@@ -86,6 +86,6 @@ export async function executeScrape(options: ScrapeOptions): Promise<ScrapeResul
  */
 export async function handleScrapeCommand(options: ScrapeOptions): Promise<void> {
   const result = await executeScrape(options);
-  handleScrapeOutput(result, options.output, options.pretty);
+  handleScrapeOutput(result, options.format, options.output, options.pretty);
 }
 

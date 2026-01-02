@@ -39,6 +39,7 @@ function createScrapeCommand(): Command {
     .description('Scrape a URL using Firecrawl')
     .argument('[url]', 'URL to scrape')
     .option('-u, --url <url>', 'URL to scrape (alternative to positional argument)')
+    .option('-H, --html', 'Output raw HTML (shortcut for --format html)')
     .option('-f, --format <format>', 'Output format: markdown, html, rawHtml, links, images, screenshot, summary, changeTracking, json, attributes, branding', 'markdown')
     .option('--only-main-content', 'Include only main content', false)
     .option('--wait-for <ms>', 'Wait time before scraping in milliseconds', parseInt)
@@ -56,7 +57,10 @@ function createScrapeCommand(): Command {
         process.exit(1);
       }
       
-      const scrapeOptions = parseScrapeOptions({ ...options, url });
+      // Handle --html shortcut flag
+      const format = options.html ? 'html' : options.format;
+      
+      const scrapeOptions = parseScrapeOptions({ ...options, url, format });
       await handleScrapeCommand(scrapeOptions);
     });
 
