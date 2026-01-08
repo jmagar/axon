@@ -18,7 +18,9 @@ function promptInput(question: string, defaultValue?: string): Promise<string> {
     output: process.stdout,
   });
 
-  const promptText = defaultValue ? `${question} [${defaultValue}]: ` : `${question} `;
+  const promptText = defaultValue
+    ? `${question} [${defaultValue}]: `
+    : `${question} `;
 
   return new Promise((resolve) => {
     rl.question(promptText, (answer) => {
@@ -37,7 +39,7 @@ export async function configure(): Promise<void> {
 
   // Prompt for API URL with default
   let url = await promptInput('Enter API URL', DEFAULT_API_URL);
-  
+
   // Ensure URL doesn't end with trailing slash
   url = url.replace(/\/$/, '');
 
@@ -58,23 +60,24 @@ export async function configure(): Promise<void> {
   const normalizedUrl = url.trim().replace(/\/$/, '');
 
   try {
-    saveCredentials({ 
+    saveCredentials({
       apiKey: key.trim(),
-      apiUrl: normalizedUrl
+      apiUrl: normalizedUrl,
     });
     console.log('\n✓ Configuration saved successfully');
     console.log(`  API URL: ${normalizedUrl}`);
     console.log(`  Stored in: ${getConfigDirectoryPath()}`);
-    
+
     // Update global config
-    updateConfig({ 
+    updateConfig({
       apiKey: key.trim(),
-      apiUrl: normalizedUrl
+      apiUrl: normalizedUrl,
     });
   } catch (error) {
-    console.error('Error saving configuration:', error instanceof Error ? error.message : 'Unknown error');
+    console.error(
+      'Error saving configuration:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     process.exit(1);
   }
 }
-
-

@@ -25,10 +25,16 @@ let globalConfig: GlobalConfig = {};
 export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
   // Priority: provided config > env vars > stored credentials
   const storedCredentials = loadCredentials();
-  
+
   globalConfig = {
-    apiKey: config.apiKey || process.env.FIRECRAWL_API_KEY || storedCredentials?.apiKey,
-    apiUrl: config.apiUrl || process.env.FIRECRAWL_API_URL || storedCredentials?.apiUrl,
+    apiKey:
+      config.apiKey ||
+      process.env.FIRECRAWL_API_KEY ||
+      storedCredentials?.apiKey,
+    apiUrl:
+      config.apiUrl ||
+      process.env.FIRECRAWL_API_URL ||
+      storedCredentials?.apiUrl,
     timeoutMs: config.timeoutMs,
     maxRetries: config.maxRetries,
     backoffFactor: config.backoffFactor,
@@ -60,7 +66,7 @@ export function getApiKey(providedKey?: string): string | undefined {
   if (providedKey) return providedKey;
   if (globalConfig.apiKey) return globalConfig.apiKey;
   if (process.env.FIRECRAWL_API_KEY) return process.env.FIRECRAWL_API_KEY;
-  
+
   // Fallback to stored credentials if not already loaded
   const storedCredentials = loadCredentials();
   return storedCredentials?.apiKey;
@@ -84,4 +90,3 @@ export function validateConfig(apiKey?: string): void {
 export function resetConfig(): void {
   globalConfig = {};
 }
-

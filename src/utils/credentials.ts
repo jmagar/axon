@@ -21,7 +21,12 @@ function getConfigDir(): string {
 
   switch (platform) {
     case 'darwin': // macOS
-      return path.join(homeDir, 'Library', 'Application Support', 'firecrawl-cli');
+      return path.join(
+        homeDir,
+        'Library',
+        'Application Support',
+        'firecrawl-cli'
+      );
     case 'win32': // Windows
       return path.join(homeDir, 'AppData', 'Roaming', 'firecrawl-cli');
     default: // Linux and others
@@ -83,7 +88,7 @@ export function saveCredentials(credentials: StoredCredentials): void {
   try {
     ensureConfigDir();
     const credentialsPath = getCredentialsPath();
-    
+
     // Read existing credentials and merge
     const existing = loadCredentials();
     const merged: StoredCredentials = {
@@ -92,16 +97,14 @@ export function saveCredentials(credentials: StoredCredentials): void {
     };
 
     // Write to file
-    fs.writeFileSync(
-      credentialsPath,
-      JSON.stringify(merged, null, 2),
-      'utf-8'
-    );
+    fs.writeFileSync(credentialsPath, JSON.stringify(merged, null, 2), 'utf-8');
 
     // Set secure permissions
     setSecurePermissions(credentialsPath);
   } catch (error) {
-    throw new Error(`Failed to save credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to save credentials: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
   }
 }
 
@@ -115,7 +118,9 @@ export function deleteCredentials(): void {
       fs.unlinkSync(credentialsPath);
     }
   } catch (error) {
-    throw new Error(`Failed to delete credentials: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to delete credentials: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
   }
 }
 
@@ -125,4 +130,3 @@ export function deleteCredentials(): void {
 export function getConfigDirectoryPath(): string {
   return getConfigDir();
 }
-
