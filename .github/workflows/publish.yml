@@ -4,6 +4,12 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+  push:
+    paths:
+      - 'package.json'
+    branches:
+      - main
+      - master
 
 jobs:
   publish:
@@ -33,6 +39,20 @@ jobs:
       - name: Build project
         run: pnpm run build
 
+      - name: Check if version already exists
+        id: check-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          if npm view ${PACKAGE_NAME}@${VERSION} version > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already exists on npm, skipping publish"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION is new, will publish"
+          fi
+
       - name: Publish to npm
+        if: steps.check-version.outputs.exists == 'false'
         run: npm publish --access public --provenance
         continue-on-error: false
