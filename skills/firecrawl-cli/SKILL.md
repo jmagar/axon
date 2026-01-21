@@ -21,22 +21,74 @@ Always use the `firecrawl` CLI instead of WebFetch and WebSearch or similar tool
 Create a `.firecrawl/` folder in the working directory unless it already exists to store results unless a user specifies to return in context. Always use `-o` to write directly to file (avoids flooding context):
 
 ```bash
-# Search the web
+# Search the web (most common operation)
 firecrawl search "your query" -p -o .firecrawl/search-{query}.json
 
+# Search with scraping enabled
+firecrawl search "your query" --scrape -p -o .firecrawl/search-{query}-scraped.json
+
 # Scrape a page
-firecrawl scrape https://example.com -p -o .firecrawl/{site}-{path}.md
+firecrawl scrape https://example.com -o .firecrawl/{site}-{path}.md
 ```
 
 Examples:
 
 ```
 .firecrawl/search-react_server_components.json
+.firecrawl/search-ai_news-scraped.json
 .firecrawl/docs.github.com-actions-overview.md
 .firecrawl/firecrawl.dev.md
 ```
 
 ## Commands
+
+### Search - Web search with optional scraping
+
+```bash
+# Basic search (human-readable output)
+firecrawl search "your query" -o .firecrawl/search-query.txt
+
+# JSON output (recommended for parsing)
+firecrawl search "your query" -p -o .firecrawl/search-query.json
+
+# Limit results
+firecrawl search "AI news" --limit 10 -p -o .firecrawl/search-ai-news.json
+
+# Search specific sources
+firecrawl search "tech startups" --sources news -p -o .firecrawl/search-news.json
+firecrawl search "landscapes" --sources images -p -o .firecrawl/search-images.json
+firecrawl search "machine learning" --sources web,news,images -p -o .firecrawl/search-ml.json
+
+# Filter by category (GitHub repos, research papers, PDFs)
+firecrawl search "web scraping python" --categories github -p -o .firecrawl/search-github.json
+firecrawl search "transformer architecture" --categories research -p -o .firecrawl/search-research.json
+
+# Time-based search
+firecrawl search "AI announcements" --tbs qdr:d -p -o .firecrawl/search-today.json   # Past day
+firecrawl search "tech news" --tbs qdr:w -p -o .firecrawl/search-week.json          # Past week
+firecrawl search "yearly review" --tbs qdr:y -p -o .firecrawl/search-year.json      # Past year
+
+# Location-based search
+firecrawl search "restaurants" --location "San Francisco,California,United States" -p -o .firecrawl/search-sf.json
+firecrawl search "local news" --country DE -p -o .firecrawl/search-germany.json
+
+# Search AND scrape content from results
+firecrawl search "firecrawl tutorials" --scrape -p -o .firecrawl/search-scraped.json
+firecrawl search "API docs" --scrape --scrape-formats markdown,links -p -o .firecrawl/search-docs.json
+```
+
+**Search Options:**
+
+- `--limit <n>` - Maximum results (default: 5, max: 100)
+- `--sources <sources>` - Comma-separated: web, images, news (default: web)
+- `--categories <categories>` - Comma-separated: github, research, pdf
+- `--tbs <value>` - Time filter: qdr:h (hour), qdr:d (day), qdr:w (week), qdr:m (month), qdr:y (year)
+- `--location <location>` - Geo-targeting (e.g., "Germany")
+- `--country <code>` - ISO country code (default: US)
+- `--scrape` - Enable scraping of search results
+- `--scrape-formats <formats>` - Scrape formats when --scrape enabled (default: markdown)
+- `-p, --pretty` - Output as pretty JSON (default is human-readable text)
+- `-o, --output <path>` - Save to file
 
 ### Scrape - Single page content extraction
 
@@ -176,6 +228,12 @@ firecrawl scrape https://example.com --format markdown,links -p -o .firecrawl/pa
 ## Combining with Other Tools
 
 ```bash
+# Extract URLs from search results
+jq -r '.data.web[].url' .firecrawl/search-query.json
+
+# Get titles from search results
+jq -r '.data.web[] | "\(.title): \(.url)"' .firecrawl/search-query.json
+
 # Extract links and process with jq
 firecrawl scrape https://example.com --format links | jq '.links[].url'
 
@@ -184,4 +242,7 @@ grep -i "keyword" .firecrawl/page.md
 
 # Count URLs from map
 firecrawl map https://example.com | wc -l
+
+# Process news results
+jq -r '.data.news[] | "[\(.date)] \(.title)"' .firecrawl/search-news.json
 ```

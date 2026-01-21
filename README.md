@@ -239,6 +239,90 @@ firecrawl map https://example.com --include-subdomains --limit 1000
 
 ---
 
+### `search` - Search the web
+
+Search the web and optionally scrape content from search results.
+
+```bash
+# Basic search
+firecrawl search "firecrawl web scraping"
+
+# Limit results
+firecrawl search "AI news" --limit 10
+
+# Search news sources
+firecrawl search "tech startups" --sources news
+
+# Search images
+firecrawl search "landscape photography" --sources images
+
+# Multiple sources
+firecrawl search "machine learning" --sources web,news,images
+
+# Filter by category (GitHub, research papers, PDFs)
+firecrawl search "web scraping python" --categories github
+firecrawl search "transformer architecture" --categories research
+firecrawl search "machine learning" --categories github,research
+
+# Time-based search
+firecrawl search "AI announcements" --tbs qdr:d   # Past day
+firecrawl search "tech news" --tbs qdr:w          # Past week
+
+# Location-based search
+firecrawl search "restaurants" --location "San Francisco,California,United States"
+firecrawl search "local news" --country DE
+
+# Search and scrape results
+firecrawl search "firecrawl tutorials" --scrape
+firecrawl search "API documentation" --scrape --scrape-formats markdown,links
+
+# Output as pretty JSON
+firecrawl search "web scraping" -p
+```
+
+#### Search Options
+
+| Option                       | Description                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `--limit <n>`                | Maximum results (default: 5, max: 100)                                                      |
+| `--sources <sources>`        | Comma-separated: `web`, `images`, `news` (default: web)                                     |
+| `--categories <categories>`  | Comma-separated: `github`, `research`, `pdf`                                                |
+| `--tbs <value>`              | Time filter: `qdr:h` (hour), `qdr:d` (day), `qdr:w` (week), `qdr:m` (month), `qdr:y` (year) |
+| `--location <location>`      | Geo-targeting (e.g., "Germany", "San Francisco,California,United States")                   |
+| `--country <code>`           | ISO country code (default: US)                                                              |
+| `--timeout <ms>`             | Timeout in milliseconds (default: 60000)                                                    |
+| `--ignore-invalid-urls`      | Exclude URLs invalid for other Firecrawl endpoints                                          |
+| `--scrape`                   | Enable scraping of search results                                                           |
+| `--scrape-formats <formats>` | Scrape formats when `--scrape` enabled (default: markdown)                                  |
+| `--only-main-content`        | Include only main content when scraping (default: true)                                     |
+| `-p, --pretty`               | Output as pretty JSON (default is human-readable text)                                      |
+| `-o, --output <path>`        | Save to file                                                                                |
+| `--json`                     | Output as compact JSON (use `-p` for pretty JSON)                                           |
+
+#### Examples
+
+```bash
+# Research a topic with recent results
+firecrawl search "React Server Components" --tbs qdr:m --limit 10
+
+# Find GitHub repositories
+firecrawl search "web scraping library" --categories github --limit 20
+
+# Search and get full content
+firecrawl search "firecrawl documentation" --scrape --scrape-formats markdown -p -o results.json
+
+# Find research papers
+firecrawl search "large language models" --categories research -p
+
+# Search with location targeting
+firecrawl search "best coffee shops" --location "Berlin,Germany" --country DE
+
+# Get news from the past week
+firecrawl search "AI startups funding" --sources news --tbs qdr:w --limit 15
+```
+
+---
+
 ### `credit-usage` - Check your credits
 
 ```bash
