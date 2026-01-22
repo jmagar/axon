@@ -73,32 +73,32 @@ Examples:
 firecrawl search "your query" -o .firecrawl/search-query.txt
 
 # JSON output (recommended for parsing)
-firecrawl search "your query" -o .firecrawl/search-query.json
+firecrawl search "your query" -o .firecrawl/search-query.json --json
 
 # Limit results
-firecrawl search "AI news" --limit 10 -o .firecrawl/search-ai-news.json
+firecrawl search "AI news" --limit 10 -o .firecrawl/search-ai-news.json --json
 
 # Search specific sources
-firecrawl search "tech startups" --sources news -o .firecrawl/search-news.json
-firecrawl search "landscapes" --sources images -o .firecrawl/search-images.json
-firecrawl search "machine learning" --sources web,news,images -o .firecrawl/search-ml.json
+firecrawl search "tech startups" --sources news -o .firecrawl/search-news.json --json
+firecrawl search "landscapes" --sources images -o .firecrawl/search-images.json --json
+firecrawl search "machine learning" --sources web,news,images -o .firecrawl/search-ml.json --json
 
 # Filter by category (GitHub repos, research papers, PDFs)
-firecrawl search "web scraping python" --categories github -o .firecrawl/search-github.json
-firecrawl search "transformer architecture" --categories research -o .firecrawl/search-research.json
+firecrawl search "web scraping python" --categories github -o .firecrawl/search-github.json --json
+firecrawl search "transformer architecture" --categories research -o .firecrawl/search-research.json --json
 
 # Time-based search
-firecrawl search "AI announcements" --tbs qdr:d -o .firecrawl/search-today.json   # Past day
-firecrawl search "tech news" --tbs qdr:w -o .firecrawl/search-week.json          # Past week
-firecrawl search "yearly review" --tbs qdr:y -o .firecrawl/search-year.json      # Past year
+firecrawl search "AI announcements" --tbs qdr:d -o .firecrawl/search-today.json --json  # Past day
+firecrawl search "tech news" --tbs qdr:w -o .firecrawl/search-week.json --json          # Past week
+firecrawl search "yearly review" --tbs qdr:y -o .firecrawl/search-year.json --json      # Past year
 
 # Location-based search
-firecrawl search "restaurants" --location "San Francisco,California,United States" -o .firecrawl/search-sf.json
-firecrawl search "local news" --country DE -o .firecrawl/search-germany.json
+firecrawl search "restaurants" --location "San Francisco,California,United States" -o .firecrawl/search-sf.json --json
+firecrawl search "local news" --country DE -o .firecrawl/search-germany.json --json
 
 # Search AND scrape content from results
-firecrawl search "firecrawl tutorials" --scrape -o .firecrawl/search-scraped.json
-firecrawl search "API docs" --scrape --scrape-formats markdown,links -o .firecrawl/search-docs.json
+firecrawl search "firecrawl tutorials" --scrape -o .firecrawl/search-scraped.json --json
+firecrawl search "API docs" --scrape --scrape-formats markdown,links -o .firecrawl/search-docs.json --json
 ```
 
 **Search Options:**
