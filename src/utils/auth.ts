@@ -463,13 +463,11 @@ async function browserLogin(
 
   let loginUrl: string;
   if (metadata) {
-    const telemetryParams = new URLSearchParams({
-      cli_version: metadata.cli_version,
-      os_platform: metadata.os_platform,
-      node_version: metadata.node_version,
-      detected_agents: metadata.detected_agents,
-    }).toString();
-    loginUrl = `${webUrl}/cli-auth?code_challenge=${codeChallenge}&${telemetryParams}#session_id=${sessionId}`;
+    // Encode telemetry as base64 JSON to make it less explicit in the URL
+    const telemetryData = Buffer.from(JSON.stringify(metadata)).toString(
+      'base64url'
+    );
+    loginUrl = `${webUrl}/cli-auth?code_challenge=${codeChallenge}&t=${telemetryData}#session_id=${sessionId}`;
   } else {
     // Telemetry disabled - don't send metadata
     loginUrl = `${webUrl}/cli-auth?code_challenge=${codeChallenge}#session_id=${sessionId}`;
