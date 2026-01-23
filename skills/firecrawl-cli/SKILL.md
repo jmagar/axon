@@ -41,7 +41,7 @@ Output when ready:
   Credits: 500,000 remaining (pay-as-you-go)
 ```
 
-- **Concurrency**: Max parallel jobs. If at limit, wait or queue requests.
+- **Concurrency**: Max parallel jobs. Run parallel operations close to this limit but not above.
 - **Credits**: Remaining API credits. Each scrape/crawl consumes credits.
 
 If not installed: `npm install -g firecrawl-cli`
@@ -70,6 +70,13 @@ Examples:
 .firecrawl/search-ai_news-scraped.json
 .firecrawl/docs.github.com-actions-overview.md
 .firecrawl/firecrawl.dev.md
+```
+
+For temporary one-time scripts (batch scraping, data processing), use `.firecrawl/scratchpad/`:
+
+```bash
+.firecrawl/scratchpad/bulk-scrape.sh
+.firecrawl/scratchpad/process-results.sh
 ```
 
 ## Commands
