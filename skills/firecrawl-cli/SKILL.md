@@ -46,7 +46,7 @@ Output when ready:
 
 If not installed: `npm install -g firecrawl-cli`
 
-If not authenticated, run `firecrawl login` or set `FIRECRAWL_API_KEY` env var. Please refer to the installation rules for more information. See [rules/install.md](rules/install.md) for more information.
+If not authenticated, run `firecrawl login` and prompt the user to select a login method. Always refer to the installation rules in [rules/install.md](rules/install.md) for more information if the user is not logged in.
 
 ## Organization
 
