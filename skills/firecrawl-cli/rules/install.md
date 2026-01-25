@@ -33,11 +33,11 @@ If not authenticated, run:
 firecrawl login
 ```
 
-This will prompt to authenticate either via browser or manually with an API key.
+This will prompt to authenticate either via browser or manually with an API key. Always select the browser login method automatically (1). And don't tell them to run the commands themselves, unless you fail to do so. Just use the tool and have it prompt the user to authenticate.
 
-## Authentication Error Handling
+## If you fail to authenticate, use the following error handling instructions:
 
-If ANY command returns an authentication error (e.g., "not authenticated", "unauthorized", "API key"), use an ask user question tool if available (such as the AskUserQuestion tool in Claude Code):
+If ANY command returns an authentication error after you ran firecrawl login and selected the browser login method (e.g., "not authenticated", "unauthorized", "API key"), use an ask user question tool if available (such as the AskUserQuestion tool in Claude Code):
 
 **Question:** "How would you like to authenticate with Firecrawl?"
 
@@ -84,24 +84,6 @@ npm config set prefix '~/.npm-global'
 export PATH=~/.npm-global/bin:$PATH
 # Add the export to your shell profile
 ```
-
-## Installation error handling
-
-If ANY command returns an authentication error (e.g., "not authenticated", "unauthorized", "API key"), immediately use the AskUserQuestion tool if available- do NOT run firecrawl credit-usage:
-
-question: "How would you like to authenticate with Firecrawl?"
-header: "Auth method"
-options:
-Label: "Login with browser (Recommended)", Description: "Opens your browser to authenticate with Firecrawl"
-Label: "Enter API key manually", Description: "Paste an existing API key from firecrawl.dev"
-If user selects browser login: Tell them to run firecrawl config in their terminal and select option 1. Wait for them to confirm, then retry the original command.
-
-If user selects manual API key: Ask for their API key, then run:
-
-export FIRECRAWL_API_KEY="<their-key>"
-Tell them to add this export to ~/.zshrc or ~/.bashrc for persistence, then retry the original command.
-
-If a user answers that they want to use a browser to authenticate you must run: "echo "1" | firecrawl config"
 
 ### Specific Instructions for Codex
 
