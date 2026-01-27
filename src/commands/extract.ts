@@ -94,10 +94,24 @@ export async function executeExtract(
         warning: result.warning,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
+    let message =
+      error instanceof Error ? error.message : 'Unknown error occurred';
+
+    // Surface validation details from Firecrawl SDK errors
+    const details = (error as { details?: unknown })?.details;
+    if (Array.isArray(details)) {
+      const msgs = details
+        .map((d: { message?: string }) => d.message)
+        .filter(Boolean);
+      if (msgs.length > 0) {
+        message += ': ' + msgs.join('; ');
+      }
+    }
+
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: message,
     };
   }
 }

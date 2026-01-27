@@ -476,7 +476,11 @@ function createExtractCommand(): Command {
     .option('--json', 'Output as JSON format', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .option('--no-embed', 'Disable auto-embedding of extracted content')
-    .action(async (urls: string[], options) => {
+    .action(async (rawUrls: string[], options) => {
+      // Flatten URLs that may contain newlines (e.g. zsh doesn't word-split variables)
+      const urls = rawUrls.flatMap((u) =>
+        u.includes('\n') ? u.split('\n').filter(Boolean) : [u]
+      );
       await handleExtractCommand({
         urls,
         prompt: options.prompt,
