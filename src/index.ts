@@ -10,7 +10,6 @@ import { handleScrapeCommand } from './commands/scrape';
 import { initializeConfig, updateConfig } from './utils/config';
 import { getClient } from './utils/client';
 import { configure, viewConfig } from './commands/config';
-import { handleCreditUsageCommand } from './commands/credit-usage';
 import { handleCrawlCommand } from './commands/crawl';
 import { handleMapCommand } from './commands/map';
 import { handleSearchCommand } from './commands/search';
@@ -30,13 +29,7 @@ import type { ScrapeFormat } from './types/scrape';
 initializeConfig();
 
 // Commands that require authentication
-const AUTH_REQUIRED_COMMANDS = [
-  'scrape',
-  'crawl',
-  'map',
-  'search',
-  'credit-usage',
-];
+const AUTH_REQUIRED_COMMANDS = ['scrape', 'crawl', 'map', 'search'];
 
 const program = new Command();
 
@@ -511,24 +504,6 @@ program
   .description('Logout and clear stored credentials')
   .action(async () => {
     await handleLogoutCommand();
-  });
-
-program
-  .command('credit-usage')
-  .description('Get team credit usage information')
-  .option(
-    '-k, --api-key <key>',
-    'Firecrawl API key (overrides global --api-key)'
-  )
-  .option('-o, --output <path>', 'Output file path (default: stdout)')
-  .option('--json', 'Output as JSON format', false)
-  .option(
-    '--pretty',
-    'Pretty print JSON output (only applies with --json)',
-    false
-  )
-  .action(async (options) => {
-    await handleCreditUsageCommand(options);
   });
 
 program
