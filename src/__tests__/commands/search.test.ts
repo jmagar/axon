@@ -3,10 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeSearch } from '../../commands/search';
+import { executeSearch, handleSearchCommand } from '../../commands/search';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+import { autoEmbed } from '../../utils/embedpipeline';
 
 // Mock the Firecrawl client module
 vi.mock('../../utils/client', async () => {
@@ -16,6 +17,16 @@ vi.mock('../../utils/client', async () => {
     getClient: vi.fn(),
   };
 });
+
+// Mock the embed pipeline module
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock the output module to prevent console output in tests
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
 
 describe('executeSearch', () => {
   let mockClient: any;
@@ -703,5 +714,212 @@ describe('executeSearch', () => {
         expect(result.success).toBe(true);
       }
     });
+  });
+});
+
+describe('handleSearchCommand auto-embed', () => {
+  let mockClient: any;
+
+  beforeEach(() => {
+    setupTest();
+    initializeConfig({
+      apiKey: 'test-api-key',
+      apiUrl: 'https://api.firecrawl.dev',
+    });
+
+    mockClient = {
+      search: vi.fn(),
+    };
+    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(autoEmbed).mockResolvedValue();
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+  });
+
+  afterEach(() => {
+    teardownTest();
+    vi.clearAllMocks();
+  });
+
+  it('should call autoEmbed for each scraped web result when scrape is true', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'Example Page',
+          markdown: '# Example Content',
+        },
+        {
+          url: 'https://example2.com',
+          title: 'Another Page',
+          markdown: '# Another Content',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(2);
+    expect(autoEmbed).toHaveBeenCalledWith('# Example Content', {
+      url: 'https://example.com',
+      title: 'Example Page',
+      sourceCommand: 'search',
+      contentType: 'markdown',
+    });
+    expect(autoEmbed).toHaveBeenCalledWith('# Another Content', {
+      url: 'https://example2.com',
+      title: 'Another Page',
+      sourceCommand: 'search',
+      contentType: 'markdown',
+    });
+  });
+
+  it('should skip autoEmbed when scrape is false (snippets only)', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'Example',
+          description: 'A snippet',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+  });
+
+  it('should skip autoEmbed when scrape is undefined (default non-scrape search)', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'Example',
+          description: 'A snippet',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+  });
+
+  it('should skip autoEmbed when embed is explicitly false', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'Example',
+          markdown: '# Content',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: true,
+      embed: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+  });
+
+  it('should use html content when markdown is not available', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'HTML Page',
+          html: '<h1>HTML Content</h1>',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(1);
+    expect(autoEmbed).toHaveBeenCalledWith('<h1>HTML Content</h1>', {
+      url: 'https://example.com',
+      title: 'HTML Page',
+      sourceCommand: 'search',
+      contentType: 'html',
+    });
+  });
+
+  it('should skip items without markdown or html content', async () => {
+    const mockResponse = {
+      web: [
+        {
+          url: 'https://example.com',
+          title: 'No Content',
+          description: 'Just a snippet',
+        },
+        {
+          url: 'https://example2.com',
+          title: 'Has Content',
+          markdown: '# Real Content',
+        },
+      ],
+    };
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(1);
+    expect(autoEmbed).toHaveBeenCalledWith('# Real Content', {
+      url: 'https://example2.com',
+      title: 'Has Content',
+      sourceCommand: 'search',
+      contentType: 'markdown',
+    });
+  });
+
+  it('should not call autoEmbed when search fails', async () => {
+    mockClient.search.mockRejectedValue(new Error('API error'));
+
+    try {
+      await handleSearchCommand({
+        query: 'test query',
+        scrape: true,
+      });
+    } catch {
+      // process.exit mock throws
+    }
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+  });
+
+  it('should not call autoEmbed when no results are returned', async () => {
+    const mockResponse = {};
+    mockClient.search.mockResolvedValue(mockResponse);
+
+    await handleSearchCommand({
+      query: 'test query',
+      scrape: true,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import type {
 } from '../types/search';
 import { getClient } from '../utils/client';
 import { writeOutput } from '../utils/output';
+import { autoEmbed } from '../utils/embedpipeline';
 
 /**
  * Execute search command
@@ -286,4 +287,25 @@ export async function handleSearchCommand(
   }
 
   writeOutput(outputContent, options.output, !!options.output);
+
+  // Auto-embed only when --scrape was used (snippets are too noisy)
+  const embedPromises: Promise<void>[] = [];
+  if (options.embed !== false && options.scrape && result.data?.web) {
+    for (const item of result.data.web) {
+      if (item.markdown || item.html) {
+        embedPromises.push(
+          autoEmbed(item.markdown || item.html || '', {
+            url: item.url,
+            title: item.title,
+            sourceCommand: 'search',
+            contentType: item.markdown ? 'markdown' : 'html',
+          })
+        );
+      }
+    }
+  }
+
+  if (embedPromises.length > 0) {
+    await Promise.all(embedPromises);
+  }
 }

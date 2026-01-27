@@ -360,6 +360,7 @@ function createSearchCommand(): Command {
       'Include only main content when scraping',
       true
     )
+    .option('--no-embed', 'Skip auto-embedding of search results')
     .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
@@ -428,6 +429,7 @@ function createSearchCommand(): Command {
         country: options.country,
         timeout: options.timeout,
         ignoreInvalidUrls: options.ignoreInvalidUrls,
+        embed: options.embed,
         scrape: options.scrape,
         scrapeFormats,
         onlyMainContent: options.onlyMainContent,

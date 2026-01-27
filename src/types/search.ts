@@ -34,6 +34,8 @@ export interface SearchOptions {
   json?: boolean;
   /** Pretty print JSON output */
   pretty?: boolean;
+  /** Skip auto-embedding (--no-embed) */
+  embed?: boolean;
   /** Enable scraping of search results */
   scrape?: boolean;
   /** Scrape formats when scraping is enabled */
