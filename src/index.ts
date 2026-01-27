@@ -200,6 +200,7 @@ function createCrawlCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
+    .option('--no-embed', 'Skip auto-embedding of crawl results')
     .action(async (positionalUrlOrJobId, options) => {
       // Use positional argument if provided, otherwise use --url option
       const urlOrJobId = positionalUrlOrJobId || options.url;
@@ -238,6 +239,7 @@ function createCrawlCommand(): Command {
         allowSubdomains: options.allowSubdomains,
         delay: options.delay,
         maxConcurrency: options.maxConcurrency,
+        embed: options.embed,
       };
 
       await handleCrawlCommand(crawlOptions);

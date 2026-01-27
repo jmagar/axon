@@ -43,6 +43,8 @@ export interface CrawlOptions {
   delay?: number;
   /** Maximum concurrency */
   maxConcurrency?: number;
+  /** Enable auto-embedding of crawl results */
+  embed?: boolean;
 }
 
 export interface CrawlResult {

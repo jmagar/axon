@@ -3,10 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeCrawl } from '../../commands/crawl';
+import { executeCrawl, handleCrawlCommand } from '../../commands/crawl';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+import { autoEmbed } from '../../utils/embedpipeline';
 
 // Mock the Firecrawl client module
 vi.mock('../../utils/client', async () => {
@@ -16,6 +17,16 @@ vi.mock('../../utils/client', async () => {
     getClient: vi.fn(),
   };
 });
+
+// Mock autoEmbed
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock writeOutput
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
 
 describe('executeCrawl', () => {
   let mockClient: any;
@@ -512,6 +523,227 @@ describe('executeCrawl', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Unknown error occurred');
+    });
+  });
+
+  describe('Auto-embed integration', () => {
+    beforeEach(() => {
+      // Suppress console.error output during tests
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(autoEmbed).mockClear();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should call autoEmbed for each crawled page with markdown', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 2,
+        completed: 2,
+        data: [
+          {
+            markdown: '# Page 1',
+            metadata: {
+              sourceURL: 'https://example.com/page1',
+              title: 'Page 1',
+            },
+          },
+          {
+            markdown: '# Page 2',
+            metadata: {
+              sourceURL: 'https://example.com/page2',
+              title: 'Page 2',
+            },
+          },
+        ],
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+      });
+
+      expect(autoEmbed).toHaveBeenCalledTimes(2);
+      expect(autoEmbed).toHaveBeenCalledWith('# Page 1', {
+        url: 'https://example.com/page1',
+        title: 'Page 1',
+        sourceCommand: 'crawl',
+        contentType: 'markdown',
+      });
+      expect(autoEmbed).toHaveBeenCalledWith('# Page 2', {
+        url: 'https://example.com/page2',
+        title: 'Page 2',
+        sourceCommand: 'crawl',
+        contentType: 'markdown',
+      });
+    });
+
+    it('should call autoEmbed with html when page has no markdown', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: [
+          {
+            html: '<h1>Page HTML</h1>',
+            metadata: {
+              sourceURL: 'https://example.com/htmlpage',
+              title: 'HTML Page',
+            },
+          },
+        ],
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+      });
+
+      expect(autoEmbed).toHaveBeenCalledTimes(1);
+      expect(autoEmbed).toHaveBeenCalledWith('<h1>Page HTML</h1>', {
+        url: 'https://example.com/htmlpage',
+        title: 'HTML Page',
+        sourceCommand: 'crawl',
+        contentType: 'html',
+      });
+    });
+
+    it('should skip autoEmbed when embed is false', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: [
+          {
+            markdown: '# Page 1',
+            metadata: {
+              sourceURL: 'https://example.com/page1',
+              title: 'Page 1',
+            },
+          },
+        ],
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+        embed: false,
+      });
+
+      expect(autoEmbed).not.toHaveBeenCalled();
+    });
+
+    it('should skip autoEmbed for pages without markdown or html', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: [
+          {
+            metadata: {
+              sourceURL: 'https://example.com/empty',
+              title: 'Empty Page',
+            },
+          },
+        ],
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+      });
+
+      expect(autoEmbed).not.toHaveBeenCalled();
+    });
+
+    it('should not embed for async job start (no completed data)', async () => {
+      const mockResponse = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        url: 'https://example.com',
+      };
+      mockClient.startCrawl.mockResolvedValue(mockResponse);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(autoEmbed).not.toHaveBeenCalled();
+    });
+
+    it('should use metadata.url as fallback when sourceURL is missing', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: [
+          {
+            markdown: '# Fallback URL',
+            metadata: {
+              url: 'https://example.com/fallback',
+              title: 'Fallback',
+            },
+          },
+        ],
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+      });
+
+      expect(autoEmbed).toHaveBeenCalledTimes(1);
+      expect(autoEmbed).toHaveBeenCalledWith('# Fallback URL', {
+        url: 'https://example.com/fallback',
+        title: 'Fallback',
+        sourceCommand: 'crawl',
+        contentType: 'markdown',
+      });
+    });
+
+    it('should handle crawl result with nested data structure', async () => {
+      const mockCrawlJob = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: {
+          data: [
+            {
+              markdown: '# Nested Page',
+              metadata: {
+                sourceURL: 'https://example.com/nested',
+                title: 'Nested',
+              },
+            },
+          ],
+        },
+      };
+      mockClient.crawl.mockResolvedValue(mockCrawlJob);
+
+      await handleCrawlCommand({
+        urlOrJobId: 'https://example.com',
+        wait: true,
+      });
+
+      expect(autoEmbed).toHaveBeenCalledTimes(1);
+      expect(autoEmbed).toHaveBeenCalledWith('# Nested Page', {
+        url: 'https://example.com/nested',
+        title: 'Nested',
+        sourceCommand: 'crawl',
+        contentType: 'markdown',
+      });
     });
   });
 });

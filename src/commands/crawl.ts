@@ -10,6 +10,7 @@ import type {
 import { getClient } from '../utils/client';
 import { isJobId } from '../utils/job';
 import { writeOutput } from '../utils/output';
+import { autoEmbed } from '../utils/embedpipeline';
 
 /**
  * Execute crawl status check
@@ -249,6 +250,35 @@ export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
     return;
   }
 
+  // Auto-embed crawl results
+  const embedPromises: Promise<void>[] = [];
+  if (
+    options.embed !== false &&
+    crawlResult.data &&
+    !('jobId' in crawlResult.data)
+  ) {
+    // crawlResult.data is the SDK response; pages may be in .data (array) or .data.data (nested)
+    const rawData = crawlResult.data.data;
+    const pages = Array.isArray(rawData)
+      ? rawData
+      : rawData && Array.isArray(rawData.data)
+        ? rawData.data
+        : [];
+
+    for (const page of pages) {
+      if (page.markdown || page.html) {
+        embedPromises.push(
+          autoEmbed(page.markdown || page.html || '', {
+            url: page.metadata?.sourceURL || page.metadata?.url || '',
+            title: page.metadata?.title,
+            sourceCommand: 'crawl',
+            contentType: page.markdown ? 'markdown' : 'html',
+          })
+        );
+      }
+    }
+  }
+
   let outputContent: string;
 
   // If it's a job ID response (has jobId field)
@@ -271,4 +301,9 @@ export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
   }
 
   writeOutput(outputContent, options.output, !!options.output);
+
+  // Wait for embedding to complete
+  if (embedPromises.length > 0) {
+    await Promise.all(embedPromises);
+  }
 }
