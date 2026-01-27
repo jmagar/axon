@@ -2,6 +2,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **📁 Organization Note:** When this plan is fully implemented and verified, move this file to `docs/plans/complete/` to keep the plans folder organized.
+
 **Goal:** Auto-embed all CLI output into Qdrant via HF TEI for semantic search, with new `extract`, `embed`, `query`, and `retrieve` commands.
 
 **Architecture:** A pipeline of utilities (chunker → TEI embeddings → Qdrant storage) is called by every content-producing command after its response. New commands wrap the pipeline directly. All HTTP is native `fetch` (Node 18+). No new npm dependencies.
@@ -20,7 +22,7 @@ Before implementing anything, understand these patterns:
 
 Every command in `src/commands/` exports two functions:
 
-- `executeX(options: XOptions): Promise<XResult>` — Core logic. Returns `{ success: boolean; data?: any; error?: string }`. Never calls `process.exit()`.
+- `executeX(options: XOptions): Promise<XResult>` — Core logic. Returns `{ success: boolean; data?: unknown; error?: string }`. Never calls `process.exit()`.
 - `handleXCommand(options: XOptions): Promise<void>` — Calls `executeX()`, formats output, writes via `writeOutput()`, calls `process.exit(1)` on error.
 
 ### Type Files
@@ -44,7 +46,7 @@ vi.mock('../../utils/client', async () => {
 });
 
 describe('executeX', () => {
-  let mockClient: any;
+  let mockClient: Record<string, unknown>;
 
   beforeEach(() => {
     setupTest();
@@ -55,12 +57,14 @@ describe('executeX', () => {
     mockClient = {
       /* mock methods */
     };
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
   });
 
   afterEach(() => {
     teardownTest();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should ...', async () => {
@@ -206,6 +210,7 @@ FIRECRAWL_API_KEY=local-dev
 FIRECRAWL_API_URL=http://localhost:53002
 
 # Embedding pipeline (optional - enables auto-embed)
+# NOTE: TEI runs on 52000 in this environment; keep as-is even though it's < 53000
 # TEI_URL=http://localhost:52000
 # QDRANT_URL=http://localhost:53333
 # QDRANT_COLLECTION=firecrawl_collection
@@ -310,11 +315,9 @@ describe('chunkText', () => {
       const chunks = chunkText(longText);
 
       if (chunks.length > 1) {
-        // Last part of chunk N should appear at start of chunk N+1 (overlap)
-        const end0 = chunks[0].text.slice(-50);
-        const start1 = chunks[1].text.slice(0, 150);
-        // The overlap means some content from end of chunk 0 appears in chunk 1
-        expect(start1.length).toBeGreaterThan(0);
+        // Last part of chunk N should appear in chunk N+1 (overlap)
+        const overlap = chunks[0].text.slice(-50);
+        expect(chunks[1].text.includes(overlap)).toBe(true);
       }
     });
   });
@@ -331,7 +334,7 @@ describe('chunkText', () => {
         if (chunks.length > 1) {
           // Allow the last chunk to be short
           if (chunk.index < chunks.length - 1) {
-            expect(chunk.text.length).toBeGreaterThanOrEqual(10);
+            expect(chunk.text.length).toBeGreaterThanOrEqual(50);
           }
         }
       }
@@ -938,6 +941,20 @@ describe('Qdrant client', () => {
       expect(mockFetch).toHaveBeenCalledTimes(5);
     });
 
+    it('should throw on non-404 errors when checking collection', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      await expect(
+        ensureCollection(qdrantUrl, collection, 1024)
+      ).rejects.toThrow('Failed to check Qdrant collection');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
     it('should cache collection existence after first check', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -1161,6 +1178,12 @@ export async function ensureCollection(
     return;
   }
 
+  if (checkResponse.status !== 404) {
+    throw new Error(
+      `Failed to check Qdrant collection: ${checkResponse.status} ${checkResponse.statusText}`
+    );
+  }
+
   // Create collection
   const createResponse = await fetch(`${qdrantUrl}/collections/${collection}`, {
     method: 'PUT',
@@ -1257,7 +1280,7 @@ export interface QueryOptions {
 export interface QueryResult {
   id: string;
   score: number;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 }
 
 /**
@@ -1269,7 +1292,8 @@ export async function queryPoints(
   vector: number[],
   options: QueryOptions
 ): Promise<QueryResult[]> {
-  const body: Record<string, any> = {
+  // Target Qdrant is latest; /points/query is supported (no fallback needed).
+  const body: Record<string, unknown> = {
     query: vector,
     limit: options.limit,
     with_payload: true,
@@ -1294,17 +1318,25 @@ export async function queryPoints(
     throw new Error(`Qdrant query failed: ${response.status}`);
   }
 
-  const data = await response.json();
-  return (data.result?.points || []).map((p: any) => ({
+  const data = (await response.json()) as {
+    result?: {
+      points?: Array<{
+        id: string;
+        score?: number;
+        payload?: Record<string, unknown>;
+      }>;
+    };
+  };
+  return (data.result?.points || []).map((p) => ({
     id: p.id,
-    score: p.score,
-    payload: p.payload,
+    score: p.score ?? 0,
+    payload: p.payload ?? {},
   }));
 }
 
 export interface ScrollResult {
   id: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 }
 
 /**
@@ -1323,7 +1355,7 @@ export async function scrollByUrl(
   while (isFirstPage || offset !== null) {
     isFirstPage = false;
 
-    const body: Record<string, any> = {
+    const body: Record<string, unknown> = {
       filter: {
         must: [{ key: 'url', match: { value: url } }],
       },
@@ -1348,11 +1380,16 @@ export async function scrollByUrl(
       throw new Error(`Qdrant scroll failed: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as {
+      result?: {
+        points?: Array<{ id: string; payload?: Record<string, unknown> }>;
+        next_page_offset?: string | number | null;
+      };
+    };
     const points = data.result?.points || [];
 
     for (const p of points) {
-      allPoints.push({ id: p.id, payload: p.payload });
+      allPoints.push({ id: p.id, payload: p.payload ?? {} });
     }
 
     offset = data.result?.next_page_offset ?? null;
@@ -1385,16 +1422,16 @@ git commit -m "feat: add Qdrant client with collection auto-creation and indexes
 
 **Files:**
 
-- Create: `src/utils/embed-pipeline.ts`
-- Create: `src/__tests__/utils/embed-pipeline.test.ts`
+- Create: `src/utils/embedpipeline.ts`
+- Create: `src/__tests__/utils/embedpipeline.test.ts`
 
 **Step 1: Write the failing tests**
 
-Create `src/__tests__/utils/embed-pipeline.test.ts`:
+Create `src/__tests__/utils/embedpipeline.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { autoEmbed } from '../../utils/embed-pipeline';
+import { autoEmbed } from '../../utils/embedpipeline';
 import { initializeConfig, resetConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
 import * as qdrant from '../../utils/qdrant';
@@ -1534,12 +1571,12 @@ describe('autoEmbed', () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm test -- src/__tests__/utils/embed-pipeline.test.ts`
-Expected: FAIL — module `../../utils/embed-pipeline` not found
+Run: `pnpm test -- src/__tests__/utils/embedpipeline.test.ts`
+Expected: FAIL — module `../../utils/embedpipeline` not found
 
 **Step 3: Write minimal implementation**
 
-Create `src/utils/embed-pipeline.ts`:
+Create `src/utils/embedpipeline.ts`:
 
 ```typescript
 /**
@@ -1547,6 +1584,7 @@ Create `src/utils/embed-pipeline.ts`:
  * Coordinates chunking, embedding, and vector storage
  */
 
+import { randomUUID } from 'crypto';
 import { getConfig } from './config';
 import { chunkText } from './chunker';
 import { getTeiInfo, embedChunks } from './embeddings';
@@ -1615,7 +1653,7 @@ export async function autoEmbed(
     const totalChunks = chunks.length;
 
     const points = chunks.map((chunk, i) => ({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       vector: vectors[i],
       payload: {
         url: metadata.url,
@@ -1646,13 +1684,13 @@ export async function autoEmbed(
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm test -- src/__tests__/utils/embed-pipeline.test.ts`
+Run: `pnpm test -- src/__tests__/utils/embedpipeline.test.ts`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add src/utils/embed-pipeline.ts src/__tests__/utils/embed-pipeline.test.ts
+git add src/utils/embedpipeline.ts src/__tests__/utils/embedpipeline.test.ts
 git commit -m "feat: add embed pipeline orchestrator (autoEmbed)"
 ```
 
@@ -1688,7 +1726,7 @@ export interface ExtractOptions {
 export interface ExtractResult {
   success: boolean;
   data?: {
-    extracted: any;
+    extracted: unknown;
     sources?: string[];
     warning?: string;
   };
@@ -1718,18 +1756,28 @@ Create `src/__tests__/commands/extract.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeExtract } from '../../commands/extract';
+import { executeExtract, handleExtractCommand } from '../../commands/extract';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+import { autoEmbed } from '../../utils/embedpipeline';
+import { writeOutput } from '../../utils/output';
 
 vi.mock('../../utils/client', async () => {
   const actual = await vi.importActual('../../utils/client');
   return { ...actual, getClient: vi.fn() };
 });
 
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn(),
+}));
+
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
+
 describe('executeExtract', () => {
-  let mockClient: any;
+  let mockClient: { extract: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     setupTest();
@@ -1742,7 +1790,9 @@ describe('executeExtract', () => {
       extract: vi.fn(),
     };
 
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
   });
 
   afterEach(() => {
@@ -1832,6 +1882,48 @@ describe('executeExtract', () => {
     expect(result.data?.sources).toEqual(['https://example.com/page1']);
   });
 });
+
+describe('handleExtractCommand', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should auto-embed once per source URL when available', async () => {
+    mockClient.extract.mockResolvedValue({
+      success: true,
+      data: { name: 'Test' },
+      sources: ['https://example.com/page1', 'https://example.com/page2'],
+    });
+
+    await handleExtractCommand({
+      urls: ['https://example.com'],
+      prompt: 'test',
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(2);
+    expect(autoEmbed).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ url: 'https://example.com/page1' })
+    );
+    expect(writeOutput).toHaveBeenCalled();
+  });
+
+  it('should skip auto-embed when embed is false', async () => {
+    mockClient.extract.mockResolvedValue({
+      success: true,
+      data: { name: 'Test' },
+    });
+
+    await handleExtractCommand({
+      urls: ['https://example.com'],
+      prompt: 'test',
+      embed: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+    expect(writeOutput).toHaveBeenCalled();
+  });
+});
 ```
 
 **Step 2: Run test to verify it fails**
@@ -1851,7 +1943,7 @@ Create `src/commands/extract.ts`:
 import type { ExtractOptions, ExtractResult } from '../types/extract';
 import { getClient } from '../utils/client';
 import { writeOutput } from '../utils/output';
-import { autoEmbed } from '../utils/embed-pipeline';
+import { autoEmbed } from '../utils/embedpipeline';
 
 /**
  * Convert extracted data to human-readable text for embedding
@@ -1869,6 +1961,14 @@ function extractionToText(data: unknown): string {
   return String(data);
 }
 
+type ExtractResponse = {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  sources?: string[];
+  warning?: string;
+};
+
 /**
  * Execute extract command
  */
@@ -1878,7 +1978,7 @@ export async function executeExtract(
   try {
     const app = getClient({ apiKey: options.apiKey });
 
-    const extractParams: Record<string, any> = {};
+    const extractParams: Record<string, unknown> = {};
 
     if (options.prompt) {
       extractParams.prompt = options.prompt;
@@ -1911,12 +2011,15 @@ export async function executeExtract(
       extractParams.showSources = options.showSources;
     }
 
-    const result = await app.extract(options.urls, extractParams);
+    const result = (await app.extract(
+      options.urls,
+      extractParams
+    )) as ExtractResponse;
 
     if ('error' in result && !result.success) {
       return {
         success: false,
-        error: (result as any).error || 'Extraction failed',
+        error: result.error || 'Extraction failed',
       };
     }
 
@@ -1924,8 +2027,8 @@ export async function executeExtract(
       success: true,
       data: {
         extracted: result.data,
-        sources: (result as any).sources,
-        warning: (result as any).warning,
+        sources: result.sources,
+        warning: result.warning,
       },
     };
   } catch (error) {
@@ -1952,19 +2055,26 @@ export async function handleExtractCommand(
   if (!result.data) return;
 
   // Start embedding concurrently (human-readable text, not raw JSON)
-  const embedPromise =
+  // Prefer actual source URLs when available for higher-quality retrieval
+  const embedTargets =
+    result.data.sources && result.data.sources.length > 0
+      ? result.data.sources
+      : options.urls;
+  const embedPromises =
     options.embed !== false
-      ? autoEmbed(extractionToText(result.data.extracted), {
-          url: options.urls[0] || 'unknown',
-          sourceCommand: 'extract',
-          contentType: 'extracted',
-        })
-      : Promise.resolve();
+      ? embedTargets.map((targetUrl) =>
+          autoEmbed(extractionToText(result.data.extracted), {
+            url: targetUrl,
+            sourceCommand: 'extract',
+            contentType: 'extracted',
+          })
+        )
+      : [];
 
   // Format output
   let outputContent: string;
 
-  const outputData: Record<string, any> = {
+  const outputData: Record<string, unknown> = {
     success: true,
     data: result.data.extracted,
   };
@@ -1982,7 +2092,9 @@ export async function handleExtractCommand(
   writeOutput(outputContent, options.output, !!options.output);
 
   // Wait for embedding to finish
-  await embedPromise;
+  if (embedPromises.length > 0) {
+    await Promise.all(embedPromises);
+  }
 }
 ```
 
@@ -2047,6 +2159,7 @@ import { setupTest, teardownTest } from '../utils/mock-client';
 import * as embeddings from '../../utils/embeddings';
 import * as qdrant from '../../utils/qdrant';
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 
 vi.mock('../../utils/client', async () => {
   const actual = await vi.importActual('../../utils/client');
@@ -2057,7 +2170,7 @@ vi.mock('../../utils/embeddings');
 vi.mock('../../utils/qdrant');
 
 describe('executeEmbed', () => {
-  let mockClient: any;
+  let mockClient: { scrape: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     setupTest();
@@ -2073,7 +2186,9 @@ describe('executeEmbed', () => {
       scrape: vi.fn(),
     };
 
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
     vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
       modelId: 'test',
       dimension: 1024,
@@ -2107,6 +2222,10 @@ describe('executeEmbed', () => {
     expect(result.success).toBe(true);
     expect(result.data?.url).toBe('https://example.com');
     expect(result.data?.chunksEmbedded).toBeGreaterThan(0);
+
+    const points = vi.mocked(qdrant.upsertPoints).mock.calls[0][2];
+    const payload = points[0].payload as Record<string, unknown>;
+    expect(payload.title).toBe('Test Page');
   });
 
   it('should read file and embed when input is a file path', async () => {
@@ -2212,6 +2331,7 @@ export async function executeEmbed(
 
     let content: string;
     let url: string;
+    let title: string | undefined;
 
     if (options.input === '-') {
       // Stdin mode
@@ -2231,6 +2351,7 @@ export async function executeEmbed(
       });
       content = result.markdown || '';
       url = options.input;
+      title = result.metadata?.title;
     } else if (fs.existsSync(options.input)) {
       // File mode
       if (!options.url) {
@@ -2290,11 +2411,11 @@ export async function executeEmbed(
     }
 
     const points = chunks.map((chunk, i) => ({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       vector: vectors[i],
       payload: {
         url,
-        title: '',
+        title: title || '',
         domain,
         chunk_index: chunk.index,
         chunk_text: chunk.text,
@@ -2571,17 +2692,25 @@ export async function executeQuery(
       domain: options.domain,
     });
 
+    const getString = (value: unknown): string =>
+      typeof value === 'string' ? value : '';
+    const getNumber = (value: unknown, fallback: number): number =>
+      typeof value === 'number' ? value : fallback;
+
     // Map to result items
     const items: QueryResultItem[] = results.map((r) => ({
       score: r.score,
-      url: r.payload.url || '',
-      title: r.payload.title || '',
-      chunkHeader: r.payload.chunk_header ?? null,
-      chunkText: r.payload.chunk_text || '',
-      chunkIndex: r.payload.chunk_index ?? 0,
-      totalChunks: r.payload.total_chunks ?? 1,
-      domain: r.payload.domain || '',
-      sourceCommand: r.payload.source_command || '',
+      url: getString(r.payload.url),
+      title: getString(r.payload.title),
+      chunkHeader:
+        typeof r.payload.chunk_header === 'string'
+          ? r.payload.chunk_header
+          : null,
+      chunkText: getString(r.payload.chunk_text),
+      chunkIndex: getNumber(r.payload.chunk_index, 0),
+      totalChunks: getNumber(r.payload.total_chunks, 1),
+      domain: getString(r.payload.domain),
+      sourceCommand: getString(r.payload.source_command),
     }));
 
     return { success: true, data: items };
@@ -2774,7 +2903,7 @@ describe('executeRetrieve', () => {
         id: '1',
         payload: {
           chunk_index: 0,
-          chunk_text: '# Title\n\nIntro.',
+          chunk_text: 'Intro.',
           chunk_header: 'Title',
         },
       },
@@ -2782,7 +2911,7 @@ describe('executeRetrieve', () => {
         id: '2',
         payload: {
           chunk_index: 1,
-          chunk_text: '## Section\n\nContent.',
+          chunk_text: 'Content.',
           chunk_header: 'Section',
         },
       },
@@ -2798,7 +2927,7 @@ describe('executeRetrieve', () => {
     expect(result.success).toBe(true);
     expect(result.data?.totalChunks).toBe(2);
     expect(result.data?.content).toContain('# Title');
-    expect(result.data?.content).toContain('## Section');
+    expect(result.data?.content).toContain('# Section');
   });
 
   it('should return error when no chunks found', async () => {
@@ -2869,13 +2998,32 @@ export async function executeRetrieve(
       };
     }
 
-    // Reassemble document from ordered chunks
-    const content = points.map((p) => p.payload.chunk_text || '').join('\n\n');
+    // Reassemble document from ordered chunks (restore headers)
+    let lastHeader: string | null = null;
+    const content = points
+      .map((p) => {
+        const header =
+          typeof p.payload.chunk_header === 'string'
+            ? p.payload.chunk_header
+            : null;
+        const text =
+          typeof p.payload.chunk_text === 'string' ? p.payload.chunk_text : '';
+        const headerLine =
+          header && header !== lastHeader ? `# ${header}\\n\\n` : '';
+        lastHeader = header;
+        return `${headerLine}${text}`;
+      })
+      .join('\\n\\n');
 
     const chunks = points.map((p) => ({
-      index: p.payload.chunk_index ?? 0,
-      header: p.payload.chunk_header ?? null,
-      text: p.payload.chunk_text || '',
+      index:
+        typeof p.payload.chunk_index === 'number' ? p.payload.chunk_index : 0,
+      header:
+        typeof p.payload.chunk_header === 'string'
+          ? p.payload.chunk_header
+          : null,
+      text:
+        typeof p.payload.chunk_text === 'string' ? p.payload.chunk_text : '',
     }));
 
     return {
@@ -3137,8 +3285,87 @@ git commit -m "feat: register extract, embed, query, retrieve commands"
 **Files:**
 
 - Modify: `src/commands/scrape.ts`
+- Modify: `src/types/scrape.ts`
+- Modify: `src/index.ts`
+- Modify: `src/utils/options.ts`
+- Modify: `src/__tests__/commands/scrape.test.ts`
+- Modify: `src/__tests__/utils/options.test.ts`
 
-**Step 1: Add --no-embed option to createScrapeCommand in index.ts**
+**Step 1: Write the failing tests**
+
+Add to `src/__tests__/utils/options.test.ts`:
+
+```typescript
+it('should pass embed flag through parseScrapeOptions', () => {
+  const result = parseScrapeOptions({
+    url: 'https://example.com',
+    embed: false,
+  });
+
+  expect(result.embed).toBe(false);
+});
+```
+
+Add to `src/__tests__/commands/scrape.test.ts`:
+
+```typescript
+import { handleScrapeCommand } from '../../commands/scrape';
+import { autoEmbed } from '../../utils/embedpipeline';
+import { handleScrapeOutput } from '../../utils/output';
+
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn(),
+}));
+
+vi.mock('../../utils/output', async () => {
+  const actual = await vi.importActual('../../utils/output');
+  return { ...actual, handleScrapeOutput: vi.fn() };
+});
+
+describe('handleScrapeCommand', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should auto-embed when embed is not false', async () => {
+    mockClient.scrape.mockResolvedValue({
+      markdown: '# Test',
+      metadata: { title: 'Test' },
+    });
+
+    await handleScrapeCommand({
+      url: 'https://example.com',
+      formats: ['markdown'],
+      embed: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalled();
+    expect(handleScrapeOutput).toHaveBeenCalled();
+  });
+
+  it('should skip auto-embed when embed is false', async () => {
+    mockClient.scrape.mockResolvedValue({
+      markdown: '# Test',
+    });
+
+    await handleScrapeCommand({
+      url: 'https://example.com',
+      formats: ['markdown'],
+      embed: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+    expect(handleScrapeOutput).toHaveBeenCalled();
+  });
+});
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `pnpm test -- src/__tests__/utils/options.test.ts src/__tests__/commands/scrape.test.ts`
+Expected: FAIL — embed flag not passed + autoEmbed not integrated
+
+**Step 3: Add --no-embed option to createScrapeCommand in index.ts**
 
 In `src/index.ts`, inside `createScrapeCommand()`, add this option:
 
@@ -3148,7 +3375,7 @@ In `src/index.ts`, inside `createScrapeCommand()`, add this option:
 
 And pass `embed: options.embed` through to `scrapeOptions`.
 
-**Step 2: Update ScrapeOptions type**
+**Step 4: Update ScrapeOptions type + parseScrapeOptions**
 
 In `src/types/scrape.ts`, add to `ScrapeOptions`:
 
@@ -3156,12 +3383,18 @@ In `src/types/scrape.ts`, add to `ScrapeOptions`:
 embed?: boolean;
 ```
 
-**Step 3: Modify handleScrapeCommand**
+In `src/utils/options.ts`, pass through the flag:
+
+```typescript
+embed: options.embed,
+```
+
+**Step 5: Modify handleScrapeCommand**
 
 In `src/commands/scrape.ts`, add import:
 
 ```typescript
-import { autoEmbed } from '../utils/embed-pipeline';
+import { autoEmbed } from '../utils/embedpipeline';
 ```
 
 Replace `handleScrapeCommand` with:
@@ -3209,15 +3442,15 @@ export async function handleScrapeCommand(
 }
 ```
 
-**Step 4: Run tests**
+**Step 6: Run tests**
 
 Run: `pnpm test`
 Expected: ALL PASS
 
-**Step 5: Commit**
+**Step 7: Commit**
 
 ```bash
-git add src/commands/scrape.ts src/types/scrape.ts src/index.ts
+git add src/commands/scrape.ts src/types/scrape.ts src/index.ts src/utils/options.ts src/__tests__/commands/scrape.test.ts src/__tests__/utils/options.test.ts
 git commit -m "feat: integrate autoEmbed into scrape command"
 ```
 
@@ -3230,8 +3463,75 @@ git commit -m "feat: integrate autoEmbed into scrape command"
 - Modify: `src/commands/crawl.ts`
 - Modify: `src/types/crawl.ts`
 - Modify: `src/index.ts`
+- Modify: `src/__tests__/commands/crawl.test.ts`
 
-**Step 1: Update CrawlOptions type**
+**Step 1: Write the failing tests**
+
+Add to `src/__tests__/commands/crawl.test.ts`:
+
+```typescript
+import * as crawlCommand from '../../commands/crawl';
+import { autoEmbed } from '../../utils/embedpipeline';
+import { writeOutput } from '../../utils/output';
+
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn(),
+}));
+
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
+
+describe('handleCrawlCommand', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should auto-embed completed crawl pages', async () => {
+    vi.spyOn(crawlCommand, 'executeCrawl').mockResolvedValue({
+      success: true,
+      data: {
+        data: [
+          {
+            markdown: '# Page',
+            metadata: { url: 'https://example.com', title: 'Example' },
+          },
+        ],
+      },
+    });
+
+    await crawlCommand.handleCrawlCommand({
+      urlOrJobId: 'https://example.com',
+      embed: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(1);
+    expect(writeOutput).toHaveBeenCalled();
+  });
+
+  it('should skip auto-embed when embed is false', async () => {
+    vi.spyOn(crawlCommand, 'executeCrawl').mockResolvedValue({
+      success: true,
+      data: { data: [] },
+    });
+
+    await crawlCommand.handleCrawlCommand({
+      urlOrJobId: 'https://example.com',
+      embed: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+    expect(writeOutput).toHaveBeenCalled();
+  });
+});
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `pnpm test -- src/__tests__/commands/crawl.test.ts`
+Expected: FAIL — autoEmbed not integrated
+
+**Step 3: Update CrawlOptions type**
 
 In `src/types/crawl.ts`, add to `CrawlOptions`:
 
@@ -3239,7 +3539,7 @@ In `src/types/crawl.ts`, add to `CrawlOptions`:
 embed?: boolean;
 ```
 
-**Step 2: Add --no-embed to createCrawlCommand in index.ts**
+**Step 4: Add --no-embed to createCrawlCommand in index.ts**
 
 In `src/index.ts`, inside `createCrawlCommand()`, add this option:
 
@@ -3249,15 +3549,15 @@ In `src/index.ts`, inside `createCrawlCommand()`, add this option:
 
 And pass `embed: options.embed` in the crawlOptions object.
 
-**Step 3: Modify handleCrawlCommand**
+**Step 5: Modify handleCrawlCommand**
 
 In `src/commands/crawl.ts`, add import:
 
 ```typescript
-import { autoEmbed } from '../utils/embed-pipeline';
+import { autoEmbed } from '../utils/embedpipeline';
 ```
 
-At the end of `handleCrawlCommand`, after `writeOutput`, add embedding for completed crawl results. The crawl response data may have a `data` array of pages. Add before the final `writeOutput`:
+At the end of `handleCrawlCommand`, add embedding for completed crawl results. The crawl response data may have a `data` array of pages. Add this block **before** the final `writeOutput`:
 
 ```typescript
 // Auto-embed crawl results
@@ -3292,15 +3592,15 @@ if (embedPromises.length > 0) {
 }
 ```
 
-**Step 4: Run tests**
+**Step 6: Run tests**
 
 Run: `pnpm test`
 Expected: ALL PASS
 
-**Step 5: Commit**
+**Step 7: Commit**
 
 ```bash
-git add src/commands/crawl.ts src/types/crawl.ts src/index.ts
+git add src/commands/crawl.ts src/types/crawl.ts src/index.ts src/__tests__/commands/crawl.test.ts
 git commit -m "feat: integrate autoEmbed into crawl command"
 ```
 
@@ -3313,8 +3613,84 @@ git commit -m "feat: integrate autoEmbed into crawl command"
 - Modify: `src/commands/search.ts`
 - Modify: `src/types/search.ts`
 - Modify: `src/index.ts`
+- Modify: `src/__tests__/commands/search.test.ts`
 
-**Step 1: Update SearchOptions type**
+**Step 1: Write the failing tests**
+
+Add to `src/__tests__/commands/search.test.ts`:
+
+```typescript
+import * as searchCommand from '../../commands/search';
+import { autoEmbed } from '../../utils/embedpipeline';
+import { writeOutput } from '../../utils/output';
+
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn(),
+}));
+
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
+
+describe('handleSearchCommand', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should auto-embed only when scrape is enabled', async () => {
+    vi.spyOn(searchCommand, 'executeSearch').mockResolvedValue({
+      success: true,
+      data: {
+        web: [
+          {
+            url: 'https://example.com',
+            title: 'Example',
+            markdown: '# Example',
+          },
+        ],
+      },
+    });
+
+    await searchCommand.handleSearchCommand({
+      query: 'test',
+      scrape: true,
+      embed: true,
+    });
+
+    expect(autoEmbed).toHaveBeenCalledTimes(1);
+    expect(writeOutput).toHaveBeenCalled();
+  });
+
+  it('should skip auto-embed when scrape is false or embed is false', async () => {
+    vi.spyOn(searchCommand, 'executeSearch').mockResolvedValue({
+      success: true,
+      data: { web: [] },
+    });
+
+    await searchCommand.handleSearchCommand({
+      query: 'test',
+      scrape: false,
+      embed: true,
+    });
+
+    await searchCommand.handleSearchCommand({
+      query: 'test',
+      scrape: true,
+      embed: false,
+    });
+
+    expect(autoEmbed).not.toHaveBeenCalled();
+    expect(writeOutput).toHaveBeenCalled();
+  });
+});
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `pnpm test -- src/__tests__/commands/search.test.ts`
+Expected: FAIL — autoEmbed not integrated
+
+**Step 3: Update SearchOptions type**
 
 In `src/types/search.ts`, add to `SearchOptions`:
 
@@ -3322,7 +3698,7 @@ In `src/types/search.ts`, add to `SearchOptions`:
 embed?: boolean;
 ```
 
-**Step 2: Add --no-embed to createSearchCommand in index.ts**
+**Step 4: Add --no-embed to createSearchCommand in index.ts**
 
 In `src/index.ts`, inside `createSearchCommand()`, add:
 
@@ -3332,12 +3708,12 @@ In `src/index.ts`, inside `createSearchCommand()`, add:
 
 And pass `embed: options.embed` to searchOptions.
 
-**Step 3: Modify handleSearchCommand**
+**Step 5: Modify handleSearchCommand**
 
 In `src/commands/search.ts`, add import:
 
 ```typescript
-import { autoEmbed } from '../utils/embed-pipeline';
+import { autoEmbed } from '../utils/embedpipeline';
 ```
 
 After the `writeOutput` call, add:
@@ -3365,15 +3741,15 @@ if (embedPromises.length > 0) {
 }
 ```
 
-**Step 4: Run tests**
+**Step 6: Run tests**
 
 Run: `pnpm test`
 Expected: ALL PASS
 
-**Step 5: Commit**
+**Step 7: Commit**
 
 ```bash
-git add src/commands/search.ts src/types/search.ts src/index.ts
+git add src/commands/search.ts src/types/search.ts src/index.ts src/__tests__/commands/search.test.ts
 git commit -m "feat: integrate autoEmbed into search command (--scrape only)"
 ```
 
@@ -3429,6 +3805,7 @@ These tests require live TEI and Qdrant instances. Run manually.
 **Step 1: Verify TEI is reachable**
 
 Run: `curl -s http://100.74.16.82:52000/info | jq .model_id`
+Note: TEI is intentionally on port 52000 in this environment.
 Expected: `"Qwen/Qwen3-Embedding-0.6B"`
 
 **Step 2: Verify Qdrant is reachable**

@@ -1,6 +1,6 @@
 # 🔥 Firecrawl CLI
 
-Command-line interface for Firecrawl. Scrape, crawl, and extract data from any website directly from your terminal.
+Command-line interface for Firecrawl. Scrape, crawl, extract, and embed data from any website directly from your terminal. Includes a built-in embedding pipeline for semantic search over scraped content via Qdrant and TEI.
 
 ## Installation
 
@@ -41,6 +41,10 @@ Tip: You can also set FIRECRAWL_API_KEY and FIRECRAWL_API_URL environment variab
 # Environment variables (recommended for self-hosted)
 export FIRECRAWL_API_KEY=your-api-key
 export FIRECRAWL_API_URL=http://localhost:53002
+
+# Optional: embedding pipeline (enables embed, query, retrieve commands)
+export TEI_URL=http://localhost:52000
+export QDRANT_URL=http://localhost:53333
 
 # Interactive (prompts automatically when needed)
 firecrawl
@@ -91,6 +95,7 @@ firecrawl https://example.com --format json -o data.json --pretty
 | `-o, --output <path>`    | Save output to file                                     |
 | `--pretty`               | Pretty print JSON output                                |
 | `--timing`               | Show request timing info                                |
+| `--no-embed`             | Skip auto-embedding (when TEI/Qdrant configured)        |
 
 #### Available Formats
 
@@ -321,6 +326,137 @@ firecrawl crawl https://example.com --wait -o crawl-results.json --pretty
 
 ---
 
+### `extract` - Extract structured data from URLs
+
+Extract structured data from one or more URLs using natural language prompts or JSON schemas.
+
+```bash
+# Extract with a prompt
+firecrawl extract https://example.com --prompt "Extract product pricing"
+
+# Extract with a JSON schema
+firecrawl extract https://example.com --schema '{"name": "string", "price": "number"}'
+
+# Multiple URLs
+firecrawl extract https://site1.com https://site2.com --prompt "Get company info"
+
+# Show source URLs
+firecrawl extract https://example.com --prompt "Find pricing" --show-sources --pretty
+```
+
+#### Extract Options
+
+| Option                     | Description                           |
+| -------------------------- | ------------------------------------- |
+| `--prompt <prompt>`        | Natural language extraction prompt    |
+| `--schema <json>`          | JSON schema for structured extraction |
+| `--system-prompt <prompt>` | System prompt for extraction          |
+| `--allow-external-links`   | Allow following external links        |
+| `--enable-web-search`      | Enable web search during extraction   |
+| `--include-subdomains`     | Include subdomains                    |
+| `--show-sources`           | Show source URLs in output            |
+| `--no-embed`               | Skip auto-embedding                   |
+| `--pretty`                 | Pretty print JSON output              |
+| `-o, --output <path>`      | Save to file                          |
+
+---
+
+### `embed` - Embed content into Qdrant
+
+Embed content from a URL, file, or stdin into a Qdrant vector database via TEI. Requires `TEI_URL` and `QDRANT_URL` environment variables.
+
+```bash
+# Embed a URL (scrapes first, then embeds)
+firecrawl embed https://example.com
+
+# Embed a local file
+firecrawl embed /path/to/file.md --url https://example.com/page
+
+# Embed from stdin
+cat document.md | firecrawl embed - --url https://example.com/doc
+
+# Embed without chunking
+firecrawl embed https://example.com --no-chunk
+
+# Custom collection
+firecrawl embed https://example.com --collection my_collection
+```
+
+#### Embed Options
+
+| Option                | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `--url <url>`         | Source URL for metadata (required for file/stdin input) |
+| `--collection <name>` | Override Qdrant collection name                         |
+| `--no-chunk`          | Embed as single vector, skip chunking                   |
+| `--json`              | Output as JSON format                                   |
+| `-o, --output <path>` | Save to file                                            |
+
+---
+
+### `query` - Semantic search over embedded content
+
+Search over previously embedded content using natural language. Requires `TEI_URL` and `QDRANT_URL` environment variables.
+
+```bash
+# Basic semantic search
+firecrawl query "how to authenticate"
+
+# Limit results
+firecrawl query "API endpoints" --limit 10
+
+# Filter by domain
+firecrawl query "configuration" --domain docs.example.com
+
+# Show full chunk text (for RAG/LLM context)
+firecrawl query "setup instructions" --full
+
+# Group results by source URL
+firecrawl query "error handling" --group
+
+# JSON output
+firecrawl query "authentication" --json
+```
+
+#### Query Options
+
+| Option                | Description                     |
+| --------------------- | ------------------------------- |
+| `--limit <n>`         | Maximum results (default: 5)    |
+| `--domain <domain>`   | Filter to specific domain       |
+| `--full`              | Show complete chunk text        |
+| `--group`             | Group results by source URL     |
+| `--collection <name>` | Override Qdrant collection name |
+| `--json`              | Output as JSON format           |
+| `-o, --output <path>` | Save to file                    |
+
+---
+
+### `retrieve` - Retrieve full document from Qdrant
+
+Reconstruct a full document from its stored chunks in Qdrant. Requires `QDRANT_URL` environment variable.
+
+```bash
+# Retrieve a previously embedded document
+firecrawl retrieve https://example.com
+
+# JSON output with per-chunk metadata
+firecrawl retrieve https://example.com --json
+
+# Save to file
+firecrawl retrieve https://example.com -o document.md
+```
+
+#### Retrieve Options
+
+| Option                | Description                              |
+| --------------------- | ---------------------------------------- |
+| `--collection <name>` | Override Qdrant collection name          |
+| `--json`              | Output as JSON (includes chunk metadata) |
+| `-o, --output <path>` | Save to file                             |
+
+---
+
 ### `config` - View configuration
 
 ```bash
@@ -343,6 +479,33 @@ firecrawl login --api-key your-key --api-url http://localhost:53002
 # Logout
 firecrawl logout
 ```
+
+---
+
+## Embedding Pipeline
+
+When configured, `scrape`, `crawl`, `search --scrape`, and `extract` automatically embed their output into Qdrant for semantic search. This also enables the `embed`, `query`, and `retrieve` commands.
+
+### Setup
+
+Set these environment variables (or add to `.env`):
+
+```bash
+export TEI_URL=http://localhost:52000        # Text Embeddings Inference server
+export QDRANT_URL=http://localhost:53333      # Qdrant vector database
+export QDRANT_COLLECTION=firecrawl_collection # optional, this is the default
+```
+
+### Auto-Embed Behavior
+
+Content-producing commands automatically embed their output when TEI and Qdrant are configured. Use `--no-embed` on any command to skip:
+
+```bash
+firecrawl scrape https://example.com --no-embed
+firecrawl crawl https://example.com --wait --no-embed
+```
+
+Without TEI/Qdrant configured, the CLI works normally and silently skips embedding.
 
 ---
 

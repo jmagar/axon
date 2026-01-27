@@ -17,8 +17,8 @@ pnpm test:ui
 
 ## Test Structure
 
-- `commands/` - Tests for command implementations
-- `utils/` - Test utilities and helpers
+- `commands/` - Tests for command implementations (scrape, crawl, search, extract, embed, query, retrieve)
+- `utils/` - Test utilities, helpers, and utility module tests (chunker, embeddings, qdrant, embedpipeline, config)
 
 ## Writing Tests
 
@@ -76,8 +76,10 @@ Resets client and config state between tests. Always use these in `beforeEach`/`
 ### Mocking Patterns
 
 - **Client methods**: Mock `getClient()` to return a mock client with stubbed methods
-- **Fetch API**: Mock `global.fetch` for commands that use fetch directly
-- **Config**: Use `initializeConfig()` to set test configuration
+- **Fetch API**: Mock `global.fetch` for utilities that call TEI/Qdrant directly (embeddings, qdrant)
+- **Config**: Use `initializeConfig()` to set test configuration (including `teiUrl`, `qdrantUrl`, `qdrantCollection`)
+- **Pipeline modules**: Mock `../../utils/embeddings`, `../../utils/qdrant`, and `../../utils/embedpipeline` in command tests
+- **Cache resets**: Call `resetTeiCache()` and `resetQdrantCache()` in `beforeEach`/`afterEach` for embedding/qdrant utility tests
 
 ## What to Test
 
@@ -85,3 +87,88 @@ Resets client and config state between tests. Always use these in `beforeEach`/`
 2. **Response Handling**: Test success and error response handling
 3. **Option Parsing**: Ensure CLI options are correctly converted to API parameters
 4. **Edge Cases**: Test with missing/optional parameters, null values, etc.
+5. **Embedding Pipeline**: Test chunker, embeddings client, Qdrant client, and pipeline orchestrator
+
+## Embedding Pipeline Tests
+
+The embedding pipeline introduces utility modules that use `global.fetch` directly (not the Firecrawl client). These require a different mocking pattern.
+
+### Mocking `global.fetch` (for TEI/Qdrant utilities)
+
+```typescript
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+describe('utility module', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should call the correct endpoint', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: 'data' }),
+    });
+
+    // Call the utility function...
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:52000/embed',
+      expect.any(Object)
+    );
+  });
+});
+```
+
+### Mocking Utility Modules (for command tests)
+
+Commands that use `autoEmbed` should mock the pipeline module:
+
+```typescript
+import { autoEmbed } from '../../utils/embedpipeline';
+
+vi.mock('../../utils/embedpipeline', () => ({
+  autoEmbed: vi.fn(),
+}));
+
+// In test: verify autoEmbed was called with correct args
+expect(autoEmbed).toHaveBeenCalledWith(
+  expect.any(String), // content
+  expect.objectContaining({
+    // metadata
+    url: 'https://example.com',
+    sourceCommand: 'scrape',
+  })
+);
+```
+
+### Pure Utility Tests (no mocking needed)
+
+The chunker module (`src/utils/chunker.ts`) is pure logic with no external dependencies. Test it directly:
+
+```typescript
+import { chunkText } from '../../utils/chunker';
+
+it('should split on markdown headers', () => {
+  const chunks = chunkText('# Title\n\nIntro.\n\n## Section\n\nContent.');
+  expect(chunks.length).toBeGreaterThanOrEqual(2);
+  expect(chunks[0].header).toBe('Title');
+});
+```
+
+### Config Tests
+
+Embedding config fields (`teiUrl`, `qdrantUrl`, `qdrantCollection`) are read from environment variables. Clean up env vars in `afterEach`:
+
+```typescript
+afterEach(() => {
+  delete process.env.TEI_URL;
+  delete process.env.QDRANT_URL;
+  delete process.env.QDRANT_COLLECTION;
+});
+```

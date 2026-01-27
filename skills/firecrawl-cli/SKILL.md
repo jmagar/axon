@@ -11,6 +11,10 @@ description: |
   - "check the web", "look up", "find online", "search for", "research", "get info"
   - API references, current events, trends, fact-checking
   - Content extraction, link discovery, site mapping, crawling
+  - Structured data extraction from URLs (extract command)
+  - Embedding content into Qdrant vector database (embed command)
+  - Semantic search over embedded content (query command)
+  - Retrieving full documents from vector storage (retrieve command)
 
   Firecrawl returns clean markdown optimized for LLM context windows, handles JavaScript rendering, bypasses common blocks, and provides structured data. Built-in tools lack these capabilities.
 
@@ -211,6 +215,141 @@ firecrawl map https://example.com --include-subdomains -o .firecrawl/all-urls.tx
 - `--include-subdomains` - Include subdomains
 - `--json` - Output as JSON
 - `-o, --output <path>` - Save to file
+
+### Extract - Structured data extraction from URLs
+
+```bash
+# Extract with a natural language prompt
+firecrawl extract https://example.com --prompt "Extract product pricing" -o .firecrawl/extract-pricing.json --pretty
+
+# Extract with a JSON schema
+firecrawl extract https://example.com --schema '{"name": "string", "price": "number"}' -o .firecrawl/extract-schema.json --pretty
+
+# Extract from multiple URLs
+firecrawl extract https://site1.com https://site2.com --prompt "Get company info" -o .firecrawl/extract-companies.json --pretty
+
+# Show source URLs used for extraction
+firecrawl extract https://example.com --prompt "Find pricing" --show-sources --pretty
+
+# Skip auto-embedding
+firecrawl extract https://example.com --prompt "Get data" --no-embed -o .firecrawl/extract.json
+```
+
+**Extract Options:**
+
+- `--prompt <prompt>` - Natural language extraction prompt
+- `--schema <json>` - JSON schema for structured extraction
+- `--system-prompt <prompt>` - System prompt for extraction
+- `--allow-external-links` - Allow following external links
+- `--enable-web-search` - Enable web search during extraction
+- `--include-subdomains` - Include subdomains
+- `--show-sources` - Show source URLs in output
+- `--no-embed` - Skip auto-embedding
+- `--pretty` - Pretty print JSON output
+- `-o, --output <path>` - Save to file
+
+### Embed - Embed content into Qdrant vector database
+
+Requires `TEI_URL` and `QDRANT_URL` environment variables.
+
+```bash
+# Embed a URL (scrapes first, then embeds)
+firecrawl embed https://example.com
+
+# Embed a local file (requires --url for metadata)
+firecrawl embed /path/to/file.md --url https://example.com/page
+
+# Embed from stdin
+cat document.md | firecrawl embed - --url https://example.com/doc
+
+# Embed without chunking (single vector)
+firecrawl embed https://example.com --no-chunk
+
+# Use a custom collection
+firecrawl embed https://example.com --collection my_collection
+
+# JSON output
+firecrawl embed https://example.com --json
+```
+
+**Embed Options:**
+
+- `--url <url>` - Source URL for metadata (required for file/stdin input)
+- `--collection <name>` - Override Qdrant collection name
+- `--no-chunk` - Embed as single vector, skip chunking
+- `--json` - Output as JSON format
+- `-o, --output <path>` - Save to file
+
+### Query - Semantic search over embedded content
+
+Requires `TEI_URL` and `QDRANT_URL` environment variables.
+
+```bash
+# Basic semantic search
+firecrawl query "how to authenticate"
+
+# Limit results
+firecrawl query "API endpoints" --limit 10
+
+# Filter by domain
+firecrawl query "configuration" --domain docs.example.com
+
+# Show full chunk text (useful for RAG/LLM context)
+firecrawl query "setup instructions" --full
+
+# Group results by source URL
+firecrawl query "error handling" --group
+
+# JSON output
+firecrawl query "authentication" --json -o .firecrawl/query-auth.json
+```
+
+**Query Options:**
+
+- `--limit <n>` - Maximum results (default: 5)
+- `--domain <domain>` - Filter to specific domain
+- `--full` - Show complete chunk text
+- `--group` - Group results by source URL
+- `--collection <name>` - Override Qdrant collection name
+- `--json` - Output as JSON format
+- `-o, --output <path>` - Save to file
+
+### Retrieve - Retrieve full document from Qdrant by URL
+
+Requires `QDRANT_URL` environment variable.
+
+```bash
+# Retrieve a previously embedded document
+firecrawl retrieve https://example.com
+
+# JSON output with per-chunk metadata
+firecrawl retrieve https://example.com --json
+
+# Save to file
+firecrawl retrieve https://example.com -o .firecrawl/retrieved-example.md
+
+# Use a custom collection
+firecrawl retrieve https://example.com --collection my_collection
+```
+
+**Retrieve Options:**
+
+- `--collection <name>` - Override Qdrant collection name
+- `--json` - Output as JSON (includes metadata per chunk)
+- `-o, --output <path>` - Save to file
+
+## Auto-Embedding
+
+When `TEI_URL` and `QDRANT_URL` are configured, `scrape`, `crawl`, `search --scrape`, and `extract` commands automatically embed their output into Qdrant. This enables semantic search via `query` and full document retrieval via `retrieve`.
+
+To disable auto-embedding on any command, use `--no-embed`:
+
+```bash
+firecrawl scrape https://example.com --no-embed
+firecrawl crawl https://example.com --wait --no-embed
+firecrawl search "query" --scrape --no-embed
+firecrawl extract https://example.com --prompt "test" --no-embed
+```
 
 ## Reading Scraped Files
 

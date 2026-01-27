@@ -80,6 +80,39 @@ firecrawl login --api-key "<their-key>" --api-url "<their-url>"
 
 Then retry the original command.
 
+## Embedding Pipeline Setup (Optional)
+
+The embedding pipeline enables `embed`, `query`, and `retrieve` commands, and auto-embeds output from `scrape`, `crawl`, `search --scrape`, and `extract`.
+
+### Requirements
+
+- **TEI (Text Embeddings Inference)** - Generates vector embeddings
+- **Qdrant** - Vector database for storage and search
+
+### Environment Variables
+
+```bash
+export TEI_URL="http://localhost:52000"
+export QDRANT_URL="http://localhost:53333"
+export QDRANT_COLLECTION="firecrawl_collection"  # optional, this is the default
+```
+
+Add these to `~/.zshrc` or `~/.bashrc` for persistence alongside the Firecrawl API variables.
+
+### Verify Services
+
+```bash
+# Check TEI is reachable
+curl -s $TEI_URL/info | jq .model_id
+
+# Check Qdrant is reachable
+curl -s $QDRANT_URL/collections | jq .
+```
+
+### Without Embedding Pipeline
+
+If TEI and Qdrant are not configured, the CLI works normally. The `scrape`, `crawl`, `search`, and `extract` commands simply skip the auto-embed step. The `embed`, `query`, and `retrieve` commands will return an error asking you to set the environment variables.
+
 ## Troubleshooting
 
 ### Command not found
