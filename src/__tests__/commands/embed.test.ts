@@ -28,6 +28,18 @@ vi.mock('fs', async () => {
   };
 });
 
+/**
+ * Helper to mock readFileSync return value.
+ * readFileSync has complex overloads; when called with encoding 'utf-8'
+ * it returns string, but vi.mocked() sees all overloads.
+ * This helper casts once to avoid repeated type gymnastics.
+ */
+function mockReadFile(content: string): void {
+  (readFileSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+    content
+  );
+}
+
 describe('executeEmbed', () => {
   let mockClient: { scrape: ReturnType<typeof vi.fn> };
 
@@ -60,7 +72,7 @@ describe('executeEmbed', () => {
 
     // Reset fs mocks to defaults
     vi.mocked(existsSync).mockReturnValue(false);
-    vi.mocked(readFileSync).mockReturnValue('');
+    mockReadFile('');
   });
 
   afterEach(() => {
@@ -93,9 +105,7 @@ describe('executeEmbed', () => {
 
   it('should read file and embed when input is a file path', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      '# File content\n\nParagraph.' as unknown as Buffer
-    );
+    mockReadFile('# File content\n\nParagraph.');
 
     const result = await executeEmbed({
       input: '/tmp/test.md',
@@ -142,9 +152,7 @@ describe('executeEmbed', () => {
     });
 
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      'Some content to embed.' as unknown as Buffer
-    );
+    mockReadFile('Some content to embed.');
 
     const result = await executeEmbed({
       input: '/tmp/test.md',
@@ -157,9 +165,7 @@ describe('executeEmbed', () => {
 
   it('should use custom collection from options', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      'Some content to embed.' as unknown as Buffer
-    );
+    mockReadFile('Some content to embed.');
 
     const result = await executeEmbed({
       input: '/tmp/test.md',
@@ -173,9 +179,7 @@ describe('executeEmbed', () => {
 
   it('should skip chunking when noChunk is true', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue(
-      'Short content.' as unknown as Buffer
-    );
+    mockReadFile('Short content.');
 
     const result = await executeEmbed({
       input: '/tmp/test.md',
@@ -189,7 +193,7 @@ describe('executeEmbed', () => {
 
   it('should fail for empty content', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockReturnValue('   ' as unknown as Buffer);
+    mockReadFile('   ');
 
     const result = await executeEmbed({
       input: '/tmp/test.md',
