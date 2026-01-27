@@ -5,6 +5,7 @@
  * Entry point for the CLI application
  */
 
+import 'dotenv/config';
 import { Command } from 'commander';
 import { handleScrapeCommand } from './commands/scrape';
 import { initializeConfig, updateConfig } from './utils/config';

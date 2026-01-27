@@ -65,6 +65,7 @@
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^4.10.0",
-    "commander": "^14.0.2"
+    "commander": "^14.0.2",
+    "dotenv": "^17.2.3"
   }
 }
