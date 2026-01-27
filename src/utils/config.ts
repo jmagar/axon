@@ -12,6 +12,9 @@ export interface GlobalConfig {
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number;
+  teiUrl?: string;
+  qdrantUrl?: string;
+  qdrantCollection?: string;
 }
 
 /**
@@ -40,6 +43,12 @@ export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
     timeoutMs: config.timeoutMs,
     maxRetries: config.maxRetries,
     backoffFactor: config.backoffFactor,
+    teiUrl: config.teiUrl || process.env.TEI_URL,
+    qdrantUrl: config.qdrantUrl || process.env.QDRANT_URL,
+    qdrantCollection:
+      config.qdrantCollection ||
+      process.env.QDRANT_COLLECTION ||
+      'firecrawl_collection',
   };
 }
 

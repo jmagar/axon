@@ -255,4 +255,41 @@ describe('Config Fallback Priority', () => {
       expect(config.apiUrl).toBe('https://url2.com'); // Should be updated
     });
   });
+
+  describe('Embedding config', () => {
+    it('should load TEI and Qdrant config from env vars', () => {
+      process.env.TEI_URL = 'http://localhost:52000';
+      process.env.QDRANT_URL = 'http://localhost:53333';
+      process.env.QDRANT_COLLECTION = 'test_collection';
+
+      initializeConfig({});
+
+      const config = getConfig();
+      expect(config.teiUrl).toBe('http://localhost:52000');
+      expect(config.qdrantUrl).toBe('http://localhost:53333');
+      expect(config.qdrantCollection).toBe('test_collection');
+    });
+
+    it('should default qdrantCollection to firecrawl_collection', () => {
+      process.env.TEI_URL = 'http://localhost:52000';
+      process.env.QDRANT_URL = 'http://localhost:53333';
+      delete process.env.QDRANT_COLLECTION;
+
+      initializeConfig({});
+
+      const config = getConfig();
+      expect(config.qdrantCollection).toBe('firecrawl_collection');
+    });
+
+    it('should have undefined teiUrl and qdrantUrl when not set', () => {
+      delete process.env.TEI_URL;
+      delete process.env.QDRANT_URL;
+
+      initializeConfig({});
+
+      const config = getConfig();
+      expect(config.teiUrl).toBeUndefined();
+      expect(config.qdrantUrl).toBeUndefined();
+    });
+  });
 });
