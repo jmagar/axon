@@ -134,7 +134,8 @@ export async function executeCrawl(
           if (
             status.status === 'completed' ||
             status.status === 'failed' ||
-            status.status === 'cancelled'
+            status.status === 'cancelled' ||
+            (status.total > 0 && status.completed >= status.total)
           ) {
             process.stderr.write('\n');
             return {
