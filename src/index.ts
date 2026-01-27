@@ -271,6 +271,10 @@ function createMapCommand(): Command {
     .option('--ignore-query-parameters', 'Ignore query parameters', false)
     .option('--timeout <seconds>', 'Timeout in seconds', parseFloat)
     .option(
+      '--notebook <id-or-name>',
+      'Add discovered URLs to NotebookLM notebook (ID or name)'
+    )
+    .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
     )
@@ -300,6 +304,7 @@ function createMapCommand(): Command {
         includeSubdomains: options.includeSubdomains,
         ignoreQueryParameters: options.ignoreQueryParameters,
         timeout: options.timeout,
+        notebook: options.notebook,
       };
 
       await handleMapCommand(mapOptions);

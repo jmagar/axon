@@ -243,8 +243,36 @@ firecrawl map https://example.com --limit 500
 | `--include-subdomains`      | Include subdomains                |
 | `--ignore-query-parameters` | Dedupe URLs with different params |
 | `--timeout <seconds>`       | Request timeout                   |
+| `--notebook <id-or-name>`   | Add URLs to NotebookLM notebook   |
 | `--json`                    | Output as JSON                    |
 | `-o, --output <path>`       | Save to file                      |
+
+#### NotebookLM Integration
+
+Add discovered URLs directly to a NotebookLM notebook:
+
+```bash
+# Create new notebook from mapped URLs
+firecrawl map https://docs.example.com --notebook "Example Docs"
+
+# Add to existing notebook by ID
+firecrawl map https://docs.example.com --notebook "abc123def456"
+
+# Combine with other options
+firecrawl map https://docs.example.com --limit 50 --search "api" --notebook "API Docs"
+```
+
+**Requirements:**
+
+- Python 3.11+ installed
+- NotebookLM package: `pip install notebooklm`
+- Authenticated: `notebooklm login`
+
+**Notes:**
+
+- Maximum 300 URLs (NotebookLM Pro limit)
+- Best-effort: notebook failures don't fail the map command
+- Progress messages go to stderr, map output to stdout
 
 #### Examples
 

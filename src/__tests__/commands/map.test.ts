@@ -3,10 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeMap } from '../../commands/map';
+import { executeMap, handleMapCommand } from '../../commands/map';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+import * as notebooklm from '../../utils/notebooklm';
 
 // Mock the Firecrawl client module
 vi.mock('../../utils/client', async () => {
@@ -16,6 +17,16 @@ vi.mock('../../utils/client', async () => {
     getClient: vi.fn(),
   };
 });
+
+// Mock NotebookLM integration
+vi.mock('../../utils/notebooklm', () => ({
+  addUrlsToNotebook: vi.fn(),
+}));
+
+// Mock output utility to prevent side effects
+vi.mock('../../utils/output', () => ({
+  writeOutput: vi.fn(),
+}));
 
 describe('executeMap', () => {
   let mockClient: any;
@@ -347,5 +358,149 @@ describe('executeMap', () => {
         expect(result.data.links[0]).not.toHaveProperty('otherField');
       }
     });
+  });
+});
+
+describe('handleMapCommand with notebook integration', () => {
+  let mockClient: any;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let processExitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    setupTest();
+    initializeConfig({
+      apiKey: 'test-api-key',
+      apiUrl: 'https://api.firecrawl.dev',
+    });
+
+    mockClient = {
+      map: vi.fn(),
+    };
+
+    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    processExitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    teardownTest();
+    consoleErrorSpy.mockRestore();
+    processExitSpy.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  it('should call addUrlsToNotebook when notebook option is provided', async () => {
+    const mockResponse = {
+      links: [
+        { url: 'https://example.com/page1' },
+        { url: 'https://example.com/page2' },
+      ],
+    };
+    mockClient.map.mockResolvedValue(mockResponse);
+
+    const mockNotebookResult = {
+      notebook_id: 'abc123',
+      notebook_title: 'Test Notebook',
+      added: 2,
+      failed: 0,
+      errors: [],
+    };
+    vi.mocked(notebooklm.addUrlsToNotebook).mockResolvedValue(
+      mockNotebookResult
+    );
+
+    await handleMapCommand({
+      urlOrJobId: 'https://example.com',
+      notebook: 'Test Notebook',
+    });
+
+    expect(notebooklm.addUrlsToNotebook).toHaveBeenCalledWith('Test Notebook', [
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
+
+  it('should not call addUrlsToNotebook when notebook option is not provided', async () => {
+    const mockResponse = {
+      links: [{ url: 'https://example.com/page1' }],
+    };
+    mockClient.map.mockResolvedValue(mockResponse);
+
+    await handleMapCommand({
+      urlOrJobId: 'https://example.com',
+    });
+
+    expect(notebooklm.addUrlsToNotebook).not.toHaveBeenCalled();
+  });
+
+  it('should continue map command even if notebook integration fails', async () => {
+    const mockResponse = {
+      links: [{ url: 'https://example.com/page1' }],
+    };
+    mockClient.map.mockResolvedValue(mockResponse);
+
+    vi.mocked(notebooklm.addUrlsToNotebook).mockResolvedValue(null);
+
+    // Should not throw
+    await handleMapCommand({
+      urlOrJobId: 'https://example.com',
+      notebook: 'Test Notebook',
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('NotebookLM')
+    );
+  });
+
+  it('should skip notebook integration when map returns no URLs', async () => {
+    const mockResponse = {
+      links: [],
+    };
+    mockClient.map.mockResolvedValue(mockResponse);
+
+    await handleMapCommand({
+      urlOrJobId: 'https://empty.com',
+      notebook: 'Test Notebook',
+    });
+
+    expect(notebooklm.addUrlsToNotebook).not.toHaveBeenCalled();
+  });
+
+  it('should truncate to 300 URLs and warn when limit exceeded', async () => {
+    const links = Array.from({ length: 350 }, (_, i) => ({
+      url: `https://example.com/page${i}`,
+    }));
+
+    const mockResponse = { links };
+    mockClient.map.mockResolvedValue(mockResponse);
+
+    const mockNotebookResult = {
+      notebook_id: 'abc123',
+      notebook_title: 'Test Notebook',
+      added: 300,
+      failed: 0,
+      errors: [],
+    };
+    vi.mocked(notebooklm.addUrlsToNotebook).mockResolvedValue(
+      mockNotebookResult
+    );
+
+    await handleMapCommand({
+      urlOrJobId: 'https://example.com',
+      notebook: 'Test Notebook',
+    });
+
+    // Should only pass first 300 URLs
+    const calledUrls = vi.mocked(notebooklm.addUrlsToNotebook).mock.calls[0][1];
+    expect(calledUrls.length).toBe(300);
+    expect(calledUrls[0]).toBe('https://example.com/page0');
+    expect(calledUrls[299]).toBe('https://example.com/page299');
+
+    // Should log warning
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Truncating to 300')
+    );
   });
 });
