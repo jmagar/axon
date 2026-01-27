@@ -179,6 +179,22 @@ describe('Credentials Utilities', () => {
       expect(writtenData.apiUrl).toBe('https://old-api.example.com');
     });
 
+    it('should save self-hosted credentials without fc- prefix', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      saveCredentials({
+        apiKey: 'local-dev',
+        apiUrl: 'http://localhost:53002',
+      });
+
+      expect(fs.writeFileSync).toHaveBeenCalled();
+      const writtenData = JSON.parse(
+        vi.mocked(fs.writeFileSync).mock.calls[0][1] as string
+      );
+      expect(writtenData.apiKey).toBe('local-dev');
+      expect(writtenData.apiUrl).toBe('http://localhost:53002');
+    });
+
     it('should set secure file permissions', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
 

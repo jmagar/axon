@@ -204,6 +204,30 @@ describe('Config Fallback Priority', () => {
     });
   });
 
+  describe('self-hosted configuration', () => {
+    it('should accept non-fc- API keys for self-hosted instances', () => {
+      initializeConfig({
+        apiKey: 'local-dev',
+        apiUrl: 'http://localhost:53002',
+      });
+
+      const config = getConfig();
+      expect(config.apiKey).toBe('local-dev');
+      expect(config.apiUrl).toBe('http://localhost:53002');
+    });
+
+    it('should use FIRECRAWL_API_URL env var for self-hosted URL', () => {
+      process.env.FIRECRAWL_API_KEY = 'my-custom-key';
+      process.env.FIRECRAWL_API_URL = 'http://firecrawl.local:3002';
+
+      initializeConfig({});
+
+      const config = getConfig();
+      expect(config.apiKey).toBe('my-custom-key');
+      expect(config.apiUrl).toBe('http://firecrawl.local:3002');
+    });
+  });
+
   describe('updateConfig behavior', () => {
     it('should merge with existing config', () => {
       initializeConfig({
