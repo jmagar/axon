@@ -6,12 +6,16 @@ import { loadCredentials } from './credentials';
 
 export const DEFAULT_API_URL = 'https://api.firecrawl.dev';
 
+export const DEFAULT_USER_AGENT =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
 export interface GlobalConfig {
   apiKey?: string;
   apiUrl?: string;
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number;
+  userAgent?: string;
   teiUrl?: string;
   qdrantUrl?: string;
   qdrantCollection?: string;
@@ -45,6 +49,10 @@ export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
     backoffFactor: config.backoffFactor,
     teiUrl: config.teiUrl || process.env.TEI_URL,
     qdrantUrl: config.qdrantUrl || process.env.QDRANT_URL,
+    userAgent:
+      config.userAgent ||
+      process.env.FIRECRAWL_USER_AGENT ||
+      DEFAULT_USER_AGENT,
     qdrantCollection:
       config.qdrantCollection ||
       process.env.QDRANT_COLLECTION ||

@@ -23,6 +23,11 @@ vi.mock('../../utils/embedpipeline', () => ({
   autoEmbed: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock settings to avoid reading real user settings from disk
+vi.mock('../../utils/settings', () => ({
+  loadSettings: vi.fn().mockReturnValue({}),
+}));
+
 // Mock writeOutput
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),

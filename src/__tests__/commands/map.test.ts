@@ -4,19 +4,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeMap, handleMapCommand } from '../../commands/map';
-import { getClient } from '../../utils/client';
-import { initializeConfig } from '../../utils/config';
-import { setupTest, teardownTest } from '../utils/mock-client';
+import {
+  initializeConfig,
+  resetConfig,
+  DEFAULT_USER_AGENT,
+} from '../../utils/config';
 import * as notebooklm from '../../utils/notebooklm';
-
-// Mock the Firecrawl client module
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return {
-    ...actual,
-    getClient: vi.fn(),
-  };
-});
 
 // Mock NotebookLM integration
 vi.mock('../../utils/notebooklm', () => ({
@@ -28,196 +21,218 @@ vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
 }));
 
+/**
+ * Helper to create a mock fetch response
+ */
+function mockFetchResponse(data: unknown, ok = true, status = 200) {
+  return vi.fn().mockResolvedValue({
+    ok,
+    status,
+    json: vi.fn().mockResolvedValue(data),
+  });
+}
+
 describe('executeMap', () => {
-  let mockClient: any;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    setupTest();
-    // Initialize config with test API key
+    resetConfig();
     initializeConfig({
       apiKey: 'test-api-key',
       apiUrl: 'https://api.firecrawl.dev',
     });
 
-    // Create mock client
-    mockClient = {
-      map: vi.fn(),
-    };
-
-    // Mock getClient to return our mock
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    // Default fetch mock returning empty links
+    fetchSpy = mockFetchResponse({ links: [] });
+    vi.stubGlobal('fetch', fetchSpy);
   });
 
   afterEach(() => {
-    teardownTest();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    resetConfig();
   });
 
   describe('API call generation', () => {
-    it('should call map with correct URL and default options', async () => {
-      const mockResponse = {
-        links: [
-          { url: 'https://example.com/page1', title: 'Page 1' },
-          { url: 'https://example.com/page2', title: 'Page 2' },
-        ],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+    it('should call /v1/map with correct URL and default options', async () => {
+      fetchSpy = mockFetchResponse({
+        links: ['https://example.com/page1', 'https://example.com/page2'],
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
       });
 
-      expect(mockClient.map).toHaveBeenCalledTimes(1);
-      expect(mockClient.map).toHaveBeenCalledWith('https://example.com', {});
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchSpy.mock.calls[0];
+      expect(url).toBe('https://api.firecrawl.dev/v1/map');
+      expect(options.method).toBe('POST');
+      expect(options.headers['Authorization']).toBe('Bearer test-api-key');
+      expect(options.headers['Content-Type']).toBe('application/json');
+
+      const body = JSON.parse(options.body);
+      expect(body.url).toBe('https://example.com');
+    });
+
+    it('should include default User-Agent in request body headers', async () => {
+      fetchSpy = mockFetchResponse({ links: [] });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.headers).toEqual({ 'User-Agent': DEFAULT_USER_AGENT });
+    });
+
+    it('should include custom User-Agent when configured', async () => {
+      resetConfig();
+      initializeConfig({
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        userAgent: 'custom-bot/1.0',
+      });
+
+      fetchSpy = mockFetchResponse({ links: [] });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.headers).toEqual({ 'User-Agent': 'custom-bot/1.0' });
     });
 
     it('should include limit option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://example.com/page1' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      fetchSpy = mockFetchResponse({ links: ['https://example.com/page1'] });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         limit: 50,
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          limit: 50,
-        })
-      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.limit).toBe(50);
     });
 
     it('should include search option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://example.com/blog' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      fetchSpy = mockFetchResponse({ links: ['https://example.com/blog'] });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         search: 'blog',
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          search: 'blog',
-        })
-      );
-    });
-
-    it('should include sitemap option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://example.com/page1' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
-
-      await executeMap({
-        urlOrJobId: 'https://example.com',
-        sitemap: 'only',
-      });
-
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          sitemap: 'only',
-        })
-      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.search).toBe('blog');
     });
 
     it('should include includeSubdomains option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://sub.example.com/page1' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      fetchSpy = mockFetchResponse({
+        links: ['https://sub.example.com/page1'],
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         includeSubdomains: true,
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          includeSubdomains: true,
-        })
-      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.includeSubdomains).toBe(true);
     });
 
     it('should include ignoreQueryParameters option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://example.com/page1' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      fetchSpy = mockFetchResponse({ links: ['https://example.com/page1'] });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         ignoreQueryParameters: true,
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          ignoreQueryParameters: true,
-        })
-      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.ignorQueryParameters).toBe(true);
     });
 
-    it('should include timeout option when provided', async () => {
-      const mockResponse = {
-        links: [{ url: 'https://example.com/page1' }],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+    it('should include timeout option converted to milliseconds', async () => {
+      fetchSpy = mockFetchResponse({ links: ['https://example.com/page1'] });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         timeout: 60,
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          timeout: 60000, // Converted to milliseconds
-        })
-      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.timeout).toBe(60000);
     });
 
     it('should combine all options correctly', async () => {
-      const mockResponse = {
+      fetchSpy = mockFetchResponse({
         links: [
-          { url: 'https://example.com/blog/post1' },
-          { url: 'https://example.com/blog/post2' },
+          'https://example.com/blog/post1',
+          'https://example.com/blog/post2',
         ],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       await executeMap({
         urlOrJobId: 'https://example.com',
         limit: 100,
         search: 'blog',
-        sitemap: 'include',
         includeSubdomains: true,
         ignoreQueryParameters: true,
         timeout: 120,
       });
 
-      expect(mockClient.map).toHaveBeenCalledWith('https://example.com', {
-        limit: 100,
-        search: 'blog',
-        sitemap: 'include',
-        includeSubdomains: true,
-        ignoreQueryParameters: true,
-        timeout: 120000,
-      });
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.url).toBe('https://example.com');
+      expect(body.limit).toBe(100);
+      expect(body.search).toBe('blog');
+      expect(body.includeSubdomains).toBe(true);
+      expect(body.ignorQueryParameters).toBe(true);
+      expect(body.timeout).toBe(120000);
+      expect(body.headers).toEqual({ 'User-Agent': DEFAULT_USER_AGENT });
     });
   });
 
   describe('Response handling', () => {
-    it('should return success result with mapped links', async () => {
-      const mockResponse = {
+    it('should return success result with mapped links (string format)', async () => {
+      fetchSpy = mockFetchResponse({
+        links: ['https://example.com/page1', 'https://example.com/page2'],
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const result = await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result).toEqual({
+        success: true,
+        data: {
+          links: [
+            {
+              url: 'https://example.com/page1',
+              title: undefined,
+              description: undefined,
+            },
+            {
+              url: 'https://example.com/page2',
+              title: undefined,
+              description: undefined,
+            },
+          ],
+        },
+      });
+    });
+
+    it('should return success result with mapped links (object format)', async () => {
+      fetchSpy = mockFetchResponse({
         links: [
           {
             url: 'https://example.com/page1',
@@ -230,8 +245,8 @@ describe('executeMap', () => {
             description: 'Description 2',
           },
         ],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -257,16 +272,13 @@ describe('executeMap', () => {
     });
 
     it('should handle links without title or description', async () => {
-      const mockResponse = {
+      fetchSpy = mockFetchResponse({
         links: [
           { url: 'https://example.com/page1' },
-          {
-            url: 'https://example.com/page2',
-            title: 'Page 2',
-          },
+          { url: 'https://example.com/page2', title: 'Page 2' },
         ],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -289,10 +301,8 @@ describe('executeMap', () => {
     });
 
     it('should handle empty links array', async () => {
-      const mockResponse = {
-        links: [],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      fetchSpy = mockFetchResponse({ links: [] });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -304,9 +314,13 @@ describe('executeMap', () => {
       }
     });
 
-    it('should return error result when map fails', async () => {
-      const errorMessage = 'API Error: Invalid URL';
-      mockClient.map.mockRejectedValue(new Error(errorMessage));
+    it('should return error result when API returns non-OK status', async () => {
+      fetchSpy = mockFetchResponse(
+        { error: 'API Error: Invalid URL' },
+        false,
+        400
+      );
+      vi.stubGlobal('fetch', fetchSpy);
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -314,12 +328,44 @@ describe('executeMap', () => {
 
       expect(result).toEqual({
         success: false,
-        error: errorMessage,
+        error: 'API Error: Invalid URL',
       });
     });
 
+    it('should handle non-JSON error responses', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 500,
+          json: vi.fn().mockRejectedValue(new Error('not json')),
+        })
+      );
+
+      const result = await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('API request failed with status 500');
+    });
+
+    it('should handle fetch rejection', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new Error('Network error'))
+      );
+
+      const result = await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Network error');
+    });
+
     it('should handle non-Error exceptions', async () => {
-      mockClient.map.mockRejectedValue('String error');
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue('String error'));
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -331,8 +377,8 @@ describe('executeMap', () => {
   });
 
   describe('Data transformation', () => {
-    it('should transform links to expected format', async () => {
-      const mockResponse = {
+    it('should transform object links to expected format', async () => {
+      fetchSpy = mockFetchResponse({
         links: [
           {
             url: 'https://example.com/page1',
@@ -341,8 +387,8 @@ describe('executeMap', () => {
             otherField: 'should be ignored',
           },
         ],
-      };
-      mockClient.map.mockResolvedValue(mockResponse);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const result = await executeMap({
         urlOrJobId: 'https://example.com',
@@ -358,26 +404,44 @@ describe('executeMap', () => {
         expect(result.data.links[0]).not.toHaveProperty('otherField');
       }
     });
+
+    it('should normalize string links to objects', async () => {
+      fetchSpy = mockFetchResponse({
+        links: ['https://example.com/page1', 'https://example.com/page2'],
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const result = await executeMap({
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.links[0]).toEqual({
+          url: 'https://example.com/page1',
+          title: undefined,
+          description: undefined,
+        });
+      }
+    });
   });
 });
 
 describe('handleMapCommand with notebook integration', () => {
-  let mockClient: any;
+  let fetchSpy: ReturnType<typeof vi.fn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let processExitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    setupTest();
+    resetConfig();
     initializeConfig({
       apiKey: 'test-api-key',
       apiUrl: 'https://api.firecrawl.dev',
     });
 
-    mockClient = {
-      map: vi.fn(),
-    };
+    fetchSpy = mockFetchResponse({ links: [] });
+    vi.stubGlobal('fetch', fetchSpy);
 
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     processExitSpy = vi
       .spyOn(process, 'exit')
@@ -385,20 +449,18 @@ describe('handleMapCommand with notebook integration', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     consoleErrorSpy.mockRestore();
     processExitSpy.mockRestore();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    resetConfig();
   });
 
   it('should call addUrlsToNotebook when notebook option is provided', async () => {
-    const mockResponse = {
-      links: [
-        { url: 'https://example.com/page1' },
-        { url: 'https://example.com/page2' },
-      ],
-    };
-    mockClient.map.mockResolvedValue(mockResponse);
+    fetchSpy = mockFetchResponse({
+      links: ['https://example.com/page1', 'https://example.com/page2'],
+    });
+    vi.stubGlobal('fetch', fetchSpy);
 
     const mockNotebookResult = {
       notebook_id: 'abc123',
@@ -423,10 +485,10 @@ describe('handleMapCommand with notebook integration', () => {
   });
 
   it('should not call addUrlsToNotebook when notebook option is not provided', async () => {
-    const mockResponse = {
-      links: [{ url: 'https://example.com/page1' }],
-    };
-    mockClient.map.mockResolvedValue(mockResponse);
+    fetchSpy = mockFetchResponse({
+      links: ['https://example.com/page1'],
+    });
+    vi.stubGlobal('fetch', fetchSpy);
 
     await handleMapCommand({
       urlOrJobId: 'https://example.com',
@@ -436,10 +498,10 @@ describe('handleMapCommand with notebook integration', () => {
   });
 
   it('should continue map command even if notebook integration fails', async () => {
-    const mockResponse = {
-      links: [{ url: 'https://example.com/page1' }],
-    };
-    mockClient.map.mockResolvedValue(mockResponse);
+    fetchSpy = mockFetchResponse({
+      links: ['https://example.com/page1'],
+    });
+    vi.stubGlobal('fetch', fetchSpy);
 
     vi.mocked(notebooklm.addUrlsToNotebook).mockResolvedValue(null);
 
@@ -455,10 +517,8 @@ describe('handleMapCommand with notebook integration', () => {
   });
 
   it('should skip notebook integration when map returns no URLs', async () => {
-    const mockResponse = {
-      links: [],
-    };
-    mockClient.map.mockResolvedValue(mockResponse);
+    fetchSpy = mockFetchResponse({ links: [] });
+    vi.stubGlobal('fetch', fetchSpy);
 
     await handleMapCommand({
       urlOrJobId: 'https://empty.com',
@@ -469,12 +529,13 @@ describe('handleMapCommand with notebook integration', () => {
   });
 
   it('should truncate to 300 URLs and warn when limit exceeded', async () => {
-    const links = Array.from({ length: 350 }, (_, i) => ({
-      url: `https://example.com/page${i}`,
-    }));
+    const links = Array.from(
+      { length: 350 },
+      (_, i) => `https://example.com/page${i}`
+    );
 
-    const mockResponse = { links };
-    mockClient.map.mockResolvedValue(mockResponse);
+    fetchSpy = mockFetchResponse({ links });
+    vi.stubGlobal('fetch', fetchSpy);
 
     const mockNotebookResult = {
       notebook_id: 'abc123',

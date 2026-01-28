@@ -3,7 +3,12 @@
  */
 
 import type { MapOptions, MapResult } from '../types/map';
-import { getClient } from '../utils/client';
+import {
+  getConfig,
+  getApiKey,
+  validateConfig,
+  DEFAULT_API_URL,
+} from '../utils/config';
 import { addUrlsToNotebook } from '../utils/notebooklm';
 import { writeOutput } from '../utils/output';
 
@@ -12,43 +17,78 @@ import { writeOutput } from '../utils/output';
  */
 export async function executeMap(options: MapOptions): Promise<MapResult> {
   try {
-    const app = getClient({ apiKey: options.apiKey });
+    const config = getConfig();
+    const apiKey = getApiKey(options.apiKey);
+    validateConfig(apiKey);
+
+    const apiUrl = config.apiUrl || DEFAULT_API_URL;
+    const userAgent = config.userAgent;
     const { urlOrJobId } = options;
 
-    // Build map options
-    const mapOptions: any = {};
+    // Build request body for direct API call
+    // Bypass SDK to include headers (User-Agent) in the request body
+    const body: Record<string, unknown> = {
+      url: urlOrJobId,
+    };
 
     if (options.limit !== undefined) {
-      mapOptions.limit = options.limit;
+      body.limit = options.limit;
     }
     if (options.search) {
-      mapOptions.search = options.search;
+      body.search = options.search;
     }
     if (options.sitemap) {
-      mapOptions.sitemap = options.sitemap;
+      body.sitemapOnly = options.sitemap === 'only';
+      body.ignoreSitemap = options.sitemap === 'skip';
     }
     if (options.includeSubdomains !== undefined) {
-      mapOptions.includeSubdomains = options.includeSubdomains;
+      body.includeSubdomains = options.includeSubdomains;
     }
     if (options.ignoreQueryParameters !== undefined) {
-      mapOptions.ignoreQueryParameters = options.ignoreQueryParameters;
+      body.ignorQueryParameters = options.ignoreQueryParameters;
     }
     if (options.timeout !== undefined) {
-      mapOptions.timeout = options.timeout * 1000; // Convert to milliseconds
+      body.timeout = options.timeout * 1000; // Convert to milliseconds
+    }
+    if (userAgent) {
+      body.headers = { 'User-Agent': userAgent };
     }
 
-    // Execute map (seems synchronous in SDK)
-    const mapData = await app.map(urlOrJobId, mapOptions);
+    const response = await fetch(`${apiUrl}/v1/map`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      const errorMessage =
+        errorData?.error || `API request failed with status ${response.status}`;
+      throw new Error(errorMessage);
+    }
+
+    const mapData = await response.json();
+
+    // Normalize response — API may return links as strings or objects
+    const rawLinks: unknown[] = mapData.links || [];
+    const links = rawLinks.map((link: unknown) => {
+      if (typeof link === 'string') {
+        return { url: link, title: undefined, description: undefined };
+      }
+      const obj = link as Record<string, unknown>;
+      return {
+        url: obj.url as string,
+        title: obj.title as string | undefined,
+        description: obj.description as string | undefined,
+      };
+    });
 
     return {
       success: true,
-      data: {
-        links: mapData.links.map((link: any) => ({
-          url: link.url,
-          title: link.title,
-          description: link.description,
-        })),
-      },
+      data: { links },
     };
   } catch (error) {
     return {
