@@ -3,16 +3,16 @@
  * Embeds content from URL, file, or stdin into Qdrant via TEI
  */
 
-import * as fs from 'fs';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
 import type { EmbedOptions, EmbedResult } from '../types/embed';
-import { getClient } from '../utils/client';
 import { chunkText } from '../utils/chunker';
-import { handleCommandError, formatJson } from '../utils/command';
+import { getClient } from '../utils/client';
+import { formatJson, handleCommandError } from '../utils/command';
 import { getConfig } from '../utils/config';
-import { getTeiInfo, embedChunks } from '../utils/embeddings';
+import { embedChunks, getTeiInfo } from '../utils/embeddings';
 import { writeOutput } from '../utils/output';
-import { ensureCollection, deleteByUrl, upsertPoints } from '../utils/qdrant';
+import { deleteByUrl, ensureCollection, upsertPoints } from '../utils/qdrant';
 import { isUrl } from '../utils/url';
 
 /**
@@ -188,4 +188,53 @@ export async function handleEmbedCommand(options: EmbedOptions): Promise<void> {
   }
 
   writeOutput(outputContent, options.output, !!options.output);
+}
+
+import { Command } from 'commander';
+import { ensureAuthenticated } from '../utils/auth';
+import { normalizeUrl } from '../utils/url';
+
+/**
+ * Create and configure the embed command
+ */
+export function createEmbedCommand(): Command {
+  const embedCmd = new Command('embed')
+    .description('Embed content into Qdrant vector database')
+    .argument('<input>', 'URL to scrape and embed, file path, or "-" for stdin')
+    .option(
+      '--url <url>',
+      'Explicit URL for metadata (required for file/stdin)'
+    )
+    .option('--collection <name>', 'Qdrant collection name')
+    .option('--no-chunk', 'Disable chunking, embed as single vector')
+    .option(
+      '-k, --api-key <key>',
+      'Firecrawl API key (overrides global --api-key)'
+    )
+    .option('-o, --output <path>', 'Output file path (default: stdout)')
+    .option('--json', 'Output as JSON format', false)
+    .action(async (input: string, options) => {
+      // Normalize URL input (but not file paths or stdin "-")
+      const normalizedInput = isUrl(input) ? normalizeUrl(input) : input;
+
+      // Conditionally require auth only for URL input
+      if (
+        normalizedInput.startsWith('http://') ||
+        normalizedInput.startsWith('https://')
+      ) {
+        await ensureAuthenticated();
+      }
+
+      await handleEmbedCommand({
+        input: normalizedInput,
+        url: options.url,
+        collection: options.collection,
+        noChunk: !options.chunk,
+        apiKey: options.apiKey,
+        output: options.output,
+        json: options.json,
+      });
+    });
+
+  return embedCmd;
 }
