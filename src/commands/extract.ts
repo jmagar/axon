@@ -4,7 +4,7 @@
 
 import type { ExtractOptions, ExtractResult } from '../types/extract';
 import { getClient } from '../utils/client';
-import { handleCommandError, formatJson } from '../utils/command';
+import { formatJson, handleCommandError } from '../utils/command';
 import { batchEmbed, type EmbedItem } from '../utils/embedpipeline';
 import { writeOutput } from '../utils/output';
 
@@ -106,7 +106,7 @@ export async function executeExtract(
         .map((d: { message?: string }) => d.message)
         .filter(Boolean);
       if (msgs.length > 0) {
-        message += ': ' + msgs.join('; ');
+        message += `: ${msgs.join('; ')}`;
       }
     }
 
@@ -167,4 +167,60 @@ export async function handleExtractCommand(
 
   const outputContent = formatJson(outputData, options.pretty);
   writeOutput(outputContent, options.output, !!options.output);
+}
+
+import { Command } from 'commander';
+import { normalizeUrl } from '../utils/url';
+
+/**
+ * Create and configure the extract command
+ */
+export function createExtractCommand(): Command {
+  const extractCmd = new Command('extract')
+    .description('Extract structured data from URLs using Firecrawl')
+    .argument('<urls...>', 'URL(s) to extract from')
+    .option('--prompt <prompt>', 'Extraction prompt describing what to extract')
+    .option('--schema <json>', 'JSON schema for structured extraction')
+    .option('--system-prompt <prompt>', 'System prompt for extraction context')
+    .option('--allow-external-links', 'Allow following external links', false)
+    .option(
+      '--enable-web-search',
+      'Enable web search for additional context',
+      false
+    )
+    .option('--include-subdomains', 'Include subdomains when extracting', false)
+    .option('--show-sources', 'Include source URLs in result', false)
+    .option(
+      '-k, --api-key <key>',
+      'Firecrawl API key (overrides global --api-key)'
+    )
+    .option('-o, --output <path>', 'Output file path (default: stdout)')
+    .option('--json', 'Output as JSON format', false)
+    .option('--pretty', 'Pretty print JSON output', false)
+    .option('--no-embed', 'Disable auto-embedding of extracted content')
+    .action(async (rawUrls: string[], options) => {
+      // Flatten URLs that may contain newlines (e.g. zsh doesn't word-split variables)
+      const urls = rawUrls
+        .flatMap((u) =>
+          u.includes('\n') ? u.split('\n').filter(Boolean) : [u]
+        )
+        .map(normalizeUrl);
+      await handleExtractCommand({
+        urls,
+        prompt: options.prompt,
+        schema: options.schema,
+        systemPrompt: options.systemPrompt,
+        allowExternalLinks: options.allowExternalLinks,
+        enableWebSearch: options.enableWebSearch,
+        includeSubdomains: options.includeSubdomains,
+        showSources: options.showSources,
+        apiKey: options.apiKey,
+        output: options.output,
+        json: options.json,
+        pretty: options.pretty,
+        embed: options.embed,
+      });
+    });
+
+  return extractCmd;
 }

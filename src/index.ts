@@ -24,7 +24,7 @@ import {
 } from './commands/config';
 import { createCrawlCommand } from './commands/crawl';
 import { handleEmbedCommand } from './commands/embed';
-import { handleExtractCommand } from './commands/extract';
+import { createExtractCommand } from './commands/extract';
 import { handleLoginCommand } from './commands/login';
 import { handleLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
@@ -114,59 +114,6 @@ program.addCommand(createScrapeCommand());
 program.addCommand(createCrawlCommand());
 program.addCommand(createMapCommand());
 program.addCommand(createSearchCommand());
-
-/**
- * Create and configure the extract command
- */
-function createExtractCommand(): Command {
-  const extractCmd = new Command('extract')
-    .description('Extract structured data from URLs using Firecrawl')
-    .argument('<urls...>', 'URL(s) to extract from')
-    .option('--prompt <prompt>', 'Extraction prompt describing what to extract')
-    .option('--schema <json>', 'JSON schema for structured extraction')
-    .option('--system-prompt <prompt>', 'System prompt for extraction context')
-    .option('--allow-external-links', 'Allow following external links', false)
-    .option(
-      '--enable-web-search',
-      'Enable web search for additional context',
-      false
-    )
-    .option('--include-subdomains', 'Include subdomains when extracting', false)
-    .option('--show-sources', 'Include source URLs in result', false)
-    .option(
-      '-k, --api-key <key>',
-      'Firecrawl API key (overrides global --api-key)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
-    .option('--pretty', 'Pretty print JSON output', false)
-    .option('--no-embed', 'Disable auto-embedding of extracted content')
-    .action(async (rawUrls: string[], options) => {
-      // Flatten URLs that may contain newlines (e.g. zsh doesn't word-split variables)
-      const urls = rawUrls
-        .flatMap((u) =>
-          u.includes('\n') ? u.split('\n').filter(Boolean) : [u]
-        )
-        .map(normalizeUrl);
-      await handleExtractCommand({
-        urls,
-        prompt: options.prompt,
-        schema: options.schema,
-        systemPrompt: options.systemPrompt,
-        allowExternalLinks: options.allowExternalLinks,
-        enableWebSearch: options.enableWebSearch,
-        includeSubdomains: options.includeSubdomains,
-        showSources: options.showSources,
-        apiKey: options.apiKey,
-        output: options.output,
-        json: options.json,
-        pretty: options.pretty,
-        embed: options.embed,
-      });
-    });
-
-  return extractCmd;
-}
 
 /**
  * Create and configure the embed command
