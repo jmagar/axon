@@ -28,11 +28,11 @@ import { handleExtractCommand } from './commands/extract';
 import { handleLoginCommand } from './commands/login';
 import { handleLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
-
 import { handleQueryCommand } from './commands/query';
 import { handleRetrieveCommand } from './commands/retrieve';
 import { createScrapeCommand, handleScrapeCommand } from './commands/scrape';
-import { handleSearchCommand } from './commands/search';
+import { createSearchCommand } from './commands/search';
+
 import { handleStatusCommand } from './commands/status';
 import { handleVersionCommand } from './commands/version';
 import type { ScrapeFormat } from './types/scrape';
@@ -109,143 +109,6 @@ program.addCommand(createScrapeCommand());
 /**
  * Create and configure the map command
  */
-
-/**
- * Create and configure the search command
- */
-function createSearchCommand(): Command {
-  const searchCmd = new Command('search')
-    .description('Search the web using Firecrawl')
-    .argument('<query>', 'Search query')
-    .option(
-      '--limit <number>',
-      'Maximum number of results (default: 5, max: 100)',
-      parseInt
-    )
-    .option(
-      '--sources <sources>',
-      'Comma-separated sources to search: web, images, news (default: web)'
-    )
-    .option(
-      '--categories <categories>',
-      'Comma-separated categories to filter: github, research, pdf'
-    )
-    .option(
-      '--tbs <value>',
-      'Time-based search: qdr:h (hour), qdr:d (day), qdr:w (week), qdr:m (month), qdr:y (year)'
-    )
-    .option(
-      '--location <location>',
-      'Location for geo-targeting (e.g., "Germany", "San Francisco,California,United States")'
-    )
-    .option(
-      '--country <code>',
-      'ISO country code for geo-targeting (default: US)'
-    )
-    .option(
-      '--timeout <ms>',
-      'Timeout in milliseconds (default: 60000)',
-      parseInt
-    )
-    .option(
-      '--ignore-invalid-urls',
-      'Exclude URLs invalid for other Firecrawl endpoints',
-      false
-    )
-    .option('--scrape', 'Enable scraping of search results', false)
-    .option(
-      '--scrape-formats <formats>',
-      'Comma-separated scrape formats when --scrape is enabled: markdown, html, rawHtml, links, etc. (default: markdown)'
-    )
-    .option(
-      '--only-main-content',
-      'Include only main content when scraping',
-      true
-    )
-    .option('--no-embed', 'Skip auto-embedding of search results')
-    .option(
-      '-k, --api-key <key>',
-      'Firecrawl API key (overrides global --api-key)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    // .option(
-    //   '-p, --pretty',
-    //   'Output as pretty JSON (default: human-readable)',
-    //   false
-    // )
-    .option('--json', 'Output as compact JSON', false)
-    .action(async (query, options) => {
-      // Parse sources
-      let sources: SearchSource[] | undefined;
-      if (options.sources) {
-        sources = options.sources
-          .split(',')
-          .map((s: string) => s.trim().toLowerCase()) as SearchSource[];
-
-        // Validate sources
-        const validSources = ['web', 'images', 'news'];
-        for (const source of sources) {
-          if (!validSources.includes(source)) {
-            console.error(
-              `Error: Invalid source "${source}". Valid sources: ${validSources.join(', ')}`
-            );
-            process.exit(1);
-          }
-        }
-      }
-
-      // Parse categories
-      let categories: SearchCategory[] | undefined;
-      if (options.categories) {
-        categories = options.categories
-          .split(',')
-          .map((c: string) => c.trim().toLowerCase()) as SearchCategory[];
-
-        // Validate categories
-        const validCategories = ['github', 'research', 'pdf'];
-        for (const category of categories) {
-          if (!validCategories.includes(category)) {
-            console.error(
-              `Error: Invalid category "${category}". Valid categories: ${validCategories.join(', ')}`
-            );
-            process.exit(1);
-          }
-        }
-      }
-
-      // Parse scrape formats
-      let scrapeFormats: ScrapeFormat[] | undefined;
-      if (options.scrapeFormats) {
-        scrapeFormats = options.scrapeFormats
-          .split(',')
-          .map((f: string) => f.trim()) as ScrapeFormat[];
-      }
-
-      const searchOptions = {
-        query,
-        limit: options.limit,
-        sources,
-        categories,
-        tbs: options.tbs,
-        location: options.location,
-        country: options.country,
-        timeout: options.timeout,
-        ignoreInvalidUrls: options.ignoreInvalidUrls,
-        embed: options.embed,
-        scrape: options.scrape,
-        scrapeFormats,
-        onlyMainContent: options.onlyMainContent,
-        apiKey: options.apiKey,
-        output: options.output,
-        json: options.json,
-        pretty: options.pretty,
-      };
-
-      await handleSearchCommand(searchOptions);
-    });
-
-  return searchCmd;
-}
 
 // Add crawl, map, and search commands to main program
 program.addCommand(createCrawlCommand());
