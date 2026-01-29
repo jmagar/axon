@@ -27,7 +27,7 @@ import { createCrawlCommand } from './commands/crawl';
 import { createEmbedCommand } from './commands/embed';
 import { createExtractCommand } from './commands/extract';
 import { createLoginCommand } from './commands/login';
-import { handleLogoutCommand } from './commands/logout';
+import { createLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
 import { createQueryCommand } from './commands/query';
 import { createRetrieveCommand } from './commands/retrieve';
@@ -133,12 +133,7 @@ program
 
 program.addCommand(createLoginCommand());
 
-program
-  .command('logout')
-  .description('Logout and clear stored credentials')
-  .action(async () => {
-    await handleLogoutCommand();
-  });
+program.addCommand(createLogoutCommand());
 
 program
   .command('version')

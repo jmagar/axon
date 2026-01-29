@@ -3,12 +3,8 @@
  * Clears stored credentials
  */
 
-import {
-  deleteCredentials,
-  loadCredentials,
-  getConfigDirectoryPath,
-} from '../utils/credentials';
 import { updateConfig } from '../utils/config';
+import { deleteCredentials, loadCredentials } from '../utils/credentials';
 
 /**
  * Main logout command handler
@@ -37,4 +33,19 @@ export async function handleLogoutCommand(): Promise<void> {
     );
     process.exit(1);
   }
+}
+
+import { Command } from 'commander';
+
+/**
+ * Create and configure the logout command
+ */
+export function createLogoutCommand(): Command {
+  const logoutCmd = new Command('logout')
+    .description('Logout and clear stored credentials')
+    .action(async () => {
+      await handleLogoutCommand();
+    });
+
+  return logoutCmd;
 }
