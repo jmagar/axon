@@ -17,6 +17,7 @@ loadDotenv({ path: envPath });
 import packageJson from '../package.json';
 import {
   configure,
+  createConfigCommand,
   handleConfigClear,
   handleConfigGet,
   handleConfigSet,
@@ -121,45 +122,7 @@ program.addCommand(createEmbedCommand());
 program.addCommand(createQueryCommand());
 program.addCommand(createRetrieveCommand());
 
-const configCmd = program
-  .command('config')
-  .description('Configure Firecrawl (login if not authenticated)')
-  .option(
-    '-k, --api-key <key>',
-    'Provide API key directly (skips interactive flow)'
-  )
-  .option('--api-url <url>', 'API URL (default: https://api.firecrawl.dev)')
-  .action(async (options) => {
-    await configure({
-      apiKey: options.apiKey,
-      apiUrl: options.apiUrl,
-    });
-  });
-
-configCmd
-  .command('set')
-  .description('Set a configuration value')
-  .argument('<key>', 'Setting key (e.g., exclude-paths)')
-  .argument('<value>', 'Setting value (comma-separated for lists)')
-  .action((key: string, value: string) => {
-    handleConfigSet(key, value);
-  });
-
-configCmd
-  .command('get')
-  .description('Get a configuration value')
-  .argument('<key>', 'Setting key (e.g., exclude-paths)')
-  .action((key: string) => {
-    handleConfigGet(key);
-  });
-
-configCmd
-  .command('clear')
-  .description('Clear a configuration value')
-  .argument('<key>', 'Setting key (e.g., exclude-paths)')
-  .action((key: string) => {
-    handleConfigClear(key);
-  });
+program.addCommand(createConfigCommand());
 
 program
   .command('view-config')
