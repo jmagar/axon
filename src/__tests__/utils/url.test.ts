@@ -2,7 +2,7 @@
  * Tests for URL utilities
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { isUrl, normalizeUrl } from '../../utils/url';
 
 describe('URL Utilities', () => {

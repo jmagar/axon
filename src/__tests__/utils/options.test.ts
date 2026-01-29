@@ -2,7 +2,7 @@
  * Tests for option parsing utilities
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseFormats, parseScrapeOptions } from '../../utils/options';
 
 describe('Option Parsing Utilities', () => {

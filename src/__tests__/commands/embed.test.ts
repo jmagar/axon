@@ -2,14 +2,14 @@
  * Tests for embed command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeEmbed } from '../../commands/embed';
 import { getClient } from '../../utils/client';
 import { initializeConfig, resetConfig } from '../../utils/config';
-import { setupTest, teardownTest } from '../utils/mock-client';
 import * as embeddings from '../../utils/embeddings';
 import * as qdrant from '../../utils/qdrant';
-import { existsSync, readFileSync } from 'fs';
+import { setupTest, teardownTest } from '../utils/mock-client';
 
 vi.mock('../../utils/client', async () => {
   const actual = await vi.importActual('../../utils/client');

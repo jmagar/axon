@@ -17,8 +17,8 @@
  * @module utils/notebooklm
  */
 
-import { spawn, execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { execSync, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 /**
  * List of allowed Python interpreter paths/names.

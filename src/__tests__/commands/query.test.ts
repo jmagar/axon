@@ -2,7 +2,7 @@
  * Tests for query command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeQuery } from '../../commands/query';
 import { initializeConfig, resetConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
@@ -60,8 +60,8 @@ describe('executeQuery', () => {
     );
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
-    expect(result.data![0].score).toBe(0.92);
-    expect(result.data![0].url).toBe('https://example.com/auth');
+    expect(result.data?.[0].score).toBe(0.92);
+    expect(result.data?.[0].url).toBe('https://example.com/auth');
   });
 
   it('should pass domain filter to Qdrant', async () => {

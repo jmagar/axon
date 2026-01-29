@@ -2,11 +2,12 @@
  * Tests for crawl command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeCrawl, handleCrawlCommand } from '../../commands/crawl';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+
 // autoEmbed is mocked below via mockAutoEmbed
 
 // Mock the Firecrawl client module
@@ -343,9 +344,10 @@ describe('executeCrawl', () => {
       });
 
       expect(result.success).toBe(true);
-      if (result.success && 'data' in result) {
-        expect(result.data?.creditsUsed).toBeUndefined();
-        expect(result.data?.expiresAt).toBeUndefined();
+      if (result.success && result.data && 'id' in result.data) {
+        // Type narrow to CrawlStatusData which has creditsUsed and expiresAt
+        expect(result.data.creditsUsed).toBeUndefined();
+        expect(result.data.expiresAt).toBeUndefined();
       }
     });
   });
@@ -517,7 +519,7 @@ describe('executeCrawl', () => {
       expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
       expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(2);
       expect(result.success).toBe(true);
-      if (result.success && 'data' in result) {
+      if (result.success && result.data && 'status' in result.data) {
         expect(result.data.status).toBe('completed');
       }
     });
@@ -823,23 +825,28 @@ describe('executeCrawl', () => {
       });
     });
 
-    it('should handle crawl result with nested data structure', async () => {
+    it('should handle crawl result with multiple pages', async () => {
       const mockCrawlJob = {
         id: '550e8400-e29b-41d4-a716-446655440000',
         status: 'completed',
-        total: 1,
-        completed: 1,
-        data: {
-          data: [
-            {
-              markdown: '# Nested Page',
-              metadata: {
-                sourceURL: 'https://example.com/nested',
-                title: 'Nested',
-              },
+        total: 2,
+        completed: 2,
+        data: [
+          {
+            markdown: '# Page 1',
+            metadata: {
+              sourceURL: 'https://example.com/page1',
+              title: 'Page 1',
             },
-          ],
-        },
+          },
+          {
+            markdown: '# Page 2',
+            metadata: {
+              sourceURL: 'https://example.com/page2',
+              title: 'Page 2',
+            },
+          },
+        ],
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
@@ -848,10 +855,17 @@ describe('executeCrawl', () => {
         wait: true,
       });
 
-      expect(mockAutoEmbed).toHaveBeenCalledTimes(1);
-      expect(mockAutoEmbed).toHaveBeenCalledWith('# Nested Page', {
-        url: 'https://example.com/nested',
-        title: 'Nested',
+      // autoEmbed is called for each page via batchEmbed
+      expect(mockAutoEmbed).toHaveBeenCalledTimes(2);
+      expect(mockAutoEmbed).toHaveBeenNthCalledWith(1, '# Page 1', {
+        url: 'https://example.com/page1',
+        title: 'Page 1',
+        sourceCommand: 'crawl',
+        contentType: 'markdown',
+      });
+      expect(mockAutoEmbed).toHaveBeenNthCalledWith(2, '# Page 2', {
+        url: 'https://example.com/page2',
+        title: 'Page 2',
         sourceCommand: 'crawl',
         contentType: 'markdown',
       });

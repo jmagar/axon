@@ -75,17 +75,19 @@ function splitOnHeaders(
 
   let lastIndex = 0;
   let currentHeader: string | null = null;
-  let match: RegExpExecArray | null;
 
-  while ((match = headerRegex.exec(text)) !== null) {
+  const matches = text.matchAll(headerRegex);
+
+  for (const match of matches) {
     // Capture text before this header
-    const beforeText = text.slice(lastIndex, match.index).trim();
+    const index = match.index ?? 0;
+    const beforeText = text.slice(lastIndex, index).trim();
     if (beforeText) {
       sections.push({ text: beforeText, header: currentHeader });
     }
 
     currentHeader = match[2].trim();
-    lastIndex = match.index + match[0].length;
+    lastIndex = index + match[0].length;
   }
 
   // Capture remaining text after last header
@@ -151,7 +153,7 @@ function mergeTinyChunks(
       prev !== null &&
       prev.header === chunk.header;
     if (canMergeBack && prev !== null) {
-      prev.text += '\n\n' + chunk.text;
+      prev.text += `\n\n${chunk.text}`;
     } else {
       afterBackward.push({ ...chunk });
     }
@@ -170,7 +172,7 @@ function mergeTinyChunks(
     if (isTiny && nextIsLarge) {
       // Merge tiny chunk into the next (larger) chunk
       afterBackward[i + 1].text =
-        chunk.text + '\n\n' + afterBackward[i + 1].text;
+        `${chunk.text}\n\n${afterBackward[i + 1].text}`;
     } else {
       result.push(chunk);
     }

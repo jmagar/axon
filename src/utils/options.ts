@@ -2,7 +2,7 @@
  * Option parsing utilities
  */
 
-import type { ScrapeOptions, ScrapeFormat } from '../types/scrape';
+import type { ScrapeFormat, ScrapeOptions } from '../types/scrape';
 
 /**
  * Valid scrape format values
@@ -65,7 +65,32 @@ export function parseFormats(formatString: string): ScrapeFormat[] {
 /**
  * Convert commander options to ScrapeOptions
  */
-export function parseScrapeOptions(options: any): ScrapeOptions {
+/**
+ * Raw Commander.js options for scrape command before parsing
+ */
+export interface CommanderScrapeOptions {
+  url: string;
+  format?: string;
+  onlyMainContent?: boolean;
+  waitFor?: number;
+  timeout?: number;
+  screenshot?: boolean;
+  includeTags?: string;
+  excludeTags?: string;
+  apiKey?: string;
+  output?: string;
+  pretty?: boolean;
+  json?: boolean;
+  timing?: boolean;
+  embed?: boolean;
+}
+
+/**
+ * Convert commander options to ScrapeOptions
+ */
+export function parseScrapeOptions(
+  options: CommanderScrapeOptions
+): ScrapeOptions {
   // Parse formats from comma-separated string
   let formats: ScrapeFormat[] | undefined;
   if (options.format) {
@@ -77,6 +102,7 @@ export function parseScrapeOptions(options: any): ScrapeOptions {
     formats,
     onlyMainContent: options.onlyMainContent,
     waitFor: options.waitFor,
+    timeout: options.timeout,
     screenshot: options.screenshot,
     includeTags: options.includeTags
       ? options.includeTags.split(',').map((t: string) => t.trim())

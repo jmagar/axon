@@ -5,7 +5,7 @@
 
 import packageJson from '../../package.json';
 import { isAuthenticated } from '../utils/auth';
-import { getConfig, DEFAULT_API_URL } from '../utils/config';
+import { DEFAULT_API_URL, getConfig } from '../utils/config';
 import { loadCredentials } from '../utils/credentials';
 
 type AuthSource = 'env' | 'stored' | 'none';

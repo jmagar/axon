@@ -2,6 +2,8 @@
  * Types and interfaces for the scrape command
  */
 
+import type { Document } from '@mendable/firecrawl-js';
+
 export type ScrapeFormat =
   | 'markdown'
   | 'html'
@@ -48,6 +50,6 @@ export interface ScrapeOptions {
 
 export interface ScrapeResult {
   success: boolean;
-  data?: any;
+  data?: Document;
   error?: string;
 }

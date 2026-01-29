@@ -3,13 +3,9 @@
  * Provides automatic authentication prompts when credentials are missing
  */
 
-import * as readline from 'readline';
-import {
-  loadCredentials,
-  saveCredentials,
-  getConfigDirectoryPath,
-} from './credentials';
-import { updateConfig, getApiKey, DEFAULT_API_URL } from './config';
+import * as readline from 'node:readline';
+import { DEFAULT_API_URL, getApiKey, updateConfig } from './config';
+import { saveCredentials } from './credentials';
 
 /**
  * Prompt for input

@@ -3,8 +3,8 @@
  * Stores persistent user settings in the platform config directory
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { getConfigDirectoryPath } from './credentials';
 
 export interface UserSettings {
@@ -34,7 +34,7 @@ function ensureConfigDir(): void {
 function setSecurePermissions(filePath: string): void {
   try {
     fs.chmodSync(filePath, 0o600);
-  } catch (error) {
+  } catch (_error) {
     // Ignore errors on Windows or if file doesn't exist
   }
 }
@@ -50,7 +50,7 @@ export function loadSettings(): UserSettings {
     }
     const data = fs.readFileSync(settingsPath, 'utf-8');
     return JSON.parse(data) as UserSettings;
-  } catch (error) {
+  } catch (_error) {
     return {};
   }
 }

@@ -1,6 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { chunkText } from '../../utils/chunker';
-import type { Chunk } from '../../utils/chunker';
 
 describe('chunkText', () => {
   describe('edge cases', () => {

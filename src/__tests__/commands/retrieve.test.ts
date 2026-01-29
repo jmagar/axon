@@ -2,7 +2,7 @@
  * Tests for retrieve command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeRetrieve } from '../../commands/retrieve';
 import { initializeConfig, resetConfig } from '../../utils/config';
 import * as qdrant from '../../utils/qdrant';

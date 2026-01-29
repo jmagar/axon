@@ -1,0 +1,94 @@
+name: firecrawl
+
+x-common-service: &common-service
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+  restart: unless-stopped
+  networks:
+    - jakenet
+  extra_hosts:
+    - 'host.docker.internal:host-gateway'
+  logging:
+    driver: 'json-file'
+    options:
+      max-size: '10m'
+      max-file: '3'
+      compress: 'true'
+  env_file:
+    - .env
+
+services:
+  playwright:
+    <<: *common-service
+    image: loorisr/patchright-scrape-api:latest
+    container_name: playwright
+    environment:
+      PORT: '${PLAYWRIGHT_PORT:-53006}'
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
+
+  api:
+    <<: *common-service
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: firecrawl
+    environment:
+      PORT: ${FIRECRAWL_PORT:-53002}
+    depends_on:
+      redis:
+        condition: service_started
+      playwright:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - '${FIRECRAWL_PORT:-53002}:${FIRECRAWL_PORT:-53002}'
+    command: node dist/src/harness.js --start-docker
+
+  redis:
+    <<: *common-service
+    image: redis:alpine
+    container_name: redis
+    command: redis-server --bind 0.0.0.0 --port "${REDIS_PORT:-53379}"
+
+  rabbitmq:
+    <<: *common-service
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    command: rabbitmq-server
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running']
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  nuq-postgres:
+    <<: *common-service
+    build: apps/nuq-postgres
+    container_name: nuq-postgres
+    command:
+      [
+        'postgres',
+        '-p',
+        '${POSTGRES_PORT:-53432}',
+        '-c',
+        'cron.use_background_workers=on',
+        '-c',
+        'max_worker_processes=32',
+      ]
+
+  qdrant:
+    <<: *common-service
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - '${QDRANT_REST_PORT:-53333}:6333'
+      - '${QDRANT_RPC_PORT:-53334}:6334'
+    volumes:
+      - /home/jmagar/appdata/qdrant:/qdrant/storage
+
+networks:
+  jakenet:
+    driver: bridge

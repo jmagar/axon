@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { autoEmbed } from '../../utils/embedpipeline';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initializeConfig, resetConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
+import { autoEmbed } from '../../utils/embedpipeline';
 import * as qdrant from '../../utils/qdrant';
 
 vi.mock('../../utils/embeddings');

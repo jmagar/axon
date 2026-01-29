@@ -2,12 +2,12 @@
  * Tests for map command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeMap, handleMapCommand } from '../../commands/map';
 import {
+  DEFAULT_USER_AGENT,
   initializeConfig,
   resetConfig,
-  DEFAULT_USER_AGENT,
 } from '../../utils/config';
 import * as notebooklm from '../../utils/notebooklm';
 
@@ -67,7 +67,7 @@ describe('executeMap', () => {
       const [url, options] = fetchSpy.mock.calls[0];
       expect(url).toBe('https://api.firecrawl.dev/v1/map');
       expect(options.method).toBe('POST');
-      expect(options.headers['Authorization']).toBe('Bearer test-api-key');
+      expect(options.headers.Authorization).toBe('Bearer test-api-key');
       expect(options.headers['Content-Type']).toBe('application/json');
 
       const body = JSON.parse(options.body);

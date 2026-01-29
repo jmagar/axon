@@ -99,7 +99,9 @@ Graceful shutdown on SIGINT/SIGTERM with double-signal force exit.
 pnpm build          # Compile TypeScript
 pnpm dev            # Watch mode
 pnpm test           # Run tests (326 tests, ~800ms)
-pnpm format         # Prettier formatting
+pnpm format         # Biome formatting
+pnpm lint           # Biome linting
+pnpm check          # Biome check (format + lint)
 pnpm type-check     # TypeScript check
 ```
 
@@ -116,7 +118,7 @@ pnpm type-check     # TypeScript check
 
 1. **Entry point bloat**: `index.ts` is ~850 lines; consider extracting command factories
 2. **22 `any` types**: Should be replaced with proper interfaces
-3. **No ESLint**: Only Prettier for formatting
+3. **Biome**: Replaced Prettier/ESLint with Biome
 4. **CommonJS**: Not yet migrated to ESM modules
 5. **Global config state**: `config.ts` uses mutable global; consider DI
 

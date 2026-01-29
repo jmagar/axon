@@ -2,11 +2,12 @@
  * Tests for search command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeSearch, handleSearchCommand } from '../../commands/search';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
+
 // autoEmbed is mocked below via mockAutoEmbed
 
 // Mock the Firecrawl client module

@@ -2,10 +2,10 @@
  * Tests for NotebookLM integration wrapper
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addUrlsToNotebook } from '../../utils/notebooklm';
-import { spawn } from 'child_process';
-import type { ChildProcess } from 'child_process';
 
 // Mock child_process
 vi.mock('child_process', () => ({
@@ -75,13 +75,13 @@ describe('addUrlsToNotebook', () => {
       })
     );
 
-    expect(mockProcess.stdin!.write).toHaveBeenCalledWith(
+    expect(mockProcess.stdin?.write).toHaveBeenCalledWith(
       JSON.stringify({
         notebook: 'Test Notebook',
         urls: ['https://example.com', 'https://test.com'],
       })
     );
-    expect(mockProcess.stdin!.end).toHaveBeenCalled();
+    expect(mockProcess.stdin?.end).toHaveBeenCalled();
   });
 
   it('should return null when python3 is not found', async () => {

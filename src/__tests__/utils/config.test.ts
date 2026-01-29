@@ -2,14 +2,14 @@
  * Tests for config fallback priority
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getClient, resetClient } from '../../utils/client';
 import {
-  initializeConfig,
   getConfig,
+  initializeConfig,
   resetConfig,
   updateConfig,
 } from '../../utils/config';
-import { getClient, resetClient } from '../../utils/client';
 import * as credentials from '../../utils/credentials';
 
 // Mock credentials module
@@ -112,7 +112,7 @@ describe('Config Fallback Priority', () => {
     });
 
     it('should prioritize options over global config', () => {
-      const client = getClient({ apiKey: 'option-api-key' });
+      const _client = getClient({ apiKey: 'option-api-key' });
 
       // Verify client was created with option API key
       // We can't directly inspect the client, but we can check the config was updated

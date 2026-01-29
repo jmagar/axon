@@ -2,8 +2,8 @@
  * Output utilities for CLI
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /**
  * Validates that an output path is safe (within cwd or a configured base directory).
@@ -33,7 +33,9 @@ export function validateOutputPath(
 
   return resolvedPath;
 }
-import type { ScrapeResult, ScrapeFormat } from '../types/scrape';
+
+import type { Document } from '@mendable/firecrawl-js';
+import type { ScrapeFormat, ScrapeResult } from '../types/scrape';
 
 /**
  * Determine if output should be JSON based on flag or file extension
@@ -43,7 +45,7 @@ function shouldOutputJson(outputPath?: string, jsonFlag?: boolean): boolean {
   if (jsonFlag) return true;
 
   // Infer from .json extension
-  if (outputPath && outputPath.toLowerCase().endsWith('.json')) {
+  if (outputPath?.toLowerCase().endsWith('.json')) {
     return true;
   }
 
@@ -65,7 +67,7 @@ const RAW_TEXT_FORMATS: ScrapeFormat[] = [
 /**
  * Format screenshot output nicely
  */
-function formatScreenshotOutput(data: any): string {
+function formatScreenshotOutput(data: Document): string {
   const lines: string[] = [];
 
   // Screenshot URL
@@ -92,7 +94,7 @@ function formatScreenshotOutput(data: any): string {
 /**
  * Extract content from Firecrawl Document based on format
  */
-function extractContent(data: any, format: ScrapeFormat): string | null {
+function extractContent(data: Document, format: ScrapeFormat): string | null {
   if (!data) return null;
 
   // Handle html/rawHtml formats - extract HTML content directly
@@ -135,10 +137,10 @@ function extractContent(data: any, format: ScrapeFormat): string | null {
  * Extract multiple format contents from response data
  */
 function extractMultipleFormats(
-  data: any,
+  data: Document,
   formats: ScrapeFormat[]
-): Record<string, any> {
-  const result: Record<string, any> = {};
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
 
   for (const format of formats) {
     const key = format;
@@ -265,7 +267,7 @@ export function handleScrapeOutput(
   }
 
   // Multiple formats or complex format: output JSON
-  let outputData: any;
+  let outputData: Document | Record<string, unknown>;
 
   if (isSingleFormat) {
     // Single complex format - output entire data object

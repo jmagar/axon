@@ -2,13 +2,13 @@
  * Tests for extract command
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeExtract, handleExtractCommand } from '../../commands/extract';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
-import { setupTest, teardownTest } from '../utils/mock-client';
 // autoEmbed is mocked below via mockAutoEmbed
 import { writeOutput } from '../../utils/output';
+import { setupTest, teardownTest } from '../utils/mock-client';
 
 vi.mock('../../utils/client', async () => {
   const actual = await vi.importActual('../../utils/client');

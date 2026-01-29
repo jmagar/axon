@@ -2,7 +2,7 @@
  * Tests for job utility functions
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { isJobId, isValidUrl } from '../../utils/job';
 
 describe('isJobId', () => {

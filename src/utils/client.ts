@@ -3,13 +3,13 @@
  * Provides a singleton client instance initialized with global configuration
  */
 
-import Firecrawl from '@mendable/firecrawl-js';
 import type { FirecrawlClientOptions } from '@mendable/firecrawl-js';
+import Firecrawl from '@mendable/firecrawl-js';
 import {
-  getConfig,
-  validateConfig,
-  updateConfig,
   type GlobalConfig,
+  getConfig,
+  updateConfig,
+  validateConfig,
 } from './config';
 
 let clientInstance: Firecrawl | null = null;

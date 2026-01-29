@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ensureCollection,
-  upsertPoints,
   deleteByUrl,
+  ensureCollection,
   queryPoints,
-  scrollByUrl,
   resetQdrantCache,
+  scrollByUrl,
+  upsertPoints,
 } from '../../utils/qdrant';
 
 const mockFetch = vi.fn();

@@ -2,6 +2,8 @@
  * Types for crawl command
  */
 
+import type { Document } from '@mendable/firecrawl-js';
+
 export interface CrawlOptions {
   /** API key for Firecrawl */
   apiKey?: string;
@@ -51,21 +53,49 @@ export interface CrawlOptions {
   noDefaultExcludes?: boolean;
 }
 
+/** Response when starting an async crawl job */
+export interface CrawlJobStartedData {
+  jobId: string;
+  url: string;
+  status: 'processing';
+}
+
+/** Completed crawl job data - matches SDK's CrawlJob interface */
+export interface CrawlJobData {
+  id: string;
+  status: 'scraping' | 'completed' | 'failed' | 'cancelled';
+  total: number;
+  completed: number;
+  creditsUsed?: number;
+  expiresAt?: string;
+  next?: string | null;
+  data: Document[];
+}
+
 export interface CrawlResult {
   success: boolean;
-  data?: any;
+  data?: CrawlJobStartedData | CrawlJobData;
   error?: string;
+}
+
+/** Status-only data returned when checking a crawl job's status */
+export interface CrawlStatusData {
+  id: string;
+  status: 'scraping' | 'completed' | 'failed' | 'cancelled';
+  total: number;
+  completed: number;
+  creditsUsed?: number;
+  expiresAt?: string;
 }
 
 export interface CrawlStatusResult {
   success: boolean;
-  data?: {
-    id: string;
-    status: 'scraping' | 'completed' | 'failed' | 'cancelled';
-    total: number;
-    completed: number;
-    creditsUsed?: number;
-    expiresAt?: string;
-  };
+  data?: CrawlStatusData;
   error?: string;
 }
+
+/** Union of all possible crawl data types */
+export type CrawlDataType =
+  | CrawlJobStartedData
+  | CrawlJobData
+  | CrawlStatusData;

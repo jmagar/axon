@@ -3,9 +3,9 @@
  * Stores credentials in platform-specific application data directories
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 export interface StoredCredentials {
   apiKey?: string;
@@ -57,7 +57,7 @@ function ensureConfigDir(): void {
 function setSecurePermissions(filePath: string): void {
   try {
     fs.chmodSync(filePath, 0o600); // rw-------
-  } catch (error) {
+  } catch (_error) {
     // Ignore errors on Windows or if file doesn't exist
   }
 }
@@ -75,7 +75,7 @@ export function loadCredentials(): StoredCredentials | null {
     const data = fs.readFileSync(credentialsPath, 'utf-8');
     const credentials = JSON.parse(data) as StoredCredentials;
     return credentials;
-  } catch (error) {
+  } catch (_error) {
     // If file is corrupted or unreadable, return null
     return null;
   }

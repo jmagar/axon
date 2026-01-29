@@ -6,12 +6,12 @@
  * batch embedding with concurrency control (batchEmbed).
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import pLimit from 'p-limit';
-import { getConfig } from './config';
 import { chunkText } from './chunker';
-import { getTeiInfo, embedChunks } from './embeddings';
-import { ensureCollection, deleteByUrl, upsertPoints } from './qdrant';
+import { getConfig } from './config';
+import { embedChunks, getTeiInfo } from './embeddings';
+import { deleteByUrl, ensureCollection, upsertPoints } from './qdrant';
 
 /**
  * Maximum concurrent embedding operations to prevent resource exhaustion
