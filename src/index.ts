@@ -5,42 +5,42 @@
  * Entry point for the CLI application
  */
 
+import { Command } from 'commander';
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'path';
-import { Command } from 'commander';
 
 // Load .env from the CLI project directory, not the current working directory
 // __dirname is available in CommonJS (tsconfig uses "module": "commonjs")
 const envPath = resolve(__dirname, '..', '.env');
 loadDotenv({ path: envPath });
-import { handleScrapeCommand } from './commands/scrape';
-import { initializeConfig, updateConfig } from './utils/config';
-import { getClient } from './utils/client';
+
+import packageJson from '../package.json';
 import {
   configure,
-  viewConfig,
-  handleConfigSet,
-  handleConfigGet,
   handleConfigClear,
+  handleConfigGet,
+  handleConfigSet,
+  viewConfig,
 } from './commands/config';
 import { handleCrawlCommand } from './commands/crawl';
-import { handleMapCommand } from './commands/map';
-import { handleSearchCommand } from './commands/search';
-import { handleVersionCommand } from './commands/version';
+import { handleEmbedCommand } from './commands/embed';
+import { handleExtractCommand } from './commands/extract';
 import { handleLoginCommand } from './commands/login';
 import { handleLogoutCommand } from './commands/logout';
-import { handleStatusCommand } from './commands/status';
-import { handleExtractCommand } from './commands/extract';
-import { handleEmbedCommand } from './commands/embed';
+import { handleMapCommand } from './commands/map';
 import { handleQueryCommand } from './commands/query';
 import { handleRetrieveCommand } from './commands/retrieve';
-import { isUrl, normalizeUrl } from './utils/url';
-import { parseScrapeOptions } from './utils/options';
-import { isJobId } from './utils/job';
-import { ensureAuthenticated, printBanner } from './utils/auth';
-import packageJson from '../package.json';
-import type { SearchSource, SearchCategory } from './types/search';
+import { createScrapeCommand, handleScrapeCommand } from './commands/scrape';
+import { handleSearchCommand } from './commands/search';
+import { handleStatusCommand } from './commands/status';
+import { handleVersionCommand } from './commands/version';
 import type { ScrapeFormat } from './types/scrape';
+import type { SearchCategory, SearchSource } from './types/search';
+import { ensureAuthenticated, printBanner } from './utils/auth';
+import { initializeConfig, updateConfig } from './utils/config';
+import { isJobId } from './utils/job';
+import { parseScrapeOptions } from './utils/options';
+import { isUrl, normalizeUrl } from './utils/url';
 
 // Initialize global configuration from environment variables
 initializeConfig();
@@ -101,91 +101,6 @@ program
       await ensureAuthenticated();
     }
   });
-
-/**
- * Create and configure the scrape command
- */
-function createScrapeCommand(): Command {
-  const scrapeCmd = new Command('scrape')
-    .description('Scrape a URL using Firecrawl')
-    .argument('[url]', 'URL to scrape')
-    .argument(
-      '[formats...]',
-      'Output format(s) as positional args (e.g., markdown screenshot links)'
-    )
-    .option(
-      '-u, --url <url>',
-      'URL to scrape (alternative to positional argument)'
-    )
-    .option('-H, --html', 'Output raw HTML (shortcut for --format html)')
-    .option(
-      '-f, --format <formats>',
-      'Output format(s). Multiple formats can be specified with commas (e.g., "markdown,links,images"). Available: markdown, html, rawHtml, links, images, screenshot, summary, changeTracking, json, attributes, branding. Single format outputs raw content; multiple formats output JSON.'
-    )
-    .option('--only-main-content', 'Include only main content', false)
-    .option(
-      '--wait-for <ms>',
-      'Wait time before scraping in milliseconds',
-      parseInt
-    )
-    .option(
-      '--timeout <seconds>',
-      'Request timeout in seconds (default: 5)',
-      parseFloat,
-      5
-    )
-    .option('--screenshot', 'Take a screenshot', false)
-    .option('--include-tags <tags>', 'Comma-separated list of tags to include')
-    .option('--exclude-tags <tags>', 'Comma-separated list of tags to exclude')
-    .option(
-      '-k, --api-key <key>',
-      'Firecrawl API key (overrides global --api-key)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
-    .option('--pretty', 'Pretty print JSON output', false)
-    .option(
-      '--timing',
-      'Show request timing and other useful information',
-      false
-    )
-    .option('--no-embed', 'Skip auto-embedding of scraped content')
-    .action(async (positionalUrl, positionalFormats, options) => {
-      // Use positional URL if provided, otherwise use --url option
-      const url = positionalUrl || options.url;
-      if (!url) {
-        console.error(
-          'Error: URL is required. Provide it as argument or use --url option.'
-        );
-        process.exit(1);
-      }
-
-      // Merge formats: positional formats take precedence, then --format flag, then default to markdown
-      let format: string;
-      if (positionalFormats && positionalFormats.length > 0) {
-        // Positional formats: join them with commas for parseFormats
-        format = positionalFormats.join(',');
-      } else if (options.html) {
-        // Handle --html shortcut flag
-        format = 'html';
-      } else if (options.format) {
-        // Use --format option
-        format = options.format;
-      } else {
-        // Default to markdown
-        format = 'markdown';
-      }
-
-      const scrapeOptions = parseScrapeOptions({
-        ...options,
-        url: normalizeUrl(url),
-        format,
-      });
-      await handleScrapeCommand(scrapeOptions);
-    });
-
-  return scrapeCmd;
-}
 
 // Add scrape command to main program
 program.addCommand(createScrapeCommand());
