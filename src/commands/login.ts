@@ -3,9 +3,9 @@
  * Handles API key entry for authentication
  */
 
-import { saveCredentials, getConfigDirectoryPath } from '../utils/credentials';
-import { updateConfig, DEFAULT_API_URL } from '../utils/config';
-import { manualLogin, interactiveLogin, isAuthenticated } from '../utils/auth';
+import { interactiveLogin, isAuthenticated } from '../utils/auth';
+import { DEFAULT_API_URL, updateConfig } from '../utils/config';
+import { getConfigDirectoryPath, saveCredentials } from '../utils/credentials';
 
 export interface LoginOptions {
   apiKey?: string;
@@ -75,4 +75,27 @@ export async function handleLoginCommand(
     );
     process.exit(1);
   }
+}
+
+import { Command } from 'commander';
+
+/**
+ * Create and configure the login command
+ */
+export function createLoginCommand(): Command {
+  const loginCmd = new Command('login')
+    .description('Login to Firecrawl (alias for config)')
+    .option(
+      '-k, --api-key <key>',
+      'Provide API key directly (skips interactive flow)'
+    )
+    .option('--api-url <url>', 'API URL (default: https://api.firecrawl.dev)')
+    .action(async (options) => {
+      await handleLoginCommand({
+        apiKey: options.apiKey,
+        apiUrl: options.apiUrl,
+      });
+    });
+
+  return loginCmd;
 }

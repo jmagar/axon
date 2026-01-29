@@ -26,7 +26,7 @@ import {
 import { createCrawlCommand } from './commands/crawl';
 import { createEmbedCommand } from './commands/embed';
 import { createExtractCommand } from './commands/extract';
-import { handleLoginCommand } from './commands/login';
+import { createLoginCommand } from './commands/login';
 import { handleLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
 import { createQueryCommand } from './commands/query';
@@ -131,20 +131,7 @@ program
     await viewConfig();
   });
 
-program
-  .command('login')
-  .description('Login to Firecrawl (alias for config)')
-  .option(
-    '-k, --api-key <key>',
-    'Provide API key directly (skips interactive flow)'
-  )
-  .option('--api-url <url>', 'API URL (default: https://api.firecrawl.dev)')
-  .action(async (options) => {
-    await handleLoginCommand({
-      apiKey: options.apiKey,
-      apiUrl: options.apiUrl,
-    });
-  });
+program.addCommand(createLoginCommand());
 
 program
   .command('logout')
