@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createCrawlCommand,
   executeCrawl,
+  executeCrawlActive,
   executeCrawlCancel,
   executeCrawlErrors,
   handleCrawlCommand,
@@ -1038,6 +1039,46 @@ describe('executeCrawlErrors', () => {
     expect(result.success).toBe(true);
     expect(result.data?.errors.length).toBe(1);
     expect(result.data?.robotsBlocked.length).toBe(1);
+  });
+});
+
+describe('executeCrawlActive', () => {
+  type CrawlActiveMock = MockFirecrawlClient &
+    Required<Pick<MockFirecrawlClient, 'getActiveCrawls'>>;
+
+  let mockClient: CrawlActiveMock;
+
+  beforeEach(() => {
+    setupTest();
+    initializeConfig({
+      apiKey: 'test-api-key',
+      apiUrl: 'https://api.firecrawl.dev',
+    });
+
+    mockClient = { scrape: vi.fn(), getActiveCrawls: vi.fn() };
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
+  });
+
+  afterEach(() => {
+    teardownTest();
+    vi.clearAllMocks();
+  });
+
+  it('should return active crawls list (SDK shape)', async () => {
+    mockClient.getActiveCrawls.mockResolvedValue({
+      success: true,
+      crawls: [
+        { id: 'job-1', teamId: 'team-1', url: 'https://a.com', options: null },
+      ],
+    });
+
+    const result = await executeCrawlActive();
+
+    expect(mockClient.getActiveCrawls).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(result.data?.crawls.length).toBe(1);
   });
 });
 

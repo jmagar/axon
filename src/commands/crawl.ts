@@ -5,6 +5,7 @@
 import type { CrawlOptions as FirecrawlCrawlOptions } from '@mendable/firecrawl-js';
 import { Command } from 'commander';
 import type {
+  CrawlActiveResult,
   CrawlCancelResult,
   CrawlErrorsResult,
   CrawlJobData,
@@ -83,6 +84,22 @@ export async function executeCrawlErrors(
     const app = getClient();
     const errors = await app.getCrawlErrors(jobId);
     return { success: true, data: errors };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+/**
+ * Execute crawl active list
+ */
+export async function executeCrawlActive(): Promise<CrawlActiveResult> {
+  try {
+    const app = getClient();
+    const active = await app.getActiveCrawls();
+    return { success: true, data: active };
   } catch (error) {
     return {
       success: false,
@@ -326,6 +343,21 @@ async function handleManualEmbedding(
  * Handle crawl command output
  */
 export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
+  if (options.active) {
+    const result = await executeCrawlActive();
+    if (!result.success) {
+      console.error('Error:', result.error || 'Unknown error occurred');
+      process.exit(1);
+    }
+
+    const outputContent = formatJson(
+      { success: true, data: result.data },
+      options.pretty
+    );
+    writeOutput(outputContent, options.output, !!options.output);
+    return;
+  }
+
   if (options.cancel) {
     const result = await executeCrawlCancel(options.urlOrJobId);
     if (!result.success) {
@@ -468,6 +500,7 @@ export function createCrawlCommand(): Command {
       'URL to crawl (alternative to positional argument)'
     )
     .option('--cancel', 'Cancel an existing crawl job', false)
+    .option('--active', 'List active crawl jobs', false)
     .option('--errors', 'Fetch crawl errors for a job ID', false)
     .option('--status', 'Check status of existing crawl job', false)
     .option(
@@ -544,6 +577,7 @@ export function createCrawlCommand(): Command {
         status: isStatusCheck,
         cancel: options.cancel,
         errors: options.errors,
+        active: options.active,
         wait: options.wait,
         pollInterval: options.pollInterval,
         timeout: options.timeout,
