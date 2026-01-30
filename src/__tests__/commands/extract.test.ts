@@ -210,6 +210,18 @@ describe('executeExtract status mode', () => {
   });
 });
 
+describe('createExtractCommand', () => {
+  it('should require job id for --status', async () => {
+    const { createExtractCommand } = await import('../../commands/extract');
+    const cmd = createExtractCommand();
+    cmd.exitOverride();
+
+    await expect(
+      cmd.parseAsync(['node', 'test', '--status'], { from: 'node' })
+    ).rejects.toThrow();
+  });
+});
+
 describe('handleExtractCommand', () => {
   let mockClient: { extract: ReturnType<typeof vi.fn> };
 

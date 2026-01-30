@@ -151,6 +151,15 @@ describe('createBatchCommand', () => {
     expect(cmd.name()).toBe('batch');
   });
 
+  it('should require job id for --status', async () => {
+    const cmd = createBatchCommand();
+    cmd.exitOverride();
+
+    await expect(
+      cmd.parseAsync(['node', 'test', '--status'], { from: 'node' })
+    ).rejects.toThrow();
+  });
+
   it('should write output when executing', async () => {
     const mockClient = {
       startBatchScrape: vi.fn().mockResolvedValue({ id: 'batch-1', url: 'u' }),
