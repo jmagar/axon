@@ -114,14 +114,6 @@ pnpm type-check     # TypeScript check
   - Mock fetch for TEI/Qdrant calls
   - Reset caches between tests (`resetTeiCache`, `resetQdrantCache`)
 
-## Known Issues / Technical Debt
-
-1. **Entry point bloat**: `index.ts` is ~850 lines; consider extracting command factories
-2. **22 `any` types**: Should be replaced with proper interfaces
-3. **Biome**: Replaced Prettier/ESLint with Biome
-4. **CommonJS**: Not yet migrated to ESM modules
-5. **Global config state**: `config.ts` uses mutable global; consider DI
-
 ## Security Considerations
 
 - API keys stored with 0600 file permissions
@@ -129,13 +121,3 @@ pnpm type-check     # TypeScript check
 - Python interpreter path validation
 - No hardcoded secrets in codebase
 - HTTP timeout prevents hanging connections
-
-## Recent Changes (feat/custom-user-agent branch)
-
-- Configurable User-Agent via `FIRECRAWL_USER_AGENT` env var
-- Map command sends User-Agent as HTTP header
-- Default exclude paths for crawl command
-- NotebookLM integration for map command
-- Signal handlers for graceful shutdown
-- HTTP timeout and retry logic for TEI/Qdrant
-- Concurrency limits for embedding operations

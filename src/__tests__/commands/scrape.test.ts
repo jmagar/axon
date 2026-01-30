@@ -3,7 +3,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeScrape, handleScrapeCommand } from '../../commands/scrape';
+import {
+  createScrapeCommand,
+  executeScrape,
+  handleScrapeCommand,
+} from '../../commands/scrape';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
@@ -300,6 +304,23 @@ describe('executeScrape', () => {
         formats: ['markdown', 'links', 'images'],
       });
     });
+  });
+});
+
+describe('createScrapeCommand', () => {
+  it('should default timeout to 15 seconds when not provided', async () => {
+    const cmd = createScrapeCommand();
+    const actionSpy = vi.fn();
+    cmd.action(actionSpy);
+
+    await cmd.parseAsync(['node', 'test', 'https://example.com'], {
+      from: 'node',
+    });
+
+    const [url, formats, options] = actionSpy.mock.calls[0] ?? [];
+    expect(url).toBe('https://example.com');
+    expect(formats).toEqual([]);
+    expect(options).toEqual(expect.objectContaining({ timeout: 15 }));
   });
 });
 

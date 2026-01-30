@@ -3,7 +3,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeCrawl, handleCrawlCommand } from '../../commands/crawl';
+import {
+  createCrawlCommand,
+  executeCrawl,
+  handleCrawlCommand,
+} from '../../commands/crawl';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
 import { setupTest, teardownTest } from '../utils/mock-client';
@@ -523,6 +527,44 @@ describe('executeCrawl', () => {
         expect(result.data.status).toBe('completed');
       }
     });
+
+    it('should automatically enable wait when progress flag is set', async () => {
+      const jobId = '550e8400-e29b-41d4-a716-446655440000';
+      const mockStartResponse = {
+        id: jobId,
+        url: 'https://example.com',
+      };
+      const mockCompletedStatus = {
+        id: jobId,
+        status: 'completed',
+        total: 100,
+        completed: 100,
+        data: [],
+      };
+
+      mockClient.startCrawl.mockResolvedValue(mockStartResponse);
+      mockClient.getCrawlStatus.mockResolvedValueOnce(mockCompletedStatus);
+
+      // Start with progress but without explicit wait
+      const crawlPromise = executeCrawl({
+        urlOrJobId: 'https://example.com',
+        progress: true,
+        pollInterval: 0.001, // Very short interval for testing (1ms)
+      });
+
+      // Fast-forward timers to resolve the setTimeout
+      await vi.advanceTimersByTimeAsync(1);
+
+      const result = await crawlPromise;
+
+      // Should use wait mode because progress implies wait
+      expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
+      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      if (result.success && result.data && 'status' in result.data) {
+        expect(result.data.status).toBe('completed');
+      }
+    });
   });
 
   describe('Error handling', () => {
@@ -722,34 +764,19 @@ describe('executeCrawl', () => {
       expect(mockAutoEmbed).not.toHaveBeenCalled();
     });
 
-    it('should embed after polling completes for async job start', async () => {
+    it('should queue embedding for async job start instead of blocking', async () => {
       const mockResponse = {
         id: '550e8400-e29b-41d4-a716-446655440000',
         url: 'https://example.com',
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      // Mock getCrawlStatus to return completed status with data
-      mockClient.getCrawlStatus.mockResolvedValue({
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        status: 'completed',
-        total: 1,
-        completed: 1,
-        data: [
-          {
-            markdown: '# Page Content',
-            sourceURL: 'https://example.com/page',
-            metadata: { title: 'Page' },
-          },
-        ],
-      });
-
       await handleCrawlCommand({
         urlOrJobId: 'https://example.com',
-        pollInterval: 0.01, // Speed up test
       });
 
-      expect(mockAutoEmbed).toHaveBeenCalledTimes(1);
+      // Async jobs now queue for background processing, not inline embedding
+      expect(mockAutoEmbed).not.toHaveBeenCalled();
     });
 
     it('should not embed when crawl fails after polling', async () => {
@@ -870,5 +897,21 @@ describe('executeCrawl', () => {
         contentType: 'markdown',
       });
     });
+  });
+});
+
+describe('createCrawlCommand', () => {
+  it('should default scrapeTimeout to 15 seconds when not provided', async () => {
+    const cmd = createCrawlCommand();
+    const actionSpy = vi.fn();
+    cmd.action(actionSpy);
+
+    await cmd.parseAsync(['node', 'test', 'https://example.com'], {
+      from: 'node',
+    });
+
+    const [urlOrJobId, options] = actionSpy.mock.calls[0] ?? [];
+    expect(urlOrJobId).toBe('https://example.com');
+    expect(options).toEqual(expect.objectContaining({ scrapeTimeout: 15 }));
   });
 });

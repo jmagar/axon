@@ -26,7 +26,7 @@ export interface ScrapeOptions {
   onlyMainContent?: boolean;
   /** Wait time before scraping (ms) */
   waitFor?: number;
-  /** Request timeout in seconds (default: 5) */
+  /** Request timeout in seconds (default: 15) */
   timeout?: number;
   /** Take screenshot */
   screenshot?: boolean;

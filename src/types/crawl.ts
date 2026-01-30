@@ -17,7 +17,7 @@ export interface CrawlOptions {
   pollInterval?: number;
   /** Timeout in seconds when waiting for crawl job to complete */
   timeout?: number;
-  /** Per-page scrape timeout in seconds (default: 5) */
+  /** Per-page scrape timeout in seconds (default: 15) */
   scrapeTimeout?: number;
   /** Show progress dots while waiting */
   progress?: boolean;

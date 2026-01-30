@@ -294,20 +294,28 @@ firecrawl map https://example.com --include-subdomains --limit 1000
 
 ### `crawl` - Crawl an entire website
 
-Crawl multiple pages from a website.
+Crawl multiple pages from a website. Embeddings are automatically generated when TEI/Qdrant are configured.
 
 ```bash
-# Start a crawl (returns job ID)
+# Start async crawl (returns immediately, embeddings queued)
 firecrawl crawl https://example.com
+# Returns job ID in <1 second
+# Embeddings generated automatically when crawl completes
 
-# Wait for crawl to complete
+# Wait for crawl to complete and embed inline
 firecrawl crawl https://example.com --wait
 
 # With progress indicator
-firecrawl crawl https://example.com --wait --progress
+firecrawl crawl https://example.com --progress
 
 # Check crawl status
 firecrawl crawl <job-id>
+
+# Manually trigger embeddings for completed crawl
+firecrawl crawl <job-id> --embed
+
+# Disable embeddings
+firecrawl crawl https://example.com --no-embed
 
 # Limit pages
 firecrawl crawl https://example.com --limit 100 --max-depth 3
@@ -315,23 +323,49 @@ firecrawl crawl https://example.com --limit 100 --max-depth 3
 
 #### Crawl Options
 
-| Option                      | Description                              |
-| --------------------------- | ---------------------------------------- |
-| `--wait`                    | Wait for crawl to complete               |
-| `--progress`                | Show progress while waiting              |
-| `--limit <n>`               | Maximum pages to crawl                   |
-| `--max-depth <n>`           | Maximum crawl depth                      |
-| `--include-paths <paths>`   | Only crawl matching paths                |
-| `--exclude-paths <paths>`   | Skip matching paths                      |
-| `--sitemap <mode>`          | `include`, `skip`, or `only`             |
-| `--allow-subdomains`        | Include subdomains                       |
-| `--allow-external-links`    | Follow external links                    |
-| `--crawl-entire-domain`     | Crawl entire domain                      |
-| `--ignore-query-parameters` | Treat URLs with different params as same |
-| `--delay <ms>`              | Delay between requests                   |
-| `--max-concurrency <n>`     | Max concurrent requests                  |
-| `--timeout <seconds>`       | Timeout when waiting                     |
-| `--poll-interval <seconds>` | Status check interval                    |
+| Option                      | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `--wait`                    | Wait for crawl to complete and embed inline            |
+| `--progress`                | Show progress while waiting (implies --wait)           |
+| `--embed`                   | Manually trigger embeddings for a completed job        |
+| `--no-embed`                | Skip auto-embedding (useful for large crawls)          |
+| `--limit <n>`               | Maximum pages to crawl                                 |
+| `--max-depth <n>`           | Maximum crawl depth                                    |
+| `--include-paths <paths>`   | Only crawl matching paths                              |
+| `--exclude-paths <paths>`   | Skip matching paths                                    |
+| `--sitemap <mode>`          | `include`, `skip`, or `only`                           |
+| `--allow-subdomains`        | Include subdomains                                     |
+| `--allow-external-links`    | Follow external links                                  |
+| `--crawl-entire-domain`     | Crawl entire domain                                    |
+| `--ignore-query-parameters` | Treat URLs with different params as same               |
+| `--delay <ms>`              | Delay between requests                                 |
+| `--max-concurrency <n>`     | Max concurrent requests                                |
+| `--scrape-timeout <seconds>`| Per-page scrape timeout (default: 15)                  |
+| `--timeout <seconds>`       | Overall crawl timeout when waiting                     |
+| `--poll-interval <seconds>` | Status check interval                                  |
+
+#### Embedding Behavior
+
+**Async mode (default)**:
+- Returns immediately with job ID
+- Embedding job queued in `~/.config/firecrawl-cli/embed-queue/`
+- Embeddings generated automatically when crawl completes
+- Resilient to process interruptions and TEI downtime
+- 3 automatic retries with exponential backoff
+
+**Sync mode (--wait or --progress)**:
+- Waits for crawl completion
+- Embeds results inline before returning
+- Traditional blocking behavior
+
+**Manual control**:
+```bash
+# Check what's queued
+$ ls ~/.config/firecrawl-cli/embed-queue/
+
+# Manually process/retry embeddings
+$ firecrawl crawl <job-id> --embed
+```
 
 #### Examples
 
