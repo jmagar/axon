@@ -653,7 +653,7 @@ describe('executeCrawl', () => {
 
       expect(result).toEqual({
         success: false,
-        error: errorMessage,
+        error: `Crawl operation failed: ${errorMessage}`,
       });
     });
 
@@ -668,7 +668,7 @@ describe('executeCrawl', () => {
 
       expect(result).toEqual({
         success: false,
-        error: errorMessage,
+        error: `Failed to check status for job 550e8400-e29b-41d4-a716-446655440000: ${errorMessage}`,
       });
     });
 
@@ -683,7 +683,7 @@ describe('executeCrawl', () => {
 
       expect(result).toEqual({
         success: false,
-        error: errorMessage,
+        error: `Crawl operation failed: ${errorMessage}`,
       });
     });
 
@@ -695,7 +695,9 @@ describe('executeCrawl', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Unknown error occurred');
+      expect(result.error).toBe(
+        'Crawl operation failed: Unknown error occurred'
+      );
     });
   });
 
@@ -1021,7 +1023,7 @@ describe('executeCrawlCancel', () => {
     const result = await executeCrawlCancel('job-123');
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Cancel failed');
+    expect(result.error).toBe('Failed to cancel job job-123: Cancel failed');
   });
 });
 
