@@ -8,6 +8,72 @@
 
 **Tech Stack:** TypeScript 5.0+, Commander.js v14, Container pattern, CommonJS
 
+**Estimated Timeline:** 10-12 hours (1.5 work days with testing/debugging)
+
+---
+
+## Pre-Flight Checklist
+
+**Before starting Task 1, verify:**
+
+```bash
+# All Phase 1 changes committed
+git status --short
+# Expected: ?? .docs/phase-1-completion-summary.md (or clean)
+
+# All tests passing
+pnpm test
+# Expected: 382 tests passing
+
+# TypeScript compiling cleanly
+pnpm type-check
+# Expected: no errors
+
+# Container infrastructure exists
+test -f src/container/Container.ts && echo "✅ Container exists"
+test -f src/container/types.ts && echo "✅ Types exist"
+test -f src/container/ContainerFactory.ts && echo "✅ Factory exists"
+```
+
+**All checks must pass before proceeding.**
+
+---
+
+## Rollback Procedure
+
+**If a task fails midway:**
+
+```bash
+# 1. Undo uncommitted changes
+git restore .
+
+# 2. Undo last commit if needed (keeps changes staged)
+git reset --soft HEAD~1
+
+# 3. Return to clean state
+git status
+
+# 4. Review error messages and fix issues before retrying
+```
+
+**Never force-push or use `git reset --hard` unless certain.**
+
+---
+
+## Task Dependencies
+
+```
+Task 1 (Entry point) ──┬──► Task 2-5 (Simple commands) ──┐
+                       ├──► Task 6-7 (Crawl command) ────┤
+                       ├──► Task 8-9 (Batch/embed) ──────┤
+                       ├──► Task 10-13 (Utility/auth) ───┤
+                       └──► Task 14 (Config commands) ────┘
+                                                          │
+                       All tasks ──────────────► Task 15 (Verification)
+```
+
+**Note:** Tasks 2-14 can be executed independently after Task 1 completes.
+
 ---
 
 ## Migration Pattern
@@ -72,19 +138,26 @@ Total: 14 commands across 22 files
 13. `src/commands/login.ts` - Authentication
 14. `src/commands/logout.ts` - Credential removal
 
+**⚠️ Special Case:** Config/login/logout commands DON'T receive container as parameter. Instead, they:
+1. Modify credentials (save/clear)
+2. Create fresh container to verify changes
+3. Test the new configuration
+
+This is different from other commands because they manage the credentials that containers use.
+
 ---
 
 ## Task 1: Update CLI Entry Point (src/index.ts)
 
 **Files:**
-- Modify: `src/index.ts:44-200`
+- Modify: `src/index.ts` (around `initializeConfig()` call)
 - No test changes needed (integration)
 
 **Objective:** Update Commander.js command handlers to pass container to command functions.
 
 **Step 1: Import container types**
 
-Add after line 10:
+Add after `import { createContainer } from './container/ContainerFactory';` line:
 ```typescript
 import type { IContainer } from './container/types';
 import { createContainer } from './container/ContainerFactory';
@@ -145,7 +218,35 @@ declare module 'commander' {
 Run: `pnpm type-check`
 Expected: No errors
 
-**Step 7: Commit**
+**Step 6a: Verify container is accessible in command handlers**
+
+Create temporary test file `test-container-access.ts`:
+```typescript
+import { Command } from 'commander';
+
+const testProgram = new Command();
+testProgram._container = { test: 'works' } as any;
+
+const testCmd = new Command('test')
+  .action((_options: any, command: Command) => {
+    console.log('Container from parent:', command.parent?._container);
+  });
+
+testProgram.addCommand(testCmd);
+testProgram.parse(['node', 'test', 'test']);
+```
+
+Run: `npx ts-node test-container-access.ts`
+Expected output: `Container from parent: { test: 'works' }`
+
+Then delete test file: `rm test-container-access.ts`
+
+**Step 7: Build and manual test**
+
+Run: `pnpm build && node dist/index.js --help`
+Expected: CLI loads without errors
+
+**Step 8: Commit**
 
 ```bash
 git add src/index.ts
@@ -165,13 +266,13 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ## Task 2: Migrate scrape command
 
 **Files:**
-- Modify: `src/commands/scrape.ts:53-140`
-- Modify: `src/commands/scrape.ts:146-180` (command handler)
+- Modify: `src/commands/scrape.ts` (executeScrape function)
+- Modify: `src/commands/scrape.ts` (createScrapeCommand handler)
 - Test: `src/__tests__/commands/scrape.test.ts`
 
 **Step 1: Update executeScrape signature**
 
-Replace line 53:
+Find the `executeScrape` function and update signature:
 ```typescript
 export async function executeScrape(
   container: IContainer,
@@ -238,6 +339,28 @@ export function createScrapeCommand(): Command {
     });
 }
 ```
+
+**Step 4a: Verify import cleanup**
+
+Verify no other code in the file uses the deleted imports:
+
+```bash
+# Should show NO results (imports were deleted)
+grep -n "getClient" src/commands/scrape.ts
+grep -n "autoEmbed" src/commands/scrape.ts
+```
+
+If grep shows results, review them to ensure they're not function calls.
+
+**Step 4b: Verify embedAndStore signature**
+
+Check `EmbedPipeline.embedAndStore()` signature matches our usage:
+
+```bash
+grep -A 10 "embedAndStore" src/container/services/EmbedPipeline.ts
+```
+
+Expected: Method accepts object with `url`, `content`, `collection` properties.
 
 **Step 5: Write failing test**
 
@@ -1106,15 +1229,23 @@ Run: `git push origin feat/di-container`
 
 ## Estimated Timeline
 
-- Task 1 (Entry point): 30 min
-- Tasks 2-5 (Simple commands): 2 hours (30 min each)
-- Tasks 6-7 (Crawl command): 2 hours
-- Tasks 8-9 (Batch/embed): 1 hour
+**Optimistic Estimate (Everything works first try):**
+- Task 1 (Entry point): 30-45 min
+- Tasks 2-5 (Simple commands): 2-3 hours (45 min each with testing)
+- Tasks 6-7 (Crawl command): 3-4 hours (complex, 8 files, dependencies)
+- Tasks 8-9 (Batch/embed): 1-1.5 hours
 - Tasks 10-11 (Query/retrieve): 1 hour
 - Tasks 12-14 (Status/list/config): 1 hour
-- Task 15 (Verification): 30 min
+- Task 15 (Verification): 1-1.5 hours (includes debugging)
 
-**Total: ~8 hours** (1 full work day with breaks)
+**Realistic Estimate (With debugging and fixes):**
+- **Total: 10-12 hours** (1.5 work days with breaks)
+
+**Buffer Time:**
+- Add 2-3 hours for unexpected issues, test fixes, or refactoring
+- **Comfortable Total: 12-15 hours** (2 work days)
+
+**Note:** This is Phase 2 only. Phase 3 (test migration) and Phase 4 (cleanup) will follow.
 
 ---
 
