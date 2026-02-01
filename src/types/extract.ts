@@ -5,6 +5,10 @@
 export interface ExtractOptions {
   /** URLs to extract data from */
   urls: string[];
+  /** Get status of an existing extract job */
+  status?: boolean;
+  /** Extract job ID to query */
+  jobId?: string;
   /** Extraction prompt describing what data to extract */
   prompt?: string;
   /** JSON schema for structured extraction */
@@ -35,7 +39,10 @@ export interface ExtractResult {
   success: boolean;
   data?: {
     extracted: unknown;
-    sources?: string[];
+    status?: 'processing' | 'completed' | 'failed' | 'cancelled';
+    expiresAt?: string;
+    tokensUsed?: number;
+    sources?: string[] | Record<string, unknown>;
     warning?: string;
   };
   error?: string;

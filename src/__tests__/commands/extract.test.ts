@@ -182,6 +182,46 @@ describe('executeExtract', () => {
   });
 });
 
+describe('executeExtract status mode', () => {
+  it('should call getExtractStatus when status is true', async () => {
+    const mockClient = { getExtractStatus: vi.fn() };
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
+
+    mockClient.getExtractStatus.mockResolvedValue({
+      id: 'ext-1',
+      status: 'completed',
+      data: { ok: true },
+      tokensUsed: 1,
+    });
+
+    const result = await executeExtract({
+      status: true,
+      jobId: 'ext-1',
+      urls: [],
+    });
+
+    expect(mockClient.getExtractStatus).toHaveBeenCalledWith('ext-1');
+    expect(result.success).toBe(true);
+    expect(result.data?.extracted).toEqual({ ok: true });
+    expect(result.data?.status).toBe('completed');
+    expect(result.data?.tokensUsed).toBe(1);
+  });
+});
+
+describe('createExtractCommand', () => {
+  it('should require job id for --status', async () => {
+    const { createExtractCommand } = await import('../../commands/extract');
+    const cmd = createExtractCommand();
+    cmd.exitOverride();
+
+    await expect(
+      cmd.parseAsync(['node', 'test', '--status'], { from: 'node' })
+    ).rejects.toThrow();
+  });
+});
+
 describe('handleExtractCommand', () => {
   let mockClient: { extract: ReturnType<typeof vi.fn> };
 

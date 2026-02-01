@@ -5,9 +5,9 @@
  * Entry point for the CLI application
  */
 
+import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { config as loadDotenv } from 'dotenv';
-import { resolve } from 'path';
 
 // Load .env from the CLI project directory, not the current working directory
 // __dirname is available in CommonJS (tsconfig uses "module": "commonjs")
@@ -15,6 +15,7 @@ const envPath = resolve(__dirname, '..', '.env');
 loadDotenv({ path: envPath });
 
 import packageJson from '../package.json';
+import { createBatchCommand } from './commands/batch';
 import {
   createConfigCommand,
   createViewConfigCommand,
@@ -22,6 +23,7 @@ import {
 import { createCrawlCommand } from './commands/crawl';
 import { createEmbedCommand } from './commands/embed';
 import { createExtractCommand } from './commands/extract';
+import { createListCommand } from './commands/list';
 import { createLoginCommand } from './commands/login';
 import { createLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
@@ -29,7 +31,7 @@ import { createQueryCommand } from './commands/query';
 import { createRetrieveCommand } from './commands/retrieve';
 import { createScrapeCommand } from './commands/scrape';
 import { createSearchCommand } from './commands/search';
-import { handleStatusCommand } from './commands/status';
+import { createStatusCommand, handleStatusCommand } from './commands/status';
 import { createVersionCommand } from './commands/version';
 
 import { ensureAuthenticated, printBanner } from './utils/auth';
@@ -67,7 +69,14 @@ process.on('SIGINT', () => handleShutdown('SIGINT'));
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
 // Commands that require authentication
-const AUTH_REQUIRED_COMMANDS = ['scrape', 'crawl', 'map', 'search', 'extract'];
+const AUTH_REQUIRED_COMMANDS = [
+  'scrape',
+  'crawl',
+  'map',
+  'search',
+  'extract',
+  'batch',
+];
 
 const program = new Command();
 
@@ -105,6 +114,8 @@ program.addCommand(createScrapeCommand());
 
 // Add crawl, map, and search commands to main program
 program.addCommand(createCrawlCommand());
+program.addCommand(createListCommand());
+program.addCommand(createStatusCommand());
 program.addCommand(createMapCommand());
 program.addCommand(createSearchCommand());
 
@@ -113,6 +124,7 @@ program.addCommand(createExtractCommand());
 program.addCommand(createEmbedCommand());
 program.addCommand(createQueryCommand());
 program.addCommand(createRetrieveCommand());
+program.addCommand(createBatchCommand());
 
 program.addCommand(createConfigCommand());
 

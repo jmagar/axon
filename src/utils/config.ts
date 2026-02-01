@@ -19,6 +19,10 @@ export interface GlobalConfig {
   teiUrl?: string;
   qdrantUrl?: string;
   qdrantCollection?: string;
+  embedderWebhookUrl?: string;
+  embedderWebhookSecret?: string;
+  embedderWebhookPort?: number;
+  embedderWebhookPath?: string;
 }
 
 /**
@@ -34,6 +38,11 @@ let globalConfig: GlobalConfig = {};
 export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
   // Priority: provided config > env vars > stored credentials
   const storedCredentials = loadCredentials();
+  const embedderWebhookPort =
+    config.embedderWebhookPort ??
+    (process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PORT
+      ? Number.parseInt(process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PORT, 10)
+      : undefined);
 
   globalConfig = {
     apiKey:
@@ -57,6 +66,16 @@ export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
       config.qdrantCollection ||
       process.env.QDRANT_COLLECTION ||
       'firecrawl_collection',
+    embedderWebhookUrl:
+      config.embedderWebhookUrl || process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL,
+    embedderWebhookSecret:
+      config.embedderWebhookSecret ||
+      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET,
+    embedderWebhookPort: Number.isFinite(embedderWebhookPort)
+      ? embedderWebhookPort
+      : undefined,
+    embedderWebhookPath:
+      config.embedderWebhookPath || process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PATH,
   };
 }
 

@@ -6,7 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeSearch, handleSearchCommand } from '../../commands/search';
 import { getClient } from '../../utils/client';
 import { initializeConfig } from '../../utils/config';
-import { setupTest, teardownTest } from '../utils/mock-client';
+import {
+  type MockFirecrawlClient,
+  setupTest,
+  teardownTest,
+} from '../utils/mock-client';
+
+type SearchMockClient = MockFirecrawlClient &
+  Required<Pick<MockFirecrawlClient, 'search'>>;
 
 // autoEmbed is mocked below via mockAutoEmbed
 
@@ -79,7 +86,7 @@ vi.mock('../../utils/output', () => ({
 }));
 
 describe('executeSearch', () => {
-  let mockClient: any;
+  let mockClient: SearchMockClient;
 
   beforeEach(() => {
     setupTest();
@@ -91,11 +98,14 @@ describe('executeSearch', () => {
 
     // Create mock client
     mockClient = {
+      scrape: vi.fn(),
       search: vi.fn(),
     };
 
     // Mock getClient to return our mock
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
   });
 
   afterEach(() => {
@@ -768,7 +778,7 @@ describe('executeSearch', () => {
 });
 
 describe('handleSearchCommand auto-embed', () => {
-  let mockClient: any;
+  let mockClient: SearchMockClient;
 
   beforeEach(() => {
     setupTest();
@@ -778,9 +788,12 @@ describe('handleSearchCommand auto-embed', () => {
     });
 
     mockClient = {
+      scrape: vi.fn(),
       search: vi.fn(),
     };
-    vi.mocked(getClient).mockReturnValue(mockClient as any);
+    vi.mocked(getClient).mockReturnValue(
+      mockClient as unknown as ReturnType<typeof getClient>
+    );
     mockAutoEmbed.mockResolvedValue(undefined);
     vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit');

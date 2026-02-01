@@ -4,6 +4,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   handleScrapeOutput,
@@ -21,9 +22,9 @@ vi.mock('fs', () => ({
 // Helper to get resolved path
 const resolvePath = (p: string) => path.resolve(process.cwd(), p);
 describe('Output Utilities', () => {
-  let consoleErrorSpy: any;
-  let processExitSpy: any;
-  let stdoutWriteSpy: any;
+  let consoleErrorSpy: MockInstance;
+  let processExitSpy: MockInstance;
+  let stdoutWriteSpy: MockInstance;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -430,8 +431,10 @@ describe('Output Utilities', () => {
 
       // Should write JSON to file
       expect(fs.writeFileSync).toHaveBeenCalled();
-      const content = (fs.writeFileSync as any).mock.calls[0][1];
-      const parsed = JSON.parse(content);
+      const content = vi.mocked(fs.writeFileSync).mock.calls[0][1];
+      const parsed = JSON.parse(
+        typeof content === 'string' ? content : content.toString()
+      );
       expect(parsed.screenshot).toBe('https://example.com/screenshot.png');
     });
 
@@ -457,11 +460,10 @@ describe('Output Utilities', () => {
 
       // Should write formatted text, not JSON
       expect(fs.writeFileSync).toHaveBeenCalled();
-      const content = (fs.writeFileSync as any).mock.calls[0][1];
-      expect(content).toContain(
-        'Screenshot: https://example.com/screenshot.png'
-      );
-      expect(() => JSON.parse(content)).toThrow(); // Not valid JSON
+      const content = vi.mocked(fs.writeFileSync).mock.calls[0][1];
+      const text = typeof content === 'string' ? content : content.toString();
+      expect(text).toContain('Screenshot: https://example.com/screenshot.png');
+      expect(() => JSON.parse(text)).toThrow(); // Not valid JSON
     });
 
     it('should output pretty JSON when both json and pretty flags are true', () => {

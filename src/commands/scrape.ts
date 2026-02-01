@@ -202,9 +202,9 @@ export function createScrapeCommand(): Command {
     )
     .option(
       '--timeout <seconds>',
-      'Request timeout in seconds (default: 5)',
+      'Request timeout in seconds (default: 15)',
       parseFloat,
-      5
+      15
     )
     .option('--screenshot', 'Take a screenshot', false)
     .option('--include-tags <tags>', 'Comma-separated list of tags to include')

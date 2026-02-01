@@ -9,23 +9,37 @@ x-common-service: &common-service
   networks:
     - jakenet
   extra_hosts:
-    - 'host.docker.internal:host-gateway'
+    - "host.docker.internal:host-gateway"
   logging:
-    driver: 'json-file'
+    driver: "json-file"
     options:
-      max-size: '10m'
-      max-file: '3'
-      compress: 'true'
+      max-size: "10m"
+      max-file: "3"
+      compress: "true"
   env_file:
     - .env
 
 services:
+  embedder-daemon:
+    <<: *common-service
+    image: node:20-alpine
+    container_name: firecrawl-embedder-daemon
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      FIRECRAWL_API_URL: http://firecrawl:53002
+      QDRANT_URL: http://qdrant:6333
+    command: node dist/embedder-daemon.js
+    ports:
+      - "53000:53000"
+
   playwright:
     <<: *common-service
     image: loorisr/patchright-scrape-api:latest
     container_name: playwright
     environment:
-      PORT: '${PLAYWRIGHT_PORT:-53006}'
+      PORT: "${PLAYWRIGHT_PORT:-53006}"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
 
@@ -43,7 +57,7 @@ services:
       rabbitmq:
         condition: service_healthy
     ports:
-      - '${FIRECRAWL_PORT:-53002}:${FIRECRAWL_PORT:-53002}'
+      - "${FIRECRAWL_PORT:-53002}:${FIRECRAWL_PORT:-53002}"
     command: node dist/src/harness.js --start-docker
 
   redis:
@@ -58,7 +72,7 @@ services:
     container_name: rabbitmq
     command: rabbitmq-server
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running']
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 5s
       timeout: 5s
       retries: 3
@@ -70,13 +84,13 @@ services:
     container_name: nuq-postgres
     command:
       [
-        'postgres',
-        '-p',
-        '${POSTGRES_PORT:-53432}',
-        '-c',
-        'cron.use_background_workers=on',
-        '-c',
-        'max_worker_processes=32',
+        "postgres",
+        "-p",
+        "${POSTGRES_PORT:-53432}",
+        "-c",
+        "cron.use_background_workers=on",
+        "-c",
+        "max_worker_processes=32",
       ]
 
   qdrant:
@@ -84,8 +98,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: qdrant
     ports:
-      - '${QDRANT_REST_PORT:-53333}:6333'
-      - '${QDRANT_RPC_PORT:-53334}:6334'
+      - "${QDRANT_REST_PORT:-53333}:6333"
+      - "${QDRANT_RPC_PORT:-53334}:6334"
     volumes:
       - /home/jmagar/appdata/qdrant:/qdrant/storage
 

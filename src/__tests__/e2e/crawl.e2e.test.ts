@@ -15,7 +15,6 @@ import {
   createTempDir,
   getTestApiKey,
   isTestServerRunning,
-  parseJSONOutput,
   runCLI,
   runCLIFailure,
   TEST_SERVER_URL,

@@ -7,19 +7,17 @@
  */
 
 import { existsSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   cleanupTempDir,
   createTempDir,
   getTestApiKey,
-  hasApiCredentials,
   isTestServerRunning,
   parseJSONOutput,
   runCLI,
   runCLIFailure,
-  runCLISuccess,
   TEST_SERVER_URL,
 } from './helpers';
 

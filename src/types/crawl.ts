@@ -8,16 +8,20 @@ export interface CrawlOptions {
   /** API key for Firecrawl */
   apiKey?: string;
   /** URL to crawl or job ID to check status */
-  urlOrJobId: string;
+  urlOrJobId?: string;
   /** Check status of existing crawl job */
   status?: boolean;
+  /** Cancel an existing crawl job */
+  cancel?: boolean;
+  /** Fetch errors for an existing crawl job */
+  errors?: boolean;
   /** Wait for crawl to complete */
   wait?: boolean;
   /** Polling interval in seconds when waiting */
   pollInterval?: number;
   /** Timeout in seconds when waiting for crawl job to complete */
   timeout?: number;
-  /** Per-page scrape timeout in seconds (default: 5) */
+  /** Per-page scrape timeout in seconds (default: 15) */
   scrapeTimeout?: number;
   /** Show progress dots while waiting */
   progress?: boolean;
@@ -91,6 +95,53 @@ export interface CrawlStatusData {
 export interface CrawlStatusResult {
   success: boolean;
   data?: CrawlStatusData;
+  error?: string;
+}
+
+export interface CrawlErrorItem {
+  id: string;
+  url: string;
+  error: string;
+  timestamp?: string;
+  code?: string;
+}
+
+export interface CrawlErrorsData {
+  errors: CrawlErrorItem[];
+  robotsBlocked: string[];
+}
+
+export interface CrawlErrorsResult {
+  success: boolean;
+  data?: CrawlErrorsData;
+  error?: string;
+}
+
+export interface ActiveCrawlItem {
+  id: string;
+  teamId: string;
+  url: string;
+  options?: Record<string, unknown> | null;
+}
+
+export interface ActiveCrawlsData {
+  success: boolean;
+  crawls: ActiveCrawlItem[];
+}
+
+export interface CrawlActiveResult {
+  success: boolean;
+  data?: ActiveCrawlsData;
+  error?: string;
+}
+
+export interface CrawlCancelData {
+  status: 'cancelled';
+}
+
+export interface CrawlCancelResult {
+  success: boolean;
+  data?: CrawlCancelData;
   error?: string;
 }
 

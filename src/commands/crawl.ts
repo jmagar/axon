@@ -2,12 +2,11 @@
  * Crawl command implementation
  */
 
-import type {
-  Document,
-  CrawlOptions as FirecrawlCrawlOptions,
-} from '@mendable/firecrawl-js';
+import type { CrawlOptions as FirecrawlCrawlOptions } from '@mendable/firecrawl-js';
 import { Command } from 'commander';
 import type {
+  CrawlCancelResult,
+  CrawlErrorsResult,
   CrawlJobData,
   CrawlOptions,
   CrawlResult,
@@ -15,8 +14,10 @@ import type {
 } from '../types/crawl';
 import { getClient } from '../utils/client';
 import { formatJson } from '../utils/command';
+import { buildEmbedderWebhookConfig } from '../utils/embedder-webhook';
 import { batchEmbed, createEmbedItems } from '../utils/embedpipeline';
 import { isJobId } from '../utils/job';
+import { recordJob } from '../utils/job-history';
 import { writeOutput } from '../utils/output';
 import { loadSettings } from '../utils/settings';
 import { normalizeUrl } from '../utils/url';
@@ -52,6 +53,47 @@ async function checkCrawlStatus(
 }
 
 /**
+ * Execute crawl cancel
+ */
+export async function executeCrawlCancel(
+  jobId: string
+): Promise<CrawlCancelResult> {
+  try {
+    const app = getClient();
+    const ok = await app.cancelCrawl(jobId);
+
+    if (!ok) {
+      return { success: false, error: 'Cancel failed' };
+    }
+
+    return { success: true, data: { status: 'cancelled' } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+/**
+ * Execute crawl errors fetch
+ */
+export async function executeCrawlErrors(
+  jobId: string
+): Promise<CrawlErrorsResult> {
+  try {
+    const app = getClient();
+    const errors = await app.getCrawlErrors(jobId);
+    return { success: true, data: errors };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+/**
  * Execute crawl command
  */
 export async function executeCrawl(
@@ -59,7 +101,13 @@ export async function executeCrawl(
 ): Promise<CrawlResult | CrawlStatusResult> {
   try {
     const app = getClient({ apiKey: options.apiKey });
-    const { urlOrJobId, status, wait, pollInterval, timeout } = options;
+    const { urlOrJobId, status, pollInterval, timeout } = options;
+    if (!urlOrJobId) {
+      return { success: false, error: 'URL or job ID is required' };
+    }
+
+    // Progress implies wait
+    const wait = options.wait || options.progress;
 
     // If status flag is set or input looks like a job ID, check status
     if (status || isJobId(urlOrJobId)) {
@@ -117,6 +165,14 @@ export async function executeCrawl(
         ...(crawlOptions.scrapeOptions || {}),
         timeout: options.scrapeTimeout * 1000, // Convert seconds to milliseconds
       };
+    }
+
+    // Attach webhook for async auto-embedding (avoid in wait/progress mode)
+    if (options.embed !== false && !wait) {
+      const webhookConfig = buildEmbedderWebhookConfig();
+      if (webhookConfig) {
+        crawlOptions.webhook = webhookConfig;
+      }
     }
 
     // If wait mode, use the convenience crawl method with polling
@@ -242,9 +298,88 @@ function formatCrawlStatus(data: CrawlStatusResult['data']): string {
 }
 
 /**
+ * Handle manual embedding for a completed crawl job
+ */
+async function handleManualEmbedding(
+  jobId: string,
+  apiKey?: string
+): Promise<void> {
+  const { processEmbedQueue } = await import('../utils/background-embedder');
+  const { enqueueEmbedJob, getEmbedJob } = await import('../utils/embed-queue');
+
+  // Check if already queued
+  const existingJob = getEmbedJob(jobId);
+
+  if (!existingJob) {
+    // Get crawl info to queue it
+    const app = getClient({ apiKey });
+    const status = await app.getCrawlStatus(jobId);
+
+    if (status.status !== 'completed') {
+      console.error(`Crawl ${jobId} is ${status.status}, cannot embed yet`);
+      return;
+    }
+
+    // Use the first page URL as the URL or fall back to job ID
+    const url =
+      Array.isArray(status.data) && status.data[0]?.metadata?.sourceURL
+        ? status.data[0].metadata.sourceURL
+        : jobId;
+
+    enqueueEmbedJob(jobId, url, apiKey);
+  }
+
+  // Process queue
+  console.error(`Processing embedding queue for job ${jobId}...`);
+  await processEmbedQueue();
+  console.error(`Embedding processing complete`);
+}
+
+/**
  * Handle crawl command output
  */
 export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
+  if (!options.urlOrJobId) {
+    console.error('Error: URL or job ID is required.');
+    process.exit(1);
+  }
+
+  if (options.cancel) {
+    const result = await executeCrawlCancel(options.urlOrJobId);
+    if (!result.success) {
+      console.error('Error:', result.error || 'Unknown error occurred');
+      process.exit(1);
+    }
+
+    const outputContent = formatJson(
+      { success: true, data: result.data },
+      options.pretty
+    );
+    writeOutput(outputContent, options.output, !!options.output);
+    return;
+  }
+
+  if (options.errors) {
+    const result = await executeCrawlErrors(options.urlOrJobId);
+    if (!result.success) {
+      console.error('Error:', result.error || 'Unknown error occurred');
+      process.exit(1);
+    }
+
+    const outputContent = formatJson(
+      { success: true, data: result.data },
+      options.pretty
+    );
+    writeOutput(outputContent, options.output, !!options.output);
+    return;
+  }
+
+  // Handle manual embedding trigger for job ID
+  if (options.embed && isJobId(options.urlOrJobId)) {
+    await handleManualEmbedding(options.urlOrJobId, options.apiKey);
+    return;
+  }
+
   const result = await executeCrawl(options);
 
   // Handle errors - can't use shared handler due to union type
@@ -279,51 +414,43 @@ export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
 
   // Auto-embed crawl results using shared batch embedding
   if (options.embed !== false && crawlResult.data) {
-    let pagesToEmbed: Document[] = [];
-
     if ('jobId' in crawlResult.data) {
-      // Async job - poll until complete before embedding
-      const app = getClient({ apiKey: options.apiKey });
+      // Async job - enqueue for background processing instead of blocking
+      const { enqueueEmbedJob } = await import('../utils/embed-queue');
+      const webhookConfig = buildEmbedderWebhookConfig();
+
       const jobId = crawlResult.data.jobId;
-      const pollMs = (options.pollInterval ?? 10) * 1000; // Default 10s for embed polling
+      const url = options.urlOrJobId ?? crawlResult.data.url;
 
-      process.stderr.write(`Waiting for crawl to complete for embedding...\n`);
+      enqueueEmbedJob(jobId, url, options.apiKey);
+      process.stderr.write(
+        `\nQueued embedding job for background processing: ${jobId}\n`
+      );
 
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-
-        const status = await app.getCrawlStatus(jobId);
+      if (webhookConfig) {
         process.stderr.write(
-          `\rEmbed wait: ${status.completed}/${status.total} pages (${status.status})`
+          'Embeddings will be generated automatically when crawl completes via webhook.\n'
         );
-
-        if (
-          status.status === 'completed' ||
-          status.status === 'failed' ||
-          status.status === 'cancelled'
-        ) {
-          process.stderr.write('\n');
-
-          if (status.status === 'completed' && status.data) {
-            pagesToEmbed = Array.isArray(status.data) ? status.data : [];
-          } else if (status.status !== 'completed') {
-            process.stderr.write(
-              `Crawl ${status.status}, skipping embedding.\n`
-            );
-          }
-          break;
-        }
+      } else {
+        process.stderr.write(
+          'Embedder webhook not configured. Set FIRECRAWL_EMBEDDER_WEBHOOK_URL to enable auto-embedding.\n'
+        );
+        process.stderr.write(
+          `Run 'firecrawl crawl ${jobId} --embed' to embed after completion.\n`
+        );
       }
     } else {
-      // Synchronous result - extract pages directly from CrawlJobData
+      // Synchronous result (--wait or --progress) - embed inline
       const crawlJobData = crawlResult.data as CrawlJobData;
-      pagesToEmbed = crawlJobData.data ?? [];
-    }
+      if (crawlJobData.id) {
+        recordJob('crawl', crawlJobData.id);
+      }
+      const pagesToEmbed = crawlJobData.data ?? [];
 
-    // Use shared embedding utility
-    if (pagesToEmbed.length > 0) {
-      const embedItems = createEmbedItems(pagesToEmbed, 'crawl');
-      await batchEmbed(embedItems);
+      if (pagesToEmbed.length > 0) {
+        const embedItems = createEmbedItems(pagesToEmbed, 'crawl');
+        await batchEmbed(embedItems);
+      }
     }
   }
 
@@ -331,6 +458,7 @@ export async function handleCrawlCommand(options: CrawlOptions): Promise<void> {
   let outputContent: string;
   if ('jobId' in crawlResult.data) {
     // Job ID response
+    recordJob('crawl', crawlResult.data.jobId);
     const jobData = {
       jobId: crawlResult.data.jobId,
       url: crawlResult.data.url,
@@ -359,6 +487,8 @@ export function createCrawlCommand(): Command {
       '-u, --url <url>',
       'URL to crawl (alternative to positional argument)'
     )
+    .option('--cancel', 'Cancel an existing crawl job', false)
+    .option('--errors', 'Fetch crawl errors for a job ID', false)
     .option('--status', 'Check status of existing crawl job', false)
     .option(
       '--wait',
@@ -377,11 +507,11 @@ export function createCrawlCommand(): Command {
     )
     .option(
       '--scrape-timeout <seconds>',
-      'Per-page scrape timeout in seconds (default: 5)',
+      'Per-page scrape timeout in seconds (default: 15)',
       parseFloat,
-      5
+      15
     )
-    .option('--progress', 'Show progress dots while waiting', false)
+    .option('--progress', 'Show progress while waiting (implies --wait)', false)
     .option('--limit <number>', 'Maximum number of pages to crawl', parseInt)
     .option('--max-depth <number>', 'Maximum crawl depth', parseInt)
     .option(
@@ -413,6 +543,7 @@ export function createCrawlCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
+    .option('--embed', 'Manually trigger embedding for a completed crawl job')
     .option('--no-embed', 'Skip auto-embedding of crawl results')
     .option('--no-default-excludes', 'Skip default exclude paths from settings')
     .action(async (positionalUrlOrJobId, options) => {
@@ -425,12 +556,25 @@ export function createCrawlCommand(): Command {
         process.exit(1);
       }
 
+      if ((options.cancel || options.errors) && !isJobId(urlOrJobId)) {
+        console.error(
+          'Error: job ID is required for --cancel/--errors (URLs are not valid).'
+        );
+        process.exit(1);
+      }
+
       // Auto-detect if it's a job ID (UUID format)
-      const isStatusCheck = options.status || isJobId(urlOrJobId);
+      const isStatusCheck =
+        options.status ||
+        options.cancel ||
+        options.errors ||
+        isJobId(urlOrJobId);
 
       const crawlOptions = {
         urlOrJobId: isStatusCheck ? urlOrJobId : normalizeUrl(urlOrJobId),
         status: isStatusCheck,
+        cancel: options.cancel,
+        errors: options.errors,
         wait: options.wait,
         pollInterval: options.pollInterval,
         timeout: options.timeout,

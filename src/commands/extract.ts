@@ -6,6 +6,7 @@ import type { ExtractOptions, ExtractResult } from '../types/extract';
 import { getClient } from '../utils/client';
 import { formatJson, handleCommandError } from '../utils/command';
 import { batchEmbed, type EmbedItem } from '../utils/embedpipeline';
+import { recordJob } from '../utils/job-history';
 import { writeOutput } from '../utils/output';
 
 /**
@@ -40,6 +41,28 @@ export async function executeExtract(
 ): Promise<ExtractResult> {
   try {
     const app = getClient({ apiKey: options.apiKey });
+
+    if (options.status && options.jobId) {
+      const status = await app.getExtractStatus(options.jobId);
+
+      if (status.error) {
+        return { success: false, error: status.error };
+      }
+
+      recordJob('extract', options.jobId);
+
+      return {
+        success: true,
+        data: {
+          extracted: status.data,
+          warning: status.warning,
+          status: status.status,
+          expiresAt: status.expiresAt,
+          tokensUsed: (status as { tokensUsed?: number }).tokensUsed,
+          sources: status.sources,
+        },
+      };
+    }
 
     // Build single-arg object for new Firecrawl SDK extract()
     const extractArgs: Record<string, unknown> = {
@@ -87,6 +110,10 @@ export async function executeExtract(
       };
     }
 
+    if ((result as { id?: string }).id) {
+      recordJob('extract', (result as { id?: string }).id as string);
+    }
+
     return {
       success: true,
       data: {
@@ -132,9 +159,18 @@ export async function handleExtractCommand(
 
   if (!result.data) return;
 
+  if (options.status) {
+    const outputContent = formatJson(
+      { success: true, data: result.data },
+      options.pretty
+    );
+    writeOutput(outputContent, options.output, !!options.output);
+    return;
+  }
+
   // Determine embed targets: prefer sources, fallback to input URLs
   const embedTargets =
-    result.data.sources && result.data.sources.length > 0
+    Array.isArray(result.data.sources) && result.data.sources.length > 0
       ? result.data.sources
       : options.urls;
 
@@ -178,7 +214,11 @@ import { normalizeUrl } from '../utils/url';
 export function createExtractCommand(): Command {
   const extractCmd = new Command('extract')
     .description('Extract structured data from URLs using Firecrawl')
-    .argument('<urls...>', 'URL(s) to extract from')
+    .argument(
+      '[urls-or-job-id...]',
+      'URL(s) to extract from or a job ID for status'
+    )
+    .option('--status', 'Get extract job status by ID', false)
     .option('--prompt <prompt>', 'Extraction prompt describing what to extract')
     .option('--schema <json>', 'JSON schema for structured extraction')
     .option('--system-prompt <prompt>', 'System prompt for extraction context')
@@ -199,6 +239,26 @@ export function createExtractCommand(): Command {
     .option('--pretty', 'Pretty print JSON output', false)
     .option('--no-embed', 'Disable auto-embedding of extracted content')
     .action(async (rawUrls: string[], options) => {
+      if (options.status) {
+        const jobId = rawUrls?.[0];
+        if (!jobId) {
+          console.error('Error: job ID is required for --status');
+          process.exit(1);
+        }
+
+        await handleExtractCommand({
+          status: true,
+          jobId,
+          urls: [],
+          apiKey: options.apiKey,
+          output: options.output,
+          json: true,
+          pretty: options.pretty,
+          embed: false,
+        });
+        return;
+      }
+
       // Flatten URLs that may contain newlines (e.g. zsh doesn't word-split variables)
       const urls = rawUrls
         .flatMap((u) =>

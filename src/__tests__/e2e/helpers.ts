@@ -2,8 +2,16 @@
  * E2E test helpers for CLI testing
  */
 
-import { type ChildProcess, spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 export const CLI_PATH = resolve(__dirname, '../../../dist/index.js');
 export const TEST_SERVER_URL = 'http://127.0.0.1:4321';
@@ -31,8 +39,15 @@ export async function runCLI(
 ): Promise<CLIResult> {
   const { env = {}, input, timeout = 30000, cwd } = options;
 
-  return new Promise((resolve, reject) => {
-    const child = spawn('node', [CLI_PATH, ...args], {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'firecrawl-cli-'));
+  const stdoutPath = join(tmpDir, 'stdout.txt');
+  const stderrPath = join(tmpDir, 'stderr.txt');
+
+  const stdoutFd = openSync(stdoutPath, 'w');
+  const stderrFd = openSync(stderrPath, 'w');
+
+  try {
+    const result = spawnSync('node', [CLI_PATH, ...args], {
       env: {
         ...process.env,
         // Ensure no local config interferes
@@ -44,44 +59,24 @@ export async function runCLI(
         ...env,
       },
       cwd: cwd || process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe'],
+      input,
+      timeout,
+      stdio: ['pipe', stdoutFd, stderrFd],
     });
 
-    let stdout = '';
-    let stderr = '';
+    const stdout = readFileSync(stdoutPath, 'utf-8');
+    const stderr = readFileSync(stderrPath, 'utf-8');
 
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    if (input) {
-      child.stdin.write(input);
-      child.stdin.end();
-    }
-
-    const timeoutId = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`CLI timed out after ${timeout}ms`));
-    }, timeout);
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId);
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code,
-      });
-    });
-
-    child.on('error', (error) => {
-      clearTimeout(timeoutId);
-      reject(error);
-    });
-  });
+    return {
+      stdout,
+      stderr,
+      exitCode: result.status,
+    };
+  } finally {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 /**

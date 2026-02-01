@@ -1,0 +1,103 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: When I run 'firecrawl scrape https://example.com', I get an error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Run command '...'
+        2. With options '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: The command should scrape the page and output markdown...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages)
+      placeholder: |
+        Error: Failed to scrape page
+        at Function.scrape (/usr/local/lib/node_modules/firecrawl-cli/dist/commands/scrape.js:42:15)
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Provide environment details:
+        - OS (Linux, macOS, Windows)
+        - Node version (node --version)
+        - CLI version (firecrawl --version)
+        - Installation method (npm, pnpm, yarn, git)
+      placeholder: |
+        - OS: Ubuntu 22.04
+        - Node: v20.19.27
+        - CLI: v1.2.1
+        - Installed via: npm install -g firecrawl-cli
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Include any relevant logs or command output
+      placeholder: Paste logs here...
+      render: shell
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this issue?
+      options:
+        - Critical (blocks all usage)
+        - High (major feature broken)
+        - Medium (feature partially broken)
+        - Low (minor inconvenience)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched for similar issues
+          required: true
+        - label: I have updated to the latest version
+          required: true
+        - label: I have included all relevant information
+          required: true

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { runCLI, runCLISuccess } from './helpers';
+import { runCLISuccess } from './helpers';
 
 describe('E2E: version command', () => {
   it('should display version with --version flag', async () => {
