@@ -3,8 +3,8 @@
  */
 
 import { Command } from 'commander';
+import type { IContainer } from '../container/types';
 import type { CrawlActiveResult } from '../types/crawl';
-import { getClient } from '../utils/client';
 import { formatJson } from '../utils/command';
 import { writeOutput } from '../utils/output';
 
@@ -18,12 +18,11 @@ export interface ListOptions {
  * Execute list command (active crawls)
  */
 export async function executeList(
+  container: IContainer,
   options: ListOptions
 ): Promise<CrawlActiveResult> {
   try {
-    const app = options.apiKey
-      ? getClient({ apiKey: options.apiKey })
-      : getClient();
+    const app = container.getFirecrawlClient();
     const active = await app.getActiveCrawls();
     return { success: true, data: active };
   } catch (error) {
@@ -37,8 +36,11 @@ export async function executeList(
 /**
  * Handle list command output
  */
-export async function handleListCommand(options: ListOptions): Promise<void> {
-  const result = await executeList(options);
+export async function handleListCommand(
+  container: IContainer,
+  options: ListOptions
+): Promise<void> {
+  const result = await executeList(container, options);
   if (!result.success) {
     console.error('Error:', result.error || 'Unknown error occurred');
     process.exit(1);
@@ -76,8 +78,13 @@ export function createListCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--no-pretty', 'Disable pretty JSON output')
-    .action(async (options) => {
-      await handleListCommand({
+    .action(async (options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
+      await handleListCommand(container, {
         apiKey: options.apiKey,
         output: options.output,
         pretty: options.pretty,

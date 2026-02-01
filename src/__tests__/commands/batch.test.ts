@@ -4,15 +4,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBatchCommand, executeBatch } from '../../commands/batch';
-import { getClient } from '../../utils/client';
-import { initializeConfig } from '../../utils/config';
+import type { IContainer } from '../../container/types';
 import { writeOutput } from '../../utils/output';
 import { setupTest, teardownTest } from '../utils/mock-client';
-
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return { ...actual, getClient: vi.fn() };
-});
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -26,13 +21,10 @@ describe('executeBatch', () => {
     getBatchScrapeErrors: ReturnType<typeof vi.fn>;
     cancelBatchScrape: ReturnType<typeof vi.fn>;
   };
+  let container: IContainer;
 
   beforeEach(() => {
     setupTest();
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
 
     mockClient = {
       startBatchScrape: vi.fn(),
@@ -42,9 +34,7 @@ describe('executeBatch', () => {
       cancelBatchScrape: vi.fn(),
     };
 
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    container = createTestContainer(mockClient as any);
   });
 
   afterEach(() => {
@@ -58,7 +48,7 @@ describe('executeBatch', () => {
       url: 'https://api.firecrawl.dev/v2/batch/scrape/batch-1',
     });
 
-    const result = await executeBatch({
+    const result = await executeBatch(container, {
       urls: ['https://a.com', 'https://b.com'],
       wait: false,
     });
@@ -80,7 +70,7 @@ describe('executeBatch', () => {
       data: [],
     });
 
-    const result = await executeBatch({
+    const result = await executeBatch(container, {
       urls: ['https://a.com'],
       wait: true,
       pollInterval: 2,
@@ -106,7 +96,10 @@ describe('executeBatch', () => {
       data: [],
     });
 
-    const result = await executeBatch({ jobId: 'batch-1', status: true });
+    const result = await executeBatch(container, {
+      jobId: 'batch-1',
+      status: true,
+    });
 
     expect(mockClient.getBatchScrapeStatus).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
@@ -115,7 +108,10 @@ describe('executeBatch', () => {
   it('should cancel batch scrape job', async () => {
     mockClient.cancelBatchScrape.mockResolvedValue(true);
 
-    const result = await executeBatch({ jobId: 'batch-1', cancel: true });
+    const result = await executeBatch(container, {
+      jobId: 'batch-1',
+      cancel: true,
+    });
 
     expect(mockClient.cancelBatchScrape).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
@@ -135,7 +131,10 @@ describe('executeBatch', () => {
       robotsBlocked: ['https://b.com/robots'],
     });
 
-    const result = await executeBatch({ jobId: 'batch-1', errors: true });
+    const result = await executeBatch(container, {
+      jobId: 'batch-1',
+      errors: true,
+    });
 
     expect(mockClient.getBatchScrapeErrors).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
@@ -186,12 +185,11 @@ describe('createBatchCommand', () => {
       getBatchScrapeErrors: vi.fn(),
       cancelBatchScrape: vi.fn(),
     };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    const testContainer = createTestContainer(mockClient as any);
 
     const cmd = createBatchCommand();
     cmd.exitOverride();
+    (cmd as any)._container = testContainer;
 
     await cmd.parseAsync(['node', 'test', 'https://a.com'], { from: 'node' });
 

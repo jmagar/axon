@@ -5,9 +5,9 @@
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import type { IContainer } from '../container/types';
 import type { EmbedOptions, EmbedResult } from '../types/embed';
 import { chunkText } from '../utils/chunker';
-import { getClient } from '../utils/client';
 import { formatJson, handleCommandError } from '../utils/command';
 import { getConfig } from '../utils/config';
 import { embedChunks, getTeiInfo } from '../utils/embeddings';
@@ -30,10 +30,11 @@ async function readStdin(): Promise<string> {
  * Execute embed command
  */
 export async function executeEmbed(
+  container: IContainer,
   options: EmbedOptions
 ): Promise<EmbedResult> {
   try {
-    const config = getConfig();
+    const config = container.config;
     const teiUrl = config.teiUrl;
     const qdrantUrl = config.qdrantUrl;
     const collection =
@@ -63,7 +64,7 @@ export async function executeEmbed(
       url = options.url;
     } else if (isUrl(options.input)) {
       // URL mode -- scrape first
-      const app = getClient({ apiKey: options.apiKey });
+      const app = container.getFirecrawlClient();
       const result = await app.scrape(options.input, {
         formats: ['markdown'],
       });
@@ -166,8 +167,11 @@ export async function executeEmbed(
 /**
  * Handle embed command output
  */
-export async function handleEmbedCommand(options: EmbedOptions): Promise<void> {
-  const result = await executeEmbed(options);
+export async function handleEmbedCommand(
+  container: IContainer,
+  options: EmbedOptions
+): Promise<void> {
+  const result = await executeEmbed(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -213,7 +217,12 @@ export function createEmbedCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
-    .action(async (input: string, options) => {
+    .action(async (input: string, options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
       // Normalize URL input (but not file paths or stdin "-")
       const normalizedInput = isUrl(input) ? normalizeUrl(input) : input;
 
@@ -225,7 +234,7 @@ export function createEmbedCommand(): Command {
         await ensureAuthenticated();
       }
 
-      await handleEmbedCommand({
+      await handleEmbedCommand(container, {
         input: normalizedInput,
         url: options.url,
         collection: options.collection,

@@ -4,17 +4,21 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeQuery } from '../../commands/query';
-import { initializeConfig, resetConfig } from '../../utils/config';
+import type { IContainer } from '../../container/types';
+import { resetConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
 import * as qdrant from '../../utils/qdrant';
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/embeddings');
 vi.mock('../../utils/qdrant');
 
 describe('executeQuery', () => {
+  let container: IContainer;
+
   beforeEach(() => {
     resetConfig();
-    initializeConfig({
+    container = createTestContainer(undefined, {
       teiUrl: 'http://localhost:52000',
       qdrantUrl: 'http://localhost:53333',
       qdrantCollection: 'test_col',
@@ -46,7 +50,9 @@ describe('executeQuery', () => {
       },
     ]);
 
-    const result = await executeQuery({ query: 'how to authenticate' });
+    const result = await executeQuery(container, {
+      query: 'how to authenticate',
+    });
 
     expect(embeddings.embedBatch).toHaveBeenCalledWith(
       'http://localhost:52000',
@@ -68,7 +74,7 @@ describe('executeQuery', () => {
     vi.mocked(embeddings.embedBatch).mockResolvedValue([[0.1]]);
     vi.mocked(qdrant.queryPoints).mockResolvedValue([]);
 
-    await executeQuery({
+    await executeQuery(container, {
       query: 'test',
       domain: 'example.com',
       limit: 10,
@@ -83,10 +89,12 @@ describe('executeQuery', () => {
   });
 
   it('should fail when TEI_URL not configured', async () => {
-    resetConfig();
-    initializeConfig({});
+    const badContainer = createTestContainer(undefined, {
+      teiUrl: undefined,
+      qdrantUrl: undefined,
+    });
 
-    const result = await executeQuery({ query: 'test' });
+    const result = await executeQuery(badContainer, { query: 'test' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('TEI_URL');
   });
@@ -95,7 +103,7 @@ describe('executeQuery', () => {
     vi.mocked(embeddings.embedBatch).mockResolvedValue([[0.1]]);
     vi.mocked(qdrant.queryPoints).mockResolvedValue([]);
 
-    const result = await executeQuery({ query: 'nonexistent' });
+    const result = await executeQuery(container, { query: 'nonexistent' });
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(0);
   });

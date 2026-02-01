@@ -6,8 +6,8 @@
 
 import { Command } from 'commander';
 import packageJson from '../../package.json';
+import type { IContainer } from '../container/types';
 import { isAuthenticated } from '../utils/auth';
-import { getClient } from '../utils/client';
 import { formatJson } from '../utils/command';
 import { DEFAULT_API_URL, getConfig } from '../utils/config';
 import { loadCredentials } from '../utils/credentials';
@@ -160,10 +160,11 @@ function summarizeEmbedQueue(): { summary: EmbedQueueSummary; jobs: any[] } {
   return { summary, jobs };
 }
 
-async function executeJobStatus(options: JobStatusOptions) {
-  const client = options.apiKey
-    ? getClient({ apiKey: options.apiKey })
-    : getClient();
+async function executeJobStatus(
+  container: IContainer,
+  options: JobStatusOptions
+) {
+  const client = container.getFirecrawlClient();
   const embedQueue = summarizeEmbedQueue();
   const crawlIds = parseIds(options.crawl);
   const batchIds = parseIds(options.batch);
@@ -463,6 +464,7 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
 }
 
 export async function handleJobStatusCommand(
+  container: IContainer,
   options: JobStatusOptions
 ): Promise<void> {
   try {
@@ -477,7 +479,7 @@ export async function handleJobStatusCommand(
       }
     }
 
-    const data = await executeJobStatus(options);
+    const data = await executeJobStatus(container, options);
     const wantsJson = options.json || options.pretty || options.output;
     if (!wantsJson) {
       if (cancelledEmbedJobId) {
@@ -522,8 +524,13 @@ export function createStatusCommand(): Command {
     .option('--json', 'Output JSON (compact)', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .action(async (options) => {
-      await handleJobStatusCommand({
+    .action(async (options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
+      await handleJobStatusCommand(container, {
         apiKey: options.apiKey,
         crawl: options.crawl,
         batch: options.batch,

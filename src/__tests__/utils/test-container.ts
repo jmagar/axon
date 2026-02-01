@@ -57,11 +57,23 @@ export function createTestContainer(
 
   return {
     config: {
-      apiKey: options?.apiKey ?? 'test-api-key',
-      apiUrl: options?.apiUrl ?? 'https://api.firecrawl.dev',
-      teiUrl: options?.teiUrl ?? 'http://localhost:8080',
-      qdrantUrl: options?.qdrantUrl ?? 'http://localhost:6333',
-      qdrantCollection: options?.qdrantCollection ?? 'test_collection',
+      apiKey: options && 'apiKey' in options ? options.apiKey : 'test-api-key',
+      apiUrl:
+        options && 'apiUrl' in options
+          ? options.apiUrl
+          : 'https://api.firecrawl.dev',
+      teiUrl:
+        options && 'teiUrl' in options
+          ? options.teiUrl
+          : 'http://localhost:8080',
+      qdrantUrl:
+        options && 'qdrantUrl' in options
+          ? options.qdrantUrl
+          : 'http://localhost:6333',
+      qdrantCollection:
+        options && 'qdrantCollection' in options
+          ? options.qdrantCollection
+          : 'test_collection',
       userAgent: options?.userAgent,
     },
     getFirecrawlClient: vi.fn().mockReturnValue(fullMockClient),

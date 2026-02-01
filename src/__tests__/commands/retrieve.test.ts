@@ -4,15 +4,19 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeRetrieve } from '../../commands/retrieve';
-import { initializeConfig, resetConfig } from '../../utils/config';
+import type { IContainer } from '../../container/types';
+import { resetConfig } from '../../utils/config';
 import * as qdrant from '../../utils/qdrant';
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/qdrant');
 
 describe('executeRetrieve', () => {
+  let container: IContainer;
+
   beforeEach(() => {
     resetConfig();
-    initializeConfig({
+    container = createTestContainer(undefined, {
       qdrantUrl: 'http://localhost:53333',
       qdrantCollection: 'test_col',
     });
@@ -44,7 +48,9 @@ describe('executeRetrieve', () => {
       },
     ]);
 
-    const result = await executeRetrieve({ url: 'https://example.com' });
+    const result = await executeRetrieve(container, {
+      url: 'https://example.com',
+    });
 
     expect(qdrant.scrollByUrl).toHaveBeenCalledWith(
       'http://localhost:53333',
@@ -60,17 +66,22 @@ describe('executeRetrieve', () => {
   it('should return error when no chunks found', async () => {
     vi.mocked(qdrant.scrollByUrl).mockResolvedValue([]);
 
-    const result = await executeRetrieve({ url: 'https://notfound.com' });
+    const result = await executeRetrieve(container, {
+      url: 'https://notfound.com',
+    });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('No content found');
   });
 
   it('should fail when QDRANT_URL not configured', async () => {
-    resetConfig();
-    initializeConfig({});
+    const badContainer = createTestContainer(undefined, {
+      qdrantUrl: undefined,
+    });
 
-    const result = await executeRetrieve({ url: 'https://example.com' });
+    const result = await executeRetrieve(badContainer, {
+      url: 'https://example.com',
+    });
     expect(result.success).toBe(false);
     expect(result.error).toContain('QDRANT_URL');
   });

@@ -3,9 +3,9 @@
  * Reconstructs full documents from Qdrant chunks
  */
 
+import type { IContainer } from '../container/types';
 import type { RetrieveOptions, RetrieveResult } from '../types/retrieve';
 import { formatJson, handleCommandError } from '../utils/command';
-import { getConfig } from '../utils/config';
 import { writeOutput } from '../utils/output';
 import { scrollByUrl } from '../utils/qdrant';
 
@@ -13,14 +13,16 @@ import { scrollByUrl } from '../utils/qdrant';
  * Execute retrieve command
  * Fetches all chunks for a URL from Qdrant and reassembles them into
  * a complete document with headers restored
+ * @param container DI container with services
  * @param options Retrieve options including URL and optional collection
  * @returns RetrieveResult with reassembled content or error
  */
 export async function executeRetrieve(
+  container: IContainer,
   options: RetrieveOptions
 ): Promise<RetrieveResult> {
   try {
-    const config = getConfig();
+    const config = container.config;
     const qdrantUrl = config.qdrantUrl;
     const collection =
       options.collection || config.qdrantCollection || 'firecrawl_collection';
@@ -89,12 +91,14 @@ export async function executeRetrieve(
 /**
  * Handle retrieve command output
  * Routes result to appropriate output format based on options
+ * @param container DI container with services
  * @param options Retrieve options including output path and JSON flag
  */
 export async function handleRetrieveCommand(
+  container: IContainer,
   options: RetrieveOptions
 ): Promise<void> {
-  const result = await executeRetrieve(options);
+  const result = await executeRetrieve(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -135,8 +139,13 @@ export function createRetrieveCommand(): Command {
     .option('--collection <name>', 'Qdrant collection name')
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
-    .action(async (url: string, options) => {
-      await handleRetrieveCommand({
+    .action(async (url: string, options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
+      await handleRetrieveCommand(container, {
         url: normalizeUrl(url),
         collection: options.collection,
         output: options.output,

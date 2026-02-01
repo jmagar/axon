@@ -7,13 +7,9 @@ import {
   createStatusCommand,
   handleJobStatusCommand,
 } from '../../commands/status';
-import { getClient } from '../../utils/client';
+import type { IContainer } from '../../container/types';
 import { writeOutput } from '../../utils/output';
-
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return { ...actual, getClient: vi.fn() };
-});
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/embed-queue', () => ({
   getEmbedJob: vi.fn(),
@@ -54,15 +50,14 @@ describe('handleJobStatusCommand', () => {
       data: [],
     }),
   };
+  let container: IContainer;
 
   beforeEach(async () => {
     const { getRecentJobIds } = await import('../../utils/job-history');
     const { listEmbedJobs } = await import('../../utils/embed-queue');
     vi.mocked(getRecentJobIds).mockReturnValue([]);
     vi.mocked(listEmbedJobs).mockReturnValue([]);
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    container = createTestContainer(mockClient as any);
   });
 
   afterEach(() => {
@@ -70,7 +65,7 @@ describe('handleJobStatusCommand', () => {
   });
 
   it('should write JSON output when json flag is set', async () => {
-    await handleJobStatusCommand({
+    await handleJobStatusCommand(container, {
       crawl: 'job-1',
       batch: 'batch-1',
       extract: 'extract-1',
@@ -89,7 +84,7 @@ describe('handleJobStatusCommand', () => {
       return [];
     });
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(
       '019c161c-8a80-7051-a438-2ec8707e1bc4'
@@ -111,7 +106,7 @@ describe('handleJobStatusCommand', () => {
       return [];
     });
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     expect(mockClient.getCrawlStatus).not.toHaveBeenCalled();
     expect(mockClient.getBatchScrapeStatus).not.toHaveBeenCalled();
@@ -127,7 +122,7 @@ describe('handleJobStatusCommand', () => {
 
     mockClient.getCrawlStatus.mockRejectedValue(new Error('Job not found'));
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     expect(writeOutput).toHaveBeenCalledTimes(1);
   });
@@ -149,7 +144,7 @@ describe('handleJobStatusCommand', () => {
     );
     mockClient.getExtractStatus.mockRejectedValue(new Error('Job not found'));
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     expect(removeJobIds).toHaveBeenCalledWith('crawl', [
       '019c161c-8a80-7051-a438-2ec8707e1bc4',
@@ -187,7 +182,7 @@ describe('handleJobStatusCommand', () => {
       },
     ]);
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
     const parsed = JSON.parse(output as string);
@@ -223,7 +218,7 @@ describe('handleJobStatusCommand', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await handleJobStatusCommand({});
+    await handleJobStatusCommand(container, {});
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Pending embeds:');
@@ -250,7 +245,7 @@ describe('handleJobStatusCommand', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await handleJobStatusCommand({});
+    await handleJobStatusCommand(container, {});
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Failed embeds:');
@@ -275,7 +270,7 @@ describe('handleJobStatusCommand', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await handleJobStatusCommand({});
+    await handleJobStatusCommand(container, {});
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain(
@@ -299,7 +294,7 @@ describe('handleJobStatusCommand', () => {
       data: [{ metadata: { sourceURL: 'https://example.com' } }],
     });
 
-    await handleJobStatusCommand({ json: true });
+    await handleJobStatusCommand(container, { json: true });
 
     const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
     const parsed = JSON.parse(output as string);
@@ -321,7 +316,10 @@ describe('handleJobStatusCommand', () => {
       updatedAt: new Date().toISOString(),
     });
 
-    await handleJobStatusCommand({ cancelEmbed: 'job-1', json: true });
+    await handleJobStatusCommand(container, {
+      cancelEmbed: 'job-1',
+      json: true,
+    });
 
     expect(removeEmbedJob).toHaveBeenCalledWith('job-1');
     const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
@@ -364,7 +362,7 @@ describe('handleJobStatusCommand', () => {
     mockClient.getActiveCrawls.mockReturnValue(activePromise);
     mockClient.getCrawlStatus.mockReturnValue(crawlPromise);
 
-    const run = handleJobStatusCommand({ json: true });
+    const run = handleJobStatusCommand(container, { json: true });
 
     await Promise.resolve();
 
@@ -394,12 +392,11 @@ describe('createStatusCommand', () => {
       getBatchScrapeStatus: vi.fn(),
       getExtractStatus: vi.fn(),
     };
-    vi.mocked(getClient).mockReturnValue(
-      activeClient as unknown as ReturnType<typeof getClient>
-    );
+    const testContainer = createTestContainer(activeClient as any);
 
     const cmd = createStatusCommand();
     cmd.exitOverride();
+    (cmd as any)._container = testContainer;
 
     await cmd.parseAsync(['node', 'test', '--json'], {
       from: 'node',

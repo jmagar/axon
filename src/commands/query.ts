@@ -3,13 +3,13 @@
  * Semantic search over Qdrant vectors
  */
 
+import type { IContainer } from '../container/types';
 import type {
   QueryOptions,
   QueryResult,
   QueryResultItem,
 } from '../types/query';
 import { formatJson, handleCommandError } from '../utils/command';
-import { getConfig } from '../utils/config';
 import { embedBatch } from '../utils/embeddings';
 import { writeOutput } from '../utils/output';
 import { queryPoints } from '../utils/qdrant';
@@ -17,14 +17,16 @@ import { queryPoints } from '../utils/qdrant';
 /**
  * Execute query command
  * Embeds query text via TEI then searches Qdrant for similar vectors
+ * @param container DI container with services
  * @param options Query options including query text, limit, domain filter
  * @returns QueryResult with matched items or error
  */
 export async function executeQuery(
+  container: IContainer,
   options: QueryOptions
 ): Promise<QueryResult> {
   try {
-    const config = getConfig();
+    const config = container.config;
     const { teiUrl, qdrantUrl } = config;
     const collection =
       options.collection || config.qdrantCollection || 'firecrawl_collection';
@@ -168,10 +170,14 @@ function getRetrievalHint(): string {
 /**
  * Handle query command output
  * Routes to appropriate formatter based on options flags
+ * @param container DI container with services
  * @param options Query options including output format flags
  */
-export async function handleQueryCommand(options: QueryOptions): Promise<void> {
-  const result = await executeQuery(options);
+export async function handleQueryCommand(
+  container: IContainer,
+  options: QueryOptions
+): Promise<void> {
+  const result = await executeQuery(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -214,8 +220,13 @@ export function createQueryCommand(): Command {
     .option('--collection <name>', 'Qdrant collection name')
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
-    .action(async (query: string, options) => {
-      await handleQueryCommand({
+    .action(async (query: string, options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
+      await handleQueryCommand(container, {
         query,
         limit: options.limit,
         domain: options.domain,

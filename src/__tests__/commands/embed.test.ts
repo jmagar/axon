@@ -5,16 +5,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeEmbed } from '../../commands/embed';
-import { getClient } from '../../utils/client';
-import { initializeConfig, resetConfig } from '../../utils/config';
+import type { IContainer } from '../../container/types';
+import { resetConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
 import * as qdrant from '../../utils/qdrant';
 import { setupTest, teardownTest } from '../utils/mock-client';
-
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return { ...actual, getClient: vi.fn() };
-});
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/embeddings');
 vi.mock('../../utils/qdrant');
@@ -42,10 +38,16 @@ function mockReadFile(content: string): void {
 
 describe('executeEmbed', () => {
   let mockClient: { scrape: ReturnType<typeof vi.fn> };
+  let container: IContainer;
 
   beforeEach(() => {
     setupTest();
-    initializeConfig({
+
+    mockClient = {
+      scrape: vi.fn(),
+    };
+
+    container = createTestContainer(mockClient as any, {
       apiKey: 'test-api-key',
       apiUrl: 'https://api.firecrawl.dev',
       teiUrl: 'http://localhost:52000',
@@ -53,13 +55,6 @@ describe('executeEmbed', () => {
       qdrantCollection: 'test_col',
     });
 
-    mockClient = {
-      scrape: vi.fn(),
-    };
-
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
     vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
       modelId: 'test',
       dimension: 1024,
@@ -86,7 +81,7 @@ describe('executeEmbed', () => {
       metadata: { title: 'Test Page' },
     });
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: 'https://example.com',
     });
 
@@ -107,7 +102,7 @@ describe('executeEmbed', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     mockReadFile('# File content\n\nParagraph.');
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: '/tmp/test.md',
       url: 'https://example.com/test',
     });
@@ -118,14 +113,14 @@ describe('executeEmbed', () => {
   });
 
   it('should fail if TEI_URL not configured', async () => {
-    resetConfig();
-    initializeConfig({
+    const badContainer = createTestContainer(mockClient as any, {
       apiKey: 'test-api-key',
+      teiUrl: undefined,
+      qdrantUrl: undefined,
     });
 
-    const result = await executeEmbed({
-      input: '/tmp/test.md',
-      url: 'https://example.com',
+    const result = await executeEmbed(badContainer, {
+      input: 'https://example.com',
     });
 
     expect(result.success).toBe(false);
@@ -135,7 +130,7 @@ describe('executeEmbed', () => {
   it('should require --url for file input', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: '/tmp/test.md',
     });
 
@@ -144,17 +139,17 @@ describe('executeEmbed', () => {
   });
 
   it('should use default collection when none specified', async () => {
-    resetConfig();
-    initializeConfig({
+    const defaultContainer = createTestContainer(mockClient as any, {
       apiKey: 'test-api-key',
       teiUrl: 'http://localhost:52000',
       qdrantUrl: 'http://localhost:53333',
+      qdrantCollection: undefined,
     });
 
     vi.mocked(existsSync).mockReturnValue(true);
     mockReadFile('Some content to embed.');
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(defaultContainer, {
       input: '/tmp/test.md',
       url: 'https://example.com',
     });
@@ -167,7 +162,7 @@ describe('executeEmbed', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     mockReadFile('Some content to embed.');
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: '/tmp/test.md',
       url: 'https://example.com',
       collection: 'my_custom_col',
@@ -181,7 +176,7 @@ describe('executeEmbed', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     mockReadFile('Short content.');
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: '/tmp/test.md',
       url: 'https://example.com',
       noChunk: true,
@@ -195,7 +190,7 @@ describe('executeEmbed', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     mockReadFile('   ');
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: '/tmp/test.md',
       url: 'https://example.com',
     });
@@ -207,7 +202,7 @@ describe('executeEmbed', () => {
   it('should fail for invalid input', async () => {
     vi.mocked(existsSync).mockReturnValue(false);
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: 'not-a-url-or-file',
     });
 
@@ -218,7 +213,7 @@ describe('executeEmbed', () => {
   it('should handle scrape errors gracefully', async () => {
     mockClient.scrape.mockRejectedValue(new Error('Network timeout'));
 
-    const result = await executeEmbed({
+    const result = await executeEmbed(container, {
       input: 'https://example.com',
     });
 
@@ -231,7 +226,7 @@ describe('executeEmbed', () => {
       markdown: '# Content\n\nSome text.',
     });
 
-    await executeEmbed({
+    await executeEmbed(container, {
       input: 'https://example.com',
     });
 

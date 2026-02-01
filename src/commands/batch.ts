@@ -3,8 +3,8 @@
  */
 
 import { Command } from 'commander';
+import type { IContainer } from '../container/types';
 import type { BatchOptions } from '../types/batch';
-import { getClient } from '../utils/client';
 import {
   type CommandResult,
   formatJson,
@@ -60,10 +60,11 @@ function buildBatchScrapeOptions(options: BatchOptions) {
 }
 
 export async function executeBatch(
+  container: IContainer,
   options: BatchOptions
 ): Promise<CommandResult<unknown>> {
   try {
-    const app = getClient({ apiKey: options.apiKey });
+    const app = container.getFirecrawlClient();
 
     if (options.cancel && options.jobId) {
       const ok = await app.cancelBatchScrape(options.jobId);
@@ -117,8 +118,11 @@ export async function executeBatch(
   }
 }
 
-export async function handleBatchCommand(options: BatchOptions): Promise<void> {
-  const result = await executeBatch(options);
+export async function handleBatchCommand(
+  container: IContainer,
+  options: BatchOptions
+): Promise<void> {
+  const result = await executeBatch(container, options);
   if (!handleCommandError(result)) return;
 
   const output = formatJson(
@@ -173,7 +177,12 @@ export function createBatchCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
-    .action(async (rawArgs: string[], options) => {
+    .action(async (rawArgs: string[], options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
       const urlsOrId = rawArgs ?? [];
 
       if (
@@ -232,7 +241,7 @@ export function createBatchCommand(): Command {
         pretty: options.pretty,
       };
 
-      await handleBatchCommand(batchOptions);
+      await handleBatchCommand(container, batchOptions);
     });
 
   return batchCmd;

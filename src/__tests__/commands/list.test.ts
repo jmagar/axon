@@ -8,19 +8,14 @@ import {
   executeList,
   handleListCommand,
 } from '../../commands/list';
-import { getClient } from '../../utils/client';
-import { initializeConfig } from '../../utils/config';
+import type { IContainer } from '../../container/types';
 import { writeOutput } from '../../utils/output';
 import {
   type MockFirecrawlClient,
   setupTest,
   teardownTest,
 } from '../utils/mock-client';
-
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return { ...actual, getClient: vi.fn() };
-});
+import { createTestContainer } from '../utils/test-container';
 
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -31,18 +26,13 @@ describe('executeList', () => {
     Required<Pick<MockFirecrawlClient, 'getActiveCrawls'>>;
 
   let mockClient: ListMock;
+  let container: IContainer;
 
   beforeEach(() => {
     setupTest();
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
 
     mockClient = { scrape: vi.fn(), getActiveCrawls: vi.fn() };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    container = createTestContainer(mockClient as any);
   });
 
   afterEach(() => {
@@ -56,7 +46,7 @@ describe('executeList', () => {
       crawls: [{ id: 'job-1', teamId: 'team-1', url: 'https://a.com' }],
     });
 
-    const result = await executeList({});
+    const result = await executeList(container, {});
 
     expect(mockClient.getActiveCrawls).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(true);
@@ -69,14 +59,13 @@ describe('handleListCommand', () => {
     Required<Pick<MockFirecrawlClient, 'getActiveCrawls'>>;
 
   let mockClient: ListMock;
+  let container: IContainer;
 
   beforeEach(() => {
     setupTest();
 
     mockClient = { scrape: vi.fn(), getActiveCrawls: vi.fn() };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    container = createTestContainer(mockClient as any);
   });
 
   afterEach(() => {
@@ -90,7 +79,7 @@ describe('handleListCommand', () => {
       crawls: [],
     });
 
-    await handleListCommand({ pretty: false });
+    await handleListCommand(container, { pretty: false });
 
     expect(writeOutput).toHaveBeenCalledTimes(0);
   });
@@ -101,7 +90,7 @@ describe('handleListCommand', () => {
       crawls: [],
     });
 
-    await handleListCommand({ pretty: true });
+    await handleListCommand(container, { pretty: true });
 
     expect(writeOutput).toHaveBeenCalledTimes(1);
   });
@@ -112,7 +101,7 @@ describe('handleListCommand', () => {
       crawls: [],
     });
 
-    await handleListCommand({});
+    await handleListCommand(container, {});
 
     expect(writeOutput).toHaveBeenCalledTimes(1);
   });
@@ -126,12 +115,11 @@ describe('createListCommand', () => {
         crawls: [],
       }),
     };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    const testContainer = createTestContainer(mockClient as any);
 
     const cmd = createListCommand();
     cmd.exitOverride();
+    (cmd as any)._container = testContainer;
 
     await cmd.parseAsync(['node', 'test'], { from: 'node' });
 
