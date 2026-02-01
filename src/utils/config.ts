@@ -34,6 +34,8 @@ let globalConfig: GlobalConfig = {};
  * Initialize global configuration
  * Loads from: provided config > environment variables > OS credential storage
  * @param config Configuration options
+ * @deprecated Use DI container instead: `createContainer(config)`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
   // Priority: provided config > env vars > stored credentials
@@ -81,6 +83,8 @@ export function initializeConfig(config: Partial<GlobalConfig> = {}): void {
 
 /**
  * Get the current global configuration
+ * @deprecated Use DI container instead: `container.config`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function getConfig(): GlobalConfig {
   return { ...globalConfig };
@@ -88,6 +92,8 @@ export function getConfig(): GlobalConfig {
 
 /**
  * Update global configuration (merges with existing)
+ * @deprecated Use DI container instead: `createContainerWithOverride(base, overrides)`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function updateConfig(config: Partial<GlobalConfig>): void {
   globalConfig = {
@@ -99,6 +105,8 @@ export function updateConfig(config: Partial<GlobalConfig>): void {
 /**
  * Get API key from global config or provided value
  * Priority: provided key > global config > env var > stored credentials
+ * @deprecated Use DI container instead: `container.config.apiKey`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function getApiKey(providedKey?: string): string | undefined {
   if (providedKey) return providedKey;
@@ -112,6 +120,8 @@ export function getApiKey(providedKey?: string): string | undefined {
 
 /**
  * Validate that required configuration is present
+ * @deprecated Validation is now automatic in container.getFirecrawlClient()
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function validateConfig(apiKey?: string): void {
   const key = getApiKey(apiKey);
@@ -124,6 +134,8 @@ export function validateConfig(apiKey?: string): void {
 
 /**
  * Reset global configuration (useful for testing)
+ * @deprecated Use test containers instead: `createTestContainer()`
+ * This function will be removed in Phase 4 after all tests are migrated.
  */
 export function resetConfig(): void {
   globalConfig = {};

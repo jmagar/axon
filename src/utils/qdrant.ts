@@ -17,6 +17,8 @@ const collectionCache = new Set<string>();
 
 /**
  * Reset collection cache (for testing)
+ * @deprecated Use test containers instead - each container has its own cache
+ * This function will be removed in Phase 4 after all tests are migrated.
  */
 export function resetQdrantCache(): void {
   collectionCache.clear();

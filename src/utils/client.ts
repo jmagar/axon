@@ -17,6 +17,9 @@ let clientInstance: Firecrawl | null = null;
 /**
  * Get or create the Firecrawl client instance
  * Uses global configuration if available, otherwise creates with provided options
+ *
+ * @deprecated Use DI container instead: `container.getFirecrawlClient()`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function getClient(
   options?: Partial<FirecrawlClientOptions>
@@ -93,6 +96,9 @@ export function getClient(
 /**
  * Initialize the client with configuration
  * This should be called early in the application lifecycle
+ *
+ * @deprecated Use DI container instead: `createContainer(config)`
+ * This function will be removed in Phase 4 after all commands are migrated.
  */
 export function initializeClient(config?: Partial<GlobalConfig>): Firecrawl {
   if (config) {
@@ -107,6 +113,9 @@ export function initializeClient(config?: Partial<GlobalConfig>): Firecrawl {
 
 /**
  * Reset the client instance (useful for testing)
+ *
+ * @deprecated Use test containers instead: `createTestContainer()`
+ * This function will be removed in Phase 4 after all tests are migrated.
  */
 export function resetClient(): void {
   clientInstance = null;
