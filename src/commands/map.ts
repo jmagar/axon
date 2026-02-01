@@ -2,15 +2,9 @@
  * Map command implementation
  */
 
+import type { IContainer } from '../container/types';
 import type { MapOptions, MapResult } from '../types/map';
 import { formatJson, handleCommandError } from '../utils/command';
-import {
-  DEFAULT_API_URL,
-  getApiKey,
-  getConfig,
-  validateConfig,
-} from '../utils/config';
-import { fetchWithTimeout } from '../utils/http';
 import { writeOutput } from '../utils/output';
 
 /** HTTP timeout for map API requests (60 seconds) */
@@ -19,13 +13,22 @@ const MAP_TIMEOUT_MS = 60000;
 /**
  * Execute map command
  */
-export async function executeMap(options: MapOptions): Promise<MapResult> {
+export async function executeMap(
+  container: IContainer,
+  options: MapOptions
+): Promise<MapResult> {
   try {
-    const config = getConfig();
-    const apiKey = getApiKey(options.apiKey);
-    validateConfig(apiKey);
+    const config = container.config;
+    const apiKey = config.apiKey;
 
-    const apiUrl = config.apiUrl || DEFAULT_API_URL;
+    if (!apiKey) {
+      throw new Error(
+        'API key is required. Set FIRECRAWL_API_KEY environment variable, ' +
+          'use --api-key flag, or run "firecrawl config" to set the API key.'
+      );
+    }
+
+    const apiUrl = config.apiUrl || 'https://api.firecrawl.dev';
     const userAgent = config.userAgent;
     const { urlOrJobId } = options;
 
@@ -67,7 +70,8 @@ export async function executeMap(options: MapOptions): Promise<MapResult> {
       headers['User-Agent'] = userAgent;
     }
 
-    const response = await fetchWithTimeout(
+    const httpClient = container.getHttpClient();
+    const response = await httpClient.fetchWithTimeout(
       `${apiUrl}/v1/map`,
       {
         method: 'POST',
@@ -125,8 +129,11 @@ function formatMapReadable(data: MapResult['data']): string {
 /**
  * Handle map command output
  */
-export async function handleMapCommand(options: MapOptions): Promise<void> {
-  const result = await executeMap(options);
+export async function handleMapCommand(
+  container: IContainer,
+  options: MapOptions
+): Promise<void> {
+  const result = await executeMap(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -184,7 +191,12 @@ export function createMapCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
     .option('--pretty', 'Pretty print JSON output', false)
-    .action(async (positionalUrl, options) => {
+    .action(async (positionalUrl, options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
       // Use positional URL if provided, otherwise use --url option
       const url = positionalUrl || options.url;
       if (!url) {
@@ -209,7 +221,7 @@ export function createMapCommand(): Command {
         timeout: options.timeout,
       };
 
-      await handleMapCommand(mapOptions);
+      await handleMapCommand(container, mapOptions);
     });
 
   return mapCmd;
