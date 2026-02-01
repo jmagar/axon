@@ -17,6 +17,7 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  realpathSync: vi.fn((p: string) => p), // Mock realpathSync to return the input path
 }));
 
 // Helper to get resolved path
@@ -496,19 +497,19 @@ describe('Output Utilities', () => {
 
     it('should reject path traversal attempts', () => {
       expect(() => validateOutputPath('../../../etc/passwd')).toThrow(
-        /outside the allowed directory/
+        /resolves outside allowed directory/
       );
       expect(() => validateOutputPath('output/../../etc/passwd')).toThrow(
-        /outside the allowed directory/
+        /resolves outside allowed directory/
       );
     });
 
     it('should reject absolute paths outside cwd', () => {
       expect(() => validateOutputPath('/etc/passwd')).toThrow(
-        /outside the allowed directory/
+        /resolves outside allowed directory/
       );
       expect(() => validateOutputPath('/tmp/output.json')).toThrow(
-        /outside the allowed directory/
+        /resolves outside allowed directory/
       );
     });
 
