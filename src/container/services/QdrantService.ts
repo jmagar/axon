@@ -80,7 +80,7 @@ export class QdrantService implements IQdrantService {
 
     // Create payload indexes for fast filtering (in parallel)
     const indexFields = ['url', 'domain', 'source_command'];
-    await Promise.all(
+    const indexResponses = await Promise.all(
       indexFields.map((field) =>
         this.httpClient.fetchWithRetry(
           `${this.qdrantUrl}/collections/${collection}/index`,
@@ -96,6 +96,16 @@ export class QdrantService implements IQdrantService {
         )
       )
     );
+
+    // Verify all indexes were created successfully
+    for (let i = 0; i < indexResponses.length; i++) {
+      const response = indexResponses[i];
+      if (!response.ok) {
+        throw new Error(
+          `Failed to create index for field '${indexFields[i]}': ${response.status}`
+        );
+      }
+    }
 
     this.collectionCache.add(collection);
   }

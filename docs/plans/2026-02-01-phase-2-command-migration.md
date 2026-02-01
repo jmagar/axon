@@ -225,19 +225,23 @@ Create temporary test file `test-container-access.ts`:
 import { Command } from 'commander';
 
 const testProgram = new Command();
-testProgram._container = { test: 'works' } as any;
 
 const testCmd = new Command('test')
   .action((_options: any, command: Command) => {
-    console.log('Container from parent:', command.parent?._container);
+    console.log('Container on command:', command._container);
   });
 
-testProgram.addCommand(testCmd);
+testProgram
+  .hook('preAction', (thisCommand, actionCommand) => {
+    actionCommand._container = { test: 'works' } as any;
+  })
+  .addCommand(testCmd);
+
 testProgram.parse(['node', 'test', 'test']);
 ```
 
 Run: `npx ts-node test-container-access.ts`
-Expected output: `Container from parent: { test: 'works' }`
+Expected output: `Container on command: { test: 'works' }`
 
 Then delete test file: `rm test-container-access.ts`
 
@@ -328,7 +332,7 @@ export function createScrapeCommand(): Command {
     .argument('<url>', 'URL to scrape')
     // ... options ...
     .action(async (url: string, cmdOptions: Record<string, unknown>, command: Command) => {
-      const container = command.parent?._container;
+      const container = command._container;
       if (!container) {
         throw new Error('Container not initialized');
       }
@@ -474,7 +478,7 @@ export function createMapCommand(): Command {
     .argument('<url>', 'Website URL to map')
     // ... options ...
     .action(async (url: string, cmdOptions: Record<string, unknown>, command: Command) => {
-      const container = command.parent?._container;
+      const container = command._container;
       if (!container) {
         throw new Error('Container not initialized');
       }
@@ -707,7 +711,7 @@ export function createCrawlCommand(): Command {
     .argument('<url-or-job-id>', 'URL to crawl or job ID to check status')
     // ... options ...
     .action(async (urlOrJobId: string, cmdOptions: Record<string, unknown>, command: Command) => {
-      const container = command.parent?._container;
+      const container = command._container;
       if (!container) {
         throw new Error('Container not initialized');
       }

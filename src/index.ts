@@ -34,7 +34,6 @@ import { createSearchCommand } from './commands/search';
 import { createStatusCommand, handleStatusCommand } from './commands/status';
 import { createVersionCommand } from './commands/version';
 import { createContainer } from './container/ContainerFactory';
-import type { IContainer } from './container/types';
 import { ensureAuthenticated, printBanner } from './utils/auth';
 import { initializeConfig, updateConfig } from './utils/config';
 import { isUrl, normalizeUrl } from './utils/url';
@@ -45,15 +44,14 @@ initializeConfig();
 /**
  * Dependency Injection Container
  *
- * Phase 1: Container infrastructure is created but not yet used by commands.
- * Phase 2: Commands will be migrated to use container instead of global config.
+ * Initialize the container for its side effects:
+ * - Validates environment variables
+ * - Loads credentials from OS keychain
+ * - Sets up default configuration
  *
- * The base container is initialized from:
- * - Environment variables (FIRECRAWL_API_KEY, TEI_URL, QDRANT_URL, etc.)
- * - OS credential store (via loadCredentials())
- * - Defaults
+ * Note: The container itself is created per-command in the preAction hook.
  */
-const baseContainer: IContainer = createContainer();
+createContainer();
 
 /**
  * Signal handlers for graceful shutdown
