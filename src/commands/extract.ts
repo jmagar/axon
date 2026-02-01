@@ -2,10 +2,9 @@
  * Extract command implementation
  */
 
+import type { IContainer } from '../container/types';
 import type { ExtractOptions, ExtractResult } from '../types/extract';
-import { getClient } from '../utils/client';
 import { formatJson, handleCommandError } from '../utils/command';
-import { batchEmbed, type EmbedItem } from '../utils/embedpipeline';
 import { recordJob } from '../utils/job-history';
 import { writeOutput } from '../utils/output';
 
@@ -37,10 +36,11 @@ type ExtractResponse = {
  * Execute extract command
  */
 export async function executeExtract(
+  container: IContainer,
   options: ExtractOptions
 ): Promise<ExtractResult> {
   try {
-    const app = getClient({ apiKey: options.apiKey });
+    const app = container.getFirecrawlClient();
 
     if (options.status && options.jobId) {
       const status = await app.getExtractStatus(options.jobId);
@@ -148,9 +148,10 @@ export async function executeExtract(
  * Handle extract command output
  */
 export async function handleExtractCommand(
+  container: IContainer,
   options: ExtractOptions
 ): Promise<void> {
-  const result = await executeExtract(options);
+  const result = await executeExtract(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -174,19 +175,19 @@ export async function handleExtractCommand(
       ? result.data.sources
       : options.urls;
 
-  // Build embed items for batch embedding
+  // Auto-embed extracted data for each target URL
   // Extract command embeds the extracted data (not markdown/html)
   if (options.embed !== false) {
+    const pipeline = container.getEmbedPipeline();
     const extractedText = extractionToText(result.data.extracted);
-    const embedItems: EmbedItem[] = embedTargets.map((targetUrl) => ({
-      content: extractedText,
-      metadata: {
+
+    for (const targetUrl of embedTargets) {
+      await pipeline.autoEmbed(extractedText, {
         url: targetUrl,
         sourceCommand: 'extract',
         contentType: 'extracted',
-      },
-    }));
-    await batchEmbed(embedItems);
+      });
+    }
   }
 
   // Format output using shared utility
@@ -238,7 +239,12 @@ export function createExtractCommand(): Command {
     .option('--json', 'Output as JSON format', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .option('--no-embed', 'Disable auto-embedding of extracted content')
-    .action(async (rawUrls: string[], options) => {
+    .action(async (rawUrls: string[], options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
       if (options.status) {
         const jobId = rawUrls?.[0];
         if (!jobId) {
@@ -246,7 +252,7 @@ export function createExtractCommand(): Command {
           process.exit(1);
         }
 
-        await handleExtractCommand({
+        await handleExtractCommand(container, {
           status: true,
           jobId,
           urls: [],
@@ -265,7 +271,7 @@ export function createExtractCommand(): Command {
           u.includes('\n') ? u.split('\n').filter(Boolean) : [u]
         )
         .map(normalizeUrl);
-      await handleExtractCommand({
+      await handleExtractCommand(container, {
         urls,
         prompt: options.prompt,
         schema: options.schema,

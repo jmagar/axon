@@ -4,70 +4,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeExtract, handleExtractCommand } from '../../commands/extract';
-import { getClient } from '../../utils/client';
-import { initializeConfig } from '../../utils/config';
-// autoEmbed is mocked below via mockAutoEmbed
+import type { IContainer } from '../../container/types';
 import { writeOutput } from '../../utils/output';
-import { setupTest, teardownTest } from '../utils/mock-client';
 
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return { ...actual, getClient: vi.fn() };
-});
-
-// Mock embedpipeline - mock autoEmbed and provide implementations for batch functions
-// Use vi.hoisted to ensure mockAutoEmbed is defined before vi.mock runs (vi.mock is hoisted)
-const { mockAutoEmbed } = vi.hoisted(() => ({
-  mockAutoEmbed: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/embedpipeline', () => ({
-  autoEmbed: mockAutoEmbed,
-  // Re-implement batchEmbed to call the mockAutoEmbed
-  batchEmbed: vi.fn().mockImplementation(
-    async (
-      items: Array<{
-        content: string;
-        metadata: {
-          url: string;
-          title?: string;
-          sourceCommand: string;
-          contentType?: string;
-        };
-      }>
-    ) => {
-      for (const item of items) {
-        await mockAutoEmbed(item.content, item.metadata);
-      }
-    }
-  ),
-  // Re-implement createEmbedItems to match real behavior
-  createEmbedItems: vi.fn().mockImplementation(
-    (
-      pages: Array<{
-        markdown?: string;
-        html?: string;
-        url?: string;
-        title?: string;
-        metadata?: { sourceURL?: string; url?: string; title?: string };
-      }>,
-      sourceCommand: string
-    ) => {
-      return pages
-        .filter((page) => page.markdown || page.html)
-        .map((page) => ({
-          content: page.markdown || page.html || '',
-          metadata: {
-            url:
-              page.url || page.metadata?.sourceURL || page.metadata?.url || '',
-            title: page.title || page.metadata?.title,
-            sourceCommand,
-            contentType: page.markdown ? 'markdown' : 'html',
-          },
-        }));
-    }
-  ),
-}));
+// Mock autoEmbed to track calls
+const mockAutoEmbed = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -75,25 +16,33 @@ vi.mock('../../utils/output', () => ({
 
 describe('executeExtract', () => {
   let mockClient: { extract: ReturnType<typeof vi.fn> };
+  let mockContainer: IContainer;
 
   beforeEach(() => {
-    setupTest();
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     mockClient = {
       extract: vi.fn(),
     };
 
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    mockContainer = {
+      config: {
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        teiUrl: 'http://localhost:53001',
+        qdrantUrl: 'http://localhost:53002',
+        collectionName: 'firecrawl',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getEmbedPipeline: vi.fn().mockReturnValue({
+        autoEmbed: mockAutoEmbed,
+      }),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IContainer;
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -103,7 +52,7 @@ describe('executeExtract', () => {
       data: { name: 'Example', price: 9.99 },
     });
 
-    const result = await executeExtract({
+    const result = await executeExtract(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'Extract product pricing',
     });
@@ -125,7 +74,7 @@ describe('executeExtract', () => {
       data: { name: 'Test' },
     });
 
-    await executeExtract({
+    await executeExtract(mockContainer, {
       urls: ['https://example.com'],
       schema: '{"name": "string", "price": "number"}',
     });
@@ -144,7 +93,7 @@ describe('executeExtract', () => {
       error: 'Extraction failed',
     });
 
-    const result = await executeExtract({
+    const result = await executeExtract(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'test',
     });
@@ -156,7 +105,7 @@ describe('executeExtract', () => {
   it('should handle thrown errors', async () => {
     mockClient.extract.mockRejectedValue(new Error('Network error'));
 
-    const result = await executeExtract({
+    const result = await executeExtract(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'test',
     });
@@ -172,7 +121,7 @@ describe('executeExtract', () => {
       sources: ['https://example.com/page1'],
     });
 
-    const result = await executeExtract({
+    const result = await executeExtract(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'test',
       showSources: true,
@@ -185,9 +134,21 @@ describe('executeExtract', () => {
 describe('executeExtract status mode', () => {
   it('should call getExtractStatus when status is true', async () => {
     const mockClient = { getExtractStatus: vi.fn() };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    const mockContainer = {
+      config: {
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        teiUrl: 'http://localhost:53001',
+        qdrantUrl: 'http://localhost:53002',
+        collectionName: 'firecrawl',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getEmbedPipeline: vi.fn(),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IContainer;
 
     mockClient.getExtractStatus.mockResolvedValue({
       id: 'ext-1',
@@ -196,7 +157,7 @@ describe('executeExtract status mode', () => {
       tokensUsed: 1,
     });
 
-    const result = await executeExtract({
+    const result = await executeExtract(mockContainer, {
       status: true,
       jobId: 'ext-1',
       urls: [],
@@ -224,21 +185,31 @@ describe('createExtractCommand', () => {
 
 describe('handleExtractCommand', () => {
   let mockClient: { extract: ReturnType<typeof vi.fn> };
+  let mockContainer: IContainer;
 
   beforeEach(() => {
-    setupTest();
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     mockClient = {
       extract: vi.fn(),
     };
 
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    mockContainer = {
+      config: {
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        teiUrl: 'http://localhost:53001',
+        qdrantUrl: 'http://localhost:53002',
+        collectionName: 'firecrawl',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getEmbedPipeline: vi.fn().mockReturnValue({
+        autoEmbed: mockAutoEmbed,
+      }),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IContainer;
+
     mockAutoEmbed.mockResolvedValue(undefined);
     vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit');
@@ -246,7 +217,6 @@ describe('handleExtractCommand', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -257,7 +227,7 @@ describe('handleExtractCommand', () => {
       sources: ['https://example.com/page1', 'https://example.com/page2'],
     });
 
-    await handleExtractCommand({
+    await handleExtractCommand(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'test',
     });
@@ -276,7 +246,7 @@ describe('handleExtractCommand', () => {
       data: { name: 'Test' },
     });
 
-    await handleExtractCommand({
+    await handleExtractCommand(mockContainer, {
       urls: ['https://example.com'],
       prompt: 'test',
       embed: false,
