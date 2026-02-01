@@ -69,7 +69,7 @@
     "vitest": "^4.0.0"
   },
   "dependencies": {
-    "@mendable/firecrawl-js": "^4.10.0",
+    "@mendable/firecrawl-js": "^4.12.0",
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
     "p-limit": "^7.2.0",
