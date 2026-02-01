@@ -7,6 +7,7 @@ import type {
   SearchData,
   SearchRequest,
 } from '@mendable/firecrawl-js';
+import type { IContainer } from '../container/types';
 import type {
   ImageSearchResult,
   NewsSearchResult,
@@ -15,9 +16,7 @@ import type {
   SearchResultData,
   WebSearchResult,
 } from '../types/search';
-import { getClient } from '../utils/client';
 import { formatJson, handleCommandError } from '../utils/command';
-import { batchEmbed, createEmbedItems } from '../utils/embedpipeline';
 import { writeOutput } from '../utils/output';
 
 /** Extended search request that includes additional CLI options not in the SDK type */
@@ -38,10 +37,11 @@ interface ExtendedSearchData extends SearchData {
  * Execute search command
  */
 export async function executeSearch(
+  container: IContainer,
   options: SearchOptions
 ): Promise<SearchResult> {
   try {
-    const app = getClient({ apiKey: options.apiKey });
+    const app = container.getFirecrawlClient();
 
     // Build search options for the SDK using extended type for additional CLI options
     const searchParams: ExtendedSearchRequest = {};
@@ -261,9 +261,10 @@ function formatSearchReadable(
  * Handle search command output
  */
 export async function handleSearchCommand(
+  container: IContainer,
   options: SearchOptions
 ): Promise<void> {
-  const result = await executeSearch(options);
+  const result = await executeSearch(container, options);
 
   // Use shared error handler
   if (!handleCommandError(result)) {
@@ -316,10 +317,20 @@ export async function handleSearchCommand(
   writeOutput(outputContent, options.output, !!options.output);
 
   // Auto-embed only when --scrape was used (snippets are too noisy)
-  // Use shared batch embedding utility
   if (options.embed !== false && options.scrape && result.data?.web) {
-    const embedItems = createEmbedItems(result.data.web, 'search');
-    await batchEmbed(embedItems);
+    const pipeline = container.getEmbedPipeline();
+
+    // Embed each search result
+    for (const item of result.data.web) {
+      if (item.markdown || item.html) {
+        await pipeline.autoEmbed(item.markdown || item.html || '', {
+          url: item.url,
+          title: item.title,
+          sourceCommand: 'search',
+          contentType: item.markdown ? 'markdown' : 'html',
+        });
+      }
+    }
   }
 }
 
@@ -386,7 +397,12 @@ export function createSearchCommand(): Command {
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as compact JSON', false)
-    .action(async (query, options) => {
+    .action(async (query, options, command: Command) => {
+      const container = command._container;
+      if (!container) {
+        throw new Error('Container not initialized');
+      }
+
       // Parse sources
       let sources: SearchSource[] | undefined;
       if (options.sources) {
@@ -453,7 +469,7 @@ export function createSearchCommand(): Command {
         pretty: options.pretty,
       };
 
-      await handleSearchCommand(searchOptions);
+      await handleSearchCommand(container, searchOptions);
     });
 
   return searchCmd;

@@ -4,81 +4,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeSearch, handleSearchCommand } from '../../commands/search';
-import { getClient } from '../../utils/client';
-import { initializeConfig } from '../../utils/config';
-import {
-  type MockFirecrawlClient,
-  setupTest,
-  teardownTest,
-} from '../utils/mock-client';
+import type { IContainer } from '../../container/types';
+import type { MockFirecrawlClient } from '../utils/mock-client';
 
 type SearchMockClient = MockFirecrawlClient &
   Required<Pick<MockFirecrawlClient, 'search'>>;
 
-// autoEmbed is mocked below via mockAutoEmbed
-
-// Mock the Firecrawl client module
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return {
-    ...actual,
-    getClient: vi.fn(),
-  };
-});
-
-// Mock embedpipeline - mock autoEmbed and provide implementations for batch functions
-// Use vi.hoisted to ensure mockAutoEmbed is defined before vi.mock runs (vi.mock is hoisted)
-const { mockAutoEmbed } = vi.hoisted(() => ({
-  mockAutoEmbed: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/embedpipeline', () => ({
-  autoEmbed: mockAutoEmbed,
-  // Re-implement batchEmbed to call the mockAutoEmbed
-  batchEmbed: vi.fn().mockImplementation(
-    async (
-      items: Array<{
-        content: string;
-        metadata: {
-          url: string;
-          title?: string;
-          sourceCommand: string;
-          contentType?: string;
-        };
-      }>
-    ) => {
-      for (const item of items) {
-        await mockAutoEmbed(item.content, item.metadata);
-      }
-    }
-  ),
-  // Re-implement createEmbedItems to match real behavior
-  createEmbedItems: vi.fn().mockImplementation(
-    (
-      pages: Array<{
-        markdown?: string;
-        html?: string;
-        url?: string;
-        title?: string;
-        metadata?: { sourceURL?: string; url?: string; title?: string };
-      }>,
-      sourceCommand: string
-    ) => {
-      return pages
-        .filter((page) => page.markdown || page.html)
-        .map((page) => ({
-          content: page.markdown || page.html || '',
-          metadata: {
-            url:
-              page.url || page.metadata?.sourceURL || page.metadata?.url || '',
-            title: page.title || page.metadata?.title,
-            sourceCommand,
-            contentType: page.markdown ? 'markdown' : 'html',
-          },
-        }));
-    }
-  ),
-}));
+// Mock autoEmbed to track calls
+const mockAutoEmbed = vi.fn().mockResolvedValue(undefined);
 
 // Mock the output module to prevent console output in tests
 vi.mock('../../utils/output', () => ({
@@ -87,29 +20,36 @@ vi.mock('../../utils/output', () => ({
 
 describe('executeSearch', () => {
   let mockClient: SearchMockClient;
+  let mockContainer: IContainer;
 
   beforeEach(() => {
-    setupTest();
-    // Initialize config with test API key
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     // Create mock client
     mockClient = {
       scrape: vi.fn(),
       search: vi.fn(),
     };
 
-    // Mock getClient to return our mock
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+    // Create mock container
+    mockContainer = {
+      config: {
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        teiUrl: 'http://localhost:53001',
+        qdrantUrl: 'http://localhost:53002',
+        collectionName: 'firecrawl',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getEmbedPipeline: vi.fn().mockReturnValue({
+        autoEmbed: mockAutoEmbed,
+      }),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IContainer;
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -122,7 +62,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'test query',
       });
 
@@ -136,7 +76,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'AI news',
         limit: 10,
       });
@@ -153,7 +93,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [], images: [], news: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'test query',
         sources: ['web', 'images', 'news'],
       });
@@ -170,7 +110,7 @@ describe('executeSearch', () => {
       const mockResponse = { news: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'tech news',
         sources: ['news'],
       });
@@ -187,7 +127,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'web scraping python',
         categories: ['github'],
       });
@@ -204,7 +144,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'transformer architecture',
         categories: ['research', 'pdf'],
       });
@@ -221,7 +161,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'AI announcements',
         tbs: 'qdr:d', // Past day
       });
@@ -238,7 +178,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'restaurants',
         location: 'San Francisco,California,United States',
       });
@@ -255,7 +195,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'local news',
         country: 'DE',
       });
@@ -272,7 +212,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'test query',
         timeout: 30000,
       });
@@ -289,7 +229,7 @@ describe('executeSearch', () => {
       const mockResponse = { web: [] };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'test query',
         ignoreInvalidUrls: true,
       });
@@ -308,7 +248,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'firecrawl tutorials',
         scrape: true,
       });
@@ -329,7 +269,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'API docs',
         scrape: true,
         scrapeFormats: ['markdown', 'links'],
@@ -351,7 +291,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'test query',
         scrape: true,
         onlyMainContent: true,
@@ -375,7 +315,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'comprehensive test',
         limit: 20,
         sources: ['web', 'news'],
@@ -423,7 +363,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test query',
       });
 
@@ -447,7 +387,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'landscapes',
         sources: ['images'],
       });
@@ -471,7 +411,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'tech news',
         sources: ['news'],
       });
@@ -495,7 +435,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'machine learning',
         sources: ['web', 'images', 'news'],
       });
@@ -520,7 +460,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
         scrape: true,
       });
@@ -539,7 +479,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
       });
 
@@ -556,7 +496,7 @@ describe('executeSearch', () => {
       ];
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
       });
 
@@ -571,7 +511,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
       });
 
@@ -586,7 +526,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
       });
 
@@ -601,7 +541,7 @@ describe('executeSearch', () => {
       };
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test',
       });
 
@@ -613,7 +553,7 @@ describe('executeSearch', () => {
       const mockResponse = {};
       mockClient.search.mockResolvedValue(mockResponse);
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'nonexistent content xyz123',
       });
 
@@ -625,7 +565,7 @@ describe('executeSearch', () => {
       const errorMessage = 'API Error: Rate limit exceeded';
       mockClient.search.mockRejectedValue(new Error(errorMessage));
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test query',
       });
 
@@ -638,7 +578,7 @@ describe('executeSearch', () => {
     it('should handle non-Error exceptions', async () => {
       mockClient.search.mockRejectedValue('String error');
 
-      const result = await executeSearch({
+      const result = await executeSearch(mockContainer, {
         query: 'test query',
       });
 
@@ -651,7 +591,7 @@ describe('executeSearch', () => {
     it('should support qdr:h for past hour', async () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'breaking news',
         tbs: 'qdr:h',
       });
@@ -665,7 +605,7 @@ describe('executeSearch', () => {
     it('should support qdr:d for past day', async () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'AI announcements',
         tbs: 'qdr:d',
       });
@@ -679,7 +619,7 @@ describe('executeSearch', () => {
     it('should support qdr:w for past week', async () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'tech news',
         tbs: 'qdr:w',
       });
@@ -693,7 +633,7 @@ describe('executeSearch', () => {
     it('should support qdr:m for past month', async () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'startup funding',
         tbs: 'qdr:m',
       });
@@ -707,7 +647,7 @@ describe('executeSearch', () => {
     it('should support qdr:y for past year', async () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
-      await executeSearch({
+      await executeSearch(mockContainer, {
         query: 'yearly review',
         tbs: 'qdr:y',
       });
@@ -729,7 +669,7 @@ describe('executeSearch', () => {
       mockClient.search.mockResolvedValue({ web: [], images: [], news: [] });
 
       for (const source of sourceList) {
-        const result = await executeSearch({
+        const result = await executeSearch(mockContainer, {
           query: 'test',
           sources: [source],
         });
@@ -746,7 +686,7 @@ describe('executeSearch', () => {
       mockClient.search.mockResolvedValue({ web: [] });
 
       for (const category of categoryList) {
-        const result = await executeSearch({
+        const result = await executeSearch(mockContainer, {
           query: 'test',
           categories: [category],
         });
@@ -766,7 +706,7 @@ describe('executeSearch', () => {
         mockClient.search.mockResolvedValue({
           web: [{ url: 'https://example.com' }],
         });
-        const result = await executeSearch({
+        const result = await executeSearch(mockContainer, {
           query: 'test',
           scrape: true,
           scrapeFormats: [format],
@@ -779,21 +719,34 @@ describe('executeSearch', () => {
 
 describe('handleSearchCommand auto-embed', () => {
   let mockClient: SearchMockClient;
+  let mockContainer: IContainer;
 
   beforeEach(() => {
-    setupTest();
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
+    // Create mock client
     mockClient = {
       scrape: vi.fn(),
       search: vi.fn(),
     };
-    vi.mocked(getClient).mockReturnValue(
-      mockClient as unknown as ReturnType<typeof getClient>
-    );
+
+    // Create mock container
+    mockContainer = {
+      config: {
+        apiKey: 'test-api-key',
+        apiUrl: 'https://api.firecrawl.dev',
+        teiUrl: 'http://localhost:53001',
+        qdrantUrl: 'http://localhost:53002',
+        collectionName: 'firecrawl',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getEmbedPipeline: vi.fn().mockReturnValue({
+        autoEmbed: mockAutoEmbed,
+      }),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as IContainer;
+
     mockAutoEmbed.mockResolvedValue(undefined);
     vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit');
@@ -801,7 +754,6 @@ describe('handleSearchCommand auto-embed', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -822,7 +774,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: true,
     });
@@ -854,7 +806,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: false,
     });
@@ -874,7 +826,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
     });
 
@@ -893,7 +845,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: true,
       embed: false,
@@ -914,7 +866,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: true,
     });
@@ -945,7 +897,7 @@ describe('handleSearchCommand auto-embed', () => {
     };
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: true,
     });
@@ -963,7 +915,7 @@ describe('handleSearchCommand auto-embed', () => {
     mockClient.search.mockRejectedValue(new Error('API error'));
 
     try {
-      await handleSearchCommand({
+      await handleSearchCommand(mockContainer, {
         query: 'test query',
         scrape: true,
       });
@@ -978,7 +930,7 @@ describe('handleSearchCommand auto-embed', () => {
     const mockResponse = {};
     mockClient.search.mockResolvedValue(mockResponse);
 
-    await handleSearchCommand({
+    await handleSearchCommand(mockContainer, {
       query: 'test query',
       scrape: true,
     });
