@@ -6,11 +6,13 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  type StoredCredentials,
+  StoredCredentialsSchema,
+} from '../schemas/storage';
 
-export interface StoredCredentials {
-  apiKey?: string;
-  apiUrl?: string;
-}
+// Re-export type for backward compatibility
+export type { StoredCredentials };
 
 /**
  * Get the platform-specific config directory
@@ -73,10 +75,21 @@ export function loadCredentials(): StoredCredentials | null {
     }
 
     const data = fs.readFileSync(credentialsPath, 'utf-8');
-    const credentials = JSON.parse(data) as StoredCredentials;
-    return credentials;
-  } catch (_error) {
-    // If file is corrupted or unreadable, return null
+    const parsed = JSON.parse(data);
+
+    // Validate with Zod schema for runtime type safety
+    const result = StoredCredentialsSchema.safeParse(parsed);
+    if (!result.success) {
+      console.error(
+        '[Credentials] Invalid credentials file:',
+        result.error.message
+      );
+      return null;
+    }
+
+    return result.data;
+  } catch (error) {
+    console.error('[Credentials] Failed to load credentials:', error);
     return null;
   }
 }

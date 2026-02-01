@@ -5,11 +5,11 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { type UserSettings, UserSettingsSchema } from '../schemas/storage';
 import { getConfigDirectoryPath } from './credentials';
 
-export interface UserSettings {
-  defaultExcludePaths?: string[];
-}
+// Re-export type for backward compatibility
+export type { UserSettings };
 
 /**
  * Get the settings file path
@@ -48,9 +48,19 @@ export function loadSettings(): UserSettings {
     if (!fs.existsSync(settingsPath)) {
       return {};
     }
+
     const data = fs.readFileSync(settingsPath, 'utf-8');
-    return JSON.parse(data) as UserSettings;
-  } catch (_error) {
+    const parsed = JSON.parse(data);
+
+    // Validate with Zod schema for runtime type safety
+    const result = UserSettingsSchema.safeParse(parsed);
+    if (!result.success) {
+      console.error('[Settings] Invalid settings file:', result.error.message);
+      return {};
+    }
+
+    return result.data;
+  } catch {
     return {};
   }
 }

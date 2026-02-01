@@ -7,7 +7,12 @@ import * as path from 'node:path';
 
 /**
  * Validates that an output path is safe (within cwd or a configured base directory).
- * Prevents path traversal attacks.
+ * Prevents path traversal attacks including symlink-based escapes.
+ *
+ * Uses fs.realpathSync() to follow all symlinks and validate the actual
+ * filesystem location, preventing attackers from using symlinks to escape
+ * the allowed directory.
+ *
  * @param outputPath - The user-provided output path
  * @param baseDir - The safe base directory (defaults to process.cwd())
  * @returns The resolved absolute path if valid
@@ -17,21 +22,46 @@ export function validateOutputPath(
   outputPath: string,
   baseDir: string = process.cwd()
 ): string {
-  const resolvedBase = path.resolve(baseDir);
-  const resolvedPath = path.resolve(resolvedBase, outputPath);
+  // Get real filesystem path for base directory (following symlinks)
+  const realBase = fs.realpathSync(baseDir);
+  const resolvedPath = path.resolve(realBase, outputPath);
 
-  // Ensure the resolved path starts with the base directory
-  if (
-    !resolvedPath.startsWith(resolvedBase + path.sep) &&
-    resolvedPath !== resolvedBase
-  ) {
+  // Resolve symlinks to get actual filesystem location
+  let realPath: string;
+  try {
+    if (fs.existsSync(resolvedPath)) {
+      // Path exists - resolve it (follows symlinks)
+      realPath = fs.realpathSync(resolvedPath);
+    } else {
+      // Path doesn't exist - validate parent directory
+      const parentDir = path.dirname(resolvedPath);
+      const fileName = path.basename(resolvedPath);
+
+      if (fs.existsSync(parentDir)) {
+        const realParent = fs.realpathSync(parentDir);
+        realPath = path.join(realParent, fileName);
+      } else {
+        // Parent doesn't exist - use logical resolution
+        realPath = resolvedPath;
+      }
+    }
+  } catch (error) {
     throw new Error(
-      `Invalid output path: "${outputPath}" resolves outside the allowed directory. ` +
-        `Path traversal is not allowed.`
+      `Cannot validate output path "${outputPath}": ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`
     );
   }
 
-  return resolvedPath;
+  // Check if real path is within base directory
+  if (!realPath.startsWith(realBase + path.sep) && realPath !== realBase) {
+    throw new Error(
+      `Invalid output path: "${outputPath}" resolves outside allowed directory ` +
+        `(${realPath} is not under ${realBase}). Path traversal not allowed.`
+    );
+  }
+
+  return realPath;
 }
 
 import type { Document } from '@mendable/firecrawl-js';

@@ -11,7 +11,6 @@ import {
   validateConfig,
 } from '../utils/config';
 import { fetchWithTimeout } from '../utils/http';
-import { addUrlsToNotebook } from '../utils/notebooklm';
 import { writeOutput } from '../utils/output';
 
 /** HTTP timeout for map API requests (60 seconds) */
@@ -124,7 +123,7 @@ function formatMapReadable(data: MapResult['data']): string {
 }
 
 /**
- * Handle map command output and optional NotebookLM integration
+ * Handle map command output
  */
 export async function handleMapCommand(options: MapOptions): Promise<void> {
   const result = await executeMap(options);
@@ -136,51 +135,6 @@ export async function handleMapCommand(options: MapOptions): Promise<void> {
 
   if (!result.data) {
     return;
-  }
-
-  // Optional: Add URLs to NotebookLM notebook
-  if (options.notebook && result.data.links.length > 0) {
-    const urls = result.data.links.map((link) => link.url);
-
-    // Truncate to 300 URLs (NotebookLM Pro limit)
-    if (urls.length > 300) {
-      console.error(
-        `[NotebookLM] Warning: Truncating to 300 URLs (NotebookLM limit), found ${urls.length}`
-      );
-    }
-
-    const urlsToAdd = urls.slice(0, 300);
-
-    console.error(
-      `[NotebookLM] Adding ${urlsToAdd.length} URLs to notebook "${options.notebook}"...`
-    );
-
-    const notebookResult = await addUrlsToNotebook(options.notebook, urlsToAdd);
-
-    if (notebookResult) {
-      if (notebookResult.failed === 0) {
-        console.error(
-          `[NotebookLM] Added ${notebookResult.added}/${urlsToAdd.length} URLs as sources`
-        );
-      } else {
-        console.error(
-          `[NotebookLM] Added ${notebookResult.added}/${urlsToAdd.length} URLs as sources (${notebookResult.failed} failed)`
-        );
-        notebookResult.errors.slice(0, 5).forEach((error) => {
-          console.error(`[NotebookLM]   - ${error}`);
-        });
-        if (notebookResult.errors.length > 5) {
-          console.error(
-            `[NotebookLM]   ... and ${notebookResult.errors.length - 5} more errors`
-          );
-        }
-      }
-      console.error(`[NotebookLM] Notebook ID: ${notebookResult.notebook_id}`);
-    } else {
-      console.error(
-        '[NotebookLM] Failed to add URLs. Check that python3 and notebooklm are installed.'
-      );
-    }
   }
 
   let outputContent: string;
@@ -224,10 +178,6 @@ export function createMapCommand(): Command {
     .option('--ignore-query-parameters', 'Ignore query parameters')
     .option('--timeout <seconds>', 'Timeout in seconds', parseFloat)
     .option(
-      '--notebook <id-or-name>',
-      'Add discovered URLs to NotebookLM notebook (ID or name)'
-    )
-    .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
     )
@@ -257,7 +207,6 @@ export function createMapCommand(): Command {
         includeSubdomains: options.includeSubdomains,
         ignoreQueryParameters: options.ignoreQueryParameters,
         timeout: options.timeout,
-        notebook: options.notebook,
       };
 
       await handleMapCommand(mapOptions);

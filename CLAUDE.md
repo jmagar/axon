@@ -23,7 +23,7 @@ src/
 │   ├── logout.ts        # Credential removal
 │   ├── status.ts        # System status
 │   └── version.ts       # Version info
-├── utils/                # Shared utilities (15 modules)
+├── utils/                # Shared utilities (14 modules)
 │   ├── client.ts        # Firecrawl SDK client singleton
 │   ├── config.ts        # Global configuration (env > credentials > defaults)
 │   ├── credentials.ts   # OS credential storage (keychain/file fallback)
@@ -34,7 +34,6 @@ src/
 │   ├── chunker.ts       # Markdown-aware text chunking
 │   ├── embeddings.ts    # TEI integration (batched, concurrent)
 │   ├── qdrant.ts        # Qdrant vector database client
-│   ├── notebooklm.ts    # NotebookLM Python integration
 │   ├── url.ts           # URL validation
 │   ├── options.ts       # CLI option parsing
 │   ├── job.ts           # Job ID detection
@@ -55,7 +54,6 @@ src/
 
 - **TEI (Text Embeddings Inference)**: Vector embedding service
 - **Qdrant**: Vector database for semantic search
-- **NotebookLM**: Google's AI notebook (via Python subprocess)
 
 ## Configuration Priority
 
@@ -89,10 +87,6 @@ Graceful shutdown on SIGINT/SIGTERM with double-signal force exit.
 
 `output.ts:validateOutputPath()` ensures output files stay within cwd.
 
-### Python Subprocess Security
-
-`notebooklm.ts:isValidPythonInterpreter()` validates interpreter paths.
-
 ## Development Commands
 
 ```bash
@@ -118,6 +112,5 @@ pnpm type-check     # TypeScript check
 
 - API keys stored with 0600 file permissions
 - Path traversal protection on file output
-- Python interpreter path validation
 - No hardcoded secrets in codebase
 - HTTP timeout prevents hanging connections

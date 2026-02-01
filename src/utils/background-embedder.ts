@@ -6,6 +6,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import type { Document } from '@mendable/firecrawl-js';
@@ -228,7 +229,34 @@ async function startEmbedderWebhookServer(): Promise<void> {
 
     if (settings.secret) {
       const provided = req.headers[EMBEDDER_WEBHOOK_HEADER];
-      if (provided !== settings.secret) {
+
+      // Type check and validate provided secret
+      if (!provided || typeof provided !== 'string') {
+        res.statusCode = 401;
+        res.end();
+        return;
+      }
+
+      // Convert to buffers for timing-safe comparison
+      const providedBuf = Buffer.from(provided, 'utf8');
+      const secretBuf = Buffer.from(settings.secret, 'utf8');
+
+      // Length check before comparison (timingSafeEqual requires equal lengths)
+      if (providedBuf.length !== secretBuf.length) {
+        res.statusCode = 401;
+        res.end();
+        return;
+      }
+
+      // Use constant-time comparison to prevent timing attacks
+      try {
+        if (!timingSafeEqual(providedBuf, secretBuf)) {
+          res.statusCode = 401;
+          res.end();
+          return;
+        }
+      } catch {
+        // timingSafeEqual can throw if lengths don't match (shouldn't happen due to check above)
         res.statusCode = 401;
         res.end();
         return;

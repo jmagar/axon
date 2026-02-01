@@ -29,8 +29,6 @@ export interface MapOptions {
   ignoreQueryParameters?: boolean;
   /** Timeout in seconds */
   timeout?: number;
-  /** NotebookLM notebook ID or name to add URLs to */
-  notebook?: string;
 }
 
 export interface MapResult {
