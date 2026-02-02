@@ -3,8 +3,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getClient } from '../../utils/client';
-import { getConfig, initializeConfig, updateConfig } from '../../utils/config';
+import { getClient, resetClient } from '../../utils/client';
+import {
+  getConfig,
+  initializeConfig,
+  resetConfig,
+  updateConfig,
+} from '../../utils/config';
 import * as credentials from '../../utils/credentials';
 
 // Mock credentials module

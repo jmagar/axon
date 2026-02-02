@@ -42,7 +42,7 @@ describe('executeBatch', () => {
   });
 
   it('should start batch scrape when wait is false', async () => {
-    mockClient.startBatchScrape.mockResolvedValue({
+    mockClient.startBatchScrape!.mockResolvedValue({
       id: 'batch-1',
       url: 'https://api.firecrawl.dev/v2/batch/scrape/batch-1',
     });
@@ -61,7 +61,7 @@ describe('executeBatch', () => {
   });
 
   it('should wait batch scrape when wait is true', async () => {
-    mockClient.batchScrape.mockResolvedValue({
+    mockClient.batchScrape!.mockResolvedValue({
       id: 'batch-1',
       status: 'completed',
       completed: 2,
@@ -87,7 +87,7 @@ describe('executeBatch', () => {
   });
 
   it('should get batch status by job id', async () => {
-    mockClient.getBatchScrapeStatus.mockResolvedValue({
+    mockClient.getBatchScrapeStatus!.mockResolvedValue({
       id: 'batch-1',
       status: 'scraping',
       completed: 1,
@@ -100,25 +100,25 @@ describe('executeBatch', () => {
       status: true,
     });
 
-    expect(mockClient.getBatchScrapeStatus).toHaveBeenCalledWith('batch-1');
+    expect(mockClient.getBatchScrapeStatus!).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
   });
 
   it('should cancel batch scrape job', async () => {
-    mockClient.cancelBatchScrape.mockResolvedValue(true);
+    mockClient.cancelBatchScrape!.mockResolvedValue(true);
 
     const result = await executeBatch(container, {
       jobId: 'batch-1',
       cancel: true,
     });
 
-    expect(mockClient.cancelBatchScrape).toHaveBeenCalledWith('batch-1');
+    expect(mockClient.cancelBatchScrape!).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ success: true, message: 'cancelled' });
   });
 
   it('should get batch scrape errors', async () => {
-    mockClient.getBatchScrapeErrors.mockResolvedValue({
+    mockClient.getBatchScrapeErrors!.mockResolvedValue({
       errors: [
         {
           id: 'err-1',
@@ -135,7 +135,7 @@ describe('executeBatch', () => {
       errors: true,
     });
 
-    expect(mockClient.getBatchScrapeErrors).toHaveBeenCalledWith('batch-1');
+    expect(mockClient.getBatchScrapeErrors!).toHaveBeenCalledWith('batch-1');
     expect(result.success).toBe(true);
     expect(
       (result.data as { errors?: unknown[] } | undefined)?.errors?.length

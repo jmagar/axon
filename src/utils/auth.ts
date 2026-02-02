@@ -4,7 +4,7 @@
  */
 
 import * as readline from 'node:readline';
-import { DEFAULT_API_URL, getApiKey, updateConfig } from './config';
+import { DEFAULT_API_URL, getApiKey, getConfig, updateConfig } from './config';
 import { saveCredentials } from './credentials';
 
 /**
@@ -114,7 +114,7 @@ export { printBanner };
  * Check if user is authenticated
  */
 export function isAuthenticated(): boolean {
-  const apiKey = getApiKey();
+  const apiKey = getConfig().apiKey;
   return !!apiKey && apiKey.length > 0;
 }
 
@@ -125,7 +125,7 @@ export function isAuthenticated(): boolean {
  */
 export async function ensureAuthenticated(): Promise<string> {
   // Check if we already have credentials
-  const existingKey = getApiKey();
+  const existingKey = getConfig().apiKey;
   if (existingKey) {
     return existingKey;
   }

@@ -91,6 +91,28 @@ export function getConfig(): GlobalConfig {
 }
 
 /**
+ * Get the API key from config
+ * Checks: config > env > stored credentials
+ * @deprecated Use DI container instead: `container.config.apiKey`
+ * This function will be removed in Phase 4 after all commands are migrated.
+ */
+export function getApiKey(): string | undefined {
+  // Check config first
+  if (globalConfig.apiKey) {
+    return globalConfig.apiKey;
+  }
+
+  // Check environment variable
+  if (process.env.FIRECRAWL_API_KEY) {
+    return process.env.FIRECRAWL_API_KEY;
+  }
+
+  // Check stored credentials
+  const stored = loadCredentials();
+  return stored?.apiKey;
+}
+
+/**
  * Update global configuration (merges with existing)
  * @deprecated Use DI container instead: `createContainerWithOverride(base, overrides)`
  * This function will be removed in Phase 4 after all commands are migrated.
