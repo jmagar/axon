@@ -4,10 +4,14 @@
  *
  * Provides both single-document embedding (autoEmbed) and
  * batch embedding with concurrency control (batchEmbed).
+ *
+ * @deprecated Use container.getEmbedPipeline() instead
+ * This module is kept for backward compatibility with background-embedder daemon
  */
 
 import { randomUUID } from 'node:crypto';
 import pLimit from 'p-limit';
+import type { ImmutableConfig } from '../container/types';
 import { chunkText } from './chunker';
 import { getConfig } from './config';
 import { embedChunks, getTeiInfo } from './embeddings';
@@ -54,11 +58,12 @@ function extractDomain(url: string): string {
  */
 export async function autoEmbed(
   content: string,
-  metadata: EmbedMetadata
+  metadata: EmbedMetadata,
+  config?: ImmutableConfig
 ): Promise<void> {
   try {
-    const config = getConfig();
-    const { teiUrl, qdrantUrl, qdrantCollection } = config;
+    const cfg = config || getConfig();
+    const { teiUrl, qdrantUrl, qdrantCollection } = cfg;
 
     // No-op if not configured
     if (!teiUrl || !qdrantUrl) return;

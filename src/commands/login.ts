@@ -4,7 +4,7 @@
  */
 
 import { interactiveLogin, isAuthenticated } from '../utils/auth';
-import { DEFAULT_API_URL, updateConfig } from '../utils/config';
+import { DEFAULT_API_URL } from '../utils/config';
 import { getConfigDirectoryPath, saveCredentials } from '../utils/credentials';
 
 export interface LoginOptions {
@@ -38,11 +38,6 @@ export async function handleLoginCommand(
         apiUrl: apiUrl,
       });
       console.log('✓ Login successful!');
-
-      updateConfig({
-        apiKey: options.apiKey,
-        apiUrl: apiUrl,
-      });
     } catch (error) {
       console.error(
         'Error saving credentials:',
@@ -63,11 +58,6 @@ export async function handleLoginCommand(
     });
 
     console.log('\n✓ Login successful!');
-
-    updateConfig({
-      apiKey: result.apiKey,
-      apiUrl: result.apiUrl || apiUrl,
-    });
   } catch (error) {
     console.error(
       '\nError:',

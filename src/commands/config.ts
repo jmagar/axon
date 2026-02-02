@@ -4,7 +4,7 @@
  */
 
 import { isAuthenticated } from '../utils/auth';
-import { DEFAULT_API_URL, getConfig } from '../utils/config';
+import { DEFAULT_API_URL } from '../utils/config';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
 import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
 
@@ -40,7 +40,6 @@ export async function configure(options: ConfigureOptions = {}): Promise<void> {
  */
 export async function viewConfig(): Promise<void> {
   const credentials = loadCredentials();
-  const config = getConfig();
 
   console.log('\n┌─────────────────────────────────────────┐');
   console.log('│          Firecrawl Configuration        │');
@@ -53,7 +52,7 @@ export async function viewConfig(): Promise<void> {
 
     console.log('Status: ✓ Authenticated\n');
     console.log(`API Key:  ${maskedKey}`);
-    console.log(`API URL:  ${config.apiUrl || DEFAULT_API_URL}`);
+    console.log(`API URL:  ${credentials?.apiUrl || DEFAULT_API_URL}`);
     console.log(`Config:   ${getConfigDirectoryPath()}`);
 
     // Show settings

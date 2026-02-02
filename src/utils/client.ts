@@ -1,16 +1,14 @@
 /**
  * Firecrawl client utility
- * Provides a singleton client instance initialized with global configuration
+ * Provides client instances initialized with global configuration
  */
 
 import type { FirecrawlClientOptions } from '@mendable/firecrawl-js';
 import Firecrawl from '@mendable/firecrawl-js';
 import { type GlobalConfig, getConfig, updateConfig } from './config';
 
-let clientInstance: Firecrawl | null = null;
-
 /**
- * Get or create the Firecrawl client instance
+ * Create a Firecrawl client instance
  * Uses global configuration if available, otherwise creates with provided options
  *
  * @deprecated Use DI container instead: `container.getFirecrawlClient()`
@@ -75,53 +73,23 @@ export function getClient(
     return new Firecrawl(clientOptions);
   }
 
-  // Return singleton instance or create one
-  if (!clientInstance) {
-    const config = getConfig();
+  // Create client from global config
+  const config = getConfig();
 
-    // Validate API key
-    if (!config.apiKey) {
-      throw new Error(
-        'API key is required. Set FIRECRAWL_API_KEY environment variable, use --api-key flag, or run "firecrawl config" to set the API key.'
-      );
-    }
-
-    const clientOptions: FirecrawlClientOptions = {
-      apiKey: config.apiKey || undefined,
-      apiUrl: config.apiUrl || undefined,
-      timeoutMs: config.timeoutMs,
-      maxRetries: config.maxRetries,
-      backoffFactor: config.backoffFactor,
-    };
-
-    clientInstance = new Firecrawl(clientOptions);
+  // Validate API key
+  if (!config.apiKey) {
+    throw new Error(
+      'API key is required. Set FIRECRAWL_API_KEY environment variable, use --api-key flag, or run "firecrawl config" to set the API key.'
+    );
   }
 
-  return clientInstance;
-}
+  const clientOptions: FirecrawlClientOptions = {
+    apiKey: config.apiKey || undefined,
+    apiUrl: config.apiUrl || undefined,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+    backoffFactor: config.backoffFactor,
+  };
 
-/**
- * Initialize the client with configuration
- * This should be called early in the application lifecycle
- *
- * @deprecated Use DI container instead: `createContainer(config)`
- * This function will be removed in Phase 4 after all commands are migrated.
- */
-export function initializeClient(config?: Partial<GlobalConfig>): Firecrawl {
-  if (config) {
-    const { initializeConfig } = require('./config');
-    initializeConfig(config);
-  }
-
-  // Reset instance to force recreation with new config
-  clientInstance = null;
-  return getClient();
-}
-
-/**
- * Reset the client instance (for testing)
- * Forces recreation on next getClient() call
- */
-export function resetClient(): void {
-  clientInstance = null;
+  return new Firecrawl(clientOptions);
 }

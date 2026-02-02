@@ -3,7 +3,6 @@
  * Clears stored credentials
  */
 
-import { updateConfig } from '../utils/config';
 import { deleteCredentials, loadCredentials } from '../utils/credentials';
 
 /**
@@ -19,11 +18,6 @@ export async function handleLogoutCommand(): Promise<void> {
 
   try {
     deleteCredentials();
-    // Clear the global config
-    updateConfig({
-      apiKey: '',
-      apiUrl: '',
-    });
 
     console.log('✓ Logged out successfully');
   } catch (error) {

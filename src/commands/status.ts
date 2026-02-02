@@ -6,10 +6,10 @@
 
 import { Command } from 'commander';
 import packageJson from '../../package.json';
-import type { IContainer } from '../container/types';
+import type { IContainer, ImmutableConfig } from '../container/types';
 import { isAuthenticated } from '../utils/auth';
 import { formatJson } from '../utils/command';
-import { DEFAULT_API_URL, getConfig } from '../utils/config';
+import { DEFAULT_API_URL } from '../utils/config';
 import { loadCredentials } from '../utils/credentials';
 import {
   getEmbedJob,
@@ -66,9 +66,8 @@ function getAuthSource(): AuthSource {
 /**
  * Get status information
  */
-export function getStatus(): StatusResult {
+export function getStatus(config: ImmutableConfig): StatusResult {
   const authSource = getAuthSource();
-  const config = getConfig();
 
   return {
     version: packageJson.version,
@@ -81,7 +80,10 @@ export function getStatus(): StatusResult {
 /**
  * Handle status command output
  */
-export async function handleStatusCommand(): Promise<void> {
+export async function handleStatusCommand(
+  container: IContainer,
+  _options: Record<string, unknown>
+): Promise<void> {
   const orange = '\x1b[38;5;208m';
   const reset = '\x1b[0m';
   const dim = '\x1b[2m';
@@ -89,7 +91,7 @@ export async function handleStatusCommand(): Promise<void> {
   const green = '\x1b[32m';
   const red = '\x1b[31m';
 
-  const status = getStatus();
+  const status = getStatus(container.config);
 
   // Header
   console.log('');

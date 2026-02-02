@@ -3,6 +3,7 @@
  */
 
 import type { Document, WebhookConfig } from '@mendable/firecrawl-js';
+import type { ImmutableConfig } from '../container/types';
 import { getConfig } from './config';
 
 export const DEFAULT_EMBEDDER_WEBHOOK_PORT = 53000;
@@ -38,18 +39,22 @@ function normalizePort(port: number | undefined): number {
   return normalized;
 }
 
-export function getEmbedderWebhookSettings(): EmbedderWebhookSettings {
-  const config = getConfig();
+export function getEmbedderWebhookSettings(
+  config?: ImmutableConfig
+): EmbedderWebhookSettings {
+  const cfg = config || getConfig();
   return {
-    url: config.embedderWebhookUrl,
-    port: normalizePort(config.embedderWebhookPort),
-    path: normalizePath(config.embedderWebhookPath),
-    secret: config.embedderWebhookSecret,
+    url: cfg.embedderWebhookUrl,
+    port: normalizePort(cfg.embedderWebhookPort),
+    path: normalizePath(cfg.embedderWebhookPath),
+    secret: cfg.embedderWebhookSecret,
   };
 }
 
-export function buildEmbedderWebhookConfig(): WebhookConfig | null {
-  const settings = getEmbedderWebhookSettings();
+export function buildEmbedderWebhookConfig(
+  config?: ImmutableConfig
+): WebhookConfig | null {
+  const settings = getEmbedderWebhookSettings(config);
   if (!settings.url) {
     return null;
   }

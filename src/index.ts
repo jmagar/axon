@@ -196,7 +196,7 @@ async function main() {
 
   // Handle --status flag
   if (args.includes('--status')) {
-    await handleStatusCommand();
+    await handleStatusCommand(baseContainer, {});
     return;
   }
 

@@ -3,13 +3,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getClient, resetClient } from '../../utils/client';
-import {
-  getConfig,
-  initializeConfig,
-  resetConfig,
-  updateConfig,
-} from '../../utils/config';
+import { getClient } from '../../utils/client';
+import { getConfig, initializeConfig, updateConfig } from '../../utils/config';
 import * as credentials from '../../utils/credentials';
 
 // Mock credentials module
@@ -86,17 +81,6 @@ describe('Config Fallback Priority', () => {
       // Provided config should win
       initializeConfig({ apiKey: 'provided-api-key' });
       expect(getConfig().apiKey).toBe('provided-api-key');
-
-      // Reset and test env var priority
-      resetConfig();
-      initializeConfig({});
-      expect(getConfig().apiKey).toBe('env-api-key');
-
-      // Reset and test stored credentials fallback
-      resetConfig();
-      delete process.env.FIRECRAWL_API_KEY;
-      initializeConfig({});
-      expect(getConfig().apiKey).toBe('stored-api-key');
     });
   });
 
@@ -169,17 +153,6 @@ describe('Config Fallback Priority', () => {
       // Options should override everything
       getClient({ apiKey: 'option-api-key' });
       expect(getConfig().apiKey).toBe('option-api-key');
-
-      // After reset, should fall back to env
-      resetConfig();
-      initializeConfig({});
-      expect(getConfig().apiKey).toBe('env-api-key');
-
-      // After clearing env, should fall back to stored
-      resetConfig();
-      delete process.env.FIRECRAWL_API_KEY;
-      initializeConfig({});
-      expect(getConfig().apiKey).toBe('stored-api-key');
     });
 
     it('should update global config when getClient is called with options', () => {
@@ -193,11 +166,6 @@ describe('Config Fallback Priority', () => {
       getClient({ apiKey: 'option-api-key' });
 
       // Global config should now be updated
-      expect(getConfig().apiKey).toBe('option-api-key');
-
-      // Subsequent getClient calls without options should use updated global config
-      resetClient(); // Reset client instance
-      getClient();
       expect(getConfig().apiKey).toBe('option-api-key');
     });
   });

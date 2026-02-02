@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { initializeConfig, resetConfig } from '../../utils/config';
+import { initializeConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
 import { autoEmbed } from '../../utils/embedpipeline';
 import * as qdrant from '../../utils/qdrant';
@@ -9,14 +9,12 @@ vi.mock('../../utils/qdrant');
 
 describe('autoEmbed', () => {
   beforeEach(() => {
-    resetConfig();
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    resetConfig();
     vi.restoreAllMocks();
   });
 

@@ -1,10 +1,14 @@
 /**
- * Authentication utilities
- * Provides automatic authentication prompts when credentials are missing
+ * Authentication utilities for CLI authentication flow
+ *
+ * Note: This module uses legacy config functions (getConfig, updateConfig)
+ * because it runs before container initialization during the login flow.
+ * The interactive authentication system is orthogonal to the DI container
+ * and would require major refactoring to migrate.
  */
 
 import * as readline from 'node:readline';
-import { DEFAULT_API_URL, getApiKey, getConfig, updateConfig } from './config';
+import { DEFAULT_API_URL, getConfig, updateConfig } from './config';
 import { saveCredentials } from './credentials';
 
 /**

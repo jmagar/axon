@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAuthenticated } from '../../utils/auth';
-import { initializeConfig, resetConfig } from '../../utils/config';
+import { initializeConfig } from '../../utils/config';
 import * as credentials from '../../utils/credentials';
 
 // Mock credentials module
@@ -18,7 +18,6 @@ describe('Authentication Utilities', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    resetConfig();
     vi.clearAllMocks();
     // Clear env vars
     delete process.env.FIRECRAWL_API_KEY;
