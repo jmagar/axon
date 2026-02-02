@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^4.10.0",
-    "commander": "^14.0.2",
+    "commander": "^14.0.3",
     "dotenv": "^17.2.3",
     "p-limit": "^7.2.0",
     "zod": "^4.3.6"
