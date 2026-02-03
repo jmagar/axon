@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initializeConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
-import { autoEmbed, batchEmbed } from '../../utils/embedpipeline';
+import {
+  autoEmbed,
+  batchEmbed,
+  createEmbedItems,
+} from '../../utils/embedpipeline';
 import * as qdrant from '../../utils/qdrant';
 
 vi.mock('../../utils/embeddings');
@@ -311,5 +315,49 @@ describe('batchEmbed', () => {
     expect(result.failed).toBe(20);
     // Should only collect first 10 errors
     expect(result.errors).toHaveLength(10);
+  });
+});
+
+describe('createEmbedItems', () => {
+  it('creates embed items from pages with markdown content', () => {
+    const pages = [
+      { markdown: '# Title', url: 'https://example.com', title: 'Example' },
+    ];
+    const items = createEmbedItems(pages, 'crawl');
+    expect(items).toHaveLength(1);
+    expect(items[0].content).toBe('# Title');
+    expect(items[0].metadata.url).toBe('https://example.com');
+    expect(items[0].metadata.sourceCommand).toBe('crawl');
+    expect(items[0].metadata.contentType).toBe('markdown');
+  });
+
+  it('creates embed items from pages with html content', () => {
+    const pages = [{ html: '<p>Hello</p>', url: 'https://example.com' }];
+    const items = createEmbedItems(pages, 'scrape');
+    expect(items).toHaveLength(1);
+    expect(items[0].metadata.contentType).toBe('html');
+  });
+
+  it('extracts url from metadata.sourceURL fallback', () => {
+    const pages = [
+      { markdown: 'content', metadata: { sourceURL: 'https://fallback.com' } },
+    ];
+    const items = createEmbedItems(pages, 'crawl');
+    expect(items[0].metadata.url).toBe('https://fallback.com');
+  });
+
+  it('filters out pages without markdown or html', () => {
+    const pages = [
+      { markdown: 'valid', url: 'https://a.com' },
+      { url: 'https://empty.com' }, // No content
+      { html: 'also valid', url: 'https://b.com' },
+    ];
+    const items = createEmbedItems(pages, 'crawl');
+    expect(items).toHaveLength(2);
+  });
+
+  it('returns empty array for empty input', () => {
+    const items = createEmbedItems([], 'crawl');
+    expect(items).toHaveLength(0);
   });
 });
