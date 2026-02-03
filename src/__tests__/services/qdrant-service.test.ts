@@ -153,4 +153,91 @@ describe('QdrantService', () => {
       );
     });
   });
+
+  describe('countPoints', () => {
+    it('should return total point count', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ result: { count: 1234 } }),
+      } as Response);
+
+      const count = await service.countPoints('test_collection');
+
+      expect(count).toBe(1234);
+    });
+
+    it('should throw on non-ok response', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: false,
+        status: 500,
+      } as Response);
+
+      await expect(service.countPoints('test_collection')).rejects.toThrow(
+        'Qdrant count failed: 500'
+      );
+    });
+  });
+
+  describe('countByUrl', () => {
+    it('should return point count for URL', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ result: { count: 42 } }),
+      } as Response);
+
+      const count = await service.countByUrl(
+        'test_collection',
+        'https://example.com'
+      );
+
+      expect(count).toBe(42);
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('https://example.com'),
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('should throw on non-ok response', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: false,
+        status: 404,
+      } as Response);
+
+      await expect(
+        service.countByUrl('test_collection', 'https://example.com')
+      ).rejects.toThrow('Qdrant count failed: 404');
+    });
+  });
+
+  describe('deleteAll', () => {
+    it('should delete all points in collection', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+      } as Response);
+
+      await service.deleteAll('test_collection');
+
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledWith(
+        expect.stringContaining('/points/delete'),
+        expect.objectContaining({
+          method: 'POST',
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('should throw on non-ok response', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: false,
+        status: 500,
+      } as Response);
+
+      await expect(service.deleteAll('test_collection')).rejects.toThrow(
+        'Qdrant delete failed: 500'
+      );
+    });
+  });
 });
