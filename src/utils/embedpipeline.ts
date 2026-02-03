@@ -105,7 +105,10 @@ async function autoEmbedInternal(
 
   // Chunk content
   const chunks = chunkText(trimmed);
-  if (chunks.length === 0) return;
+  if (chunks.length === 0) {
+    console.error(`Chunking produced 0 chunks for ${metadata.url}`);
+    return;
+  }
 
   // Generate embeddings
   const texts = chunks.map((c) => c.text);

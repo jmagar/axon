@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chunkText } from '../../utils/chunker';
 import { initializeConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../../utils/embedpipeline';
 import * as qdrant from '../../utils/qdrant';
 
+vi.mock('../../utils/chunker');
 vi.mock('../../utils/embeddings');
 vi.mock('../../utils/qdrant');
 
@@ -74,6 +76,34 @@ describe('autoEmbed', () => {
     );
   });
 
+  it('logs when chunking produces zero chunks', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
+      modelId: 'test',
+      dimension: 1024,
+      maxInput: 32768,
+    });
+    vi.mocked(qdrant.ensureCollection).mockResolvedValue();
+
+    // Mock chunkText to return empty array
+    vi.mocked(chunkText).mockReturnValue([]);
+
+    await autoEmbed('some content', {
+      url: 'https://example.com',
+      sourceCommand: 'test',
+    });
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Chunking produced 0 chunks for https://example.com'
+      )
+    );
+  });
+
   it('should chunk, embed, delete old, and upsert when configured', async () => {
     initializeConfig({
       teiUrl: 'http://localhost:52000',
@@ -93,6 +123,11 @@ describe('autoEmbed', () => {
     vi.mocked(qdrant.ensureCollection).mockResolvedValue();
     vi.mocked(qdrant.deleteByUrl).mockResolvedValue();
     vi.mocked(qdrant.upsertPoints).mockResolvedValue();
+    // Mock chunkText to return chunks
+    vi.mocked(chunkText).mockReturnValue([
+      { text: 'chunk 1 text', index: 0, header: '# Title' },
+      { text: 'chunk 2 text', index: 1, header: '## Section' },
+    ]);
 
     await autoEmbed('# Title\n\nSome content.\n\n## Section\n\nMore content.', {
       url: 'https://example.com/page',
@@ -189,6 +224,9 @@ describe('batchEmbed', () => {
     vi.mocked(qdrant.ensureCollection).mockResolvedValue();
     vi.mocked(qdrant.deleteByUrl).mockResolvedValue();
     vi.mocked(qdrant.upsertPoints).mockResolvedValue();
+    vi.mocked(chunkText).mockReturnValue([
+      { text: 'chunk text', index: 0, header: null },
+    ]);
 
     const result = await batchEmbed([
       {
@@ -226,6 +264,9 @@ describe('batchEmbed', () => {
     });
     vi.mocked(qdrant.ensureCollection).mockResolvedValue();
     vi.mocked(embeddings.embedChunks).mockRejectedValue(new Error('TEI error'));
+    vi.mocked(chunkText).mockReturnValue([
+      { text: 'chunk text', index: 0, header: null },
+    ]);
 
     const result = await batchEmbed([
       {
@@ -265,6 +306,10 @@ describe('batchEmbed', () => {
     vi.mocked(qdrant.ensureCollection).mockResolvedValue();
     vi.mocked(qdrant.deleteByUrl).mockResolvedValue();
     vi.mocked(qdrant.upsertPoints).mockResolvedValue();
+    // Return chunks that contain the original content for differentiation
+    vi.mocked(chunkText).mockImplementation((text: string) => [
+      { text, index: 0, header: null },
+    ]);
 
     // Fail embedding for Content 2, succeed for Content 1
     vi.mocked(embeddings.embedChunks).mockImplementation(
@@ -315,6 +360,9 @@ describe('batchEmbed', () => {
     });
     vi.mocked(qdrant.ensureCollection).mockResolvedValue();
     vi.mocked(embeddings.embedChunks).mockRejectedValue(new Error('Error'));
+    vi.mocked(chunkText).mockReturnValue([
+      { text: 'chunk text', index: 0, header: null },
+    ]);
 
     // Create 20 items that will all fail
     const items = Array.from({ length: 20 }, (_, i) => ({
