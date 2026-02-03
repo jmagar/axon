@@ -67,4 +67,90 @@ describe('QdrantService', () => {
       );
     });
   });
+
+  describe('scrollAll', () => {
+    it('should scroll all points without filter', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            result: {
+              points: [
+                { id: 'p1', payload: { url: 'https://a.com' } },
+                { id: 'p2', payload: { url: 'https://b.com' } },
+              ],
+              next_page_offset: null,
+            },
+          }),
+      } as Response);
+
+      const points = await service.scrollAll('test_collection');
+
+      expect(points).toHaveLength(2);
+      expect(points[0].payload.url).toBe('https://a.com');
+    });
+
+    it('should scroll with filter', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            result: {
+              points: [{ id: 'p1', payload: { domain: 'example.com' } }],
+              next_page_offset: null,
+            },
+          }),
+      } as Response);
+
+      await service.scrollAll('test_collection', { domain: 'example.com' });
+
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"domain"'),
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('should paginate through multiple pages', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              result: {
+                points: [{ id: 'p1', payload: {} }],
+                next_page_offset: 'offset1',
+              },
+            }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              result: {
+                points: [{ id: 'p2', payload: {} }],
+                next_page_offset: null,
+              },
+            }),
+        } as Response);
+
+      const points = await service.scrollAll('test_collection');
+
+      expect(points).toHaveLength(2);
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw on non-ok response', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: false,
+        status: 500,
+      } as Response);
+
+      await expect(service.scrollAll('test_collection')).rejects.toThrow(
+        'Qdrant scroll failed: 500'
+      );
+    });
+  });
 });

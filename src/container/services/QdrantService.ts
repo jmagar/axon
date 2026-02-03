@@ -419,5 +419,83 @@ export class QdrantService implements IQdrantService {
       },
     };
   }
+
+  /**
+   * Scroll all points with optional filter
+   *
+   * @param collection Collection name
+   * @param filter Optional payload filter
+   * @returns Array of all matching points
+   */
+  async scrollAll(
+    collection: string,
+    filter?: Record<string, unknown>
+  ): Promise<QdrantPoint[]> {
+    const allPoints: QdrantPoint[] = [];
+    let offset: string | number | null = null;
+    let isFirstPage = true;
+
+    while (isFirstPage || offset !== null) {
+      isFirstPage = false;
+
+      const body: Record<string, unknown> = {
+        limit: SCROLL_PAGE_SIZE,
+        with_payload: true,
+        with_vector: false,
+      };
+
+      if (filter && Object.keys(filter).length > 0) {
+        body.filter = {
+          must: Object.entries(filter).map(([key, value]) => ({
+            key,
+            match: { value },
+          })),
+        };
+      }
+
+      if (offset !== null) {
+        body.offset = offset;
+      }
+
+      const response = await this.httpClient.fetchWithRetry(
+        `${this.qdrantUrl}/collections/${collection}/points/scroll`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Qdrant scroll failed: ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        result?: {
+          points?: Array<{
+            id: string;
+            vector?: number[];
+            payload?: Record<string, unknown>;
+          }>;
+          next_page_offset?: string | number | null;
+        };
+      };
+
+      const points = data.result?.points || [];
+
+      for (const p of points) {
+        allPoints.push({
+          id: p.id,
+          vector: p.vector || [],
+          payload: p.payload || {},
+        });
+      }
+
+      offset = data.result?.next_page_offset ?? null;
+    }
+
+    return allPoints;
+  }
 }
 
