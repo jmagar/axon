@@ -3,7 +3,12 @@
  * Handles collection management, upsert, delete, query, and scroll operations
  */
 
-import type { IHttpClient, IQdrantService, QdrantPoint } from '../types';
+import type {
+  CollectionInfo,
+  IHttpClient,
+  IQdrantService,
+  QdrantPoint,
+} from '../types';
 
 /** Scroll page size for pagination */
 const SCROLL_PAGE_SIZE = 100;
@@ -353,4 +358,52 @@ export class QdrantService implements IQdrantService {
     const data = (await response.json()) as { result?: { count?: number } };
     return data.result?.count ?? 0;
   }
+
+  /**
+   * Get collection information
+   *
+   * @param collection Collection name
+   * @returns Collection info including vector count and config
+   */
+  async getCollectionInfo(collection: string): Promise<CollectionInfo> {
+    const response = await this.httpClient.fetchWithRetry(
+      `${this.qdrantUrl}/collections/${collection}`,
+      undefined,
+      { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Qdrant getCollectionInfo failed: ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      result?: {
+        status?: string;
+        vectors_count?: number;
+        points_count?: number;
+        segments_count?: number;
+        config?: {
+          params?: {
+            vectors?: {
+              size?: number;
+              distance?: string;
+            };
+          };
+        };
+      };
+    };
+
+    const result = data.result;
+    return {
+      status: result?.status ?? 'unknown',
+      vectorsCount: result?.vectors_count ?? 0,
+      pointsCount: result?.points_count ?? 0,
+      segmentsCount: result?.segments_count ?? 0,
+      config: {
+        dimension: result?.config?.params?.vectors?.size ?? 0,
+        distance: result?.config?.params?.vectors?.distance ?? 'unknown',
+      },
+    };
+  }
 }
+
