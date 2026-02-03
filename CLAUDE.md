@@ -50,10 +50,53 @@ src/
 - **Testing**: Vitest v4
 - **Package Manager**: pnpm
 
-## External Integrations (Optional)
+## Local Infrastructure
 
-- **TEI (Text Embeddings Inference)**: Vector embedding service
-- **Qdrant**: Vector database for semantic search
+This project uses a **self-hosted Firecrawl stack**, NOT the cloud API.
+
+### Docker Services
+
+| Container | Image | Port | Purpose |
+|-----------|-------|------|---------|
+| `firecrawl` | mendableai/firecrawl | 53002 | Main Firecrawl API |
+| `playwright` | loorisr/patchright-scrape-api | 53006 (internal) | Browser scraping backend |
+| `tei` | ghcr.io/huggingface/tei | 53010 | Text embeddings |
+| `qdrant` | qdrant/qdrant | 53333 | Vector database |
+
+### Scraping Architecture
+
+```
+CLI → Firecrawl API (53002) → Patchright container (53006) → Chrome
+                            ↘ Fetch engine (fallback)
+```
+
+- **Firecrawl** tries `playwright` engine first, waterfalls to `fetch` on failure
+- **Patchright** is a patched Playwright fork with anti-bot-detection
+- Uses system Chrome via `channel="chrome"` (not bundled Chromium)
+- Blocks images/stylesheets/media/fonts by default for performance
+
+### Environment Variables (.env)
+
+```bash
+FIRECRAWL_API_KEY=local-dev
+FIRECRAWL_API_URL=http://localhost:53002
+TEI_URL=http://localhost:53010
+QDRANT_URL=http://localhost:53333
+```
+
+### Debugging Scrape Failures
+
+1. Check Firecrawl logs: `docker logs firecrawl --tail 100`
+2. Check Patchright logs: `docker logs playwright --tail 100`
+3. Common issues:
+   - Patchright `page.timeout()` bug - should be `page.wait_for_timeout()`
+   - Client-side rendered sites may need `--wait-for` flag
+   - Bot detection on some sites (try Chrome DevTools MCP as workaround)
+
+## External Integrations
+
+- **TEI (Text Embeddings Inference)**: Local vector embedding service at port 53010
+- **Qdrant**: Local vector database at port 53333
 
 ## Configuration Priority
 
@@ -114,3 +157,19 @@ pnpm type-check     # TypeScript check
 - Path traversal protection on file output
 - No hardcoded secrets in codebase
 - HTTP timeout prevents hanging connections
+
+## Known Issues
+
+### Patchright `wait_after_load` Bug
+
+The patchright container (`/app/app.py`) has a bug where `page.timeout()` should be `page.wait_for_timeout()`. This causes 500 errors when using `--wait-for` flag:
+
+```
+Error: 'Page' object has no attribute 'timeout'
+```
+
+**Workaround**: Don't use `--wait-for` flag, or fix the container's app.py.
+
+### Client-Side Rendered Sites
+
+Sites using heavy JS frameworks (TanStack Router, Next.js client-only, etc.) may fail to scrape if content isn't in initial HTML. The `fetch` engine will see empty content, and `playwright` engine may timeout before JS hydrates.

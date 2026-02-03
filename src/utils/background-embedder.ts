@@ -17,8 +17,11 @@ import {
   type EmbedJob,
   getEmbedJob,
   getPendingJobs,
+  getQueueStats,
   getStalePendingJobs,
+  getStuckProcessingJobs,
   markJobCompleted,
+  markJobConfigError,
   markJobFailed,
   markJobProcessing,
   updateEmbedJob,
@@ -67,9 +70,21 @@ async function processEmbedJob(
 
     // Check if TEI/Qdrant are configured
     if (!jobContainer.config.teiUrl || !jobContainer.config.qdrantUrl) {
-      throw new Error(
-        'TEI_URL or QDRANT_URL not configured - skipping embedding'
+      const missingConfigs = [];
+      if (!jobContainer.config.teiUrl) missingConfigs.push('TEI_URL');
+      if (!jobContainer.config.qdrantUrl) missingConfigs.push('QDRANT_URL');
+
+      const errorMsg = `Missing required configuration: ${missingConfigs.join(', ')}. Set these environment variables to enable embedding.`;
+
+      console.error(`[Embedder] CONFIGURATION ERROR: ${errorMsg}`);
+      console.error(
+        `[Embedder] To enable embedding, configure:\n` +
+          `  - TEI_URL: Text Embeddings Inference service endpoint (e.g., http://localhost:53080)\n` +
+          `  - QDRANT_URL: Qdrant vector database endpoint (e.g., http://localhost:53333)`
       );
+
+      markJobConfigError(job.jobId, errorMsg);
+      return;
     }
 
     // Get crawl status and data (from webhook or API)
@@ -111,13 +126,21 @@ async function processEmbedJob(
     // Embed pages using job-specific container config
     console.error(`[Embedder] Embedding ${pages.length} pages for ${job.url}`);
     const embedItems = createEmbedItems(pages, 'crawl');
-    await batchEmbed(embedItems);
+    const result = await batchEmbed(embedItems);
     // Note: batchEmbed still uses legacy getConfig() internally
     // This is acceptable for daemon backward compatibility
 
-    console.error(
-      `[Embedder] Successfully embedded ${pages.length} pages for ${job.url}`
-    );
+    // Log partial failures if any
+    if (result.failed > 0) {
+      const total = result.succeeded + result.failed;
+      console.error(
+        `[Embedder] Partial embed: ${result.succeeded}/${total} succeeded`
+      );
+    } else {
+      console.error(
+        `[Embedder] Successfully embedded ${pages.length} pages for ${job.url}`
+      );
+    }
     markJobCompleted(job.jobId);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -157,6 +180,19 @@ export async function processStaleJobsOnce(
   container: IContainer,
   maxAgeMs: number
 ): Promise<number> {
+  // First, recover any stuck processing jobs
+  const stuckJobs = getStuckProcessingJobs(maxAgeMs);
+  if (stuckJobs.length > 0) {
+    console.error(
+      `[Embedder] Recovering ${stuckJobs.length} stuck processing jobs`
+    );
+    for (const job of stuckJobs) {
+      job.status = 'pending';
+      updateEmbedJob(job);
+    }
+  }
+
+  // Then process stale pending jobs
   const staleJobs = getStalePendingJobs(maxAgeMs);
   if (staleJobs.length === 0) {
     return 0;
@@ -226,8 +262,19 @@ async function handleWebhookPayload(
 
 async function startEmbedderWebhookServer(
   container: IContainer
-): Promise<void> {
+): Promise<{ intervalMs: number; staleMs: number }> {
   const settings = getEmbedderWebhookSettings(container.config);
+
+  // Calculate polling intervals
+  const staleMinutes = Number.parseFloat(
+    process.env.FIRECRAWL_EMBEDDER_STALE_MINUTES ?? '10'
+  );
+  const staleMs =
+    Number.isFinite(staleMinutes) && staleMinutes > 0
+      ? staleMinutes * 60_000
+      : 10 * 60_000;
+  const intervalMs = Math.max(60_000, Math.floor(staleMs / 2));
+
   const server = createServer(async (req, res) => {
     const requestUrl = new URL(req.url || '/', 'http://localhost');
 
@@ -236,6 +283,23 @@ async function startEmbedderWebhookServer(
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ status: 'ok', service: 'embedder-daemon' }));
+      return;
+    }
+
+    // Status endpoint for monitoring
+    if (req.method === 'GET' && requestUrl.pathname === '/status') {
+      const stats = getQueueStats();
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          webhookConfigured: !!settings.url,
+          pollingIntervalMs: intervalMs,
+          staleThresholdMs: staleMs,
+          pendingJobs: stats.pending,
+          processingJobs: stats.processing,
+        })
+      );
       return;
     }
 
@@ -302,10 +366,16 @@ async function startEmbedderWebhookServer(
   console.error(`[Embedder] Webhook server listening on ${localUrl}`);
 
   if (!settings.url) {
+    console.error(`[Embedder] WARNING: No webhook URL configured`);
     console.error(
-      '[Embedder] FIRECRAWL_EMBEDDER_WEBHOOK_URL not set; configure a public URL to receive crawl completion events.'
+      `[Embedder] Jobs will be processed via polling (every ${Math.round(intervalMs / 1000)}s, stale after ${Math.round(staleMs / 1000)}s)`
+    );
+    console.error(
+      `[Embedder] For faster processing, set FIRECRAWL_EMBEDDER_WEBHOOK_URL`
     );
   }
+
+  return { intervalMs, staleMs };
 }
 
 /**
@@ -324,16 +394,7 @@ export async function startEmbedderDaemon(
     console.error(`[Embedder] Cleaned up ${cleaned} old jobs`);
   }
 
-  await startEmbedderWebhookServer(container);
-
-  const staleMinutes = Number.parseFloat(
-    process.env.FIRECRAWL_EMBEDDER_STALE_MINUTES ?? '10'
-  );
-  const staleMs =
-    Number.isFinite(staleMinutes) && staleMinutes > 0
-      ? staleMinutes * 60_000
-      : 10 * 60_000;
-  const intervalMs = Math.max(60_000, Math.floor(staleMs / 2));
+  const { intervalMs, staleMs } = await startEmbedderWebhookServer(container);
 
   console.error(
     `[Embedder] Checking for stale jobs every ${Math.round(intervalMs / 1000)}s (stale after ${Math.round(staleMs / 1000)}s)`

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initializeConfig } from '../../utils/config';
 import * as embeddings from '../../utils/embeddings';
-import { autoEmbed } from '../../utils/embedpipeline';
+import { autoEmbed, batchEmbed } from '../../utils/embedpipeline';
 import * as qdrant from '../../utils/qdrant';
 
 vi.mock('../../utils/embeddings');
@@ -130,5 +130,185 @@ describe('autoEmbed', () => {
     ).resolves.toBeUndefined();
 
     expect(console.error).toHaveBeenCalled();
+  });
+});
+
+describe('batchEmbed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should return empty result for empty items array', async () => {
+    const result = await batchEmbed([]);
+
+    expect(result).toEqual({
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+    });
+  });
+
+  it('should track succeeded count when all items succeed', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
+      modelId: 'test',
+      dimension: 1024,
+      maxInput: 32768,
+    });
+    vi.mocked(embeddings.embedChunks).mockResolvedValue([[0.1, 0.2]]);
+    vi.mocked(qdrant.ensureCollection).mockResolvedValue();
+    vi.mocked(qdrant.deleteByUrl).mockResolvedValue();
+    vi.mocked(qdrant.upsertPoints).mockResolvedValue();
+
+    const result = await batchEmbed([
+      {
+        content: 'Content 1',
+        metadata: {
+          url: 'https://example.com/1',
+          sourceCommand: 'scrape',
+        },
+      },
+      {
+        content: 'Content 2',
+        metadata: {
+          url: 'https://example.com/2',
+          sourceCommand: 'scrape',
+        },
+      },
+    ]);
+
+    expect(result.succeeded).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('should track failed count and collect errors when items fail', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    // Make embedChunks fail
+    vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
+      modelId: 'test',
+      dimension: 1024,
+      maxInput: 32768,
+    });
+    vi.mocked(qdrant.ensureCollection).mockResolvedValue();
+    vi.mocked(embeddings.embedChunks).mockRejectedValue(new Error('TEI error'));
+
+    const result = await batchEmbed([
+      {
+        content: 'Content 1',
+        metadata: {
+          url: 'https://example.com/1',
+          sourceCommand: 'scrape',
+        },
+      },
+      {
+        content: 'Content 2',
+        metadata: {
+          url: 'https://example.com/2',
+          sourceCommand: 'scrape',
+        },
+      },
+    ]);
+
+    expect(result.succeeded).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]).toContain('https://example.com/');
+    expect(result.errors[0]).toContain('TEI error');
+  });
+
+  it('should track partial failures (mix of success and failure)', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
+      modelId: 'test',
+      dimension: 1024,
+      maxInput: 32768,
+    });
+    vi.mocked(qdrant.ensureCollection).mockResolvedValue();
+    vi.mocked(qdrant.deleteByUrl).mockResolvedValue();
+    vi.mocked(qdrant.upsertPoints).mockResolvedValue();
+
+    // First call succeeds, second fails
+    let callCount = 0;
+    vi.mocked(embeddings.embedChunks).mockImplementation(() => {
+      callCount++;
+      if (callCount === 2) {
+        return Promise.reject(new Error('Failed embedding'));
+      }
+      return Promise.resolve([[0.1, 0.2]]);
+    });
+
+    const result = await batchEmbed([
+      {
+        content: 'Content 1',
+        metadata: {
+          url: 'https://example.com/1',
+          sourceCommand: 'scrape',
+        },
+      },
+      {
+        content: 'Content 2',
+        metadata: {
+          url: 'https://example.com/2',
+          sourceCommand: 'scrape',
+        },
+      },
+    ]);
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Embedded 1/2 items (1 failed)')
+    );
+  });
+
+  it('should limit errors to first 10 to avoid memory issues', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    vi.mocked(embeddings.getTeiInfo).mockResolvedValue({
+      modelId: 'test',
+      dimension: 1024,
+      maxInput: 32768,
+    });
+    vi.mocked(qdrant.ensureCollection).mockResolvedValue();
+    vi.mocked(embeddings.embedChunks).mockRejectedValue(new Error('Error'));
+
+    // Create 20 items that will all fail
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      content: `Content ${i}`,
+      metadata: {
+        url: `https://example.com/${i}`,
+        sourceCommand: 'scrape',
+      },
+    }));
+
+    const result = await batchEmbed(items);
+
+    expect(result.succeeded).toBe(0);
+    expect(result.failed).toBe(20);
+    // Should only collect first 10 errors
+    expect(result.errors).toHaveLength(10);
   });
 });

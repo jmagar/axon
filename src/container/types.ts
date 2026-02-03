@@ -205,6 +205,7 @@ export interface IEmbedPipeline {
    * Batch embed multiple items with concurrency control
    * @param items Array of items to embed
    * @param options Batch options
+   * @returns Promise with embedding result statistics
    */
   batchEmbed(
     items: Array<{
@@ -218,7 +219,7 @@ export interface IEmbedPipeline {
       };
     }>,
     options?: { concurrency?: number }
-  ): Promise<void>;
+  ): Promise<{ succeeded: number; failed: number; errors: string[] }>;
 }
 
 /**

@@ -7,11 +7,19 @@ import type { IContainer } from '../../container/types';
 
 vi.mock('../../utils/embed-queue', () => ({
   getStalePendingJobs: vi.fn(),
+  getStuckProcessingJobs: vi.fn().mockReturnValue([]),
   markJobProcessing: vi.fn(),
   markJobCompleted: vi.fn(),
   markJobFailed: vi.fn(),
+  markJobConfigError: vi.fn(),
   updateEmbedJob: vi.fn(),
   cleanupOldJobs: vi.fn().mockReturnValue(0),
+  getQueueStats: vi.fn().mockReturnValue({
+    pending: 0,
+    processing: 0,
+    completed: 0,
+    failed: 0,
+  }),
 }));
 
 vi.mock('../../utils/config', () => ({
@@ -28,7 +36,11 @@ vi.mock('../../utils/embedpipeline', () => ({
     .mockReturnValue([
       { content: 'hello', metadata: { url: 'https://example.com' } },
     ]),
-  batchEmbed: vi.fn().mockResolvedValue(undefined),
+  batchEmbed: vi.fn().mockResolvedValue({
+    succeeded: 1,
+    failed: 0,
+    errors: [],
+  }),
 }));
 
 vi.mock('../../container/DaemonContainerFactory', () => ({
@@ -38,6 +50,67 @@ vi.mock('../../container/DaemonContainerFactory', () => ({
 describe('processStaleJobsOnce', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('should recover stuck processing jobs before processing stale jobs', async () => {
+    const { getStalePendingJobs, getStuckProcessingJobs, updateEmbedJob } =
+      await import('../../utils/embed-queue');
+    const { createDaemonContainer } = await import(
+      '../../container/DaemonContainerFactory'
+    );
+
+    const stuckJob = {
+      id: 'job-stuck',
+      jobId: 'job-stuck',
+      url: 'https://example.com/stuck',
+      status: 'processing' as const,
+      retries: 0,
+      maxRetries: 3,
+      createdAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      updatedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    };
+
+    vi.mocked(getStuckProcessingJobs).mockReturnValue([stuckJob]);
+    vi.mocked(getStalePendingJobs).mockReturnValue([]);
+
+    const mockContainer: IContainer = {
+      config: {
+        apiKey: 'test-key',
+        teiUrl: 'http://tei:8080',
+        qdrantUrl: 'http://qdrant:6333',
+      },
+      getFirecrawlClient: vi.fn(),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      getEmbedPipeline: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { processStaleJobsOnce } = await import(
+      '../../utils/background-embedder'
+    );
+
+    await processStaleJobsOnce(mockContainer, 5 * 60_000);
+
+    expect(getStuckProcessingJobs).toHaveBeenCalledWith(5 * 60_000);
+    expect(updateEmbedJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job-stuck',
+        status: 'pending',
+      })
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[Embedder] Recovering 1 stuck processing jobs'
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it('should process stale pending jobs', async () => {
@@ -97,6 +170,186 @@ describe('processStaleJobsOnce', () => {
     expect(processed).toBe(1);
     expect(markJobProcessing).toHaveBeenCalledWith('job-1');
     expect(markJobCompleted).toHaveBeenCalledWith('job-1');
+  });
+});
+
+describe('processEmbedJob - configuration errors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should immediately fail job with config error when TEI_URL is missing', async () => {
+    const { getStalePendingJobs, markJobConfigError } = await import(
+      '../../utils/embed-queue'
+    );
+    const { createDaemonContainer } = await import(
+      '../../container/DaemonContainerFactory'
+    );
+
+    vi.mocked(getStalePendingJobs).mockReturnValue([
+      {
+        id: 'job-1',
+        jobId: 'job-1',
+        url: 'https://example.com',
+        status: 'pending',
+        retries: 0,
+        maxRetries: 3,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const mockContainer: IContainer = {
+      config: {
+        apiKey: 'test-key',
+        teiUrl: undefined, // Missing TEI_URL
+        qdrantUrl: 'http://qdrant:6333',
+      },
+      getFirecrawlClient: vi.fn(),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      getEmbedPipeline: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { processStaleJobsOnce } = await import(
+      '../../utils/background-embedder'
+    );
+
+    await processStaleJobsOnce(mockContainer, 60_000);
+
+    expect(markJobConfigError).toHaveBeenCalledWith(
+      'job-1',
+      expect.stringContaining('TEI_URL')
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('CONFIGURATION ERROR')
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('should immediately fail job with config error when QDRANT_URL is missing', async () => {
+    const { getStalePendingJobs, markJobConfigError } = await import(
+      '../../utils/embed-queue'
+    );
+    const { createDaemonContainer } = await import(
+      '../../container/DaemonContainerFactory'
+    );
+
+    vi.mocked(getStalePendingJobs).mockReturnValue([
+      {
+        id: 'job-1',
+        jobId: 'job-1',
+        url: 'https://example.com',
+        status: 'pending',
+        retries: 0,
+        maxRetries: 3,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const mockContainer: IContainer = {
+      config: {
+        apiKey: 'test-key',
+        teiUrl: 'http://tei:8080',
+        qdrantUrl: undefined, // Missing QDRANT_URL
+      },
+      getFirecrawlClient: vi.fn(),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      getEmbedPipeline: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { processStaleJobsOnce } = await import(
+      '../../utils/background-embedder'
+    );
+
+    await processStaleJobsOnce(mockContainer, 60_000);
+
+    expect(markJobConfigError).toHaveBeenCalledWith(
+      'job-1',
+      expect.stringContaining('QDRANT_URL')
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('CONFIGURATION ERROR')
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('should list both missing configs in error message', async () => {
+    const { getStalePendingJobs, markJobConfigError } = await import(
+      '../../utils/embed-queue'
+    );
+    const { createDaemonContainer } = await import(
+      '../../container/DaemonContainerFactory'
+    );
+
+    vi.mocked(getStalePendingJobs).mockReturnValue([
+      {
+        id: 'job-1',
+        jobId: 'job-1',
+        url: 'https://example.com',
+        status: 'pending',
+        retries: 0,
+        maxRetries: 3,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const mockContainer: IContainer = {
+      config: {
+        apiKey: 'test-key',
+        teiUrl: undefined, // Missing both
+        qdrantUrl: undefined,
+      },
+      getFirecrawlClient: vi.fn(),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      getEmbedPipeline: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { processStaleJobsOnce } = await import(
+      '../../utils/background-embedder'
+    );
+
+    await processStaleJobsOnce(mockContainer, 60_000);
+
+    expect(markJobConfigError).toHaveBeenCalledWith(
+      'job-1',
+      expect.stringMatching(/TEI_URL.*QDRANT_URL/)
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('CONFIGURATION ERROR')
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 });
 

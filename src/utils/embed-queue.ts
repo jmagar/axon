@@ -173,6 +173,30 @@ export function getStalePendingJobs(maxAgeMs: number): EmbedJob[] {
 }
 
 /**
+ * Get jobs stuck in processing state longer than maxProcessingMs
+ *
+ * Returns jobs with status === 'processing' that have been in that state
+ * longer than the specified threshold (default 5 minutes). This helps recover
+ * from daemon crashes where jobs get stuck in processing state forever.
+ */
+export function getStuckProcessingJobs(
+  maxProcessingMs: number = 5 * 60 * 1000
+): EmbedJob[] {
+  const cutoff = Date.now() - maxProcessingMs;
+  return listEmbedJobs()
+    .filter(
+      (job) =>
+        job.status === 'processing' &&
+        job.retries < job.maxRetries &&
+        new Date(job.updatedAt).getTime() <= cutoff
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+    );
+}
+
+/**
  * Mark a job as processing
  */
 export function markJobProcessing(jobId: string): void {
@@ -207,6 +231,54 @@ export function markJobFailed(jobId: string, error: string): void {
     job.lastError = error;
     updateEmbedJob(job);
   }
+}
+
+/**
+ * Mark a job as permanently failed due to configuration error
+ *
+ * Sets retries to maxRetries to prevent further retry attempts.
+ */
+export function markJobConfigError(jobId: string, error: string): void {
+  const job = getEmbedJob(jobId);
+  if (job) {
+    job.status = 'failed';
+    job.retries = job.maxRetries;
+    job.lastError = `Configuration error: ${error}`;
+    updateEmbedJob(job);
+  }
+}
+
+/**
+ * Get queue statistics for monitoring
+ */
+export function getQueueStats(): {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+} {
+  const jobs = listEmbedJobs();
+
+  return jobs.reduce(
+    (acc, job) => {
+      switch (job.status) {
+        case 'pending':
+          acc.pending++;
+          break;
+        case 'processing':
+          acc.processing++;
+          break;
+        case 'completed':
+          acc.completed++;
+          break;
+        case 'failed':
+          acc.failed++;
+          break;
+      }
+      return acc;
+    },
+    { pending: 0, processing: 0, completed: 0, failed: 0 }
+  );
 }
 
 /**
