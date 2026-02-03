@@ -75,6 +75,16 @@ export interface QdrantPoint {
 }
 
 /**
+ * Qdrant collection distance types
+ */
+export type QdrantDistance =
+  | 'Cosine'
+  | 'Dot'
+  | 'Euclid'
+  | 'Manhattan'
+  | 'unknown';
+
+/**
  * Qdrant collection information
  */
 export interface CollectionInfo {
@@ -84,7 +94,7 @@ export interface CollectionInfo {
   segmentsCount: number;
   config: {
     dimension: number;
-    distance: string;
+    distance: QdrantDistance;
   };
 }
 

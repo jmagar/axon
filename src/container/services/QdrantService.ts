@@ -7,8 +7,21 @@ import type {
   CollectionInfo,
   IHttpClient,
   IQdrantService,
+  QdrantDistance,
   QdrantPoint,
 } from '../types';
+
+const QDRANT_DISTANCE_VALUES: QdrantDistance[] = [
+  'Cosine',
+  'Dot',
+  'Euclid',
+  'Manhattan',
+  'unknown',
+];
+
+const isQdrantDistance = (value: unknown): value is QdrantDistance =>
+  typeof value === 'string' &&
+  QDRANT_DISTANCE_VALUES.includes(value as QdrantDistance);
 
 /** Scroll page size for pagination */
 const SCROLL_PAGE_SIZE = 100;
@@ -394,6 +407,7 @@ export class QdrantService implements IQdrantService {
     };
 
     const result = data.result;
+    const distance = result?.config?.params?.vectors?.distance;
     return {
       status: result?.status ?? 'unknown',
       vectorsCount: result?.vectors_count ?? 0,
@@ -401,7 +415,7 @@ export class QdrantService implements IQdrantService {
       segmentsCount: result?.segments_count ?? 0,
       config: {
         dimension: result?.config?.params?.vectors?.size ?? 0,
-        distance: result?.config?.params?.vectors?.distance ?? 'unknown',
+        distance: isQdrantDistance(distance) ? distance : 'unknown',
       },
     };
   }
