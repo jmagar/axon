@@ -7,6 +7,17 @@ import { fetchWithRetry } from './http';
 
 const SCROLL_PAGE_SIZE = 100;
 
+/**
+ * Get response body for error messages
+ */
+async function getErrorBody(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
+}
+
 /** HTTP timeout for Qdrant requests (60 seconds - longer for large operations) */
 const QDRANT_TIMEOUT_MS = 60000;
 
@@ -112,7 +123,10 @@ export async function upsertPoints(
   );
 
   if (!response.ok) {
-    throw new Error(`Qdrant upsert failed: ${response.status}`);
+    const body = await getErrorBody(response);
+    throw new Error(
+      `Qdrant upsert failed: ${response.status}${body ? ` - ${body}` : ''}`
+    );
   }
 }
 
@@ -139,7 +153,10 @@ export async function deleteByUrl(
   );
 
   if (!response.ok) {
-    throw new Error(`Qdrant delete failed: ${response.status}`);
+    const body = await getErrorBody(response);
+    throw new Error(
+      `Qdrant delete failed: ${response.status}${body ? ` - ${body}` : ''}`
+    );
   }
 }
 
@@ -186,7 +203,10 @@ export async function queryPoints(
   );
 
   if (!response.ok) {
-    throw new Error(`Qdrant query failed: ${response.status}`);
+    const body = await getErrorBody(response);
+    throw new Error(
+      `Qdrant query failed: ${response.status}${body ? ` - ${body}` : ''}`
+    );
   }
 
   const data = (await response.json()) as {
@@ -249,7 +269,10 @@ export async function scrollByUrl(
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant scroll failed: ${response.status}`);
+      const body = await getErrorBody(response);
+      throw new Error(
+        `Qdrant scroll failed: ${response.status}${body ? ` - ${body}` : ''}`
+      );
     }
 
     const data = (await response.json()) as {

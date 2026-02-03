@@ -264,4 +264,68 @@ describe('Qdrant client', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('error messages include response body', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetQdrantCache();
+    });
+
+    it('upsertPoints includes response body in error', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () =>
+          JSON.stringify({ status: { error: 'invalid vector dimension' } }),
+      });
+
+      await expect(
+        upsertPoints('http://qdrant', 'collection', [])
+      ).rejects.toThrow(/invalid vector dimension/);
+    });
+
+    it('deleteByUrl includes response body in error', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: async () =>
+          JSON.stringify({ status: { error: 'collection not found' } }),
+      });
+
+      await expect(
+        deleteByUrl('http://qdrant', 'collection', 'http://test.com')
+      ).rejects.toThrow(/collection not found/);
+    });
+
+    it('queryPoints includes response body in error', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () =>
+          JSON.stringify({ status: { error: 'vector dimension mismatch' } }),
+      });
+
+      await expect(
+        queryPoints('http://qdrant', 'collection', [0.1], { limit: 10 })
+      ).rejects.toThrow(/vector dimension mismatch/);
+    });
+
+    it('scrollByUrl includes response body in error', async () => {
+      // Use 400 (not retryable) to avoid retry delays
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () =>
+          JSON.stringify({ status: { error: 'invalid filter syntax' } }),
+      });
+
+      await expect(
+        scrollByUrl('http://qdrant', 'collection', 'http://test.com')
+      ).rejects.toThrow(/invalid filter syntax/);
+    });
+  });
 });
