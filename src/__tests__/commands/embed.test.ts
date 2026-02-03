@@ -68,6 +68,8 @@ describe('executeEmbed', () => {
     mockQdrantService = {
       ensureCollection: vi.fn().mockResolvedValue(undefined),
       deleteByUrl: vi.fn().mockResolvedValue(undefined),
+      deleteByDomain: vi.fn().mockResolvedValue(undefined),
+      countByDomain: vi.fn().mockResolvedValue(0),
       upsertPoints: vi.fn().mockResolvedValue(undefined),
       queryPoints: vi.fn().mockResolvedValue([]),
       scrollByUrl: vi.fn().mockResolvedValue([]),

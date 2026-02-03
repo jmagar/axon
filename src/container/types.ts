@@ -177,6 +177,20 @@ export interface IQdrantService {
    * @param url URL to scroll points for
    */
   scrollByUrl(collection: string, url: string): Promise<QdrantPoint[]>;
+
+  /**
+   * Delete all points for a domain
+   * @param collection Collection name
+   * @param domain Domain to delete points for
+   */
+  deleteByDomain(collection: string, domain: string): Promise<void>;
+
+  /**
+   * Count points matching a domain filter
+   * @param collection Collection name
+   * @param domain Domain to count points for
+   */
+  countByDomain(collection: string, domain: string): Promise<number>;
 }
 
 /**

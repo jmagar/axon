@@ -46,10 +46,14 @@ export interface ScrapeOptions {
   timing?: boolean;
   /** Enable auto-embedding of scraped content (default: true) */
   embed?: boolean;
+  /** Remove all documents for this domain from Qdrant */
+  remove?: boolean;
 }
 
 export interface ScrapeResult {
   success: boolean;
   data?: Document;
   error?: string;
+  /** Number of documents removed when using --remove flag */
+  removed?: number;
 }

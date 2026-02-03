@@ -297,4 +297,60 @@ export class QdrantService implements IQdrantService {
 
     return allPoints;
   }
+
+  /**
+   * Delete all points for a domain
+   *
+   * @param collection Collection name
+   * @param domain Domain to delete points for
+   */
+  async deleteByDomain(collection: string, domain: string): Promise<void> {
+    const response = await this.httpClient.fetchWithRetry(
+      `${this.qdrantUrl}/collections/${collection}/points/delete`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filter: {
+            must: [{ key: 'domain', match: { value: domain } }],
+          },
+        }),
+      },
+      { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Qdrant delete failed: ${response.status}`);
+    }
+  }
+
+  /**
+   * Count points matching a domain filter
+   *
+   * @param collection Collection name
+   * @param domain Domain to count points for
+   */
+  async countByDomain(collection: string, domain: string): Promise<number> {
+    const response = await this.httpClient.fetchWithRetry(
+      `${this.qdrantUrl}/collections/${collection}/points/count`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filter: {
+            must: [{ key: 'domain', match: { value: domain } }],
+          },
+          exact: true,
+        }),
+      },
+      { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Qdrant count failed: ${response.status}`);
+    }
+
+    const data = (await response.json()) as { result?: { count?: number } };
+    return data.result?.count ?? 0;
+  }
 }

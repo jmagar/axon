@@ -54,6 +54,27 @@ export async function executeScrape(
   container: IContainer,
   options: ScrapeOptions
 ): Promise<ScrapeResult> {
+  // Handle --remove flag (delete from Qdrant, skip scraping)
+  if (options.remove) {
+    const { qdrantUrl, qdrantCollection } = container.config;
+
+    if (!qdrantUrl) {
+      return {
+        success: false,
+        error: 'QDRANT_URL not configured. Set QDRANT_URL to use --remove.',
+      };
+    }
+
+    const collection = qdrantCollection || 'firecrawl_collection';
+    const domain = new URL(options.url).hostname;
+
+    const qdrantService = container.getQdrantService();
+    const count = await qdrantService.countByDomain(collection, domain);
+    await qdrantService.deleteByDomain(collection, domain);
+
+    return { success: true, removed: count };
+  }
+
   // Get client instance from container
   const app = container.getFirecrawlClient();
 
@@ -137,6 +158,20 @@ export async function handleScrapeCommand(
   container: IContainer,
   options: ScrapeOptions
 ): Promise<void> {
+  // Handle --remove flag with early return
+  if (options.remove) {
+    const result = await executeScrape(container, options);
+
+    if (!result.success) {
+      console.error(`Error: ${result.error}`);
+      process.exit(1);
+    }
+
+    const domain = new URL(options.url).hostname;
+    console.log(`Removed ${result.removed} documents for domain ${domain}`);
+    return;
+  }
+
   // Display command info
   displayCommandInfo('Scraping', options.url, {
     formats: options.formats,
@@ -245,6 +280,11 @@ export function createScrapeCommand(): Command {
       false
     )
     .option('--no-embed', 'Skip auto-embedding of scraped content')
+    .option(
+      '--remove',
+      'Remove all documents for this domain from Qdrant',
+      false
+    )
     .action(
       async (positionalUrl, positionalFormats, options, command: Command) => {
         const container = command._container;

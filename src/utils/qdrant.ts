@@ -301,6 +301,70 @@ export async function scrollByUrl(
 }
 
 /**
+ * Delete all points for a domain
+ */
+export async function deleteByDomain(
+  qdrantUrl: string,
+  collection: string,
+  domain: string
+): Promise<void> {
+  const response = await fetchWithRetry(
+    `${qdrantUrl}/collections/${collection}/points/delete`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filter: {
+          must: [{ key: 'domain', match: { value: domain } }],
+        },
+      }),
+    },
+    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+  );
+
+  if (!response.ok) {
+    const errorBody = await getErrorBody(response);
+    throw new Error(
+      `Qdrant delete failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
+    );
+  }
+}
+
+/**
+ * Count points matching a domain filter
+ */
+export async function countByDomain(
+  qdrantUrl: string,
+  collection: string,
+  domain: string
+): Promise<number> {
+  const response = await fetchWithRetry(
+    `${qdrantUrl}/collections/${collection}/points/count`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filter: {
+          must: [{ key: 'domain', match: { value: domain } }],
+        },
+        exact: true,
+      }),
+    },
+    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+  );
+
+  if (!response.ok) {
+    const errorBody = await getErrorBody(response);
+    throw new Error(
+      `Qdrant count failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
+    );
+  }
+
+  const data = (await response.json()) as { result?: { count?: number } };
+  return data.result?.count ?? 0;
+}
+
+/**
  * Reset collection cache (for testing)
  * NOTE: Only for use in qdrant.test.ts unit tests.
  * Command tests should use test containers instead.

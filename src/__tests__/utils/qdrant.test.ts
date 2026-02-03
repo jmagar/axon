@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  countByDomain,
+  deleteByDomain,
   deleteByUrl,
   ensureCollection,
   queryPoints,
@@ -326,6 +328,97 @@ describe('Qdrant client', () => {
       await expect(
         scrollByUrl('http://qdrant', 'collection', 'http://test.com')
       ).rejects.toThrow(/invalid filter syntax/);
+    });
+  });
+
+  describe('deleteByDomain', () => {
+    it('should POST delete with domain filter', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      await deleteByDomain(qdrantUrl, collection, 'docs.firecrawl.dev');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${qdrantUrl}/collections/${collection}/points/delete`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            filter: {
+              must: [{ key: 'domain', match: { value: 'docs.firecrawl.dev' } }],
+            },
+          }),
+        })
+      );
+    });
+
+    it('should throw on API error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: async () =>
+          JSON.stringify({ status: { error: 'delete failed' } }),
+      });
+
+      await expect(
+        deleteByDomain(qdrantUrl, collection, 'example.com')
+      ).rejects.toThrow(/delete failed/);
+    });
+  });
+
+  describe('countByDomain', () => {
+    it('should return count of documents matching domain', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { count: 42 } }),
+      });
+
+      const count = await countByDomain(
+        qdrantUrl,
+        collection,
+        'docs.firecrawl.dev'
+      );
+
+      expect(count).toBe(42);
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${qdrantUrl}/collections/${collection}/points/count`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            filter: {
+              must: [{ key: 'domain', match: { value: 'docs.firecrawl.dev' } }],
+            },
+            exact: true,
+          }),
+        })
+      );
+    });
+
+    it('should return 0 when no documents match', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: { count: 0 } }),
+      });
+
+      const count = await countByDomain(
+        qdrantUrl,
+        collection,
+        'nonexistent.com'
+      );
+      expect(count).toBe(0);
+    });
+
+    it('should throw on API error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () =>
+          JSON.stringify({ status: { error: 'invalid filter' } }),
+      });
+
+      await expect(
+        countByDomain(qdrantUrl, collection, 'example.com')
+      ).rejects.toThrow(/invalid filter/);
     });
   });
 });
