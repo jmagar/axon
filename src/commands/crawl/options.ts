@@ -64,12 +64,24 @@ export function buildCrawlOptions(
     builder.add('includePaths', options.includePaths);
   }
 
-  // Handle scrape timeout (nested + transformation)
+  // Handle scrapeOptions (nested properties)
   if (options.scrapeTimeout !== undefined) {
     builder.addNested(
       'scrapeOptions.timeout',
       options.scrapeTimeout * 1000 // Convert seconds to milliseconds
     );
+  }
+
+  if (options.onlyMainContent !== undefined) {
+    builder.addNested('scrapeOptions.onlyMainContent', options.onlyMainContent);
+  }
+
+  if (options.excludeTags && options.excludeTags.length > 0) {
+    builder.addNested('scrapeOptions.excludeTags', options.excludeTags);
+  }
+
+  if (options.includeTags && options.includeTags.length > 0) {
+    builder.addNested('scrapeOptions.includeTags', options.includeTags);
   }
 
   // Handle polling options

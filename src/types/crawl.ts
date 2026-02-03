@@ -51,6 +51,12 @@ export interface CrawlOptions {
   embed?: boolean;
   /** Skip default exclude paths from settings */
   noDefaultExcludes?: boolean;
+  /** Include only main content when scraping pages */
+  onlyMainContent?: boolean;
+  /** Tags to exclude from scraped content */
+  excludeTags?: string[];
+  /** Tags to include in scraped content */
+  includeTags?: string[];
 }
 
 /** Response when starting an async crawl job */

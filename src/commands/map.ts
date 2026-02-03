@@ -6,6 +6,7 @@ import type { MapOptions as SdkMapOptions } from '@mendable/firecrawl-js';
 import type { IContainer, IHttpClient } from '../container/types';
 import type { MapOptions, MapResult } from '../types/map';
 import { formatJson, handleCommandError } from '../utils/command';
+import { displayCommandInfo } from '../utils/display';
 import { writeOutput } from '../utils/output';
 
 /** HTTP timeout for map API requests (60 seconds) */
@@ -205,6 +206,15 @@ export async function handleMapCommand(
   container: IContainer,
   options: MapOptions
 ): Promise<void> {
+  // Display command info
+  displayCommandInfo('Mapping', options.urlOrJobId, {
+    includeSubdomains: options.includeSubdomains,
+    ignoreQueryParameters: options.ignoreQueryParameters,
+    limit: options.limit,
+    sitemap: options.sitemap,
+    timeout: options.timeout,
+  });
+
   const result = await executeMap(container, options);
 
   // Use shared error handler
@@ -253,8 +263,14 @@ export function createMapCommand(): Command {
       '--sitemap <mode>',
       'Sitemap handling: only, include, skip (defaults to include if not specified)'
     )
-    .option('--include-subdomains', 'Include subdomains')
-    .option('--ignore-query-parameters', 'Ignore query parameters')
+    .option('--include-subdomains', 'Include subdomains (default: true)', true)
+    .option('--no-include-subdomains', 'Exclude subdomains')
+    .option(
+      '--ignore-query-parameters',
+      'Ignore query parameters (default: true)',
+      true
+    )
+    .option('--no-ignore-query-parameters', 'Include query parameters')
     .option('--timeout <seconds>', 'Timeout in seconds', parseFloat)
     .option(
       '-k, --api-key <key>',

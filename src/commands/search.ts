@@ -18,6 +18,7 @@ import type {
   WebSearchResult,
 } from '../types/search';
 import { formatJson, handleCommandError } from '../utils/command';
+import { displayCommandInfo } from '../utils/display';
 import { validateOutputPath, writeOutput } from '../utils/output';
 
 /**
@@ -270,6 +271,16 @@ export async function handleSearchCommand(
   container: IContainer,
   options: SearchOptions
 ): Promise<void> {
+  // Display command info
+  displayCommandInfo('Searching', options.query, {
+    scrape: options.scrape,
+    onlyMainContent: options.onlyMainContent,
+    ignoreInvalidUrls: options.ignoreInvalidUrls,
+    limit: options.limit,
+    sources: options.sources,
+    timeout: options.timeout,
+  });
+
   const result = await executeSearch(container, options);
 
   // Use shared error handler
@@ -400,10 +411,19 @@ export function createSearchCommand(): Command {
     )
     .option(
       '--ignore-invalid-urls',
-      'Exclude URLs invalid for other Firecrawl endpoints',
-      false
+      'Exclude URLs invalid for other Firecrawl endpoints (default: true)',
+      true
     )
-    .option('--scrape', 'Enable scraping of search results', false)
+    .option(
+      '--no-ignore-invalid-urls',
+      'Include all URLs including invalid ones'
+    )
+    .option(
+      '--scrape',
+      'Enable scraping of search results (default: true)',
+      true
+    )
+    .option('--no-scrape', 'Disable scraping of search results')
     .option(
       '--scrape-formats <formats>',
       'Comma-separated scrape formats when --scrape is enabled: markdown, html, rawHtml, links, etc. (default: markdown)'

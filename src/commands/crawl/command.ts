@@ -10,6 +10,7 @@ import type {
   CrawlStatusResult,
 } from '../../types/crawl';
 import { formatJson } from '../../utils/command';
+import { displayCommandInfo } from '../../utils/display';
 import { isJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
 import { validateOutputPath, writeOutput } from '../../utils/output';
@@ -71,6 +72,20 @@ export async function handleCrawlCommand(
     await handleManualEmbedding(container, options.urlOrJobId, options.apiKey);
     return;
   }
+
+  // Display command info
+  displayCommandInfo('Crawling', options.urlOrJobId, {
+    maxDepth: options.maxDepth,
+    limit: options.limit,
+    allowSubdomains: options.allowSubdomains,
+    ignoreQueryParameters: options.ignoreQueryParameters,
+    onlyMainContent: options.onlyMainContent,
+    excludeTags: options.excludeTags,
+    excludePaths: options.excludePaths,
+    scrapeTimeout: options.scrapeTimeout,
+    wait: options.wait,
+    progress: options.progress,
+  });
 
   // Execute crawl
   const result = await executeCrawl(container, options);
@@ -323,7 +338,12 @@ export function createCrawlCommand(): Command {
     )
     .option('--progress', 'Show progress while waiting (implies --wait)', false)
     .option('--limit <number>', 'Maximum number of pages to crawl', parseInt)
-    .option('--max-depth <number>', 'Maximum crawl depth', parseInt)
+    .option(
+      '--max-depth <number>',
+      'Maximum crawl depth (default: 3)',
+      (value: string) => parseInt(value, 10),
+      3
+    )
     .option(
       '--exclude-paths <paths>',
       'Comma-separated list of paths to exclude'
@@ -335,12 +355,32 @@ export function createCrawlCommand(): Command {
     .option('--sitemap <mode>', 'Sitemap handling: skip, include', 'include')
     .option(
       '--ignore-query-parameters',
-      'Ignore query parameters when crawling',
-      false
+      'Ignore query parameters when crawling (default: true)',
+      true
+    )
+    .option(
+      '--no-ignore-query-parameters',
+      'Include query parameters when crawling'
     )
     .option('--crawl-entire-domain', 'Crawl entire domain', false)
     .option('--allow-external-links', 'Allow external links', false)
-    .option('--allow-subdomains', 'Allow subdomains', false)
+    .option('--allow-subdomains', 'Allow subdomains (default: true)', true)
+    .option('--no-allow-subdomains', 'Disallow subdomains')
+    .option(
+      '--only-main-content',
+      'Include only main content when scraping pages (default: true)',
+      true
+    )
+    .option('--no-only-main-content', 'Include full page content')
+    .option(
+      '--exclude-tags <tags>',
+      'Comma-separated list of tags to exclude from scraped content (default: nav,footer)',
+      'nav,footer'
+    )
+    .option(
+      '--include-tags <tags>',
+      'Comma-separated list of tags to include in scraped content'
+    )
     .option('--delay <ms>', 'Delay between requests in milliseconds', parseInt)
     .option(
       '--max-concurrency <number>',
@@ -412,6 +452,13 @@ export function createCrawlCommand(): Command {
         maxConcurrency: options.maxConcurrency,
         embed: options.embed,
         noDefaultExcludes: options.defaultExcludes === false,
+        onlyMainContent: options.onlyMainContent,
+        excludeTags: options.excludeTags
+          ? options.excludeTags.split(',').map((t: string) => t.trim())
+          : undefined,
+        includeTags: options.includeTags
+          ? options.includeTags.split(',').map((t: string) => t.trim())
+          : undefined,
       };
 
       await handleCrawlCommand(container, crawlOptions);

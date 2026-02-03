@@ -10,6 +10,7 @@ import type {
   ScrapeOptions,
   ScrapeResult,
 } from '../types/scrape';
+import { displayCommandInfo } from '../utils/display';
 import { parseScrapeOptions } from '../utils/options';
 import { handleScrapeOutput } from '../utils/output';
 import { normalizeUrl } from '../utils/url';
@@ -136,6 +137,16 @@ export async function handleScrapeCommand(
   container: IContainer,
   options: ScrapeOptions
 ): Promise<void> {
+  // Display command info
+  displayCommandInfo('Scraping', options.url, {
+    formats: options.formats,
+    onlyMainContent: options.onlyMainContent,
+    excludeTags: options.excludeTags,
+    includeTags: options.includeTags,
+    timeout: options.timeout,
+    waitFor: options.waitFor,
+  });
+
   const result = await executeScrape(container, options);
 
   // Start embedding concurrently with output
@@ -197,7 +208,12 @@ export function createScrapeCommand(): Command {
       '-f, --format <formats>',
       'Output format(s). Multiple formats can be specified with commas (e.g., "markdown,links,images"). Available: markdown, html, rawHtml, links, images, screenshot, summary, changeTracking, json, attributes, branding. Single format outputs raw content; multiple formats output JSON.'
     )
-    .option('--only-main-content', 'Include only main content', false)
+    .option(
+      '--only-main-content',
+      'Include only main content (default: true)',
+      true
+    )
+    .option('--no-only-main-content', 'Include full page content')
     .option(
       '--wait-for <ms>',
       'Wait time before scraping in milliseconds',
@@ -211,7 +227,11 @@ export function createScrapeCommand(): Command {
     )
     .option('--screenshot', 'Take a screenshot', false)
     .option('--include-tags <tags>', 'Comma-separated list of tags to include')
-    .option('--exclude-tags <tags>', 'Comma-separated list of tags to exclude')
+    .option(
+      '--exclude-tags <tags>',
+      'Comma-separated list of tags to exclude (default: nav,footer)',
+      'nav,footer'
+    )
     .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
