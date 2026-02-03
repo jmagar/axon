@@ -61,16 +61,16 @@
   "packageManager": "pnpm@10.12.1",
   "devDependencies": {
     "@biomejs/biome": "^2.3.13",
-    "@types/node": "^20.0.0",
+    "@types/node": "^25.1.0",
     "@vitest/coverage-v8": "^4.0.18",
     "husky": "^9.0.0",
-    "lint-staged": "^15.0.0",
+    "lint-staged": "^16.2.7",
     "typescript": "^5.0.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mendable/firecrawl-js": "^4.10.0",
-    "commander": "^14.0.2",
+    "@mendable/firecrawl-js": "^4.12.0",
+    "commander": "^14.0.3",
     "dotenv": "^17.2.3",
     "p-limit": "^7.2.0",
     "zod": "^4.3.6"
