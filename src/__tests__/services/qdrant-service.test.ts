@@ -51,6 +51,7 @@ describe('QdrantService', () => {
       expect(info.status).toBe('green');
       expect(info.vectorsCount).toBe(1000);
       expect(info.pointsCount).toBe(500);
+      expect(info.segmentsCount).toBe(3);
       expect(info.config.dimension).toBe(768);
       expect(info.config.distance).toBe('Cosine');
     });
