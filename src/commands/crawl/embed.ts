@@ -152,9 +152,9 @@ export async function handleManualEmbedding(
   const existingJob = getEmbedJob(jobId);
 
   if (!existingJob) {
-    // Get crawl info to queue it
+    // Get crawl info to queue it (only need first page for URL extraction)
     const app = container.getFirecrawlClient();
-    const status = await app.getCrawlStatus(jobId);
+    const status = await app.getCrawlStatus(jobId, { autoPaginate: false });
 
     if (status.status !== 'completed') {
       console.error(`Crawl ${jobId} is ${status.status}, cannot embed yet`);

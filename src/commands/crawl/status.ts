@@ -37,7 +37,8 @@ export async function checkCrawlStatus(
 ): Promise<CrawlStatusResult> {
   try {
     const app = container.getFirecrawlClient();
-    const status = await app.getCrawlStatus(jobId);
+    // Disable auto-pagination - we only need summary fields, not document data
+    const status = await app.getCrawlStatus(jobId, { autoPaginate: false });
 
     return {
       success: true,

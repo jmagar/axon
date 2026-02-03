@@ -40,6 +40,9 @@ export async function pollCrawlProgress(
 
   const app = container.getFirecrawlClient();
 
+  // Disable auto-pagination during polling - we only need progress counts
+  const noPagination = { autoPaginate: false };
+
   try {
     // Write initial messages to stderr
     process.stderr.write(`Polling job status...\n`);
@@ -47,7 +50,10 @@ export async function pollCrawlProgress(
 
     return await pollWithProgress({
       jobId,
-      statusFetcher: async (id) => app.getCrawlStatus(id),
+      // Lightweight status fetches during polling (no auto-pagination)
+      statusFetcher: async (id) => app.getCrawlStatus(id, noPagination),
+      // Full fetch with auto-pagination when complete (for embedding and output)
+      finalFetcher: async (id) => app.getCrawlStatus(id),
       pollInterval: options.pollInterval,
       timeout: options.timeout,
       showProgress: true,

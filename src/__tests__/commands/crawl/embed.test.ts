@@ -270,7 +270,9 @@ describe('handleManualEmbedding', () => {
 
     await handleManualEmbedding(container, 'job-123', 'test-key');
 
-    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123');
+    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123', {
+      autoPaginate: false,
+    });
     expect(mockEnqueueEmbedJob).toHaveBeenCalledWith(
       'job-123',
       'https://example.com',

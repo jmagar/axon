@@ -471,7 +471,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command._container;
+      const container = command.parent?._container;
       if (!container) {
         throw new Error('Container not initialized');
       }
@@ -487,7 +487,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command._container;
+      const container = command.parent?._container;
       if (!container) {
         throw new Error('Container not initialized');
       }
@@ -503,7 +503,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command._container;
+      const container = command.parent?._container;
       if (!container) {
         throw new Error('Container not initialized');
       }

@@ -392,6 +392,225 @@ describe('handleJobStatusCommand', () => {
 
     await run;
   });
+
+  describe('sorting behavior', () => {
+    it('should sort completed embeds by updatedAt descending (newest first)', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockReturnValue([
+        {
+          id: 'job-1',
+          jobId: 'job-1',
+          url: 'https://example.com/1',
+          status: 'completed',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T10:00:00.000Z',
+          updatedAt: '2026-02-01T10:00:00.000Z',
+        },
+        {
+          id: 'job-3',
+          jobId: 'job-3',
+          url: 'https://example.com/3',
+          status: 'completed',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-03T10:00:00.000Z',
+          updatedAt: '2026-02-03T10:00:00.000Z',
+        },
+        {
+          id: 'job-2',
+          jobId: 'job-2',
+          url: 'https://example.com/2',
+          status: 'completed',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-02T10:00:00.000Z',
+          updatedAt: '2026-02-02T10:00:00.000Z',
+        },
+      ]);
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const completed = parsed.data.embeddings.completed;
+
+      expect(completed).toHaveLength(3);
+      expect(completed[0].jobId).toBe('job-3'); // newest first
+      expect(completed[1].jobId).toBe('job-2');
+      expect(completed[2].jobId).toBe('job-1'); // oldest last
+    });
+
+    it('should sort pending embeds by updatedAt descending (newest first)', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockReturnValue([
+        {
+          id: 'job-1',
+          jobId: 'job-1',
+          url: 'https://example.com/1',
+          status: 'pending',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T10:00:00.000Z',
+          updatedAt: '2026-02-01T10:00:00.000Z',
+        },
+        {
+          id: 'job-2',
+          jobId: 'job-2',
+          url: 'https://example.com/2',
+          status: 'pending',
+          retries: 1,
+          maxRetries: 3,
+          createdAt: '2026-02-02T10:00:00.000Z',
+          updatedAt: '2026-02-02T10:00:00.000Z',
+        },
+      ]);
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const pending = parsed.data.embeddings.pending;
+
+      expect(pending).toHaveLength(2);
+      expect(pending[0].jobId).toBe('job-2'); // newest first
+      expect(pending[1].jobId).toBe('job-1'); // oldest last
+    });
+
+    it('should sort failed embeds by updatedAt descending (newest first)', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockReturnValue([
+        {
+          id: 'job-1',
+          jobId: 'job-1',
+          url: 'https://example.com/1',
+          status: 'failed',
+          retries: 3,
+          maxRetries: 3,
+          createdAt: '2026-02-01T10:00:00.000Z',
+          updatedAt: '2026-02-01T10:00:00.000Z',
+          lastError: 'Error 1',
+        },
+        {
+          id: 'job-2',
+          jobId: 'job-2',
+          url: 'https://example.com/2',
+          status: 'failed',
+          retries: 3,
+          maxRetries: 3,
+          createdAt: '2026-02-02T10:00:00.000Z',
+          updatedAt: '2026-02-02T10:00:00.000Z',
+          lastError: 'Error 2',
+        },
+      ]);
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const failed = parsed.data.embeddings.failed;
+
+      expect(failed).toHaveLength(2);
+      expect(failed[0].jobId).toBe('job-2'); // newest first
+      expect(failed[1].jobId).toBe('job-1'); // oldest last
+    });
+
+    it('should sort crawls by ID descending (newest first)', async () => {
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      vi.mocked(getRecentJobIds).mockImplementation((type: string) => {
+        if (type === 'crawl')
+          return [
+            '019c21d6-909a-74b8-a486-2a0a39a1834d', // oldest
+            '019c2443-183b-751b-9bf0-dfd1be25b48f', // newest
+            '019c2438-1969-7418-8f42-6d4ceef31eb3', // middle
+          ];
+        return [];
+      });
+
+      mockClient.getCrawlStatus.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          status: 'completed',
+          total: 1,
+          completed: 1,
+          data: [],
+        })
+      );
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const crawls = parsed.data.crawls;
+
+      expect(crawls).toHaveLength(3);
+      expect(crawls[0].id).toBe('019c2443-183b-751b-9bf0-dfd1be25b48f'); // newest
+      expect(crawls[1].id).toBe('019c2438-1969-7418-8f42-6d4ceef31eb3'); // middle
+      expect(crawls[2].id).toBe('019c21d6-909a-74b8-a486-2a0a39a1834d'); // oldest
+    });
+
+    it('should sort batches by ID descending (newest first)', async () => {
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      vi.mocked(getRecentJobIds).mockImplementation((type: string) => {
+        if (type === 'batch')
+          return [
+            '019c21d6-909a-74b8-a486-2a0a39a1834d', // oldest
+            '019c2443-183b-751b-9bf0-dfd1be25b48f', // newest
+          ];
+        return [];
+      });
+
+      mockClient.getBatchScrapeStatus.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          status: 'completed',
+          total: 1,
+          completed: 1,
+          data: [],
+        })
+      );
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const batches = parsed.data.batches;
+
+      expect(batches).toHaveLength(2);
+      expect(batches[0].id).toBe('019c2443-183b-751b-9bf0-dfd1be25b48f'); // newest
+      expect(batches[1].id).toBe('019c21d6-909a-74b8-a486-2a0a39a1834d'); // oldest
+    });
+
+    it('should sort extracts by ID descending (newest first)', async () => {
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      vi.mocked(getRecentJobIds).mockImplementation((type: string) => {
+        if (type === 'extract')
+          return [
+            '019c21d6-909a-74b8-a486-2a0a39a1834d', // oldest
+            '019c2443-183b-751b-9bf0-dfd1be25b48f', // newest
+          ];
+        return [];
+      });
+
+      mockClient.getExtractStatus.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          status: 'completed',
+          data: [],
+        })
+      );
+
+      await handleJobStatusCommand(container, { json: true });
+
+      const output = vi.mocked(writeOutput).mock.calls[0]?.[0];
+      const parsed = JSON.parse(output as string);
+      const extracts = parsed.data.extracts;
+
+      expect(extracts).toHaveLength(2);
+      expect(extracts[0].id).toBe('019c2443-183b-751b-9bf0-dfd1be25b48f'); // newest
+      expect(extracts[1].id).toBe('019c21d6-909a-74b8-a486-2a0a39a1834d'); // oldest
+    });
+  });
 });
 
 describe('createStatusCommand', () => {

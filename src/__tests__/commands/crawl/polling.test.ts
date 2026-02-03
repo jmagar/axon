@@ -85,9 +85,11 @@ describe('pollCrawlProgress', () => {
 
     expect(capturedStatusFetcher).toBeDefined();
 
-    // Call the statusFetcher to verify it works
+    // Call the statusFetcher to verify it works (should use noPagination)
     await capturedStatusFetcher?.('job-123');
-    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123');
+    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123', {
+      autoPaginate: false,
+    });
   });
 
   it('should configure isComplete to check for terminal states', async () => {

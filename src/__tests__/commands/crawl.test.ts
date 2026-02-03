@@ -371,7 +371,8 @@ describe('executeCrawl', () => {
 
       expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(1);
       expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(
-        '550e8400-e29b-41d4-a716-446655440000'
+        '550e8400-e29b-41d4-a716-446655440000',
+        { autoPaginate: false }
       );
       expect(result).toEqual({
         success: true,
@@ -575,9 +576,10 @@ describe('executeCrawl', () => {
       };
 
       mockClient.startCrawl.mockResolvedValue(mockStartResponse);
-      // First call returns scraping status, second returns completed
+      // First call returns scraping status, second returns completed, third is finalFetcher
       mockClient.getCrawlStatus
         .mockResolvedValueOnce(mockScrapingStatus)
+        .mockResolvedValueOnce(mockCompletedStatus)
         .mockResolvedValueOnce(mockCompletedStatus);
 
       const container = createTestContainer(mockClient);
@@ -598,7 +600,7 @@ describe('executeCrawl', () => {
       const result = await crawlPromise;
 
       expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
-      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(2);
+      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(3);
       expect(result.success).toBe(true);
       if (result.success && result.data && 'status' in result.data) {
         expect(result.data.status).toBe('completed');
@@ -620,7 +622,10 @@ describe('executeCrawl', () => {
       };
 
       mockClient.startCrawl.mockResolvedValue(mockStartResponse);
-      mockClient.getCrawlStatus.mockResolvedValueOnce(mockCompletedStatus);
+      // First call returns completed, second is finalFetcher
+      mockClient.getCrawlStatus
+        .mockResolvedValueOnce(mockCompletedStatus)
+        .mockResolvedValueOnce(mockCompletedStatus);
 
       const container = createTestContainer(mockClient);
       // Start with progress but without explicit wait
@@ -637,7 +642,7 @@ describe('executeCrawl', () => {
 
       // Should use wait mode because progress implies wait
       expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
-      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(1);
+      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(2);
       expect(result.success).toBe(true);
       if (result.success && result.data && 'status' in result.data) {
         expect(result.data.status).toBe('completed');
@@ -1126,7 +1131,9 @@ describe('createCrawlCommand', () => {
         from: 'node',
       });
 
-      expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123');
+      expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('job-123', {
+        autoPaginate: false,
+      });
       expect(writeOutput).toHaveBeenCalled();
     });
 
@@ -1250,7 +1257,9 @@ describe('createCrawlCommand', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '⚠️  Detected job ID. Use "firecrawl crawl status <job-id>" instead.'
     );
-    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(jobId);
+    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(jobId, {
+      autoPaginate: false,
+    });
 
     warnSpy.mockRestore();
   });

@@ -38,7 +38,9 @@ describe('checkCrawlStatus', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual(mockStatus);
-    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('test-job-123');
+    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('test-job-123', {
+      autoPaginate: false,
+    });
   });
 
   it('should use container client', async () => {
@@ -57,7 +59,9 @@ describe('checkCrawlStatus', () => {
 
     await checkCrawlStatus(container, 'test-job');
 
-    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('test-job');
+    expect(mockClient.getCrawlStatus).toHaveBeenCalledWith('test-job', {
+      autoPaginate: false,
+    });
   });
 
   it('should return error on failure', async () => {

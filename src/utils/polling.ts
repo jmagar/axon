@@ -8,8 +8,10 @@
 export interface PollingConfig<T> {
   /** Unique job identifier */
   jobId: string;
-  /** Function to fetch current status */
+  /** Function to fetch current status (lightweight, for progress updates) */
   statusFetcher: (jobId: string) => Promise<T>;
+  /** Optional function to fetch final result (with full data) after completion */
+  finalFetcher?: (jobId: string) => Promise<T>;
   /** Polling interval in milliseconds */
   pollInterval: number;
   /** Optional timeout in milliseconds */
@@ -48,6 +50,7 @@ export async function pollWithProgress<T>(
   const {
     jobId,
     statusFetcher,
+    finalFetcher,
     pollInterval,
     timeout,
     showProgress,
@@ -103,6 +106,15 @@ export async function pollWithProgress<T>(
     if (isComplete(status)) {
       if (showProgress) {
         process.stderr.write('\n');
+      }
+      // If a finalFetcher is provided, use it to get complete data
+      if (finalFetcher) {
+        try {
+          return await finalFetcher(jobId);
+        } catch (error) {
+          // Fall back to the last status if final fetch fails
+          return status;
+        }
       }
       return status;
     }
