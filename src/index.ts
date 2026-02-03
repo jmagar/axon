@@ -21,8 +21,12 @@ import {
   createViewConfigCommand,
 } from './commands/config';
 import { createCrawlCommand } from './commands/crawl';
+import { createDeleteCommand } from './commands/delete';
+import { createDomainsCommand } from './commands/domains';
 import { createEmbedCommand } from './commands/embed';
 import { createExtractCommand } from './commands/extract';
+import { createHistoryCommand } from './commands/history';
+import { createInfoCommand } from './commands/info';
 import { createListCommand } from './commands/list';
 import { createLoginCommand } from './commands/login';
 import { createLogoutCommand } from './commands/logout';
@@ -31,6 +35,8 @@ import { createQueryCommand } from './commands/query';
 import { createRetrieveCommand } from './commands/retrieve';
 import { createScrapeCommand } from './commands/scrape';
 import { createSearchCommand } from './commands/search';
+import { createSourcesCommand } from './commands/sources';
+import { createStatsCommand } from './commands/stats';
 import { createStatusCommand, handleStatusCommand } from './commands/status';
 import { createVersionCommand } from './commands/version';
 import {
@@ -176,6 +182,13 @@ program.addCommand(createLoginCommand());
 program.addCommand(createLogoutCommand());
 
 program.addCommand(createVersionCommand());
+
+program.addCommand(createSourcesCommand());
+program.addCommand(createStatsCommand());
+program.addCommand(createDomainsCommand());
+program.addCommand(createDeleteCommand());
+program.addCommand(createHistoryCommand());
+program.addCommand(createInfoCommand());
 
 // Parse arguments
 const args = process.argv.slice(2);
