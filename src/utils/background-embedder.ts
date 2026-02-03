@@ -125,9 +125,9 @@ async function processEmbedJob(
     // Embed pages using job-specific container config
     console.error(`[Embedder] Embedding ${pages.length} pages for ${job.url}`);
     const embedItems = createEmbedItems(pages, 'crawl');
-    const result = await batchEmbed(embedItems);
-    // Note: batchEmbed still uses legacy getConfig() internally
-    // This is acceptable for daemon backward compatibility
+    const result = await batchEmbed(embedItems, {
+      config: jobContainer.config,
+    });
 
     // Log partial failures if any
     if (result.failed > 0) {
@@ -137,7 +137,7 @@ async function processEmbedJob(
       );
     } else {
       console.error(
-        `[Embedder] Successfully embedded ${pages.length} pages for ${job.url}`
+        `[Embedder] Successfully embedded ${result.succeeded} pages for ${job.url}`
       );
     }
     markJobCompleted(job.jobId);

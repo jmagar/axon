@@ -353,6 +353,79 @@ describe('processEmbedJob - configuration errors', () => {
   });
 });
 
+describe('processEmbedJob - success logging', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('logs result.succeeded count, not pages.length', async () => {
+    const { getStalePendingJobs } = await import('../../utils/embed-queue');
+    const { createDaemonContainer } = await import(
+      '../../container/DaemonContainerFactory'
+    );
+    const { batchEmbed } = await import('../../utils/embedpipeline');
+
+    vi.mocked(getStalePendingJobs).mockReturnValue([
+      {
+        id: 'job-1',
+        jobId: 'job-1',
+        url: 'https://example.com',
+        status: 'pending',
+        retries: 0,
+        maxRetries: 3,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    // batchEmbed returns succeeded=3 (simulating 2 filtered pages)
+    vi.mocked(batchEmbed).mockResolvedValue({
+      succeeded: 3,
+      failed: 0,
+      errors: [],
+    });
+
+    const mockClient = {
+      getCrawlStatus: vi.fn().mockResolvedValue({
+        status: 'completed',
+        data: [{ markdown: 'a' }, { markdown: 'b' }, { markdown: 'c' }, {}, {}], // 5 pages, 2 empty
+      }),
+    };
+
+    const mockContainer: IContainer = {
+      config: {
+        apiKey: 'test',
+        teiUrl: 'http://tei:8080',
+        qdrantUrl: 'http://qdrant:6333',
+      },
+      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
+      getHttpClient: vi.fn(),
+      getTeiService: vi.fn(),
+      getQdrantService: vi.fn(),
+      getEmbedPipeline: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { processStaleJobsOnce } = await import(
+      '../../utils/background-embedder'
+    );
+    await processStaleJobsOnce(mockContainer, 60_000);
+
+    // Should log "3 pages" (result.succeeded), not "5 pages" (pages.length)
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Successfully embedded 3 pages')
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+});
+
 describe('isEmbedderRunning', () => {
   beforeEach(() => {
     vi.clearAllMocks();
