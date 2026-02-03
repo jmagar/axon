@@ -166,10 +166,18 @@ export function createInfoCommand(): Command {
   const infoCmd = new Command('info')
     .description('Show detailed information for a specific URL')
     .argument('<url>', 'URL to get information for')
-    .option('-f, --full', 'Show full chunk text (default: 100 char preview)')
-    .option('-c, --collection <name>', 'Qdrant collection name', 'firecrawl')
-    .option('-o, --output <file>', 'Write output to file')
-    .option('--json', 'Output as JSON')
+    .option(
+      '-f, --full',
+      'Show full chunk text (default: false, 100 char preview)',
+      false
+    )
+    .option(
+      '-c, --collection <name>',
+      'Qdrant collection name (default: firecrawl)',
+      'firecrawl'
+    )
+    .option('-o, --output <file>', 'Write output to file (default: stdout)')
+    .option('--json', 'Output as JSON (default: false)', false)
     .action(async (url: string, options, command: Command) => {
       const container = command._container;
       if (!container) {

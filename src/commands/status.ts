@@ -185,13 +185,15 @@ async function executeJobStatus(
   const resolvedCrawlIds = filterValidJobIds(
     crawlIds.length > 0
       ? crawlIds
-      : Array.from(new Set([...getRecentJobIds('crawl'), ...embedJobIds]))
+      : Array.from(
+          new Set([...getRecentJobIds('crawl', 10), ...embedJobIds])
+        ).slice(0, 10)
   );
   const resolvedBatchIds = filterValidJobIds(
-    batchIds.length > 0 ? batchIds : getRecentJobIds('batch')
+    batchIds.length > 0 ? batchIds : getRecentJobIds('batch', 10)
   );
   const resolvedExtractIds = filterValidJobIds(
-    extractIds.length > 0 ? extractIds : getRecentJobIds('extract')
+    extractIds.length > 0 ? extractIds : getRecentJobIds('extract', 10)
   );
 
   const STATUS_TIMEOUT_MS = 10000; // 10 second timeout per API call
@@ -323,7 +325,8 @@ async function executeJobStatus(
       lastError: job.lastError,
       updatedAt: job.updatedAt,
     }))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 10);
   const pendingEmbeds = embedQueue.jobs
     .filter((job) => job.status === 'pending')
     .map((job) => ({
@@ -333,7 +336,8 @@ async function executeJobStatus(
       maxRetries: job.maxRetries,
       updatedAt: job.updatedAt,
     }))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 10);
   const completedEmbeds = embedQueue.jobs
     .filter((job) => job.status === 'completed')
     .map((job) => ({
@@ -341,18 +345,19 @@ async function executeJobStatus(
       url: job.url,
       updatedAt: job.updatedAt,
     }))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 10);
 
   // Sort by ID descending (ULIDs are lexicographically sortable by timestamp)
-  const sortedCrawls = crawlStatuses.sort((a, b) =>
-    (b.id ?? '').localeCompare(a.id ?? '')
-  );
-  const sortedBatches = batchStatuses.sort((a, b) =>
-    (b.id ?? '').localeCompare(a.id ?? '')
-  );
-  const sortedExtracts = extractStatuses.sort((a, b) =>
-    (b.id ?? '').localeCompare(a.id ?? '')
-  );
+  const sortedCrawls = crawlStatuses
+    .sort((a, b) => (b.id ?? '').localeCompare(a.id ?? ''))
+    .slice(0, 10);
+  const sortedBatches = batchStatuses
+    .sort((a, b) => (b.id ?? '').localeCompare(a.id ?? ''))
+    .slice(0, 10);
+  const sortedExtracts = extractStatuses
+    .sort((a, b) => (b.id ?? '').localeCompare(a.id ?? ''))
+    .slice(0, 10);
 
   return {
     activeCrawls,
@@ -583,8 +588,8 @@ export function createStatusCommand(): Command {
       '--embed [job-id]',
       'Show embedding queue status (optionally for job ID)'
     )
-    .option('--json', 'Output JSON (compact)', false)
-    .option('--pretty', 'Pretty print JSON output', false)
+    .option('--json', 'Output JSON (compact) (default: false)', false)
+    .option('--pretty', 'Pretty print JSON output (default: false)', false)
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .action(async (options, command: Command) => {
       const container = command._container;

@@ -77,7 +77,7 @@ export function createListCommand(): Command {
       'Firecrawl API key (overrides global --api-key)'
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--no-pretty', 'Disable pretty JSON output')
+    .option('--no-pretty', 'Disable pretty JSON output (default: false)')
     .action(async (options, command: Command) => {
       const container = command._container;
       if (!container) {
