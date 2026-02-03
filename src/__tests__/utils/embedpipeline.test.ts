@@ -58,6 +58,22 @@ describe('autoEmbed', () => {
     expect(embeddings.embedChunks).not.toHaveBeenCalled();
   });
 
+  it('logs when skipping empty content', async () => {
+    initializeConfig({
+      teiUrl: 'http://localhost:52000',
+      qdrantUrl: 'http://localhost:53333',
+    });
+
+    await autoEmbed('   ', {
+      url: 'https://example.com',
+      sourceCommand: 'test',
+    });
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Skipping empty content for https://example.com')
+    );
+  });
+
   it('should chunk, embed, delete old, and upsert when configured', async () => {
     initializeConfig({
       teiUrl: 'http://localhost:52000',

@@ -92,7 +92,10 @@ async function autoEmbedInternal(
 
   // No-op for empty content
   const trimmed = content.trim();
-  if (!trimmed) return;
+  if (!trimmed) {
+    console.error(`Skipping empty content for ${metadata.url}`);
+    return;
+  }
 
   // Get TEI info (dimension) -- cached after first call
   const teiInfo = await getTeiInfo(teiUrl);
