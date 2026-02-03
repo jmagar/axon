@@ -191,6 +191,41 @@ export async function fetchWithRetry(
 }
 
 /**
+ * Wrap any promise with a timeout
+ *
+ * Useful for wrapping SDK calls that don't support timeout natively.
+ *
+ * @param promise - The promise to wrap
+ * @param timeoutMs - Timeout in milliseconds (default: 30000)
+ * @param errorMessage - Custom error message for timeout
+ * @returns The resolved value of the promise
+ * @throws Error if timeout occurs
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = DEFAULT_HTTP_OPTIONS.timeoutMs,
+  errorMessage?: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(
+        errorMessage ?? `Operation timed out after ${timeoutMs}ms`
+      );
+      error.name = 'TimeoutError';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
+/**
  * Make an HTTP request with timeout (no retry)
  *
  * Useful for operations that should not be retried (e.g., POST with side effects)

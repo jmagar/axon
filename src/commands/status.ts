@@ -12,6 +12,7 @@ import { formatJson } from '../utils/command';
 import { DEFAULT_API_URL } from '../utils/config';
 import { loadCredentials } from '../utils/credentials';
 import { listEmbedJobs, updateEmbedJob } from '../utils/embed-queue';
+import { withTimeout } from '../utils/http';
 import { isJobId } from '../utils/job';
 import { getRecentJobIds, removeJobIds } from '../utils/job-history';
 import { validateOutputPath, writeOutput } from '../utils/output';
@@ -179,11 +180,25 @@ async function executeJobStatus(
     extractIds.length > 0 ? extractIds : getRecentJobIds('extract')
   );
 
-  const activeCrawlsPromise = client.getActiveCrawls();
+  const STATUS_TIMEOUT_MS = 10000; // 10 second timeout per API call
+
+  const activeCrawlsPromise = withTimeout(
+    client.getActiveCrawls(),
+    STATUS_TIMEOUT_MS,
+    'getActiveCrawls timed out'
+  ).catch(() => ({ success: false, crawls: [] }));
+
+  // Disable auto-pagination for status checks - we only need summary, not all data
+  const noPagination = { autoPaginate: false };
+
   const crawlStatusesPromise = Promise.all(
     resolvedCrawlIds.map(async (id) => {
       try {
-        return await client.getCrawlStatus(id);
+        return await withTimeout(
+          client.getCrawlStatus(id, noPagination),
+          STATUS_TIMEOUT_MS,
+          `getCrawlStatus(${id}) timed out`
+        );
       } catch (error) {
         return {
           id,
@@ -196,7 +211,11 @@ async function executeJobStatus(
   const batchStatusesPromise = Promise.all(
     resolvedBatchIds.map(async (id) => {
       try {
-        return await client.getBatchScrapeStatus(id);
+        return await withTimeout(
+          client.getBatchScrapeStatus(id, noPagination),
+          STATUS_TIMEOUT_MS,
+          `getBatchScrapeStatus(${id}) timed out`
+        );
       } catch (error) {
         return {
           id,
@@ -209,7 +228,11 @@ async function executeJobStatus(
   const extractStatusesPromise = Promise.all(
     resolvedExtractIds.map(async (id) => {
       try {
-        return await client.getExtractStatus(id);
+        return await withTimeout(
+          client.getExtractStatus(id),
+          STATUS_TIMEOUT_MS,
+          `getExtractStatus(${id}) timed out`
+        );
       } catch (error) {
         return {
           id,
