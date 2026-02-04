@@ -241,14 +241,21 @@ export function createEmbedCommand(): Command {
       '--url <url>',
       'Explicit URL for metadata (required for file/stdin)'
     )
-    .option('--collection <name>', 'Qdrant collection name')
-    .option('--no-chunk', 'Disable chunking, embed as single vector')
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
+    .option(
+      '--no-chunk',
+      'Disable chunking, embed as single vector (default: false)',
+      false
+    )
     .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
+    .option('--json', 'Output as JSON format (default: false)', false)
     .action(async (input: string | undefined, options, command: Command) => {
       // If no input provided and no subcommand, show help
       if (!input) {

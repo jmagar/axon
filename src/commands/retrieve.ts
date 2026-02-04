@@ -142,9 +142,12 @@ export function createRetrieveCommand(): Command {
   const retrieveCmd = new Command('retrieve')
     .description('Retrieve full document from Qdrant by URL')
     .argument('<url>', 'URL of the document to retrieve')
-    .option('--collection <name>', 'Qdrant collection name')
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
+    .option('--json', 'Output as JSON format (default: false)', false)
     .action(async (url: string, options, command: Command) => {
       const container = command._container;
       if (!container) {

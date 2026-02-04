@@ -178,10 +178,17 @@ export function createDeleteCommand(): Command {
     .option('--url <url>', 'Delete all vectors for a specific URL')
     .option('--domain <domain>', 'Delete all vectors for a specific domain')
     .option('--all', 'Delete all vectors in the collection')
-    .option('--yes', 'Confirm deletion (required for safety)', false)
-    .option('--collection <name>', 'Qdrant collection name')
-    .option('-o, --output <path>', 'Output file path')
-    .option('--json', 'Output as JSON', false)
+    .option(
+      '--yes',
+      'Confirm deletion (required for safety) (default: false)',
+      false
+    )
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
+    .option('-o, --output <path>', 'Output file path (default: stdout)')
+    .option('--json', 'Output as JSON (default: false)', false)
     .action(async (options, command: Command) => {
       const container = command._container;
       if (!container) {

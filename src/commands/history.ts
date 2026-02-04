@@ -231,9 +231,12 @@ export function createHistoryCommand(): Command {
       'Filter by source command (scrape, crawl, embed, search, extract)'
     )
     .option('--limit <number>', 'Maximum entries to show', parseInt)
-    .option('--collection <name>', 'Qdrant collection name')
-    .option('-o, --output <path>', 'Output file path')
-    .option('--json', 'Output as JSON', false)
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
+    .option('-o, --output <path>', 'Output file path (default: stdout)')
+    .option('--json', 'Output as JSON (default: false)', false)
     .action(async (options, command: Command) => {
       const container = command._container;
       if (!container) {

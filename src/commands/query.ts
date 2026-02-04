@@ -224,14 +224,22 @@ export function createQueryCommand(): Command {
     .option(
       '--limit <number>',
       'Maximum number of results (default: 5)',
-      parseInt
+      parseInt,
+      5
     )
     .option('--domain <domain>', 'Filter results by domain')
-    .option('--full', 'Show full chunk text instead of truncated', false)
-    .option('--group', 'Group results by URL', false)
-    .option('--collection <name>', 'Qdrant collection name')
+    .option(
+      '--full',
+      'Show full chunk text instead of truncated (default: false)',
+      false
+    )
+    .option('--group', 'Group results by URL (default: false)', false)
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
+    .option('--json', 'Output as JSON format (default: false)', false)
     .action(async (query: string, options, command: Command) => {
       const container = command._container;
       if (!container) {

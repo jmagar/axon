@@ -192,10 +192,13 @@ export async function handleStatsCommand(
 export function createStatsCommand(): Command {
   const statsCmd = new Command('stats')
     .description('Show vector database statistics')
-    .option('--verbose', 'Include additional details', false)
-    .option('--collection <name>', 'Qdrant collection name')
-    .option('-o, --output <path>', 'Output file path')
-    .option('--json', 'Output as JSON', false)
+    .option('--verbose', 'Include additional details (default: false)', false)
+    .option(
+      '--collection <name>',
+      'Qdrant collection name (default: firecrawl)'
+    )
+    .option('-o, --output <path>', 'Output file path (default: stdout)')
+    .option('--json', 'Output as JSON (default: false)', false)
     .action(async (options, command: Command) => {
       const container = command._container;
       if (!container) {
