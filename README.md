@@ -678,13 +678,59 @@ firecrawl retrieve https://example.com -o document.md
 
 ---
 
-### `config` - View configuration
+### `config` - View and manage configuration
 
 ```bash
+# View configuration
 firecrawl config
+
+# Set default exclude paths for crawls
+firecrawl config set exclude-paths "/admin,/api,/login"
+
+# Set default exclude extensions (overrides built-in defaults)
+firecrawl config set exclude-extensions ".pkg,.exe,.dmg,.zip"
+
+# Get current settings (individual)
+firecrawl config get exclude-paths
+firecrawl config get exclude-extensions
+
+# Get combined view of both paths and extensions
+firecrawl config get excludes
+
+# Clear settings (reverts to built-in defaults for extensions)
+firecrawl config clear exclude-paths
+firecrawl config clear exclude-extensions
 ```
 
-Shows authentication status and stored credentials location.
+Shows authentication status, stored credentials location, and user settings.
+
+#### Binary File Exclusion
+
+The CLI automatically excludes common binary files during crawls to prevent worker crashes. By default, these extensions are excluded:
+
+**Executables/Installers:** `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`
+**Archives:** `.zip`, `.tar`, `.gz`, `.bz2`, `.7z`, `.rar`
+**Media:** `.mp4`, `.mp3`, `.avi`, `.mov`, `.jpg`, `.jpeg`, `.png`, `.gif`, `.pdf`
+**Fonts:** `.ttf`, `.woff`, `.woff2`
+
+You can customize this list:
+
+```bash
+# Override default extensions (replaces built-in list)
+firecrawl config set exclude-extensions ".pkg,.exe,.dmg"
+
+# Revert to built-in defaults
+firecrawl config clear exclude-extensions
+
+# Check current configuration
+firecrawl config get exclude-extensions
+```
+
+Extensions are converted to wildcard patterns (e.g., `.pkg` → `**/*.pkg`) and merged with `excludePaths` transparently. To disable all default exclusions (both paths and extensions) for a single crawl:
+
+```bash
+firecrawl crawl https://example.com --no-default-excludes
+```
 
 ---
 

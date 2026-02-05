@@ -4,6 +4,8 @@
 
 import type { CrawlOptions as FirecrawlCrawlOptions } from '@mendable/firecrawl-js';
 import type { CrawlOptions } from '../../types/crawl';
+import { DEFAULT_EXCLUDE_EXTENSIONS } from '../../utils/constants.js';
+import { extensionsToPaths } from '../../utils/extensions.js';
 import { OptionsBuilder } from '../../utils/options-builder';
 import { loadSettings } from '../../utils/settings';
 
@@ -50,10 +52,16 @@ export function buildCrawlOptions(
     .add('delay', options.delay)
     .add('maxConcurrency', options.maxConcurrency);
 
-  // Handle merged exclude paths
+  // Handle merged exclude extensions and paths
+  const extensions = mergeExcludeExtensions(
+    undefined, // No CLI extension flag yet
+    options.noDefaultExcludes ?? false
+  );
+  const extensionPatterns = extensionsToPaths(extensions);
   const excludePaths = mergeExcludePaths(
     options.excludePaths,
-    options.noDefaultExcludes ?? false
+    options.noDefaultExcludes ?? false,
+    extensionPatterns
   );
   if (excludePaths.length > 0) {
     builder.add('excludePaths', excludePaths);
@@ -100,21 +108,64 @@ export function buildCrawlOptions(
 }
 
 /**
- * Merge CLI exclude paths with default exclude paths from settings
+ * Merge CLI exclude extensions with default exclude extensions from settings
+ *
+ * @param cliExtensions - Extensions from CLI options (not implemented yet)
+ * @param skipDefaults - Whether to skip default exclude extensions
+ * @returns Merged and deduplicated extensions (empty strings filtered out)
+ *
+ * @example
+ * ```typescript
+ * const extensions = mergeExcludeExtensions(undefined, false);
+ * // Returns: ['.exe', '.pkg', '.dmg', ...] (default extensions)
+ * ```
+ */
+export function mergeExcludeExtensions(
+  cliExtensions: string[] | undefined,
+  skipDefaults: boolean
+): string[] {
+  const settingsExtensions = loadSettings().defaultExcludeExtensions ?? [];
+
+  // If user has custom settings, use those; otherwise use built-in defaults
+  const defaultExtensions = skipDefaults
+    ? []
+    : settingsExtensions.length > 0
+      ? settingsExtensions
+      : DEFAULT_EXCLUDE_EXTENSIONS;
+
+  // Filter out empty strings and merge
+  const validDefaults = defaultExtensions.filter(
+    (ext) => ext && ext.trim() !== ''
+  );
+  const validCliExtensions = (cliExtensions ?? []).filter(
+    (ext) => ext && ext.trim() !== ''
+  );
+
+  const mergedExtensions = [
+    ...new Set([...validDefaults, ...validCliExtensions]),
+  ];
+
+  return mergedExtensions;
+}
+
+/**
+ * Merge CLI exclude paths with default exclude paths from settings and extension patterns
  *
  * @param cliExcludes - Exclude paths from CLI options
  * @param skipDefaults - Whether to skip default exclude paths
+ * @param extensionPatterns - Wildcard patterns converted from extensions
  * @returns Merged and deduplicated exclude paths (empty strings filtered out)
  *
  * @example
  * ```typescript
- * const excludes = mergeExcludePaths(['/admin', '/api'], false);
- * // Returns: ['/login', '/logout', '/admin', '/api'] (assuming defaults)
+ * const excludes = mergeExcludePaths(['/admin', '/api'], false, ['**\/*.pkg']);
+ * // Returns: ['/login', '/logout', '/admin', '/api', '**\/*.pkg'] (assuming defaults)
  * ```
  */
 export function mergeExcludePaths(
   cliExcludes: string[] | undefined,
-  skipDefaults: boolean
+  skipDefaults: boolean,
+  extensionPatterns: string[] = []
 ): string[] {
   const defaultExcludes = skipDefaults
     ? []
@@ -127,8 +178,17 @@ export function mergeExcludePaths(
   const validCliExcludes = (cliExcludes ?? []).filter(
     (path) => path && path.trim() !== ''
   );
+  const validExtensionPatterns = extensionPatterns.filter(
+    (pattern) => pattern && pattern.trim() !== ''
+  );
 
-  const mergedExcludes = [...new Set([...validDefaults, ...validCliExcludes])];
+  const mergedExcludes = [
+    ...new Set([
+      ...validDefaults,
+      ...validCliExcludes,
+      ...validExtensionPatterns,
+    ]),
+  ];
 
   return mergedExcludes;
 }

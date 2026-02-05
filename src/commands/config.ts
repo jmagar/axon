@@ -5,6 +5,7 @@
 
 import { isAuthenticated } from '../utils/auth';
 import { DEFAULT_API_URL } from '../utils/config';
+import { DEFAULT_EXCLUDE_EXTENSIONS } from '../utils/constants';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
 import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
@@ -70,6 +71,14 @@ export async function viewConfig(): Promise<void> {
         `  ${fmt.dim('Exclude Paths:')} ${settings.defaultExcludePaths.join(', ')}`
       );
     }
+    if (
+      settings.defaultExcludeExtensions &&
+      settings.defaultExcludeExtensions.length > 0
+    ) {
+      console.log(
+        `  ${fmt.dim('Exclude Extensions:')} ${settings.defaultExcludeExtensions.join(', ')}`
+      );
+    }
 
     console.log('');
     console.log(fmt.dim('Commands:'));
@@ -90,45 +99,136 @@ export async function viewConfig(): Promise<void> {
  * Handle config set <key> <value>
  */
 export function handleConfigSet(key: string, value: string): void {
-  if (key !== 'exclude-paths') {
+  if (key !== 'exclude-paths' && key !== 'exclude-extensions') {
     console.error(fmt.error(`Unknown setting "${key}".`));
-    console.error(fmt.dim('Available settings: exclude-paths'));
+    console.error(
+      fmt.dim('Available settings: exclude-paths, exclude-extensions')
+    );
     process.exit(1);
   }
 
-  const paths = value
+  const values = value
     .split(',')
-    .map((p) => p.trim())
+    .map((v) => v.trim())
     .filter(Boolean);
 
-  if (paths.length === 0) {
-    console.error(fmt.error('No paths provided.'));
+  if (values.length === 0) {
+    console.error(fmt.error(`No ${key} provided.`));
     process.exit(1);
   }
 
-  saveSettings({ defaultExcludePaths: paths });
-  console.log(
-    `${icons.success} Default exclude paths set: ${paths.join(', ')}`
-  );
+  if (key === 'exclude-paths') {
+    saveSettings({ defaultExcludePaths: values });
+    console.log(
+      `${icons.success} Default exclude paths set: ${values.join(', ')}`
+    );
+  } else if (key === 'exclude-extensions') {
+    saveSettings({ defaultExcludeExtensions: values });
+    console.log(
+      `${icons.success} Default exclude extensions set: ${values.join(', ')}`
+    );
+  }
 }
 
 /**
  * Handle config get <key>
  */
 export function handleConfigGet(key: string): void {
-  if (key !== 'exclude-paths') {
+  if (
+    key !== 'exclude-paths' &&
+    key !== 'exclude-extensions' &&
+    key !== 'excludes'
+  ) {
     console.error(fmt.error(`Unknown setting "${key}".`));
-    console.error(fmt.dim('Available settings: exclude-paths'));
+    console.error(
+      fmt.dim('Available settings: exclude-paths, exclude-extensions, excludes')
+    );
     process.exit(1);
   }
 
   const settings = loadSettings();
-  const paths = settings.defaultExcludePaths;
 
-  if (!paths || paths.length === 0) {
-    console.log(fmt.dim('No default exclude paths configured.'));
-  } else {
-    console.log(`${icons.bullet} Default exclude paths: ${paths.join(', ')}`);
+  if (key === 'exclude-paths') {
+    const paths = settings.defaultExcludePaths;
+    if (!paths || paths.length === 0) {
+      console.log(fmt.dim('No default exclude paths configured.'));
+    } else {
+      console.log(`${icons.bullet} Default exclude paths: ${paths.join(', ')}`);
+    }
+  } else if (key === 'exclude-extensions') {
+    const extensions = settings.defaultExcludeExtensions;
+    if (!extensions || extensions.length === 0) {
+      console.log(
+        fmt.dim(
+          'No default exclude extensions configured (using built-in defaults).'
+        )
+      );
+    } else {
+      console.log(
+        `${icons.bullet} Default exclude extensions: ${extensions.join(', ')}`
+      );
+    }
+  } else if (key === 'excludes') {
+    // Combined view of both paths and extensions
+    const paths = settings.defaultExcludePaths;
+    const extensions = settings.defaultExcludeExtensions;
+    const activeExtensions =
+      extensions && extensions.length > 0
+        ? extensions
+        : DEFAULT_EXCLUDE_EXTENSIONS;
+
+    console.log('');
+    console.log(fmt.bold('Exclude Configuration'));
+    console.log('');
+
+    // Show paths
+    console.log(fmt.primary('Paths:'));
+    if (!paths || paths.length === 0) {
+      console.log(fmt.dim('  No custom exclude paths configured'));
+    } else {
+      console.log(`  ${paths.join(', ')}`);
+    }
+
+    console.log('');
+
+    // Show extensions with categories
+    console.log(fmt.primary('Extensions:'));
+    if (extensions && extensions.length > 0) {
+      console.log(fmt.dim('  (custom configuration)'));
+      console.log(`  ${extensions.join(', ')}`);
+    } else {
+      console.log(fmt.dim('  (using built-in defaults)'));
+
+      // Group by category
+      const executables = activeExtensions.filter((e) =>
+        ['.exe', '.msi', '.dmg', '.pkg', '.deb', '.rpm'].includes(e)
+      );
+      const archives = activeExtensions.filter((e) =>
+        ['.zip', '.tar', '.gz', '.bz2', '.7z', '.rar'].includes(e)
+      );
+      const media = activeExtensions.filter(
+        (e) =>
+          ![...executables, ...archives, '.ttf', '.woff', '.woff2'].includes(e)
+      );
+      const fonts = activeExtensions.filter((e) =>
+        ['.ttf', '.woff', '.woff2'].includes(e)
+      );
+
+      if (executables.length > 0) {
+        console.log(`  ${fmt.dim('Executables:')} ${executables.join(', ')}`);
+      }
+      if (archives.length > 0) {
+        console.log(`  ${fmt.dim('Archives:')} ${archives.join(', ')}`);
+      }
+      if (media.length > 0) {
+        console.log(`  ${fmt.dim('Media:')} ${media.join(', ')}`);
+      }
+      if (fonts.length > 0) {
+        console.log(`  ${fmt.dim('Fonts:')} ${fonts.join(', ')}`);
+      }
+    }
+
+    console.log('');
   }
 }
 
@@ -136,14 +236,23 @@ export function handleConfigGet(key: string): void {
  * Handle config clear <key>
  */
 export function handleConfigClear(key: string): void {
-  if (key !== 'exclude-paths') {
+  if (key !== 'exclude-paths' && key !== 'exclude-extensions') {
     console.error(fmt.error(`Unknown setting "${key}".`));
-    console.error(fmt.dim('Available settings: exclude-paths'));
+    console.error(
+      fmt.dim('Available settings: exclude-paths, exclude-extensions')
+    );
     process.exit(1);
   }
 
-  clearSetting('defaultExcludePaths');
-  console.log(`${icons.success} Default exclude paths cleared.`);
+  if (key === 'exclude-paths') {
+    clearSetting('defaultExcludePaths');
+    console.log(`${icons.success} Default exclude paths cleared.`);
+  } else if (key === 'exclude-extensions') {
+    clearSetting('defaultExcludeExtensions');
+    console.log(
+      `${icons.success} Default exclude extensions cleared (will use built-in defaults).`
+    );
+  }
 }
 
 import { Command } from 'commander';

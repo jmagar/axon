@@ -34,13 +34,15 @@ export const StoredCredentialsSchema = z
  * Example:
  * ```json
  * {
- *   "defaultExcludePaths": ["node_modules/**", ".git/**"]
+ *   "defaultExcludePaths": ["node_modules/**", ".git/**"],
+ *   "defaultExcludeExtensions": [".pkg", ".exe", ".dmg"]
  * }
  * ```
  */
 export const UserSettingsSchema = z
   .object({
     defaultExcludePaths: z.array(z.string()).optional(),
+    defaultExcludeExtensions: z.array(z.string()).optional(),
   })
   .strict();
 

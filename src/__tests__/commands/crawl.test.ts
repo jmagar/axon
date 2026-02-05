@@ -147,10 +147,13 @@ describe('executeCrawl', () => {
       });
 
       expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
-      expect(mockClient.startCrawl).toHaveBeenCalledWith(
-        'https://example.com',
-        {}
-      );
+      // Now includes default binary extensions (regex patterns like \.exe$)
+      const call = mockClient.startCrawl.mock.calls[0];
+      expect(call[0]).toBe('https://example.com');
+      expect(call[1].excludePaths).toBeDefined();
+      expect(call[1].excludePaths.length).toBeGreaterThan(20); // Should have 24 default extensions
+      expect(call[1].excludePaths).toContain('\\.exe$');
+      expect(call[1].excludePaths).toContain('\\.pkg$');
       expect(result).toEqual({
         success: true,
         data: {
@@ -259,12 +262,13 @@ describe('executeCrawl', () => {
         excludePaths: ['/admin', '/private'],
       });
 
-      expect(mockClient.startCrawl).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          excludePaths: ['/admin', '/private'],
-        })
-      );
+      // Now includes custom paths + default binary extensions
+      const call = mockClient.startCrawl.mock.calls[0];
+      expect(call[0]).toBe('https://example.com');
+      expect(call[1].excludePaths).toContain('/admin');
+      expect(call[1].excludePaths).toContain('/private');
+      expect(call[1].excludePaths).toContain('\\.exe$'); // Binary extension
+      expect(call[1].excludePaths).toContain('\\.pkg$'); // Binary extension
     });
 
     it('should include includePaths option when provided', async () => {
@@ -332,22 +336,25 @@ describe('executeCrawl', () => {
         maxConcurrency: 5,
       });
 
-      expect(mockClient.startCrawl).toHaveBeenCalledWith(
-        'https://example.com',
-        {
-          limit: 50,
-          maxDiscoveryDepth: 2,
-          excludePaths: ['/admin'],
-          includePaths: ['/blog'],
-          sitemap: 'include',
-          ignoreQueryParameters: true,
-          crawlEntireDomain: false,
-          allowExternalLinks: false,
-          allowSubdomains: true,
-          delay: 1000,
-          maxConcurrency: 5,
-        }
-      );
+      // Now includes custom paths + default binary extensions
+      const call = mockClient.startCrawl.mock.calls[0];
+      expect(call[0]).toBe('https://example.com');
+      expect(call[1]).toMatchObject({
+        limit: 50,
+        maxDiscoveryDepth: 2,
+        includePaths: ['/blog'],
+        sitemap: 'include',
+        ignoreQueryParameters: true,
+        crawlEntireDomain: false,
+        allowExternalLinks: false,
+        allowSubdomains: true,
+        delay: 1000,
+        maxConcurrency: 5,
+      });
+      // Verify excludePaths includes custom path and extensions
+      expect(call[1].excludePaths).toContain('/admin');
+      expect(call[1].excludePaths).toContain('\\.exe$'); // Binary extension
+      expect(call[1].excludePaths).toContain('\\.pkg$'); // Binary extension
     });
   });
 
