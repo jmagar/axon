@@ -256,6 +256,176 @@ describe('markJobConfigError', () => {
   });
 });
 
+describe('tryClaimJob', () => {
+  let queueDir: string;
+
+  beforeEach(() => {
+    queueDir = mkdtempSync(join(tmpdir(), 'firecrawl-queue-'));
+    process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR = queueDir;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    rmSync(queueDir, { recursive: true, force: true });
+    delete process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR;
+    vi.resetModules();
+  });
+
+  it('should claim a pending job and mark it as processing', async () => {
+    const { enqueueEmbedJob, tryClaimJob, getEmbedJob } = await import(
+      '../../utils/embed-queue'
+    );
+
+    enqueueEmbedJob('job-claim-test', 'https://example.com');
+
+    const claimed = tryClaimJob('job-claim-test');
+
+    expect(claimed).toBe(true);
+    const job = getEmbedJob('job-claim-test');
+    expect(job?.status).toBe('processing');
+  });
+
+  it('should return false for non-existent job', async () => {
+    const { tryClaimJob } = await import('../../utils/embed-queue');
+
+    const claimed = tryClaimJob('non-existent-job');
+
+    expect(claimed).toBe(false);
+  });
+
+  it('should return false for already processing job', async () => {
+    const now = Date.now();
+    const processingJob = {
+      id: 'job-processing',
+      jobId: 'job-processing',
+      url: 'https://example.com',
+      status: 'processing',
+      retries: 0,
+      maxRetries: 3,
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    };
+
+    writeFileSync(
+      join(queueDir, `${processingJob.jobId}.json`),
+      JSON.stringify(processingJob, null, 2)
+    );
+
+    const { tryClaimJob } = await import('../../utils/embed-queue');
+    const claimed = tryClaimJob('job-processing');
+
+    expect(claimed).toBe(false);
+  });
+
+  it('should return false for completed job', async () => {
+    const now = Date.now();
+    const completedJob = {
+      id: 'job-completed',
+      jobId: 'job-completed',
+      url: 'https://example.com',
+      status: 'completed',
+      retries: 0,
+      maxRetries: 3,
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    };
+
+    writeFileSync(
+      join(queueDir, `${completedJob.jobId}.json`),
+      JSON.stringify(completedJob, null, 2)
+    );
+
+    const { tryClaimJob } = await import('../../utils/embed-queue');
+    const claimed = tryClaimJob('job-completed');
+
+    expect(claimed).toBe(false);
+  });
+
+  it('should return false for failed job', async () => {
+    const now = Date.now();
+    const failedJob = {
+      id: 'job-failed',
+      jobId: 'job-failed',
+      url: 'https://example.com',
+      status: 'failed',
+      retries: 3,
+      maxRetries: 3,
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    };
+
+    writeFileSync(
+      join(queueDir, `${failedJob.jobId}.json`),
+      JSON.stringify(failedJob, null, 2)
+    );
+
+    const { tryClaimJob } = await import('../../utils/embed-queue');
+    const claimed = tryClaimJob('job-failed');
+
+    expect(claimed).toBe(false);
+  });
+
+  it('should update the updatedAt timestamp when claiming', async () => {
+    const { enqueueEmbedJob, tryClaimJob, getEmbedJob } = await import(
+      '../../utils/embed-queue'
+    );
+
+    enqueueEmbedJob('job-timestamp-test', 'https://example.com');
+    const before = getEmbedJob('job-timestamp-test');
+    const beforeTime = new Date(before!.updatedAt).getTime();
+
+    // Small delay to ensure timestamp changes
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    tryClaimJob('job-timestamp-test');
+    const after = getEmbedJob('job-timestamp-test');
+    const afterTime = new Date(after!.updatedAt).getTime();
+
+    expect(afterTime).toBeGreaterThanOrEqual(beforeTime);
+  });
+});
+
+describe('secure file permissions', () => {
+  let queueDir: string;
+
+  beforeEach(() => {
+    queueDir = mkdtempSync(join(tmpdir(), 'firecrawl-queue-'));
+    process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR = queueDir;
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    rmSync(queueDir, { recursive: true, force: true });
+    delete process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR;
+    vi.resetModules();
+  });
+
+  it('should create queue directory with secure permissions', async () => {
+    const { statSync } = await import('node:fs');
+    const { enqueueEmbedJob } = await import('../../utils/embed-queue');
+
+    enqueueEmbedJob('job-perms-test', 'https://example.com');
+
+    const stats = statSync(queueDir);
+    // On Unix, 0o700 is owner read/write/execute only
+    // mode includes file type bits, so we mask with 0o777
+    const mode = stats.mode & 0o777;
+    expect(mode).toBe(0o700);
+  });
+
+  it('should create job files with secure permissions', async () => {
+    const { statSync } = await import('node:fs');
+    const { enqueueEmbedJob } = await import('../../utils/embed-queue');
+
+    enqueueEmbedJob('job-file-perms', 'https://example.com');
+
+    const jobPath = join(queueDir, 'job-file-perms.json');
+    const stats = statSync(jobPath);
+    const mode = stats.mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+});
+
 describe('getQueueStats', () => {
   let queueDir: string;
 

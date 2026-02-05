@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import type { Document } from '@mendable/firecrawl-js';
 import { createDaemonContainer } from '../container/DaemonContainerFactory';
 import type { IContainer, ImmutableConfig } from '../container/types';
+import { createEmbedItems } from '../container/utils/embed-helpers';
 import {
   cleanupOldJobs,
   type EmbedJob,
@@ -24,6 +25,7 @@ import {
   markJobConfigError,
   markJobFailed,
   markJobProcessing,
+  tryClaimJob,
   updateEmbedJob,
 } from './embed-queue';
 import {
@@ -31,7 +33,6 @@ import {
   extractEmbedderWebhookJobInfo,
   getEmbedderWebhookSettings,
 } from './embedder-webhook';
-import { batchEmbed, createEmbedItems } from './embedpipeline';
 import { fmt } from './theme';
 
 const POLL_INTERVAL_MS = 10000; // 10 seconds (retry base)
@@ -155,10 +156,18 @@ async function processEmbedJob(
     console.error(
       fmt.dim(`[Embedder] Embedding ${pages.length} pages for ${job.url}`)
     );
-    const embedItems = createEmbedItems(pages, 'crawl');
-    const result = await batchEmbed(embedItems, {
-      config: jobContainer.config,
-    });
+    // Transform pages to embed items and use container's EmbedPipeline
+    const embedItems = createEmbedItems(pages, 'crawl').map((item) => ({
+      content: item.content,
+      metadata: {
+        url: item.metadata.url,
+        title: item.metadata.title,
+        sourceCommand: item.metadata.sourceCommand,
+        contentType: item.metadata.contentType,
+      },
+    }));
+    const pipeline = jobContainer.getEmbedPipeline();
+    const result = await pipeline.batchEmbed(embedItems);
 
     // Log partial failures if any
     if (result.failed > 0) {

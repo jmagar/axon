@@ -6,8 +6,9 @@ import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, NonNegativeInt, HttpUrl, model_validator, ValidationError
-from typing import List, Union, Optional
+from pydantic import BaseModel, NonNegativeInt, HttpUrl, model_validator
+from pydantic_core import PydanticCustomError
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from patchright.async_api import async_playwright, Browser, BrowserContext, Route, Request as PlaywrightRequest
@@ -24,16 +25,16 @@ load_dotenv()
 # Configuration from environment
 try:
     # Attempt to parse the environment variable as JSON
-    DOMAIN_BLOCKED_DOMAINS = json.loads(os.getenv('DOMAIN_BLOCKED_DOMAINS', []))
-except:
+    DOMAIN_BLOCKED_DOMAINS = json.loads(os.getenv('DOMAIN_BLOCKED_DOMAINS', '[]'))
+except Exception:
     DOMAIN_BLOCKED_DOMAINS = []
 
 # https://playwright.dev/python/docs/api/class-request#request-resource-type
 try:
     # Attempt to parse the environment variable as JSON
-    RESOURCES_BLOCKED = json.loads(os.getenv('RESOURCES_BLOCKED', ['image', 'stylesheet', 'media', 'font','other']))
-except:
-    RESOURCES_BLOCKED = ['image', 'stylesheet', 'media', 'font','other']
+    RESOURCES_BLOCKED = json.loads(os.getenv('RESOURCES_BLOCKED', '["image", "stylesheet", "media", "font", "other"]'))
+except Exception:
+    RESOURCES_BLOCKED = ['image', 'stylesheet', 'media', 'font', 'other']
 
 DOMAIN_BLOCKLIST_URL = os.getenv('DOMAIN_BLOCKLIST_URL')
 DOMAIN_BLOCKLIST_PATH = os.getenv('DOMAIN_BLOCKLIST_PATH')
@@ -55,16 +56,16 @@ class FirecrawlScape(BaseModel):
     url: HttpUrl
     formats: list[str] = ["markdown"]
     onlyMainContent: bool = True
-    includeTags: list[str] = None
-    excludeTags: list[str] = None
-    headers: dict = None
+    includeTags: Optional[list[str]] = None
+    excludeTags: Optional[list[str]] = None
+    headers: Optional[dict] = None
     waitFor: NonNegativeInt = 0
     mobile: bool = False
     skipTlsVerification: bool = False
     timeout: NonNegativeInt = 30000
-    jsonOptions: dict = None
-    actions: list[dict] = None
-    location: dict = {"country": "US", "languages":""}
+    jsonOptions: Optional[dict] = None
+    actions: Optional[list[dict]] = None
+    location: dict = {"country": "US", "languages": ""}
     removeBase64Images: bool = False
     blockAds: bool = True
 

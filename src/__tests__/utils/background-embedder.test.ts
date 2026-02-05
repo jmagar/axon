@@ -30,17 +30,13 @@ vi.mock('../../utils/config', () => ({
   initializeConfig: vi.fn(),
 }));
 
-vi.mock('../../utils/embedpipeline', () => ({
-  createEmbedItems: vi
-    .fn()
-    .mockReturnValue([
-      { content: 'hello', metadata: { url: 'https://example.com' } },
-    ]),
-  batchEmbed: vi.fn().mockResolvedValue({
-    succeeded: 1,
-    failed: 0,
-    errors: [],
-  }),
+vi.mock('../../container/utils/embed-helpers', () => ({
+  createEmbedItems: vi.fn().mockReturnValue([
+    {
+      content: 'hello',
+      metadata: { url: 'https://example.com', sourceCommand: 'crawl' },
+    },
+  ]),
 }));
 
 vi.mock('../../container/DaemonContainerFactory', () => ({
@@ -145,6 +141,15 @@ describe('processStaleJobsOnce', () => {
       }),
     };
 
+    const mockEmbedPipeline = {
+      batchEmbed: vi.fn().mockResolvedValue({
+        succeeded: 1,
+        failed: 0,
+        errors: [],
+      }),
+      autoEmbed: vi.fn(),
+    };
+
     const mockContainer: IContainer = {
       config: {
         apiKey: 'test-key',
@@ -155,7 +160,7 @@ describe('processStaleJobsOnce', () => {
       getHttpClient: vi.fn(),
       getTeiService: vi.fn(),
       getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
+      getEmbedPipeline: vi.fn().mockReturnValue(mockEmbedPipeline),
       dispose: vi.fn(),
     };
 
@@ -363,7 +368,6 @@ describe('processEmbedJob - success logging', () => {
     const { createDaemonContainer } = await import(
       '../../container/DaemonContainerFactory'
     );
-    const { batchEmbed } = await import('../../utils/embedpipeline');
 
     vi.mocked(getStalePendingJobs).mockReturnValue([
       {
@@ -378,18 +382,21 @@ describe('processEmbedJob - success logging', () => {
       },
     ]);
 
-    // batchEmbed returns succeeded=3 (simulating 2 filtered pages)
-    vi.mocked(batchEmbed).mockResolvedValue({
-      succeeded: 3,
-      failed: 0,
-      errors: [],
-    });
-
     const mockClient = {
       getCrawlStatus: vi.fn().mockResolvedValue({
         status: 'completed',
         data: [{ markdown: 'a' }, { markdown: 'b' }, { markdown: 'c' }, {}, {}], // 5 pages, 2 empty
       }),
+    };
+
+    // Mock pipeline.batchEmbed returns succeeded=3 (simulating 2 filtered pages)
+    const mockEmbedPipeline = {
+      batchEmbed: vi.fn().mockResolvedValue({
+        succeeded: 3,
+        failed: 0,
+        errors: [],
+      }),
+      autoEmbed: vi.fn(),
     };
 
     const mockContainer: IContainer = {
@@ -402,7 +409,7 @@ describe('processEmbedJob - success logging', () => {
       getHttpClient: vi.fn(),
       getTeiService: vi.fn(),
       getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
+      getEmbedPipeline: vi.fn().mockReturnValue(mockEmbedPipeline),
       dispose: vi.fn(),
     };
 

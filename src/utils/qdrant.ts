@@ -3,6 +3,7 @@
  * Handles collection management, upsert, delete, query, and scroll operations
  */
 
+import { LRUCache } from 'lru-cache';
 import { fetchWithRetry } from './http';
 
 const SCROLL_PAGE_SIZE = 100;
@@ -24,7 +25,20 @@ const QDRANT_TIMEOUT_MS = 60000;
 /** Number of retries for Qdrant requests */
 const QDRANT_MAX_RETRIES = 3;
 
-const collectionCache = new Set<string>();
+/** Maximum number of collections to cache (LRU eviction) */
+const COLLECTION_CACHE_MAX = 100;
+
+const collectionCache = new LRUCache<string, true>({
+  max: COLLECTION_CACHE_MAX,
+});
+
+/** Cache key separator - null character cannot appear in URLs */
+const CACHE_KEY_SEP = '\x00';
+
+/** Generate a safe cache key combining URL and collection */
+function getCacheKey(url: string, collection: string): string {
+  return `${url}${CACHE_KEY_SEP}${collection}`;
+}
 
 /**
  * Ensure collection exists, create if not
@@ -35,7 +49,8 @@ export async function ensureCollection(
   collection: string,
   dimension: number
 ): Promise<void> {
-  if (collectionCache.has(collection)) return;
+  const cacheKey = getCacheKey(qdrantUrl, collection);
+  if (collectionCache.get(cacheKey)) return;
 
   const checkResponse = await fetchWithRetry(
     `${qdrantUrl}/collections/${collection}`,
@@ -44,7 +59,7 @@ export async function ensureCollection(
   );
 
   if (checkResponse.ok) {
-    collectionCache.add(collection);
+    collectionCache.set(cacheKey, true);
     return;
   }
 
@@ -95,7 +110,7 @@ export async function ensureCollection(
     )
   );
 
-  collectionCache.add(collection);
+  collectionCache.set(cacheKey, true);
 }
 
 export interface QdrantPoint {

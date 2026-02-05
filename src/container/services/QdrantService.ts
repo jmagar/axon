@@ -3,6 +3,7 @@
  * Handles collection management, upsert, delete, query, and scroll operations
  */
 
+import { LRUCache } from 'lru-cache';
 import type {
   CollectionInfo,
   IHttpClient,
@@ -33,12 +34,17 @@ const QDRANT_TIMEOUT_MS = 60000;
 /** Number of retries for Qdrant requests */
 const QDRANT_MAX_RETRIES = 3;
 
+/** Maximum number of collections to cache (LRU eviction) */
+const COLLECTION_CACHE_MAX = 100;
+
 /**
  * QdrantService implementation
- * Provides vector database operations with instance-level caching
+ * Provides vector database operations with instance-level LRU caching
  */
 export class QdrantService implements IQdrantService {
-  private collectionCache = new Set<string>();
+  private collectionCache = new LRUCache<string, true>({
+    max: COLLECTION_CACHE_MAX,
+  });
 
   constructor(
     private readonly qdrantUrl: string,
@@ -53,7 +59,7 @@ export class QdrantService implements IQdrantService {
    * @param dimension Vector dimension
    */
   async ensureCollection(collection: string, dimension: number): Promise<void> {
-    if (this.collectionCache.has(collection)) {
+    if (this.collectionCache.get(collection)) {
       return;
     }
 
@@ -64,7 +70,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (checkResponse.ok) {
-      this.collectionCache.add(collection);
+      this.collectionCache.set(collection, true);
       return;
     }
 
@@ -125,7 +131,7 @@ export class QdrantService implements IQdrantService {
       }
     }
 
-    this.collectionCache.add(collection);
+    this.collectionCache.set(collection, true);
   }
 
   /**

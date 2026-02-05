@@ -6,6 +6,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -14,7 +15,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import * as lockfile from 'proper-lockfile';
 import { fmt } from './theme';
+
+/**
+ * Write file with secure permissions (owner-only read/write)
+ */
+function writeSecureFile(filePath: string, data: string): void {
+  writeFileSync(filePath, data, { mode: 0o600 });
+}
 
 export interface EmbedJob {
   id: string;
@@ -49,11 +58,17 @@ const QUEUE_DIR = resolveQueueDir();
 const MAX_RETRIES = 3;
 
 /**
- * Ensure queue directory exists
+ * Ensure queue directory exists with secure permissions
  */
 function ensureQueueDir(): void {
   if (!existsSync(QUEUE_DIR)) {
-    mkdirSync(QUEUE_DIR, { recursive: true });
+    mkdirSync(QUEUE_DIR, { recursive: true, mode: 0o700 });
+  } else {
+    try {
+      chmodSync(QUEUE_DIR, 0o700);
+    } catch {
+      // Ignore errors on Windows
+    }
   }
 }
 
@@ -86,7 +101,7 @@ export function enqueueEmbedJob(
     apiKey,
   };
 
-  writeFileSync(getJobPath(jobId), JSON.stringify(job, null, 2));
+  writeSecureFile(getJobPath(jobId), JSON.stringify(job, null, 2));
   return job;
 }
 
@@ -118,7 +133,41 @@ export function getEmbedJob(jobId: string): EmbedJob | null {
 export function updateEmbedJob(job: EmbedJob): void {
   ensureQueueDir();
   job.updatedAt = new Date().toISOString();
-  writeFileSync(getJobPath(job.jobId), JSON.stringify(job, null, 2));
+  writeSecureFile(getJobPath(job.jobId), JSON.stringify(job, null, 2));
+}
+
+/**
+ * Atomically claim a job for processing using file locking.
+ * Only succeeds if job is in 'pending' status.
+ * @returns true if job was successfully claimed, false otherwise
+ */
+export function tryClaimJob(jobId: string): boolean {
+  const jobPath = getJobPath(jobId);
+  if (!existsSync(jobPath)) return false;
+
+  let release: (() => void) | undefined;
+  try {
+    release = lockfile.lockSync(jobPath, { retries: 0, stale: 60000 });
+    const job = getEmbedJob(jobId);
+    if (!job || job.status !== 'pending') {
+      release();
+      return false;
+    }
+    job.status = 'processing';
+    job.updatedAt = new Date().toISOString();
+    writeSecureFile(jobPath, JSON.stringify(job, null, 2));
+    release();
+    return true;
+  } catch {
+    if (release) {
+      try {
+        release();
+      } catch {
+        // Ignore release errors
+      }
+    }
+    return false;
+  }
 }
 
 /**
