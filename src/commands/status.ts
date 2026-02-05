@@ -402,13 +402,19 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
     }
   }
 
-  if (data.crawls.length > 0) {
+  const hasCrawlLookup =
+    data.crawls.length > 0 || data.resolvedIds.crawls.length > 0;
+  if (hasCrawlLookup) {
     console.log('');
     console.log(fmt.bold('Crawl Status'));
+    if (data.crawls.length === 0) {
+      console.log(fmt.dim('  No crawl jobs found.'));
+    }
+
     const activeUrlById = new Map(
       data.activeCrawls.crawls.map((crawl) => [crawl.id, crawl.url])
     );
-    for (const crawl of data.crawls) {
+    const crawlRows = data.crawls.map((crawl) => {
       const crawlError = (crawl as { error?: string }).error;
       const crawlData = (
         crawl as {
@@ -419,32 +425,69 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
         ? (crawlData[0]?.metadata?.sourceURL ?? crawlData[0]?.metadata?.url)
         : undefined;
       const displayUrl = sourceUrl ?? activeUrlById.get(crawl.id);
-      const icon = getStatusIcon(crawl.status ?? 'unknown', !!crawlError);
-      const statusColor = getStatusColor(
-        crawl.status ?? 'unknown',
-        !!crawlError
-      );
+      const status = crawl.status ?? 'unknown';
+      const isFailed =
+        Boolean(crawlError) || status === 'failed' || status === 'error';
+      const isCompleted = status === 'completed';
+      const icon = getStatusIcon(status, isFailed);
+      const statusColor = getStatusColor(status, isFailed);
+      const progress =
+        'completed' in crawl && 'total' in crawl
+          ? formatProgress(crawl.completed as number, crawl.total as number)
+          : null;
 
-      if (crawlError) {
-        const suffix = displayUrl ? ` ${fmt.dim(displayUrl)}` : '';
-        console.log(
-          `  ${colorize(statusColor, icon)} ${crawl.id} ${colorize(statusColor, 'error')} ${fmt.dim(`(${crawlError})`)}${suffix}`
-        );
-      } else if ('completed' in crawl && 'total' in crawl) {
-        const progress = formatProgress(
-          crawl.completed as number,
-          crawl.total as number
-        );
-        console.log(
-          `  ${colorize(statusColor, icon)} ${crawl.id} ${colorize(statusColor, crawl.status)} ${progress}${displayUrl ? ` ${fmt.dim(displayUrl)}` : ''}`
-        );
+      let line = `${colorize(statusColor, icon)} ${crawl.id} `;
+      if (isFailed) {
+        line += `${colorize(statusColor, 'error')} ${fmt.dim(`(${crawlError ?? 'Unknown error'})`)}`;
+      } else if (progress) {
+        line += `${colorize(statusColor, status)} ${progress}`;
       } else {
-        console.log(
-          `  ${colorize(statusColor, icon)} ${crawl.id} ${colorize(statusColor, crawl.status ?? 'unknown')}${displayUrl ? ` ${fmt.dim(displayUrl)}` : ''}`
-        );
+        line += `${colorize(statusColor, status)}`;
+      }
+      if (displayUrl) {
+        line += ` ${fmt.dim(displayUrl)}`;
+      }
+      return {
+        crawl,
+        line,
+        isFailed,
+        isCompleted,
+      };
+    });
+
+    const failedCrawls = crawlRows.filter((row) => row.isFailed);
+    const completedCrawls = crawlRows.filter((row) => row.isCompleted);
+    const pendingCrawls = crawlRows.filter(
+      (row) => !row.isFailed && !row.isCompleted
+    );
+
+    console.log(`  ${fmt.dim('Failed crawls:')}`);
+    if (failedCrawls.length === 0) {
+      console.log(fmt.dim('    No failed crawl jobs.'));
+    } else {
+      for (const row of failedCrawls) {
+        console.log(`    ${row.line}`);
       }
     }
-  } else if (data.resolvedIds.crawls.length === 0) {
+
+    console.log(`  ${fmt.dim('Pending crawls:')}`);
+    if (pendingCrawls.length === 0) {
+      console.log(fmt.dim('    No pending crawl jobs.'));
+    } else {
+      for (const row of pendingCrawls) {
+        console.log(`    ${row.line}`);
+      }
+    }
+
+    console.log(`  ${fmt.dim('Completed crawls:')}`);
+    if (completedCrawls.length === 0) {
+      console.log(fmt.dim('    No completed crawl jobs.'));
+    } else {
+      for (const row of completedCrawls) {
+        console.log(`    ${row.line}`);
+      }
+    }
+  } else {
     console.log('');
     console.log(fmt.bold('Crawl Status'));
     console.log(fmt.dim('  No recent crawl job IDs found.'));

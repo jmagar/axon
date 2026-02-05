@@ -5,6 +5,7 @@
 
 import packageJson from '../../package.json';
 import { isAuthenticated } from '../utils/auth';
+import { fmt, icons } from '../utils/theme';
 
 export interface VersionOptions {
   authStatus?: boolean;
@@ -14,11 +15,17 @@ export interface VersionOptions {
  * Display version information
  */
 export function handleVersionCommand(options: VersionOptions = {}): void {
-  console.log(`version: ${packageJson.version}`);
+  console.log(
+    `${fmt.primary('firecrawl')} ${fmt.dim(`v${packageJson.version}`)}`
+  );
 
   if (options.authStatus) {
     const authenticated = isAuthenticated();
-    console.log(`authenticated: ${authenticated}`);
+    const statusIcon = authenticated ? icons.success : icons.pending;
+    const statusColor = authenticated ? fmt.success : fmt.dim;
+    console.log(
+      `${statusColor(`${statusIcon} ${authenticated ? 'authenticated' : 'not authenticated'}`)}`
+    );
   }
 }
 

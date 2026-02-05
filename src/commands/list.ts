@@ -7,6 +7,7 @@ import type { IContainer } from '../container/types';
 import type { CrawlActiveResult } from '../types/crawl';
 import { formatJson } from '../utils/command';
 import { writeOutput } from '../utils/output';
+import { fmt } from '../utils/theme';
 
 export interface ListOptions {
   apiKey?: string;
@@ -42,7 +43,7 @@ export async function handleListCommand(
 ): Promise<void> {
   const result = await executeList(container, options);
   if (!result.success) {
-    console.error('Error:', result.error || 'Unknown error occurred');
+    console.error(fmt.error(result.error || 'Unknown error occurred'));
     process.exit(1);
   }
 
@@ -55,7 +56,7 @@ export async function handleListCommand(
     Array.isArray(result.data.crawls) &&
     result.data.crawls.length === 0
   ) {
-    console.log('No active crawls.');
+    console.log(fmt.dim('No active crawls.'));
     return;
   }
 

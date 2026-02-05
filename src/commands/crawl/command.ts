@@ -14,6 +14,7 @@ import { displayCommandInfo } from '../../utils/display';
 import { isJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
 import { validateOutputPath, writeOutput } from '../../utils/output';
+import { fmt, icons } from '../../utils/theme';
 import { normalizeUrl } from '../../utils/url';
 import {
   handleAsyncEmbedding,
@@ -62,7 +63,7 @@ export async function handleCrawlCommand(
   options: CrawlOptions
 ): Promise<void> {
   if (!options.urlOrJobId) {
-    console.error('Error: URL or job ID is required.');
+    console.error(fmt.error('URL or job ID is required.'));
     process.exit(1);
     return; // Ensure early return for testing
   }
@@ -92,7 +93,7 @@ export async function handleCrawlCommand(
 
   // Handle errors
   if (!result.success) {
-    console.error('Error:', result.error || 'Unknown error occurred');
+    console.error(fmt.error(result.error || 'Unknown error occurred'));
     process.exit(1);
     return; // Ensure early return for testing
   }
@@ -114,8 +115,9 @@ export async function handleCrawlCommand(
           validateOutputPath(options.output);
         } catch (error) {
           console.error(
-            'Error:',
-            error instanceof Error ? error.message : 'Invalid output path'
+            fmt.error(
+              error instanceof Error ? error.message : 'Invalid output path'
+            )
           );
           process.exit(1);
           return;
@@ -196,7 +198,7 @@ async function handleCrawlStatusCommand(
   const result = await checkCrawlStatus(container, jobId);
 
   if (!result.success) {
-    console.error('Error:', result.error || 'Unknown error occurred');
+    console.error(fmt.error(result.error || 'Unknown error occurred'));
     process.exit(1);
     return;
   }
@@ -237,7 +239,7 @@ async function handleCrawlCancelCommand(
   const result = await executeCrawlCancel(container, jobId);
 
   if (!result.success) {
-    console.error('Error:', result.error || 'Unknown error occurred');
+    console.error(fmt.error(result.error || 'Unknown error occurred'));
     process.exit(1);
     return;
   }
@@ -277,7 +279,7 @@ async function handleCrawlErrorsCommand(
   const result = await executeCrawlErrors(container, jobId);
 
   if (!result.success) {
-    console.error('Error:', result.error || 'Unknown error occurred');
+    console.error(fmt.error(result.error || 'Unknown error occurred'));
     process.exit(1);
     return;
   }
@@ -410,7 +412,9 @@ export function createCrawlCommand(): Command {
       const urlOrJobId = positionalUrlOrJobId || options.url;
       if (!urlOrJobId) {
         console.error(
-          'Error: URL or job ID is required. Provide it as argument or use --url option.'
+          fmt.error(
+            'URL or job ID is required. Provide it as argument or use --url option.'
+          )
         );
         process.exit(1);
         return;
@@ -419,7 +423,7 @@ export function createCrawlCommand(): Command {
       // Auto-detect if it's a job ID and show deprecation warning
       if (isJobId(urlOrJobId)) {
         console.warn(
-          '⚠️  Detected job ID. Use "firecrawl crawl status <job-id>" instead.'
+          `${icons.warning} Detected job ID. Use "firecrawl crawl status <job-id>" instead.`
         );
         await handleCrawlStatusCommand(container, urlOrJobId, {
           output: options.output,

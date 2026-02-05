@@ -13,6 +13,7 @@ import {
 import { recordJob } from '../utils/job-history';
 import { parseFormats } from '../utils/options';
 import { writeOutput } from '../utils/output';
+import { fmt } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 
 // Extend Commander's Command type to include our custom _container property
@@ -142,7 +143,7 @@ async function handleBatchStatusCommand(
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Error:', message);
+    console.error(fmt.error(message));
     process.exit(1);
   }
 }
@@ -160,7 +161,7 @@ async function handleBatchCancelCommand(
     const ok = await app.cancelBatchScrape(jobId);
 
     if (!ok) {
-      console.error('Error: Cancel failed');
+      console.error(fmt.error('Cancel failed'));
       process.exit(1);
     }
 
@@ -176,7 +177,7 @@ async function handleBatchCancelCommand(
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Error:', message);
+    console.error(fmt.error(message));
     process.exit(1);
   }
 }
@@ -205,7 +206,7 @@ async function handleBatchErrorsCommand(
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Error:', message);
+    console.error(fmt.error(message));
     process.exit(1);
   }
 }

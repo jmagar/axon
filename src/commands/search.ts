@@ -20,6 +20,7 @@ import type {
 import { formatJson, handleCommandError } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
 import { validateOutputPath, writeOutput } from '../utils/output';
+import { fmt, icons } from '../utils/theme';
 
 /**
  * Maximum concurrent embedding operations to prevent resource exhaustion
@@ -299,7 +300,7 @@ export async function handleSearchCommand(
     (result.data.news && result.data.news.length > 0);
 
   if (!hasResults) {
-    console.log('No results found.');
+    console.log(fmt.dim('No results found.'));
     return;
   }
 
@@ -336,8 +337,9 @@ export async function handleSearchCommand(
       validateOutputPath(options.output);
     } catch (error) {
       console.error(
-        'Error:',
-        error instanceof Error ? error.message : 'Invalid output path'
+        fmt.error(
+          error instanceof Error ? error.message : 'Invalid output path'
+        )
       );
       process.exit(1);
       return;
@@ -465,7 +467,9 @@ export function createSearchCommand(): Command {
         for (const source of sources) {
           if (!validSources.includes(source)) {
             console.error(
-              `Error: Invalid source "${source}". Valid sources: ${validSources.join(', ')}`
+              fmt.error(
+                `Invalid source "${source}". Valid sources: ${validSources.join(', ')}`
+              )
             );
             process.exit(1);
           }
@@ -484,7 +488,9 @@ export function createSearchCommand(): Command {
         for (const category of categories) {
           if (!validCategories.includes(category)) {
             console.error(
-              `Error: Invalid category "${category}". Valid categories: ${validCategories.join(', ')}`
+              fmt.error(
+                `Invalid category "${category}". Valid categories: ${validCategories.join(', ')}`
+              )
             );
             process.exit(1);
           }

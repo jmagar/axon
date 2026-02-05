@@ -10,6 +10,7 @@ import type { EmbedOptions, EmbedResult } from '../types/embed';
 import { chunkText } from '../utils/chunker';
 import { formatJson, handleCommandError } from '../utils/command';
 import { writeOutput } from '../utils/output';
+import { fmt, icons } from '../utils/theme';
 import { isUrl } from '../utils/url';
 
 /**
@@ -189,7 +190,7 @@ export async function handleEmbedCommand(
       data: result.data,
     });
   } else {
-    outputContent = `Embedded ${result.data.chunksEmbedded} chunks for ${result.data.url} into ${result.data.collection}`;
+    outputContent = `${icons.success} Embedded ${result.data.chunksEmbedded} chunks for ${fmt.dim(result.data.url)} into ${fmt.dim(result.data.collection)}`;
   }
 
   writeOutput(outputContent, options.output, !!options.output);
@@ -216,7 +217,7 @@ async function handleCancelCommand(
   }
 
   removeEmbedJob(jobId);
-  console.log(`Cancelled embed job ${jobId}`);
+  console.log(`${icons.success} Cancelled embed job ${fmt.dim(jobId)}`);
   return { success: true };
 }
 
@@ -298,7 +299,7 @@ export function createEmbedCommand(): Command {
     .action(async (jobId: string) => {
       const result = await handleCancelCommand(jobId);
       if (!result.success) {
-        console.error(result.error);
+        console.error(fmt.error(result.error || 'Unknown error'));
         process.exit(1);
       }
     });

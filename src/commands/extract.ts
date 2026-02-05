@@ -9,6 +9,7 @@ import { formatJson, handleCommandError } from '../utils/command';
 import { normalizeJobId } from '../utils/job';
 import { recordJob } from '../utils/job-history';
 import { writeOutput } from '../utils/output';
+import { fmt } from '../utils/theme';
 
 /**
  * Maximum concurrent embedding operations to prevent resource exhaustion
@@ -204,7 +205,7 @@ async function handleExtractStatusCommand(
     const status = await app.getExtractStatus(jobId);
 
     if (status.error) {
-      console.error('Error:', status.error);
+      console.error(fmt.error(status.error));
       process.exit(1);
     }
 
@@ -227,7 +228,7 @@ async function handleExtractStatusCommand(
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Error:', message);
+    console.error(fmt.error(message));
     process.exit(1);
   }
 }
@@ -291,7 +292,7 @@ export function createExtractCommand(container?: IContainer): Command {
 
       // Validate at least one URL provided
       if (urls.length === 0) {
-        console.error('Error: At least one URL is required.');
+        console.error(fmt.error('At least one URL is required.'));
         process.exit(1);
       }
 

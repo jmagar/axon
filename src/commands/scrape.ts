@@ -13,6 +13,7 @@ import type {
 import { displayCommandInfo } from '../utils/display';
 import { parseScrapeOptions } from '../utils/options';
 import { handleScrapeOutput } from '../utils/output';
+import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 
 /**
@@ -173,7 +174,7 @@ export async function handleScrapeCommand(
     const result = await executeScrape(container, options);
 
     if (!result.success) {
-      console.error(`Error: ${result.error}`);
+      console.error(fmt.error(result.error || 'Unknown error'));
       process.exit(1);
     }
 
@@ -184,7 +185,9 @@ export async function handleScrapeCommand(
     } catch {
       domain = options.url; // Fallback to raw URL for display
     }
-    console.log(`Removed ${result.removed} documents for domain ${domain}`);
+    console.log(
+      `${icons.success} Removed ${result.removed} documents for domain ${fmt.dim(domain)}`
+    );
     return;
   }
 
@@ -305,7 +308,9 @@ export function createScrapeCommand(): Command {
         const url = positionalUrl || options.url;
         if (!url) {
           console.error(
-            'Error: URL is required. Provide it as argument or use --url option.'
+            fmt.error(
+              'URL is required. Provide it as argument or use --url option.'
+            )
           );
           process.exit(1);
         }

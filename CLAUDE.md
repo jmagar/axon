@@ -134,6 +134,15 @@ Graceful shutdown on SIGINT/SIGTERM with double-signal force exit.
 
 `output.ts:validateOutputPath()` ensures output files stay within cwd.
 
+### CLI Output Theming
+
+All command output uses `utils/theme.ts` for consistent styling:
+
+- **TTY-safe colors**: Use `fmt.success()`, `fmt.error()`, `fmt.warning()`, `fmt.dim()`, `fmt.primary()` - these only apply ANSI codes when outputting to a terminal, preserving pipe compatibility
+- **Terminal-safe icons**: Use `icons.*` (✓ ✗ ○ ◉ → •) - these Unicode characters render correctly in all terminals (avoid emojis)
+- **Status helpers**: `getStatusIcon()` and `getStatusColor()` for job status display
+- **Progress bars**: `formatProgress()` for visual progress with filled/empty blocks
+
 ## Development Commands
 
 ```bash

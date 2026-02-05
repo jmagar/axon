@@ -294,6 +294,53 @@ describe('handleJobStatusCommand', () => {
     logSpy.mockRestore();
   });
 
+  it('should list failed, pending, and completed crawls in human output', async () => {
+    const { getRecentJobIds } = await import('../../utils/job-history');
+    vi.mocked(getRecentJobIds).mockReturnValue([
+      '019c161c-8a80-7051-a438-2ec8707e1bc4',
+      '019c161c-8a80-7051-a438-2ec8707e1bc5',
+      '019c161c-8a80-7051-a438-2ec8707e1bc6',
+    ]);
+
+    mockClient.getCrawlStatus.mockImplementation((id: string) => {
+      if (id === '019c161c-8a80-7051-a438-2ec8707e1bc4') {
+        return Promise.reject(new Error('Job not found'));
+      }
+      if (id === '019c161c-8a80-7051-a438-2ec8707e1bc5') {
+        return Promise.resolve({
+          id,
+          status: 'running',
+          total: 2,
+          completed: 1,
+          data: [],
+        });
+      }
+      return Promise.resolve({
+        id,
+        status: 'completed',
+        total: 2,
+        completed: 2,
+        data: [{ metadata: { sourceURL: 'https://example.com' } }],
+      });
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleJobStatusCommand(container, {});
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Failed crawls:');
+    expect(output).toContain('Job not found');
+    expect(output).toContain('Pending crawls:');
+    expect(output).toContain('running');
+    expect(output).toContain('1/2');
+    expect(output).toContain('Completed crawls:');
+    expect(output).toContain('2/2');
+    expect(output).toContain('https://example.com');
+
+    logSpy.mockRestore();
+  });
+
   it('should include crawl URL in status output when available', async () => {
     const { getRecentJobIds } = await import('../../utils/job-history');
     vi.mocked(getRecentJobIds).mockReturnValue([
@@ -313,6 +360,7 @@ describe('handleJobStatusCommand', () => {
     await handleJobStatusCommand(container, {});
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Completed crawls:');
     expect(output).toContain('019c161c-8a80-7051-a438-2ec8707e1bc4');
     expect(output).toContain('completed');
     expect(output).toContain('1/1');

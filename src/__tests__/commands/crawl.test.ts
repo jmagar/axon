@@ -1255,7 +1255,7 @@ describe('createCrawlCommand', () => {
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
-      '⚠️  Detected job ID. Use "firecrawl crawl status <job-id>" instead.'
+      '! Detected job ID. Use "firecrawl crawl status <job-id>" instead.'
     );
     expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(jobId, {
       autoPaginate: false,

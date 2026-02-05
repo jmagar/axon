@@ -7,6 +7,7 @@ import type { IContainer } from '../../container/types';
 import type { CrawlJobData } from '../../types/crawl';
 import { buildEmbedderWebhookConfig } from '../../utils/embedder-webhook';
 import { recordJob } from '../../utils/job-history';
+import { fmt, icons } from '../../utils/theme';
 
 /**
  * Attach webhook for async auto-embedding
@@ -60,18 +61,27 @@ export async function handleAsyncEmbedding(
   const webhookConfig = buildEmbedderWebhookConfig();
 
   enqueueEmbedJob(jobId, url, apiKey);
-  console.error(`\nQueued embedding job for background processing: ${jobId}`);
+  console.error('');
+  console.error(
+    `${icons.pending} Queued embedding job for background processing: ${fmt.dim(jobId)}`
+  );
 
   if (webhookConfig) {
     console.error(
-      'Embeddings will be generated automatically when crawl completes via webhook.'
+      fmt.dim(
+        'Embeddings will be generated automatically when crawl completes via webhook.'
+      )
     );
   } else {
     console.error(
-      'Embedder webhook not configured. Set FIRECRAWL_EMBEDDER_WEBHOOK_URL to enable auto-embedding.'
+      fmt.warning(
+        `${icons.warning} Embedder webhook not configured. Set FIRECRAWL_EMBEDDER_WEBHOOK_URL to enable auto-embedding.`
+      )
     );
     console.error(
-      `Run 'firecrawl crawl ${jobId} --embed' to embed after completion.`
+      fmt.dim(
+        `Run 'firecrawl crawl ${jobId} --embed' to embed after completion.`
+      )
     );
   }
 }
@@ -157,7 +167,11 @@ export async function handleManualEmbedding(
     const status = await app.getCrawlStatus(jobId, { autoPaginate: false });
 
     if (status.status !== 'completed') {
-      console.error(`Crawl ${jobId} is ${status.status}, cannot embed yet`);
+      console.error(
+        fmt.warning(
+          `${icons.warning} Crawl ${jobId} is ${status.status}, cannot embed yet`
+        )
+      );
       return;
     }
 
@@ -169,12 +183,18 @@ export async function handleManualEmbedding(
         url = sourceURL;
       } else {
         console.warn(
-          `Warning: No valid source URL found, using job ID as fallback`
+          fmt.warning(
+            `${icons.warning} No valid source URL found, using job ID as fallback`
+          )
         );
         url = jobId;
       }
     } else {
-      console.warn(`Warning: No crawl data available, using job ID as URL`);
+      console.warn(
+        fmt.warning(
+          `${icons.warning} No crawl data available, using job ID as URL`
+        )
+      );
       url = jobId;
     }
 
@@ -182,7 +202,9 @@ export async function handleManualEmbedding(
   }
 
   // Process queue
-  console.error(`Processing embedding queue for job ${jobId}...`);
+  console.error(
+    `${icons.processing} Processing embedding queue for job ${fmt.dim(jobId)}...`
+  );
   await processEmbedQueue(container);
-  console.error(`Embedding processing complete`);
+  console.error(`${icons.success} Embedding processing complete`);
 }

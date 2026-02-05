@@ -7,6 +7,7 @@ import { isAuthenticated } from '../utils/auth';
 import { DEFAULT_API_URL } from '../utils/config';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
 import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
+import { fmt, icons } from '../utils/theme';
 
 export interface ConfigureOptions {
   apiKey?: string;
@@ -31,7 +32,7 @@ export async function configure(options: ConfigureOptions = {}): Promise<void> {
   // Already authenticated - show config and offer to re-authenticate
   await viewConfig();
   console.log(
-    'To re-authenticate, run: firecrawl logout && firecrawl config\n'
+    fmt.dim('To re-authenticate, run: firecrawl logout && firecrawl config\n')
   );
 }
 
@@ -41,19 +42,22 @@ export async function configure(options: ConfigureOptions = {}): Promise<void> {
 export async function viewConfig(): Promise<void> {
   const credentials = loadCredentials();
 
-  console.log('\n┌─────────────────────────────────────────┐');
-  console.log('│          Firecrawl Configuration        │');
-  console.log('└─────────────────────────────────────────┘\n');
+  console.log('');
+  console.log(fmt.bold('Firecrawl Configuration'));
+  console.log('');
 
   if (isAuthenticated()) {
     const maskedKey = credentials?.apiKey
       ? `${credentials.apiKey.substring(0, 6)}...${credentials.apiKey.slice(-4)}`
       : 'Not set';
 
-    console.log('Status: ✓ Authenticated\n');
-    console.log(`API Key:  ${maskedKey}`);
-    console.log(`API URL:  ${credentials?.apiUrl || DEFAULT_API_URL}`);
-    console.log(`Config:   ${getConfigDirectoryPath()}`);
+    console.log(`${fmt.success(icons.success)} Authenticated`);
+    console.log('');
+    console.log(`  ${fmt.dim('API Key:')}  ${maskedKey}`);
+    console.log(
+      `  ${fmt.dim('API URL:')}  ${credentials?.apiUrl || DEFAULT_API_URL}`
+    );
+    console.log(`  ${fmt.dim('Config:')}   ${getConfigDirectoryPath()}`);
 
     // Show settings
     const settings = loadSettings();
@@ -61,18 +65,23 @@ export async function viewConfig(): Promise<void> {
       settings.defaultExcludePaths &&
       settings.defaultExcludePaths.length > 0
     ) {
+      console.log('');
       console.log(
-        `\nDefault Exclude Paths: ${settings.defaultExcludePaths.join(', ')}`
+        `  ${fmt.dim('Exclude Paths:')} ${settings.defaultExcludePaths.join(', ')}`
       );
     }
 
-    console.log('\nCommands:');
-    console.log('  firecrawl logout       Clear credentials');
-    console.log('  firecrawl config       Re-authenticate');
+    console.log('');
+    console.log(fmt.dim('Commands:'));
+    console.log(fmt.dim('  firecrawl logout       Clear credentials'));
+    console.log(fmt.dim('  firecrawl config       Re-authenticate'));
   } else {
-    console.log('Status: Not authenticated\n');
-    console.log('Run any command to start authentication, or use:');
-    console.log('  firecrawl config    Authenticate with browser or API key');
+    console.log(`${fmt.warning(icons.pending)} Not authenticated`);
+    console.log('');
+    console.log(fmt.dim('Run any command to start authentication, or use:'));
+    console.log(
+      fmt.dim('  firecrawl config    Authenticate with browser or API key')
+    );
   }
   console.log('');
 }
@@ -82,8 +91,8 @@ export async function viewConfig(): Promise<void> {
  */
 export function handleConfigSet(key: string, value: string): void {
   if (key !== 'exclude-paths') {
-    console.error(`Error: Unknown setting "${key}".`);
-    console.error('Available settings: exclude-paths');
+    console.error(fmt.error(`Unknown setting "${key}".`));
+    console.error(fmt.dim('Available settings: exclude-paths'));
     process.exit(1);
   }
 
@@ -93,12 +102,14 @@ export function handleConfigSet(key: string, value: string): void {
     .filter(Boolean);
 
   if (paths.length === 0) {
-    console.error('Error: No paths provided.');
+    console.error(fmt.error('No paths provided.'));
     process.exit(1);
   }
 
   saveSettings({ defaultExcludePaths: paths });
-  console.log(`Default exclude paths set: ${paths.join(', ')}`);
+  console.log(
+    `${icons.success} Default exclude paths set: ${paths.join(', ')}`
+  );
 }
 
 /**
@@ -106,8 +117,8 @@ export function handleConfigSet(key: string, value: string): void {
  */
 export function handleConfigGet(key: string): void {
   if (key !== 'exclude-paths') {
-    console.error(`Error: Unknown setting "${key}".`);
-    console.error('Available settings: exclude-paths');
+    console.error(fmt.error(`Unknown setting "${key}".`));
+    console.error(fmt.dim('Available settings: exclude-paths'));
     process.exit(1);
   }
 
@@ -115,9 +126,9 @@ export function handleConfigGet(key: string): void {
   const paths = settings.defaultExcludePaths;
 
   if (!paths || paths.length === 0) {
-    console.log('No default exclude paths configured.');
+    console.log(fmt.dim('No default exclude paths configured.'));
   } else {
-    console.log(`Default exclude paths: ${paths.join(', ')}`);
+    console.log(`${icons.bullet} Default exclude paths: ${paths.join(', ')}`);
   }
 }
 
@@ -126,13 +137,13 @@ export function handleConfigGet(key: string): void {
  */
 export function handleConfigClear(key: string): void {
   if (key !== 'exclude-paths') {
-    console.error(`Error: Unknown setting "${key}".`);
-    console.error('Available settings: exclude-paths');
+    console.error(fmt.error(`Unknown setting "${key}".`));
+    console.error(fmt.dim('Available settings: exclude-paths'));
     process.exit(1);
   }
 
   clearSetting('defaultExcludePaths');
-  console.log('Default exclude paths cleared.');
+  console.log(`${icons.success} Default exclude paths cleared.`);
 }
 
 import { Command } from 'commander';

@@ -8,6 +8,7 @@ import type { MapOptions, MapResult } from '../types/map';
 import { formatJson, handleCommandError } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
 import { writeOutput } from '../utils/output';
+import { fmt } from '../utils/theme';
 
 /** HTTP timeout for map API requests (60 seconds) */
 const MAP_TIMEOUT_MS = 60000;
@@ -289,7 +290,9 @@ export function createMapCommand(): Command {
       const url = positionalUrl || options.url;
       if (!url) {
         console.error(
-          'Error: URL is required. Provide it as argument or use --url option.'
+          fmt.error(
+            'URL is required. Provide it as argument or use --url option.'
+          )
         );
         process.exit(1);
       }
