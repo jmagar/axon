@@ -163,6 +163,10 @@ async function summarizeEmbedQueue(): Promise<{
     updatedAt: string;
     lastError?: string;
     apiKey?: string;
+    totalDocuments?: number;
+    processedDocuments?: number;
+    failedDocuments?: number;
+    progressUpdatedAt?: string;
   }>;
 }> {
   const jobs = await listEmbedJobs();
@@ -225,6 +229,9 @@ export function getEmbedContext(
     status: 'pending' | 'processing' | 'completed' | 'failed';
     retries: number;
     maxRetries: number;
+    totalDocuments?: number;
+    processedDocuments?: number;
+    failedDocuments?: number;
   },
   crawlData?: {
     status: string;
@@ -232,13 +239,43 @@ export function getEmbedContext(
     total: number;
   }
 ): EmbedContext {
-  const { status, retries, maxRetries } = embedJob;
+  const {
+    status,
+    retries,
+    maxRetries,
+    totalDocuments,
+    processedDocuments,
+    failedDocuments,
+  } = embedJob;
 
   if (status === 'processing') {
+    // Show progress if available
+    if (totalDocuments && processedDocuments !== undefined) {
+      const percentage = Math.floor(
+        (processedDocuments / totalDocuments) * 100
+      );
+      return {
+        message: 'Embedding in progress',
+        metadata: `${processedDocuments}/${totalDocuments} - ${percentage}%`,
+      };
+    }
+    // Fallback for old jobs without progress tracking
     return { message: 'Embedding in progress...' };
   }
 
   if (status === 'completed') {
+    // Show final counts if available
+    if (
+      totalDocuments !== undefined &&
+      processedDocuments !== undefined &&
+      failedDocuments !== undefined &&
+      failedDocuments > 0
+    ) {
+      return {
+        message: 'Completed with failures',
+        metadata: `${processedDocuments}/${totalDocuments} succeeded, ${failedDocuments} failed`,
+      };
+    }
     return { message: 'Embedded successfully' };
   }
 
@@ -443,6 +480,9 @@ async function executeJobStatus(
       maxRetries: job.maxRetries,
       lastError: job.lastError,
       updatedAt: job.updatedAt,
+      totalDocuments: job.totalDocuments,
+      processedDocuments: job.processedDocuments,
+      failedDocuments: job.failedDocuments,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 10);
@@ -454,6 +494,9 @@ async function executeJobStatus(
       retries: job.retries,
       maxRetries: job.maxRetries,
       updatedAt: job.updatedAt,
+      totalDocuments: job.totalDocuments,
+      processedDocuments: job.processedDocuments,
+      failedDocuments: job.failedDocuments,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 10);
@@ -464,6 +507,9 @@ async function executeJobStatus(
       url: job.url,
       maxRetries: job.maxRetries,
       updatedAt: job.updatedAt,
+      totalDocuments: job.totalDocuments,
+      processedDocuments: job.processedDocuments,
+      failedDocuments: job.failedDocuments,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 10);
@@ -746,6 +792,9 @@ function renderEmbeddingSection(
           status: 'failed',
           retries: job.retries,
           maxRetries: job.maxRetries,
+          totalDocuments: job.totalDocuments,
+          processedDocuments: job.processedDocuments,
+          failedDocuments: job.failedDocuments,
         },
         undefined
       );
@@ -778,6 +827,9 @@ function renderEmbeddingSection(
           status: 'pending',
           retries: job.retries,
           maxRetries: job.maxRetries,
+          totalDocuments: job.totalDocuments,
+          processedDocuments: job.processedDocuments,
+          failedDocuments: job.failedDocuments,
         },
         crawlData
       );
@@ -803,6 +855,9 @@ function renderEmbeddingSection(
           status: 'completed',
           retries: 0,
           maxRetries: job.maxRetries,
+          totalDocuments: job.totalDocuments,
+          processedDocuments: job.processedDocuments,
+          failedDocuments: job.failedDocuments,
         },
         undefined
       );

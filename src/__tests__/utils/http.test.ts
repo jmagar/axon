@@ -153,7 +153,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);
@@ -173,7 +173,7 @@ describe('HTTP utilities with timeout and retry', () => {
 
         const promise = fetchWithRetry('http://test.com');
         await vi.advanceTimersByTimeAsync(0);
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
         const response = await promise;
 
         expect(response.status).toBe(200);
@@ -198,9 +198,9 @@ describe('HTTP utilities with timeout and retry', () => {
       // Advance timers and await the promise rejection together
       const advanceTimers = async () => {
         await vi.advanceTimersByTimeAsync(0);
-        await vi.advanceTimersByTimeAsync(2000);
-        await vi.advanceTimersByTimeAsync(3000);
-        await vi.advanceTimersByTimeAsync(5000);
+        await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
+        await vi.advanceTimersByTimeAsync(15000); // 5000ms base * 2^1 with jitter
+        await vi.advanceTimersByTimeAsync(25000); // 5000ms base * 2^2 with jitter
       };
 
       await Promise.all([
@@ -261,7 +261,7 @@ describe('HTTP utilities with timeout and retry', () => {
       // Advance timers and await the promise rejection together
       const advanceTimers = async () => {
         await vi.advanceTimersByTimeAsync(0);
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       };
 
       await Promise.all([
@@ -287,8 +287,8 @@ describe('HTTP utilities with timeout and retry', () => {
       });
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
+      await vi.advanceTimersByTimeAsync(15000); // 5000ms base * 2^1 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);
@@ -308,7 +308,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);
@@ -325,7 +325,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       await promise;
 
       const firstSignal = mockFetch.mock.calls[0][1].signal;
@@ -345,7 +345,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       await promise;
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -379,7 +379,7 @@ describe('HTTP utilities with timeout and retry', () => {
       await vi.advanceTimersByTimeAsync(1500);
 
       // Second retry - ~2000ms (1500-2500ms with jitter)
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(15000); // 5000ms base * 2^1 with jitter
 
       // Third retry - ~4000ms (3000-5000ms with jitter)
       await vi.advanceTimersByTimeAsync(6000);
@@ -490,7 +490,7 @@ describe('HTTP utilities with timeout and retry', () => {
       });
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000); // First retry - capped at 2000
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter // First retry - capped at 2000
       await vi.advanceTimersByTimeAsync(2500); // Second retry - also capped at 2000
       await promise;
 
@@ -557,6 +557,71 @@ describe('HTTP utilities with timeout and retry', () => {
       await promise;
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should use 5s base delay by default', async () => {
+      vi.useFakeTimers();
+      const mathRandomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: true, status: 200 });
+
+      // No baseDelayMs option - should use default 5000ms
+      const promise = fetchWithRetry('http://test.com');
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      // With Math.random() = 0.5, jitter = 0 (neutral)
+      // Current default: 1000ms → expect ~1000ms delay
+      // New default: 5000ms → expect ~5000ms delay
+      // Test with exactly 5000ms - will timeout with current 1000ms default
+      await vi.advanceTimersByTimeAsync(5000);
+
+      const response = await promise;
+
+      expect(response.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      mathRandomSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('should exponentially increase delay up to 60s max', async () => {
+      vi.useFakeTimers();
+      const mathRandomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+      mockFetch.mockResolvedValue({ ok: false, status: 503 });
+
+      // No maxDelayMs option - should use default
+      const promise = fetchWithRetry('http://test.com', undefined, {
+        maxRetries: 3,
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      // With Math.random() = 0.5, jitter = 0
+      // New defaults (5000ms base, 60000ms max):
+      //   Attempt 1: 5000ms
+      //   Attempt 2: 10000ms
+      //   Attempt 3: 20000ms
+      // Current defaults (1000ms base, 30000ms max):
+      //   Attempt 1: 1000ms
+      //   Attempt 2: 2000ms
+      //   Attempt 3: 4000ms
+      // Total with new: 35000ms, total with current: 7000ms
+      const advanceTimers = async () => {
+        await vi.advanceTimersByTimeAsync(5000); // Attempt 1
+        await vi.advanceTimersByTimeAsync(10000); // Attempt 2
+        await vi.advanceTimersByTimeAsync(20000); // Attempt 3
+      };
+
+      await Promise.all([expect(promise).rejects.toThrow(), advanceTimers()]);
+
+      expect(mockFetch).toHaveBeenCalledTimes(4); // Initial + 3 retries
+
+      mathRandomSpy.mockRestore();
+      vi.useRealTimers();
     });
   });
 
@@ -867,7 +932,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);
@@ -886,7 +951,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);
@@ -905,7 +970,7 @@ describe('HTTP utilities with timeout and retry', () => {
       const promise = fetchWithRetry('http://test.com');
 
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(10000); // 5000ms base * 2^0 with jitter
       const response = await promise;
 
       expect(response.status).toBe(200);

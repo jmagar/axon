@@ -40,6 +40,11 @@ export interface EmbedJob {
   updatedAt: string;
   lastError?: string;
   apiKey?: string;
+  // Progress tracking (optional for backward compatibility)
+  totalDocuments?: number;
+  processedDocuments?: number;
+  failedDocuments?: number;
+  progressUpdatedAt?: string;
 }
 
 function resolveQueueDir(): string {
@@ -380,4 +385,34 @@ export async function cleanupOldJobs(
   }
 
   return cleaned;
+}
+
+/**
+ * Update job progress (throttled persistence)
+ *
+ * Updates progress counters in memory and optionally persists to disk.
+ * Used by background embedder to track embedding progress without
+ * excessive file I/O operations.
+ *
+ * @param jobId - Job identifier
+ * @param processedDocuments - Number of documents successfully embedded
+ * @param failedDocuments - Number of documents that failed embedding
+ * @param shouldPersist - If true, writes changes to disk immediately
+ */
+export async function updateJobProgress(
+  jobId: string,
+  processedDocuments: number,
+  failedDocuments: number,
+  shouldPersist: boolean = false
+): Promise<void> {
+  const job = await getEmbedJob(jobId);
+  if (!job) return;
+
+  job.processedDocuments = processedDocuments;
+  job.failedDocuments = failedDocuments;
+  job.progressUpdatedAt = new Date().toISOString();
+
+  if (shouldPersist) {
+    await updateEmbedJob(job);
+  }
 }

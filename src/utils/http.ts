@@ -29,8 +29,8 @@ export interface HttpOptions {
 const DEFAULT_HTTP_OPTIONS: Required<HttpOptions> = {
   timeoutMs: 30000,
   maxRetries: 3,
-  baseDelayMs: 1000,
-  maxDelayMs: 30000,
+  baseDelayMs: 5000, // Increased from 1000ms to give TEI time to clear permits
+  maxDelayMs: 60000, // Increased from 30000ms to handle longer backpressure
 };
 
 /**

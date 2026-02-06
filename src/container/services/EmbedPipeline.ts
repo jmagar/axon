@@ -158,10 +158,13 @@ export class EmbedPipeline implements IEmbedPipeline {
    * - Default concurrency: 10
    * - Tracks success/failure counts
    * - Collects error messages (limit 10)
+   * - Optional progress callback after each item completes
    * - Never throws - designed for fire-and-forget usage
    *
    * @param items Array of items to embed
-   * @param options Batch options (concurrency limit)
+   * @param options Batch options
+   * @param options.concurrency Maximum concurrent operations
+   * @param options.onProgress Callback invoked after each item (current, total)
    * @returns Promise with embedding result statistics
    */
   async batchEmbed(
@@ -175,7 +178,10 @@ export class EmbedPipeline implements IEmbedPipeline {
         [key: string]: unknown;
       };
     }>,
-    options: { concurrency?: number } = {}
+    options: {
+      concurrency?: number;
+      onProgress?: (current: number, total: number) => void | Promise<void>;
+    } = {}
   ): Promise<{ succeeded: number; failed: number; errors: string[] }> {
     const result = {
       succeeded: 0,
@@ -187,6 +193,8 @@ export class EmbedPipeline implements IEmbedPipeline {
 
     const concurrency = options.concurrency ?? MAX_CONCURRENT_EMBEDS;
     const limit = pLimit(concurrency);
+    const { onProgress } = options;
+    const total = items.length;
     const MAX_ERRORS = 10; // Limit stored errors to avoid memory issues
 
     const promises = items.map((item) =>
@@ -201,6 +209,21 @@ export class EmbedPipeline implements IEmbedPipeline {
             const errorMsg =
               error instanceof Error ? error.message : 'Unknown error';
             result.errors.push(`${item.metadata.url}: ${errorMsg}`);
+          }
+        } finally {
+          // Invoke progress callback after each completion
+          if (onProgress) {
+            try {
+              const current = result.succeeded + result.failed;
+              await onProgress(current, total);
+            } catch (error) {
+              // Log but don't throw - progress callback errors shouldn't break embedding
+              console.error(
+                fmt.warning(
+                  `Progress callback error: ${error instanceof Error ? error.message : 'Unknown error'}`
+                )
+              );
+            }
           }
         }
       })

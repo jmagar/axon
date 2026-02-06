@@ -27,6 +27,7 @@ import {
   markJobProcessing,
   tryClaimJob,
   updateEmbedJob,
+  updateJobProgress,
 } from './embed-queue';
 import {
   EMBEDDER_WEBHOOK_HEADER,
@@ -148,9 +149,19 @@ async function processEmbedJob(
       console.error(
         fmt.warning(`[Embedder] Job ${job.jobId} has no pages to embed`)
       );
+      // Initialize with zero progress for empty jobs
+      job.totalDocuments = 0;
+      job.processedDocuments = 0;
+      job.failedDocuments = 0;
       await markJobCompleted(job.jobId);
       return;
     }
+
+    // Initialize progress tracking
+    job.totalDocuments = pages.length;
+    job.processedDocuments = 0;
+    job.failedDocuments = 0;
+    await updateEmbedJob(job);
 
     // Embed pages using job-specific container config
     console.error(
@@ -167,7 +178,39 @@ async function processEmbedJob(
       },
     }));
     const pipeline = jobContainer.getEmbedPipeline();
-    const result = await pipeline.batchEmbed(embedItems);
+
+    // Track progress with throttled persistence
+    let updateCounter = 0;
+    const THROTTLE_INTERVAL = 10; // Update disk every 10 documents
+
+    const result = await pipeline.batchEmbed(embedItems, {
+      onProgress: async (current, total) => {
+        updateCounter++;
+        const shouldPersist = updateCounter % THROTTLE_INTERVAL === 0;
+
+        // Calculate succeeded from current count (current = succeeded + failed)
+        const succeeded = result.succeeded;
+        const failed = result.failed;
+
+        await updateJobProgress(
+          job.jobId,
+          succeeded,
+          failed,
+          shouldPersist
+        ).catch((error) => {
+          // Log but don't throw - embedding should continue even if progress update fails
+          console.error(
+            fmt.warning(
+              `[Embedder] Failed to persist progress: ${error instanceof Error ? error.message : String(error)}`
+            )
+          );
+        });
+      },
+    });
+
+    // Final progress update on completion
+    job.processedDocuments = result.succeeded;
+    job.failedDocuments = result.failed;
 
     // Log partial failures if any
     if (result.failed > 0) {
