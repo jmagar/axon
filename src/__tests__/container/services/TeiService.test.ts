@@ -141,7 +141,8 @@ describe('TeiService', () => {
           body: JSON.stringify({ inputs }),
         }),
         expect.objectContaining({
-          timeoutMs: 30000,
+          // Dynamic timeout for 2 texts: (10 + 2×2) × 1.5 = 21s
+          timeoutMs: 21000,
           maxRetries: 3,
         })
       );
@@ -284,6 +285,90 @@ describe('TeiService', () => {
       await expect(service.embedChunks(['test'])).rejects.toThrow(
         'TEI /embed failed: 500 Internal Server Error'
       );
+    });
+  });
+
+  describe('embedBatch with dynamic timeout', () => {
+    it('should use calculated timeout for small batch (3 texts)', async () => {
+      let capturedTimeout: number | undefined;
+      vi.mocked(mockHttpClient.fetchWithRetry).mockImplementation(
+        async (_url, _init, options) => {
+          capturedTimeout = options?.timeoutMs;
+          return {
+            ok: true,
+            json: () => Promise.resolve([[0.1, 0.2]]),
+          } as Response;
+        }
+      );
+
+      const texts = Array.from({ length: 3 }, (_, i) => `text ${i}`);
+      await service.embedBatch(texts);
+
+      // Formula: (10s + (3 × 2s)) × 1.5 = 24s = 24000ms
+      expect(capturedTimeout).toBe(24000);
+    });
+
+    it('should use calculated timeout for full batch (24 texts)', async () => {
+      let capturedTimeout: number | undefined;
+      vi.mocked(mockHttpClient.fetchWithRetry).mockImplementation(
+        async (_url, _init, options) => {
+          capturedTimeout = options?.timeoutMs;
+          return {
+            ok: true,
+            json: () => Promise.resolve(Array(24).fill([0.1])),
+          } as Response;
+        }
+      );
+
+      const texts = Array.from({ length: 24 }, (_, i) => `text ${i}`);
+      await service.embedBatch(texts);
+
+      // Formula: (10s + (24 × 2s)) × 1.5 = 87s = 87000ms
+      expect(capturedTimeout).toBe(87000);
+    });
+
+    it('should never return timeout less than base for empty batch', async () => {
+      let capturedTimeout: number | undefined;
+      vi.mocked(mockHttpClient.fetchWithRetry).mockImplementation(
+        async (_url, _init, options) => {
+          capturedTimeout = options?.timeoutMs;
+          return {
+            ok: true,
+            json: () => Promise.resolve([]),
+          } as Response;
+        }
+      );
+
+      await service.embedBatch([]);
+
+      // Formula: (10s + (0 × 2s)) × 1.5 = 15s = 15000ms
+      expect(capturedTimeout).toBeGreaterThanOrEqual(15000);
+    });
+
+    it('should not timeout on large batches processed slowly', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(mockHttpClient.fetchWithRetry).mockImplementation(
+        async (_url, _init, options) => {
+          // Simulate slow TEI response (60s)
+          await new Promise((resolve) => setTimeout(resolve, 60000));
+          return {
+            ok: true,
+            json: () => Promise.resolve(Array(24).fill([0.1])),
+          } as Response;
+        }
+      );
+
+      const texts = Array.from({ length: 24 }, (_, i) => `text ${i}`);
+      const promise = service.embedBatch(texts);
+
+      // Fast-forward time to simulate 60s processing
+      await vi.advanceTimersByTimeAsync(60000);
+
+      // Should NOT timeout (87s timeout > 60s processing time)
+      await expect(promise).resolves.toBeDefined();
+
+      vi.useRealTimers();
     });
   });
 });

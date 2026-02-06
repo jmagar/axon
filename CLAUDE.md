@@ -63,10 +63,11 @@ This project uses a **self-hosted Firecrawl stack**, NOT the cloud API.
 | Container | Image | Port | Purpose | Status |
 |-----------|-------|------|---------|--------|
 | `firecrawl` | ghcr.io/firecrawl/firecrawl | 53002 | Main Firecrawl API | Active |
+| `firecrawl-embedder` | node:20-alpine | 53000 | Async embedding daemon | Active |
 | `firecrawl-playwright` | loorisr/patchright-scrape-api | 53006 (internal) | Browser scraping backend | Active |
 | `firecrawl-qdrant` | qdrant/qdrant | 53333 | Vector database | Active |
-
-**Note:** TEI is NOT running - always use `--no-embed` flag.
+| `firecrawl-redis` | redis:alpine | 53379 (internal) | Job queue/cache | Active |
+| `firecrawl-rabbitmq` | rabbitmq:3-management | (internal) | Message broker | Active |
 
 ### Scraping Architecture
 
@@ -80,12 +81,26 @@ CLI → Firecrawl API (53002) → Patchright container (53006) → Chrome
 - Uses system Chrome via `channel="chrome"` (not bundled Chromium)
 - Blocks images/stylesheets/media/fonts by default for performance
 
+### Embedding Architecture
+
+```text
+CLI (scrape/crawl/extract) → Embedder Daemon (53000) → TEI @ steamy-wsl (100.74.16.82:52000)
+                                     ↓                      [RTX 4070 GPU]
+                              Qdrant (53333) ← stores vectors
+```
+
+- **Embedder Daemon** runs as a background service (`firecrawl-embedder` container)
+- Processes embedding jobs asynchronously via queue system
+- **TEI** runs on remote machine (steamy-wsl) with GPU acceleration
+- Embeddings are automatically generated for all scrape/crawl/extract/search operations
+- Vectors stored in local Qdrant for semantic search queries
+
 ### Environment Variables (.env)
 
 ```bash
 FIRECRAWL_API_KEY=local-dev
 FIRECRAWL_API_URL=http://localhost:53002
-TEI_URL=http://localhost:53010
+TEI_URL=http://100.74.16.82:52000  # Remote TEI on steamy-wsl with RTX 4070
 QDRANT_URL=http://localhost:53333
 ```
 
@@ -101,7 +116,8 @@ QDRANT_URL=http://localhost:53333
 ## External Integrations
 
 - **Qdrant**: Local vector database at port 53333
-- **TEI**: NOT AVAILABLE - do not attempt embedding operations
+- **TEI**: Remote embedding service on steamy-wsl (100.74.16.82:52000) with RTX 4070 GPU
+- **Embedder Daemon**: Background service processing embedding jobs asynchronously (port 53000)
 
 ## Configuration Priority
 
@@ -192,16 +208,3 @@ This fix persists across container restarts.
 ### Client-Side Rendered Sites
 
 Sites using heavy JS frameworks (TanStack Router, Next.js client-only, etc.) may fail to scrape if content isn't in initial HTML. The `fetch` engine will see empty content, and `playwright` engine may timeout before JS hydrates.
-
-## Current Environment
-
-### TEI IS NOT RUNNING
-
-**TEI (Text Embeddings Inference) is NOT available on this device.** Always use `--no-embed` flag when running scrape/crawl commands to prevent embedding failures:
-
-```bash
-firecrawl scrape https://example.com --no-embed
-firecrawl crawl https://example.com --wait --progress --no-embed
-```
-
-Do NOT attempt to start TEI or troubleshoot embedding failures - embedding is simply not available.

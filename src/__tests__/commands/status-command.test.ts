@@ -37,7 +37,7 @@ describe('handleJobStatusCommand', () => {
   const mockClient = {
     getActiveCrawls: vi.fn().mockResolvedValue({ success: true, crawls: [] }),
     getCrawlStatus: vi.fn().mockResolvedValue({
-      id: 'job-1',
+      id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
       status: 'completed',
       total: 1,
       completed: 1,
@@ -77,7 +77,7 @@ describe('handleJobStatusCommand', () => {
 
   it('should write JSON output when json flag is set', async () => {
     await handleJobStatusCommand(container, {
-      crawl: 'job-1',
+      crawl: '019c161c-8a80-7051-a438-2ec8707e1bc9',
       batch: 'batch-1',
       extract: 'extract-1',
       json: true,
@@ -257,8 +257,8 @@ describe('handleJobStatusCommand', () => {
     const { listEmbedJobs } = await import('../../utils/embed-queue');
     vi.mocked(listEmbedJobs).mockResolvedValue([
       {
-        id: 'job-1',
-        jobId: 'job-1',
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
         url: 'https://example.com',
         status: 'pending',
         retries: 1,
@@ -284,7 +284,7 @@ describe('handleJobStatusCommand', () => {
     const parsed = JSON.parse(output as string);
     expect(parsed.data.embeddings.pending).toEqual([
       {
-        jobId: 'job-1',
+        jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
         url: 'https://example.com',
         retries: 1,
         maxRetries: 3,
@@ -298,9 +298,9 @@ describe('handleJobStatusCommand', () => {
     const { listEmbedJobs } = await import('../../utils/embed-queue');
     vi.mocked(listEmbedJobs).mockResolvedValue([
       {
-        id: 'job-1',
-        jobId: 'job-1',
-        url: 'http://localhost:53002/v2/crawl/job-1',
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        url: 'http://localhost:53002/v2/crawl/019c161c-8a80-7051-a438-2ec8707e1bc9',
         status: 'pending',
         retries: 2,
         maxRetries: 3,
@@ -310,7 +310,13 @@ describe('handleJobStatusCommand', () => {
     ]);
     mockClient.getActiveCrawls.mockResolvedValue({
       success: true,
-      crawls: [{ id: 'job-1', teamId: 'team', url: 'https://example.com' }],
+      crawls: [
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          teamId: 'team',
+          url: 'https://example.com',
+        },
+      ],
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -319,7 +325,10 @@ describe('handleJobStatusCommand', () => {
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Pending embeds:');
-    expect(output).toContain('job-1 (2/3) https://example.com');
+    expect(output).toContain(
+      '019c161c-8a80-7051-a438-2ec8707e1bc9 Queued for embedding'
+    );
+    expect(output).toContain('https://example.com');
 
     logSpy.mockRestore();
   });
@@ -328,8 +337,8 @@ describe('handleJobStatusCommand', () => {
     const { listEmbedJobs } = await import('../../utils/embed-queue');
     vi.mocked(listEmbedJobs).mockResolvedValue([
       {
-        id: 'job-1',
-        jobId: 'job-1',
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
         url: 'https://example.com',
         status: 'failed',
         retries: 3,
@@ -346,7 +355,7 @@ describe('handleJobStatusCommand', () => {
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Failed embeds:');
-    expect(output).toContain('job-1');
+    expect(output).toContain('019c161c-8a80-7051-a438-2ec8707e1bc9');
     expect(output).toContain('Boom');
 
     logSpy.mockRestore();
@@ -356,9 +365,9 @@ describe('handleJobStatusCommand', () => {
     const { listEmbedJobs } = await import('../../utils/embed-queue');
     vi.mocked(listEmbedJobs).mockResolvedValue([
       {
-        id: 'job-1',
-        jobId: 'job-1',
-        url: 'http://localhost:53002/v2/crawl/job-1',
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        url: 'http://localhost:53002/v2/crawl/019c161c-8a80-7051-a438-2ec8707e1bc9',
         status: 'completed',
         retries: 0,
         maxRetries: 3,
@@ -368,7 +377,13 @@ describe('handleJobStatusCommand', () => {
     ]);
     mockClient.getActiveCrawls.mockResolvedValue({
       success: true,
-      crawls: [{ id: 'job-1', teamId: 'team', url: 'https://example.com' }],
+      crawls: [
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          teamId: 'team',
+          url: 'https://example.com',
+        },
+      ],
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -377,7 +392,10 @@ describe('handleJobStatusCommand', () => {
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Completed embeds:');
-    expect(output).toContain('job-1 https://example.com');
+    expect(output).toContain(
+      '019c161c-8a80-7051-a438-2ec8707e1bc9 Embedded successfully'
+    );
+    expect(output).toContain('https://example.com');
 
     logSpy.mockRestore();
   });
@@ -536,8 +554,8 @@ describe('handleJobStatusCommand', () => {
       const { listEmbedJobs } = await import('../../utils/embed-queue');
       vi.mocked(listEmbedJobs).mockResolvedValue([
         {
-          id: 'job-1',
-          jobId: 'job-1',
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
           url: 'https://example.com/1',
           status: 'completed',
           retries: 0,
@@ -574,12 +592,13 @@ describe('handleJobStatusCommand', () => {
       const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
       const completedSection = output.split('Completed embeds:')[1];
 
-      // Verify order: job-3 (newest), job-2, job-1 (oldest)
+      // Verify order: job-3 (newest), job-2, 019c161c-8a80-7051-a438-2ec8707e1bc9 (oldest)
       expect(completedSection?.indexOf('job-3')).toBeLessThan(
         completedSection?.indexOf('job-2') ?? Infinity
       );
       expect(completedSection?.indexOf('job-2')).toBeLessThan(
-        completedSection?.indexOf('job-1') ?? Infinity
+        completedSection?.indexOf('019c161c-8a80-7051-a438-2ec8707e1bc9') ??
+          Infinity
       );
 
       logSpy.mockRestore();
@@ -589,8 +608,8 @@ describe('handleJobStatusCommand', () => {
       const { listEmbedJobs } = await import('../../utils/embed-queue');
       vi.mocked(listEmbedJobs).mockResolvedValue([
         {
-          id: 'job-1',
-          jobId: 'job-1',
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
           url: 'https://example.com/1',
           status: 'pending',
           retries: 0,
@@ -618,15 +637,15 @@ describe('handleJobStatusCommand', () => {
 
       expect(pending).toHaveLength(2);
       expect(pending[0].jobId).toBe('job-2'); // newest first
-      expect(pending[1].jobId).toBe('job-1'); // oldest last
+      expect(pending[1].jobId).toBe('019c161c-8a80-7051-a438-2ec8707e1bc9'); // oldest last
     });
 
     it('should sort failed embeds by updatedAt descending (newest first)', async () => {
       const { listEmbedJobs } = await import('../../utils/embed-queue');
       vi.mocked(listEmbedJobs).mockResolvedValue([
         {
-          id: 'job-1',
-          jobId: 'job-1',
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
           url: 'https://example.com/1',
           status: 'failed',
           retries: 3,
@@ -656,7 +675,7 @@ describe('handleJobStatusCommand', () => {
 
       expect(failed).toHaveLength(2);
       expect(failed[0].jobId).toBe('job-2'); // newest first
-      expect(failed[1].jobId).toBe('job-1'); // oldest last
+      expect(failed[1].jobId).toBe('019c161c-8a80-7051-a438-2ec8707e1bc9'); // oldest last
     });
 
     it('should sort crawls by ID descending (newest first)', async () => {
@@ -753,6 +772,187 @@ describe('handleJobStatusCommand', () => {
       expect(extracts).toHaveLength(2);
       expect(extracts[0].id).toBe('019c2443-183b-751b-9bf0-dfd1be25b48f'); // newest
       expect(extracts[1].id).toBe('019c21d6-909a-74b8-a486-2a0a39a1834d'); // oldest
+    });
+  });
+
+  describe('Embedding status display with crawl context', () => {
+    it('should show crawl progress for pending embeds with active crawl', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockResolvedValue([
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          url: 'http://localhost:53002/v2/crawl/019c161c-8a80-7051-a438-2ec8707e1bc9',
+          status: 'pending',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:01:00.000Z',
+        },
+      ]);
+
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      // Return empty for 'crawl' to ensure only embed job is checked
+      vi.mocked(getRecentJobIds).mockImplementation(async (type) => {
+        if (type === 'crawl') return [];
+        return [];
+      });
+
+      mockClient.getCrawlStatus.mockResolvedValue({
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        status: 'scraping',
+        total: 100,
+        completed: 45,
+        data: [{ metadata: { sourceURL: 'https://example.com' } }],
+      });
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleJobStatusCommand(container, {});
+
+      const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(output).toContain('Pending embeds:');
+      expect(output).toContain('Queued for embedding');
+      expect(output).toContain('crawl: 45/100 scraped');
+
+      logSpy.mockRestore();
+    });
+
+    it('should show ready to embed for pending embeds with completed crawl', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockResolvedValue([
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          url: 'http://localhost:53002/v2/crawl/019c161c-8a80-7051-a438-2ec8707e1bc9',
+          status: 'pending',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:01:00.000Z',
+        },
+      ]);
+
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      // Return empty for 'crawl' to ensure only embed job is checked
+      vi.mocked(getRecentJobIds).mockImplementation(async (type) => {
+        if (type === 'crawl') return [];
+        return [];
+      });
+
+      mockClient.getCrawlStatus.mockResolvedValue({
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        status: 'completed',
+        total: 150,
+        completed: 150,
+        data: [{ metadata: { sourceURL: 'https://example.com' } }],
+      });
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleJobStatusCommand(container, {});
+
+      const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(output).toContain('Pending embeds:');
+      expect(output).toContain('Ready to embed');
+      expect(output).toContain('150 documents');
+
+      logSpy.mockRestore();
+    });
+
+    it('should show blocked status for pending embeds with failed crawl', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockResolvedValue([
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          url: 'http://localhost:53002/v2/crawl/019c161c-8a80-7051-a438-2ec8707e1bc9',
+          status: 'pending',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:01:00.000Z',
+        },
+      ]);
+
+      const { getRecentJobIds } = await import('../../utils/job-history');
+      // Return empty for 'crawl' to ensure only embed job is checked
+      vi.mocked(getRecentJobIds).mockImplementation(async (type) => {
+        if (type === 'crawl') return [];
+        return [];
+      });
+
+      mockClient.getCrawlStatus.mockResolvedValue({
+        id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+        status: 'failed',
+        total: 100,
+        completed: 25,
+        data: [],
+      });
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleJobStatusCommand(container, {});
+
+      const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(output).toContain('Pending embeds:');
+      expect(output).toContain('Blocked (crawl failed)');
+
+      logSpy.mockRestore();
+    });
+
+    it('should display processing embeds with in-progress message', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockResolvedValue([
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          url: 'https://example.com',
+          status: 'processing',
+          retries: 0,
+          maxRetries: 3,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:01:00.000Z',
+        },
+      ]);
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleJobStatusCommand(container, {});
+
+      const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(output).toContain('Embeddings');
+      expect(output).toContain('processing 1');
+
+      logSpy.mockRestore();
+    });
+
+    it('should handle failed embed without lastError gracefully', async () => {
+      const { listEmbedJobs } = await import('../../utils/embed-queue');
+      vi.mocked(listEmbedJobs).mockResolvedValue([
+        {
+          id: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          jobId: '019c161c-8a80-7051-a438-2ec8707e1bc9',
+          url: 'https://example.com',
+          status: 'failed',
+          retries: 3,
+          maxRetries: 3,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:01:00.000Z',
+          // No lastError property
+        },
+      ]);
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleJobStatusCommand(container, {});
+
+      const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(output).toContain('Failed embeds:');
+      expect(output).toContain('Embedding failed');
+      expect(output).toContain('retries: 3/3');
+
+      logSpy.mockRestore();
     });
   });
 });

@@ -241,3 +241,13 @@ export function formatCount(count: number, label: string): string {
   const plural = count === 1 ? label : `${label}s`;
   return `${count} ${plural}`;
 }
+
+/**
+ * Format retry count display
+ * @param current - Current retry count
+ * @param max - Maximum retries allowed
+ * @returns Formatted string like "retries: 2/3"
+ */
+export function formatRetries(current: number, max: number): string {
+  return `retries: ${current}/${max}`;
+}

@@ -29,6 +29,7 @@ import {
   colors,
   fmt,
   formatProgress,
+  formatRetries,
   getStatusColor,
   getStatusIcon,
   icons,
@@ -179,6 +180,98 @@ async function summarizeEmbedQueue(): Promise<{
   }
 
   return { summary, jobs };
+}
+
+interface EmbedContext {
+  message: string;
+  metadata?: string;
+}
+
+/**
+ * Get display context for an embedding job based on its status and related crawl data
+ *
+ * @param embedJob - The embedding job to generate context for
+ * @param embedJob.jobId - Unique job identifier
+ * @param embedJob.status - Current job status (pending, processing, completed, failed)
+ * @param embedJob.retries - Number of retry attempts made
+ * @param embedJob.maxRetries - Maximum retry attempts allowed
+ * @param crawlData - Optional crawl status data for showing progress on pending embeds
+ * @param crawlData.status - Crawl status (scraping, completed, failed, cancelled, etc.)
+ * @param crawlData.completed - Number of pages scraped so far
+ * @param crawlData.total - Total number of pages to scrape
+ * @returns Object with user-friendly message and optional metadata string
+ *
+ * @example
+ * // Pending embed with no crawl data
+ * getEmbedContext({ jobId: 'job-1', status: 'pending', retries: 0, maxRetries: 3 })
+ * // => { message: 'Queued for embedding' }
+ *
+ * @example
+ * // Pending embed with active crawl showing progress
+ * getEmbedContext(
+ *   { jobId: 'job-1', status: 'pending', retries: 0, maxRetries: 3 },
+ *   { status: 'scraping', completed: 268, total: 1173 }
+ * )
+ * // => { message: 'Queued for embedding', metadata: 'crawl: 268/1173 scraped' }
+ *
+ * @example
+ * // Failed embed showing retry count
+ * getEmbedContext({ jobId: 'job-1', status: 'failed', retries: 2, maxRetries: 3 })
+ * // => { message: 'Embedding failed', metadata: 'retries: 2/3' }
+ */
+export function getEmbedContext(
+  embedJob: {
+    jobId: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    retries: number;
+    maxRetries: number;
+  },
+  crawlData?: {
+    status: string;
+    completed: number;
+    total: number;
+  }
+): EmbedContext {
+  const { status, retries, maxRetries } = embedJob;
+
+  if (status === 'processing') {
+    return { message: 'Embedding in progress...' };
+  }
+
+  if (status === 'completed') {
+    return { message: 'Embedded successfully' };
+  }
+
+  if (status === 'failed') {
+    return {
+      message: 'Embedding failed',
+      metadata: formatRetries(retries, maxRetries),
+    };
+  }
+
+  // Status is 'pending'
+  if (!crawlData) {
+    return { message: 'Queued for embedding' };
+  }
+
+  const { status: crawlStatus, completed, total } = crawlData;
+
+  if (crawlStatus === 'failed' || crawlStatus === 'cancelled') {
+    return { message: 'Blocked (crawl failed)' };
+  }
+
+  if (crawlStatus === 'completed') {
+    return {
+      message: 'Ready to embed',
+      metadata: `${total} documents`,
+    };
+  }
+
+  // Crawl is still scraping
+  return {
+    message: 'Queued for embedding',
+    metadata: `crawl: ${completed}/${total} scraped`,
+  };
 }
 
 async function executeJobStatus(
@@ -347,6 +440,7 @@ async function executeJobStatus(
       jobId: job.jobId,
       url: job.url,
       retries: job.retries,
+      maxRetries: job.maxRetries,
       lastError: job.lastError,
       updatedAt: job.updatedAt,
     }))
@@ -368,6 +462,7 @@ async function executeJobStatus(
     .map((job) => ({
       jobId: job.jobId,
       url: job.url,
+      maxRetries: job.maxRetries,
       updatedAt: job.updatedAt,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -404,7 +499,14 @@ async function executeJobStatus(
   };
 }
 
-function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
+/**
+ * Renders the active crawls section showing currently running crawls.
+ *
+ * @param data - Job status data containing active crawls
+ */
+function renderActiveCrawlsSection(
+  data: Awaited<ReturnType<typeof executeJobStatus>>
+): void {
   console.log('');
   console.log(fmt.bold('Crawls'));
   if (data.activeCrawls.crawls.length === 0) {
@@ -416,9 +518,21 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
       );
     }
   }
+}
 
+/**
+ * Renders the crawl status section showing completed/pending/failed crawls.
+ *
+ * @param data - Job status data containing crawl job results
+ * @param crawlUrlById - Map of crawl IDs to their URLs
+ */
+function renderCrawlStatusSection(
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  crawlUrlById: Map<string, string>
+): void {
   const hasCrawlLookup =
     data.crawls.length > 0 || data.resolvedIds.crawls.length > 0;
+
   if (hasCrawlLookup) {
     console.log('');
     console.log(fmt.bold('Crawl Status'));
@@ -426,20 +540,9 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
       console.log(fmt.dim('  No crawl jobs found.'));
     }
 
-    const activeUrlById = new Map(
-      data.activeCrawls.crawls.map((crawl) => [crawl.id, crawl.url])
-    );
     const crawlRows = data.crawls.map((crawl) => {
       const crawlError = (crawl as { error?: string }).error;
-      const crawlData = (
-        crawl as {
-          data?: Array<{ metadata?: { sourceURL?: string; url?: string } }>;
-        }
-      ).data;
-      const sourceUrl = Array.isArray(crawlData)
-        ? (crawlData[0]?.metadata?.sourceURL ?? crawlData[0]?.metadata?.url)
-        : undefined;
-      const displayUrl = sourceUrl ?? activeUrlById.get(crawl.id);
+      const displayUrl = crawlUrlById.get(crawl.id);
       const status = crawl.status ?? 'unknown';
       const isFailed =
         Boolean(crawlError) || status === 'failed' || status === 'error';
@@ -507,7 +610,16 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
     console.log(fmt.bold('Crawl Status'));
     console.log(fmt.dim('  No recent crawl job IDs found.'));
   }
+}
 
+/**
+ * Renders the batch scrape status section.
+ *
+ * @param data - Job status data containing batch job results
+ */
+function renderBatchSection(
+  data: Awaited<ReturnType<typeof executeJobStatus>>
+): void {
   console.log('');
   console.log(fmt.bold('Batch Status'));
   if (data.batches.length === 0) {
@@ -540,7 +652,16 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
       }
     }
   }
+}
 
+/**
+ * Renders the extract job status section.
+ *
+ * @param data - Job status data containing extract job results
+ */
+function renderExtractSection(
+  data: Awaited<ReturnType<typeof executeJobStatus>>
+): void {
   console.log('');
   console.log(fmt.bold('Extract Status'));
   if (data.extracts.length === 0) {
@@ -565,7 +686,23 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
       }
     }
   }
+}
 
+/**
+ * Renders the embedding status section including summary and job details.
+ *
+ * @param data - Job status data containing embedding job results
+ * @param crawlUrlById - Map of crawl IDs to their URLs for display
+ * @param crawlDataById - Map of crawl IDs to their progress data
+ */
+function renderEmbeddingSection(
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  crawlUrlById: Map<string, string>,
+  crawlDataById: Map<
+    string,
+    { status: string; completed: number; total: number }
+  >
+): void {
   console.log('');
   console.log(fmt.bold('Embeddings'));
   const summary = data.embeddings.summary;
@@ -602,12 +739,89 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
     console.log(fmt.dim('    No failed embedding jobs.'));
   } else {
     for (const job of data.embeddings.failed) {
-      console.log(
-        `    ${colorize(colors.error, icons.error)} ${job.jobId} ${colorize(colors.error, job.lastError ?? 'Unknown error')}`
+      const displayUrl = crawlUrlById.get(job.jobId) ?? job.url;
+      const context = getEmbedContext(
+        {
+          jobId: job.jobId,
+          status: 'failed',
+          retries: job.retries,
+          maxRetries: job.maxRetries,
+        },
+        undefined
       );
+
+      let line = `    ${colorize(colors.error, icons.error)} ${job.jobId} ${context.message}`;
+      if (context.metadata) {
+        line += ` ${fmt.dim(`(${context.metadata})`)}`;
+      }
+      line += ` ${fmt.dim(displayUrl)}`;
+
+      if (job.lastError) {
+        console.log(line);
+        console.log(`      ${colorize(colors.error, `└─ ${job.lastError}`)}`);
+      } else {
+        console.log(line);
+      }
     }
   }
 
+  console.log(`  ${fmt.dim('Pending embeds:')}`);
+  if (data.embeddings.pending.length === 0) {
+    console.log(fmt.dim('    No pending embedding jobs.'));
+  } else {
+    for (const job of data.embeddings.pending) {
+      const displayUrl = crawlUrlById.get(job.jobId) ?? job.url;
+      const crawlData = crawlDataById.get(job.jobId);
+      const context = getEmbedContext(
+        {
+          jobId: job.jobId,
+          status: 'pending',
+          retries: job.retries,
+          maxRetries: job.maxRetries,
+        },
+        crawlData
+      );
+
+      let line = `    ${colorize(colors.warning, icons.processing)} ${job.jobId} ${context.message}`;
+      if (context.metadata) {
+        line += ` ${fmt.dim(`(${context.metadata})`)}`;
+      }
+      line += ` ${fmt.dim(displayUrl)}`;
+      console.log(line);
+    }
+  }
+
+  console.log(`  ${fmt.dim('Completed embeds:')}`);
+  if (data.embeddings.completed.length === 0) {
+    console.log(fmt.dim('    No completed embedding jobs.'));
+  } else {
+    for (const job of data.embeddings.completed) {
+      const displayUrl = crawlUrlById.get(job.jobId) ?? job.url;
+      const context = getEmbedContext(
+        {
+          jobId: job.jobId,
+          status: 'completed',
+          retries: 0,
+          maxRetries: job.maxRetries,
+        },
+        undefined
+      );
+      console.log(
+        `    ${colorize(colors.success, icons.success)} ${job.jobId} ${context.message} ${fmt.dim(displayUrl)}`
+      );
+    }
+  }
+  console.log('');
+}
+
+/**
+ * Renders the complete job status in human-readable format.
+ * Delegates to specialized rendering functions for each section.
+ *
+ * @param data - Job status data from executeJobStatus
+ */
+function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
+  // Build URL mapping for all crawls (used throughout the function)
   const activeUrlById = new Map(
     data.activeCrawls.crawls.map((crawl) => [crawl.id, crawl.url])
   );
@@ -626,30 +840,34 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
     }
   }
 
-  console.log(`  ${fmt.dim('Pending embeds:')}`);
-  if (data.embeddings.pending.length === 0) {
-    console.log(fmt.dim('    No pending embedding jobs.'));
-  } else {
-    for (const job of data.embeddings.pending) {
-      const displayUrl = crawlUrlById.get(job.jobId) ?? job.url;
-      console.log(
-        `    ${colorize(colors.warning, icons.processing)} ${job.jobId} ${fmt.dim(`(${job.retries}/${job.maxRetries})`)} ${fmt.dim(displayUrl)}`
-      );
+  // Build lookup for crawl progress data
+  const crawlDataById = new Map<
+    string,
+    { status: string; completed: number; total: number }
+  >();
+  for (const crawl of data.crawls) {
+    if (
+      crawl.id &&
+      'completed' in crawl &&
+      'total' in crawl &&
+      crawl.status &&
+      typeof crawl.completed === 'number' &&
+      typeof crawl.total === 'number'
+    ) {
+      crawlDataById.set(crawl.id, {
+        status: crawl.status,
+        completed: crawl.completed,
+        total: crawl.total,
+      });
     }
   }
 
-  console.log(`  ${fmt.dim('Completed embeds:')}`);
-  if (data.embeddings.completed.length === 0) {
-    console.log(fmt.dim('    No completed embedding jobs.'));
-  } else {
-    for (const job of data.embeddings.completed) {
-      const displayUrl = crawlUrlById.get(job.jobId) ?? job.url;
-      console.log(
-        `    ${colorize(colors.success, icons.success)} ${job.jobId} ${fmt.dim(displayUrl)}`
-      );
-    }
-  }
-  console.log('');
+  // Render sections
+  renderActiveCrawlsSection(data);
+  renderCrawlStatusSection(data, crawlUrlById);
+  renderBatchSection(data);
+  renderExtractSection(data);
+  renderEmbeddingSection(data, crawlUrlById, crawlDataById);
 }
 
 export async function handleJobStatusCommand(

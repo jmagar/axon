@@ -3,6 +3,7 @@
  * Handles batched embedding generation with concurrency control
  */
 
+import { fmt } from '../../utils/theme';
 import type { IHttpClient, ITeiService, TeiInfo } from '../types';
 
 /** Batch size for embedding requests */
@@ -16,6 +17,31 @@ const TEI_TIMEOUT_MS = 30000;
 
 /** Number of retries for TEI requests */
 const TEI_MAX_RETRIES = 3;
+
+/**
+ * Calculate dynamic timeout based on batch size
+ *
+ * Formula: BASE + (size × PER_TEXT) × BUFFER
+ * - BASE: 10s for overhead (network, tokenization)
+ * - PER_TEXT: 2s empirical average per text
+ * - BUFFER: 1.5x (50% safety margin)
+ *
+ * Examples:
+ * - 3 texts: (10 + 3×2) × 1.5 = 24s
+ * - 24 texts: (10 + 24×2) × 1.5 = 87s
+ *
+ * @param batchSize Number of texts in batch
+ * @returns Timeout in milliseconds
+ */
+function calculateBatchTimeout(batchSize: number): number {
+  const BASE_TIMEOUT_MS = 10000;
+  const PER_TEXT_MS = 2000;
+  const BUFFER_MULTIPLIER = 1.5;
+
+  return Math.ceil(
+    (BASE_TIMEOUT_MS + batchSize * PER_TEXT_MS) * BUFFER_MULTIPLIER
+  );
+}
 
 /**
  * Simple semaphore for concurrency control
@@ -105,6 +131,15 @@ export class TeiService implements ITeiService {
    * @returns Array of embedding vectors
    */
   async embedBatch(inputs: string[]): Promise<number[][]> {
+    const timeoutMs = calculateBatchTimeout(inputs.length);
+
+    // Log timeout for debugging (dim color, won't clutter normal output)
+    console.error(
+      fmt.dim(
+        `[TEI] Embedding ${inputs.length} texts (timeout: ${timeoutMs}ms)`
+      )
+    );
+
     const response = await this.httpClient.fetchWithRetry(
       `${this.teiUrl}/embed`,
       {
@@ -113,7 +148,7 @@ export class TeiService implements ITeiService {
         body: JSON.stringify({ inputs }),
       },
       {
-        timeoutMs: TEI_TIMEOUT_MS,
+        timeoutMs,
         maxRetries: TEI_MAX_RETRIES,
       }
     );
