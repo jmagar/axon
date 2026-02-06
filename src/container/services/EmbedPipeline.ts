@@ -196,18 +196,43 @@ export class EmbedPipeline implements IEmbedPipeline {
     const { onProgress } = options;
     const total = items.length;
     const MAX_ERRORS = 10; // Limit stored errors to avoid memory issues
+    const failedUrls: string[] = [];
 
-    const promises = items.map((item) =>
+    console.error(
+      fmt.dim(
+        `[Pipeline] Starting batch embed of ${items.length} items (concurrency: ${concurrency})`
+      )
+    );
+
+    const promises = items.map((item, index) =>
       limit(async () => {
         try {
+          console.error(
+            fmt.dim(
+              `[Pipeline] Embedding ${index + 1}/${items.length}: ${item.metadata.url}`
+            )
+          );
+
           await this.autoEmbedInternal(item.content, item.metadata);
+
           result.succeeded++;
+
+          console.error(
+            fmt.success(`[Pipeline] ✓ Embedded: ${item.metadata.url}`)
+          );
         } catch (error) {
           result.failed++;
+          failedUrls.push(item.metadata.url);
+
+          const errorMsg =
+            error instanceof Error ? error.message : 'Unknown error';
+
+          // Log detailed failure
+          console.error(fmt.error(`[Pipeline] ✗ FAILED: ${item.metadata.url}`));
+          console.error(fmt.dim(`[Pipeline]   Error: ${errorMsg}`));
+
           // Collect error messages (limit to first 10 to avoid memory issues)
           if (result.errors.length < MAX_ERRORS) {
-            const errorMsg =
-              error instanceof Error ? error.message : 'Unknown error';
             result.errors.push(`${item.metadata.url}: ${errorMsg}`);
           }
         } finally {
@@ -231,12 +256,25 @@ export class EmbedPipeline implements IEmbedPipeline {
 
     await Promise.all(promises);
 
-    // Log summary if there were any failures
+    // Log summary
     if (result.failed > 0) {
-      const total = result.succeeded + result.failed;
       console.error(
         fmt.warning(
-          `Embedded ${result.succeeded}/${total} items (${result.failed} failed)`
+          `\n[Pipeline] Embedded ${result.succeeded}/${total} items (${result.failed} failed)`
+        )
+      );
+
+      // Log failed URLs for easy retry
+      if (failedUrls.length > 0) {
+        console.error(fmt.error('[Pipeline] Failed URLs:'));
+        for (const url of failedUrls) {
+          console.error(fmt.dim(`  - ${url}`));
+        }
+      }
+    } else {
+      console.error(
+        fmt.success(
+          `\n[Pipeline] ✓ Successfully embedded all ${result.succeeded} items`
         )
       );
     }

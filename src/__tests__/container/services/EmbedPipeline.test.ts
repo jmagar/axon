@@ -380,6 +380,130 @@ describe('EmbedPipeline', () => {
         expect.stringContaining('1/2')
       );
     });
+
+    describe('Enhanced Logging', () => {
+      it('should log embedding attempt for each document', async () => {
+        const consoleSpy = vi.spyOn(console, 'error');
+
+        await pipeline.batchEmbed([
+          {
+            content: 'test1',
+            metadata: { url: 'https://test1.com', sourceCommand: 'test' },
+          },
+          {
+            content: 'test2',
+            metadata: { url: 'https://test2.com', sourceCommand: 'test' },
+          },
+        ]);
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/Embedding.*https:\/\/test1\.com/)
+        );
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/Embedding.*https:\/\/test2\.com/)
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it('should log detailed error info on failure', async () => {
+        const consoleSpy = vi.spyOn(console, 'error');
+
+        vi.mocked(mockTeiService.embedChunks).mockRejectedValueOnce(
+          new Error('TEI timeout after 87000ms')
+        );
+
+        await pipeline.batchEmbed([
+          {
+            content: 'test',
+            metadata: { url: 'https://fail.com', sourceCommand: 'test' },
+          },
+        ]);
+
+        // Check for FAILED line
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/✗ FAILED.*https:\/\/fail\.com/)
+        );
+
+        // Check for Error details line
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/Error: TEI timeout/)
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it('should log summary statistics at end of batch', async () => {
+        const consoleSpy = vi.spyOn(console, 'error');
+
+        vi.mocked(mockTeiService.embedChunks)
+          .mockResolvedValueOnce([[0.1]])
+          .mockRejectedValueOnce(new Error('Fail'))
+          .mockResolvedValueOnce([[0.2]]);
+
+        await pipeline.batchEmbed([
+          {
+            content: 'test1',
+            metadata: { url: 'https://test1.com', sourceCommand: 'test' },
+          },
+          {
+            content: 'test2',
+            metadata: { url: 'https://test2.com', sourceCommand: 'test' },
+          },
+          {
+            content: 'test3',
+            metadata: { url: 'https://test3.com', sourceCommand: 'test' },
+          },
+        ]);
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/Embedded 2\/3 items \(1 failed\)/)
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it('should log failed URLs for easy retry', async () => {
+        const consoleSpy = vi.spyOn(console, 'error');
+
+        vi.mocked(mockTeiService.embedChunks)
+          .mockResolvedValueOnce([[0.1]])
+          .mockRejectedValueOnce(new Error('Fail 1'))
+          .mockRejectedValueOnce(new Error('Fail 2'));
+
+        await pipeline.batchEmbed([
+          {
+            content: 'ok',
+            metadata: { url: 'https://ok.com', sourceCommand: 'test' },
+          },
+          {
+            content: 'fail1',
+            metadata: { url: 'https://fail1.com', sourceCommand: 'test' },
+          },
+          {
+            content: 'fail2',
+            metadata: { url: 'https://fail2.com', sourceCommand: 'test' },
+          },
+        ]);
+
+        // Should log "Failed URLs:" header
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/Failed URLs:/)
+        );
+
+        // Should log first failed URL
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/- https:\/\/fail1\.com/)
+        );
+
+        // Should log second failed URL
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringMatching(/- https:\/\/fail2\.com/)
+        );
+
+        consoleSpy.mockRestore();
+      });
+    });
   });
 
   describe('collection name', () => {
