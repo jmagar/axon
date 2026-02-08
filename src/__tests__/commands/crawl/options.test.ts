@@ -286,8 +286,8 @@ describe('mergeExcludePaths', () => {
     const result = mergeExcludePaths(undefined, false);
 
     expect(result).toContain('/blog/');
-    expect(result).toContain('/de');
-    expect(result).toContain('/fr');
+    expect(result).toContain('/de/*');
+    expect(result).toContain('/fr/*');
   });
 
   it('should preserve order of defaults first, then CLI', () => {

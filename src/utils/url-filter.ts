@@ -32,13 +32,14 @@ export interface FilterResult<T> {
 export function matchesPattern(url: string, pattern: string): boolean {
   // Detect glob patterns first so values like **/*.pdf are not treated as raw regex.
   // Glob support here intentionally focuses on *, **, and ? wildcards.
-  const looksLikeGlob =
-    (pattern.includes('*') || pattern.includes('?')) &&
-    !/[\\^$(){}|]/.test(pattern);
+  // Require at least one * to avoid ambiguity with literal ? in URLs (e.g., query params)
+  const looksLikeGlob = pattern.includes('*') && !/[\\^$(){}|]/.test(pattern);
 
   if (looksLikeGlob) {
     const globRegex = globToRegex(pattern);
-    return globRegex.test(url);
+    // For path patterns (starting with /), test against the path component only
+    const testTarget = pattern.startsWith('/') ? new URL(url).pathname : url;
+    return globRegex.test(testTarget);
   }
 
   // Check if pattern looks like regex:
@@ -67,17 +68,37 @@ export function matchesPattern(url: string, pattern: string): boolean {
 }
 
 function globToRegex(pattern: string): RegExp {
-  // Use a placeholder string instead of control character
-  const DOUBLE_STAR_PLACEHOLDER = '__DOUBLE_STAR__';
+  // Use Unicode private use area character as placeholder (cannot appear in valid URLs)
+  const DOUBLE_STAR_PLACEHOLDER = '\uE000';
+
+  // Validate pattern complexity to prevent ReDoS
+  const wildcardCount = (pattern.match(/\*/g) || []).length;
+  if (wildcardCount > 50) {
+    throw new Error(
+      `Glob pattern too complex: ${wildcardCount} wildcards (max 50)`
+    );
+  }
 
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, DOUBLE_STAR_PLACEHOLDER);
 
-  const regexBody = escaped
+  let regexBody = escaped
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
     .replace(new RegExp(DOUBLE_STAR_PLACEHOLDER, 'g'), '.*');
+
+  // Smart anchoring: anchor start/end only if pattern doesn't begin/end with wildcard
+  // This allows both prefix matching (/docs/ matches /docs/anything) and exact matching (*.pdf matches files.pdf only at end)
+  const anchorStart = !pattern.startsWith('*');
+  const anchorEnd = !pattern.endsWith('*');
+
+  if (anchorStart) {
+    regexBody = `^${regexBody}`;
+  }
+  if (anchorEnd) {
+    regexBody = `${regexBody}$`;
+  }
 
   return new RegExp(regexBody);
 }

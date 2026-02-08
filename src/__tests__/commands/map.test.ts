@@ -240,9 +240,8 @@ describe('executeMap', () => {
     });
 
     it('should use /en/latest/ for ReadTheDocs root fallback', async () => {
-      const mockClient = createMockMapClient([
-        'https://fail2ban.readthedocs.io/develop.html',
-      ]);
+      // Map returns empty for root URL, triggering fallback to /en/latest/
+      const mockClient = createMockMapClient([]);
       mockClient.crawl = vi
         .fn()
         .mockResolvedValue(

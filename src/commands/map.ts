@@ -2,7 +2,11 @@
  * Map command implementation
  */
 
-import type { MapOptions as SdkMapOptions } from '@mendable/firecrawl-js';
+import type {
+  Document,
+  CrawlOptions as SdkCrawlOptions,
+  MapOptions as SdkMapOptions,
+} from '@mendable/firecrawl-js';
 import type { IContainer, IHttpClient } from '../container/types';
 import type { MapOptions, MapResult } from '../types/map';
 import { processCommandResult } from '../utils/command';
@@ -31,7 +35,12 @@ function isReadTheDocsHost(url: string): boolean {
     return false;
   }
   const host = parsed.hostname.toLowerCase();
-  return host === 'readthedocs.io' || host.endsWith('.readthedocs.io');
+  return (
+    host === 'readthedocs.io' ||
+    host.endsWith('.readthedocs.io') ||
+    host === 'readthedocs.org' ||
+    host.endsWith('.readthedocs.org')
+  );
 }
 
 function shouldUseCrawlFallback(url: string, options: MapOptions): boolean {
@@ -55,15 +64,16 @@ function getReadTheDocsLatestUrl(url: string): string | null {
     return null;
   }
   if (parsed.pathname === '/' || parsed.pathname === '') {
+    // Note: This assumes English language and "latest" version.
+    // Projects with different defaults (e.g., /de/latest/, /en/stable/) may not work correctly.
+    // In the future, consider following HTTP redirects to discover the actual default path.
     return new URL('/en/latest/', parsed).toString();
   }
   return null;
 }
 
 function extractCrawlDiscoveredLinks(
-  crawlData: Array<{
-    metadata?: Record<string, unknown>;
-  }>
+  crawlData: Document[]
 ): Array<{ url: string; title?: string; description?: string }> {
   const seen = new Set<string>();
   const links: Array<{ url: string; title?: string; description?: string }> =
@@ -101,30 +111,30 @@ async function executeMapViaCrawlFallback(
   url: string,
   options: MapOptions
 ): Promise<MapResult> {
+  // Inform user that fallback is happening
+  console.error(
+    fmt.dim(
+      'Map returned empty results. Falling back to crawl discovery (depth 10)...'
+    )
+  );
+
   const client = container.getFirecrawlClient();
-  const crawlUrl = getReadTheDocsLatestUrl(url) ?? url;
-  const crawlOptions: Record<string, unknown> = {
+  const crawlOptions: Partial<SdkCrawlOptions> = {
     limit: options.limit,
     maxDiscoveryDepth: MAP_CRAWL_FALLBACK_MAX_DISCOVERY_DEPTH,
     sitemap: 'skip',
+    allowSubdomains: options.includeSubdomains,
+    ignoreQueryParameters: options.noFiltering
+      ? false
+      : options.ignoreQueryParameters,
   };
 
-  if (options.includeSubdomains !== undefined) {
-    crawlOptions.allowSubdomains = options.includeSubdomains;
-  }
-  if (!options.noFiltering && options.ignoreQueryParameters !== undefined) {
-    crawlOptions.ignoreQueryParameters = options.ignoreQueryParameters;
-  } else if (options.noFiltering) {
-    crawlOptions.ignoreQueryParameters = false;
-  }
+  // Add timeout if specified (not part of standard CrawlOptions type)
   if (options.timeout !== undefined) {
-    crawlOptions.timeout = options.timeout;
+    (crawlOptions as Record<string, unknown>).timeout = options.timeout;
   }
 
-  const crawlResult = await client.crawl(
-    crawlUrl,
-    crawlOptions as Parameters<typeof client.crawl>[1]
-  );
+  const crawlResult = await client.crawl(url, crawlOptions);
   const links = extractCrawlDiscoveredLinks(crawlResult.data ?? []);
 
   return {
@@ -306,7 +316,6 @@ export async function executeMap(
     const { urlOrJobId } = options;
 
     let result: MapResult;
-    let usedCrawlFallback = false;
 
     // When User-Agent is configured, use direct HTTP (SDK limitation)
     // Otherwise, use the SDK for better error handling and retry logic
@@ -335,23 +344,27 @@ export async function executeMap(
       result = await executeMapViaSdk(container, urlOrJobId, options);
     }
 
+    // Try crawl fallback if map returned empty results on a ReadTheDocs site
     const shouldFallback =
       shouldUseCrawlFallback(urlOrJobId, options) &&
-      (isReadTheDocsRootUrl(urlOrJobId) ||
-        (result.success && (result.data?.links.length ?? 0) === 0));
+      result.success &&
+      (result.data?.links.length ?? 0) === 0;
 
     if (shouldFallback) {
-      result = await executeMapViaCrawlFallback(container, urlOrJobId, options);
-      usedCrawlFallback = true;
+      // For root URLs, redirect to /en/latest/ before crawling
+      let crawlUrl = urlOrJobId;
+      if (isReadTheDocsRootUrl(urlOrJobId)) {
+        const latestUrl = getReadTheDocsLatestUrl(urlOrJobId);
+        if (latestUrl) {
+          crawlUrl = latestUrl;
+        }
+      }
+      result = await executeMapViaCrawlFallback(container, crawlUrl, options);
     }
 
     // Apply client-side filtering if result succeeded (unless --no-filtering flag set)
-    if (
-      result.success &&
-      result.data?.links &&
-      !options.noFiltering &&
-      !usedCrawlFallback
-    ) {
+    // Filtering applies to both map and crawl fallback results
+    if (result.success && result.data?.links && !options.noFiltering) {
       const excludePatterns = buildExcludePatterns(options);
 
       if (excludePatterns.length > 0) {
