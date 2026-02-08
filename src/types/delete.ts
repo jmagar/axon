@@ -2,6 +2,7 @@
  * Delete command types
  * Defines interfaces for vector deletion operations
  */
+import type { CommandResult } from './common';
 
 export interface DeleteOptions {
   url?: string;
@@ -13,12 +14,8 @@ export interface DeleteOptions {
   json?: boolean;
 }
 
-export interface DeleteResult {
-  success: boolean;
-  data?: {
-    deleted: number;
-    target: string;
-    targetType: 'url' | 'domain' | 'all';
-  };
-  error?: string;
-}
+export type DeleteResult = CommandResult<{
+  deleted: number;
+  target: string;
+  targetType: 'url' | 'domain' | 'all';
+}>;

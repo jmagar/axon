@@ -32,7 +32,7 @@ docker compose ps
 - **Qdrant** (vector DB): http://localhost:53333
 - **Embedder Daemon**: http://localhost:53000
 
-**Note:** TEI (Text Embeddings Inference) runs on a remote GPU server (steamy-wsl) and is not part of the local Docker stack.
+**Note:** TEI (Text Embeddings Inference) runs on a remote GPU server and is not part of the local Docker stack.
 
 **Important:** The project includes a patched `patchright-app.py` file that fixes a bug in the upstream `loorisr/patchright-scrape-api` image. This file is automatically mounted into the container via `docker-compose.yaml`. The fix changes `page.timeout()` to `page.wait_for_timeout()` to prevent 500 errors when using the `--wait-for` flag.
 
@@ -67,8 +67,8 @@ export FIRECRAWL_API_KEY=your-api-key
 export FIRECRAWL_API_URL=http://localhost:53002
 
 # Optional: embedding pipeline (enables embed, query, retrieve commands)
-# TEI runs on remote GPU server (steamy-wsl) - update with your TEI endpoint
-export TEI_URL=http://100.74.16.82:52000
+# TEI runs on remote GPU server - update with your TEI endpoint
+export TEI_URL=http://your-tei-server:52000
 export QDRANT_URL=http://localhost:53333
 
 # Interactive (prompts automatically when needed)
@@ -80,6 +80,65 @@ firecrawl login --api-key your-api-key --api-url http://localhost:53002
 # Per-command API key
 firecrawl scrape https://example.com --api-key your-api-key
 ```
+
+---
+
+## Shell Completion
+
+Enable tab completion for commands, options, and arguments in your shell.
+
+### Installation
+
+**Automatic (recommended):**
+
+The CLI will auto-detect your shell (bash, zsh, or fish) and show installation instructions:
+
+```bash
+firecrawl completion install
+```
+
+**Manual installation:**
+
+If you prefer to manually add completion to your shell RC file:
+
+```bash
+# Bash
+firecrawl completion script bash >> ~/.bashrc
+source ~/.bashrc
+
+# Zsh
+firecrawl completion script zsh >> ~/.zshrc
+source ~/.zshrc
+
+# Fish
+firecrawl completion script fish >> ~/.config/fish/config.fish
+source ~/.config/fish/config.fish
+```
+
+**Uninstall:**
+
+```bash
+firecrawl completion uninstall
+```
+
+### Usage
+
+After installation, restart your shell or source your RC file. Then use Tab to complete:
+
+```bash
+firecrawl <TAB>              # Shows all commands
+firecrawl scrape --<TAB>      # Shows scrape options
+firecrawl crawl --<TAB>       # Shows crawl options
+firecrawl batch <TAB>         # Shows batch subcommands
+```
+
+### Features
+
+- ✅ All command names (scrape, crawl, map, search, extract, batch, etc.)
+- ✅ All option flags (--wait, --format, --output, --pretty, etc.)
+- ✅ Subcommand completion (batch status/cancel/errors, crawl status/cancel/errors, extract status)
+- ✅ File path completion for --output option
+- ✅ Context-aware option suggestions based on command
 
 ---
 
@@ -383,7 +442,6 @@ firecrawl crawl https://example.com --limit 100 --max-depth 3
 | `--ignore-query-parameters` | Treat URLs with different params as same               |
 | `--delay <ms>`              | Delay between requests                                 |
 | `--max-concurrency <n>`     | Max concurrent requests                                |
-| `--scrape-timeout <seconds>`| Per-page scrape timeout (default: 15)                  |
 | `--timeout <seconds>`       | Overall crawl timeout when waiting                     |
 | `--poll-interval <seconds>` | Status check interval                                  |
 
@@ -525,7 +583,6 @@ firecrawl batch errors <job-id>
 | `--format <formats>`        | Scrape formats for batch results          |
 | `--only-main-content`       | Only return main content                  |
 | `--wait-for <ms>`           | Wait before scraping (JS-rendered pages)  |
-| `--scrape-timeout <seconds>`| Per-page scrape timeout                   |
 | `--screenshot`              | Include screenshot format                 |
 | `--include-tags <tags>`     | Comma-separated tags to include           |
 | `--exclude-tags <tags>`     | Comma-separated tags to exclude           |
@@ -761,10 +818,10 @@ When configured, `scrape`, `crawl`, `search --scrape`, and `extract` automatical
 Set these environment variables (or add to `.env`):
 
 ```bash
-# TEI runs on remote GPU server (steamy-wsl) - update with your TEI endpoint
-export TEI_URL=http://100.74.16.82:52000     # Text Embeddings Inference server
-export QDRANT_URL=http://localhost:53333      # Qdrant vector database
-export QDRANT_COLLECTION=firecrawl            # optional, this is the default
+# TEI runs on remote GPU server - update with your TEI endpoint
+export TEI_URL=http://your-tei-server:52000     # Text Embeddings Inference server
+export QDRANT_URL=http://localhost:53333        # Qdrant vector database
+export QDRANT_COLLECTION=firecrawl              # optional, this is the default
 ```
 
 ### Auto-Embed Behavior

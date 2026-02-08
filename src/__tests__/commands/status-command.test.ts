@@ -15,6 +15,9 @@ import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 vi.mock('../../utils/embed-queue', () => ({
   getEmbedJob: vi.fn().mockResolvedValue(null),
   listEmbedJobs: vi.fn().mockResolvedValue([]),
@@ -66,7 +69,7 @@ describe('handleJobStatusCommand', () => {
     vi.mocked(getRecentJobIds).mockResolvedValue([]);
     vi.mocked(listEmbedJobs).mockResolvedValue([]);
     vi.mocked(cleanupOldJobs).mockResolvedValue(0);
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {

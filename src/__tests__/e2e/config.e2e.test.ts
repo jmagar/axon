@@ -4,26 +4,23 @@
 
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  cleanupTempDir,
-  createTempDir,
-  runCLI,
-  runCLISuccess,
-} from './helpers';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { registerTempDirLifecycle, runCLI, runCLISuccess } from './helpers';
 
 describe('E2E: config command', () => {
   let tempDir: string;
   let configDir: string;
 
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
+
   beforeEach(async () => {
-    tempDir = await createTempDir();
     configDir = join(tempDir, 'firecrawl-cli');
     await mkdir(configDir, { recursive: true });
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
   });
 
   describe('config help', () => {
@@ -132,13 +129,12 @@ describe('E2E: config command', () => {
 describe('E2E: login command', () => {
   let tempDir: string;
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('login help', () => {
     it('should display login command help', async () => {
@@ -190,13 +186,12 @@ describe('E2E: login command', () => {
 describe('E2E: logout command', () => {
   let tempDir: string;
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('logout help', () => {
     it('should display logout command help', async () => {

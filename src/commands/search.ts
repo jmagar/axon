@@ -17,10 +17,14 @@ import type {
   SearchResultData,
   WebSearchResult,
 } from '../types/search';
-import { formatJson, handleCommandError } from '../utils/command';
+import {
+  formatJson,
+  handleCommandError,
+  writeCommandOutput,
+} from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
-import { validateOutputPath, writeOutput } from '../utils/output';
-import { fmt } from '../utils/theme';
+import { fmt, icons } from '../utils/theme';
+import { requireContainer } from './shared';
 
 /**
  * Maximum concurrent embedding operations to prevent resource exhaustion
@@ -177,36 +181,32 @@ export async function executeSearch(
  */
 function formatSearchReadable(
   data: SearchResultData,
-  options: SearchOptions
+  _options: SearchOptions
 ): string {
   const lines: string[] = [];
 
   // Format web results
   if (data.web && data.web.length > 0) {
-    if (options.sources && options.sources.length > 1) {
-      lines.push('=== Web Results ===');
-      lines.push('');
-    }
+    lines.push(`  ${fmt.primary('Web results')}`);
+    lines.push('');
 
     for (const result of data.web) {
-      lines.push(`${result.title || 'Untitled'}`);
-      lines.push(`  URL: ${result.url}`);
+      lines.push(`    ${fmt.info(icons.bullet)} ${result.title || 'Untitled'}`);
+      lines.push(`      ${fmt.dim('URL:')} ${result.url}`);
       if (result.description) {
-        lines.push(`  ${result.description}`);
+        lines.push(`      ${result.description}`);
       }
       if (result.category) {
-        lines.push(`  Category: ${result.category}`);
+        lines.push(`      ${fmt.dim('Category:')} ${result.category}`);
       }
       if (result.markdown) {
-        lines.push('');
-        lines.push('  --- Content ---');
         // Indent markdown content
         const indentedMarkdown = result.markdown
           .split('\n')
-          .map((line) => `  ${line}`)
+          .map((line) => `      ${line}`)
           .join('\n');
+        lines.push(`      ${fmt.dim('Content:')}`);
         lines.push(indentedMarkdown);
-        lines.push('  --- End Content ---');
       }
       lines.push('');
     }
@@ -217,15 +217,17 @@ function formatSearchReadable(
     if (lines.length > 0) {
       lines.push('');
     }
-    lines.push('=== Image Results ===');
+    lines.push(`  ${fmt.primary('Image results')}`);
     lines.push('');
 
     for (const result of data.images) {
-      lines.push(`${result.title || 'Untitled'}`);
-      lines.push(`  Image URL: ${result.imageUrl}`);
-      lines.push(`  Source: ${result.url}`);
+      lines.push(`    ${fmt.info(icons.bullet)} ${result.title || 'Untitled'}`);
+      lines.push(`      ${fmt.dim('Image URL:')} ${result.imageUrl}`);
+      lines.push(`      ${fmt.dim('Source:')} ${result.url}`);
       if (result.imageWidth && result.imageHeight) {
-        lines.push(`  Size: ${result.imageWidth}x${result.imageHeight}`);
+        lines.push(
+          `      ${fmt.dim('Size:')} ${result.imageWidth}x${result.imageHeight}`
+        );
       }
       lines.push('');
     }
@@ -236,27 +238,25 @@ function formatSearchReadable(
     if (lines.length > 0) {
       lines.push('');
     }
-    lines.push('=== News Results ===');
+    lines.push(`  ${fmt.primary('News results')}`);
     lines.push('');
 
     for (const result of data.news) {
-      lines.push(`${result.title || 'Untitled'}`);
-      lines.push(`  URL: ${result.url}`);
+      lines.push(`    ${fmt.info(icons.bullet)} ${result.title || 'Untitled'}`);
+      lines.push(`      ${fmt.dim('URL:')} ${result.url}`);
       if (result.date) {
-        lines.push(`  Date: ${result.date}`);
+        lines.push(`      ${fmt.dim('Date:')} ${result.date}`);
       }
       if (result.snippet) {
-        lines.push(`  ${result.snippet}`);
+        lines.push(`      ${result.snippet}`);
       }
       if (result.markdown) {
-        lines.push('');
-        lines.push('  --- Content ---');
         const indentedMarkdown = result.markdown
           .split('\n')
-          .map((line) => `  ${line}`)
+          .map((line) => `      ${line}`)
           .join('\n');
+        lines.push(`      ${fmt.dim('Content:')}`);
         lines.push(indentedMarkdown);
-        lines.push('  --- End Content ---');
       }
       lines.push('');
     }
@@ -332,20 +332,15 @@ export async function handleSearchCommand(
     outputContent = formatSearchReadable(result.data, options);
   }
 
-  if (options.output) {
-    try {
-      validateOutputPath(options.output);
-    } catch (error) {
-      console.error(
-        fmt.error(
-          error instanceof Error ? error.message : 'Invalid output path'
-        )
-      );
-      process.exit(1);
-      return;
-    }
+  try {
+    writeCommandOutput(outputContent, options);
+  } catch (error) {
+    console.error(
+      fmt.error(error instanceof Error ? error.message : 'Invalid output path')
+    );
+    process.exit(1);
+    return;
   }
-  writeOutput(outputContent, options.output, !!options.output);
 
   // Auto-embed only when --scrape was used (snippets are too noisy)
   if (options.embed !== false && options.scrape && result.data?.web) {
@@ -450,10 +445,7 @@ export function createSearchCommand(): Command {
       false
     )
     .action(async (query, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       // Parse sources
       let sources: SearchSource[] | undefined;

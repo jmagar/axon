@@ -2,7 +2,7 @@
  * Display utilities for command execution info
  */
 
-import { fmt } from './theme';
+import { fmt, icons } from './theme';
 
 /**
  * Format a value for display
@@ -15,6 +15,20 @@ function formatValue(value: unknown): string {
     return `[${value.join(',')}]`;
   }
   return String(value);
+}
+
+function formatOptionEntries(
+  options: Record<string, unknown>
+): Array<{ key: string; value: string }> {
+  const entries: Array<{ key: string; value: string }> = [];
+
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    entries.push({ key, value: formatValue(value) });
+  }
+
+  return entries;
 }
 
 /**
@@ -33,18 +47,9 @@ function formatValue(value: unknown): string {
  * ```
  */
 export function formatOptionsDisplay(options: Record<string, unknown>): string {
-  const pairs: string[] = [];
-
-  for (const [key, value] of Object.entries(options)) {
-    // Skip undefined and null
-    if (value === undefined || value === null) continue;
-    // Skip empty arrays
-    if (Array.isArray(value) && value.length === 0) continue;
-
-    pairs.push(`${key}=${formatValue(value)}`);
-  }
-
-  return pairs.join(', ');
+  return formatOptionEntries(options)
+    .map((entry) => `${entry.key}=${entry.value}`)
+    .join(', ');
 }
 
 /**
@@ -74,11 +79,16 @@ export function displayCommandInfo(
   target: string,
   options: Record<string, unknown>
 ): void {
-  console.error(`${action}: ${fmt.dim(target)}`);
+  console.error(
+    `  ${fmt.primary(`${icons.processing} ${action}`)} ${fmt.dim(target)}`
+  );
 
   const optionsStr = formatOptionsDisplay(options);
   if (optionsStr) {
-    console.error(`Options: ${fmt.dim(optionsStr)}`);
+    console.error(`  ${fmt.primary('Options:')}`);
+    for (const entry of formatOptionEntries(options)) {
+      console.error(`    ${fmt.dim(`${entry.key}:`)} ${entry.value}`);
+    }
   }
 
   console.error(''); // Blank line for separation

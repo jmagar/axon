@@ -5,10 +5,10 @@
 import type { MapOptions as SdkMapOptions } from '@mendable/firecrawl-js';
 import type { IContainer, IHttpClient } from '../container/types';
 import type { MapOptions, MapResult } from '../types/map';
-import { formatJson, handleCommandError } from '../utils/command';
+import { processCommandResult } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
-import { writeOutput } from '../utils/output';
 import { fmt } from '../utils/theme';
+import { requireContainer } from './shared';
 
 /** HTTP timeout for map API requests (60 seconds) */
 const MAP_TIMEOUT_MS = 60000;
@@ -152,22 +152,21 @@ export async function executeMap(
   options: MapOptions
 ): Promise<MapResult> {
   try {
-    const config = container.config;
-    const userAgent = config.userAgent;
+    const userAgent = container.config.userAgent;
     const { urlOrJobId } = options;
 
     // When User-Agent is configured, use direct HTTP (SDK limitation)
     // Otherwise, use the SDK for better error handling and retry logic
     if (userAgent) {
       // Prefer options.apiKey over container.config.apiKey
-      const apiKey = options.apiKey || config.apiKey;
+      const apiKey = options.apiKey || container.config.apiKey;
       if (!apiKey) {
         throw new Error(
           'API key is required. Set FIRECRAWL_API_KEY environment variable, ' +
             'use --api-key flag, or run "firecrawl config" to set the API key.'
         );
       }
-      const apiUrl = config.apiUrl || 'https://api.firecrawl.dev';
+      const apiUrl = container.config.apiUrl || 'https://api.firecrawl.dev';
       const httpClient = container.getHttpClient();
 
       return await executeMapWithUserAgent(
@@ -216,31 +215,9 @@ export async function handleMapCommand(
     timeout: options.timeout,
   });
 
-  const result = await executeMap(container, options);
-
-  // Use shared error handler
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) {
-    return;
-  }
-
-  let outputContent: string;
-
-  // Use JSON format if --json flag is set
-  if (options.json) {
-    outputContent = formatJson(
-      { success: true, data: result.data },
-      options.pretty
-    );
-  } else {
-    // Default to human-readable format (one URL per line)
-    outputContent = formatMapReadable(result.data);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(await executeMap(container, options), options, (data) =>
+    formatMapReadable(data)
+  );
 }
 
 import { Command } from 'commander';
@@ -281,10 +258,7 @@ export function createMapCommand(): Command {
     .option('--json', 'Output as JSON format', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (positionalUrl, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       // Use positional URL if provided, otherwise use --url option
       const url = positionalUrl || options.url;

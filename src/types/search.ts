@@ -2,6 +2,7 @@
  * Types for search command
  */
 
+import type { CommandResult } from './common';
 import type { ScrapeFormat } from './scrape';
 
 export type SearchSource = 'web' | 'images' | 'news';
@@ -102,11 +103,8 @@ export interface SearchResultData {
   news?: NewsSearchResult[];
 }
 
-export interface SearchResult {
-  success: boolean;
-  data?: SearchResultData;
+export interface SearchResult extends CommandResult<SearchResultData> {
   warning?: string;
   id?: string;
   creditsUsed?: number;
-  error?: string;
 }

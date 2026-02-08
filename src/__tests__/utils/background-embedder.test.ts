@@ -43,6 +43,38 @@ vi.mock('../../container/DaemonContainerFactory', () => ({
   createDaemonContainer: vi.fn(),
 }));
 
+function createMockContainer(options?: {
+  config?: {
+    apiKey?: string;
+    teiUrl?: string;
+    qdrantUrl?: string;
+  };
+  firecrawlClient?: unknown;
+  embedPipeline?: unknown;
+}): IContainer {
+  const hasConfig = options?.config;
+  return {
+    config: {
+      apiKey:
+        hasConfig && 'apiKey' in hasConfig ? hasConfig.apiKey : 'test-key',
+      teiUrl:
+        hasConfig && 'teiUrl' in hasConfig
+          ? hasConfig.teiUrl
+          : 'http://tei:8080',
+      qdrantUrl:
+        hasConfig && 'qdrantUrl' in hasConfig
+          ? hasConfig.qdrantUrl
+          : 'http://qdrant:6333',
+    },
+    getFirecrawlClient: vi.fn().mockReturnValue(options?.firecrawlClient),
+    getHttpClient: vi.fn(),
+    getTeiService: vi.fn(),
+    getQdrantService: vi.fn(),
+    getEmbedPipeline: vi.fn().mockReturnValue(options?.embedPipeline),
+    dispose: vi.fn(),
+  };
+}
+
 describe('processStaleJobsOnce', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -69,19 +101,7 @@ describe('processStaleJobsOnce', () => {
     vi.mocked(getStuckProcessingJobs).mockResolvedValue([stuckJob]);
     vi.mocked(getStalePendingJobs).mockResolvedValue([]);
 
-    const mockContainer: IContainer = {
-      config: {
-        apiKey: 'test-key',
-        teiUrl: 'http://tei:8080',
-        qdrantUrl: 'http://qdrant:6333',
-      },
-      getFirecrawlClient: vi.fn(),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
-      dispose: vi.fn(),
-    };
+    const mockContainer = createMockContainer();
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 
@@ -150,19 +170,10 @@ describe('processStaleJobsOnce', () => {
       autoEmbed: vi.fn(),
     };
 
-    const mockContainer: IContainer = {
-      config: {
-        apiKey: 'test-key',
-        teiUrl: 'http://tei:8080',
-        qdrantUrl: 'http://qdrant:6333',
-      },
-      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn().mockReturnValue(mockEmbedPipeline),
-      dispose: vi.fn(),
-    };
+    const mockContainer = createMockContainer({
+      firecrawlClient: mockClient,
+      embedPipeline: mockEmbedPipeline,
+    });
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 
@@ -204,19 +215,9 @@ describe('processEmbedJob - configuration errors', () => {
       },
     ]);
 
-    const mockContainer: IContainer = {
-      config: {
-        apiKey: 'test-key',
-        teiUrl: undefined, // Missing TEI_URL
-        qdrantUrl: 'http://qdrant:6333',
-      },
-      getFirecrawlClient: vi.fn(),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
-      dispose: vi.fn(),
-    };
+    const mockContainer = createMockContainer({
+      config: { teiUrl: undefined }, // Missing TEI_URL
+    });
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 
@@ -262,19 +263,9 @@ describe('processEmbedJob - configuration errors', () => {
       },
     ]);
 
-    const mockContainer: IContainer = {
-      config: {
-        apiKey: 'test-key',
-        teiUrl: 'http://tei:8080',
-        qdrantUrl: undefined, // Missing QDRANT_URL
-      },
-      getFirecrawlClient: vi.fn(),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
-      dispose: vi.fn(),
-    };
+    const mockContainer = createMockContainer({
+      config: { qdrantUrl: undefined }, // Missing QDRANT_URL
+    });
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 
@@ -320,19 +311,12 @@ describe('processEmbedJob - configuration errors', () => {
       },
     ]);
 
-    const mockContainer: IContainer = {
+    const mockContainer = createMockContainer({
       config: {
-        apiKey: 'test-key',
         teiUrl: undefined, // Missing both
         qdrantUrl: undefined,
       },
-      getFirecrawlClient: vi.fn(),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn(),
-      dispose: vi.fn(),
-    };
+    });
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 
@@ -399,19 +383,11 @@ describe('processEmbedJob - success logging', () => {
       autoEmbed: vi.fn(),
     };
 
-    const mockContainer: IContainer = {
-      config: {
-        apiKey: 'test',
-        teiUrl: 'http://tei:8080',
-        qdrantUrl: 'http://qdrant:6333',
-      },
-      getFirecrawlClient: vi.fn().mockReturnValue(mockClient),
-      getHttpClient: vi.fn(),
-      getTeiService: vi.fn(),
-      getQdrantService: vi.fn(),
-      getEmbedPipeline: vi.fn().mockReturnValue(mockEmbedPipeline),
-      dispose: vi.fn(),
-    };
+    const mockContainer = createMockContainer({
+      config: { apiKey: 'test' },
+      firecrawlClient: mockClient,
+      embedPipeline: mockEmbedPipeline,
+    });
 
     vi.mocked(createDaemonContainer).mockReturnValue(mockContainer);
 

@@ -9,15 +9,16 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   isTestServerRunning,
   parseJSONOutput,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
+  skipIfMissingApiKey,
+  skipIfMissingApiOrServer,
   TEST_SERVER_URL,
 } from './helpers';
 
@@ -31,55 +32,51 @@ describe('E2E: scrape command', () => {
     testServerAvailable = await isTestServerRunning();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no URL is provided', async () => {
       const result = await runCLIFailure(['scrape'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain('URL is required');
     });
 
     it('should accept URL as positional argument', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['scrape', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       // Should not fail on "URL is required"
       expect(result.stderr).not.toContain('URL is required');
     });
 
     it('should accept URL with --url flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['scrape', '--url', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain('URL is required');
     });
 
     it('should normalize URLs without protocol', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['scrape', 'example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       // URL should be normalized to https://example.com
       expect(result.stderr).not.toContain('URL is required');
@@ -94,8 +91,7 @@ describe('E2E: scrape command', () => {
     });
 
     it('should accept positional format arguments', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
@@ -118,15 +114,14 @@ describe('E2E: scrape command', () => {
 
   describe('output options', () => {
     it('should support --output flag for file output', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const outputPath = join(tempDir, 'output.md');
       const result = await runCLI(
         ['scrape', `${TEST_SERVER_URL}/about/`, '--output', outputPath],
-        { env: { FIRECRAWL_API_KEY: apiKey } }
+        { env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' } }
       );
 
       if (result.exitCode === 0) {
@@ -137,14 +132,13 @@ describe('E2E: scrape command', () => {
     });
 
     it('should support --json flag for JSON output', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['scrape', `${TEST_SERVER_URL}/about/`, '--json'],
-        { env: { FIRECRAWL_API_KEY: apiKey } }
+        { env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' } }
       );
 
       if (result.exitCode === 0) {
@@ -155,14 +149,13 @@ describe('E2E: scrape command', () => {
     });
 
     it('should support --pretty flag for formatted JSON', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['scrape', `${TEST_SERVER_URL}/about/`, '--json', '--pretty'],
-        { env: { FIRECRAWL_API_KEY: apiKey } }
+        { env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' } }
       );
 
       if (result.exitCode === 0) {
@@ -213,13 +206,12 @@ describe('E2E: scrape command', () => {
 
   describe('scrape with test server', () => {
     it('should scrape the test server homepage', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(['scrape', TEST_SERVER_URL], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -230,13 +222,12 @@ describe('E2E: scrape command', () => {
     });
 
     it('should scrape the about page', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(['scrape', `${TEST_SERVER_URL}/about/`], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -246,8 +237,7 @@ describe('E2E: scrape command', () => {
     });
 
     it('should scrape a blog post page', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -258,7 +248,7 @@ describe('E2E: scrape command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -270,15 +260,14 @@ describe('E2E: scrape command', () => {
     });
 
     it('should output timing info with --timing flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['scrape', `${TEST_SERVER_URL}/about/`, '--timing'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -291,15 +280,14 @@ describe('E2E: scrape command', () => {
     });
 
     it('should scrape with multiple formats', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['scrape', `${TEST_SERVER_URL}/about/`, '--format', 'markdown,links'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -314,14 +302,13 @@ describe('E2E: scrape command', () => {
 
   describe('shorthand URL scraping', () => {
     it('should support direct URL as first argument (shorthand for scrape)', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       // firecrawl <url> is shorthand for firecrawl scrape <url>
       const result = await runCLI([TEST_SERVER_URL], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 

@@ -4,7 +4,10 @@
 
 import type { CrawlOptions as FirecrawlCrawlOptions } from '@mendable/firecrawl-js';
 import type { CrawlOptions } from '../../types/crawl';
-import { DEFAULT_EXCLUDE_EXTENSIONS } from '../../utils/constants.js';
+import {
+  DEFAULT_EXCLUDE_EXTENSIONS,
+  DEFAULT_EXCLUDE_PATHS,
+} from '../../utils/constants.js';
 import { extensionsToPaths } from '../../utils/extensions.js';
 import { OptionsBuilder } from '../../utils/options-builder';
 import { loadSettings } from '../../utils/settings';
@@ -13,6 +16,19 @@ import { loadSettings } from '../../utils/settings';
  * Default polling interval in milliseconds when in wait/progress mode
  */
 const DEFAULT_POLL_INTERVAL_MS = 5000;
+
+/**
+ * Normalize user-facing exclude path literals to regex-safe patterns
+ * expected by Firecrawl.
+ */
+function normalizeExcludePathPattern(pattern: string): string {
+  const trimmed = pattern.trim();
+  // Firecrawl treats excludePaths as regex; leading ? is invalid regex syntax.
+  if (trimmed.startsWith('?')) {
+    return `\\${trimmed}`;
+  }
+  return trimmed;
+}
 
 /**
  * Extended crawl options with polling configuration
@@ -34,7 +50,6 @@ export type ExtendedCrawlOptions = FirecrawlCrawlOptions & {
  * const crawlOptions = buildCrawlOptions({
  *   limit: 100,
  *   maxDepth: 3,
- *   scrapeTimeout: 15,
  * });
  * ```
  */
@@ -73,13 +88,6 @@ export function buildCrawlOptions(
   }
 
   // Handle scrapeOptions (nested properties)
-  if (options.scrapeTimeout !== undefined) {
-    builder.addNested(
-      'scrapeOptions.timeout',
-      options.scrapeTimeout * 1000 // Convert seconds to milliseconds
-    );
-  }
-
   if (options.onlyMainContent !== undefined) {
     builder.addNested('scrapeOptions.onlyMainContent', options.onlyMainContent);
   }
@@ -167,17 +175,20 @@ export function mergeExcludePaths(
   skipDefaults: boolean,
   extensionPatterns: string[] = []
 ): string[] {
+  const settingsPaths = loadSettings().defaultExcludePaths ?? [];
   const defaultExcludes = skipDefaults
     ? []
-    : (loadSettings().defaultExcludePaths ?? []);
+    : settingsPaths.length > 0
+      ? settingsPaths
+      : DEFAULT_EXCLUDE_PATHS;
 
   // Filter out empty strings and merge
-  const validDefaults = defaultExcludes.filter(
-    (path) => path && path.trim() !== ''
-  );
-  const validCliExcludes = (cliExcludes ?? []).filter(
-    (path) => path && path.trim() !== ''
-  );
+  const validDefaults = defaultExcludes
+    .filter((path) => path && path.trim() !== '')
+    .map(normalizeExcludePathPattern);
+  const validCliExcludes = (cliExcludes ?? [])
+    .filter((path) => path && path.trim() !== '')
+    .map(normalizeExcludePathPattern);
   const validExtensionPatterns = extensionPatterns.filter(
     (pattern) => pattern && pattern.trim() !== ''
   );

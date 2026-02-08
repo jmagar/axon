@@ -5,8 +5,13 @@
 
 import type { IContainer } from '../container/types';
 import type { RetrieveOptions, RetrieveResult } from '../types/retrieve';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, isTTY } from '../utils/theme';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute retrieve command
@@ -21,15 +26,13 @@ export async function executeRetrieve(
   options: RetrieveOptions
 ): Promise<RetrieveResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the retrieve command.',
+        error: getQdrantUrlError('retrieve'),
       };
     }
 
@@ -99,37 +102,22 @@ export async function handleRetrieveCommand(
   container: IContainer,
   options: RetrieveOptions
 ): Promise<void> {
-  const result = await executeRetrieve(container, options);
-
-  // Use shared error handler
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({
-      success: true,
-      data: {
-        url: result.data.url,
-        totalChunks: result.data.totalChunks,
-        chunks: result.data.chunks,
-      },
-    });
-  } else {
-    // Default: raw document content
-    outputContent = result.data.content;
-  }
-
-  // Validate output path before writing to prevent path traversal attacks
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeRetrieve(container, options),
+    options,
+    (data) => {
+      if (!options.output && isTTY()) {
+        return [
+          `  ${fmt.primary('Retrieved document')}`,
+          `    ${fmt.dim('URL:')} ${data.url}`,
+          `    ${fmt.dim('Chunks:')} ${data.totalChunks}`,
+          '',
+          data.content,
+        ].join('\n');
+      }
+      return data.content;
+    }
+  );
 }
 
 import { Command } from 'commander';
@@ -149,10 +137,7 @@ export function createRetrieveCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
     .action(async (url: string, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleRetrieveCommand(container, {
         url: normalizeUrl(url),

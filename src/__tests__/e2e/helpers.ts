@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { afterEach, beforeEach } from 'vitest';
 
 export const CLI_PATH = resolve(__dirname, '../../../dist/index.js');
 export const TEST_SERVER_URL = 'http://127.0.0.1:4321';
@@ -191,4 +192,45 @@ export async function createTempDir(): Promise<string> {
 export async function cleanupTempDir(dir: string): Promise<void> {
   const { rm } = await import('node:fs/promises');
   await rm(dir, { recursive: true, force: true });
+}
+
+/**
+ * Register temp directory lifecycle hooks for a test suite.
+ */
+export function registerTempDirLifecycle(
+  setTempDir: (dir: string) => void,
+  getTempDir: () => string
+): void {
+  beforeEach(async () => {
+    setTempDir(await createTempDir());
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(getTempDir());
+  });
+}
+
+/**
+ * Standardized skip guard for tests requiring API credentials.
+ */
+export function skipIfMissingApiKey(apiKey?: string): boolean {
+  if (apiKey) {
+    return false;
+  }
+  console.log('Skipping: No API credentials');
+  return true;
+}
+
+/**
+ * Standardized skip guard for tests requiring API credentials and test server.
+ */
+export function skipIfMissingApiOrServer(
+  apiKey: string | undefined,
+  testServerAvailable: boolean
+): boolean {
+  if (apiKey && testServerAvailable) {
+    return false;
+  }
+  console.log('Skipping: No API credentials or test server');
+  return true;
 }

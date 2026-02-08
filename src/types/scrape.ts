@@ -3,6 +3,7 @@
  */
 
 import type { Document } from '@mendable/firecrawl-js';
+import type { CommandResult } from './common';
 
 export type ScrapeFormat =
   | 'markdown'
@@ -50,10 +51,7 @@ export interface ScrapeOptions {
   remove?: boolean;
 }
 
-export interface ScrapeResult {
-  success: boolean;
-  data?: Document;
-  error?: string;
+export interface ScrapeResult extends CommandResult<Document> {
   /** Number of documents removed when using --remove flag */
   removed?: number;
 }

@@ -11,12 +11,11 @@ import {
 import type { IContainer } from '../../container/types';
 import type { CommandWithContainer } from '../../types/test';
 import { writeOutput } from '../../utils/output';
-import {
-  type MockFirecrawlClient,
-  setupTest,
-  teardownTest,
-} from '../utils/mock-client';
+import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
+
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
 
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -30,14 +29,11 @@ describe('executeList', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = { scrape: vi.fn(), getActiveCrawls: vi.fn() };
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -63,14 +59,11 @@ describe('handleListCommand', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = { scrape: vi.fn(), getActiveCrawls: vi.fn() };
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -80,23 +73,23 @@ describe('handleListCommand', () => {
       crawls: [],
     });
 
-    await handleListCommand(container, { pretty: false });
+    await handleListCommand(container, {});
 
-    expect(writeOutput).toHaveBeenCalledTimes(0);
+    expect(writeOutput).toHaveBeenCalledTimes(1);
   });
 
-  it('should write JSON output when pretty is true even if empty', async () => {
+  it('should write JSON output when json is true even if empty', async () => {
     mockClient.getActiveCrawls.mockResolvedValue({
       success: true,
       crawls: [],
     });
 
-    await handleListCommand(container, { pretty: true });
+    await handleListCommand(container, { json: true, pretty: true });
 
     expect(writeOutput).toHaveBeenCalledTimes(1);
   });
 
-  it('should default to pretty JSON output when pretty is undefined', async () => {
+  it('should write human output by default when json is not requested', async () => {
     mockClient.getActiveCrawls.mockResolvedValue({
       success: true,
       crawls: [],
@@ -116,7 +109,7 @@ describe('createListCommand', () => {
         crawls: [],
       }),
     };
-    const testContainer = createTestContainer(mockClient);
+    const testContainer = createContainer(mockClient);
 
     const cmd = createListCommand() as CommandWithContainer;
     cmd.exitOverride();

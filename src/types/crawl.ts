@@ -3,6 +3,7 @@
  */
 
 import type { Document } from '@mendable/firecrawl-js';
+import type { CommandResult } from './common';
 
 export interface CrawlOptions {
   /** API key for Firecrawl */
@@ -17,8 +18,6 @@ export interface CrawlOptions {
   pollInterval?: number;
   /** Timeout in seconds when waiting for crawl job to complete */
   timeout?: number;
-  /** Per-page scrape timeout in seconds (default: 15) */
-  scrapeTimeout?: number;
   /** Show progress dots while waiting */
   progress?: boolean;
   /** Output file path */
@@ -78,11 +77,7 @@ export interface CrawlJobData {
   data: Document[];
 }
 
-export interface CrawlResult {
-  success: boolean;
-  data?: CrawlJobStartedData | CrawlJobData;
-  error?: string;
-}
+export type CrawlResult = CommandResult<CrawlJobStartedData | CrawlJobData>;
 
 /** Status-only data returned when checking a crawl job's status */
 export interface CrawlStatusData {
@@ -94,11 +89,7 @@ export interface CrawlStatusData {
   expiresAt?: string;
 }
 
-export interface CrawlStatusResult {
-  success: boolean;
-  data?: CrawlStatusData;
-  error?: string;
-}
+export type CrawlStatusResult = CommandResult<CrawlStatusData>;
 
 export interface CrawlErrorItem {
   id: string;
@@ -113,11 +104,7 @@ export interface CrawlErrorsData {
   robotsBlocked: string[];
 }
 
-export interface CrawlErrorsResult {
-  success: boolean;
-  data?: CrawlErrorsData;
-  error?: string;
-}
+export type CrawlErrorsResult = CommandResult<CrawlErrorsData>;
 
 export interface ActiveCrawlItem {
   id: string;
@@ -131,21 +118,13 @@ export interface ActiveCrawlsData {
   crawls: ActiveCrawlItem[];
 }
 
-export interface CrawlActiveResult {
-  success: boolean;
-  data?: ActiveCrawlsData;
-  error?: string;
-}
+export type CrawlActiveResult = CommandResult<ActiveCrawlsData>;
 
 export interface CrawlCancelData {
   status: 'cancelled';
 }
 
-export interface CrawlCancelResult {
-  success: boolean;
-  data?: CrawlCancelData;
-  error?: string;
-}
+export type CrawlCancelResult = CommandResult<CrawlCancelData>;
 
 /** Union of all possible crawl data types */
 export type CrawlDataType =

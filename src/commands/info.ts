@@ -6,9 +6,14 @@
 import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { InfoOptions, InfoResult, UrlInfo } from '../types/info';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute info command
@@ -23,15 +28,13 @@ export async function executeInfo(
   options: InfoOptions
 ): Promise<InfoResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the info command.',
+        error: getQdrantUrlError('info'),
       };
     }
 
@@ -103,21 +106,23 @@ function formatHuman(info: UrlInfo, _full: boolean): string {
   const data = info;
   const lines: string[] = [];
 
-  lines.push('\n=== URL Information ===\n');
-  lines.push(`URL:          ${data.url}`);
-  lines.push(`Domain:       ${data.domain}`);
-  lines.push(`Title:        ${data.title}`);
-  lines.push(`Source:       ${data.sourceCommand}`);
-  lines.push(`Content Type: ${data.contentType}`);
-  lines.push(`Scraped At:   ${data.scrapedAt}`);
-  lines.push(`Total Chunks: ${data.totalChunks}`);
+  lines.push(`  ${fmt.primary('URL information')}`);
+  lines.push(`    ${fmt.dim('URL:')} ${data.url}`);
+  lines.push(`    ${fmt.dim('Domain:')} ${data.domain}`);
+  lines.push(`    ${fmt.dim('Title:')} ${data.title}`);
+  lines.push(`    ${fmt.dim('Source:')} ${data.sourceCommand}`);
+  lines.push(`    ${fmt.dim('Content type:')} ${data.contentType}`);
+  lines.push(`    ${fmt.dim('Scraped at:')} ${data.scrapedAt}`);
+  lines.push(`    ${fmt.dim('Total chunks:')} ${data.totalChunks}`);
 
-  lines.push('\n=== Chunks ===\n');
+  lines.push('');
+  lines.push(`  ${fmt.primary('Chunks')}`);
 
   for (const chunk of data.chunks) {
-    lines.push(`[${chunk.index}] ${chunk.header || '(no header)'}`);
-    lines.push(`    ${chunk.textPreview.replace(/\n/g, '\n    ')}`);
-    lines.push('');
+    lines.push(
+      `    ${fmt.info(icons.bullet)} [${chunk.index}] ${chunk.header || '(no header)'}`
+    );
+    lines.push(`      ${chunk.textPreview.replace(/\n/g, '\n      ')}`);
   }
 
   return lines.join('\n');
@@ -134,27 +139,11 @@ async function handleInfoCommand(
   container: IContainer,
   options: InfoOptions
 ): Promise<void> {
-  const result = await executeInfo(container, options);
-
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else {
-    outputContent = formatHuman(result.data, !!options.full);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeInfo(container, options),
+    options,
+    (resultData) => formatHuman(resultData, !!options.full)
+  );
 }
 
 /**
@@ -179,10 +168,7 @@ export function createInfoCommand(): Command {
     .option('-o, --output <file>', 'Write output to file (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (url: string, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleInfoCommand(container, {
         url: normalizeUrl(url),

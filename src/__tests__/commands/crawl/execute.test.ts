@@ -3,6 +3,9 @@ import { executeCrawl } from '../../../commands/crawl/execute';
 import type { CrawlOptions } from '../../../types/crawl';
 import { createTestContainer } from '../../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 // Mock dependencies
 vi.mock('../../../utils/job', () => ({
   isJobId: vi.fn(),
@@ -103,7 +106,7 @@ describe('executeCrawl', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
@@ -144,7 +147,7 @@ describe('executeCrawl', () => {
       crawl: vi.fn().mockResolvedValue(mockCrawlJob),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({
       limit: 5,
@@ -196,7 +199,7 @@ describe('executeCrawl', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({
       limit: 8,
@@ -255,7 +258,7 @@ describe('executeCrawl', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
@@ -282,7 +285,7 @@ describe('executeCrawl', () => {
         .mockRejectedValue(new Error('API Error: Rate limit exceeded')),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
@@ -305,7 +308,7 @@ describe('executeCrawl', () => {
       startCrawl: vi.fn().mockRejectedValue('String error'),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
@@ -329,7 +332,7 @@ describe('executeCrawl', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient, {
+    const container = createContainer(mockClient, {
       apiKey: 'test-api-key',
     });
     vi.mocked(isJobId).mockReturnValue(false);
@@ -363,7 +366,7 @@ describe('executeCrawl', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 3 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 3 } as never);

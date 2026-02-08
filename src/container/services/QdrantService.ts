@@ -51,6 +51,20 @@ export class QdrantService implements IQdrantService {
     private readonly httpClient: IHttpClient
   ) {}
 
+  private async formatError(
+    response: Response,
+    baseMessage: string
+  ): Promise<string> {
+    try {
+      const body = await response.text();
+      return body
+        ? `${baseMessage}: ${response.status} - ${body}`
+        : `${baseMessage}: ${response.status}`;
+    } catch {
+      return `${baseMessage}: ${response.status}`;
+    }
+  }
+
   /**
    * Ensure collection exists, create if not
    * Creates payload indexes on url, domain, source_command after creation
@@ -98,7 +112,10 @@ export class QdrantService implements IQdrantService {
 
     if (!createResponse.ok) {
       throw new Error(
-        `Failed to create Qdrant collection: ${createResponse.status}`
+        await this.formatError(
+          createResponse,
+          'Failed to create Qdrant collection'
+        )
       );
     }
 
@@ -126,7 +143,10 @@ export class QdrantService implements IQdrantService {
       const response = indexResponses[i];
       if (!response.ok) {
         throw new Error(
-          `Failed to create index for field '${indexFields[i]}': ${response.status}`
+          await this.formatError(
+            response,
+            `Failed to create index for field '${indexFields[i]}'`
+          )
         );
       }
     }
@@ -152,7 +172,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant upsert failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant upsert failed'));
     }
   }
 
@@ -178,7 +198,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant delete failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant delete failed'));
     }
   }
 
@@ -224,7 +244,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant query failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant query failed'));
     }
 
     const data = (await response.json()) as {
@@ -286,7 +306,9 @@ export class QdrantService implements IQdrantService {
       );
 
       if (!response.ok) {
-        throw new Error(`Qdrant scroll failed: ${response.status}`);
+        throw new Error(
+          await this.formatError(response, 'Qdrant scroll failed')
+        );
       }
 
       const data = (await response.json()) as {
@@ -345,7 +367,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant delete failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant delete failed'));
     }
   }
 
@@ -372,7 +394,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant count failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant count failed'));
     }
 
     const data = (await response.json()) as { result?: { count?: number } };
@@ -393,7 +415,9 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant getCollectionInfo failed: ${response.status}`);
+      throw new Error(
+        await this.formatError(response, 'Qdrant getCollectionInfo failed')
+      );
     }
 
     const data = (await response.json()) as {
@@ -475,7 +499,9 @@ export class QdrantService implements IQdrantService {
       );
 
       if (!response.ok) {
-        throw new Error(`Qdrant scroll failed: ${response.status}`);
+        throw new Error(
+          await this.formatError(response, 'Qdrant scroll failed')
+        );
       }
 
       const data = (await response.json()) as {
@@ -521,7 +547,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant count failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant count failed'));
     }
 
     const data = (await response.json()) as { result?: { count?: number } };
@@ -552,7 +578,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant count failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant count failed'));
     }
 
     const data = (await response.json()) as { result?: { count?: number } };
@@ -580,7 +606,7 @@ export class QdrantService implements IQdrantService {
     );
 
     if (!response.ok) {
-      throw new Error(`Qdrant delete failed: ${response.status}`);
+      throw new Error(await this.formatError(response, 'Qdrant delete failed'));
     }
   }
 }

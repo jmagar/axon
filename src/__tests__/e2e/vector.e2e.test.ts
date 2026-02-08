@@ -9,15 +9,15 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   isTestServerRunning,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
   runCLISuccess,
+  skipIfMissingApiKey,
   TEST_SERVER_URL,
 } from './helpers';
 
@@ -49,6 +49,26 @@ async function hasVectorServices(): Promise<boolean> {
   }
 }
 
+function skipIfNoVectorServices(vectorServicesAvailable: boolean): boolean {
+  if (vectorServicesAvailable) {
+    return false;
+  }
+  console.log('Skipping: Vector services not available');
+  return true;
+}
+
+function skipIfEmbedPrerequisitesMissing(
+  apiKey: string | undefined,
+  vectorServicesAvailable: boolean,
+  testServerAvailable: boolean
+): boolean {
+  if (apiKey && vectorServicesAvailable && testServerAvailable) {
+    return false;
+  }
+  console.log('Skipping: Prerequisites not available');
+  return true;
+}
+
 describe('E2E: embed command', () => {
   let tempDir: string;
   let apiKey: string | undefined;
@@ -61,30 +81,28 @@ describe('E2E: embed command', () => {
     vectorServicesAvailable = await hasVectorServices();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no input is provided', async () => {
       const result = await runCLIFailure(['embed'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain("required argument 'input'");
     });
 
     it('should accept URL as input', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['embed', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain("required argument 'input'");
     });
@@ -133,8 +151,7 @@ describe('E2E: embed command', () => {
 
   describe('embed execution', () => {
     it('should embed content from a file', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -167,8 +184,7 @@ describe('E2E: embed command', () => {
     });
 
     it('should embed content from stdin', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -196,8 +212,13 @@ describe('E2E: embed command', () => {
     });
 
     it('should embed from URL when API key available', async () => {
-      if (!apiKey || !vectorServicesAvailable || !testServerAvailable) {
-        console.log('Skipping: Prerequisites not available');
+      if (
+        skipIfEmbedPrerequisitesMissing(
+          apiKey,
+          vectorServicesAvailable,
+          testServerAvailable
+        )
+      ) {
         return;
       }
 
@@ -205,7 +226,7 @@ describe('E2E: embed command', () => {
         ['embed', `${TEST_SERVER_URL}/about/`, '--collection', 'e2e-test'],
         {
           env: {
-            FIRECRAWL_API_KEY: apiKey,
+            FIRECRAWL_API_KEY: apiKey ?? 'test-key',
             TEI_URL: process.env.TEI_URL || '',
             QDRANT_URL: process.env.QDRANT_URL || '',
           },
@@ -283,8 +304,7 @@ describe('E2E: query command', () => {
 
   describe('query execution', () => {
     it('should perform semantic search', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -303,8 +323,7 @@ describe('E2E: query command', () => {
     });
 
     it('should filter by domain', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -329,8 +348,7 @@ describe('E2E: query command', () => {
     });
 
     it('should output JSON with --json flag', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -348,8 +366,7 @@ describe('E2E: query command', () => {
     });
 
     it('should group results with --group flag', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -411,8 +428,7 @@ describe('E2E: retrieve command', () => {
 
   describe('retrieve execution', () => {
     it('should retrieve document by URL', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 
@@ -431,8 +447,7 @@ describe('E2E: retrieve command', () => {
     });
 
     it('should output JSON with --json flag', async () => {
-      if (!vectorServicesAvailable) {
-        console.log('Skipping: Vector services not available');
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
         return;
       }
 

@@ -10,8 +10,13 @@ import type {
   SourcesOptions,
   SourcesResult,
 } from '../types/sources';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute sources command
@@ -26,15 +31,13 @@ export async function executeSources(
   options: SourcesOptions
 ): Promise<SourcesResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the sources command.',
+        error: getQdrantUrlError('sources'),
       };
     }
 
@@ -109,10 +112,12 @@ export async function executeSources(
  */
 function formatTable(sources: SourceInfo[]): string {
   if (sources.length === 0) {
-    return 'No sources found in vector database.';
+    return fmt.dim('No sources found in vector database.');
   }
 
   const lines: string[] = [];
+  lines.push(`  ${fmt.primary('Sources')}`);
+  lines.push('');
 
   // Header
   const header = [
@@ -149,7 +154,7 @@ function formatTable(sources: SourceInfo[]): string {
  * Format sources summary
  */
 function formatSummary(data: NonNullable<SourcesResult['data']>): string {
-  return `\nTotal: ${data.totalSources} sources, ${data.totalChunks} chunks across ${data.uniqueDomains} domains`;
+  return `\n  ${fmt.info(icons.info)} ${data.totalSources} sources, ${data.totalChunks} chunks across ${data.uniqueDomains} domains`;
 }
 
 /**
@@ -159,28 +164,11 @@ export async function handleSourcesCommand(
   container: IContainer,
   options: SourcesOptions
 ): Promise<void> {
-  const result = await executeSources(container, options);
-
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else {
-    outputContent =
-      formatTable(result.data.sources) + formatSummary(result.data);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeSources(container, options),
+    options,
+    (resultData) => formatTable(resultData.sources) + formatSummary(resultData)
+  );
 }
 
 /**
@@ -202,10 +190,7 @@ export function createSourcesCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleSourcesCommand(container, {
         domain: options.domain,

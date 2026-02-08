@@ -8,14 +8,14 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   parseJSONOutput,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
+  skipIfMissingApiKey,
 } from './helpers';
 
 describe('E2E: search command', () => {
@@ -26,30 +26,28 @@ describe('E2E: search command', () => {
     apiKey = getTestApiKey();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no query is provided', async () => {
       const result = await runCLIFailure(['search'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain("required argument 'query'");
     });
 
     it('should accept query as positional argument', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['search', 'test query'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
       expect(result.stderr).not.toContain("required argument 'query'");
@@ -139,13 +137,12 @@ describe('E2E: search command', () => {
 
   describe('search execution', () => {
     it('should perform a basic search', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['search', 'firecrawl web scraping'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -155,15 +152,14 @@ describe('E2E: search command', () => {
     });
 
     it('should limit results with --limit flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(
         ['search', 'web scraping', '--limit', '3', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -177,15 +173,14 @@ describe('E2E: search command', () => {
     });
 
     it('should output JSON with --json flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(
         ['search', 'web scraping', '--limit', '2', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -198,8 +193,7 @@ describe('E2E: search command', () => {
     });
 
     it('should save output to file with --output flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
@@ -215,7 +209,7 @@ describe('E2E: search command', () => {
           outputPath,
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -228,15 +222,14 @@ describe('E2E: search command', () => {
     });
 
     it('should handle --scrape flag to scrape results', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(
         ['search', 'example', '--limit', '1', '--scrape', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000, // Longer timeout for scraping
         }
       );
@@ -248,15 +241,14 @@ describe('E2E: search command', () => {
 
   describe('source validation', () => {
     it('should reject invalid source', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLIFailure(
         ['search', 'test', '--sources', 'invalid'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         }
       );
 
@@ -264,15 +256,14 @@ describe('E2E: search command', () => {
     });
 
     it('should accept valid sources', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(
         ['search', 'test', '--sources', 'web,news', '--limit', '2', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -284,15 +275,14 @@ describe('E2E: search command', () => {
 
   describe('category validation', () => {
     it('should reject invalid category', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLIFailure(
         ['search', 'test', '--categories', 'invalid'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         }
       );
 
@@ -300,8 +290,7 @@ describe('E2E: search command', () => {
     });
 
     it('should accept valid categories', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
@@ -316,7 +305,7 @@ describe('E2E: search command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );

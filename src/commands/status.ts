@@ -8,7 +8,7 @@ import { Command } from 'commander';
 import packageJson from '../../package.json';
 import type { IContainer, ImmutableConfig } from '../container/types';
 import { isAuthenticated } from '../utils/auth';
-import { formatJson } from '../utils/command';
+import { formatJson, writeCommandOutput } from '../utils/command';
 import { DEFAULT_API_URL } from '../utils/config';
 import { loadCredentials } from '../utils/credentials';
 import {
@@ -23,7 +23,6 @@ import {
   getRecentJobIds,
   removeJobIds,
 } from '../utils/job-history';
-import { writeOutput } from '../utils/output';
 import {
   colorize,
   colors,
@@ -34,6 +33,7 @@ import {
   getStatusIcon,
   icons,
 } from '../utils/theme';
+import { requireContainer } from './shared';
 
 type AuthSource = 'env' | 'stored' | 'none';
 
@@ -597,12 +597,23 @@ function renderCrawlStatusSection(
       const isFailed =
         Boolean(crawlError) || status === 'failed' || status === 'error';
       const isCompleted = status === 'completed';
+      const hasProgress = 'completed' in crawl && 'total' in crawl;
+      const completedValue = hasProgress ? (crawl.completed as number) : 0;
+      const totalValue = hasProgress ? (crawl.total as number) : 0;
+      const isStaleScraping =
+        !isFailed &&
+        !isCompleted &&
+        (status === 'scraping' ||
+          status === 'processing' ||
+          status === 'running') &&
+        hasProgress &&
+        totalValue > 0 &&
+        completedValue >= totalValue;
       const icon = getStatusIcon(status, isFailed);
       const statusColor = getStatusColor(status, isFailed);
-      const progress =
-        'completed' in crawl && 'total' in crawl
-          ? formatProgress(crawl.completed as number, crawl.total as number)
-          : null;
+      const progress = hasProgress
+        ? formatProgress(completedValue, totalValue)
+        : null;
 
       let line = `${colorize(statusColor, icon)} ${crawl.id} `;
       if (isFailed) {
@@ -612,6 +623,9 @@ function renderCrawlStatusSection(
       } else {
         line += `${colorize(statusColor, status)}`;
       }
+      if (isStaleScraping) {
+        line += ` ${colorize(colors.warning, '[stale: reached total but not completed]')}`;
+      }
       if (displayUrl) {
         line += ` ${fmt.dim(displayUrl)}`;
       }
@@ -620,6 +634,7 @@ function renderCrawlStatusSection(
         line,
         isFailed,
         isCompleted,
+        isStaleScraping,
       };
     });
 
@@ -628,6 +643,7 @@ function renderCrawlStatusSection(
     const pendingCrawls = crawlRows.filter(
       (row) => !row.isFailed && !row.isCompleted
     );
+    const staleCrawls = pendingCrawls.filter((row) => row.isStaleScraping);
 
     console.log(`  ${colorize(colors.primary, 'Failed crawls:')}`);
     if (failedCrawls.length === 0) {
@@ -643,6 +659,13 @@ function renderCrawlStatusSection(
       console.log(fmt.dim('    No pending crawl jobs.'));
     } else {
       for (const row of pendingCrawls) {
+        console.log(`    ${row.line}`);
+      }
+    }
+
+    if (staleCrawls.length > 0) {
+      console.log(`  ${colorize(colors.warning, 'Stale pending crawls:')}`);
+      for (const row of staleCrawls) {
         console.log(`    ${row.line}`);
       }
     }
@@ -953,7 +976,7 @@ export async function handleJobStatusCommand(
       },
       options.pretty ?? false
     );
-    writeOutput(outputContent, options.output, !!options.output);
+    writeCommandOutput(outputContent, options);
   } catch (error) {
     console.error(
       fmt.error(error instanceof Error ? error.message : String(error))
@@ -987,10 +1010,7 @@ export function createStatusCommand(): Command {
     .option('--pretty', 'Pretty print JSON output', false)
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       if (options.clear) {
         await clearJobHistory();

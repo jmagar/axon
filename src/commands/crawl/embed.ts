@@ -63,24 +63,24 @@ export async function handleAsyncEmbedding(
   await enqueueEmbedJob(jobId, url, apiKey);
   console.error();
   console.error(
-    `${icons.pending} Queued embedding job for background processing: ${fmt.dim(jobId)}`
+    `  ${fmt.primary(icons.pending)} Queued embedding job for background processing: ${fmt.dim(jobId)}`
   );
 
   if (webhookConfig) {
     console.error(
       fmt.dim(
-        'Embeddings will be generated automatically when crawl completes via webhook.'
+        '  Embeddings will be generated automatically when crawl completes via webhook.'
       )
     );
   } else {
     console.error(
       fmt.warning(
-        `${icons.warning} Embedder webhook not configured. Set FIRECRAWL_EMBEDDER_WEBHOOK_URL to enable auto-embedding.`
+        `  ${icons.warning} Embedder webhook not configured. Set FIRECRAWL_EMBEDDER_WEBHOOK_URL to enable auto-embedding.`
       )
     );
     console.error(
       fmt.dim(
-        `Run 'firecrawl crawl ${jobId} --embed' to embed after completion.`
+        `  Run 'firecrawl crawl ${jobId} --embed' to embed after completion.`
       )
     );
   }
@@ -203,8 +203,10 @@ export async function handleManualEmbedding(
 
   // Process queue
   console.error(
-    `${icons.processing} Processing embedding queue for job ${fmt.dim(jobId)}...`
+    `  ${fmt.primary(icons.processing)} Processing embedding queue for job ${fmt.dim(jobId)}...`
   );
   await processEmbedQueue(container);
-  console.error(`${icons.success} Embedding processing complete`);
+  console.error(
+    `  ${fmt.success(icons.success)} Embedding processing complete`
+  );
 }

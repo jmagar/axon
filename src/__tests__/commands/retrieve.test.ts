@@ -5,7 +5,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeRetrieve } from '../../commands/retrieve';
 import type { IContainer, IQdrantService } from '../../container/types';
-import { setupTest, teardownTest } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
 describe('executeRetrieve', () => {
@@ -13,8 +12,6 @@ describe('executeRetrieve', () => {
   let mockQdrantService: IQdrantService;
 
   beforeEach(() => {
-    setupTest();
-
     // Create mock Qdrant service
     mockQdrantService = {
       ensureCollection: vi.fn().mockResolvedValue(undefined),
@@ -49,7 +46,6 @@ describe('executeRetrieve', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 

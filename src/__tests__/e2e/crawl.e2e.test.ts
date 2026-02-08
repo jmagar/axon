@@ -9,14 +9,15 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   isTestServerRunning,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
+  skipIfMissingApiKey,
+  skipIfMissingApiOrServer,
   TEST_SERVER_URL,
 } from './helpers';
 
@@ -30,42 +31,39 @@ describe('E2E: crawl command', () => {
     testServerAvailable = await isTestServerRunning();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no URL is provided', async () => {
       const result = await runCLIFailure(['crawl'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain('URL or job ID is required');
     });
 
     it('should accept URL as positional argument', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['crawl', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain('URL or job ID is required');
     });
 
     it('should accept URL with --url flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['crawl', '--url', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain('URL or job ID is required');
     });
@@ -172,13 +170,12 @@ describe('E2E: crawl command', () => {
 
   describe('async crawl job', () => {
     it('should start an async crawl and return a job ID', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(['crawl', TEST_SERVER_URL, '--limit', '2'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -191,8 +188,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should auto-detect job ID and check status', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -200,7 +196,7 @@ describe('E2E: crawl command', () => {
       const startResult = await runCLI(
         ['crawl', TEST_SERVER_URL, '--limit', '2'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -223,7 +219,7 @@ describe('E2E: crawl command', () => {
 
       // Check status using job ID
       const statusResult = await runCLI(['crawl', jobId, '--status'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 30000,
       });
 
@@ -235,8 +231,7 @@ describe('E2E: crawl command', () => {
 
   describe('sync crawl with --wait', () => {
     it('should wait for crawl to complete with --wait flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -251,7 +246,7 @@ describe('E2E: crawl command', () => {
           '1',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000, // Longer timeout for sync crawl
         }
       );
@@ -263,8 +258,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should show progress with --wait --progress flags', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -280,7 +274,7 @@ describe('E2E: crawl command', () => {
           '1',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -292,8 +286,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should output to file with --output flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -309,7 +302,7 @@ describe('E2E: crawl command', () => {
           outputPath,
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -324,8 +317,7 @@ describe('E2E: crawl command', () => {
 
   describe('crawl with filters', () => {
     it('should respect --include-paths filter', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -340,7 +332,7 @@ describe('E2E: crawl command', () => {
           '/blog',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -351,8 +343,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should respect --exclude-paths filter', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -367,7 +358,7 @@ describe('E2E: crawl command', () => {
           '/blog/category',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -378,8 +369,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should respect --max-depth limit', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -394,7 +384,7 @@ describe('E2E: crawl command', () => {
           '1',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -405,8 +395,7 @@ describe('E2E: crawl command', () => {
     });
 
     it('should handle --sitemap skip option', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -421,7 +410,7 @@ describe('E2E: crawl command', () => {
           'skip',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );

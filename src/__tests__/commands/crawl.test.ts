@@ -17,6 +17,9 @@ import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 // autoEmbed is mocked below via mockAutoEmbed
 
 // No longer need to mock the client module since we use containers
@@ -140,7 +143,7 @@ describe('executeCrawl', () => {
         url: 'https://example.com',
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
@@ -177,7 +180,7 @@ describe('executeCrawl', () => {
         url: 'https://example.com',
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
@@ -214,7 +217,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         limit: 100,
@@ -235,7 +238,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         maxDepth: 3,
@@ -256,7 +259,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         excludePaths: ['/admin', '/private'],
@@ -278,7 +281,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         includePaths: ['/blog', '/docs'],
@@ -299,7 +302,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         sitemap: 'skip',
@@ -320,7 +323,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         limit: 50,
@@ -370,7 +373,7 @@ describe('executeCrawl', () => {
       };
       mockClient.getCrawlStatus.mockResolvedValue(mockStatus);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: '550e8400-e29b-41d4-a716-446655440000',
         status: true,
@@ -403,7 +406,7 @@ describe('executeCrawl', () => {
       };
       mockClient.getCrawlStatus.mockResolvedValue(mockStatus);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: '550e8400-e29b-41d4-a716-446655440000',
       });
@@ -421,7 +424,7 @@ describe('executeCrawl', () => {
       };
       mockClient.getCrawlStatus.mockResolvedValue(mockStatus);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: '550e8400-e29b-41d4-a716-446655440000',
         status: true,
@@ -447,7 +450,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -476,7 +479,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -501,7 +504,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -526,7 +529,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -589,7 +592,7 @@ describe('executeCrawl', () => {
         .mockResolvedValueOnce(mockCompletedStatus)
         .mockResolvedValueOnce(mockCompletedStatus);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       // Start the async operation
       const crawlPromise = executeCrawl(container, {
         urlOrJobId: 'https://example.com',
@@ -634,7 +637,7 @@ describe('executeCrawl', () => {
         .mockResolvedValueOnce(mockCompletedStatus)
         .mockResolvedValueOnce(mockCompletedStatus);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       // Start with progress but without explicit wait
       const crawlPromise = executeCrawl(container, {
         urlOrJobId: 'https://example.com',
@@ -662,7 +665,7 @@ describe('executeCrawl', () => {
       const errorMessage = 'API Error: Invalid URL';
       mockClient.startCrawl.mockRejectedValue(new Error(errorMessage));
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
       });
@@ -677,7 +680,7 @@ describe('executeCrawl', () => {
       const errorMessage = 'Job not found';
       mockClient.getCrawlStatus.mockRejectedValue(new Error(errorMessage));
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: '550e8400-e29b-41d4-a716-446655440000',
         status: true,
@@ -693,7 +696,7 @@ describe('executeCrawl', () => {
       const errorMessage = 'Crawl timeout';
       mockClient.crawl.mockRejectedValue(new Error(errorMessage));
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -708,7 +711,7 @@ describe('executeCrawl', () => {
     it('should handle non-Error exceptions', async () => {
       mockClient.startCrawl.mockRejectedValue('String error');
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
       });
@@ -756,7 +759,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient, { mockAutoEmbed });
+      const container = createContainer(mockClient, { mockAutoEmbed });
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -795,7 +798,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient, { mockAutoEmbed });
+      const container = createContainer(mockClient, { mockAutoEmbed });
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -828,7 +831,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -855,7 +858,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -872,7 +875,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
       });
@@ -901,7 +904,7 @@ describe('executeCrawl', () => {
         completed: 0,
       });
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         embed: true,
@@ -918,7 +921,7 @@ describe('executeCrawl', () => {
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
 
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         embed: false,
@@ -947,7 +950,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient, { mockAutoEmbed });
+      const container = createContainer(mockClient, { mockAutoEmbed });
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -987,7 +990,7 @@ describe('executeCrawl', () => {
       };
       mockClient.crawl.mockResolvedValue(mockCrawlJob);
 
-      const container = createTestContainer(mockClient, { mockAutoEmbed });
+      const container = createContainer(mockClient, { mockAutoEmbed });
       await handleCrawlCommand(container, {
         urlOrJobId: 'https://example.com',
         wait: true,
@@ -1031,7 +1034,7 @@ describe('executeCrawlCancel', () => {
   });
 
   it('should cancel crawl and return status', async () => {
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     mockClient.cancelCrawl.mockResolvedValue(true);
 
     const result = await executeCrawlCancel(container, 'job-123');
@@ -1042,7 +1045,7 @@ describe('executeCrawlCancel', () => {
   });
 
   it('should return error when cancel fails', async () => {
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     mockClient.cancelCrawl.mockRejectedValue(new Error('Cancel failed'));
 
     const result = await executeCrawlCancel(container, 'job-123');
@@ -1072,7 +1075,7 @@ describe('executeCrawlErrors', () => {
   });
 
   it('should return crawl errors and robotsBlocked', async () => {
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     mockClient.getCrawlErrors.mockResolvedValue({
       errors: [
         {
@@ -1134,7 +1137,7 @@ describe('createCrawlCommand', () => {
           expiresAt: '2026-02-15T00:00:00Z',
         }),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const cmd = createCrawlCommand();
       cmd._container = container;
@@ -1158,7 +1161,7 @@ describe('createCrawlCommand', () => {
           completed: 100,
         }),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const cmd = createCrawlCommand();
       cmd._container = container;
@@ -1186,7 +1189,7 @@ describe('createCrawlCommand', () => {
       const mockClient: Partial<MockFirecrawlClient> = {
         cancelCrawl: vi.fn().mockResolvedValue(true),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const cmd = createCrawlCommand();
       cmd._container = container;
@@ -1203,7 +1206,7 @@ describe('createCrawlCommand', () => {
       const mockClient: Partial<MockFirecrawlClient> = {
         cancelCrawl: vi.fn().mockRejectedValue(new Error('Cancel failed')),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const cmd = createCrawlCommand();
       cmd._container = container;
@@ -1231,7 +1234,7 @@ describe('createCrawlCommand', () => {
           robotsBlocked: [],
         }),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const cmd = createCrawlCommand();
       cmd._container = container;
@@ -1256,7 +1259,7 @@ describe('createCrawlCommand', () => {
         completed: 100,
       }),
     };
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const cmd = createCrawlCommand();
@@ -1274,19 +1277,5 @@ describe('createCrawlCommand', () => {
     });
 
     warnSpy.mockRestore();
-  });
-
-  it('should default scrapeTimeout to 15 seconds when not provided', async () => {
-    const cmd = createCrawlCommand();
-    const actionSpy = vi.fn();
-    cmd.action(actionSpy);
-
-    await cmd.parseAsync(['node', 'test', 'https://example.com'], {
-      from: 'node',
-    });
-
-    const [urlOrJobId, options] = actionSpy.mock.calls[0] ?? [];
-    expect(urlOrJobId).toBe('https://example.com');
-    expect(options).toEqual(expect.objectContaining({ scrapeTimeout: 15 }));
   });
 });

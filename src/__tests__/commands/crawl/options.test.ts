@@ -81,18 +81,6 @@ describe('buildCrawlOptions', () => {
     expect(result.maxConcurrency).toBe(5);
   });
 
-  it('should convert scrapeTimeout to nested milliseconds', () => {
-    const options: CrawlOptions = {
-      urlOrJobId: 'https://example.com',
-      scrapeTimeout: 15,
-    };
-
-    const result = buildCrawlOptions(options);
-
-    expect(result.scrapeOptions).toBeDefined();
-    expect(result.scrapeOptions?.timeout).toBe(15000);
-  });
-
   it('should handle exclude paths', () => {
     const options: CrawlOptions = {
       urlOrJobId: 'https://example.com',
@@ -215,7 +203,6 @@ describe('buildCrawlOptions', () => {
       maxDepth: 2,
       excludePaths: ['/admin'],
       includePaths: ['/blog'],
-      scrapeTimeout: 20,
       pollInterval: 3,
       timeout: 120,
       delay: 500,
@@ -229,7 +216,6 @@ describe('buildCrawlOptions', () => {
     expect(result.excludePaths).toContain('/admin');
     expect(result.excludePaths).toContain('\\.exe$'); // Default extensions included
     expect(result.includePaths).toEqual(['/blog']);
-    expect(result.scrapeOptions?.timeout).toBe(20000);
     expect(result.pollInterval).toBe(3000);
     expect(result.crawlTimeout).toBe(120000);
     expect(result.delay).toBe(500);
@@ -287,15 +273,26 @@ describe('mergeExcludePaths', () => {
 
     const result = mergeExcludePaths(['/admin'], false);
 
-    expect(result).toEqual(['/admin']);
+    expect(result).toContain('/admin');
+    expect(result).toContain('/blog/');
   });
 
-  it('should return empty array when both are empty', () => {
+  it('should return empty array when defaults are skipped and settings/CLI are empty', () => {
     vi.mocked(loadSettings).mockReturnValue({});
 
     const result = mergeExcludePaths(undefined, true);
 
     expect(result).toEqual([]);
+  });
+
+  it('should include built-in defaults when settings and CLI are empty', () => {
+    vi.mocked(loadSettings).mockReturnValue({});
+
+    const result = mergeExcludePaths(undefined, false);
+
+    expect(result).toContain('/blog/');
+    expect(result).toContain('/de');
+    expect(result).toContain('/fr');
   });
 
   it('should preserve order of defaults first, then CLI', () => {
@@ -347,7 +344,19 @@ describe('mergeExcludePaths', () => {
     const extensionPatterns = ['\\.pkg$', '', '  ', '\\.exe$'];
     const result = mergeExcludePaths(undefined, false, extensionPatterns);
 
-    expect(result).toEqual(['\\.pkg$', '\\.exe$']);
+    expect(result).toContain('/blog/');
+    expect(result).toContain('\\.pkg$');
+    expect(result).toContain('\\.exe$');
+  });
+
+  it('should escape leading query-string patterns for regex safety', () => {
+    vi.mocked(loadSettings).mockReturnValue({
+      defaultExcludePaths: ['?output=print'],
+    });
+
+    const result = mergeExcludePaths(undefined, false);
+
+    expect(result).toContain('\\?output=print');
   });
 });
 
@@ -462,6 +471,7 @@ describe('buildCrawlOptions with extensions', () => {
     expect(result.excludePaths).toContain('\\.exe$');
     expect(result.excludePaths).toContain('\\.pkg$');
     expect(result.excludePaths).toContain('\\.dmg$');
+    expect(result.excludePaths).toContain('/blog/');
   });
 
   it('should combine extensions with custom exclude paths', () => {

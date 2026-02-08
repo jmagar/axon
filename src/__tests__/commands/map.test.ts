@@ -15,6 +15,9 @@ import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 // Mock output utility to prevent side effects
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -56,7 +59,7 @@ describe('executeMap', () => {
         'https://example.com/page1',
         'https://example.com/page2',
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -68,7 +71,7 @@ describe('executeMap', () => {
 
     it('should pass limit option to SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -82,7 +85,7 @@ describe('executeMap', () => {
 
     it('should pass search option to SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -96,7 +99,7 @@ describe('executeMap', () => {
 
     it('should pass includeSubdomains option to SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -110,7 +113,7 @@ describe('executeMap', () => {
 
     it('should pass ignoreQueryParameters option to SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -124,7 +127,7 @@ describe('executeMap', () => {
 
     it('should convert timeout to milliseconds for SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -138,7 +141,7 @@ describe('executeMap', () => {
 
     it('should pass sitemap option to SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -152,7 +155,7 @@ describe('executeMap', () => {
 
     it('should combine all options for SDK', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -332,7 +335,7 @@ describe('executeMap', () => {
         'https://example.com/page1',
         'https://example.com/page2',
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -370,7 +373,7 @@ describe('executeMap', () => {
           description: 'Description 2',
         },
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -400,7 +403,7 @@ describe('executeMap', () => {
         { url: 'https://example.com/page1' },
         { url: 'https://example.com/page2', title: 'Page 2' },
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -424,7 +427,7 @@ describe('executeMap', () => {
 
     it('should handle empty links array', async () => {
       const mockClient = createMockMapClient([]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -440,7 +443,7 @@ describe('executeMap', () => {
       const mockClient = {
         map: vi.fn().mockRejectedValue(new Error('SDK error')),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -454,7 +457,7 @@ describe('executeMap', () => {
       const mockClient = {
         map: vi.fn().mockRejectedValue('String error'),
       };
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -475,7 +478,7 @@ describe('executeMap', () => {
           otherField: 'should be ignored',
         },
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',
@@ -497,7 +500,7 @@ describe('executeMap', () => {
         'https://example.com/page1',
         'https://example.com/page2',
       ]);
-      const container = createTestContainer(mockClient);
+      const container = createContainer(mockClient);
 
       const result = await executeMap(container, {
         urlOrJobId: 'https://example.com',

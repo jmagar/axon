@@ -193,7 +193,6 @@ export function createCrawlCommand(): Command {
       parseFloat
     )
     .option(
-      '--scrape-timeout <seconds>',
       'Per-page scrape timeout in seconds (default: 5)',
       parseFloat,
       5
@@ -251,7 +250,6 @@ export function createCrawlCommand(): Command {
         wait: options.wait,
         pollInterval: options.pollInterval,
         timeout: options.timeout,
-        scrapeTimeout: options.scrapeTimeout,
         progress: options.progress,
         output: options.output,
         pretty: options.pretty,

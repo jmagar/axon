@@ -11,7 +11,7 @@
  * @module utils/command
  */
 
-import { writeOutput } from './output';
+import { validateOutputPath, writeOutput } from './output';
 import { fmt } from './theme';
 
 /**
@@ -108,9 +108,13 @@ export function writeCommandOutput(
   options: CommonOutputOptions,
   forceJson: boolean = false
 ): void {
+  if (options.output) {
+    validateOutputPath(options.output);
+  }
+
   let outputContent: string;
 
-  if (typeof content === 'string' && !forceJson && !options.json) {
+  if (typeof content === 'string' && !forceJson) {
     outputContent = content;
   } else {
     outputContent = formatJson(content, options.pretty);

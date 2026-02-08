@@ -15,6 +15,7 @@ import { parseScrapeOptions } from '../utils/options';
 import { handleScrapeOutput } from '../utils/output';
 import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
+import { requireContainer } from './shared';
 
 /**
  * Output timing information if requested
@@ -299,10 +300,7 @@ export function createScrapeCommand(): Command {
     )
     .action(
       async (positionalUrl, positionalFormats, options, command: Command) => {
-        const container = command._container;
-        if (!container) {
-          throw new Error('Container not initialized');
-        }
+        const container = requireContainer(command);
 
         // Use positional URL if provided, otherwise use --url option
         const url = positionalUrl || options.url;

@@ -7,12 +7,11 @@ import { createBatchCommand, executeBatch } from '../../commands/batch';
 import type { IContainer } from '../../container/types';
 import type { CommandWithContainer } from '../../types/test';
 import { writeOutput } from '../../utils/output';
-import {
-  type MockFirecrawlClient,
-  setupTest,
-  teardownTest,
-} from '../utils/mock-client';
+import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
+
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
 
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
@@ -23,8 +22,6 @@ describe('executeBatch', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = {
       startBatchScrape: vi.fn(),
       batchScrape: vi.fn(),
@@ -33,11 +30,10 @@ describe('executeBatch', () => {
       cancelBatchScrape: vi.fn(),
     };
 
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -118,8 +114,6 @@ describe('batch status subcommand', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = {
       startBatchScrape: vi.fn(),
       batchScrape: vi.fn(),
@@ -128,11 +122,10 @@ describe('batch status subcommand', () => {
       cancelBatchScrape: vi.fn(),
     };
 
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -179,8 +172,6 @@ describe('batch cancel subcommand', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = {
       startBatchScrape: vi.fn(),
       batchScrape: vi.fn(),
@@ -189,11 +180,10 @@ describe('batch cancel subcommand', () => {
       cancelBatchScrape: vi.fn(),
     };
 
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -236,8 +226,6 @@ describe('batch errors subcommand', () => {
   let container: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = {
       startBatchScrape: vi.fn(),
       batchScrape: vi.fn(),
@@ -246,11 +234,10 @@ describe('batch errors subcommand', () => {
       cancelBatchScrape: vi.fn(),
     };
 
-    container = createTestContainer(mockClient);
+    container = createContainer(mockClient);
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 

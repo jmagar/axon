@@ -1,6 +1,7 @@
 /**
  * Query command types
  */
+import type { CommandResult } from './common';
 
 export interface QueryOptions {
   query: string;
@@ -25,8 +26,4 @@ export interface QueryResultItem {
   sourceCommand: string;
 }
 
-export interface QueryResult {
-  success: boolean;
-  data?: QueryResultItem[];
-  error?: string;
-}
+export type QueryResult = CommandResult<QueryResultItem[]>;

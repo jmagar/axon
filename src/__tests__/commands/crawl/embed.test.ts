@@ -10,6 +10,9 @@ import { resetTeiCache } from '../../../utils/embeddings';
 import { resetQdrantCache } from '../../../utils/qdrant';
 import { createTestContainer } from '../../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 // Mock dependencies
 vi.mock('../../../utils/embedder-webhook', () => ({
   buildEmbedderWebhookConfig: vi.fn(),
@@ -254,7 +257,7 @@ describe('handleManualEmbedding', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     vi.doMock('../../../utils/background-embedder', () => ({
       processEmbedQueue: mockProcessEmbedQueue,
@@ -324,7 +327,7 @@ describe('handleManualEmbedding', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     vi.doMock('../../../utils/background-embedder', () => ({
       processEmbedQueue: mockProcessEmbedQueue,
@@ -360,7 +363,7 @@ describe('handleManualEmbedding', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     vi.doMock('../../../utils/background-embedder', () => ({
       processEmbedQueue: mockProcessEmbedQueue,

@@ -9,11 +9,7 @@ import {
   handleScrapeCommand,
 } from '../../commands/scrape';
 import type { IContainer, IQdrantService } from '../../container/types';
-import {
-  type MockFirecrawlClient,
-  setupTest,
-  teardownTest,
-} from '../utils/mock-client';
+import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
 // Mock the output module to prevent console output in tests
@@ -26,8 +22,6 @@ describe('executeScrape', () => {
   let mockContainer: IContainer;
 
   beforeEach(() => {
-    setupTest();
-
     // Create mock client
     mockClient = {
       scrape: vi.fn(),
@@ -53,7 +47,6 @@ describe('executeScrape', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 
@@ -331,8 +324,6 @@ describe('handleScrapeCommand auto-embed', () => {
   let mockAutoEmbed: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    setupTest();
-
     mockClient = {
       scrape: vi.fn(),
     };
@@ -358,7 +349,6 @@ describe('handleScrapeCommand auto-embed', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 

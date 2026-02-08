@@ -9,8 +9,9 @@ import type {
   QueryResult,
   QueryResultItem,
 } from '../types/query';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
+import { requireContainer, resolveCollectionName } from './shared';
 
 /**
  * Execute query command
@@ -24,10 +25,9 @@ export async function executeQuery(
   options: QueryOptions
 ): Promise<QueryResult> {
   try {
-    const config = container.config;
-    const { teiUrl, qdrantUrl } = config;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const teiUrl = container.config.teiUrl;
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!teiUrl || !qdrantUrl) {
       return {
@@ -92,20 +92,25 @@ export async function executeQuery(
  * @returns Formatted string for compact display
  */
 function formatCompact(items: QueryResultItem[]): string {
-  if (items.length === 0) return 'No results found.';
+  if (items.length === 0) return fmt.dim('No results found.');
+  const lines: string[] = [];
+  lines.push(`  ${fmt.primary('Query results')}`);
+  lines.push('');
   const results = items
     .map((item) => {
-      const header = item.chunkHeader ? ` — ${item.chunkHeader}` : '';
+      const header = item.chunkHeader ? ` - ${item.chunkHeader}` : '';
       const score = item.score.toFixed(2);
       const truncated =
         item.chunkText.length > 120
           ? `${item.chunkText.slice(0, 120)}...`
           : item.chunkText;
-      return `[${score}] ${item.url}${header}\n  ${truncated}`;
+      return `    ${fmt.info(icons.bullet)} [${score}] ${item.url}${header}\n      ${truncated}`;
     })
     .join('\n\n');
-
-  return `${results}\n\n${getRetrievalHint()}`;
+  lines.push(results);
+  lines.push('');
+  lines.push(getRetrievalHint());
+  return lines.join('\n');
 }
 
 /**
@@ -115,16 +120,21 @@ function formatCompact(items: QueryResultItem[]): string {
  * @returns Formatted string with full chunk text
  */
 function formatFull(items: QueryResultItem[]): string {
-  if (items.length === 0) return 'No results found.';
+  if (items.length === 0) return fmt.dim('No results found.');
+  const lines: string[] = [];
+  lines.push(`  ${fmt.primary('Query results')}`);
+  lines.push('');
   const results = items
     .map((item) => {
-      const header = item.chunkHeader ? ` — ${item.chunkHeader}` : '';
+      const header = item.chunkHeader ? ` - ${item.chunkHeader}` : '';
       const score = item.score.toFixed(2);
-      return `[${score}] ${item.url}${header}\n\n${item.chunkText}`;
+      return `    ${fmt.info(icons.bullet)} [${score}] ${item.url}${header}\n\n${item.chunkText}`;
     })
     .join('\n\n---\n\n');
-
-  return `${results}\n\n---\n\n${getRetrievalHint()}`;
+  lines.push(results);
+  lines.push('');
+  lines.push(getRetrievalHint());
+  return lines.join('\n');
 }
 
 /**
@@ -135,7 +145,7 @@ function formatFull(items: QueryResultItem[]): string {
  * @returns Formatted string grouped by URL
  */
 function formatGrouped(items: QueryResultItem[], full: boolean): string {
-  if (items.length === 0) return 'No results found.';
+  if (items.length === 0) return fmt.dim('No results found.');
 
   const groups = new Map<string, QueryResultItem[]>();
   for (const item of items) {
@@ -145,25 +155,32 @@ function formatGrouped(items: QueryResultItem[], full: boolean): string {
   }
 
   const parts: string[] = [];
+  parts.push(`  ${fmt.primary('Query results')}`);
+  parts.push('');
   for (const [url, groupItems] of groups) {
-    parts.push(`== ${url} ==`);
+    parts.push(`  ${fmt.primary(url)}`);
     for (const item of groupItems) {
-      const header = item.chunkHeader ? ` — ${item.chunkHeader}` : '';
+      const header = item.chunkHeader ? ` - ${item.chunkHeader}` : '';
       const score = item.score.toFixed(2);
       if (full) {
-        parts.push(`  [${score}]${header}\n${item.chunkText}`);
+        parts.push(
+          `    ${fmt.info(icons.bullet)} [${score}]${header}\n${item.chunkText}`
+        );
       } else {
         const truncated =
           item.chunkText.length > 120
             ? `${item.chunkText.slice(0, 120)}...`
             : item.chunkText;
-        parts.push(`  [${score}]${header}\n  ${truncated}`);
+        parts.push(
+          `    ${fmt.info(icons.bullet)} [${score}]${header}\n      ${truncated}`
+        );
       }
     }
     parts.push('');
   }
 
-  return `${parts.join('\n')}\n${getRetrievalHint()}`;
+  parts.push(getRetrievalHint());
+  return parts.join('\n');
 }
 
 /**
@@ -171,7 +188,7 @@ function formatGrouped(items: QueryResultItem[], full: boolean): string {
  * @returns Formatted hint message for users
  */
 function getRetrievalHint(): string {
-  return '💡 To retrieve full documents from the vector DB, use:\n  firecrawl retrieve <url>';
+  return `${fmt.dim(`${icons.arrow} To retrieve full documents from the vector DB, use: firecrawl retrieve <url>`)}`;
 }
 
 /**
@@ -184,32 +201,19 @@ export async function handleQueryCommand(
   container: IContainer,
   options: QueryOptions
 ): Promise<void> {
-  const result = await executeQuery(container, options);
-
-  // Use shared error handler
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  // Validate output path before processing to prevent path traversal attacks
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else if (options.group) {
-    outputContent = formatGrouped(result.data, !!options.full);
-  } else if (options.full) {
-    outputContent = formatFull(result.data);
-  } else {
-    outputContent = formatCompact(result.data);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeQuery(container, options),
+    options,
+    (data) => {
+      if (options.group) {
+        return formatGrouped(data, !!options.full);
+      }
+      if (options.full) {
+        return formatFull(data);
+      }
+      return formatCompact(data);
+    }
+  );
 }
 
 import { Command } from 'commander';
@@ -241,10 +245,7 @@ export function createQueryCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON format', false)
     .action(async (query: string, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleQueryCommand(container, {
         query,

@@ -1,6 +1,7 @@
 /**
  * Domains command types
  */
+import type { CommandResult } from './common';
 
 export interface DomainInfo {
   domain: string;
@@ -16,13 +17,9 @@ export interface DomainsOptions {
   json?: boolean;
 }
 
-export interface DomainsResult {
-  success: boolean;
-  data?: {
-    domains: DomainInfo[];
-    totalDomains: number;
-    totalUrls: number;
-    totalVectors: number;
-  };
-  error?: string;
-}
+export type DomainsResult = CommandResult<{
+  domains: DomainInfo[];
+  totalDomains: number;
+  totalUrls: number;
+  totalVectors: number;
+}>;

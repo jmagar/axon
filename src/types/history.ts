@@ -2,6 +2,7 @@
  * History command types
  * Represents time-based view of indexed content
  */
+import type { CommandResult } from './common';
 
 export interface HistoryEntry {
   date: string;
@@ -21,12 +22,8 @@ export interface HistoryOptions {
   json?: boolean;
 }
 
-export interface HistoryResult {
-  success: boolean;
-  data?: {
-    entries: HistoryEntry[];
-    totalEntries: number;
-    dateRange: { from: string; to: string };
-  };
-  error?: string;
-}
+export type HistoryResult = CommandResult<{
+  entries: HistoryEntry[];
+  totalEntries: number;
+  dateRange: { from: string; to: string };
+}>;

@@ -12,8 +12,13 @@ import type {
   StatsOptions,
   StatsResult,
 } from '../types/stats';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute stats command
@@ -27,15 +32,13 @@ export async function executeStats(
   options: StatsOptions
 ): Promise<StatsResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the stats command.',
+        error: getQdrantUrlError('stats'),
       };
     }
 
@@ -112,46 +115,47 @@ export async function executeStats(
 function formatHuman(data: StatsData, verbose: boolean): string {
   const lines: string[] = [];
 
-  lines.push('');
-  lines.push('Vector Database Statistics');
-  lines.push('═'.repeat(50));
-  lines.push('');
-  lines.push(`Collection:     ${data.collection}`);
-  lines.push(`Status:         ${data.status}`);
-  lines.push(`Vectors:        ${data.vectorsCount.toLocaleString()}`);
-  lines.push(`Dimension:      ${data.dimension}`);
-  lines.push(`Distance:       ${data.distance}`);
+  lines.push(`  ${fmt.primary('Vector database statistics')}`);
+  lines.push(`    ${fmt.dim('Collection:')} ${data.collection}`);
+  lines.push(`    ${fmt.dim('Status:')} ${data.status}`);
+  lines.push(
+    `    ${fmt.dim('Vectors:')} ${data.vectorsCount.toLocaleString()}`
+  );
+  lines.push(`    ${fmt.dim('Dimension:')} ${data.dimension}`);
+  lines.push(`    ${fmt.dim('Distance:')} ${data.distance}`);
 
   if (verbose) {
-    lines.push(`Points:         ${data.pointsCount.toLocaleString()}`);
-    lines.push(`Segments:       ${data.segmentsCount}`);
+    lines.push(
+      `    ${fmt.dim('Points:')} ${data.pointsCount.toLocaleString()}`
+    );
+    lines.push(`    ${fmt.dim('Segments:')} ${data.segmentsCount}`);
   }
 
   if (data.byDomain.length > 0) {
     lines.push('');
-    lines.push('By Domain:');
+    lines.push(`  ${fmt.primary('By domain')}`);
     for (const d of data.byDomain.slice(0, 10)) {
       const sources = d.sourceCount > 1 ? ` (${d.sourceCount} sources)` : '';
       lines.push(
-        `  ${d.domain.padEnd(30)} ${d.vectorCount.toLocaleString().padStart(8)} vectors${sources}`
+        `    ${fmt.info(icons.bullet)} ${d.domain.padEnd(30)} ${d.vectorCount.toLocaleString().padStart(8)} vectors${sources}`
       );
     }
     if (data.byDomain.length > 10) {
-      lines.push(`  ... and ${data.byDomain.length - 10} more domains`);
+      lines.push(
+        `    ${fmt.dim(`... and ${data.byDomain.length - 10} more domains`)}`
+      );
     }
   }
 
   if (data.bySourceCommand.length > 0) {
     lines.push('');
-    lines.push('By Source Command:');
+    lines.push(`  ${fmt.primary('By source command')}`);
     for (const c of data.bySourceCommand) {
       lines.push(
-        `  ${c.command.padEnd(15)} ${c.vectorCount.toLocaleString().padStart(8)} vectors`
+        `    ${fmt.info(icons.bullet)} ${c.command.padEnd(15)} ${c.vectorCount.toLocaleString().padStart(8)} vectors`
       );
     }
   }
-
-  lines.push('');
 
   return lines.join('\n');
 }
@@ -163,27 +167,11 @@ export async function handleStatsCommand(
   container: IContainer,
   options: StatsOptions
 ): Promise<void> {
-  const result = await executeStats(container, options);
-
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else {
-    outputContent = formatHuman(result.data, !!options.verbose);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeStats(container, options),
+    options,
+    (resultData) => formatHuman(resultData, !!options.verbose)
+  );
 }
 
 /**
@@ -200,10 +188,7 @@ export function createStatsCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleStatsCommand(container, {
         verbose: options.verbose,

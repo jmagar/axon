@@ -1,6 +1,7 @@
 /**
  * Sources command types
  */
+import type { CommandResult } from './common';
 
 export interface SourceInfo {
   url: string;
@@ -20,13 +21,9 @@ export interface SourcesOptions {
   json?: boolean;
 }
 
-export interface SourcesResult {
-  success: boolean;
-  data?: {
-    sources: SourceInfo[];
-    totalSources: number;
-    totalChunks: number;
-    uniqueDomains: number;
-  };
-  error?: string;
-}
+export type SourcesResult = CommandResult<{
+  sources: SourceInfo[];
+  totalSources: number;
+  totalChunks: number;
+  uniqueDomains: number;
+}>;

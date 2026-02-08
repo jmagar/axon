@@ -316,3 +316,43 @@ If ports are in use:
 1. Stop conflicting services: `docker ps` to identify containers
 2. Or modify `docker-compose.yaml` to use different ports
 3. Update `.env` to match new port assignments
+
+## Shell Completion
+
+This project includes shell completion support for bash, zsh, and fish shells.
+
+**Architecture:**
+- **Static completion**: Command names, option flags, common values
+- **Manual script generation**: Simple, dependency-free approach
+- **Supported shells**: bash, zsh, fish
+
+**Key files:**
+- `src/commands/completion.ts` - Completion command implementation
+- `src/utils/completion-helpers.ts` - Shell detection and RC file helpers
+- `src/utils/completion-tree.ts` - Completion definitions (kept for reference, not actively used)
+
+**Installation:**
+```bash
+firecrawl completion install [shell]
+```
+
+**Testing:**
+```bash
+pnpm build
+pnpm local completion install
+# Follow instructions to add to RC file
+source ~/.zshrc  # or ~/.bashrc, ~/.config/fish/config.fish
+firecrawl <TAB>
+```
+
+**How it works:**
+1. `firecrawl completion install` auto-detects your shell
+2. Generates a native completion script for that shell
+3. Provides instructions to add it to your shell RC file
+4. Once installed, tab completion works for all commands and common options
+
+**What's completed:**
+- All 19 top-level commands (scrape, crawl, map, search, extract, batch, embed, query, retrieve, list, status, config, view-config, login, logout, version, sources, stats, domains, delete, history, info, completion, help)
+- Common option flags (--help, --api-key, --output, --pretty, --json, -o, -k, -h)
+- Subcommands (batch status/cancel/errors, crawl status/cancel/errors, extract status)
+- File paths for --output option (via shell's native file completion)

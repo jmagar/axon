@@ -95,7 +95,6 @@ Crawl multiple pages starting from a URL.
 | Flag | Default | Type | Description | Notes |
 |------|---------|------|-------------|-------|
 | `--max-depth` | `3` | number | Maximum crawl depth | |
-| `--scrape-timeout` | `15` | number | Per-page scrape timeout in seconds | Unit: seconds |
 | `--exclude-tags` | `nav,footer` | string | Comma-separated list of tags to exclude from scraped content | |
 | `--only-main-content` | `true` | boolean | Include only main content when scraping pages | Has negation: `--no-only-main-content` |
 | `--sitemap` | `include` | string | Sitemap handling: skip, include | Valid values: skip, include |
@@ -291,7 +290,6 @@ When using the CLI, omitting the flag uses the default value. To override a `tru
 **Important:** Most commands use **seconds**, but the `search` command uses **milliseconds**:
 
 - `scrape --timeout`: 15 seconds (default)
-- `crawl --scrape-timeout`: 15 seconds (default)
 - `search --timeout`: 60000 milliseconds (default)
 
 ### Collection Default

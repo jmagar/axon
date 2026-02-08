@@ -16,6 +16,7 @@ loadDotenv({ path: envPath, quiet: true });
 
 import packageJson from '../package.json';
 import { createBatchCommand } from './commands/batch';
+import { createCompletionCommand } from './commands/completion';
 import {
   createConfigCommand,
   createViewConfigCommand,
@@ -146,6 +147,7 @@ const TOP_LEVEL_COMMANDS = new Set([
   'delete',
   'history',
   'info',
+  'completion',
   'help',
 ]);
 
@@ -376,6 +378,7 @@ program.addCommand(createDomainsCommand());
 program.addCommand(createDeleteCommand());
 program.addCommand(createHistoryCommand());
 program.addCommand(createInfoCommand());
+program.addCommand(createCompletionCommand());
 
 // Parse arguments
 const args = process.argv.slice(2);
@@ -389,8 +392,16 @@ async function main() {
 
   if (hasVersion && hasAuthStatus) {
     const { isAuthenticated } = await import('./utils/auth');
-    console.log(`version: ${packageJson.version}`);
-    console.log(`authenticated: ${isAuthenticated()}`);
+    console.log('');
+    console.log(`  ${fmt.primary('Version:')} ${fmt.dim(packageJson.version)}`);
+    console.log(
+      `  ${fmt.primary('Authenticated:')} ${
+        isAuthenticated()
+          ? fmt.success(`${icons.success} true`)
+          : fmt.error(`${icons.error} false`)
+      }`
+    );
+    console.log('');
     return;
   }
 
@@ -416,9 +427,15 @@ async function main() {
       // Not authenticated - prompt for login (banner is shown by ensureAuthenticated)
       await ensureAuthenticated();
 
-      console.log("You're all set! Try scraping a URL:\n");
-      console.log('  firecrawl https://example.com\n');
-      console.log('For more commands, run: firecrawl --help\n');
+      console.log('');
+      console.log(
+        `  ${fmt.success(`${icons.success} You're all set. Try scraping a URL:`)}`
+      );
+      console.log(`  ${fmt.dim('firecrawl https://example.com')}`);
+      console.log(
+        `  ${fmt.dim(`${icons.arrow} For more commands, run: firecrawl --help`)}`
+      );
+      console.log('');
       return;
     }
 

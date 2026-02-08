@@ -40,29 +40,31 @@ describe('OptionsBuilder', () => {
   });
 
   it('should handle nested properties', () => {
-    const result = new OptionsBuilder<{ scrapeOptions: { timeout: number } }>()
-      .addNested('scrapeOptions.timeout', 15000)
+    const result = new OptionsBuilder<{
+      scrapeOptions: { onlyMainContent: boolean };
+    }>()
+      .addNested('scrapeOptions.onlyMainContent', true)
       .build();
-    expect(result).toEqual({ scrapeOptions: { timeout: 15000 } });
+    expect(result).toEqual({ scrapeOptions: { onlyMainContent: true } });
   });
 
   it('should skip undefined nested values', () => {
     const result = new OptionsBuilder<{
-      scrapeOptions?: { timeout?: number };
+      scrapeOptions?: { onlyMainContent?: boolean };
     }>()
-      .addNested('scrapeOptions.timeout', undefined)
+      .addNested('scrapeOptions.onlyMainContent', undefined)
       .build();
     expect(result).toEqual({});
   });
 
   it('should handle multi-level nested properties', () => {
     const result = new OptionsBuilder<{
-      crawl: { scrape: { options: { timeout: number } } };
+      crawl: { scrape: { options: { onlyMainContent: boolean } } };
     }>()
-      .addNested('crawl.scrape.options.timeout', 10000)
+      .addNested('crawl.scrape.options.onlyMainContent', true)
       .build();
     expect(result).toEqual({
-      crawl: { scrape: { options: { timeout: 10000 } } },
+      crawl: { scrape: { options: { onlyMainContent: true } } },
     });
   });
 
@@ -70,19 +72,19 @@ describe('OptionsBuilder', () => {
     type ComplexOptions = {
       limit: number;
       maxDiscoveryDepth: number;
-      scrapeOptions: { timeout: number };
+      scrapeOptions: { onlyMainContent: boolean };
     };
 
     const result = new OptionsBuilder<ComplexOptions>()
       .add('limit', 100)
       .addMapped('maxDiscoveryDepth', 3)
-      .addNested('scrapeOptions.timeout', 10000)
+      .addNested('scrapeOptions.onlyMainContent', true)
       .build();
 
     expect(result).toEqual({
       limit: 100,
       maxDiscoveryDepth: 3,
-      scrapeOptions: { timeout: 10000 },
+      scrapeOptions: { onlyMainContent: true },
     });
   });
 
@@ -107,17 +109,17 @@ describe('OptionsBuilder', () => {
 
   it('should merge into existing nested objects', () => {
     type NestedOptions = {
-      scrapeOptions: { timeout: number; waitTime?: number };
+      scrapeOptions: { onlyMainContent: boolean; waitTime?: number };
     };
 
     const result = new OptionsBuilder<NestedOptions>()
-      .addNested('scrapeOptions.timeout', 15000)
+      .addNested('scrapeOptions.onlyMainContent', true)
       .addNested('scrapeOptions.waitTime', 2000)
       .build();
 
     expect(result).toEqual({
       scrapeOptions: {
-        timeout: 15000,
+        onlyMainContent: true,
         waitTime: 2000,
       },
     });

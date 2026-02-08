@@ -12,7 +12,7 @@
  * const options = new OptionsBuilder<FirecrawlOptions>()
  *   .add('limit', 10)
  *   .addMapped('limit', cliOptions.limit) // Same as add() for type safety
- *   .addNested('scrapeOptions.timeout', 15000)
+ *   .addNested('scrapeOptions.onlyMainContent', true)
  *   .build();
  * ```
  */
@@ -48,7 +48,7 @@ export class OptionsBuilder<T extends Record<string, unknown>> {
   }
 
   /**
-   * Add a nested property (e.g., 'scrapeOptions.timeout')
+   * Add a nested property (e.g., 'scrapeOptions.onlyMainContent')
    *
    * @param path - Dot-separated path to nested property
    * @param value - Property value (skipped if undefined)

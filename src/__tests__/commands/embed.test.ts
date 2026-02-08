@@ -12,11 +12,7 @@ import type {
 } from '../../container/types';
 import { resetTeiCache } from '../../utils/embeddings';
 import { resetQdrantCache } from '../../utils/qdrant';
-import {
-  type MockFirecrawlClient,
-  setupTest,
-  teardownTest,
-} from '../utils/mock-client';
+import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
 vi.mock('fs', async () => {
@@ -47,8 +43,6 @@ describe('executeEmbed', () => {
   let mockQdrantService: IQdrantService;
 
   beforeEach(() => {
-    setupTest();
-
     mockClient = {
       scrape: vi.fn(),
     };
@@ -104,7 +98,6 @@ describe('executeEmbed', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
     resetTeiCache();
     resetQdrantCache();

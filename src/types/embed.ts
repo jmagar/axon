@@ -1,6 +1,7 @@
 /**
  * Embed command types
  */
+import type { CommandResult } from './common';
 
 export interface EmbedOptions {
   input: string; // URL, file path, or '-' for stdin
@@ -12,12 +13,8 @@ export interface EmbedOptions {
   json?: boolean;
 }
 
-export interface EmbedResult {
-  success: boolean;
-  data?: {
-    url: string;
-    chunksEmbedded: number;
-    collection: string;
-  };
-  error?: string;
-}
+export type EmbedResult = CommandResult<{
+  url: string;
+  chunksEmbedded: number;
+  collection: string;
+}>;

@@ -5,13 +5,14 @@
 import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { CrawlActiveResult } from '../types/crawl';
-import { formatJson } from '../utils/command';
-import { writeOutput } from '../utils/output';
-import { fmt } from '../utils/theme';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
+import { requireContainer } from './shared';
 
 export interface ListOptions {
   apiKey?: string;
   output?: string;
+  json?: boolean;
   pretty?: boolean;
 }
 
@@ -41,30 +42,24 @@ export async function handleListCommand(
   container: IContainer,
   options: ListOptions
 ): Promise<void> {
-  const result = await executeList(container, options);
-  if (!result.success) {
-    console.error(fmt.error(result.error || 'Unknown error occurred'));
-    process.exit(1);
-  }
-
-  const pretty = options.pretty ?? true;
-
-  if (
-    !options.output &&
-    !pretty &&
-    result.data &&
-    Array.isArray(result.data.crawls) &&
-    result.data.crawls.length === 0
-  ) {
-    console.log(fmt.dim('No active crawls.'));
-    return;
-  }
-
-  const outputContent = formatJson(
-    { success: true, data: result.data },
-    pretty
+  processCommandResult(
+    await executeList(container, options),
+    { ...options, json: options.json || !!options.output },
+    (data) => {
+      const crawls = data?.crawls ?? [];
+      if (crawls.length === 0) {
+        return fmt.dim('No active crawls.');
+      }
+      const lines: string[] = [];
+      lines.push(`  ${fmt.primary('Active crawls:')}`);
+      for (const crawl of crawls) {
+        lines.push(
+          `    ${fmt.warning(icons.processing)} ${fmt.dim(crawl.id)} ${crawl.url}`
+        );
+      }
+      return lines.join('\n');
+    }
   );
-  writeOutput(outputContent, options.output, !!options.output);
 }
 
 /**
@@ -78,15 +73,14 @@ export function createListCommand(): Command {
       'Firecrawl API key (overrides global --api-key)'
     )
     .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--no-pretty', 'Disable pretty JSON output')
+    .option('--json', 'Output as JSON', false)
+    .option('--pretty', 'Pretty print JSON output', false)
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleListCommand(container, {
         apiKey: options.apiKey,
+        json: options.json,
         output: options.output,
         pretty: options.pretty,
       });

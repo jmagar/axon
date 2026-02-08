@@ -10,8 +10,13 @@ import type {
   DomainsOptions,
   DomainsResult,
 } from '../types/domains';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import { fmt, icons } from '../utils/theme';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute domains command
@@ -25,15 +30,13 @@ export async function executeDomains(
   options: DomainsOptions
 ): Promise<DomainsResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the domains command.',
+        error: getQdrantUrlError('domains'),
       };
     }
 
@@ -108,10 +111,12 @@ export async function executeDomains(
  */
 function formatTable(domains: DomainInfo[]): string {
   if (domains.length === 0) {
-    return 'No domains found in vector database.';
+    return fmt.dim('No domains found in vector database.');
   }
 
   const lines: string[] = [];
+  lines.push(`  ${fmt.primary('Domains')}`);
+  lines.push('');
 
   const header = [
     'Domain'.padEnd(35),
@@ -143,7 +148,7 @@ function formatTable(domains: DomainInfo[]): string {
  * Format domains summary
  */
 function formatSummary(data: NonNullable<DomainsResult['data']>): string {
-  return `\nTotal: ${data.totalDomains} domains, ${data.totalUrls} URLs, ${data.totalVectors} vectors`;
+  return `\n  ${fmt.info(icons.info)} ${data.totalDomains} domains, ${data.totalUrls} URLs, ${data.totalVectors} vectors`;
 }
 
 /**
@@ -153,28 +158,11 @@ export async function handleDomainsCommand(
   container: IContainer,
   options: DomainsOptions
 ): Promise<void> {
-  const result = await executeDomains(container, options);
-
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else {
-    outputContent =
-      formatTable(result.data.domains) + formatSummary(result.data);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeDomains(container, options),
+    options,
+    (resultData) => formatTable(resultData.domains) + formatSummary(resultData)
+  );
 }
 
 /**
@@ -191,10 +179,7 @@ export function createDomainsCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleDomainsCommand(container, {
         limit: options.limit,

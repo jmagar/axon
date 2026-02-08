@@ -8,7 +8,6 @@ export interface BatchOptions {
   format?: string;
   onlyMainContent?: boolean;
   waitFor?: number;
-  scrapeTimeout?: number;
   screenshot?: boolean;
   includeTags?: string[];
   excludeTags?: string[];

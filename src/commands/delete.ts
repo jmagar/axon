@@ -6,8 +6,12 @@
 import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { DeleteOptions, DeleteResult } from '../types/delete';
-import { formatJson, handleCommandError } from '../utils/command';
-import { validateOutputPath, writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
+import {
+  getQdrantUrlError,
+  requireContainer,
+  resolveCollectionName,
+} from './shared';
 
 /**
  * Execute delete command
@@ -22,15 +26,13 @@ export async function executeDelete(
   options: DeleteOptions
 ): Promise<DeleteResult> {
   try {
-    const config = container.config;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!qdrantUrl) {
       return {
         success: false,
-        error: 'QDRANT_URL must be set in .env for the delete command.',
+        error: getQdrantUrlError('delete'),
       };
     }
 
@@ -146,27 +148,11 @@ export async function handleDeleteCommand(
   container: IContainer,
   options: DeleteOptions
 ): Promise<void> {
-  const result = await executeDelete(container, options);
-
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  if (options.output) {
-    validateOutputPath(options.output);
-  }
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({ success: true, data: result.data });
-  } else {
-    outputContent = formatHuman(result.data);
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeDelete(container, options),
+    options,
+    formatHuman
+  );
 }
 
 /**
@@ -190,10 +176,7 @@ export function createDeleteCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       await handleDeleteCommand(container, {
         url: options.url,

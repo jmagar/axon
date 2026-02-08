@@ -1,6 +1,7 @@
 /**
  * Stats command types
  */
+import type { CommandResult } from './common';
 
 export interface DomainStats {
   domain: string;
@@ -32,8 +33,4 @@ export interface StatsOptions {
   json?: boolean;
 }
 
-export interface StatsResult {
-  success: boolean;
-  data?: StatsData;
-  error?: string;
-}
+export type StatsResult = CommandResult<StatsData>;

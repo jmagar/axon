@@ -1,6 +1,7 @@
 /**
  * Types for map command
  */
+import type { CommandResult } from './common';
 
 export interface MapOptions {
   /** API key for Firecrawl */
@@ -31,14 +32,10 @@ export interface MapOptions {
   timeout?: number;
 }
 
-export interface MapResult {
-  success: boolean;
-  data?: {
-    links: Array<{
-      url: string;
-      title?: string;
-      description?: string;
-    }>;
-  };
-  error?: string;
-}
+export type MapResult = CommandResult<{
+  links: Array<{
+    url: string;
+    title?: string;
+    description?: string;
+  }>;
+}>;

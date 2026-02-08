@@ -8,6 +8,9 @@ import { resetTeiCache } from '../../../utils/embeddings';
 import { resetQdrantCache } from '../../../utils/qdrant';
 import { createTestContainer } from '../../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 describe('checkCrawlStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -32,7 +35,7 @@ describe('checkCrawlStatus', () => {
       getCrawlStatus: vi.fn().mockResolvedValue(mockStatus),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await checkCrawlStatus(container, 'test-job-123');
 
@@ -53,7 +56,7 @@ describe('checkCrawlStatus', () => {
       }),
     };
 
-    const container = createTestContainer(mockClient, {
+    const container = createContainer(mockClient, {
       apiKey: 'test-api-key',
     });
 
@@ -69,7 +72,7 @@ describe('checkCrawlStatus', () => {
       getCrawlStatus: vi.fn().mockRejectedValue(new Error('Network error')),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await checkCrawlStatus(container, 'test-job-123');
 
@@ -84,7 +87,7 @@ describe('checkCrawlStatus', () => {
       getCrawlStatus: vi.fn().mockRejectedValue('String error'),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await checkCrawlStatus(container, 'test-job-456');
 
@@ -105,7 +108,7 @@ describe('executeCrawlCancel', () => {
       cancelCrawl: vi.fn().mockResolvedValue(true),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlCancel(container, 'test-job-123');
 
@@ -119,7 +122,7 @@ describe('executeCrawlCancel', () => {
       cancelCrawl: vi.fn().mockResolvedValue(true),
     };
 
-    const container = createTestContainer(mockClient, { apiKey: 'test-key' });
+    const container = createContainer(mockClient, { apiKey: 'test-key' });
 
     await executeCrawlCancel(container, 'test-job');
 
@@ -131,7 +134,7 @@ describe('executeCrawlCancel', () => {
       cancelCrawl: vi.fn().mockResolvedValue(false),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlCancel(container, 'test-job-789');
 
@@ -144,7 +147,7 @@ describe('executeCrawlCancel', () => {
       cancelCrawl: vi.fn().mockRejectedValue(new Error('API error')),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlCancel(container, 'test-job-000');
 
@@ -157,7 +160,7 @@ describe('executeCrawlCancel', () => {
       cancelCrawl: vi.fn().mockResolvedValue(true),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlCancel(container, 'test-job');
 
@@ -180,7 +183,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockResolvedValue(mockErrors),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlErrors(container, 'test-job-123');
 
@@ -194,7 +197,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockResolvedValue([]),
     };
 
-    const container = createTestContainer(mockClient, { apiKey: 'my-key' });
+    const container = createContainer(mockClient, { apiKey: 'my-key' });
 
     await executeCrawlErrors(container, 'test-job');
 
@@ -206,7 +209,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockResolvedValue([]),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlErrors(container, 'test-job');
 
@@ -219,7 +222,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockRejectedValue(new Error('Fetch failed')),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlErrors(container, 'test-job-111');
 
@@ -234,7 +237,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockRejectedValue({ message: 'Custom error' }),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlErrors(container, 'test-job-222');
 
@@ -249,7 +252,7 @@ describe('executeCrawlErrors', () => {
       getCrawlErrors: vi.fn().mockResolvedValue([]),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     const result = await executeCrawlErrors(container, 'test-job');
 

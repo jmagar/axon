@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { pollCrawlProgress } from '../../../commands/crawl/polling';
 import { createTestContainer } from '../../utils/test-container';
 
+const createContainer = (...args: Parameters<typeof createTestContainer>) =>
+  createTestContainer(...args);
+
 // Mock dependencies
 vi.mock('../../../utils/polling', () => ({
   pollWithProgress: vi.fn(),
@@ -27,7 +30,7 @@ describe('pollCrawlProgress', () => {
       data: [],
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockResolvedValue(mockResult as never);
 
     const result = await pollCrawlProgress(container, 'job-123', {
@@ -51,7 +54,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient, { apiKey: 'test-key' });
+    const container = createContainer(mockClient, { apiKey: 'test-key' });
     vi.mocked(pollWithProgress).mockResolvedValue({} as never);
 
     await pollCrawlProgress(container, 'job-123', {
@@ -73,7 +76,7 @@ describe('pollCrawlProgress', () => {
 
     let capturedStatusFetcher: ((id: string) => Promise<unknown>) | undefined;
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockImplementation(async (config) => {
       capturedStatusFetcher = config.statusFetcher;
       return {} as never;
@@ -102,7 +105,7 @@ describe('pollCrawlProgress', () => {
       | undefined;
 
     const mockClient = { getCrawlStatus: vi.fn() };
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockImplementation(async (config) => {
       capturedIsComplete = config.isComplete;
       return {} as never;
@@ -142,7 +145,7 @@ describe('pollCrawlProgress', () => {
       | undefined;
 
     const mockClient = { getCrawlStatus: vi.fn() };
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockImplementation(async (config) => {
       capturedFormatProgress = config.formatProgress;
       return {} as never;
@@ -168,7 +171,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockResolvedValue({} as never);
 
     await pollCrawlProgress(container, 'job-123', {
@@ -187,7 +190,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockResolvedValue({} as never);
 
     await pollCrawlProgress(container, 'job-123', {
@@ -202,7 +205,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
     vi.mocked(pollWithProgress).mockRejectedValue(
       new Error('Timeout after 60 seconds')
     );
@@ -220,7 +223,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     await expect(
       pollCrawlProgress(container, 'job-123', {
@@ -234,7 +237,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     await expect(
       pollCrawlProgress(container, 'job-123', {
@@ -248,7 +251,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     await expect(
       pollCrawlProgress(container, 'job-123', {
@@ -262,7 +265,7 @@ describe('pollCrawlProgress', () => {
       getCrawlStatus: vi.fn(),
     };
 
-    const container = createTestContainer(mockClient);
+    const container = createContainer(mockClient);
 
     await expect(
       pollCrawlProgress(container, 'job-123', {

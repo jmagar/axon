@@ -1,6 +1,7 @@
 /**
  * Info command types
  */
+import type { CommandResult } from './common';
 
 export interface UrlInfo {
   url: string;
@@ -25,8 +26,4 @@ export interface InfoOptions {
   json?: boolean;
 }
 
-export interface InfoResult {
-  success: boolean;
-  data?: UrlInfo;
-  error?: string;
-}
+export type InfoResult = CommandResult<UrlInfo>;

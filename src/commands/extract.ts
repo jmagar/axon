@@ -5,11 +5,15 @@
 import pLimit from 'p-limit';
 import type { IContainer } from '../container/types';
 import type { ExtractOptions, ExtractResult } from '../types/extract';
-import { formatJson, handleCommandError } from '../utils/command';
+import {
+  formatJson,
+  handleCommandError,
+  writeCommandOutput,
+} from '../utils/command';
 import { normalizeJobId } from '../utils/job';
 import { recordJob } from '../utils/job-history';
-import { writeOutput } from '../utils/output';
 import { fmt } from '../utils/theme';
+import { requireContainer, requireContainerFromCommandTree } from './shared';
 
 /**
  * Maximum concurrent embedding operations to prevent resource exhaustion
@@ -186,7 +190,7 @@ export async function handleExtractCommand(
   }
 
   const outputContent = formatJson(outputData, options.pretty);
-  writeOutput(outputContent, options.output, !!options.output);
+  writeCommandOutput(outputContent, options);
 }
 
 import { Command } from 'commander';
@@ -224,7 +228,7 @@ async function handleExtractStatusCommand(
     };
 
     const outputContent = formatJson(result, options.pretty);
-    writeOutput(outputContent, options.output, !!options.output);
+    writeCommandOutput(outputContent, options);
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Unknown error occurred';
@@ -278,10 +282,7 @@ export function createExtractCommand(container?: IContainer): Command {
     .option('--pretty', 'Pretty print JSON output', false)
     .option('--no-embed', 'Disable auto-embedding of extracted content')
     .action(async (rawUrls: string[], options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       // Flatten URLs that may contain newlines (e.g. zsh doesn't word-split variables)
       const urls = rawUrls
@@ -321,10 +322,7 @@ export function createExtractCommand(container?: IContainer): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command.parent?._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainerFromCommandTree(command);
 
       // Normalize job ID to support both raw IDs and URLs
       const normalizedJobId = normalizeJobId(jobId);

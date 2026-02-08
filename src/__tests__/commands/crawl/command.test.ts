@@ -8,6 +8,7 @@ import { createTestContainer } from '../../utils/test-container';
 // Mock dependencies
 vi.mock('../../../utils/command', () => ({
   formatJson: vi.fn(),
+  writeCommandOutput: vi.fn(),
 }));
 
 vi.mock('../../../utils/output', () => ({
@@ -44,10 +45,14 @@ import {
 } from '../../../commands/crawl/embed';
 import { executeCrawl } from '../../../commands/crawl/execute';
 import { formatCrawlStatus } from '../../../commands/crawl/format';
-import { formatJson } from '../../../utils/command';
+import { formatJson, writeCommandOutput } from '../../../utils/command';
 import { isJobId } from '../../../utils/job';
 import { recordJob } from '../../../utils/job-history';
 import { writeOutput } from '../../../utils/output';
+
+vi.mocked(writeCommandOutput).mockImplementation((content, options) => {
+  writeOutput(String(content), options.output, !!options.output);
+});
 
 describe('handleCrawlCommand', () => {
   beforeEach(() => {
@@ -189,12 +194,8 @@ describe('handleCrawlCommand', () => {
       undefined
     );
     expect(recordJob).toHaveBeenCalledWith('crawl', 'job-222');
-    expect(formatJson).toHaveBeenCalledWith(
-      { success: true, data: mockJobResult },
-      undefined
-    );
     expect(writeOutput).toHaveBeenCalledWith(
-      '{"jobId":"job-222"}',
+      expect.stringContaining('Job ID:'),
       undefined,
       false
     );
@@ -309,12 +310,18 @@ describe('handleCrawlCommand', () => {
     const options: CrawlOptions = {
       urlOrJobId: 'https://example.com',
       pretty: true,
+      output: 'pretty-output.json',
     };
 
     await handleCrawlCommand(container, options);
 
     expect(formatJson).toHaveBeenCalledWith(
       { success: true, data: mockJobResult },
+      true
+    );
+    expect(writeOutput).toHaveBeenCalledWith(
+      '{\n  "jobId": "job-666"\n}',
+      'pretty-output.json',
       true
     );
   });

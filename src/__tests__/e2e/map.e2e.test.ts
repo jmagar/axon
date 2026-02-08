@@ -9,15 +9,16 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   isTestServerRunning,
   parseJSONOutput,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
+  skipIfMissingApiKey,
+  skipIfMissingApiOrServer,
   TEST_SERVER_URL,
 } from './helpers';
 
@@ -31,42 +32,39 @@ describe('E2E: map command', () => {
     testServerAvailable = await isTestServerRunning();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no URL is provided', async () => {
       const result = await runCLIFailure(['map'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain('URL is required');
     });
 
     it('should accept URL as positional argument', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['map', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain('URL is required');
     });
 
     it('should accept URL with --url flag', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['map', '--url', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain('URL is required');
     });
@@ -128,13 +126,12 @@ describe('E2E: map command', () => {
 
   describe('map with test server', () => {
     it('should map URLs from the test server', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(['map', TEST_SERVER_URL, '--limit', '10'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -146,15 +143,14 @@ describe('E2E: map command', () => {
     });
 
     it('should output URLs in JSON format with --json flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--limit', '10', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -167,8 +163,7 @@ describe('E2E: map command', () => {
     });
 
     it('should save output to file with --output flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -176,7 +171,7 @@ describe('E2E: map command', () => {
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--limit', '10', '--output', outputPath],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -189,15 +184,14 @@ describe('E2E: map command', () => {
     });
 
     it('should respect --limit option', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--limit', '5', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -215,15 +209,14 @@ describe('E2E: map command', () => {
     });
 
     it('should filter URLs with --search option', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--search', 'blog', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -238,15 +231,14 @@ describe('E2E: map command', () => {
     });
 
     it('should handle --sitemap only option', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--sitemap', 'only', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -256,15 +248,14 @@ describe('E2E: map command', () => {
     });
 
     it('should handle --sitemap skip option', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--sitemap', 'skip', '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );
@@ -275,13 +266,12 @@ describe('E2E: map command', () => {
 
   describe('map output format', () => {
     it('should output one URL per line by default', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(['map', TEST_SERVER_URL, '--limit', '5'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         timeout: 60000,
       });
 
@@ -299,15 +289,14 @@ describe('E2E: map command', () => {
     });
 
     it('should output pretty JSON with --json --pretty flags', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
       const result = await runCLI(
         ['map', TEST_SERVER_URL, '--limit', '3', '--json', '--pretty'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 60000,
         }
       );

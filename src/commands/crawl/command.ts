@@ -9,13 +9,13 @@ import type {
   CrawlResult,
   CrawlStatusResult,
 } from '../../types/crawl';
-import { formatJson } from '../../utils/command';
+import { formatJson, writeCommandOutput } from '../../utils/command';
 import { displayCommandInfo } from '../../utils/display';
 import { isJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
-import { validateOutputPath, writeOutput } from '../../utils/output';
 import { fmt, icons } from '../../utils/theme';
 import { normalizeUrl } from '../../utils/url';
+import { requireContainer, requireContainerFromCommandTree } from '../shared';
 import {
   handleAsyncEmbedding,
   handleManualEmbedding,
@@ -43,6 +43,22 @@ function isStatusOnlyResult(data: unknown): boolean {
     !('data' in data) &&
     'status' in data
   );
+}
+
+function writeOutputOrExit(
+  outputContent: string,
+  options: { output?: string; pretty?: boolean; json?: boolean }
+): boolean {
+  try {
+    writeCommandOutput(outputContent, options);
+    return true;
+  } catch (error) {
+    console.error(
+      fmt.error(error instanceof Error ? error.message : 'Invalid output path')
+    );
+    process.exit(1);
+    return false;
+  }
 }
 
 /**
@@ -83,7 +99,6 @@ export async function handleCrawlCommand(
     onlyMainContent: options.onlyMainContent,
     excludeTags: options.excludeTags,
     excludePaths: options.excludePaths,
-    scrapeTimeout: options.scrapeTimeout,
     wait: options.wait,
     progress: options.progress,
   });
@@ -110,20 +125,9 @@ export async function handleCrawlCommand(
               { success: true, data: statusResult.data },
               options.pretty
             );
-      if (options.output) {
-        try {
-          validateOutputPath(options.output);
-        } catch (error) {
-          console.error(
-            fmt.error(
-              error instanceof Error ? error.message : 'Invalid output path'
-            )
-          );
-          process.exit(1);
-          return;
-        }
+      if (!writeOutputOrExit(outputContent, options)) {
+        return;
       }
-      writeOutput(outputContent, options.output, !!options.output);
       return;
     }
   }
@@ -159,28 +163,26 @@ export async function handleCrawlCommand(
       url: crawlResult.data.url,
       status: crawlResult.data.status,
     };
-    outputContent = formatJson(
-      { success: true, data: jobData },
-      options.pretty
-    );
+    if (options.output) {
+      outputContent = formatJson(
+        { success: true, data: jobData },
+        options.pretty
+      );
+    } else {
+      outputContent = [
+        `  ${fmt.primary('Job ID:')} ${fmt.dim(jobData.jobId)}`,
+        `  ${fmt.primary('Status:')} ${jobData.status}`,
+        `  ${fmt.primary('URL:')} ${fmt.dim(jobData.url)}`,
+      ].join('\n');
+    }
   } else {
     // Completed crawl - output the data
     outputContent = formatJson(crawlResult.data, options.pretty);
   }
 
-  if (options.output) {
-    try {
-      validateOutputPath(options.output);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : 'Invalid output path'
-      );
-      process.exit(1);
-      return;
-    }
+  if (!writeOutputOrExit(outputContent, options)) {
+    return;
   }
-  writeOutput(outputContent, options.output, !!options.output);
 }
 
 /**
@@ -203,25 +205,13 @@ async function handleCrawlStatusCommand(
     return;
   }
 
-  if (options.output) {
-    try {
-      validateOutputPath(options.output);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : 'Invalid output path'
-      );
-      process.exit(1);
-      return;
-    }
-  }
-
   const outputContent =
     options.pretty || !options.output
       ? formatCrawlStatus(result.data)
       : formatJson({ success: true, data: result.data }, options.pretty);
-
-  writeOutput(outputContent, options.output, !!options.output);
+  if (!writeOutputOrExit(outputContent, options)) {
+    return;
+  }
 }
 
 /**
@@ -244,24 +234,13 @@ async function handleCrawlCancelCommand(
     return;
   }
 
-  if (options.output) {
-    try {
-      validateOutputPath(options.output);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : 'Invalid output path'
-      );
-      process.exit(1);
-      return;
-    }
-  }
-
   const outputContent = formatJson(
     { success: true, data: result.data },
     options.pretty
   );
-  writeOutput(outputContent, options.output, !!options.output);
+  if (!writeOutputOrExit(outputContent, options)) {
+    return;
+  }
 }
 
 /**
@@ -284,24 +263,13 @@ async function handleCrawlErrorsCommand(
     return;
   }
 
-  if (options.output) {
-    try {
-      validateOutputPath(options.output);
-    } catch (error) {
-      console.error(
-        'Error:',
-        error instanceof Error ? error.message : 'Invalid output path'
-      );
-      process.exit(1);
-      return;
-    }
-  }
-
   const outputContent = formatJson(
     { success: true, data: result.data },
     options.pretty
   );
-  writeOutput(outputContent, options.output, !!options.output);
+  if (!writeOutputOrExit(outputContent, options)) {
+    return;
+  }
 }
 
 /**
@@ -331,12 +299,6 @@ export function createCrawlCommand(): Command {
       '--timeout <seconds>',
       'Timeout in seconds when waiting for crawl job to complete (default: no timeout)',
       parseFloat
-    )
-    .option(
-      '--scrape-timeout <seconds>',
-      'Per-page scrape timeout in seconds',
-      parseFloat,
-      15
     )
     .option('--progress', 'Show progress while waiting (implies --wait)', false)
     .option('--limit <number>', 'Maximum number of pages to crawl', parseInt)
@@ -403,10 +365,7 @@ export function createCrawlCommand(): Command {
     .option('--no-embed', 'Skip auto-embedding of crawl results')
     .option('--no-default-excludes', 'Skip default exclude paths from settings')
     .action(async (positionalUrlOrJobId, options, command: Command) => {
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       // Use positional argument if provided, otherwise use --url option
       const urlOrJobId = positionalUrlOrJobId || options.url;
@@ -438,7 +397,6 @@ export function createCrawlCommand(): Command {
         wait: options.wait,
         pollInterval: options.pollInterval,
         timeout: options.timeout,
-        scrapeTimeout: options.scrapeTimeout,
         progress: options.progress,
         output: options.output,
         pretty: options.pretty,
@@ -479,10 +437,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command.parent?._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainerFromCommandTree(command);
       await handleCrawlStatusCommand(container, jobId, options);
     });
 
@@ -495,10 +450,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command.parent?._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainerFromCommandTree(command);
       await handleCrawlCancelCommand(container, jobId, options);
     });
 
@@ -511,10 +463,7 @@ export function createCrawlCommand(): Command {
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
     .action(async (jobId: string, options, command: Command) => {
-      const container = command.parent?._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainerFromCommandTree(command);
       await handleCrawlErrorsCommand(container, jobId, options);
     });
 

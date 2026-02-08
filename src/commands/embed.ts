@@ -8,10 +8,10 @@ import * as fs from 'node:fs';
 import type { IContainer } from '../container/types';
 import type { EmbedOptions, EmbedResult } from '../types/embed';
 import { chunkText } from '../utils/chunker';
-import { formatJson, handleCommandError } from '../utils/command';
-import { writeOutput } from '../utils/output';
+import { processCommandResult } from '../utils/command';
 import { fmt, icons } from '../utils/theme';
 import { isUrl } from '../utils/url';
+import { requireContainer, resolveCollectionName } from './shared';
 
 /**
  * Read stdin as a string
@@ -32,11 +32,9 @@ export async function executeEmbed(
   options: EmbedOptions
 ): Promise<EmbedResult> {
   try {
-    const config = container.config;
-    const teiUrl = config.teiUrl;
-    const qdrantUrl = config.qdrantUrl;
-    const collection =
-      options.collection || config.qdrantCollection || 'firecrawl';
+    const teiUrl = container.config.teiUrl;
+    const qdrantUrl = container.config.qdrantUrl;
+    const collection = resolveCollectionName(container, options.collection);
 
     if (!teiUrl || !qdrantUrl) {
       return {
@@ -173,27 +171,12 @@ export async function handleEmbedCommand(
   container: IContainer,
   options: EmbedOptions
 ): Promise<void> {
-  const result = await executeEmbed(container, options);
-
-  // Use shared error handler
-  if (!handleCommandError(result)) {
-    return;
-  }
-
-  if (!result.data) return;
-
-  let outputContent: string;
-
-  if (options.json) {
-    outputContent = formatJson({
-      success: true,
-      data: result.data,
-    });
-  } else {
-    outputContent = `${icons.success} Embedded ${result.data.chunksEmbedded} chunks for ${fmt.dim(result.data.url)} into ${fmt.dim(result.data.collection)}`;
-  }
-
-  writeOutput(outputContent, options.output, !!options.output);
+  processCommandResult(
+    await executeEmbed(container, options),
+    options,
+    (data) =>
+      `${icons.success} Embedded ${data.chunksEmbedded} chunks for ${fmt.dim(data.url)} into ${fmt.dim(data.collection)}`
+  );
 }
 
 import { Command } from 'commander';
@@ -264,10 +247,7 @@ export function createEmbedCommand(): Command {
         return;
       }
 
-      const container = command._container;
-      if (!container) {
-        throw new Error('Container not initialized');
-      }
+      const container = requireContainer(command);
 
       // Normalize URL input (but not file paths or stdin "-")
       const normalizedInput = isUrl(input) ? normalizeUrl(input) : input;

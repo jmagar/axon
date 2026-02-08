@@ -9,7 +9,6 @@ import type {
   IQdrantService,
   ITeiService,
 } from '../../container/types';
-import { setupTest, teardownTest } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
 describe('executeQuery', () => {
@@ -18,8 +17,6 @@ describe('executeQuery', () => {
   let mockQdrantService: IQdrantService;
 
   beforeEach(() => {
-    setupTest();
-
     // Create mock TEI service
     mockTeiService = {
       getTeiInfo: vi.fn().mockResolvedValue({
@@ -67,7 +64,6 @@ describe('executeQuery', () => {
   });
 
   afterEach(() => {
-    teardownTest();
     vi.clearAllMocks();
   });
 

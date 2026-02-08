@@ -9,15 +9,16 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  cleanupTempDir,
-  createTempDir,
   getTestApiKey,
   isTestServerRunning,
   parseJSONOutput,
+  registerTempDirLifecycle,
   runCLI,
   runCLIFailure,
+  skipIfMissingApiKey,
+  skipIfMissingApiOrServer,
   TEST_SERVER_URL,
 } from './helpers';
 
@@ -31,44 +32,41 @@ describe('E2E: extract command', () => {
     testServerAvailable = await isTestServerRunning();
   });
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
 
   describe('input validation', () => {
     it('should fail when no URLs are provided', async () => {
       const result = await runCLIFailure(['extract'], {
-        env: { FIRECRAWL_API_KEY: apiKey || 'test-key' },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).toContain("required argument 'urls'");
     });
 
     it('should accept URL as positional argument', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(['extract', 'https://example.com'], {
-        env: { FIRECRAWL_API_KEY: apiKey },
+        env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
       });
       expect(result.stderr).not.toContain("required argument 'urls'");
     });
 
     it('should accept multiple URLs', async () => {
-      if (!apiKey) {
-        console.log('Skipping: No API credentials');
+      if (skipIfMissingApiKey(apiKey)) {
         return;
       }
 
       const result = await runCLI(
         ['extract', 'https://example.com', 'https://example.org'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
         }
       );
       expect(result.stderr).not.toContain("required argument 'urls'");
@@ -136,8 +134,7 @@ describe('E2E: extract command', () => {
 
   describe('extract with test server', () => {
     it('should extract data with a prompt', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -150,7 +147,7 @@ describe('E2E: extract command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -161,8 +158,7 @@ describe('E2E: extract command', () => {
     });
 
     it('should extract data with a JSON schema', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -177,7 +173,7 @@ describe('E2E: extract command', () => {
       const result = await runCLI(
         ['extract', `${TEST_SERVER_URL}/about/`, '--schema', schema, '--json'],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -189,8 +185,7 @@ describe('E2E: extract command', () => {
     });
 
     it('should save output to file with --output flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -205,7 +200,7 @@ describe('E2E: extract command', () => {
           outputPath,
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -218,8 +213,7 @@ describe('E2E: extract command', () => {
     });
 
     it('should extract from multiple URLs', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -233,7 +227,7 @@ describe('E2E: extract command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 180000,
         }
       );
@@ -243,8 +237,7 @@ describe('E2E: extract command', () => {
     });
 
     it('should show sources with --show-sources flag', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -258,7 +251,7 @@ describe('E2E: extract command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );
@@ -273,8 +266,7 @@ describe('E2E: extract command', () => {
 
   describe('extract with blog posts', () => {
     it('should extract structured data from a blog post', async () => {
-      if (!apiKey || !testServerAvailable) {
-        console.log('Skipping: No API credentials or test server');
+      if (skipIfMissingApiOrServer(apiKey, testServerAvailable)) {
         return;
       }
 
@@ -296,7 +288,7 @@ describe('E2E: extract command', () => {
           '--json',
         ],
         {
-          env: { FIRECRAWL_API_KEY: apiKey },
+          env: { FIRECRAWL_API_KEY: apiKey ?? 'test-key' },
           timeout: 120000,
         }
       );

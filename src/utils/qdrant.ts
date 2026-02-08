@@ -1,178 +1,30 @@
 /**
- * Qdrant vector database client
- * Handles collection management, upsert, delete, query, and scroll operations
+ * Legacy Qdrant utility wrappers.
+ *
+ * This module now delegates to the container-oriented QdrantService to avoid
+ * duplicated request logic across the codebase.
  */
 
-import { LRUCache } from 'lru-cache';
-import { fetchWithRetry } from './http';
+import { HttpClient } from '../container/services/HttpClient';
+import { QdrantService } from '../container/services/QdrantService';
 
-const SCROLL_PAGE_SIZE = 100;
+const serviceCache = new Map<string, QdrantService>();
 
-/**
- * Get response body for error messages
- */
-async function getErrorBody(response: Response): Promise<string> {
-  try {
-    return await response.text();
-  } catch {
-    return '';
-  }
-}
-
-/** HTTP timeout for Qdrant requests (60 seconds - longer for large operations) */
-const QDRANT_TIMEOUT_MS = 60000;
-
-/** Number of retries for Qdrant requests */
-const QDRANT_MAX_RETRIES = 3;
-
-/** Maximum number of collections to cache (LRU eviction) */
-const COLLECTION_CACHE_MAX = 100;
-
-const collectionCache = new LRUCache<string, true>({
-  max: COLLECTION_CACHE_MAX,
-});
-
-/** Cache key separator - null character cannot appear in URLs */
-const CACHE_KEY_SEP = '\x00';
-
-/** Generate a safe cache key combining URL and collection */
-function getCacheKey(url: string, collection: string): string {
-  return `${url}${CACHE_KEY_SEP}${collection}`;
-}
-
-/**
- * Ensure collection exists, create if not
- * Creates payload indexes on url, domain, source_command after creation
- */
-export async function ensureCollection(
-  qdrantUrl: string,
-  collection: string,
-  dimension: number
-): Promise<void> {
-  const cacheKey = getCacheKey(qdrantUrl, collection);
-  if (collectionCache.get(cacheKey)) return;
-
-  const checkResponse = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}`,
-    undefined,
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (checkResponse.ok) {
-    collectionCache.set(cacheKey, true);
-    return;
+function getService(qdrantUrl: string): QdrantService {
+  const cached = serviceCache.get(qdrantUrl);
+  if (cached) {
+    return cached;
   }
 
-  if (checkResponse.status !== 404) {
-    throw new Error(
-      `Failed to check Qdrant collection: ${checkResponse.status} ${checkResponse.statusText}`
-    );
-  }
-
-  // Create collection
-  const createResponse = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vectors: {
-          size: dimension,
-          distance: 'Cosine',
-        },
-      }),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (!createResponse.ok) {
-    throw new Error(
-      `Failed to create Qdrant collection: ${createResponse.status}`
-    );
-  }
-
-  // Create payload indexes for fast filtering (in parallel)
-  const indexFields = ['url', 'domain', 'source_command'];
-  await Promise.all(
-    indexFields.map((field) =>
-      fetchWithRetry(
-        `${qdrantUrl}/collections/${collection}/index`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            field_name: field,
-            field_schema: 'keyword',
-          }),
-        },
-        { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-      )
-    )
-  );
-
-  collectionCache.set(cacheKey, true);
+  const service = new QdrantService(qdrantUrl, new HttpClient());
+  serviceCache.set(qdrantUrl, service);
+  return service;
 }
 
 export interface QdrantPoint {
   id: string;
   vector: number[];
   payload: Record<string, unknown>;
-}
-
-/**
- * Upsert points into collection
- */
-export async function upsertPoints(
-  qdrantUrl: string,
-  collection: string,
-  points: QdrantPoint[]
-): Promise<void> {
-  const response = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}/points`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points }),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (!response.ok) {
-    const errorBody = await getErrorBody(response);
-    throw new Error(
-      `Qdrant upsert failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-    );
-  }
-}
-
-/**
- * Delete all points matching a URL
- */
-export async function deleteByUrl(
-  qdrantUrl: string,
-  collection: string,
-  url: string
-): Promise<void> {
-  const response = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}/points/delete`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filter: {
-          must: [{ key: 'url', match: { value: url } }],
-        },
-      }),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (!response.ok) {
-    const errorBody = await getErrorBody(response);
-    throw new Error(
-      `Qdrant delete failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-    );
-  }
 }
 
 export interface QueryOptions {
@@ -186,204 +38,84 @@ export interface QueryResult {
   payload: Record<string, unknown>;
 }
 
-/**
- * Query collection with vector similarity
- */
+export interface ScrollResult {
+  id: string;
+  payload: Record<string, unknown>;
+}
+
+export async function ensureCollection(
+  qdrantUrl: string,
+  collection: string,
+  dimension: number
+): Promise<void> {
+  await getService(qdrantUrl).ensureCollection(collection, dimension);
+}
+
+export async function upsertPoints(
+  qdrantUrl: string,
+  collection: string,
+  points: QdrantPoint[]
+): Promise<void> {
+  await getService(qdrantUrl).upsertPoints(collection, points);
+}
+
+export async function deleteByUrl(
+  qdrantUrl: string,
+  collection: string,
+  url: string
+): Promise<void> {
+  await getService(qdrantUrl).deleteByUrl(collection, url);
+}
+
 export async function queryPoints(
   qdrantUrl: string,
   collection: string,
   vector: number[],
   options: QueryOptions
 ): Promise<QueryResult[]> {
-  const body: Record<string, unknown> = {
-    query: vector,
-    limit: options.limit,
-    with_payload: true,
-  };
-
-  if (options.domain) {
-    body.filter = {
-      must: [{ key: 'domain', match: { value: options.domain } }],
-    };
-  }
-
-  const response = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}/points/query`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
+  const filter = options.domain ? { domain: options.domain } : undefined;
+  const points = await getService(qdrantUrl).queryPoints(
+    collection,
+    vector,
+    options.limit,
+    filter
   );
 
-  if (!response.ok) {
-    const errorBody = await getErrorBody(response);
-    throw new Error(
-      `Qdrant query failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-    );
-  }
-
-  const data = (await response.json()) as {
-    result?: {
-      points?: Array<{
-        id: string;
-        score?: number;
-        payload?: Record<string, unknown>;
-      }>;
-    };
-  };
-  return (data.result?.points || []).map((p) => ({
-    id: p.id,
-    score: p.score ?? 0,
-    payload: p.payload ?? {},
+  return points.map((point) => ({
+    id: point.id,
+    score: point.score ?? 0,
+    payload: point.payload,
   }));
 }
 
-export interface ScrollResult {
-  id: string;
-  payload: Record<string, unknown>;
-}
-
-/**
- * Scroll all points for a URL, paginating through results
- * Returns points sorted by chunk_index
- */
 export async function scrollByUrl(
   qdrantUrl: string,
   collection: string,
   url: string
 ): Promise<ScrollResult[]> {
-  const allPoints: ScrollResult[] = [];
-  let offset: string | number | null = null;
-  let isFirstPage = true;
-
-  while (isFirstPage || offset !== null) {
-    isFirstPage = false;
-
-    const body: Record<string, unknown> = {
-      filter: {
-        must: [{ key: 'url', match: { value: url } }],
-      },
-      limit: SCROLL_PAGE_SIZE,
-      with_payload: true,
-    };
-
-    if (offset !== null) {
-      body.offset = offset;
-    }
-
-    const response = await fetchWithRetry(
-      `${qdrantUrl}/collections/${collection}/points/scroll`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-    );
-
-    if (!response.ok) {
-      const errorBody = await getErrorBody(response);
-      throw new Error(
-        `Qdrant scroll failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-      );
-    }
-
-    const data = (await response.json()) as {
-      result?: {
-        points?: Array<{ id: string; payload?: Record<string, unknown> }>;
-        next_page_offset?: string | number | null;
-      };
-    };
-    const points = data.result?.points || [];
-
-    for (const p of points) {
-      allPoints.push({ id: p.id, payload: p.payload ?? {} });
-    }
-
-    offset = data.result?.next_page_offset ?? null;
-  }
-
-  // Sort by chunk_index
-  allPoints.sort(
-    (a, b) =>
-      ((a.payload.chunk_index as number) ?? 0) -
-      ((b.payload.chunk_index as number) ?? 0)
-  );
-
-  return allPoints;
+  const points = await getService(qdrantUrl).scrollByUrl(collection, url);
+  return points.map((point) => ({ id: point.id, payload: point.payload }));
 }
 
-/**
- * Delete all points for a domain
- */
 export async function deleteByDomain(
   qdrantUrl: string,
   collection: string,
   domain: string
 ): Promise<void> {
-  const response = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}/points/delete`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filter: {
-          must: [{ key: 'domain', match: { value: domain } }],
-        },
-      }),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (!response.ok) {
-    const errorBody = await getErrorBody(response);
-    throw new Error(
-      `Qdrant delete failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-    );
-  }
+  await getService(qdrantUrl).deleteByDomain(collection, domain);
 }
 
-/**
- * Count points matching a domain filter
- */
 export async function countByDomain(
   qdrantUrl: string,
   collection: string,
   domain: string
 ): Promise<number> {
-  const response = await fetchWithRetry(
-    `${qdrantUrl}/collections/${collection}/points/count`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filter: {
-          must: [{ key: 'domain', match: { value: domain } }],
-        },
-        exact: true,
-      }),
-    },
-    { timeoutMs: QDRANT_TIMEOUT_MS, maxRetries: QDRANT_MAX_RETRIES }
-  );
-
-  if (!response.ok) {
-    const errorBody = await getErrorBody(response);
-    throw new Error(
-      `Qdrant count failed: ${response.status}${errorBody ? ` - ${errorBody}` : ''}`
-    );
-  }
-
-  const data = (await response.json()) as { result?: { count?: number } };
-  return data.result?.count ?? 0;
+  return getService(qdrantUrl).countByDomain(collection, domain);
 }
 
 /**
- * Reset collection cache (for testing)
- * NOTE: Only for use in qdrant.test.ts unit tests.
- * Command tests should use test containers instead.
+ * Reset module-level service cache for tests.
  */
 export function resetQdrantCache(): void {
-  collectionCache.clear();
+  serviceCache.clear();
 }
