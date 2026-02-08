@@ -7,11 +7,29 @@ import type { IContainer, IHttpClient } from '../container/types';
 import type { MapOptions, MapResult } from '../types/map';
 import { processCommandResult } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
+import { extensionsToPaths } from '../utils/extensions';
 import { fmt } from '../utils/theme';
+import { filterUrls } from '../utils/url-filter';
+import { mergeExcludePaths } from './crawl/options';
 import { requireContainer } from './shared';
 
 /** HTTP timeout for map API requests (60 seconds) */
 const MAP_TIMEOUT_MS = 60000;
+
+/**
+ * Build exclude patterns from map options
+ */
+function buildExcludePatterns(options: MapOptions): string[] {
+  const extensionPatterns = options.excludeExtensions
+    ? extensionsToPaths(options.excludeExtensions)
+    : [];
+
+  return mergeExcludePaths(
+    options.excludePaths,
+    options.noDefaultExcludes ?? false,
+    extensionPatterns
+  );
+}
 
 /**
  * Normalize SDK map response to our internal format.
@@ -65,8 +83,15 @@ async function executeMapWithUserAgent(
   if (options.includeSubdomains !== undefined) {
     body.includeSubdomains = options.includeSubdomains;
   }
-  if (options.ignoreQueryParameters !== undefined) {
+  // Handle ignoreQueryParameters based on --no-filtering flag
+  if (!options.noFiltering && options.ignoreQueryParameters !== undefined) {
     body.ignoreQueryParameters = options.ignoreQueryParameters;
+  } else if (options.noFiltering) {
+    // When --no-filtering is set, explicitly disable query param filtering
+    body.ignoreQueryParameters = false;
+  }
+  if (options.ignoreCache !== undefined) {
+    body.ignoreCache = options.ignoreCache;
   }
   if (options.timeout !== undefined) {
     body.timeout = options.timeout * 1000; // Convert to milliseconds
@@ -79,7 +104,7 @@ async function executeMapWithUserAgent(
   };
 
   const response = await httpClient.fetchWithTimeout(
-    `${apiUrl}/v1/map`,
+    `${apiUrl}/v2/map`,
     {
       method: 'POST',
       headers,
@@ -128,8 +153,16 @@ async function executeMapViaSdk(
   if (options.includeSubdomains !== undefined) {
     sdkOptions.includeSubdomains = options.includeSubdomains;
   }
-  if (options.ignoreQueryParameters !== undefined) {
+  // Handle ignoreQueryParameters based on --no-filtering flag
+  if (!options.noFiltering && options.ignoreQueryParameters !== undefined) {
     sdkOptions.ignoreQueryParameters = options.ignoreQueryParameters;
+  } else if (options.noFiltering) {
+    // When --no-filtering is set, explicitly disable query param filtering
+    sdkOptions.ignoreQueryParameters = false;
+  }
+  if (options.ignoreCache !== undefined) {
+    // NOTE: ignoreCache is a newer API parameter not yet in SDK types
+    (sdkOptions as Record<string, unknown>).ignoreCache = options.ignoreCache;
   }
   if (options.timeout !== undefined) {
     sdkOptions.timeout = options.timeout * 1000; // Convert to milliseconds
@@ -155,6 +188,8 @@ export async function executeMap(
     const userAgent = container.config.userAgent;
     const { urlOrJobId } = options;
 
+    let result: MapResult;
+
     // When User-Agent is configured, use direct HTTP (SDK limitation)
     // Otherwise, use the SDK for better error handling and retry logic
     if (userAgent) {
@@ -169,7 +204,7 @@ export async function executeMap(
       const apiUrl = container.config.apiUrl || 'https://api.firecrawl.dev';
       const httpClient = container.getHttpClient();
 
-      return await executeMapWithUserAgent(
+      result = await executeMapWithUserAgent(
         httpClient,
         apiUrl,
         apiKey,
@@ -177,10 +212,30 @@ export async function executeMap(
         urlOrJobId,
         options
       );
+    } else {
+      // Use SDK for standard requests (no User-Agent override)
+      result = await executeMapViaSdk(container, urlOrJobId, options);
     }
 
-    // Use SDK for standard requests (no User-Agent override)
-    return await executeMapViaSdk(container, urlOrJobId, options);
+    // Apply client-side filtering if result succeeded (unless --no-filtering flag set)
+    if (result.success && result.data?.links && !options.noFiltering) {
+      const excludePatterns = buildExcludePatterns(options);
+
+      if (excludePatterns.length > 0) {
+        const filterResult = filterUrls(result.data.links, excludePatterns);
+        result.data.links = filterResult.filtered;
+
+        // Store stats for display
+        if (options.verbose || filterResult.stats.excluded > 0) {
+          (result as any).filterStats = filterResult.stats;
+          (result as any).excludedUrls = options.verbose
+            ? filterResult.excluded
+            : undefined;
+        }
+      }
+    }
+
+    return result;
   } catch (error) {
     return {
       success: false,
@@ -192,11 +247,35 @@ export async function executeMap(
 /**
  * Format map data in human-readable way
  */
-function formatMapReadable(data: MapResult['data']): string {
+function formatMapReadable(
+  data: MapResult['data'],
+  filterStats?: { total: number; excluded: number; kept: number },
+  excludedUrls?: Array<{ url: string; matchedPattern: string }>
+): string {
   if (!data || !data.links) return '';
 
-  // Output one URL per line (like curl)
-  return `${data.links.map((link) => link.url).join('\n')}\n`;
+  let output = '';
+
+  // Show filter summary if URLs were excluded
+  if (filterStats && filterStats.excluded > 0) {
+    output += fmt.dim(
+      `Filtered: ${filterStats.kept}/${filterStats.total} URLs ` +
+        `(excluded ${filterStats.excluded})\n\n`
+    );
+  }
+
+  // Output URLs (one per line)
+  output += data.links.map((link) => link.url).join('\n');
+
+  // Show excluded URLs if verbose
+  if (excludedUrls && excludedUrls.length > 0) {
+    output += '\n\n' + fmt.dim('Excluded URLs:\n');
+    excludedUrls.forEach((item) => {
+      output += fmt.dim(`  ${item.url} (matched: ${item.matchedPattern})\n`);
+    });
+  }
+
+  return output + '\n';
 }
 
 /**
@@ -210,13 +289,19 @@ export async function handleMapCommand(
   displayCommandInfo('Mapping', options.urlOrJobId, {
     includeSubdomains: options.includeSubdomains,
     ignoreQueryParameters: options.ignoreQueryParameters,
+    ignoreCache: options.ignoreCache,
     limit: options.limit,
     sitemap: options.sitemap,
     timeout: options.timeout,
   });
 
-  processCommandResult(await executeMap(container, options), options, (data) =>
-    formatMapReadable(data)
+  const result = await executeMap(container, options);
+  processCommandResult(result, options, (data) =>
+    formatMapReadable(
+      data,
+      (result as any).filterStats,
+      (result as any).excludedUrls
+    )
   );
 }
 
@@ -249,7 +334,24 @@ export function createMapCommand(): Command {
       true
     )
     .option('--no-ignore-query-parameters', 'Include query parameters')
+    .option(
+      '--ignore-cache',
+      'Bypass sitemap cache for fresh URLs (default: true)',
+      true
+    )
+    .option('--no-ignore-cache', 'Use cached sitemap data')
     .option('--timeout <seconds>', 'Timeout in seconds', parseFloat)
+    .option('--exclude-paths <paths...>', 'Paths to exclude from results')
+    .option(
+      '--exclude-extensions <exts...>',
+      'File extensions to exclude (.exe, .pkg, etc.)'
+    )
+    .option('--no-default-excludes', 'Skip default exclude patterns')
+    .option(
+      '--no-filtering',
+      'Completely disable all filtering (overrides excludes and ignoreQueryParameters)'
+    )
+    .option('--verbose', 'Show excluded URLs and filter statistics')
     .option(
       '-k, --api-key <key>',
       'Firecrawl API key (overrides global --api-key)'
@@ -283,7 +385,15 @@ export function createMapCommand(): Command {
         sitemap: options.sitemap,
         includeSubdomains: options.includeSubdomains,
         ignoreQueryParameters: options.ignoreQueryParameters,
+        ignoreCache: options.ignoreCache,
         timeout: options.timeout,
+        excludePaths: options.excludePaths,
+        excludeExtensions: options.excludeExtensions,
+        // Commander.js: --no-default-excludes creates options.defaultExcludes = false
+        noDefaultExcludes: options.defaultExcludes === false,
+        // Commander.js: --no-filtering creates options.filtering = false
+        noFiltering: options.filtering === false,
+        verbose: options.verbose,
       };
 
       await handleMapCommand(container, mapOptions);

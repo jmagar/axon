@@ -18,7 +18,7 @@ pnpm test:ui
 ## Test Structure
 
 - `commands/` - Tests for command implementations (scrape, crawl, search, extract, embed, query, retrieve)
-- `utils/` - Test utilities, helpers, and utility module tests (chunker, embeddings, qdrant, embedpipeline, config)
+- `utils/` - Test utilities, helpers, and utility module tests (chunker, auth, embed queue)
 
 ## Writing Tests
 
@@ -34,25 +34,12 @@ pnpm test:ui
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeScrape } from '../../commands/scrape';
-import { getClient } from '../../utils/client';
-import { setupTest, teardownTest } from '../utils/mock-client';
-
-// Mock the client module
-vi.mock('../../utils/client', async () => {
-  const actual = await vi.importActual('../../utils/client');
-  return {
-    ...actual,
-    getClient: vi.fn(),
-  };
-});
 
 describe('executeScrape', () => {
   let mockClient: any;
 
   beforeEach(() => {
-    setupTest();
     mockClient = { scrape: vi.fn() };
-    vi.mocked(getClient).mockReturnValue(mockClient);
   });
 
   it('should call scrape with correct parameters', async () => {
@@ -69,17 +56,12 @@ describe('executeScrape', () => {
 
 ## Test Utilities
 
-### `setupTest()` / `teardownTest()`
-
-Resets client and config state between tests. Always use these in `beforeEach`/`afterEach`.
-
 ### Mocking Patterns
 
-- **Client methods**: Mock `getClient()` to return a mock client with stubbed methods
+- **Client methods**: Mock container services (`getFirecrawlClient`, `getHttpClient`) per command
 - **Fetch API**: Mock `global.fetch` for utilities that call TEI/Qdrant directly (embeddings, qdrant)
-- **Config**: Use `initializeConfig()` to set test configuration (including `teiUrl`, `qdrantUrl`, `qdrantCollection`)
-- **Pipeline modules**: Mock `../../utils/embeddings`, `../../utils/qdrant`, and `../../utils/embedpipeline` in command tests
-- **Cache resets**: Call `resetTeiCache()` and `resetQdrantCache()` in `beforeEach`/`afterEach` for embedding/qdrant utility tests
+- **Pipeline modules**: Mock container services (`getEmbedPipeline`, `getTeiService`, `getQdrantService`) in command tests
+- **Cache resets**: Not needed for container-based embedding/Qdrant services.
 
 ## What to Test
 
@@ -130,11 +112,9 @@ describe('utility module', () => {
 Commands that use `autoEmbed` should mock the pipeline module:
 
 ```typescript
-import { autoEmbed } from '../../utils/embedpipeline';
-
-vi.mock('../../utils/embedpipeline', () => ({
-  autoEmbed: vi.fn(),
-}));
+const container = createTestContainer(undefined, {
+  mockAutoEmbed: vi.fn(),
+});
 
 // In test: verify autoEmbed was called with correct args
 expect(autoEmbed).toHaveBeenCalledWith(

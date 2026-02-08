@@ -8,6 +8,7 @@ import type { RetrieveOptions, RetrieveResult } from '../types/retrieve';
 import { processCommandResult } from '../utils/command';
 import { fmt, isTTY } from '../utils/theme';
 import {
+  addVectorOutputOptions,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -127,25 +128,20 @@ import { normalizeUrl } from '../utils/url';
  * Create and configure the retrieve command
  */
 export function createRetrieveCommand(): Command {
-  const retrieveCmd = new Command('retrieve')
-    .description('Retrieve full document from Qdrant by URL')
-    .argument('<url>', 'URL of the document to retrieve')
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON format', false)
-    .action(async (url: string, options, command: Command) => {
-      const container = requireContainer(command);
+  const retrieveCmd = addVectorOutputOptions(
+    new Command('retrieve')
+      .description('Retrieve full document from Qdrant by URL')
+      .argument('<url>', 'URL of the document to retrieve')
+  ).action(async (url: string, options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleRetrieveCommand(container, {
-        url: normalizeUrl(url),
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleRetrieveCommand(container, {
+      url: normalizeUrl(url),
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return retrieveCmd;
 }

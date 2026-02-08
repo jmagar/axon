@@ -8,8 +8,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleCrawlCommand } from '../../commands/crawl';
-import { resetTeiCache } from '../../utils/embeddings';
-import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
@@ -63,8 +61,6 @@ describe('Crawl embedding config initialization', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   describe('Config initialization with container', () => {

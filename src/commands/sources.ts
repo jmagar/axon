@@ -13,6 +13,9 @@ import type {
 import { processCommandResult } from '../utils/command';
 import { fmt, icons } from '../utils/theme';
 import {
+  addDomainSourceFilterOptions,
+  addVectorOutputOptions,
+  buildDomainSourceFilter,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -43,19 +46,9 @@ export async function executeSources(
 
     const qdrantService = container.getQdrantService();
 
-    // Build filter
-    const filter: Record<string, string | number | boolean> = {};
-    if (options.domain) {
-      filter.domain = options.domain;
-    }
-    if (options.source) {
-      filter.source_command = options.source;
-    }
-
-    // Scroll all points (with optional filter)
     const points = await qdrantService.scrollAll(
       collection,
-      Object.keys(filter).length > 0 ? filter : undefined
+      buildDomainSourceFilter(options)
     );
 
     // Aggregate by URL
@@ -175,32 +168,24 @@ export async function handleSourcesCommand(
  * Create and configure the sources command
  */
 export function createSourcesCommand(): Command {
-  const sourcesCmd = new Command('sources')
-    .description('List all source URLs indexed in the vector database')
-    .option('--domain <domain>', 'Filter by domain')
-    .option(
-      '--source <command>',
-      'Filter by source command (scrape, crawl, embed, search, extract)'
+  const sourcesCmd = addVectorOutputOptions(
+    addDomainSourceFilterOptions(
+      new Command('sources')
+        .description('List all source URLs indexed in the vector database')
+        .option('--limit <number>', 'Maximum sources to show', parseInt)
     )
-    .option('--limit <number>', 'Maximum sources to show', parseInt)
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON', false)
-    .action(async (options, command: Command) => {
-      const container = requireContainer(command);
+  ).action(async (options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleSourcesCommand(container, {
-        domain: options.domain,
-        source: options.source,
-        limit: options.limit,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleSourcesCommand(container, {
+      domain: options.domain,
+      source: options.source,
+      limit: options.limit,
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return sourcesCmd;
 }

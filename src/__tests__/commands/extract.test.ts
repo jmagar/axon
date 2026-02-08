@@ -5,9 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeExtract, handleExtractCommand } from '../../commands/extract';
 import type { IContainer } from '../../container/types';
-import { resetTeiCache } from '../../utils/embeddings';
 import { writeOutput } from '../../utils/output';
-import { resetQdrantCache } from '../../utils/qdrant';
 
 // Mock autoEmbed to track calls
 const mockAutoEmbed = vi.fn().mockResolvedValue(undefined);
@@ -46,8 +44,6 @@ describe('executeExtract', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   it('should call extract with URLs and prompt', async () => {
@@ -268,8 +264,6 @@ describe('handleExtractCommand', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   it('should auto-embed once per source URL when available', async () => {

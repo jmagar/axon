@@ -4,7 +4,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAuthenticated } from '../../utils/auth';
-import { initializeConfig } from '../../utils/config';
 import * as credentials from '../../utils/credentials';
 
 // Mock credentials module
@@ -31,19 +30,12 @@ describe('Authentication Utilities', () => {
   });
 
   describe('isAuthenticated', () => {
-    it('should return true when API key is set in config', () => {
-      initializeConfig({
-        apiKey: 'fc-test-api-key',
-        apiUrl: 'https://api.firecrawl.dev',
-      });
-
-      expect(isAuthenticated()).toBe(true);
+    it('should return true when explicit API key is provided', () => {
+      expect(isAuthenticated('fc-test-api-key')).toBe(true);
     });
 
     it('should return true when API key is set via environment variable', () => {
       process.env.FIRECRAWL_API_KEY = 'fc-env-api-key';
-      initializeConfig({});
-
       expect(isAuthenticated()).toBe(true);
     });
 
@@ -51,43 +43,27 @@ describe('Authentication Utilities', () => {
       vi.mocked(credentials.loadCredentials).mockReturnValue({
         apiKey: 'fc-stored-api-key',
       });
-      initializeConfig({});
-
       expect(isAuthenticated()).toBe(true);
     });
 
     it('should return false when no API key is set', () => {
-      initializeConfig({});
-
       expect(isAuthenticated()).toBe(false);
     });
 
-    it('should return false when API key is empty string', () => {
-      initializeConfig({
-        apiKey: '',
-      });
-
+    it('should return false when env API key is empty string', () => {
+      process.env.FIRECRAWL_API_KEY = '   ';
       expect(isAuthenticated()).toBe(false);
     });
 
     it('should return true when API key does not start with fc-', () => {
-      initializeConfig({
-        apiKey: 'local-dev',
-        apiUrl: 'http://localhost:53002',
-      });
-
-      expect(isAuthenticated()).toBe(true);
+      expect(isAuthenticated('local-dev')).toBe(true);
     });
   });
 
   describe('Authentication priority', () => {
     it('should prioritize provided API key over env var', () => {
       process.env.FIRECRAWL_API_KEY = 'fc-env-key';
-      initializeConfig({
-        apiKey: 'fc-provided-key',
-      });
-
-      expect(isAuthenticated()).toBe(true);
+      expect(isAuthenticated('fc-provided-key')).toBe(true);
     });
 
     it('should prioritize env var over stored credentials', () => {
@@ -95,8 +71,6 @@ describe('Authentication Utilities', () => {
       vi.mocked(credentials.loadCredentials).mockReturnValue({
         apiKey: 'fc-stored-key',
       });
-      initializeConfig({});
-
       expect(isAuthenticated()).toBe(true);
     });
 
@@ -104,8 +78,6 @@ describe('Authentication Utilities', () => {
       vi.mocked(credentials.loadCredentials).mockReturnValue({
         apiKey: 'fc-stored-key',
       });
-      initializeConfig({});
-
       expect(isAuthenticated()).toBe(true);
     });
   });

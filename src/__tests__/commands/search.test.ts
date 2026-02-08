@@ -490,21 +490,6 @@ describe('executeSearch', () => {
       ]);
     });
 
-    it('should handle array response format (legacy)', async () => {
-      const mockResponse = [
-        { url: 'https://example.com', title: 'Test 1' },
-        { url: 'https://example2.com', title: 'Test 2' },
-      ];
-      mockClient.search.mockResolvedValue(mockResponse);
-
-      const result = await executeSearch(mockContainer, {
-        query: 'test',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data?.web).toEqual(mockResponse);
-    });
-
     it('should include warning in result when present', async () => {
       const mockResponse = {
         web: [{ url: 'https://example.com', title: 'Test' }],

@@ -3,7 +3,7 @@
  */
 
 import type { CrawlOptions as FirecrawlCrawlOptions } from '@mendable/firecrawl-js';
-import type { IContainer } from '../../container/types';
+import type { IContainer, ImmutableConfig } from '../../container/types';
 import type { CrawlJobData } from '../../types/crawl';
 import { buildEmbedderWebhookConfig } from '../../utils/embedder-webhook';
 import { recordJob } from '../../utils/job-history';
@@ -25,11 +25,12 @@ import { fmt, icons } from '../../utils/theme';
 export function attachEmbedWebhook<T extends FirecrawlCrawlOptions>(
   options: T,
   shouldEmbed: boolean,
-  isWaitMode: boolean
+  isWaitMode: boolean,
+  config: ImmutableConfig
 ): T {
   // Only attach webhook for async mode with embedding enabled
   if (shouldEmbed && !isWaitMode) {
-    const webhookConfig = buildEmbedderWebhookConfig();
+    const webhookConfig = buildEmbedderWebhookConfig(config);
     if (webhookConfig) {
       return { ...options, webhook: webhookConfig };
     }
@@ -55,10 +56,11 @@ export function attachEmbedWebhook<T extends FirecrawlCrawlOptions>(
 export async function handleAsyncEmbedding(
   jobId: string,
   url: string,
+  config: ImmutableConfig,
   apiKey?: string
 ): Promise<void> {
   const { enqueueEmbedJob } = await import('../../utils/embed-queue');
-  const webhookConfig = buildEmbedderWebhookConfig();
+  const webhookConfig = buildEmbedderWebhookConfig(config);
 
   await enqueueEmbedJob(jobId, url, apiKey);
   console.error();

@@ -10,72 +10,17 @@ import {
   executeCrawlErrors,
   handleCrawlCommand,
 } from '../../commands/crawl';
-import { initializeConfig } from '../../utils/config';
-import { resetTeiCache } from '../../utils/embeddings';
 import { writeOutput } from '../../utils/output';
-import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
 const createContainer = (...args: Parameters<typeof createTestContainer>) =>
   createTestContainer(...args);
 
-// autoEmbed is mocked below via mockAutoEmbed
-
-// No longer need to mock the client module since we use containers
-
-// Mock embedpipeline - mock autoEmbed and provide implementations for batch functions
-// Use vi.hoisted to ensure mockAutoEmbed is defined before vi.mock runs (vi.mock is hoisted)
+// No longer need to mock the client module since we use containers.
+// Use vi.hoisted to ensure mockAutoEmbed is defined before test modules run.
 const { mockAutoEmbed } = vi.hoisted(() => ({
   mockAutoEmbed: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/embedpipeline', () => ({
-  autoEmbed: mockAutoEmbed,
-  // Re-implement batchEmbed to call the mockAutoEmbed
-  batchEmbed: vi.fn().mockImplementation(
-    async (
-      items: Array<{
-        content: string;
-        metadata: {
-          url: string;
-          title?: string;
-          sourceCommand: string;
-          contentType?: string;
-        };
-      }>
-    ) => {
-      for (const item of items) {
-        await mockAutoEmbed(item.content, item.metadata);
-      }
-    }
-  ),
-  // Re-implement createEmbedItems to match real behavior
-  createEmbedItems: vi.fn().mockImplementation(
-    (
-      pages: Array<{
-        markdown?: string;
-        html?: string;
-        url?: string;
-        title?: string;
-        metadata?: { sourceURL?: string; url?: string; title?: string };
-      }>,
-      sourceCommand: string
-    ) => {
-      return pages
-        .filter((page) => page.markdown || page.html)
-        .map((page) => ({
-          content: page.markdown || page.html || '',
-          metadata: {
-            url:
-              page.url || page.metadata?.sourceURL || page.metadata?.url || '',
-            title: page.title || page.metadata?.title,
-            sourceCommand,
-            contentType: page.markdown ? 'markdown' : 'html',
-          },
-        }));
-    }
-  ),
 }));
 
 // Mock settings to avoid reading real user settings from disk
@@ -115,12 +60,6 @@ describe('executeCrawl', () => {
   let mockClient: CrawlMockClient;
 
   beforeEach(() => {
-    // Initialize config with test API key
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     // Create mock client
     mockClient = {
       scrape: vi.fn(),
@@ -132,8 +71,6 @@ describe('executeCrawl', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   describe('Start crawl (async)', () => {
@@ -168,19 +105,15 @@ describe('executeCrawl', () => {
     });
 
     it('should include webhook config when embedder webhook URL is set', async () => {
-      const originalUrl = process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL;
-      const originalSecret = process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET;
-      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL =
-        'https://example.com/embedder';
-      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET = 'test-secret';
-      initializeConfig();
-
       const mockResponse = {
         id: '550e8400-e29b-41d4-a716-446655440000',
         url: 'https://example.com',
       };
       mockClient.startCrawl.mockResolvedValue(mockResponse);
-      const container = createContainer(mockClient);
+      const container = createContainer(mockClient, {
+        embedderWebhookUrl: 'https://example.com/embedder',
+        embedderWebhookSecret: 'test-secret',
+      });
 
       await executeCrawl(container, {
         urlOrJobId: 'https://example.com',
@@ -196,18 +129,6 @@ describe('executeCrawl', () => {
           },
         })
       );
-
-      if (originalUrl === undefined) {
-        delete process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL;
-      } else {
-        process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL = originalUrl;
-      }
-      if (originalSecret === undefined) {
-        delete process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET;
-      } else {
-        process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET = originalSecret;
-      }
-      initializeConfig();
     });
 
     it('should include limit option when provided', async () => {
@@ -397,21 +318,19 @@ describe('executeCrawl', () => {
       });
     });
 
-    it('should auto-detect job ID from UUID format', async () => {
-      const mockStatus = {
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        status: 'scraping',
-        total: 100,
-        completed: 45,
-      };
-      mockClient.getCrawlStatus.mockResolvedValue(mockStatus);
+    it('should not auto-detect job ID without status flag', async () => {
+      mockClient.startCrawl.mockResolvedValue({
+        id: 'new-crawl-job',
+        url: '550e8400-e29b-41d4-a716-446655440000',
+      });
 
       const container = createContainer(mockClient);
       const result = await executeCrawl(container, {
         urlOrJobId: '550e8400-e29b-41d4-a716-446655440000',
       });
 
-      expect(mockClient.getCrawlStatus).toHaveBeenCalledTimes(1);
+      expect(mockClient.getCrawlStatus).not.toHaveBeenCalled();
+      expect(mockClient.startCrawl).toHaveBeenCalledTimes(1);
       expect(result.success).toBe(true);
     });
 
@@ -1021,11 +940,6 @@ describe('executeCrawlCancel', () => {
   let mockClient: CrawlCancelMock;
 
   beforeEach(() => {
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     mockClient = { scrape: vi.fn(), cancelCrawl: vi.fn() };
   });
 
@@ -1062,11 +976,6 @@ describe('executeCrawlErrors', () => {
   let mockClient: CrawlErrorsMock;
 
   beforeEach(() => {
-    initializeConfig({
-      apiKey: 'test-api-key',
-      apiUrl: 'https://api.firecrawl.dev',
-    });
-
     mockClient = { scrape: vi.fn(), getCrawlErrors: vi.fn() };
   });
 
@@ -1103,10 +1012,7 @@ describe('createCrawlCommand', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   describe('status subcommand', () => {
     it('should exist as a subcommand', () => {
@@ -1248,19 +1154,17 @@ describe('createCrawlCommand', () => {
     });
   });
 
-  it('should auto-detect job ID and show deprecation warning', async () => {
+  it('should reject job ID on primary crawl action', async () => {
     const jobId = '550e8400-e29b-41d4-a716-446655440000';
     const mockClient: Partial<MockFirecrawlClient> = {
       scrape: vi.fn(),
-      getCrawlStatus: vi.fn().mockResolvedValue({
-        id: jobId,
-        status: 'completed',
-        total: 100,
-        completed: 100,
-      }),
+      getCrawlStatus: vi.fn(),
     };
     const container = createContainer(mockClient);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
 
     const cmd = createCrawlCommand();
     cmd._container = container;
@@ -1269,13 +1173,41 @@ describe('createCrawlCommand', () => {
       from: 'node',
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      '! Detected job ID. Use "firecrawl crawl status <job-id>" instead.'
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Job IDs are not accepted here. Use "firecrawl crawl status <job-id>" instead.'
+      )
     );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(mockClient.getCrawlStatus).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it('should preserve raw job ID for manual embedding action', async () => {
+    const jobId = '550e8400-e29b-41d4-a716-446655440000';
+    const mockClient: Partial<MockFirecrawlClient> = {
+      scrape: vi.fn(),
+      getCrawlStatus: vi.fn().mockResolvedValue({
+        id: jobId,
+        status: 'completed',
+        total: 1,
+        completed: 1,
+        data: [],
+      }),
+    };
+    const container = createContainer(mockClient);
+
+    const cmd = createCrawlCommand();
+    cmd._container = container;
+
+    await cmd.parseAsync(['node', 'test', jobId, '--embed'], {
+      from: 'node',
+    });
+
     expect(mockClient.getCrawlStatus).toHaveBeenCalledWith(jobId, {
       autoPaginate: false,
     });
-
-    warnSpy.mockRestore();
   });
 });

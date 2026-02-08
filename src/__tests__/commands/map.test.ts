@@ -9,9 +9,7 @@
 import type { Mock } from 'vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { executeMap } from '../../commands/map';
-import { DEFAULT_USER_AGENT } from '../../utils/config';
-import { resetTeiCache } from '../../utils/embeddings';
-import { resetQdrantCache } from '../../utils/qdrant';
+import { DEFAULT_USER_AGENT } from '../../utils/defaults';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
@@ -21,6 +19,14 @@ const createContainer = (...args: Parameters<typeof createTestContainer>) =>
 // Mock output utility to prevent side effects
 vi.mock('../../utils/output', () => ({
   writeOutput: vi.fn(),
+}));
+
+// Mock the settings module to return empty settings
+vi.mock('../../utils/settings', () => ({
+  loadSettings: vi.fn(() => ({
+    defaultExcludePaths: [],
+    defaultExcludeExtensions: [],
+  })),
 }));
 
 /**
@@ -49,8 +55,6 @@ function createMockMapClient(
 describe('executeMap', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   describe('SDK path (no User-Agent)', () => {
@@ -198,7 +202,7 @@ describe('executeMap', () => {
 
       expect(mockHttpClient.fetchWithTimeout).toHaveBeenCalledTimes(1);
       const [url, options] = mockHttpClient.fetchWithTimeout.mock.calls[0];
-      expect(url).toBe('https://api.firecrawl.dev/v1/map');
+      expect(url).toBe('https://api.firecrawl.dev/v2/map');
       expect(options.method).toBe('POST');
       expect(options.headers.Authorization).toBe('Bearer test-api-key');
       expect(options.headers['Content-Type']).toBe('application/json');
@@ -326,6 +330,29 @@ describe('executeMap', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Network error');
+    });
+
+    it('should explicitly send ignoreQueryParameters: false in HTTP body when noFiltering is true', async () => {
+      const mockHttpClient = {
+        fetchWithTimeout: mockFetchResponse({ links: [] }),
+        fetchWithRetry: vi.fn(),
+      };
+      const container = createTestContainer(undefined, {
+        userAgent: DEFAULT_USER_AGENT,
+      });
+      (container.getHttpClient as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockHttpClient
+      );
+
+      await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        ignoreQueryParameters: true, // Try to set this
+        noFiltering: true, // Should override and send false to API
+      });
+
+      const [, fetchOptions] = mockHttpClient.fetchWithTimeout.mock.calls[0];
+      const body = JSON.parse(fetchOptions.body);
+      expect(body.ignoreQueryParameters).toBe(false);
     });
   });
 
@@ -513,6 +540,396 @@ describe('executeMap', () => {
           title: undefined,
           description: undefined,
         });
+      }
+    });
+  });
+
+  describe('Client-side URL filtering', () => {
+    it('should apply default exclude patterns by default', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/about',
+        'https://example.com/blog/post',
+        'https://example.com/de/home',
+        'https://example.com/fr/accueil',
+        'https://example.com/wp-admin/login',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        // Default patterns should exclude language routes, blog paths, wp-admin
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        expect(urls).toContain('https://example.com/about');
+        expect(urls).not.toContain('https://example.com/blog/post');
+        expect(urls).not.toContain('https://example.com/de/home');
+        expect(urls).not.toContain('https://example.com/fr/accueil');
+        expect(urls).not.toContain('https://example.com/wp-admin/login');
+      }
+    });
+
+    it('should filter with custom exclude paths', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/about',
+        'https://example.com/api/users',
+        'https://example.com/admin/dashboard',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        excludePaths: ['/api', '/admin'],
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        expect(urls).toContain('https://example.com/about');
+        expect(urls).not.toContain('https://example.com/api/users');
+        expect(urls).not.toContain('https://example.com/admin/dashboard');
+      }
+    });
+
+    it('should filter with exclude extensions', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/page.html',
+        'https://example.com/document.pdf',
+        'https://example.com/archive.zip',
+        'https://example.com/installer.exe',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        excludeExtensions: ['.pdf', '.zip', '.exe'],
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/page.html');
+        expect(urls).not.toContain('https://example.com/document.pdf');
+        expect(urls).not.toContain('https://example.com/archive.zip');
+        expect(urls).not.toContain('https://example.com/installer.exe');
+      }
+    });
+
+    it('should skip default excludes when noDefaultExcludes is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/en/home',
+        'https://example.com/fr/accueil',
+        'https://example.com/blog/post',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        noDefaultExcludes: true,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        // Without defaults, all URLs should be kept
+        expect(result.data.links).toHaveLength(3);
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/en/home');
+        expect(urls).toContain('https://example.com/fr/accueil');
+        expect(urls).toContain('https://example.com/blog/post');
+      }
+    });
+
+    it('should apply defaults when noDefaultExcludes is false', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+        'https://example.com/fr/accueil',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        noDefaultExcludes: false, // Explicitly false (should apply defaults)
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        // With defaults, blog and language routes should be filtered
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        expect(urls).not.toContain('https://example.com/blog/post');
+        expect(urls).not.toContain('https://example.com/fr/accueil');
+      }
+    });
+
+    it('should apply defaults when noDefaultExcludes is undefined', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        // noDefaultExcludes not specified - should default to false (apply defaults)
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        expect(urls).not.toContain('https://example.com/blog/post');
+      }
+    });
+
+    it('should bypass all filtering when noFiltering is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+        'https://example.com/de/home',
+        'https://example.com/api/users',
+        'https://example.com/file.pdf',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        excludePaths: ['/api'], // Custom excludes
+        excludeExtensions: ['.pdf'], // Extension excludes
+        noFiltering: true, // Should override all excludes
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        // With --no-filtering, ALL URLs should be kept (no filtering applied)
+        expect(result.data.links).toHaveLength(5);
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        expect(urls).toContain('https://example.com/blog/post');
+        expect(urls).toContain('https://example.com/de/home');
+        expect(urls).toContain('https://example.com/api/users');
+        expect(urls).toContain('https://example.com/file.pdf');
+      }
+    });
+
+    it('should not attach filter stats when noFiltering is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/blog/post',
+        'https://example.com/de/home',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        noFiltering: true,
+      });
+
+      expect(result.success).toBe(true);
+      // No filter stats should be attached when filtering is disabled
+      expect((result as any).filterStats).toBeUndefined();
+    });
+
+    it('should override noDefaultExcludes when noFiltering is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/blog/post',
+        'https://example.com/api/users',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        noDefaultExcludes: false, // Try to apply defaults
+        excludePaths: ['/api'], // Try to apply custom excludes
+        noFiltering: true, // Should override everything
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        // noFiltering should override all other exclude options
+        expect(result.data.links).toHaveLength(2);
+      }
+    });
+
+    it('should explicitly send ignoreQueryParameters: false when noFiltering is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/page?id=1',
+        'https://example.com/page?id=2',
+      ]);
+      const container = createContainer(mockClient);
+
+      await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        ignoreQueryParameters: true, // Try to set this
+        noFiltering: true, // Should override and send false to API
+      });
+
+      // Verify SDK was called with explicit false
+      expect(mockClient.map).toHaveBeenCalledWith('https://example.com', {
+        ignoreQueryParameters: false,
+      });
+      expect(mockClient.map).toHaveBeenCalledTimes(1);
+    });
+
+    it('should send ignoreQueryParameters when noFiltering is false', async () => {
+      const mockClient = createMockMapClient(['https://example.com/page']);
+      const container = createContainer(mockClient);
+
+      await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        ignoreQueryParameters: true,
+        noFiltering: false, // Should allow ignoreQueryParameters to be sent
+      });
+
+      // Verify SDK was called WITH ignoreQueryParameters
+      expect(mockClient.map).toHaveBeenCalledWith('https://example.com', {
+        ignoreQueryParameters: true,
+      });
+    });
+
+    it('should attach filter stats when URLs are excluded', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+        'https://example.com/en/home',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      expect((result as any).filterStats).toBeDefined();
+      expect((result as any).filterStats.total).toBe(3);
+      expect((result as any).filterStats.excluded).toBeGreaterThan(0);
+      expect((result as any).filterStats.kept).toBeLessThan(3);
+    });
+
+    it('should include excludedUrls when verbose is true', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        verbose: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect((result as any).excludedUrls).toBeDefined();
+      expect(Array.isArray((result as any).excludedUrls)).toBe(true);
+    });
+
+    it('should not include excludedUrls when verbose is false', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/blog/post',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        verbose: false,
+      });
+
+      expect(result.success).toBe(true);
+      expect((result as any).excludedUrls).toBeUndefined();
+    });
+
+    it('should not attach filter stats when no URLs are excluded', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/about',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        noDefaultExcludes: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect((result as any).filterStats).toBeUndefined();
+    });
+
+    it('should handle empty results after filtering', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/blog/post-1',
+        'https://example.com/blog/post-2',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.links).toHaveLength(0);
+      }
+    });
+
+    it('should preserve URL metadata during filtering', async () => {
+      const mockClient = createMockMapClient([
+        {
+          url: 'https://example.com/about',
+          title: 'About Us',
+          description: 'Learn about us',
+        },
+        {
+          url: 'https://example.com/blog/post',
+          title: 'Blog Post',
+          description: 'A blog post',
+        },
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        expect(result.data.links).toHaveLength(1);
+        expect(result.data.links[0]).toEqual({
+          url: 'https://example.com/about',
+          title: 'About Us',
+          description: 'Learn about us',
+        });
+      }
+    });
+
+    it('should combine custom excludes with defaults', async () => {
+      const mockClient = createMockMapClient([
+        'https://example.com/',
+        'https://example.com/api/users',
+        'https://example.com/blog/post',
+        'https://example.com/de/home',
+      ]);
+      const container = createContainer(mockClient);
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+        excludePaths: ['/api'],
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const urls = result.data.links.map((link) => link.url);
+        expect(urls).toContain('https://example.com/');
+        // Custom exclude
+        expect(urls).not.toContain('https://example.com/api/users');
+        // Default excludes (blog, language routes)
+        expect(urls).not.toContain('https://example.com/blog/post');
+        expect(urls).not.toContain('https://example.com/de/home');
       }
     });
   });

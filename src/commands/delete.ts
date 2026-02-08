@@ -8,6 +8,7 @@ import type { IContainer } from '../container/types';
 import type { DeleteOptions, DeleteResult } from '../types/delete';
 import { processCommandResult } from '../utils/command';
 import {
+  addVectorOutputOptions,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -159,35 +160,30 @@ export async function handleDeleteCommand(
  * Create and configure the delete command
  */
 export function createDeleteCommand(): Command {
-  const deleteCmd = new Command('delete')
-    .description('Delete vectors from the vector database')
-    .option('--url <url>', 'Delete all vectors for a specific URL')
-    .option('--domain <domain>', 'Delete all vectors for a specific domain')
-    .option('--all', 'Delete all vectors in the collection')
-    .option(
-      '--yes',
-      'Confirm deletion (required for safety) (default: false)',
-      false
-    )
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON', false)
-    .action(async (options, command: Command) => {
-      const container = requireContainer(command);
+  const deleteCmd = addVectorOutputOptions(
+    new Command('delete')
+      .description('Delete vectors from the vector database')
+      .option('--url <url>', 'Delete all vectors for a specific URL')
+      .option('--domain <domain>', 'Delete all vectors for a specific domain')
+      .option('--all', 'Delete all vectors in the collection')
+      .option(
+        '--yes',
+        'Confirm deletion (required for safety) (default: false)',
+        false
+      )
+  ).action(async (options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleDeleteCommand(container, {
-        url: options.url,
-        domain: options.domain,
-        all: options.all,
-        yes: options.yes,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleDeleteCommand(container, {
+      url: options.url,
+      domain: options.domain,
+      all: options.all,
+      yes: options.yes,
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return deleteCmd;
 }

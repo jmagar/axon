@@ -23,6 +23,10 @@ export function createTestContainer(
     qdrantUrl?: string;
     qdrantCollection?: string;
     userAgent?: string;
+    embedderWebhookUrl?: string;
+    embedderWebhookSecret?: string;
+    embedderWebhookPort?: number;
+    embedderWebhookPath?: string;
     mockAutoEmbed?: Mock;
   }
 ): IContainer {
@@ -80,6 +84,10 @@ export function createTestContainer(
         ? options.qdrantCollection
         : 'test_collection',
     userAgent: options?.userAgent,
+    embedderWebhookUrl: options?.embedderWebhookUrl,
+    embedderWebhookSecret: options?.embedderWebhookSecret,
+    embedderWebhookPort: options?.embedderWebhookPort,
+    embedderWebhookPath: options?.embedderWebhookPath,
   });
 
   return {

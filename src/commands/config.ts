@@ -4,9 +4,9 @@
  */
 
 import { isAuthenticated } from '../utils/auth';
-import { DEFAULT_API_URL } from '../utils/config';
 import { DEFAULT_EXCLUDE_EXTENSIONS } from '../utils/constants';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
+import { DEFAULT_API_URL } from '../utils/defaults';
 import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
 

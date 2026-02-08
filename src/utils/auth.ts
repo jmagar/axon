@@ -1,15 +1,13 @@
 /**
- * Authentication utilities for CLI authentication flow
+ * Authentication utilities for CLI authentication flow.
  *
- * Note: This module uses legacy config functions (getConfig, updateConfig)
- * because it runs before container initialization during the login flow.
- * The interactive authentication system is orthogonal to the DI container
- * and would require major refactoring to migrate.
+ * This module is stateless and resolves auth from:
+ * explicit API key -> env var -> stored credentials.
  */
 
 import * as readline from 'node:readline';
-import { DEFAULT_API_URL, getConfig, updateConfig } from './config';
-import { saveCredentials } from './credentials';
+import { loadCredentials, saveCredentials } from './credentials';
+import { DEFAULT_API_URL } from './defaults';
 import { fmt, icons } from './theme';
 
 /**
@@ -114,12 +112,41 @@ async function interactiveLogin(): Promise<{
  */
 export { printBanner };
 
+function normalizeApiKey(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function resolveApiKey(explicitApiKey?: string): string | undefined {
+  const stored = loadCredentials();
+  return (
+    normalizeApiKey(explicitApiKey) ||
+    normalizeApiKey(process.env.FIRECRAWL_API_KEY) ||
+    normalizeApiKey(stored?.apiKey)
+  );
+}
+
+export type AuthSource = 'explicit' | 'env' | 'stored' | 'none';
+
+export function getAuthSource(explicitApiKey?: string): AuthSource {
+  if (normalizeApiKey(explicitApiKey)) {
+    return 'explicit';
+  }
+  if (normalizeApiKey(process.env.FIRECRAWL_API_KEY)) {
+    return 'env';
+  }
+  if (normalizeApiKey(loadCredentials()?.apiKey)) {
+    return 'stored';
+  }
+  return 'none';
+}
+
 /**
  * Check if user is authenticated
  */
-export function isAuthenticated(): boolean {
-  const apiKey = getConfig().apiKey;
-  return !!apiKey && apiKey.length > 0;
+export function isAuthenticated(explicitApiKey?: string): boolean {
+  return Boolean(resolveApiKey(explicitApiKey));
 }
 
 /**
@@ -127,9 +154,11 @@ export function isAuthenticated(): boolean {
  * If not authenticated, prompts for login
  * Returns the API key
  */
-export async function ensureAuthenticated(): Promise<string> {
+export async function ensureAuthenticated(
+  explicitApiKey?: string
+): Promise<string> {
   // Check if we already have credentials
-  const existingKey = getConfig().apiKey;
+  const existingKey = resolveApiKey(explicitApiKey);
   if (existingKey) {
     return existingKey;
   }
@@ -140,12 +169,6 @@ export async function ensureAuthenticated(): Promise<string> {
 
     // Save credentials
     saveCredentials({
-      apiKey: result.apiKey,
-      apiUrl: result.apiUrl,
-    });
-
-    // Update global config
-    updateConfig({
       apiKey: result.apiKey,
       apiUrl: result.apiUrl,
     });

@@ -9,7 +9,6 @@ import { type UserSettings, UserSettingsSchema } from '../schemas/storage';
 import { getConfigDirectoryPath } from './credentials';
 import { fmt } from './theme';
 
-// Re-export type for backward compatibility
 export type { UserSettings };
 
 /**

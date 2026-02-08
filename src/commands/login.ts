@@ -4,8 +4,8 @@
  */
 
 import { interactiveLogin, isAuthenticated } from '../utils/auth';
-import { DEFAULT_API_URL } from '../utils/config';
 import { getConfigDirectoryPath, saveCredentials } from '../utils/credentials';
+import { DEFAULT_API_URL } from '../utils/defaults';
 import { fmt, icons } from '../utils/theme';
 
 export interface LoginOptions {

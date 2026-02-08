@@ -7,10 +7,9 @@
 import { Command } from 'commander';
 import packageJson from '../../package.json';
 import type { IContainer, ImmutableConfig } from '../container/types';
-import { isAuthenticated } from '../utils/auth';
+import { getAuthSource, isAuthenticated } from '../utils/auth';
 import { formatJson, writeCommandOutput } from '../utils/command';
-import { DEFAULT_API_URL } from '../utils/config';
-import { loadCredentials } from '../utils/credentials';
+import { DEFAULT_API_URL } from '../utils/defaults';
 import {
   cleanupOldJobs,
   listEmbedJobs,
@@ -35,7 +34,7 @@ import {
 } from '../utils/theme';
 import { requireContainer } from './shared';
 
-type AuthSource = 'env' | 'stored' | 'none';
+type AuthSource = 'explicit' | 'env' | 'stored' | 'none';
 
 interface StatusResult {
   version: string;
@@ -67,20 +66,6 @@ function statusHeading(text: string): string {
 }
 
 /**
- * Detect how the user is authenticated
- */
-function getAuthSource(): AuthSource {
-  if (process.env.FIRECRAWL_API_KEY) {
-    return 'env';
-  }
-  const stored = loadCredentials();
-  if (stored?.apiKey) {
-    return 'stored';
-  }
-  return 'none';
-}
-
-/**
  * Get status information
  */
 export function getStatus(config: ImmutableConfig): StatusResult {
@@ -88,7 +73,7 @@ export function getStatus(config: ImmutableConfig): StatusResult {
 
   return {
     version: packageJson.version,
-    authenticated: isAuthenticated(),
+    authenticated: isAuthenticated(config.apiKey),
     authSource,
     apiUrl: config.apiUrl || DEFAULT_API_URL,
   };
@@ -113,9 +98,11 @@ export async function handleStatusCommand(
   // Auth status with source
   if (status.authenticated) {
     const sourceLabel =
-      status.authSource === 'env'
-        ? 'via FIRECRAWL_API_KEY'
-        : 'via stored credentials';
+      status.authSource === 'explicit'
+        ? 'via --api-key'
+        : status.authSource === 'env'
+          ? 'via FIRECRAWL_API_KEY'
+          : 'via stored credentials';
     console.log(
       `  ${fmt.success(icons.active)} Authenticated ${fmt.dim(sourceLabel)}`
     );

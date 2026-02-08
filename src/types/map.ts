@@ -28,8 +28,20 @@ export interface MapOptions {
   includeSubdomains?: boolean;
   /** Ignore query parameters */
   ignoreQueryParameters?: boolean;
+  /** Ignore cache (bypass sitemap cache for fresh URLs) */
+  ignoreCache?: boolean;
   /** Timeout in seconds */
   timeout?: number;
+  /** Paths to exclude from results (client-side filtering) */
+  excludePaths?: string[];
+  /** File extensions to exclude (converted to regex patterns) */
+  excludeExtensions?: string[];
+  /** Skip default exclude patterns */
+  noDefaultExcludes?: boolean;
+  /** Completely disable all filtering (overrides all exclude options and ignoreQueryParameters) */
+  noFiltering?: boolean;
+  /** Show excluded URLs in output */
+  verbose?: boolean;
 }
 
 export type MapResult = CommandResult<{

@@ -9,23 +9,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IContainer } from '../../container/types';
 
-vi.mock('../../utils/config', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    teiUrl: 'http://tei:8080',
-    qdrantUrl: 'http://qdrant:6333',
-  }),
-  initializeConfig: vi.fn(),
-}));
-
-vi.mock('../../utils/embedpipeline', () => ({
-  createEmbedItems: vi
-    .fn()
-    .mockReturnValue([
-      { content: 'hello', metadata: { url: 'https://example.com' } },
-    ]),
-  batchEmbed: vi.fn().mockResolvedValue({ succeeded: 1, failed: 0 }),
-}));
-
 vi.mock('../../container/DaemonContainerFactory', () => ({
   createDaemonContainer: vi.fn(),
 }));

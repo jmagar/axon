@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleCrawlCommand } from '../../../commands/crawl/command';
 import type { CrawlOptions } from '../../../types/crawl';
-import { resetTeiCache } from '../../../utils/embeddings';
-import { resetQdrantCache } from '../../../utils/qdrant';
 import { createTestContainer } from '../../utils/test-container';
 
 // Mock dependencies
@@ -59,10 +57,7 @@ describe('handleCrawlCommand', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   it('should exit when URL or job ID is missing', async () => {
     const container = createTestContainer();
@@ -191,6 +186,7 @@ describe('handleCrawlCommand', () => {
     expect(handleAsyncEmbedding).toHaveBeenCalledWith(
       'job-222',
       'https://example.com',
+      container.config,
       undefined
     );
     expect(recordJob).toHaveBeenCalledWith('crawl', 'job-222');
@@ -370,6 +366,7 @@ describe('handleCrawlCommand', () => {
     expect(handleAsyncEmbedding).toHaveBeenCalledWith(
       'job-777',
       'https://example.com',
+      container.config,
       'test-key'
     );
   });

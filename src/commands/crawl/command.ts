@@ -13,7 +13,7 @@ import { formatJson, writeCommandOutput } from '../../utils/command';
 import { displayCommandInfo } from '../../utils/display';
 import { isJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
-import { fmt, icons } from '../../utils/theme';
+import { fmt } from '../../utils/theme';
 import { normalizeUrl } from '../../utils/url';
 import { requireContainer, requireContainerFromCommandTree } from '../shared';
 import {
@@ -145,6 +145,7 @@ export async function handleCrawlCommand(
       await handleAsyncEmbedding(
         crawlResult.data.jobId,
         options.urlOrJobId ?? crawlResult.data.url,
+        container.config,
         options.apiKey
       );
     } else {
@@ -280,7 +281,7 @@ async function handleCrawlErrorsCommand(
 export function createCrawlCommand(): Command {
   const crawlCmd = new Command('crawl')
     .description('Crawl a website using Firecrawl')
-    .argument('[url-or-job-id]', 'URL to crawl or job ID to check status')
+    .argument('[url]', 'URL to crawl')
     .option(
       '-u, --url <url>',
       'URL to crawl (alternative to positional argument)'
@@ -372,27 +373,29 @@ export function createCrawlCommand(): Command {
       if (!urlOrJobId) {
         console.error(
           fmt.error(
-            'URL or job ID is required. Provide it as argument or use --url option.'
+            'URL is required. Provide it as argument or use --url option.'
           )
         );
         process.exit(1);
         return;
       }
 
-      // Auto-detect if it's a job ID and show deprecation warning
-      if (isJobId(urlOrJobId)) {
-        console.warn(
-          `${icons.warning} Detected job ID. Use "firecrawl crawl status <job-id>" instead.`
+      // Job IDs are accepted here only for manual embedding.
+      if (isJobId(urlOrJobId) && !options.embed) {
+        console.error(
+          fmt.error(
+            'Job IDs are not accepted here. Use "firecrawl crawl status <job-id>" instead.'
+          )
         );
-        await handleCrawlStatusCommand(container, urlOrJobId, {
-          output: options.output,
-          pretty: options.pretty,
-        });
+        process.exit(1);
         return;
       }
 
       const crawlOptions = {
-        urlOrJobId: normalizeUrl(urlOrJobId),
+        urlOrJobId:
+          options.embed && isJobId(urlOrJobId)
+            ? urlOrJobId
+            : normalizeUrl(urlOrJobId),
         status: false,
         wait: options.wait,
         pollInterval: options.pollInterval,

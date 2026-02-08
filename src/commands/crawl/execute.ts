@@ -8,7 +8,6 @@ import type {
   CrawlResult,
   CrawlStatusResult,
 } from '../../types/crawl';
-import { isJobId } from '../../utils/job';
 import { attachEmbedWebhook } from './embed';
 import { buildCrawlOptions } from './options';
 import { pollCrawlProgress } from './polling';
@@ -18,7 +17,7 @@ import { checkCrawlStatus } from './status';
  * Execute crawl operation
  *
  * Handles three modes:
- * 1. Status check - if status flag or input is job ID
+ * 1. Status check - if status flag is set
  * 2. Wait mode - polls until completion (with or without progress)
  * 3. Async mode - starts crawl and returns job ID
  *
@@ -35,17 +34,14 @@ export async function executeCrawl(
     const { urlOrJobId } = options;
 
     if (!urlOrJobId) {
-      return { success: false, error: 'URL or job ID is required' };
+      return { success: false, error: 'URL is required' };
     }
 
     // Progress implies wait
     const shouldWait = options.wait || options.progress;
 
-    // If status flag is set or input looks like a job ID (but not a URL), check status
-    if (
-      options.status ||
-      (isJobId(urlOrJobId) && !urlOrJobId.includes('://'))
-    ) {
+    // Explicit status mode
+    if (options.status) {
       return await checkCrawlStatus(container, urlOrJobId);
     }
 
@@ -56,7 +52,8 @@ export async function executeCrawl(
     crawlOptions = attachEmbedWebhook(
       crawlOptions,
       options.embed !== false,
-      shouldWait ?? false
+      shouldWait ?? false,
+      container.config
     );
 
     // If wait mode, use polling with optional progress

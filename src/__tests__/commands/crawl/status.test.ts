@@ -4,8 +4,6 @@ import {
   executeCrawlCancel,
   executeCrawlErrors,
 } from '../../../commands/crawl/status';
-import { resetTeiCache } from '../../../utils/embeddings';
-import { resetQdrantCache } from '../../../utils/qdrant';
 import { createTestContainer } from '../../utils/test-container';
 
 const createContainer = (...args: Parameters<typeof createTestContainer>) =>
@@ -16,10 +14,7 @@ describe('checkCrawlStatus', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   it('should return successful status result', async () => {
     const mockStatus = {

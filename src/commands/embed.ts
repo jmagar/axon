@@ -257,7 +257,7 @@ export function createEmbedCommand(): Command {
         normalizedInput.startsWith('http://') ||
         normalizedInput.startsWith('https://')
       ) {
-        await ensureAuthenticated();
+        await ensureAuthenticated(container.config.apiKey);
       }
 
       await handleEmbedCommand(container, {

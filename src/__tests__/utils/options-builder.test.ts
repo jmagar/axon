@@ -1,15 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { resetTeiCache } from '../../utils/embeddings';
 import { OptionsBuilder } from '../../utils/options-builder';
-import { resetQdrantCache } from '../../utils/qdrant';
 
 describe('OptionsBuilder', () => {
   beforeEach(() => {});
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   it('should add simple properties', () => {
     const result = new OptionsBuilder<{ limit: number }>()

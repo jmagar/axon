@@ -12,7 +12,6 @@ import {
 } from '../schemas/storage';
 import { fmt } from './theme';
 
-// Re-export type for backward compatibility
 export type { StoredCredentials };
 
 /**

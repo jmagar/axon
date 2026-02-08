@@ -15,6 +15,7 @@ import type {
 import { processCommandResult } from '../utils/command';
 import { fmt, icons } from '../utils/theme';
 import {
+  addVectorOutputOptions,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -178,25 +179,20 @@ export async function handleStatsCommand(
  * Create and configure the stats command
  */
 export function createStatsCommand(): Command {
-  const statsCmd = new Command('stats')
-    .description('Show vector database statistics')
-    .option('--verbose', 'Include additional details', false)
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON', false)
-    .action(async (options, command: Command) => {
-      const container = requireContainer(command);
+  const statsCmd = addVectorOutputOptions(
+    new Command('stats')
+      .description('Show vector database statistics')
+      .option('--verbose', 'Include additional details', false)
+  ).action(async (options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleStatsCommand(container, {
-        verbose: options.verbose,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleStatsCommand(container, {
+      verbose: options.verbose,
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return statsCmd;
 }

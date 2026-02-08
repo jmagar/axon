@@ -22,14 +22,6 @@ vi.mock('../../utils/embed-queue', () => ({
   }),
 }));
 
-vi.mock('../../utils/config', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    teiUrl: 'http://tei:8080',
-    qdrantUrl: 'http://qdrant:6333',
-  }),
-  initializeConfig: vi.fn(),
-}));
-
 vi.mock('../../container/utils/embed-helpers', () => ({
   createEmbedItems: vi.fn().mockReturnValue([
     {

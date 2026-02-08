@@ -13,6 +13,7 @@ import type {
 import { processCommandResult } from '../utils/command';
 import { fmt, icons } from '../utils/theme';
 import {
+  addVectorOutputOptions,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -169,25 +170,20 @@ export async function handleDomainsCommand(
  * Create and configure the domains command
  */
 export function createDomainsCommand(): Command {
-  const domainsCmd = new Command('domains')
-    .description('List unique domains in the vector database')
-    .option('--limit <number>', 'Maximum domains to show', parseInt)
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON', false)
-    .action(async (options, command: Command) => {
-      const container = requireContainer(command);
+  const domainsCmd = addVectorOutputOptions(
+    new Command('domains')
+      .description('List unique domains in the vector database')
+      .option('--limit <number>', 'Maximum domains to show', parseInt)
+  ).action(async (options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleDomainsCommand(container, {
-        limit: options.limit,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleDomainsCommand(container, {
+      limit: options.limit,
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return domainsCmd;
 }

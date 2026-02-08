@@ -4,7 +4,6 @@
 
 import type { Document, WebhookConfig } from '@mendable/firecrawl-js';
 import type { ImmutableConfig } from '../container/types';
-import { getConfig } from './config';
 
 export const DEFAULT_EMBEDDER_WEBHOOK_PORT = 53000;
 export const DEFAULT_EMBEDDER_WEBHOOK_PATH = '/webhooks/crawl';
@@ -41,14 +40,13 @@ function normalizePort(port: number | undefined): number {
 }
 
 export function getEmbedderWebhookSettings(
-  config?: ImmutableConfig
+  config: Partial<ImmutableConfig> = {}
 ): EmbedderWebhookSettings {
-  const cfg = config || getConfig();
   return {
-    url: cfg.embedderWebhookUrl,
-    port: normalizePort(cfg.embedderWebhookPort),
-    path: normalizePath(cfg.embedderWebhookPath),
-    secret: cfg.embedderWebhookSecret,
+    url: config.embedderWebhookUrl,
+    port: normalizePort(config.embedderWebhookPort),
+    path: normalizePath(config.embedderWebhookPath),
+    secret: config.embedderWebhookSecret,
   };
 }
 

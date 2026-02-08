@@ -9,9 +9,7 @@ import {
 } from '../../commands/status';
 import type { IContainer } from '../../container/types';
 import type { CommandWithContainer } from '../../types/test';
-import { resetTeiCache } from '../../utils/embeddings';
 import { writeOutput } from '../../utils/output';
-import { resetQdrantCache } from '../../utils/qdrant';
 import type { MockFirecrawlClient } from '../utils/mock-client';
 import { createTestContainer } from '../utils/test-container';
 
@@ -74,8 +72,6 @@ describe('handleJobStatusCommand', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    resetTeiCache();
-    resetQdrantCache();
   });
 
   it('should write JSON output when json flag is set', async () => {

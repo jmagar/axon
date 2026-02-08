@@ -40,7 +40,7 @@ export interface EmbedJob {
   updatedAt: string;
   lastError?: string;
   apiKey?: string;
-  // Progress tracking (optional for backward compatibility)
+  // Progress tracking for background processing and status reporting
   totalDocuments?: number;
   processedDocuments?: number;
   failedDocuments?: number;

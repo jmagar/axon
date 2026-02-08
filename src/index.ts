@@ -46,7 +46,6 @@ import {
 } from './container/ContainerFactory';
 import type { IContainer } from './container/types';
 import { ensureAuthenticated, printBanner } from './utils/auth';
-import { initializeConfig } from './utils/config';
 import { fmt, icons, isTTY } from './utils/theme';
 import { isUrl, normalizeUrl } from './utils/url';
 
@@ -58,9 +57,6 @@ declare module 'commander' {
     _container?: IContainer;
   }
 }
-
-// Initialize global configuration from environment variables
-initializeConfig();
 
 /**
  * Dependency Injection Container
@@ -337,7 +333,7 @@ program
     const commandName = actionCommand.name();
     if (AUTH_REQUIRED_COMMANDS.includes(commandName)) {
       // Ensure user is authenticated (prompts for login if needed)
-      await ensureAuthenticated();
+      await ensureAuthenticated(commandContainer.config.apiKey);
     }
   });
 

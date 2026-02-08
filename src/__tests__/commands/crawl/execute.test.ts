@@ -6,11 +6,6 @@ import { createTestContainer } from '../../utils/test-container';
 const createContainer = (...args: Parameters<typeof createTestContainer>) =>
   createTestContainer(...args);
 
-// Mock dependencies
-vi.mock('../../../utils/job', () => ({
-  isJobId: vi.fn(),
-}));
-
 vi.mock('../../../commands/crawl/status', () => ({
   checkCrawlStatus: vi.fn(),
 }));
@@ -31,14 +26,13 @@ import { attachEmbedWebhook } from '../../../commands/crawl/embed';
 import { buildCrawlOptions } from '../../../commands/crawl/options';
 import { pollCrawlProgress } from '../../../commands/crawl/polling';
 import { checkCrawlStatus } from '../../../commands/crawl/status';
-import { isJobId } from '../../../utils/job';
 
 describe('executeCrawl', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should return error when URL or job ID is missing', async () => {
+  it('should return error when URL is missing', async () => {
     const container = createTestContainer();
     const options: CrawlOptions = {
       urlOrJobId: '',
@@ -47,7 +41,7 @@ describe('executeCrawl', () => {
     const result = await executeCrawl(container, options);
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('URL or job ID is required');
+    expect(result.error).toBe('URL is required');
   });
 
   it('should check status when status flag is set', async () => {
@@ -73,30 +67,6 @@ describe('executeCrawl', () => {
     expect(result).toEqual(mockStatusResult);
   });
 
-  it('should check status when input is a job ID', async () => {
-    const container = createTestContainer();
-    const mockStatusResult = {
-      success: true,
-      data: { id: 'job-456', status: 'processing', total: 5, completed: 2 },
-    };
-
-    vi.mocked(isJobId).mockReturnValue(true);
-    vi.mocked(checkCrawlStatus).mockResolvedValue(mockStatusResult as never);
-
-    const options: CrawlOptions = {
-      urlOrJobId: 'job-456',
-    };
-
-    const result = await executeCrawl(container, options);
-
-    expect(isJobId).toHaveBeenCalledWith('job-456');
-    expect(checkCrawlStatus).toHaveBeenCalledWith(
-      expect.any(Object),
-      'job-456'
-    );
-    expect(result).toEqual(mockStatusResult);
-  });
-
   it('should start async crawl and return job ID', async () => {
     const mockClient = {
       scrape: vi.fn(),
@@ -107,7 +77,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
 
@@ -119,7 +88,12 @@ describe('executeCrawl', () => {
     const result = await executeCrawl(container, options);
 
     expect(buildCrawlOptions).toHaveBeenCalledWith(options);
-    expect(attachEmbedWebhook).toHaveBeenCalledWith({ limit: 10 }, true, false);
+    expect(attachEmbedWebhook).toHaveBeenCalledWith(
+      { limit: 10 },
+      true,
+      false,
+      container.config
+    );
     expect(mockClient.startCrawl).toHaveBeenCalledWith('https://example.com', {
       limit: 10,
     });
@@ -148,7 +122,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({
       limit: 5,
       pollInterval: 5000,
@@ -170,7 +143,8 @@ describe('executeCrawl', () => {
     expect(attachEmbedWebhook).toHaveBeenCalledWith(
       { limit: 5, pollInterval: 5000 },
       true,
-      true
+      true,
+      container.config
     );
     expect(mockClient.crawl).toHaveBeenCalledWith('https://example.com', {
       limit: 5,
@@ -200,7 +174,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({
       limit: 8,
       pollInterval: 3000,
@@ -227,7 +200,8 @@ describe('executeCrawl', () => {
     expect(attachEmbedWebhook).toHaveBeenCalledWith(
       { limit: 8, pollInterval: 3000, crawlTimeout: 60000 },
       true,
-      true
+      true,
+      container.config
     );
     expect(mockClient.startCrawl).toHaveBeenCalledWith('https://example.com', {
       limit: 8,
@@ -259,7 +233,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
 
@@ -273,7 +246,8 @@ describe('executeCrawl', () => {
     expect(attachEmbedWebhook).toHaveBeenCalledWith(
       { limit: 10 },
       false,
-      false
+      false,
+      container.config
     );
   });
 
@@ -286,7 +260,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
 
@@ -309,7 +282,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
 
@@ -335,7 +307,6 @@ describe('executeCrawl', () => {
     const container = createContainer(mockClient, {
       apiKey: 'test-api-key',
     });
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
 
@@ -367,7 +338,6 @@ describe('executeCrawl', () => {
     };
 
     const container = createContainer(mockClient);
-    vi.mocked(isJobId).mockReturnValue(false);
     vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 3 } as never);
     vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 3 } as never);
     vi.mocked(pollCrawlProgress).mockResolvedValue(mockCrawlJob as never);

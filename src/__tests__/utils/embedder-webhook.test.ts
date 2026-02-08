@@ -3,7 +3,6 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { initializeConfig } from '../../utils/config';
 import {
   extractEmbedderWebhookJobInfo,
   getEmbedderWebhookSettings,
@@ -60,8 +59,6 @@ describe('extractEmbedderWebhookJobInfo', () => {
 
 describe('getEmbedderWebhookSettings', () => {
   it('should return defaults when no config set', () => {
-    initializeConfig({});
-
     const settings = getEmbedderWebhookSettings();
     expect(settings.port).toBe(53000);
     expect(settings.path).toBe('/webhooks/crawl');

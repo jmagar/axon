@@ -8,9 +8,9 @@
  * 3. Store in vector database (via QdrantService)
  */
 
-import { randomUUID } from 'node:crypto';
 import pLimit from 'p-limit';
 import { chunkText } from '../../utils/chunker';
+import { buildEmbeddingPoints, runEmbedSafely } from '../../utils/embed-core';
 import { fmt, icons } from '../../utils/theme';
 import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
 
@@ -18,17 +18,6 @@ import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
  * Maximum concurrent embedding operations to prevent resource exhaustion
  */
 const MAX_CONCURRENT_EMBEDS = 10;
-
-/**
- * Extract domain from URL
- */
-function extractDomain(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return 'unknown';
-  }
-}
 
 /**
  * EmbedPipeline implementation
@@ -79,34 +68,10 @@ export class EmbedPipeline implements IEmbedPipeline {
     // Delete existing vectors for this URL (overwrite dedup)
     await this.qdrantService.deleteByUrl(this.collectionName, metadata.url);
 
-    // Build points with metadata
-    const now = new Date().toISOString();
-    const domain = extractDomain(metadata.url);
-    const totalChunks = chunks.length;
-
-    const points = chunks.map((chunk, i) => ({
-      id: randomUUID(),
-      vector: vectors[i],
-      payload: {
-        url: metadata.url,
-        title: metadata.title || '',
-        domain,
-        chunk_index: chunk.index,
-        chunk_text: chunk.text,
-        chunk_header: chunk.header,
-        total_chunks: totalChunks,
-        source_command: metadata.sourceCommand || 'unknown',
-        content_type: metadata.contentType || 'text',
-        scraped_at: now,
-        // Include any additional metadata fields
-        ...Object.fromEntries(
-          Object.entries(metadata).filter(
-            ([key]) =>
-              !['url', 'title', 'sourceCommand', 'contentType'].includes(key)
-          )
-        ),
-      },
-    }));
+    const points = buildEmbeddingPoints(chunks, vectors, metadata, {
+      sourceCommandFallback: 'unknown',
+      includeExtraMetadata: true,
+    });
 
     // Upsert to Qdrant
     await this.qdrantService.upsertPoints(this.collectionName, points);
@@ -139,15 +104,9 @@ export class EmbedPipeline implements IEmbedPipeline {
       [key: string]: unknown;
     }
   ): Promise<void> {
-    try {
-      await this.autoEmbedInternal(content, metadata);
-    } catch (error) {
-      console.error(
-        fmt.error(
-          `Embed failed for ${metadata.url}: ${error instanceof Error ? error.message : 'Unknown error'}`
-        )
-      );
-    }
+    await runEmbedSafely(metadata.url, () =>
+      this.autoEmbedInternal(content, metadata)
+    );
   }
 
   /**

@@ -28,23 +28,3 @@ export interface MockFirecrawlClient {
   getBatchScrapeErrors?: Mock;
   cancelBatchScrape?: Mock;
 }
-
-/**
- * Setup test environment
- * NOTE: Tests should use test containers (createTestContainer()) for isolation
- * instead of global state resets. This function is deprecated.
- * @deprecated Use test containers instead
- */
-export function setupTest(): void {
-  // No-op: Tests should use test containers
-}
-
-/**
- * Teardown test environment
- * NOTE: Tests should use test containers (createTestContainer()) for isolation
- * instead of global state resets. This function is deprecated.
- * @deprecated Use test containers instead
- */
-export function teardownTest(): void {
-  // No-op: Tests should use test containers
-}

@@ -5,8 +5,6 @@ import {
   mergeExcludePaths,
 } from '../../../commands/crawl/options';
 import type { CrawlOptions } from '../../../types/crawl';
-import { resetTeiCache } from '../../../utils/embeddings';
-import { resetQdrantCache } from '../../../utils/qdrant';
 
 // Mock the settings module
 vi.mock('../../../utils/settings', () => ({
@@ -21,10 +19,7 @@ describe('buildCrawlOptions', () => {
     vi.mocked(loadSettings).mockReturnValue({});
   });
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   it('should build basic crawl options', () => {
     const options: CrawlOptions = {
@@ -451,10 +446,7 @@ describe('buildCrawlOptions with extensions', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    resetTeiCache();
-    resetQdrantCache();
-  });
+  afterEach(() => {});
 
   it('should include default binary extensions in excludePaths', () => {
     vi.mocked(loadSettings).mockReturnValue({});

@@ -13,6 +13,9 @@ import type {
 import { processCommandResult } from '../utils/command';
 import { fmt, icons } from '../utils/theme';
 import {
+  addDomainSourceFilterOptions,
+  addVectorOutputOptions,
+  buildDomainSourceFilter,
   getQdrantUrlError,
   requireContainer,
   resolveCollectionName,
@@ -43,19 +46,9 @@ export async function executeHistory(
 
     const qdrantService = container.getQdrantService();
 
-    // Build filter
-    const filter: Record<string, string | number | boolean> = {};
-    if (options.domain) {
-      filter.domain = options.domain;
-    }
-    if (options.source) {
-      filter.source_command = options.source;
-    }
-
-    // Scroll all points (with optional filter)
     const points = await qdrantService.scrollAll(
       collection,
-      Object.keys(filter).length > 0 ? filter : undefined
+      buildDomainSourceFilter(options)
     );
 
     // Aggregate by URL - process ONLY chunk_index === 0 to avoid duplicates
@@ -210,34 +203,30 @@ export async function handleHistoryCommand(
  * Create and configure the history command
  */
 export function createHistoryCommand(): Command {
-  const historyCmd = new Command('history')
-    .description('Show time-based view of indexed content')
-    .option('--days <number>', 'Filter by entries from last N days', parseInt)
-    .option('--domain <domain>', 'Filter by domain')
-    .option(
-      '--source <command>',
-      'Filter by source command (scrape, crawl, embed, search, extract)'
+  const historyCmd = addVectorOutputOptions(
+    addDomainSourceFilterOptions(
+      new Command('history')
+        .description('Show time-based view of indexed content')
+        .option(
+          '--days <number>',
+          'Filter by entries from last N days',
+          parseInt
+        )
+        .option('--limit <number>', 'Maximum entries to show', parseInt)
     )
-    .option('--limit <number>', 'Maximum entries to show', parseInt)
-    .option(
-      '--collection <name>',
-      'Qdrant collection name (default: firecrawl)'
-    )
-    .option('-o, --output <path>', 'Output file path (default: stdout)')
-    .option('--json', 'Output as JSON', false)
-    .action(async (options, command: Command) => {
-      const container = requireContainer(command);
+  ).action(async (options, command: Command) => {
+    const container = requireContainer(command);
 
-      await handleHistoryCommand(container, {
-        days: options.days,
-        domain: options.domain,
-        source: options.source,
-        limit: options.limit,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+    await handleHistoryCommand(container, {
+      days: options.days,
+      domain: options.domain,
+      source: options.source,
+      limit: options.limit,
+      collection: options.collection,
+      output: options.output,
+      json: options.json,
     });
+  });
 
   return historyCmd;
 }

@@ -41,7 +41,7 @@ interface ExtendedSearchData extends SearchData {
   warning?: string;
   id?: string;
   creditsUsed?: number;
-  /** Legacy nested data format */
+  /** Nested data format observed in some API responses */
   data?: SearchData;
 }
 
@@ -129,7 +129,7 @@ export async function executeSearch(
       searchParams
     )) as ExtendedSearchData;
 
-    // Handle the response - the SDK returns SearchData or legacy formats
+    // Handle the response - the SDK returns SearchData plus metadata fields
     const data: SearchResultData = {};
 
     // Check if result has the expected structure
@@ -153,11 +153,6 @@ export async function executeSearch(
         data.news = result.news as NewsSearchResult[];
       } else if (result.data?.news) {
         data.news = result.data.news as NewsSearchResult[];
-      }
-
-      // Handle legacy array response format (treat as web results)
-      if (Array.isArray(result)) {
-        data.web = result as unknown as WebSearchResult[];
       }
     }
 
