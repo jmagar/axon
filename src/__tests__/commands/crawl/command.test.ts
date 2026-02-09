@@ -61,9 +61,7 @@ describe('handleCrawlCommand', () => {
 
   it('should exit when URL or job ID is missing', async () => {
     const container = createTestContainer();
-    const mockExit = vi
-      .spyOn(process, 'exit')
-      .mockImplementation(() => undefined as never);
+    process.exitCode = 0; // Reset exit code before test
     const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const options: CrawlOptions = {
@@ -75,9 +73,9 @@ describe('handleCrawlCommand', () => {
     expect(mockError).toHaveBeenCalledWith(
       expect.stringContaining('URL or job ID is required')
     );
-    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
 
-    mockExit.mockRestore();
+    process.exitCode = 0; // Clean up after test
     mockError.mockRestore();
   });
 
@@ -103,9 +101,7 @@ describe('handleCrawlCommand', () => {
 
   it('should handle crawl execution failure', async () => {
     const container = createTestContainer();
-    const mockExit = vi
-      .spyOn(process, 'exit')
-      .mockImplementation(() => undefined as never);
+    process.exitCode = 0; // Reset exit code before test
     const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     vi.mocked(isJobId).mockReturnValue(false);
@@ -123,9 +119,9 @@ describe('handleCrawlCommand', () => {
     expect(mockError).toHaveBeenCalledWith(
       expect.stringContaining('Network error')
     );
-    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
 
-    mockExit.mockRestore();
+    process.exitCode = 0; // Clean up after test
     mockError.mockRestore();
   });
 

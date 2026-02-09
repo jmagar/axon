@@ -9,10 +9,12 @@ import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { config as loadDotenv } from 'dotenv';
 
-// Load .env from the CLI project directory, not the current working directory
-// __dirname is available in CommonJS (tsconfig uses "module": "commonjs")
-const envPath = resolve(__dirname, '..', '.env');
-loadDotenv({ path: envPath, quiet: true });
+// Load the CLI project's .env by default for local/self-hosted workflows.
+// Set FIRECRAWL_CLI_DISABLE_LOCAL_ENV=1 to disable this behavior.
+if (process.env.FIRECRAWL_CLI_DISABLE_LOCAL_ENV !== '1') {
+  const envPath = resolve(__dirname, '..', '.env');
+  loadDotenv({ path: envPath, quiet: true });
+}
 
 import packageJson from '../package.json';
 import { createBatchCommand } from './commands/batch';
@@ -148,6 +150,18 @@ const TOP_LEVEL_COMMANDS = new Set([
   'help',
 ]);
 
+function isCloudApiUrl(apiUrl?: string): boolean {
+  if (!apiUrl) {
+    return true;
+  }
+  try {
+    const parsed = new URL(apiUrl);
+    return parsed.hostname === 'api.firecrawl.dev';
+  } catch {
+    return apiUrl.includes('api.firecrawl.dev');
+  }
+}
+
 const program = new Command();
 const ANSI_RESET = '\x1b[0m';
 
@@ -191,6 +205,7 @@ function renderTopLevelHelp(): string {
       '-k, --api-key <key>',
       'Firecrawl API key (or set FIRECRAWL_API_KEY env var)',
     ],
+    ['--api-url <url>', 'Firecrawl API URL (or set FIRECRAWL_API_URL env var)'],
     ['--status', 'Show version, auth status, concurrency, and credits'],
     ['-h, --help', 'display help for command'],
   ];
@@ -316,23 +331,32 @@ program
     '-k, --api-key <key>',
     'Firecrawl API key (or set FIRECRAWL_API_KEY env var)'
   )
+  .option(
+    '--api-url <url>',
+    'Firecrawl API URL (or set FIRECRAWL_API_URL env var)'
+  )
   .option('--status', 'Show version, auth status, concurrency, and credits')
   .allowUnknownOption() // Allow unknown options when URL is passed directly
   .hook('preAction', async (thisCommand, actionCommand) => {
-    // Create container with optional API key override
+    // Create container with optional API overrides
     const globalOptions = thisCommand.opts();
-    let commandContainer = globalOptions.apiKey
-      ? createContainerWithOverride(baseContainer, {
-          apiKey: globalOptions.apiKey,
-        })
-      : baseContainer;
+    let commandContainer = baseContainer;
+    if (globalOptions.apiKey || globalOptions.apiUrl) {
+      commandContainer = createContainerWithOverride(baseContainer, {
+        apiKey: globalOptions.apiKey,
+        apiUrl: globalOptions.apiUrl,
+      });
+    }
 
     // Store container on command for access in handlers
     actionCommand._container = commandContainer;
 
     // Check if this command requires authentication
     const commandName = actionCommand.name();
-    if (AUTH_REQUIRED_COMMANDS.includes(commandName)) {
+    const requiresCloudAuth =
+      AUTH_REQUIRED_COMMANDS.includes(commandName) &&
+      isCloudApiUrl(commandContainer.config.apiUrl);
+    if (requiresCloudAuth) {
       // Ensure user is authenticated (prompts for login if needed)
       const apiKey = await ensureAuthenticated(commandContainer.config.apiKey);
       if (apiKey !== commandContainer.config.apiKey) {

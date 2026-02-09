@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { InfoOptions, InfoResult, UrlInfo } from '../types/info';
 import { processCommandResult } from '../utils/command';
+import { parseInfoOptions } from '../utils/options';
 import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 import {
@@ -169,14 +170,9 @@ export function createInfoCommand(): Command {
     .option('--json', 'Output as JSON', false)
     .action(async (url: string, options, command: Command) => {
       const container = requireContainer(command);
+      const parsedOptions = parseInfoOptions(normalizeUrl(url), options);
 
-      await handleInfoCommand(container, {
-        url: normalizeUrl(url),
-        full: options.full,
-        collection: options.collection,
-        output: options.output,
-        json: options.json,
-      });
+      await handleInfoCommand(container, parsedOptions);
     });
 
   return infoCmd;

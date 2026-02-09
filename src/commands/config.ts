@@ -48,9 +48,17 @@ export async function viewConfig(): Promise<void> {
   console.log('');
 
   if (isAuthenticated()) {
-    const maskedKey = credentials?.apiKey
-      ? `${credentials.apiKey.substring(0, 6)}...${credentials.apiKey.slice(-4)}`
-      : 'Not set';
+    let maskedKey = 'Not set';
+    if (credentials?.apiKey) {
+      const key = credentials.apiKey;
+      // Only mask if key is long enough to safely show prefix/suffix
+      if (key.length >= 16) {
+        maskedKey = `${key.substring(0, 6)}...${key.slice(-4)}`;
+      } else {
+        // For short keys, show minimal information
+        maskedKey = '*'.repeat(Math.min(key.length, 8));
+      }
+    }
 
     console.log(`${fmt.success(icons.success)} Authenticated`);
     console.log('');

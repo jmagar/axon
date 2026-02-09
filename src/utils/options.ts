@@ -118,3 +118,71 @@ export function parseScrapeOptions(
     embed: options.embed,
   };
 }
+
+/**
+ * Raw Commander.js options for info command before parsing
+ */
+export interface CommanderInfoOptions {
+  full?: boolean;
+  collection?: string;
+  output?: string;
+  json?: boolean;
+}
+
+/**
+ * Convert commander options to InfoOptions
+ */
+export function parseInfoOptions(
+  url: string,
+  options: CommanderInfoOptions
+): {
+  url: string;
+  full?: boolean;
+  collection?: string;
+  output?: string;
+  json?: boolean;
+} {
+  return {
+    url,
+    full: options.full,
+    collection: options.collection,
+    output: options.output,
+    json: options.json,
+  };
+}
+
+/**
+ * Raw Commander.js options for delete command before parsing
+ */
+export interface CommanderDeleteOptions {
+  url?: string;
+  domain?: string;
+  all?: boolean;
+  yes?: boolean;
+  collection?: string;
+  output?: string;
+  json?: boolean;
+}
+
+/**
+ * Convert commander options to DeleteOptions
+ */
+export function parseDeleteOptions(options: CommanderDeleteOptions): {
+  url?: string;
+  domain?: string;
+  all?: boolean;
+  yes?: boolean;
+  collection?: string;
+  output?: string;
+  json?: boolean;
+} {
+  return {
+    url: options.url,
+    domain: options.domain,
+    all: options.all,
+    yes: options.yes,
+    collection: options.collection,
+    output: options.output,
+    json: options.json,
+  };
+}

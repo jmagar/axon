@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { DeleteOptions, DeleteResult } from '../types/delete';
 import { processCommandResult } from '../utils/command';
+import { parseDeleteOptions } from '../utils/options';
 import {
   addVectorOutputOptions,
   getQdrantUrlError,
@@ -173,16 +174,9 @@ export function createDeleteCommand(): Command {
       )
   ).action(async (options, command: Command) => {
     const container = requireContainer(command);
+    const parsedOptions = parseDeleteOptions(options);
 
-    await handleDeleteCommand(container, {
-      url: options.url,
-      domain: options.domain,
-      all: options.all,
-      yes: options.yes,
-      collection: options.collection,
-      output: options.output,
-      json: options.json,
-    });
+    await handleDeleteCommand(container, parsedOptions);
   });
 
   return deleteCmd;

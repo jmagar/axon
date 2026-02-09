@@ -119,8 +119,12 @@ fi
 # Step 3: Run tests
 echo ""
 echo "→ Running tests for '${COMMAND}'..."
+
+# Temporarily disable set -e to capture test exit code
+set +e
 pnpm test:unit -- --run src/__tests__/commands/${COMMAND}
 TEST_EXIT=$?
+set -e
 
 # Step 4: Format output
 echo ""

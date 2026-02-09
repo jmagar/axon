@@ -219,7 +219,7 @@ List active crawl jobs.
 
 | Flag | Default | Type | Description | Notes |
 |------|---------|------|-------------|-------|
-| `--no-pretty` | `false` | boolean | Skip pretty formatting | |
+| `--pretty` | `false` | boolean | Pretty print JSON output | |
 
 ### sources
 

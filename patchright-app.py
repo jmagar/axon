@@ -101,12 +101,13 @@ class MultipleUrlModel(BaseModel):
 
         return self
 
-def get_error(status_code: int) -> str:
+def get_error(status_code: int) -> Optional[str]:
+    """Return error message for HTTP error status codes, None for success codes."""
     if 400 <= status_code < 500:
         return "Client error"
     elif 500 <= status_code < 600:
         return "Server error"
-    return "Unknown error"
+    return None
 
 
 def update_ads_blocklist_from_url():
@@ -331,7 +332,7 @@ async def scrape_page_endpoint(request_model: MultipleUrlModel):
         ]
 
         results = await asyncio.gather(
-            *(scrape_page(url_models) for url_models in url_models)
+            *(scrape_page(url_model) for url_model in url_models)
         )
         return results
 
@@ -377,7 +378,8 @@ async def scrape_page(request_model: UrlModel):
         content = await page.content()
         header_content_type = await response.header_value('Content-Type')
         if (header_content_type and ("application/json" in header_content_type.lower() or "text/plain" in header_content_type.lower())):
-            content = await response.body()
+            body_bytes = await response.body()
+            content = body_bytes.decode('utf-8', errors='replace')
         
         status_code = response.status if response else None
         page_error = get_error(status_code) if status_code != 200 else None
@@ -404,4 +406,4 @@ async def scrape_page(request_model: UrlModel):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv('PORT', 3000)))
+    uvicorn.run(f"{__name__}:app", host="0.0.0.0", port=int(os.getenv('PORT', 3000)))

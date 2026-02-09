@@ -598,7 +598,7 @@ export class QdrantService implements IQdrantService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filter: {
-            must: [{ key: 'id', match: { any: [] } }],
+            must: [],
           },
         }),
       },

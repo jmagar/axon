@@ -27,11 +27,11 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - /home/jmagar/appdata/cli-firecrawl/embed-queue:/home/jmagar/appdata/cli-firecrawl/embed-queue
+      - ${EMBEDDER_QUEUE_DIR:-./data/embed-queue}:/app/.cache/embed-queue
     environment:
       FIRECRAWL_API_URL: http://firecrawl:53002
       QDRANT_URL: http://firecrawl-qdrant:6333
-      FIRECRAWL_EMBEDDER_QUEUE_DIR: /home/jmagar/appdata/cli-firecrawl/embed-queue
+      FIRECRAWL_EMBEDDER_QUEUE_DIR: /app/.cache/embed-queue
     command: node dist/embedder-daemon.js
     ports:
       - "53000:53000"

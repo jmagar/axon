@@ -564,19 +564,14 @@ export async function isEmbedderRunning(
   const settings = getEmbedderWebhookSettings(container?.config);
 
   try {
-    // Attempt HTTP GET to webhook server (should return 405 Method Not Allowed)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-    const response = await fetch(`http://localhost:${settings.port}/health`, {
+    // Attempt HTTP GET to webhook server (returns 200 with health status)
+    await fetch(`http://localhost:${settings.port}/health`, {
       method: 'GET',
-      signal: controller.signal,
+      signal: AbortSignal.timeout(1000),
     });
 
-    clearTimeout(timeoutId);
-
-    // Any response (even 404/405) means daemon is running
-    return response.status !== undefined;
+    // Any successful fetch means daemon is running and responsive
+    return true;
   } catch (_error) {
     // Connection refused, timeout, or network error means daemon is not running
     return false;

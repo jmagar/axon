@@ -80,11 +80,18 @@ export async function executeScrape(
 
     const collection = qdrantCollection || 'firecrawl';
 
-    const qdrantService = container.getQdrantService();
-    const count = await qdrantService.countByDomain(collection, domain);
-    await qdrantService.deleteByDomain(collection, domain);
+    try {
+      const qdrantService = container.getQdrantService();
+      const count = await qdrantService.countByDomain(collection, domain);
+      await qdrantService.deleteByDomain(collection, domain);
 
-    return { success: true, removed: count };
+      return { success: true, removed: count };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to remove domain from Qdrant: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
 
   // Get client instance from container

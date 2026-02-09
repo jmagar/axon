@@ -71,23 +71,25 @@ export async function executeSources(
     }
 
     // Convert to array and sort by scrapedAt descending
-    let sources = Array.from(sourcesMap.values()).sort((a, b) =>
+    const allSources = Array.from(sourcesMap.values()).sort((a, b) =>
       b.scrapedAt.localeCompare(a.scrapedAt)
     );
 
-    // Apply limit if specified
-    if (options.limit && options.limit > 0) {
-      sources = sources.slice(0, options.limit);
-    }
+    // Calculate aggregates before applying limit
+    const totalSources = allSources.length;
+    const uniqueDomains = new Set(allSources.map((s) => s.domain)).size;
 
-    // Calculate aggregates
-    const uniqueDomains = new Set(sources.map((s) => s.domain)).size;
+    // Apply limit if specified
+    const sources =
+      options.limit && options.limit > 0
+        ? allSources.slice(0, options.limit)
+        : allSources;
 
     return {
       success: true,
       data: {
         sources,
-        totalSources: sources.length,
+        totalSources,
         totalChunks: points.length,
         uniqueDomains,
       },

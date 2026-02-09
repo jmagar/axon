@@ -276,7 +276,7 @@ describe('executeMap', () => {
   describe('HTTP path (with User-Agent)', () => {
     it('should use HTTP client when User-Agent is configured', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: mockFetchResponse({ links: [] }),
+        fetchWithTimeout: vi.fn()({ links: [] }),
         fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
@@ -291,8 +291,8 @@ describe('executeMap', () => {
         urlOrJobId: 'https://example.com',
       });
 
-      expect(mockHttpClient.fetchWithTimeout).toHaveBeenCalledTimes(1);
-      const [url, options] = mockHttpClient.fetchWithTimeout.mock.calls[0];
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledTimes(1);
+      const [url, options] = mockHttpClient.fetchWithRetry.mock.calls[0];
       expect(url).toBe('https://api.firecrawl.dev/v2/map');
       expect(options.method).toBe('POST');
       expect(options.headers.Authorization).toBe('Bearer test-api-key');
@@ -302,7 +302,7 @@ describe('executeMap', () => {
 
     it('should include custom User-Agent as HTTP header', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: mockFetchResponse({ links: [] }),
+        fetchWithTimeout: vi.fn()({ links: [] }),
         fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
@@ -316,13 +316,13 @@ describe('executeMap', () => {
         urlOrJobId: 'https://example.com',
       });
 
-      const [, options] = mockHttpClient.fetchWithTimeout.mock.calls[0];
+      const [, options] = mockHttpClient.fetchWithRetry.mock.calls[0];
       expect(options.headers['User-Agent']).toBe('custom-bot/1.0');
     });
 
     it('should include all options in HTTP request body', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: mockFetchResponse({ links: [] }),
+        fetchWithTimeout: vi.fn()({ links: [] }),
         fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
@@ -342,7 +342,7 @@ describe('executeMap', () => {
         sitemap: 'include',
       });
 
-      const [, fetchOptions] = mockHttpClient.fetchWithTimeout.mock.calls[0];
+      const [, fetchOptions] = mockHttpClient.fetchWithRetry.mock.calls[0];
       const body = JSON.parse(fetchOptions.body);
       expect(body.url).toBe('https://example.com');
       expect(body.limit).toBe(100);
@@ -355,12 +355,12 @@ describe('executeMap', () => {
 
     it('should return error when API returns non-OK status', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: mockFetchResponse(
+        fetchWithTimeout: vi.fn(),
+        fetchWithRetry: mockFetchResponse(
           { error: 'API Error: Invalid URL' },
           false,
           400
         ),
-        fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
         userAgent: DEFAULT_USER_AGENT,
@@ -381,12 +381,12 @@ describe('executeMap', () => {
 
     it('should handle non-JSON error responses', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: vi.fn().mockResolvedValue({
+        fetchWithTimeout: vi.fn(),
+        fetchWithRetry: vi.fn().mockResolvedValue({
           ok: false,
           status: 500,
           json: vi.fn().mockRejectedValue(new Error('not json')),
         }),
-        fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
         userAgent: DEFAULT_USER_AGENT,
@@ -405,8 +405,8 @@ describe('executeMap', () => {
 
     it('should handle fetch rejection', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: vi.fn().mockRejectedValue(new Error('Network error')),
-        fetchWithRetry: vi.fn(),
+        fetchWithTimeout: vi.fn(),
+        fetchWithRetry: vi.fn().mockRejectedValue(new Error('Network error')),
       };
       const container = createTestContainer(undefined, {
         userAgent: DEFAULT_USER_AGENT,
@@ -425,7 +425,7 @@ describe('executeMap', () => {
 
     it('should explicitly send ignoreQueryParameters: false in HTTP body when noFiltering is true', async () => {
       const mockHttpClient = {
-        fetchWithTimeout: mockFetchResponse({ links: [] }),
+        fetchWithTimeout: vi.fn()({ links: [] }),
         fetchWithRetry: vi.fn(),
       };
       const container = createTestContainer(undefined, {
@@ -441,7 +441,7 @@ describe('executeMap', () => {
         noFiltering: true, // Should override and send false to API
       });
 
-      const [, fetchOptions] = mockHttpClient.fetchWithTimeout.mock.calls[0];
+      const [, fetchOptions] = mockHttpClient.fetchWithRetry.mock.calls[0];
       const body = JSON.parse(fetchOptions.body);
       expect(body.ignoreQueryParameters).toBe(false);
     });

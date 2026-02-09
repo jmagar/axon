@@ -1113,16 +1113,17 @@ describe('createCrawlCommand', () => {
         cancelCrawl: vi.fn().mockRejectedValue(new Error('Cancel failed')),
       };
       const container = createContainer(mockClient);
+      process.exitCode = 0; // Reset exit code before test
 
       const cmd = createCrawlCommand();
       cmd._container = container;
-      cmd.exitOverride();
 
-      await expect(
-        cmd.parseAsync(['node', 'test', 'cancel', 'job-456'], {
-          from: 'node',
-        })
-      ).rejects.toThrow();
+      await cmd.parseAsync(['node', 'test', 'cancel', 'job-456'], {
+        from: 'node',
+      });
+
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0; // Clean up after test
     });
   });
 
@@ -1162,9 +1163,7 @@ describe('createCrawlCommand', () => {
     };
     const container = createContainer(mockClient);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi
-      .spyOn(process, 'exit')
-      .mockImplementation((() => {}) as never);
+    process.exitCode = 0; // Reset exit code before test
 
     const cmd = createCrawlCommand();
     cmd._container = container;
@@ -1178,11 +1177,11 @@ describe('createCrawlCommand', () => {
         'Job IDs are not accepted here. Use "firecrawl crawl status <job-id>" instead.'
       )
     );
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
     expect(mockClient.getCrawlStatus).not.toHaveBeenCalled();
 
+    process.exitCode = 0; // Clean up after test
     errorSpy.mockRestore();
-    exitSpy.mockRestore();
   });
 
   it('should preserve raw job ID for manual embedding action', async () => {

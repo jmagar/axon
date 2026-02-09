@@ -2,6 +2,8 @@
  * Map command implementation
  */
 
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type {
   Document,
   CrawlOptions as SdkCrawlOptions,
@@ -17,9 +19,8 @@ import { filterUrls } from '../utils/url-filter';
 import { mergeExcludePaths } from './crawl/options';
 import { requireContainer } from './shared';
 
-/** HTTP timeout for map API requests (60 seconds) */
-const MAP_TIMEOUT_MS = 60000;
 const MAP_CRAWL_FALLBACK_MAX_DISCOVERY_DEPTH = 10;
+const execFileAsync = promisify(execFile);
 
 function parseUrl(url: string): URL | null {
   try {
@@ -191,11 +192,17 @@ function normalizeMapLinks(
 async function executeMapWithUserAgent(
   httpClient: IHttpClient,
   apiUrl: string,
-  apiKey: string,
-  userAgent: string,
+  apiKey: string | undefined,
+  userAgent: string | undefined,
   url: string,
   options: MapOptions
 ): Promise<MapResult> {
+  console.error('[DEBUG] executeMapWithUserAgent called');
+  console.error('[DEBUG] apiUrl:', apiUrl);
+  console.error('[DEBUG] apiKey:', apiKey ? '***SET***' : 'undefined');
+  console.error('[DEBUG] userAgent:', userAgent);
+
+  const isCloud = apiUrl.includes('api.firecrawl.dev');
   const body: Record<string, unknown> = { url };
 
   if (options.limit !== undefined) {
@@ -226,19 +233,29 @@ async function executeMapWithUserAgent(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-    'User-Agent': userAgent,
   };
+  if (userAgent) {
+    headers['User-Agent'] = userAgent;
+  }
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
 
-  const response = await httpClient.fetchWithTimeout(
+  console.error('[DEBUG] Making request to:', `${apiUrl}/v2/map`);
+  console.error('[DEBUG] Headers:', JSON.stringify(headers, null, 2));
+  console.error('[DEBUG] Body:', JSON.stringify(body, null, 2));
+
+  const response = await httpClient.fetchWithRetry(
     `${apiUrl}/v2/map`,
     {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     },
-    MAP_TIMEOUT_MS
+    { timeoutMs: 30000 }
   );
+
+  console.error('[DEBUG] Response received, status:', response.status);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
@@ -248,12 +265,42 @@ async function executeMapWithUserAgent(
   }
 
   const mapData = await response.json();
-  const links = normalizeMapLinks(mapData.links || []);
+  let links = normalizeMapLinks(mapData.links || []);
+
+  // Self-hosted endpoints can return empty results via Node fetch/SDK
+  // while returning valid data via curl. Retry with curl for parity.
+  if (!isCloud && links.length === 0) {
+    const curlLinks = await executeMapWithCurl(apiUrl, body);
+    if (curlLinks.length > 0) {
+      links = curlLinks;
+    }
+  }
 
   return {
     success: true,
     data: { links },
   };
+}
+
+async function executeMapWithCurl(
+  apiUrl: string,
+  body: Record<string, unknown>
+): Promise<Array<{ url: string; title?: string; description?: string }>> {
+  const { stdout } = await execFileAsync('curl', [
+    '-sS',
+    '-X',
+    'POST',
+    `${apiUrl}/v2/map`,
+    '-H',
+    'Content-Type: application/json',
+    '--data',
+    JSON.stringify(body),
+  ]);
+
+  const parsed = JSON.parse(stdout) as {
+    links?: unknown[];
+  };
+  return normalizeMapLinks(parsed.links || []);
 }
 
 /**
@@ -264,7 +311,9 @@ async function executeMapViaSdk(
   url: string,
   options: MapOptions
 ): Promise<MapResult> {
+  console.error('[DEBUG] executeMapViaSdk called');
   const client = container.getFirecrawlClient();
+  console.error('[DEBUG] client obtained:', typeof client);
 
   const sdkOptions: SdkMapOptions = {};
 
@@ -315,6 +364,10 @@ export async function executeMap(
     const userAgent = container.config.userAgent;
     const { urlOrJobId } = options;
 
+    console.error('[DEBUG] executeMap called with URL:', urlOrJobId);
+    console.error('[DEBUG] userAgent:', userAgent);
+    console.error('[DEBUG] options:', JSON.stringify(options, null, 2));
+
     let result: MapResult;
 
     // When User-Agent is configured, use direct HTTP (SDK limitation)
@@ -322,20 +375,21 @@ export async function executeMap(
     if (userAgent) {
       // Prefer options.apiKey over container.config.apiKey
       const apiKey = options.apiKey || container.config.apiKey;
-      if (!apiKey) {
+      const apiUrl = container.config.apiUrl || 'https://api.firecrawl.dev';
+      const isCloud = apiUrl.includes('api.firecrawl.dev');
+      if (isCloud && !apiKey) {
         throw new Error(
           'API key is required. Set FIRECRAWL_API_KEY environment variable, ' +
             'use --api-key flag, or run "firecrawl config" to set the API key.'
         );
       }
-      const apiUrl = container.config.apiUrl || 'https://api.firecrawl.dev';
       const httpClient = container.getHttpClient();
 
       result = await executeMapWithUserAgent(
         httpClient,
         apiUrl,
         apiKey,
-        userAgent,
+        isCloud ? userAgent : undefined,
         urlOrJobId,
         options
       );
@@ -468,19 +522,11 @@ export function createMapCommand(): Command {
       '--sitemap <mode>',
       'Sitemap handling: only, include, skip (default: include)'
     )
-    .option('--include-subdomains', 'Include subdomains', true)
+    .option('--include-subdomains', 'Include subdomains')
     .option('--no-include-subdomains', 'Exclude subdomains')
-    .option(
-      '--ignore-query-parameters',
-      'Ignore query parameters (default: true)',
-      true
-    )
+    .option('--ignore-query-parameters', 'Ignore query parameters')
     .option('--no-ignore-query-parameters', 'Include query parameters')
-    .option(
-      '--ignore-cache',
-      'Bypass sitemap cache for fresh URLs (default: true)',
-      true
-    )
+    .option('--ignore-cache', 'Bypass sitemap cache for fresh URLs')
     .option('--no-ignore-cache', 'Use cached sitemap data')
     .option('--timeout <seconds>', 'Timeout in seconds', parseFloat)
     .option('--exclude-paths <paths...>', 'Paths to exclude from results')
@@ -525,9 +571,18 @@ export function createMapCommand(): Command {
         limit: options.limit,
         search: options.search,
         sitemap: options.sitemap,
-        includeSubdomains: options.includeSubdomains,
-        ignoreQueryParameters: options.ignoreQueryParameters,
-        ignoreCache: options.ignoreCache,
+        includeSubdomains:
+          command.getOptionValueSource('includeSubdomains') === 'default'
+            ? undefined
+            : options.includeSubdomains,
+        ignoreQueryParameters:
+          command.getOptionValueSource('ignoreQueryParameters') === 'default'
+            ? undefined
+            : options.ignoreQueryParameters,
+        ignoreCache:
+          command.getOptionValueSource('ignoreCache') === 'default'
+            ? undefined
+            : options.ignoreCache,
         timeout: options.timeout,
         excludePaths: options.excludePaths,
         excludeExtensions: options.excludeExtensions,

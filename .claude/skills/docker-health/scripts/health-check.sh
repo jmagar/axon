@@ -4,6 +4,24 @@
 
 set -o pipefail
 
+# Change to project root (4 levels up from scripts/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Load TEI_URL from .env file if available
+TEI_URL="${TEI_URL:-http://localhost:53010}"
+if [ -f ".env" ]; then
+  # Source .env safely (only TEI_URL)
+  TEI_URL_FROM_ENV=$(grep "^TEI_URL=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+  if [ -n "$TEI_URL_FROM_ENV" ]; then
+    TEI_URL="$TEI_URL_FROM_ENV"
+  fi
+fi
+
+# Extract hostname and port from TEI_URL for display
+TEI_HOST=$(echo "$TEI_URL" | sed -E 's|https?://||' | cut -d'/' -f1)
+
 # Colors (only if TTY)
 if [ -t 1 ]; then
   GREEN='\033[0;32m'
@@ -34,7 +52,7 @@ echo "${BOLD}   EMBEDDING MODEL INFORMATION${NC}"
 echo "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo "${GREEN}✓${NC} Model: Qwen/Qwen3-Embedding-0.6B"
 echo "${GREEN}✓${NC} Service: Hugging Face Text Embeddings Inference (TEI)"
-echo "${GREEN}✓${NC} Location: steamy-wsl (100.74.16.82:52000)"
+echo "${GREEN}✓${NC} Location: ${TEI_HOST}"
 echo "${GREEN}✓${NC} Hardware: RTX 4070 GPU"
 echo "${GREEN}✓${NC} Vector Dimension: 1024"
 echo "${GREEN}✓${NC} Endpoints: /embed (native), /v1 (OpenAI-compatible)"
@@ -138,17 +156,17 @@ else
   echo -e "${DIM}  → docker compose up -d firecrawl-rabbitmq${NC}"
 fi
 
-# 7. Remote TEI (100.74.16.82:52000)
-echo -n "Checking remote-tei (100.74.16.82:52000)... "
-if INFO=$(curl -s --max-time 5 http://100.74.16.82:52000/info 2>/dev/null); then
+# 7. Remote TEI (from TEI_URL env var)
+echo -n "Checking remote-tei (${TEI_HOST})... "
+if INFO=$(curl -s --max-time 5 "${TEI_URL}/info" 2>/dev/null); then
   MODEL=$(echo "$INFO" | jq -r '.model_id // "unknown"' 2>/dev/null || echo "unknown")
   echo -e "${GREEN}✓ healthy${NC} ${DIM}[${MODEL}]${NC}"
   ((HEALTHY_COUNT++))
 else
   echo -e "${RED}✗ unreachable${NC}"
-  echo -e "${DIM}  → Check TEI service on steamy-wsl${NC}"
-  echo -e "${DIM}  → ping -c 3 100.74.16.82${NC}"
-  echo -e "${DIM}  → Verify firewall/Tailscale ACLs${NC}"
+  echo -e "${DIM}  → Check TEI service at ${TEI_URL}${NC}"
+  echo -e "${DIM}  → Verify TEI_URL in .env file${NC}"
+  echo -e "${DIM}  → Check firewall/network connectivity${NC}"
 fi
 
 # Summary
