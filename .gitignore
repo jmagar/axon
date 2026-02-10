@@ -40,6 +40,9 @@ __pycache__/
 *.temp
 .cache/
 .full-review/
+.1code/
+.docs/
+.serena/
 
 .firecrawl/
 
