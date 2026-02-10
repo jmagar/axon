@@ -429,8 +429,8 @@ describe('isEmbedderRunning', () => {
     );
   });
 
-  it('should return true when daemon returns 404 (server running but no health endpoint)', async () => {
-    // Mock 404 response (server is running but endpoint doesn't exist)
+  it('should return false when daemon returns 404 (health endpoint not found)', async () => {
+    // Mock 404 response (health endpoint doesn't exist, daemon is unhealthy)
     global.fetch = vi.fn().mockResolvedValue({
       status: 404,
       ok: false,
@@ -442,7 +442,7 @@ describe('isEmbedderRunning', () => {
 
     const result = await isEmbedderRunning();
 
-    expect(result).toBe(true);
+    expect(result).toBe(false);
   });
 
   it('should return false when daemon is not running (connection refused)', async () => {

@@ -197,11 +197,6 @@ async function executeMapWithUserAgent(
   url: string,
   options: MapOptions
 ): Promise<MapResult> {
-  console.error('[DEBUG] executeMapWithUserAgent called');
-  console.error('[DEBUG] apiUrl:', apiUrl);
-  console.error('[DEBUG] apiKey:', apiKey ? '***SET***' : 'undefined');
-  console.error('[DEBUG] userAgent:', userAgent);
-
   const isCloud = apiUrl.includes('api.firecrawl.dev');
   const body: Record<string, unknown> = { url };
 
@@ -241,10 +236,6 @@ async function executeMapWithUserAgent(
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
-  console.error('[DEBUG] Making request to:', `${apiUrl}/v2/map`);
-  console.error('[DEBUG] Headers:', JSON.stringify(headers, null, 2));
-  console.error('[DEBUG] Body:', JSON.stringify(body, null, 2));
-
   const response = await httpClient.fetchWithRetry(
     `${apiUrl}/v2/map`,
     {
@@ -254,8 +245,6 @@ async function executeMapWithUserAgent(
     },
     { timeoutMs: 30000 }
   );
-
-  console.error('[DEBUG] Response received, status:', response.status);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
@@ -311,9 +300,7 @@ async function executeMapViaSdk(
   url: string,
   options: MapOptions
 ): Promise<MapResult> {
-  console.error('[DEBUG] executeMapViaSdk called');
   const client = container.getFirecrawlClient();
-  console.error('[DEBUG] client obtained:', typeof client);
 
   const sdkOptions: SdkMapOptions = {};
 
@@ -363,10 +350,6 @@ export async function executeMap(
   try {
     const userAgent = container.config.userAgent;
     const { urlOrJobId } = options;
-
-    console.error('[DEBUG] executeMap called with URL:', urlOrJobId);
-    console.error('[DEBUG] userAgent:', userAgent);
-    console.error('[DEBUG] options:', JSON.stringify(options, null, 2));
 
     let result: MapResult;
 

@@ -18,7 +18,7 @@ loadDotenv({ path: envPath });
 const container = createDaemonContainer();
 
 // Start daemon and store cleanup function
-let cleanup: (() => void) | undefined;
+let cleanup: (() => Promise<void>) | undefined;
 startEmbedderDaemon(container)
   .then((cleanupFn) => {
     cleanup = cleanupFn;
@@ -33,18 +33,30 @@ startEmbedderDaemon(container)
   });
 
 // Handle graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.error(
     fmt.dim('[Embedder] Received SIGTERM, shutting down gracefully')
   );
-  cleanup?.();
-  process.exit(0);
+  try {
+    await cleanup?.();
+    await container.dispose();
+    process.exit(0);
+  } catch (error) {
+    console.error(fmt.error(`[Embedder] Cleanup error: ${error}`));
+    process.exit(1);
+  }
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.error(
     fmt.dim('[Embedder] Received SIGINT, shutting down gracefully')
   );
-  cleanup?.();
-  process.exit(0);
+  try {
+    await cleanup?.();
+    await container.dispose();
+    process.exit(0);
+  } catch (error) {
+    console.error(fmt.error(`[Embedder] Cleanup error: ${error}`));
+    process.exit(1);
+  }
 });

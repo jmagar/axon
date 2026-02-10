@@ -9,15 +9,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Load TEI_URL from .env file if available
-TEI_URL="${TEI_URL:-http://localhost:53010}"
-if [ -f ".env" ]; then
-  # Source .env safely (only TEI_URL)
-  TEI_URL_FROM_ENV=$(grep "^TEI_URL=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-  if [ -n "$TEI_URL_FROM_ENV" ]; then
-    TEI_URL="$TEI_URL_FROM_ENV"
+# Load TEI_URL with correct precedence: env var > .env > default
+if [ -z "$TEI_URL" ]; then
+  # No environment variable set, try .env file
+  if [ -f ".env" ]; then
+    # Source .env safely (only TEI_URL)
+    TEI_URL_FROM_ENV=$(grep "^TEI_URL=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [ -n "$TEI_URL_FROM_ENV" ]; then
+      TEI_URL="$TEI_URL_FROM_ENV"
+    fi
   fi
 fi
+# Final fallback to default if still empty
+TEI_URL="${TEI_URL:-http://localhost:53010}"
 
 # Extract hostname and port from TEI_URL for display
 TEI_HOST=$(echo "$TEI_URL" | sed -E 's|https?://||' | cut -d'/' -f1)
@@ -64,7 +68,7 @@ echo ""
 
 # 1. Firecrawl API (Port 53002)
 echo -n "Checking firecrawl (53002)... "
-if STATUS=$(curl -s --max-time 5 http://localhost:53002/health 2>/dev/null); then
+if STATUS=$(curl -sf --max-time 5 http://localhost:53002/health 2>/dev/null); then
   echo -e "${GREEN}✓ healthy${NC}"
   ((HEALTHY_COUNT++))
 else
@@ -75,8 +79,8 @@ fi
 
 # 2. Embedder Daemon (Port 53000)
 echo -n "Checking embedder (53000)... "
-if HEALTH=$(curl -s --max-time 5 http://localhost:53000/health 2>/dev/null); then
-  if STATUS=$(curl -s --max-time 5 http://localhost:53000/status 2>/dev/null); then
+if HEALTH=$(curl -sf --max-time 5 http://localhost:53000/health 2>/dev/null); then
+  if STATUS=$(curl -sf --max-time 5 http://localhost:53000/status 2>/dev/null); then
     PENDING=$(echo "$STATUS" | jq -r '.pending // 0' 2>/dev/null || echo "0")
     PROCESSING=$(echo "$STATUS" | jq -r '.processing // 0' 2>/dev/null || echo "0")
     echo -e "${GREEN}✓ healthy${NC} ${DIM}[${PENDING} pending, ${PROCESSING} processing]${NC}"
@@ -108,8 +112,8 @@ fi
 
 # 4. Qdrant (Port 53333)
 echo -n "Checking qdrant (53333)... "
-if HEALTH=$(curl -s --max-time 5 http://localhost:53333/health 2>/dev/null); then
-  if COLLECTION=$(curl -s --max-time 5 http://localhost:53333/collections/firecrawl 2>/dev/null); then
+if HEALTH=$(curl -sf --max-time 5 http://localhost:53333/health 2>/dev/null); then
+  if COLLECTION=$(curl -sf --max-time 5 http://localhost:53333/collections/firecrawl 2>/dev/null); then
     VECTORS=$(echo "$COLLECTION" | jq -r '.result.vectors_count // 0' 2>/dev/null || echo "0")
     echo -e "${GREEN}✓ healthy${NC} ${DIM}[${VECTORS} vectors]${NC}"
     ((HEALTHY_COUNT++))
@@ -158,7 +162,7 @@ fi
 
 # 7. Remote TEI (from TEI_URL env var)
 echo -n "Checking remote-tei (${TEI_HOST})... "
-if INFO=$(curl -s --max-time 5 "${TEI_URL}/info" 2>/dev/null); then
+if INFO=$(curl -sf --max-time 5 "${TEI_URL}/info" 2>/dev/null); then
   MODEL=$(echo "$INFO" | jq -r '.model_id // "unknown"' 2>/dev/null || echo "unknown")
   echo -e "${GREEN}✓ healthy${NC} ${DIM}[${MODEL}]${NC}"
   ((HEALTHY_COUNT++))

@@ -49,7 +49,7 @@ echo ""
 echo "→ Running tests for '${COMMAND}'..."
 
 # Run tests with coverage
-pnpm test:unit -- --run src/__tests__/commands/${COMMAND}
+pnpm test:unit -- --run "src/__tests__/commands/${COMMAND}"
 
 TEST_EXIT=$?
 ```
@@ -122,7 +122,7 @@ echo "→ Running tests for '${COMMAND}'..."
 
 # Temporarily disable set -e to capture test exit code
 set +e
-pnpm test:unit -- --run src/__tests__/commands/${COMMAND}
+pnpm test:unit -- --run "src/__tests__/commands/${COMMAND}"
 TEST_EXIT=$?
 set -e
 

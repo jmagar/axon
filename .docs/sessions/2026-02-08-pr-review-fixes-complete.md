@@ -83,7 +83,7 @@ Successfully addressed all 21 PR review comments (3 critical + 18 major) for the
 
 **docker-compose.yaml:30** - Changed from hardcoded `/home/jmagar/appdata/...` to `${EMBEDDER_QUEUE_DIR:-./data/embed-queue}`
 
-**.env.example:18** - Removed internal Tailscale IP `100.74.16.82`, replaced with `http://your-tei-host:52000`
+**.env.example:18** - Removed internal IP address, replaced with `http://your-tei-host:52000`
 
 **.github/workflows/security.yml:105** - Updated shellcheck action from `@master` to `@2.0.0`
 

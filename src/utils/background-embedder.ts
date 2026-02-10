@@ -565,13 +565,13 @@ export async function isEmbedderRunning(
 
   try {
     // Attempt HTTP GET to webhook server (returns 200 with health status)
-    await fetch(`http://localhost:${settings.port}/health`, {
+    const response = await fetch(`http://localhost:${settings.port}/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(1000),
     });
 
-    // Any successful fetch means daemon is running and responsive
-    return true;
+    // Only treat a healthy response as running (2xx status codes)
+    return response.ok;
   } catch (_error) {
     // Connection refused, timeout, or network error means daemon is not running
     return false;
