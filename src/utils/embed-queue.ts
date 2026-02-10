@@ -115,26 +115,49 @@ export async function enqueueEmbedJob(
   return job;
 }
 
+export interface JobReadResult {
+  job: EmbedJob | null;
+  /** 'found' | 'not_found' | 'corrupted' */
+  status: 'found' | 'not_found' | 'corrupted';
+  error?: string;
+}
+
 /**
- * Get a job from the queue
+ * Get a job from the queue with detailed error reporting
+ *
+ * Distinguishes between "not found" and "corrupted" states, allowing callers
+ * to handle each case appropriately (e.g., warn about corruption, suggest repair).
  */
-export async function getEmbedJob(jobId: string): Promise<EmbedJob | null> {
+export async function getEmbedJobDetailed(
+  jobId: string
+): Promise<JobReadResult> {
   const path = getJobPath(jobId);
   if (!(await pathExists(path))) {
-    return null;
+    return { job: null, status: 'not_found' };
   }
 
   try {
     const data = await fs.readFile(path, 'utf-8');
-    return JSON.parse(data);
+    const job = JSON.parse(data);
+    return { job, status: 'found' };
   } catch (error) {
-    console.error(
-      fmt.error(
-        `Failed to read job ${jobId}: ${error instanceof Error ? error.message : String(error)}`
-      )
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(fmt.error(`Failed to read job ${jobId}: ${errorMsg}`));
+    console.warn(
+      fmt.warning(`Job file may be corrupted. Consider removing: ${path}`)
     );
-    return null;
+    return { job: null, status: 'corrupted', error: errorMsg };
   }
+}
+
+/**
+ * Get a job from the queue (legacy compatibility)
+ *
+ * @deprecated Use getEmbedJobDetailed() to distinguish "not found" from "corrupted"
+ */
+export async function getEmbedJob(jobId: string): Promise<EmbedJob | null> {
+  const result = await getEmbedJobDetailed(jobId);
+  return result.job;
 }
 
 /**
@@ -157,26 +180,78 @@ export async function tryClaimJob(jobId: string): Promise<boolean> {
 
   let release: (() => void) | undefined;
   try {
+    // Acquire lock BEFORE reading job status to prevent TOCTOU race
     release = await lockfile.lock(jobPath, { retries: 0, stale: 60000 });
-    const job = await getEmbedJob(jobId);
+
+    // Read job file directly while holding lock (don't use getEmbedJob which doesn't know about our lock)
+    const data = await fs.readFile(jobPath, 'utf-8');
+    const job: EmbedJob = JSON.parse(data);
+
+    // Check status while holding lock
     if (!job || job.status !== 'pending') {
       await release();
       return false;
     }
+
+    // Update status while holding lock
     job.status = 'processing';
     job.updatedAt = new Date().toISOString();
     await writeSecureFile(jobPath, JSON.stringify(job, null, 2));
+
+    // Release lock after update
     await release();
     return true;
-  } catch {
+  } catch (error) {
+    // Log specific error details for debugging
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
+
+    // Categorize error types for better diagnostics
+    if (errorMsg.includes('EACCES')) {
+      console.error(
+        fmt.error(`Failed to claim job ${jobId}: Permission denied (EACCES)`)
+      );
+    } else if (errorMsg.includes('ENOSPC')) {
+      console.error(
+        fmt.error(
+          `Failed to claim job ${jobId}: No space left on device (ENOSPC)`
+        )
+      );
+    } else if (errorMsg.includes('EIO')) {
+      console.error(fmt.error(`Failed to claim job ${jobId}: I/O error (EIO)`));
+    } else if (errorName === 'SyntaxError') {
+      console.error(
+        fmt.error(`Failed to claim job ${jobId}: Corrupted JSON in job file`)
+      );
+    } else if (errorMsg.includes('lock')) {
+      console.error(
+        fmt.error(
+          `Failed to claim job ${jobId}: Lock acquisition failed - ${errorMsg}`
+        )
+      );
+    } else {
+      console.error(
+        fmt.error(`Failed to claim job ${jobId}: ${errorName} - ${errorMsg}`)
+      );
+    }
+
+    return false;
+  } finally {
+    // Ensure lock is always released if acquired
     if (release) {
       try {
         await release();
-      } catch {
-        // Ignore release errors
+      } catch (releaseError) {
+        // Log release errors separately to avoid masking the original error
+        const releaseMsg =
+          releaseError instanceof Error
+            ? releaseError.message
+            : String(releaseError);
+        console.error(
+          fmt.error(`Failed to release lock for job ${jobId}: ${releaseMsg}`)
+        );
       }
     }
-    return false;
   }
 }
 
@@ -190,31 +265,63 @@ export async function removeEmbedJob(jobId: string): Promise<void> {
   }
 }
 
+export interface QueueListResult {
+  jobs: EmbedJob[];
+  skipped: number;
+  errors: Array<{ file: string; error: string }>;
+}
+
 /**
- * List all jobs in the queue
+ * List all jobs in the queue with error tracking
+ *
+ * Returns structured data that distinguishes between valid jobs and corrupted files.
+ * Callers can display warnings when files are skipped due to corruption.
  */
-export async function listEmbedJobs(): Promise<EmbedJob[]> {
+export async function listEmbedJobsDetailed(): Promise<QueueListResult> {
   await ensureQueueDir();
 
   const files = (await fs.readdir(QUEUE_DIR)).filter((f) =>
     f.endsWith('.json')
   );
   const jobs: EmbedJob[] = [];
+  const errors: Array<{ file: string; error: string }> = [];
 
   for (const file of files) {
     try {
       const data = await fs.readFile(join(QUEUE_DIR, file), 'utf-8');
       jobs.push(JSON.parse(data));
     } catch (error) {
-      console.error(
-        fmt.error(
-          `Failed to read job file ${file}: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      errors.push({ file, error: errorMsg });
+      console.error(fmt.error(`Failed to read job file ${file}: ${errorMsg}`));
     }
   }
 
-  return jobs;
+  // Display warning if files were skipped
+  if (errors.length > 0) {
+    console.warn(
+      fmt.warning(
+        `WARNING: Skipped ${errors.length} corrupted job file${errors.length > 1 ? 's' : ''}`
+      )
+    );
+    console.warn(
+      fmt.dim(
+        `  Run 'firecrawl cleanup-queue' to remove corrupted files (if available)`
+      )
+    );
+  }
+
+  return { jobs, skipped: errors.length, errors };
+}
+
+/**
+ * List all jobs in the queue (legacy compatibility)
+ *
+ * @deprecated Use listEmbedJobsDetailed() for better error visibility
+ */
+export async function listEmbedJobs(): Promise<EmbedJob[]> {
+  const result = await listEmbedJobsDetailed();
+  return result.jobs;
 }
 
 /**

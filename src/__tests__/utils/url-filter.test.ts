@@ -89,19 +89,76 @@ describe('matchesPattern', () => {
     });
   });
 
+  describe('ReDoS protection', () => {
+    it('rejects glob patterns with more than 50 wildcards', () => {
+      // Create a pattern with 51 wildcards
+      const maliciousPattern = '/*'.repeat(51);
+      expect(() =>
+        matchesPattern('https://example.com/test', maliciousPattern)
+      ).toThrow('Glob pattern too complex: 51 wildcards (max 50)');
+    });
+
+    it('accepts glob patterns with exactly 50 wildcards', () => {
+      // Create a pattern with exactly 50 wildcards
+      const validPattern = '/*'.repeat(50);
+      expect(() =>
+        matchesPattern('https://example.com/test', validPattern)
+      ).not.toThrow();
+    });
+
+    it('accepts glob patterns with fewer than 50 wildcards', () => {
+      const validPattern = '/*'.repeat(25);
+      expect(() =>
+        matchesPattern('https://example.com/test', validPattern)
+      ).not.toThrow();
+    });
+
+    it('completes complex glob matching within reasonable time', () => {
+      // Test that a pattern with 50 wildcards completes quickly (< 100ms)
+      const pattern = '/*'.repeat(50);
+      const url = 'https://example.com/' + 'a/'.repeat(100);
+
+      const startTime = performance.now();
+      try {
+        matchesPattern(url, pattern);
+      } catch {
+        // Pattern might throw or not match, we only care about timing
+      }
+      const endTime = performance.now();
+
+      const duration = endTime - startTime;
+      expect(duration).toBeLessThan(100);
+    });
+
+    it('rejects various malicious wildcard patterns', () => {
+      const maliciousPatterns = [
+        '*'.repeat(51), // 51 single wildcards
+        '**'.repeat(26), // 52 wildcards via double-star
+        '*/*'.repeat(26), // 52 wildcards via mixed pattern
+      ];
+
+      for (const pattern of maliciousPatterns) {
+        expect(() =>
+          matchesPattern('https://example.com/test', pattern)
+        ).toThrow(/Glob pattern too complex/);
+      }
+    });
+
+    it('counts both single and double wildcards correctly', () => {
+      // Mix of * and ** should count all wildcards
+      const pattern = '**/*'.repeat(17) + '**'; // 17*3 + 2 = 53 wildcards
+      expect(() => matchesPattern('https://example.com/test', pattern)).toThrow(
+        'Glob pattern too complex: 53 wildcards (max 50)'
+      );
+    });
+  });
+
   describe('edge cases', () => {
-    it('handles invalid regex patterns gracefully', () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+    it('throws error on invalid regex patterns', () => {
       // Invalid regex (unmatched parenthesis)
-      expect(matchesPattern('https://example.com/test', '(invalid')).toBe(
-        false
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid regex pattern')
-      );
-
-      consoleSpy.mockRestore();
+      expect(() =>
+        matchesPattern('https://example.com/test', '(invalid')
+      ).toThrow(/Invalid exclude pattern.*syntax errors/);
     });
 
     it('handles special characters in URLs with escaped patterns', () => {
@@ -241,18 +298,10 @@ describe('filterUrls', () => {
   });
 
   describe('invalid patterns', () => {
-    it('continues with remaining patterns when one is invalid', () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const result = filterUrls(urls, ['(invalid', '/blog/']);
-
-      expect(result.filtered).toHaveLength(6);
-      expect(result.stats.excluded).toBe(2);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid regex pattern')
+    it('throws error on invalid regex pattern', () => {
+      expect(() => filterUrls(urls, ['(invalid', '/blog/'])).toThrow(
+        /Invalid exclude pattern.*syntax errors/
       );
-
-      consoleSpy.mockRestore();
     });
   });
 });

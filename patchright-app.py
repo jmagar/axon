@@ -324,11 +324,11 @@ async def scrape_page_endpoint(request_model: MultipleUrlModel):
 
         url_models = [
             UrlModel(
-                url=url,
+                url=url_item,
                 wait_after_load=request_model.wait_after_load,
                 timeout=request_model.timeout,
                 headers=request_model.headers if request_model.headers else {}  # Use {} if None
-            ) for url in urls
+            ) for url_item in urls
         ]
 
         results = await asyncio.gather(

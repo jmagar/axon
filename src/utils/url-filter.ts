@@ -32,13 +32,23 @@ export interface FilterResult<T> {
 export function matchesPattern(url: string, pattern: string): boolean {
   // Detect glob patterns first so values like **/*.pdf are not treated as raw regex.
   // Glob support here intentionally focuses on *, **, and ? wildcards.
-  // Require at least one * to avoid ambiguity with literal ? in URLs (e.g., query params)
+  // Two criteria for glob detection:
+  // 1. Require at least one * to avoid ambiguity with literal ? in URLs (e.g., query params)
+  // 2. Exclude patterns with regex metacharacters (\ ^ $ ( ) { } |) to avoid treating
+  //    regex patterns like \.pdf$ or (foo|bar) as globs
   const looksLikeGlob = pattern.includes('*') && !/[\\^$(){}|]/.test(pattern);
 
   if (looksLikeGlob) {
     const globRegex = globToRegex(pattern);
     // For path patterns (starting with /), test against the path component only
-    const testTarget = pattern.startsWith('/') ? new URL(url).pathname : url;
+    let testTarget = url;
+    if (pattern.startsWith('/')) {
+      try {
+        testTarget = new URL(url).pathname;
+      } catch {
+        return false; // Invalid URL can't match path pattern
+      }
+    }
     return globRegex.test(testTarget);
   }
 
@@ -55,11 +65,10 @@ export function matchesPattern(url: string, pattern: string): boolean {
       const regex = new RegExp(pattern);
       return regex.test(url);
     } catch (error) {
-      // Invalid regex - log warning and skip this pattern
-      console.warn(
-        `[url-filter] Invalid regex pattern "${pattern}": ${error instanceof Error ? error.message : String(error)}`
+      throw new Error(
+        `Invalid exclude pattern "${pattern}": ${error instanceof Error ? error.message : String(error)}. ` +
+          'Pattern looks like regex but has syntax errors. Use glob syntax (*.pdf) or literal strings instead.'
       );
-      return false;
     }
   }
 
@@ -71,7 +80,10 @@ function globToRegex(pattern: string): RegExp {
   // Use Unicode private use area character as placeholder (cannot appear in valid URLs)
   const DOUBLE_STAR_PLACEHOLDER = '\uE000';
 
-  // Validate pattern complexity to prevent ReDoS
+  // Layer 1: Sanity check for pattern complexity (not primary ReDoS defense)
+  // Wildcard limit prevents pathological cases, but actual ReDoS protection comes from:
+  // - Layer 2: Smart anchoring (lines 93-101) limits backtracking search space
+  // - Layer 3: Non-greedy [^/]* and .* quantifiers with Unicode placeholder
   const wildcardCount = (pattern.match(/\*/g) || []).length;
   if (wildcardCount > 50) {
     throw new Error(

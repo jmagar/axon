@@ -488,6 +488,10 @@ export async function startEmbedderDaemon(
   console.error(fmt.dim('[Embedder] Starting background embedder daemon'));
   logEmbedderConfig(container.config);
 
+  // Track consecutive failures for health monitoring
+  let consecutiveFailures = 0;
+  const MAX_FAILURES_BEFORE_ALERT = 3;
+
   // Clean up old jobs on startup
   const cleaned = await cleanupOldJobs(24);
   if (cleaned > 0) {
@@ -503,22 +507,54 @@ export async function startEmbedderDaemon(
     )
   );
 
-  void processStaleJobsOnce(container, staleMs).catch((error) => {
-    console.error(
-      fmt.error(
-        `[Embedder] Failed to process stale jobs: ${error instanceof Error ? error.message : String(error)}`
-      )
-    );
-  });
+  void processStaleJobsOnce(container, staleMs)
+    .then(() => {
+      // Reset failure counter on success
+      if (consecutiveFailures > 0) {
+        console.error(fmt.dim('[Embedder] Stale job processing recovered'));
+        consecutiveFailures = 0;
+      }
+    })
+    .catch((error) => {
+      consecutiveFailures++;
+      const failureMsg = `[Embedder] Failed to process stale jobs (${consecutiveFailures} consecutive failures): ${error instanceof Error ? error.message : String(error)}`;
+
+      if (consecutiveFailures >= MAX_FAILURES_BEFORE_ALERT) {
+        console.error(fmt.error(`CRITICAL: ${failureMsg}`));
+        console.error(
+          fmt.error(
+            '[Embedder] Daemon may be unhealthy - check TEI/Qdrant connectivity'
+          )
+        );
+      } else {
+        console.error(fmt.error(failureMsg));
+      }
+    });
 
   const intervalId = setInterval(() => {
-    void processStaleJobsOnce(container, staleMs).catch((error) => {
-      console.error(
-        fmt.error(
-          `[Embedder] Failed to process stale jobs: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
-    });
+    void processStaleJobsOnce(container, staleMs)
+      .then(() => {
+        // Reset failure counter on success
+        if (consecutiveFailures > 0) {
+          console.error(fmt.dim('[Embedder] Stale job processing recovered'));
+          consecutiveFailures = 0;
+        }
+      })
+      .catch((error) => {
+        consecutiveFailures++;
+        const failureMsg = `[Embedder] Failed to process stale jobs (${consecutiveFailures} consecutive failures): ${error instanceof Error ? error.message : String(error)}`;
+
+        if (consecutiveFailures >= MAX_FAILURES_BEFORE_ALERT) {
+          console.error(fmt.error(`CRITICAL: ${failureMsg}`));
+          console.error(
+            fmt.error(
+              '[Embedder] Daemon may be unhealthy - check TEI/Qdrant connectivity'
+            )
+          );
+        } else {
+          console.error(fmt.error(failureMsg));
+        }
+      });
   }, intervalMs);
 
   // Return async cleanup function

@@ -2,12 +2,15 @@
  * Daemon Container Factory
  * Creates DI containers for background daemon processes
  *
- * Unlike the standard ContainerFactory which uses priority resolution
- * (options > env > stored credentials > defaults), the daemon factory
- * only uses environment variables and provided overrides.
+ * Configuration priority order:
+ * 1. Provided overrides (highest)
+ * 2. Environment variables
+ * 3. Stored credentials (API key fallback only)
+ * 4. Defaults (lowest)
  *
- * This ensures daemon processes are fully configured via environment
- * and don't depend on user credential files.
+ * Note: Unlike interactive CLI commands, daemons prefer environment
+ * configuration but will fall back to stored credentials for API keys
+ * to ensure they can function when launched without explicit config.
  */
 
 import { loadCredentials } from '../utils/credentials';
