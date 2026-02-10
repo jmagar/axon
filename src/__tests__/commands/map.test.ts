@@ -423,6 +423,30 @@ describe('executeMap', () => {
       expect(result.error).toBe('Network error');
     });
 
+    it('should include actionable self-hosted hint on local connectivity failures', async () => {
+      const mockHttpClient = {
+        fetchWithTimeout: vi.fn(),
+        fetchWithRetry: vi.fn().mockRejectedValue(new Error('fetch failed')),
+      };
+      const container = createTestContainer(undefined, {
+        userAgent: DEFAULT_USER_AGENT,
+        apiUrl: 'http://localhost:53002',
+      });
+      (container.getHttpClient as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockHttpClient
+      );
+
+      const result = await executeMap(container, {
+        urlOrJobId: 'https://example.com',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('fetch failed');
+      expect(result.error).toContain(
+        'Could not reach Firecrawl API at http://localhost:53002'
+      );
+    });
+
     it('should explicitly send ignoreQueryParameters: false in HTTP body when noFiltering is true', async () => {
       const mockHttpClient = {
         fetchWithTimeout: vi.fn()({ links: [] }),

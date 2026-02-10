@@ -34,51 +34,26 @@ let mockCwd = '/test/working/directory';
 
 describe('Job History Utilities', () => {
   const mockHome = '/home/testuser';
-  const expectedDataDir = join(mockHome, '.local', 'share', 'firecrawl-cli');
+  const expectedDataDir = join(mockHome, '.firecrawl');
   const expectedHistoryPath = join(expectedDataDir, 'job-history.json');
   const legacyPath = join(mockCwd, '.cache', 'job-history.json');
+  const originalFirecrawlHome = process.env.FIRECRAWL_HOME;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(homedir).mockReturnValue(mockHome);
     process.cwd = vi.fn(() => mockCwd) as () => string;
+    delete process.env.FIRECRAWL_HOME;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     process.cwd = originalCwd;
+    process.env.FIRECRAWL_HOME = originalFirecrawlHome;
   });
 
-  describe('XDG Base Directory Support', () => {
-    it('should use XDG_DATA_HOME when set', async () => {
-      const originalEnv = process.env.XDG_DATA_HOME;
-
-      // Need to set env before importing, so this test is limited
-      // Just verify that the path logic works with our manual test
-      delete process.env.XDG_DATA_HOME;
-
-      // Mock empty history file
-      vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === expectedHistoryPath) return;
-        if (path === legacyPath) throw new Error('not found');
-        throw new Error('not found');
-      });
-      vi.mocked(fs.readFile).mockResolvedValue(
-        JSON.stringify({ crawl: [], batch: [], extract: [] })
-      );
-
-      await getRecentJobIds('crawl');
-
-      // Should use the expected path (home-based)
-      expect(fs.access).toHaveBeenCalledWith(expectedHistoryPath);
-
-      // Cleanup
-      process.env.XDG_DATA_HOME = originalEnv;
-    });
-
-    it('should fallback to ~/.local/share when XDG_DATA_HOME not set', async () => {
-      delete process.env.XDG_DATA_HOME;
-
+  describe('Storage root support', () => {
+    it('should use default ~/.firecrawl path when FIRECRAWL_HOME is not set', async () => {
       // Mock empty history file
       vi.mocked(fs.access).mockImplementation(async (path) => {
         if (path === expectedHistoryPath) return;
@@ -95,8 +70,6 @@ describe('Job History Utilities', () => {
     });
 
     it('should create directory with secure permissions (0o700)', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       // Mock directory doesn't exist
       vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
@@ -113,8 +86,6 @@ describe('Job History Utilities', () => {
 
   describe('Legacy Migration', () => {
     it('should migrate from legacy .cache directory', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       const legacyData = {
         crawl: [
           { id: 'old-crawl-1', updatedAt: '2024-01-01T00:00:00.000Z' },
@@ -162,8 +133,6 @@ describe('Job History Utilities', () => {
     });
 
     it('should not print migration messages to stdout', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       const legacyData = {
         crawl: [{ id: 'old-crawl-1', updatedAt: '2024-01-01T00:00:00.000Z' }],
         batch: [],
@@ -210,8 +179,6 @@ describe('Job History Utilities', () => {
     });
 
     it('should not migrate if new file already exists', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       const newData = {
         crawl: [{ id: 'new-crawl-1', updatedAt: '2024-02-01T00:00:00.000Z' }],
         batch: [],
@@ -235,8 +202,6 @@ describe('Job History Utilities', () => {
     });
 
     it('should handle missing legacy file gracefully', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       // Mock no files exist
       vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
 
@@ -249,8 +214,6 @@ describe('Job History Utilities', () => {
 
   describe('Directory Independence', () => {
     it('should persist data across working directory changes', async () => {
-      delete process.env.XDG_DATA_HOME;
-
       // Start in directory A
       mockCwd = '/project/dir-a';
 
@@ -297,7 +260,6 @@ describe('Job History Utilities', () => {
 
   describe('recordJob', () => {
     beforeEach(() => {
-      delete process.env.XDG_DATA_HOME;
       vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
@@ -390,7 +352,6 @@ describe('Job History Utilities', () => {
 
   describe('getRecentJobIds', () => {
     beforeEach(() => {
-      delete process.env.XDG_DATA_HOME;
       vi.mocked(fs.access).mockResolvedValue(undefined);
     });
 
@@ -441,7 +402,6 @@ describe('Job History Utilities', () => {
 
   describe('removeJobIds', () => {
     beforeEach(() => {
-      delete process.env.XDG_DATA_HOME;
       vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     });
@@ -488,7 +448,6 @@ describe('Job History Utilities', () => {
 
   describe('clearJobHistory', () => {
     beforeEach(() => {
-      delete process.env.XDG_DATA_HOME;
       vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);

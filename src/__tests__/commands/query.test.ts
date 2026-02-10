@@ -97,7 +97,7 @@ describe('executeQuery', () => {
     expect(mockQdrantService.queryPoints).toHaveBeenCalledWith(
       'test_col',
       [0.1, 0.2, 0.3],
-      5,
+      100, // Fetches 10x default limit (10) for deduplication
       undefined
     );
     expect(result.success).toBe(true);
@@ -119,7 +119,7 @@ describe('executeQuery', () => {
     expect(mockQdrantService.queryPoints).toHaveBeenCalledWith(
       'test_col',
       [0.1],
-      10,
+      100, // Fetches 10x requested limit (10) for deduplication
       { domain: 'example.com' }
     );
   });

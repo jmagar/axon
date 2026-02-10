@@ -3,11 +3,23 @@
  * Shows detailed information for a specific URL including metadata and chunk listings
  */
 
+import { existsSync } from 'node:fs';
 import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { InfoOptions, InfoResult, UrlInfo } from '../types/info';
-import { processCommandResult } from '../utils/command';
+import {
+  formatJson,
+  processCommandResult,
+  writeCommandOutput,
+} from '../utils/command';
 import { parseInfoOptions } from '../utils/options';
+import {
+  getCredentialsPath,
+  getEmbedQueueDir,
+  getJobHistoryPath,
+  getSettingsPath,
+  getStorageRoot,
+} from '../utils/storage-paths';
 import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 import {
@@ -15,6 +27,22 @@ import {
   requireContainer,
   resolveCollectionName,
 } from './shared';
+
+type StorageInfo = {
+  storageRoot: string;
+  credentialsPath: string;
+  settingsPath: string;
+  jobHistoryPath: string;
+  embedQueueDir: string;
+  embedQueueOverride: string | null;
+  exists: {
+    storageRoot: boolean;
+    credentialsPath: boolean;
+    settingsPath: boolean;
+    jobHistoryPath: boolean;
+    embedQueueDir: boolean;
+  };
+};
 
 /**
  * Execute info command
@@ -129,6 +157,58 @@ function formatHuman(info: UrlInfo, _full: boolean): string {
   return lines.join('\n');
 }
 
+function getStorageInfo(): StorageInfo {
+  const storageRoot = getStorageRoot();
+  const credentialsPath = getCredentialsPath();
+  const settingsPath = getSettingsPath();
+  const jobHistoryPath = getJobHistoryPath();
+  const embedQueueDir = getEmbedQueueDir();
+  const embedQueueOverride = process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR || null;
+
+  return {
+    storageRoot,
+    credentialsPath,
+    settingsPath,
+    jobHistoryPath,
+    embedQueueDir,
+    embedQueueOverride,
+    exists: {
+      storageRoot: existsSync(storageRoot),
+      credentialsPath: existsSync(credentialsPath),
+      settingsPath: existsSync(settingsPath),
+      jobHistoryPath: existsSync(jobHistoryPath),
+      embedQueueDir: existsSync(embedQueueDir),
+    },
+  };
+}
+
+function formatStorageHuman(info: StorageInfo): string {
+  const lines: string[] = [];
+  lines.push(`  ${fmt.primary('Storage')}`);
+  lines.push(`    ${fmt.dim('Root:')} ${info.storageRoot}`);
+  lines.push(`    ${fmt.dim('Credentials:')} ${info.credentialsPath}`);
+  lines.push(`    ${fmt.dim('Settings:')} ${info.settingsPath}`);
+  lines.push(`    ${fmt.dim('Job history:')} ${info.jobHistoryPath}`);
+  lines.push(`    ${fmt.dim('Embed queue:')} ${info.embedQueueDir}`);
+  lines.push(
+    `    ${fmt.dim('Embed queue override:')} ${info.embedQueueOverride ?? '(none)'}`
+  );
+  lines.push('');
+  lines.push(`  ${fmt.primary('Exists')}`);
+  lines.push(`    ${fmt.dim('Root:')} ${String(info.exists.storageRoot)}`);
+  lines.push(
+    `    ${fmt.dim('Credentials:')} ${String(info.exists.credentialsPath)}`
+  );
+  lines.push(`    ${fmt.dim('Settings:')} ${String(info.exists.settingsPath)}`);
+  lines.push(
+    `    ${fmt.dim('Job history:')} ${String(info.exists.jobHistoryPath)}`
+  );
+  lines.push(
+    `    ${fmt.dim('Embed queue:')} ${String(info.exists.embedQueueDir)}`
+  );
+  return lines.join('\n');
+}
+
 /**
  * Handle info command execution
  * Wrapper for Commander.js integration
@@ -155,7 +235,7 @@ async function handleInfoCommand(
 export function createInfoCommand(): Command {
   const infoCmd = new Command('info')
     .description('Show detailed information for a specific URL')
-    .argument('<url>', 'URL to get information for')
+    .argument('[url]', 'URL to get information for')
     .option(
       '-f, --full',
       'Show full chunk text (default: false, 100 char preview)',
@@ -169,10 +249,39 @@ export function createInfoCommand(): Command {
     .option('-o, --output <file>', 'Write output to file (default: stdout)')
     .option('--json', 'Output as JSON', false)
     .action(async (url: string, options, command: Command) => {
+      if (!url) {
+        console.error(
+          fmt.error('URL is required. Use "firecrawl info <url>".')
+        );
+        process.exit(1);
+      }
       const container = requireContainer(command);
       const parsedOptions = parseInfoOptions(normalizeUrl(url), options);
 
       await handleInfoCommand(container, parsedOptions);
+    });
+
+  infoCmd
+    .command('storage')
+    .description('Show active local storage paths')
+    .option('-o, --output <file>', 'Write output to file (default: stdout)')
+    .option('--json', 'Output as JSON', false)
+    .option('--pretty', 'Pretty print JSON output', false)
+    .action(async (options, command: Command) => {
+      const storageInfo = getStorageInfo();
+      const parentOptions =
+        typeof command.parent?.opts === 'function' ? command.parent.opts() : {};
+      const useJson =
+        options.json ||
+        options.pretty ||
+        (parentOptions as { json?: boolean }).json === true;
+      const usePretty =
+        options.pretty ||
+        (parentOptions as { pretty?: boolean }).pretty === true;
+      const output = useJson
+        ? formatJson(storageInfo, usePretty)
+        : formatStorageHuman(storageInfo);
+      writeCommandOutput(output, options);
     });
 
   return infoCmd;

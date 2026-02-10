@@ -11,6 +11,7 @@ import type {
   ScrapeResult,
 } from '../types/scrape';
 import { displayCommandInfo } from '../utils/display';
+import { buildApiErrorMessage } from '../utils/network-error';
 import { parseScrapeOptions } from '../utils/options';
 import { handleScrapeOutput } from '../utils/output';
 import { fmt, icons } from '../utils/theme';
@@ -165,7 +166,7 @@ export async function executeScrape(
 
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: buildApiErrorMessage(error, container.config.apiUrl),
     };
   }
 }

@@ -114,6 +114,28 @@ describe('executeExtract', () => {
     expect(result.error).toBe('Network error');
   });
 
+  it('should include actionable self-hosted hint on local connectivity failures', async () => {
+    mockContainer = {
+      ...mockContainer,
+      config: {
+        ...mockContainer.config,
+        apiUrl: 'http://localhost:53002',
+      },
+    } as IContainer;
+    mockClient.extract.mockRejectedValue(new Error('fetch failed'));
+
+    const result = await executeExtract(mockContainer, {
+      urls: ['https://example.com'],
+      prompt: 'test',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('fetch failed');
+    expect(result.error).toContain(
+      'Could not reach Firecrawl API at http://localhost:53002'
+    );
+  });
+
   it('should include sources in result when showSources is true', async () => {
     mockClient.extract.mockResolvedValue({
       success: true,

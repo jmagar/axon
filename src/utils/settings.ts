@@ -1,12 +1,13 @@
 /**
  * User settings utility
- * Stores persistent user settings in the platform config directory
+ * Stores persistent user settings in the unified Firecrawl home directory
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type UserSettings, UserSettingsSchema } from '../schemas/storage';
 import { getConfigDirectoryPath } from './credentials';
+import { getSettingsPath as getUnifiedSettingsPath } from './storage-paths';
 import { fmt } from './theme';
 
 export type { UserSettings };
@@ -15,7 +16,22 @@ export type { UserSettings };
  * Get the settings file path
  */
 function getSettingsPath(): string {
-  return path.join(getConfigDirectoryPath(), 'settings.json');
+  return getUnifiedSettingsPath();
+}
+
+function getLegacySettingsPaths(): string[] {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  return [
+    path.join(
+      homeDir,
+      'Library',
+      'Application Support',
+      'firecrawl-cli',
+      'settings.json'
+    ),
+    path.join(homeDir, 'AppData', 'Roaming', 'firecrawl-cli', 'settings.json'),
+    path.join(homeDir, '.config', 'firecrawl-cli', 'settings.json'),
+  ];
 }
 
 /**
@@ -40,10 +56,50 @@ function setSecurePermissions(filePath: string): void {
 }
 
 /**
+ * Migrate settings from legacy paths to FIRECRAWL_HOME path.
+ */
+function migrateLegacySettings(): void {
+  const newPath = getSettingsPath();
+  if (fs.existsSync(newPath)) {
+    return;
+  }
+
+  for (const legacyPath of getLegacySettingsPaths()) {
+    if (!fs.existsSync(legacyPath)) {
+      continue;
+    }
+
+    try {
+      const data = fs.readFileSync(legacyPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      const validation = UserSettingsSchema.safeParse(parsed);
+      if (!validation.success) {
+        continue;
+      }
+
+      ensureConfigDir();
+      fs.writeFileSync(
+        newPath,
+        JSON.stringify(validation.data, null, 2),
+        'utf-8'
+      );
+      setSecurePermissions(newPath);
+      console.error(
+        fmt.dim(`[Settings] Migrated settings from ${legacyPath} to ${newPath}`)
+      );
+      return;
+    } catch {
+      // Ignore invalid legacy files and continue checking others
+    }
+  }
+}
+
+/**
  * Load settings from disk
  */
 export function loadSettings(): UserSettings {
   try {
+    migrateLegacySettings();
     const settingsPath = getSettingsPath();
     if (!fs.existsSync(settingsPath)) {
       return {};

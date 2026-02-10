@@ -59,9 +59,27 @@ describe('HttpClient service', () => {
 
       expect(result).toBe(mockResponse);
       expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
+      expect(mockFetchWithRetry).toHaveBeenCalledWith(
+        url,
+        undefined,
+        undefined
+      );
+    });
+
+    it('should omit undefined retry options instead of overriding defaults', async () => {
+      const mockResponse = new Response('test', { status: 200 });
+      mockFetchWithRetry.mockResolvedValueOnce(mockResponse);
+
+      const url = 'https://example.com';
+
+      const result = await httpClient.fetchWithRetry(url, undefined, {
+        timeoutMs: 5000,
+      });
+
+      expect(result).toBe(mockResponse);
+      expect(mockFetchWithRetry).toHaveBeenCalledTimes(1);
       expect(mockFetchWithRetry).toHaveBeenCalledWith(url, undefined, {
-        timeoutMs: undefined,
-        maxRetries: undefined,
+        timeoutMs: 5000,
       });
     });
 

@@ -295,6 +295,31 @@ describe('executeCrawl', () => {
     expect(result.error).toBe('Crawl operation failed: Unknown error occurred');
   });
 
+  it('should include actionable self-hosted hint on local connectivity failures', async () => {
+    const mockClient = {
+      scrape: vi.fn(),
+      startCrawl: vi.fn().mockRejectedValue(new Error('fetch failed')),
+    };
+
+    const container = createContainer(mockClient, {
+      apiUrl: 'http://localhost:53002',
+    });
+    vi.mocked(buildCrawlOptions).mockReturnValue({ limit: 10 } as never);
+    vi.mocked(attachEmbedWebhook).mockReturnValue({ limit: 10 } as never);
+
+    const options: CrawlOptions = {
+      urlOrJobId: 'https://example.com',
+    };
+
+    const result = await executeCrawl(container, options);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Crawl operation failed: fetch failed');
+    expect(result.error).toContain(
+      'Could not reach Firecrawl API at http://localhost:53002'
+    );
+  });
+
   it('should pass apiKey to getClient', async () => {
     const mockClient = {
       scrape: vi.fn(),

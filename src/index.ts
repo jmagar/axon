@@ -232,7 +232,7 @@ function renderTopLevelHelp(): string {
         ['domains', 'List unique indexed domains'],
         ['stats', 'Show vector database statistics'],
         ['history', 'Show time-based index history'],
-        ['info <url>', 'Show detailed information for a URL'],
+        ['info [url]', 'Show URL details or storage paths'],
         ['delete', 'Delete vectors from the vector database'],
       ],
     },

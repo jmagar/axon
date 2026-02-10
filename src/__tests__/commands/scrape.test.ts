@@ -260,6 +260,27 @@ describe('executeScrape', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Unknown error occurred');
     });
+
+    it('should include actionable self-hosted hint on local connectivity failures', async () => {
+      mockContainer = {
+        ...mockContainer,
+        config: {
+          ...mockContainer.config,
+          apiUrl: 'http://localhost:53002',
+        },
+      } as IContainer;
+      mockClient.scrape.mockRejectedValue(new Error('fetch failed'));
+
+      const result = await executeScrape(mockContainer, {
+        url: 'https://example.com',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('fetch failed');
+      expect(result.error).toContain(
+        'Could not reach Firecrawl API at http://localhost:53002'
+      );
+    });
   });
 
   describe('Type safety', () => {

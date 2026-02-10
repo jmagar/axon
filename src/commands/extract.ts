@@ -13,6 +13,7 @@ import {
 import { MAX_CONCURRENT_EMBEDS } from '../utils/constants';
 import { normalizeJobId } from '../utils/job';
 import { recordJob } from '../utils/job-history';
+import { buildApiErrorMessage } from '../utils/network-error';
 import { fmt } from '../utils/theme';
 import { requireContainer, requireContainerFromCommandTree } from './shared';
 
@@ -109,8 +110,7 @@ export async function executeExtract(
       },
     };
   } catch (error: unknown) {
-    let message =
-      error instanceof Error ? error.message : 'Unknown error occurred';
+    let message = buildApiErrorMessage(error, container.config.apiUrl);
 
     // Surface validation details from Firecrawl SDK errors
     const details = (error as { details?: unknown })?.details;

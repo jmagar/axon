@@ -8,6 +8,7 @@ import type {
   CrawlResult,
   CrawlStatusResult,
 } from '../../types/crawl';
+import { buildApiErrorMessage } from '../../utils/network-error';
 import { attachEmbedWebhook } from './embed';
 import { buildCrawlOptions } from './options';
 import { pollCrawlProgress } from './polling';
@@ -85,8 +86,7 @@ export async function executeCrawl(
       },
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error occurred';
+    const errorMessage = buildApiErrorMessage(error, container.config.apiUrl);
     return {
       success: false,
       error: `Crawl operation failed: ${errorMessage}`,

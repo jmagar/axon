@@ -24,6 +24,7 @@ import {
 } from '../utils/command';
 import { MAX_CONCURRENT_EMBEDS } from '../utils/constants';
 import { displayCommandInfo } from '../utils/display';
+import { buildApiErrorMessage } from '../utils/network-error';
 import { fmt, icons } from '../utils/theme';
 import { requireContainer } from './shared';
 
@@ -162,7 +163,7 @@ export async function executeSearch(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: buildApiErrorMessage(error, container.config.apiUrl),
     };
   }
 }

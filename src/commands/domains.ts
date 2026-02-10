@@ -173,7 +173,9 @@ export function createDomainsCommand(): Command {
   const domainsCmd = addVectorOutputOptions(
     new Command('domains')
       .description('List unique domains in the vector database')
-      .option('--limit <number>', 'Maximum domains to show', parseInt)
+      .option('--limit <number>', 'Maximum domains to show', (val) =>
+        parseInt(val, 10)
+      )
   ).action(async (options, command: Command) => {
     const container = requireContainer(command);
 

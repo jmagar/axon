@@ -25,60 +25,39 @@ vi.mock('fs', () => ({
 // Mock os module
 vi.mock('os', () => ({
   homedir: vi.fn(),
-  platform: vi.fn(),
 }));
 
 describe('Credentials Utilities', () => {
+  const originalFirecrawlHome = process.env.FIRECRAWL_HOME;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(os.homedir).mockReturnValue('/home/testuser');
+    delete process.env.FIRECRAWL_HOME;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    process.env.FIRECRAWL_HOME = originalFirecrawlHome;
   });
 
   describe('getConfigDirectoryPath', () => {
-    it('should return macOS config path', () => {
-      vi.mocked(os.platform).mockReturnValue('darwin');
-
+    it('should return default FIRECRAWL_HOME path', () => {
       const configPath = getConfigDirectoryPath();
 
-      expect(configPath).toBe(
-        '/home/testuser/Library/Application Support/firecrawl-cli'
-      );
+      expect(configPath).toBe('/home/testuser/.firecrawl');
     });
 
-    it('should return Windows config path', () => {
-      vi.mocked(os.platform).mockReturnValue('win32');
+    it('should use FIRECRAWL_HOME override when set', () => {
+      process.env.FIRECRAWL_HOME = '/tmp/custom-firecrawl-home';
 
       const configPath = getConfigDirectoryPath();
 
-      expect(configPath).toBe('/home/testuser/AppData/Roaming/firecrawl-cli');
-    });
-
-    it('should return Linux config path', () => {
-      vi.mocked(os.platform).mockReturnValue('linux');
-
-      const configPath = getConfigDirectoryPath();
-
-      expect(configPath).toBe('/home/testuser/.config/firecrawl-cli');
-    });
-
-    it('should return Linux config path for unknown platforms', () => {
-      vi.mocked(os.platform).mockReturnValue('freebsd' as NodeJS.Platform);
-
-      const configPath = getConfigDirectoryPath();
-
-      expect(configPath).toBe('/home/testuser/.config/firecrawl-cli');
+      expect(configPath).toBe('/tmp/custom-firecrawl-home');
     });
   });
 
   describe('loadCredentials', () => {
-    beforeEach(() => {
-      vi.mocked(os.platform).mockReturnValue('darwin');
-    });
-
     it('should return null when credentials file does not exist', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
@@ -126,7 +105,6 @@ describe('Credentials Utilities', () => {
 
   describe('saveCredentials', () => {
     beforeEach(() => {
-      vi.mocked(os.platform).mockReturnValue('darwin');
       vi.mocked(fs.existsSync).mockReturnValue(false);
     });
 
@@ -135,10 +113,10 @@ describe('Credentials Utilities', () => {
 
       saveCredentials({ apiKey: 'fc-test-key' });
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith(
-        expect.stringContaining('firecrawl-cli'),
-        { recursive: true, mode: 0o700 }
-      );
+      expect(fs.mkdirSync).toHaveBeenCalledWith('/home/testuser/.firecrawl', {
+        recursive: true,
+        mode: 0o700,
+      });
     });
 
     it('should save credentials to file', () => {
@@ -218,10 +196,6 @@ describe('Credentials Utilities', () => {
   });
 
   describe('deleteCredentials', () => {
-    beforeEach(() => {
-      vi.mocked(os.platform).mockReturnValue('darwin');
-    });
-
     it('should delete credentials file when it exists', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
 

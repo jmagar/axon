@@ -40,7 +40,7 @@ Configuration values are resolved in the following order (highest priority first
 
 1. **Runtime flags** - Command-line options (e.g., `--api-key`, `--timeout`)
 2. **Environment variables** - Shell environment (e.g., `FIRECRAWL_API_KEY`, `TEI_URL`)
-3. **OS credential store** - Stored credentials at `~/.config/firecrawl-cli/` or keychain
+3. **Storage root** - Stored credentials/settings/state at `~/.firecrawl/` (or `FIRECRAWL_HOME`)
 4. **Built-in defaults** - Documented in this file
 
 ---
@@ -51,6 +51,7 @@ Configuration values are resolved in the following order (highest priority first
 |----------|---------|-------------|
 | `FIRECRAWL_API_KEY` | `local-dev` | API authentication (for self-hosted deployments) |
 | `FIRECRAWL_API_URL` | `http://localhost:53002` | API endpoint |
+| `FIRECRAWL_HOME` | `~/.firecrawl` | Unified storage root for credentials, settings, history, and queue |
 | `TEI_URL` | `http://localhost:53010` | Text embeddings service |
 | `QDRANT_URL` | `http://localhost:53333` | Vector database |
 | `QDRANT_COLLECTION` | `firecrawl` | Default collection name |

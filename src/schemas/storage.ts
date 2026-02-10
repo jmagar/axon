@@ -11,7 +11,7 @@
 import { z } from 'zod';
 
 /**
- * Schema for stored credentials file (~/.config/firecrawl-cli/credentials.json)
+ * Schema for stored credentials file (~/.firecrawl/credentials.json by default)
  *
  * Example:
  * ```json
@@ -29,7 +29,7 @@ export const StoredCredentialsSchema = z
   .strict();
 
 /**
- * Schema for user settings file (~/.config/firecrawl-cli/settings.json)
+ * Schema for user settings file (~/.firecrawl/settings.json by default)
  *
  * Example:
  * ```json

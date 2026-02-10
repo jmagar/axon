@@ -449,7 +449,7 @@ firecrawl crawl https://example.com --limit 100 --max-depth 3
 
 **Async mode (default)**:
 - Returns immediately with job ID
-- Embedding job queued in `~/.config/firecrawl-cli/embed-queue/`
+- Embedding job queued in `~/.firecrawl/embed-queue/` by default
 - Embeddings generated automatically when crawl completes
 - Resilient to process interruptions and TEI downtime
 - 3 automatic retries with exponential backoff
@@ -462,7 +462,7 @@ firecrawl crawl https://example.com --limit 100 --max-depth 3
 **Manual control**:
 ```bash
 # Check what's queued
-$ ls ~/.config/firecrawl-cli/embed-queue/
+$ ls ~/.firecrawl/embed-queue/
 
 # Manually process/retry embeddings
 $ firecrawl crawl <job-id> --embed

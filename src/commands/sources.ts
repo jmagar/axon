@@ -174,7 +174,9 @@ export function createSourcesCommand(): Command {
     addDomainSourceFilterOptions(
       new Command('sources')
         .description('List all source URLs indexed in the vector database')
-        .option('--limit <number>', 'Maximum sources to show', parseInt)
+        .option('--limit <number>', 'Maximum sources to show', (val) =>
+          parseInt(val, 10)
+        )
     )
   ).action(async (options, command: Command) => {
     const container = requireContainer(command);

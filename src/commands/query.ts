@@ -47,11 +47,16 @@ export async function executeQuery(
     // Build filter for Qdrant query
     const filter = options.domain ? { domain: options.domain } : undefined;
 
+    // Fetch MORE results than requested to account for deduplication
+    // After grouping by URL, we'll have fewer unique URLs than chunks
+    const requestedLimit = options.limit || 10;
+    const fetchLimit = requestedLimit * 10; // Fetch 10x to ensure enough unique URLs
+
     // Search Qdrant
     const results = await qdrantService.queryPoints(
       collection,
       queryVector,
-      options.limit || 5,
+      fetchLimit,
       filter
     );
 
@@ -86,28 +91,106 @@ export async function executeQuery(
 }
 
 /**
+ * Strip fragment identifier from URL
+ * @param url URL with possible fragment
+ * @returns URL without fragment
+ */
+function stripFragment(url: string): string {
+  const hashIndex = url.indexOf('#');
+  return hashIndex === -1 ? url : url.substring(0, hashIndex);
+}
+
+/**
+ * Get meaningful snippet from chunk text
+ * Skips formatting characters and finds substantive content
+ * @param text Chunk text to extract snippet from
+ * @returns Meaningful snippet or truncated text
+ */
+function getMeaningfulSnippet(text: string): string {
+  // Clean up markdown and formatting
+  const cleaned = text
+    .replace(/\[​\]\([^)]+\)/g, '') // Remove empty markdown links
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert markdown links to just text
+    .replace(/^[\s\n\r\t*\-•]+/, '') // Remove leading whitespace and list markers
+    .replace(/^\s*#{1,6}\s+/, '') // Remove leading markdown headers
+    .replace(/^[-=_*]{3,}.*$/gm, '') // Remove horizontal rules
+    .trim();
+
+  // Split into lines and find the first substantial line
+  const lines = cleaned
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => {
+      // Skip empty lines, horizontal rules, very short lines
+      if (l.length < 10) return false;
+      if (/^[-=_*]{3,}$/.test(l)) return false;
+      if (/^[*\-•]\s*$/.test(l)) return false;
+      // Skip lines that are just single words or very basic
+      if (l.split(/\s+/).length < 2) return false;
+      return true;
+    });
+
+  if (lines.length === 0) {
+    // Fallback: clean markdown from original and truncate
+    const fallback = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
+    return fallback.slice(0, 120);
+  }
+
+  // Use the first substantial line
+  const snippet = lines[0];
+  return snippet.length > 120 ? `${snippet.slice(0, 120)}...` : snippet;
+}
+
+/**
  * Format compact output (default)
- * Shows score, URL, optional header, and truncated chunk text
+ * Groups by base URL and shows highest-scoring chunk with numbered results
  * @param items Query result items to format
+ * @param limit Maximum number of unique URLs to display
  * @returns Formatted string for compact display
  */
-function formatCompact(items: QueryResultItem[]): string {
+function formatCompact(items: QueryResultItem[], limit: number = 10): string {
   if (items.length === 0) return fmt.dim('No results found.');
+
+  // Group by base URL (without fragment)
+  const grouped = new Map<string, QueryResultItem[]>();
+  for (const item of items) {
+    const baseUrl = stripFragment(item.url);
+    const existing = grouped.get(baseUrl) || [];
+    existing.push(item);
+    grouped.set(baseUrl, existing);
+  }
+
+  // Sort groups by highest score in each group, then limit to requested number
+  const sortedGroups = Array.from(grouped.entries())
+    .map(([baseUrl, groupItems]) => {
+      const sorted = [...groupItems].sort((a, b) => b.score - a.score);
+      return { baseUrl, items: sorted, topScore: sorted[0].score };
+    })
+    .sort((a, b) => b.topScore - a.topScore)
+    .slice(0, limit);
+
+  // Format each group (show highest-scoring chunk)
   const lines: string[] = [];
   lines.push(`  ${fmt.primary('Query results')}`);
   lines.push('');
-  const results = items
-    .map((item) => {
-      const header = item.chunkHeader ? ` - ${item.chunkHeader}` : '';
-      const score = item.score.toFixed(2);
-      const truncated =
-        item.chunkText.length > 120
-          ? `${item.chunkText.slice(0, 120)}...`
-          : item.chunkText;
-      return `    ${fmt.info(icons.bullet)} [${score}] ${item.url}${header}\n      ${truncated}`;
-    })
-    .join('\n\n');
-  lines.push(results);
+
+  const results: string[] = [];
+  let index = 1;
+  for (const { baseUrl, items: groupItems } of sortedGroups) {
+    const topItem = groupItems[0];
+    const chunkCount = groupItems.length;
+
+    const score = topItem.score.toFixed(2);
+    const countPart = chunkCount > 1 ? ` (${chunkCount} chunks)` : ' (1 chunk)';
+    const snippet = getMeaningfulSnippet(topItem.chunkText);
+
+    results.push(
+      `  ${fmt.dim(`${index}.`)} [${score}] ${baseUrl}${countPart}\n     ${snippet}`
+    );
+    index++;
+  }
+
+  lines.push(results.join('\n\n'));
   lines.push('');
   lines.push(getRetrievalHint());
   return lines.join('\n');
@@ -211,7 +294,7 @@ export async function handleQueryCommand(
       if (options.full) {
         return formatFull(data);
       }
-      return formatCompact(data);
+      return formatCompact(data, options.limit || 10);
     }
   );
 }
@@ -227,9 +310,9 @@ export function createQueryCommand(): Command {
     .argument('<query>', 'Search query text')
     .option(
       '--limit <number>',
-      'Maximum number of results (default: 5)',
-      parseInt,
-      5
+      'Maximum number of results (default: 10)',
+      (val) => parseInt(val, 10),
+      10
     )
     .option('--domain <domain>', 'Filter results by domain')
     .option(

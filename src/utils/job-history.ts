@@ -5,6 +5,7 @@
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { getJobHistoryPath, getStoragePath } from './storage-paths';
 
 export type JobType = 'crawl' | 'batch' | 'extract';
 
@@ -22,42 +23,38 @@ interface JobHistoryData {
 const MAX_ENTRIES = 20;
 
 /**
- * Get the data directory following XDG Base Directory spec
- * Primary: $XDG_DATA_HOME/firecrawl-cli/ (usually ~/.local/share/firecrawl-cli/)
- * Fallback: Platform-specific paths (Linux/Mac: ~/.local/share, Windows: %APPDATA%)
- */
-function getDataDir(): string {
-  const xdgDataHome = process.env.XDG_DATA_HOME;
-  if (xdgDataHome) {
-    return join(xdgDataHome, 'firecrawl-cli');
-  }
-
-  const home = homedir();
-  const platform = process.platform;
-
-  // Platform-specific data directory
-  if (platform === 'win32') {
-    // Windows: %APPDATA%/firecrawl-cli
-    const appData = process.env.APPDATA || join(home, 'AppData', 'Roaming');
-    return join(appData, 'firecrawl-cli');
-  }
-  if (platform === 'darwin') {
-    // macOS: ~/Library/Application Support/firecrawl-cli
-    return join(home, 'Library', 'Application Support', 'firecrawl-cli');
-  }
-  // Linux and others: ~/.local/share/firecrawl-cli (XDG spec)
-  return join(home, '.local', 'share', 'firecrawl-cli');
-}
-
-/**
  * Get legacy cache directory path for migration
  */
 function getLegacyCachePath(): string {
   return join(process.cwd(), '.cache', 'job-history.json');
 }
 
-const HISTORY_DIR = getDataDir();
-const HISTORY_PATH = join(HISTORY_DIR, 'job-history.json');
+function getLegacyDataPath(): string {
+  const xdgDataHome = process.env.XDG_DATA_HOME;
+  if (xdgDataHome) {
+    return join(xdgDataHome, 'firecrawl-cli', 'job-history.json');
+  }
+
+  const home = homedir();
+  const platform = process.platform;
+  if (platform === 'win32') {
+    const appData = process.env.APPDATA || join(home, 'AppData', 'Roaming');
+    return join(appData, 'firecrawl-cli', 'job-history.json');
+  }
+  if (platform === 'darwin') {
+    return join(
+      home,
+      'Library',
+      'Application Support',
+      'firecrawl-cli',
+      'job-history.json'
+    );
+  }
+  return join(home, '.local', 'share', 'firecrawl-cli', 'job-history.json');
+}
+
+const HISTORY_DIR = getStoragePath();
+const HISTORY_PATH = getJobHistoryPath();
 
 async function ensureHistoryDir(): Promise<void> {
   try {
@@ -71,35 +68,30 @@ async function ensureHistoryDir(): Promise<void> {
  * Migrate job history from legacy cache directory if it exists
  */
 async function migrateLegacyHistory(): Promise<void> {
-  const legacyPath = getLegacyCachePath();
   try {
-    // Check if legacy file exists
-    await fs.access(legacyPath);
+    await fs.access(HISTORY_PATH);
+    return;
+  } catch {
+    // Target file does not exist, continue
+  }
 
-    // Check if new file already exists
+  const legacyPaths = [getLegacyDataPath(), getLegacyCachePath()];
+  for (const legacyPath of legacyPaths) {
     try {
-      await fs.access(HISTORY_PATH);
-      // New file exists, no migration needed
+      await fs.access(legacyPath);
+      const legacyData = await fs.readFile(legacyPath, 'utf-8');
+      const _parsed = JSON.parse(legacyData) as Partial<JobHistoryData>;
+
+      await ensureHistoryDir();
+      await fs.writeFile(HISTORY_PATH, legacyData);
+
+      console.error(
+        `[Job History] Migrated from ${legacyPath} to ${HISTORY_PATH}`
+      );
       return;
     } catch {
-      // New file doesn't exist, proceed with migration
+      // Continue checking additional legacy paths
     }
-
-    // Read legacy data
-    const legacyData = await fs.readFile(legacyPath, 'utf-8');
-    const _parsed = JSON.parse(legacyData) as Partial<JobHistoryData>;
-
-    // Ensure new directory exists
-    await ensureHistoryDir();
-
-    // Write to new location
-    await fs.writeFile(HISTORY_PATH, legacyData);
-
-    console.error(
-      `[Job History] Migrated from ${legacyPath} to ${HISTORY_PATH}`
-    );
-  } catch {
-    // No legacy file or migration failed silently - not critical
   }
 }
 

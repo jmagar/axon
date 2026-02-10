@@ -2,8 +2,10 @@
  * Tests for info command
  */
 
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeInfo } from '../../commands/info';
+import { createInfoCommand, executeInfo } from '../../commands/info';
 import type { IContainer, IQdrantService } from '../../container/types';
 import { createTestContainer } from '../utils/test-container';
 
@@ -289,5 +291,95 @@ describe('executeInfo', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.chunks[0].header).toBeNull();
+  });
+});
+
+describe('createInfoCommand', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should output storage paths via info storage --pretty', async () => {
+    const command = createInfoCommand();
+    let output = '';
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        output += String(chunk);
+        return true;
+      });
+
+    await command.parseAsync(['node', 'test', 'storage', '--pretty'], {
+      from: 'node',
+    });
+
+    writeSpy.mockRestore();
+    const parsed = JSON.parse(output.trim()) as { storageRoot?: string };
+    expect(parsed.storageRoot).toBeDefined();
+  });
+
+  it('should require URL for info command action', async () => {
+    const command = createInfoCommand();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+
+    await expect(
+      command.parseAsync(['node', 'test'], { from: 'node' })
+    ).rejects.toThrow('process.exit');
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    errorSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it('should expand tilde in FIRECRAWL_HOME for info storage --json', async () => {
+    const originalHome = process.env.FIRECRAWL_HOME;
+    process.env.FIRECRAWL_HOME = '~/.firecrawl';
+
+    try {
+      const command = createInfoCommand();
+      let output = '';
+      const writeSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk: string | Uint8Array) => {
+          output += String(chunk);
+          return true;
+        });
+
+      await command.parseAsync(['node', 'test', 'storage', '--json'], {
+        from: 'node',
+      });
+
+      writeSpy.mockRestore();
+
+      const parsed = JSON.parse(output.trim()) as {
+        storageRoot: string;
+        credentialsPath: string;
+        settingsPath: string;
+        jobHistoryPath: string;
+        embedQueueDir: string;
+      };
+      const expectedRoot = join(homedir(), '.firecrawl');
+
+      expect(parsed.storageRoot).toBe(expectedRoot);
+      expect(parsed.credentialsPath).toBe(
+        join(expectedRoot, 'credentials.json')
+      );
+      expect(parsed.settingsPath).toBe(join(expectedRoot, 'settings.json'));
+      expect(parsed.jobHistoryPath).toBe(
+        join(expectedRoot, 'job-history.json')
+      );
+      expect(parsed.embedQueueDir).toBe(join(expectedRoot, 'embed-queue'));
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.FIRECRAWL_HOME;
+      } else {
+        process.env.FIRECRAWL_HOME = originalHome;
+      }
+    }
   });
 });

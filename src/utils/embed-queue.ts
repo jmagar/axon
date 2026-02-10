@@ -8,6 +8,7 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
+import { getEmbedQueueDir } from './storage-paths';
 import { fmt } from './theme';
 
 /**
@@ -47,29 +48,48 @@ export interface EmbedJob {
   progressUpdatedAt?: string;
 }
 
-function resolveQueueDir(): string {
-  const configuredDir = process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR;
-  if (configuredDir) {
-    return configuredDir.startsWith('/')
-      ? configuredDir
-      : join(process.cwd(), configuredDir);
-  }
+const QUEUE_DIR = getEmbedQueueDir();
+const MAX_RETRIES = 3;
 
-  return join(
-    process.env.HOME ?? process.env.USERPROFILE ?? '.',
-    '.config',
-    'firecrawl-cli',
-    'embed-queue'
-  );
+function getLegacyQueueDir(): string {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '.';
+  return join(homeDir, '.config', 'firecrawl-cli', 'embed-queue');
 }
 
-const QUEUE_DIR = resolveQueueDir();
-const MAX_RETRIES = 3;
+async function migrateLegacyQueueDir(): Promise<void> {
+  if (process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR) {
+    return;
+  }
+
+  const legacyDir = getLegacyQueueDir();
+  if (legacyDir === QUEUE_DIR) {
+    return;
+  }
+
+  if (!(await pathExists(legacyDir)) || (await pathExists(QUEUE_DIR))) {
+    return;
+  }
+
+  await fs.mkdir(QUEUE_DIR, { recursive: true, mode: 0o700 });
+  const files = await fs.readdir(legacyDir);
+  for (const file of files) {
+    const source = join(legacyDir, file);
+    const target = join(QUEUE_DIR, file);
+    await fs.copyFile(source, target);
+  }
+  console.error(
+    fmt.dim(
+      `[Embed Queue] Migrated queue files from ${legacyDir} to ${QUEUE_DIR}`
+    )
+  );
+}
 
 /**
  * Ensure queue directory exists with secure permissions
  */
 async function ensureQueueDir(): Promise<void> {
+  await migrateLegacyQueueDir();
+
   if (!(await pathExists(QUEUE_DIR))) {
     await fs.mkdir(QUEUE_DIR, { recursive: true, mode: 0o700 });
     return;

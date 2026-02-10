@@ -1,46 +1,50 @@
 /**
  * OS-level credential storage utility
- * Stores credentials in platform-specific application data directories
+ * Stores credentials in the unified Firecrawl home directory.
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   type StoredCredentials,
   StoredCredentialsSchema,
 } from '../schemas/storage';
+import {
+  getStorageRoot,
+  getCredentialsPath as getUnifiedCredentialsPath,
+} from './storage-paths';
 import { fmt } from './theme';
 
 export type { StoredCredentials };
 
 /**
- * Get the platform-specific config directory
+ * Legacy config directory paths (pre-FIRECRAWL_HOME unification).
+ */
+function getLegacyConfigDirs(): string[] {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  return [
+    path.join(homeDir, 'Library', 'Application Support', 'firecrawl-cli'),
+    path.join(homeDir, 'AppData', 'Roaming', 'firecrawl-cli'),
+    path.join(homeDir, '.config', 'firecrawl-cli'),
+  ];
+}
+
+/**
+ * Get the unified storage directory.
  */
 function getConfigDir(): string {
-  const homeDir = os.homedir();
-  const platform = os.platform();
-
-  switch (platform) {
-    case 'darwin': // macOS
-      return path.join(
-        homeDir,
-        'Library',
-        'Application Support',
-        'firecrawl-cli'
-      );
-    case 'win32': // Windows
-      return path.join(homeDir, 'AppData', 'Roaming', 'firecrawl-cli');
-    default: // Linux and others
-      return path.join(homeDir, '.config', 'firecrawl-cli');
-  }
+  return getStorageRoot();
 }
 
 /**
  * Get the credentials file path
  */
 function getCredentialsPath(): string {
-  return path.join(getConfigDir(), 'credentials.json');
+  return getUnifiedCredentialsPath();
+}
+
+function getLegacyCredentialsPaths(): string[] {
+  return getLegacyConfigDirs().map((dir) => path.join(dir, 'credentials.json'));
 }
 
 /**
@@ -65,10 +69,52 @@ function setSecurePermissions(filePath: string): void {
 }
 
 /**
+ * Migrate credentials from legacy paths to FIRECRAWL_HOME path.
+ */
+function migrateLegacyCredentials(): void {
+  const newPath = getCredentialsPath();
+  if (fs.existsSync(newPath)) {
+    return;
+  }
+
+  for (const legacyPath of getLegacyCredentialsPaths()) {
+    if (!fs.existsSync(legacyPath)) {
+      continue;
+    }
+
+    try {
+      const data = fs.readFileSync(legacyPath, 'utf-8');
+      const parsed = JSON.parse(data);
+      const validation = StoredCredentialsSchema.safeParse(parsed);
+      if (!validation.success) {
+        continue;
+      }
+
+      ensureConfigDir();
+      fs.writeFileSync(
+        newPath,
+        JSON.stringify(validation.data, null, 2),
+        'utf-8'
+      );
+      setSecurePermissions(newPath);
+      console.error(
+        fmt.dim(
+          `[Credentials] Migrated credentials from ${legacyPath} to ${newPath}`
+        )
+      );
+      return;
+    } catch {
+      // Ignore invalid legacy files and continue checking others
+    }
+  }
+}
+
+/**
  * Load credentials from OS storage
  */
 export function loadCredentials(): StoredCredentials | null {
   try {
+    migrateLegacyCredentials();
     const credentialsPath = getCredentialsPath();
     if (!fs.existsSync(credentialsPath)) {
       return null;

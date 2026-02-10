@@ -38,14 +38,25 @@ export class HttpClient implements IHttpClient {
       maxDelayMs?: number;
     }
   ): Promise<Response> {
-    // Map container options to utility options
-    // Note: backoffFactor not supported by utils/http.ts (uses hardcoded 2^attempt)
-    return utilFetchWithRetry(url, init, {
-      timeoutMs: options?.timeoutMs,
-      maxRetries: options?.maxRetries,
-      baseDelayMs: options?.baseDelayMs,
-      maxDelayMs: options?.maxDelayMs,
-    });
+    const retryOptions =
+      options === undefined
+        ? undefined
+        : {
+            ...(options.timeoutMs !== undefined
+              ? { timeoutMs: options.timeoutMs }
+              : {}),
+            ...(options.maxRetries !== undefined
+              ? { maxRetries: options.maxRetries }
+              : {}),
+            ...(options.baseDelayMs !== undefined
+              ? { baseDelayMs: options.baseDelayMs }
+              : {}),
+            ...(options.maxDelayMs !== undefined
+              ? { maxDelayMs: options.maxDelayMs }
+              : {}),
+          };
+
+    return utilFetchWithRetry(url, init, retryOptions);
   }
 
   /**

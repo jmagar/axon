@@ -318,7 +318,9 @@ export function createCrawlCommand(): Command {
       parseFloat
     )
     .option('--progress', 'Show progress while waiting (implies --wait)', false)
-    .option('--limit <number>', 'Maximum number of pages to crawl', parseInt)
+    .option('--limit <number>', 'Maximum number of pages to crawl', (val) =>
+      parseInt(val, 10)
+    )
     .option(
       '--max-depth <number>',
       'Maximum crawl depth',
@@ -366,7 +368,9 @@ export function createCrawlCommand(): Command {
       '--include-tags <tags>',
       'Comma-separated list of tags to include in scraped content'
     )
-    .option('--delay <ms>', 'Delay between requests in milliseconds', parseInt)
+    .option('--delay <ms>', 'Delay between requests in milliseconds', (val) =>
+      parseInt(val, 10)
+    )
     .option(
       '--max-concurrency <number>',
       'Maximum concurrent requests',

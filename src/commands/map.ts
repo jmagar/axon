@@ -14,6 +14,7 @@ import type { MapOptions, MapResult } from '../types/map';
 import { processCommandResult } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
 import { extensionsToPaths } from '../utils/extensions';
+import { buildApiErrorMessage } from '../utils/network-error';
 import { fmt } from '../utils/theme';
 import { filterUrls } from '../utils/url-filter';
 import { mergeExcludePaths } from './crawl/options';
@@ -422,7 +423,7 @@ export async function executeMap(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: buildApiErrorMessage(error, container.config.apiUrl),
     };
   }
 }
@@ -499,7 +500,9 @@ export function createMapCommand(): Command {
       'URL to map (alternative to positional argument)'
     )
     .option('--wait', 'Wait for map to complete')
-    .option('--limit <number>', 'Maximum URLs to discover', parseInt)
+    .option('--limit <number>', 'Maximum URLs to discover', (val) =>
+      parseInt(val, 10)
+    )
     .option('--search <query>', 'Search query to filter URLs')
     .option(
       '--sitemap <mode>',
@@ -507,7 +510,7 @@ export function createMapCommand(): Command {
     )
     .option('--include-subdomains', 'Include subdomains')
     .option('--no-include-subdomains', 'Exclude subdomains')
-    .option('--ignore-query-parameters', 'Ignore query parameters')
+    .option('--ignore-query-parameters', 'Ignore query parameters', true)
     .option('--no-ignore-query-parameters', 'Include query parameters')
     .option('--ignore-cache', 'Bypass sitemap cache for fresh URLs')
     .option('--no-ignore-cache', 'Use cached sitemap data')

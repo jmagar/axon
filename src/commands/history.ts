@@ -212,7 +212,9 @@ export function createHistoryCommand(): Command {
           'Filter by entries from last N days',
           parseInt
         )
-        .option('--limit <number>', 'Maximum entries to show', parseInt)
+        .option('--limit <number>', 'Maximum entries to show', (val) =>
+          parseInt(val, 10)
+        )
     )
   ).action(async (options, command: Command) => {
     const container = requireContainer(command);
