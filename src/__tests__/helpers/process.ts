@@ -202,6 +202,8 @@ export function setupCommandTestCapture() {
   });
 
   afterEach(() => {
+    logs.length = 0;
+    errors.length = 0;
     mockLog.mockRestore();
     mockError.mockRestore();
   });

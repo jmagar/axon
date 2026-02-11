@@ -19,6 +19,11 @@ import { fmt } from './theme';
 export type { StoredCredentials };
 
 /**
+ * Module-level flag to avoid repeated filesystem checks for migration
+ */
+let migrationDone = false;
+
+/**
  * Legacy config directory paths (pre-FIRECRAWL_HOME unification).
  */
 function getLegacyConfigDirs(): string[] {
@@ -73,8 +78,13 @@ function setSecurePermissions(filePath: string): void {
  * Migrate credentials from legacy paths to FIRECRAWL_HOME path.
  */
 function migrateLegacyCredentials(): void {
+  if (migrationDone) {
+    return;
+  }
+
   const newPath = getCredentialsPath();
   if (fs.existsSync(newPath)) {
+    migrationDone = true;
     return;
   }
 
@@ -103,11 +113,14 @@ function migrateLegacyCredentials(): void {
           `[Credentials] Migrated credentials from ${legacyPath} to ${newPath}`
         )
       );
+      migrationDone = true;
       return;
     } catch {
       // Ignore invalid legacy files and continue checking others
     }
   }
+
+  migrationDone = true;
 }
 
 /**
@@ -117,11 +130,14 @@ export function loadCredentials(): StoredCredentials | null {
   try {
     migrateLegacyCredentials();
     const credentialsPath = getCredentialsPath();
-    if (!fs.existsSync(credentialsPath)) {
+
+    let data: string;
+    try {
+      data = fs.readFileSync(credentialsPath, 'utf-8');
+    } catch {
       return null;
     }
 
-    const data = fs.readFileSync(credentialsPath, 'utf-8');
     const parsed = JSON.parse(data);
 
     // Validate with Zod schema for runtime type safety

@@ -20,11 +20,26 @@ import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
  * Composes TEI and Qdrant services for end-to-end embedding workflow
  */
 export class EmbedPipeline implements IEmbedPipeline {
+  private collectionEnsured = false;
+
   constructor(
     private readonly teiService: ITeiService,
     private readonly qdrantService: IQdrantService,
     private readonly collectionName: string = 'firecrawl'
   ) {}
+
+  /**
+   * Ensure the target collection exists (only calls Qdrant once per pipeline instance)
+   */
+  private async ensureCollectionReady(): Promise<void> {
+    if (this.collectionEnsured) return;
+    const teiInfo = await this.teiService.getTeiInfo();
+    await this.qdrantService.ensureCollection(
+      this.collectionName,
+      teiInfo.dimension
+    );
+    this.collectionEnsured = true;
+  }
 
   /**
    * Internal embedding implementation that can throw errors
@@ -44,14 +59,8 @@ export class EmbedPipeline implements IEmbedPipeline {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    // Get TEI info (dimension) - cached after first call
-    const teiInfo = await this.teiService.getTeiInfo();
-
-    // Ensure collection exists
-    await this.qdrantService.ensureCollection(
-      this.collectionName,
-      teiInfo.dimension
-    );
+    // Ensure collection exists (cached after first call)
+    await this.ensureCollectionReady();
 
     // Chunk content
     const chunks = chunkText(trimmed);

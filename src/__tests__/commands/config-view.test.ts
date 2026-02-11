@@ -18,6 +18,10 @@ vi.mock('../../utils/settings', () => ({
 }));
 
 vi.mock('../../utils/theme', () => ({
+  colorize: (_color: string, text: string) => text,
+  colors: {
+    primary: '',
+  },
   fmt: {
     error: (msg: string) => msg,
     dim: (msg: string) => msg,
@@ -28,6 +32,7 @@ vi.mock('../../utils/theme', () => ({
   },
   icons: {
     success: '✓',
+    active: '●',
     error: '✗',
     warning: '⚠',
     pending: '○',
@@ -43,15 +48,30 @@ describe('viewConfig', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Clean all env vars read by buildRuntimeEnvItems and buildConfigDiagnostics
+    // to prevent test pollution from the host environment
     delete process.env.FIRECRAWL_API_KEY;
     delete process.env.FIRECRAWL_API_URL;
-    delete process.env.OPENAI_MODEL;
     delete process.env.ASK_CLI;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_BASE_URL;
     delete process.env.SEARXNG_ENDPOINT;
     delete process.env.SEARXNG_ENGINES;
     delete process.env.SEARXNG_CATEGORIES;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_MODEL;
+    delete process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL;
+    delete process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET;
+    delete process.env.FIRECRAWL_HOME;
+    delete process.env.QDRANT_DATA_DIR;
+    delete process.env.REDIS_URL;
+    delete process.env.REDIS_RATE_LIMIT_URL;
+    delete process.env.PLAYWRIGHT_MICROSERVICE_URL;
+    delete process.env.NUQ_RABBITMQ_URL;
+    delete process.env.POSTGRES_USER;
+    delete process.env.POSTGRES_PASSWORD;
+    delete process.env.POSTGRES_DB;
+    delete process.env.POSTGRES_HOST;
+    delete process.env.POSTGRES_PORT;
     delete process.env.TEI_URL;
     delete process.env.QDRANT_URL;
     delete process.env.QDRANT_COLLECTION;

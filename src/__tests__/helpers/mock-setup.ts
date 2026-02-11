@@ -80,7 +80,9 @@ export function createMockEmbedPipeline(
 ): IEmbedPipeline {
   return {
     autoEmbed: config?.autoEmbed ?? vi.fn().mockResolvedValue(undefined),
-    batchEmbed: config?.batchEmbed ?? vi.fn().mockResolvedValue(undefined),
+    batchEmbed:
+      config?.batchEmbed ??
+      vi.fn().mockResolvedValue({ succeeded: 0, failed: 0, errors: [] }),
   } as IEmbedPipeline;
 }
 
@@ -164,8 +166,15 @@ export function createMockContainer(
     config: frozenConfig,
     getFirecrawlClient: vi.fn().mockReturnValue(fullMockClient),
     getEmbedPipeline: vi.fn().mockReturnValue(mockEmbedPipeline),
-    getTeiService: vi.fn(),
-    getQdrantService: vi.fn(),
+    getTeiService: vi.fn().mockReturnValue({
+      getTeiInfo: vi.fn().mockResolvedValue({
+        model_id: 'test-model',
+        model_type: { embedding: { dim: 384 } },
+      }),
+      embed: vi.fn().mockResolvedValue([]),
+      batchEmbed: vi.fn().mockResolvedValue([]),
+    }),
+    getQdrantService: vi.fn().mockReturnValue(createMockQdrantService()),
     getHttpClient: vi.fn().mockReturnValue(mockHttpClient),
     dispose: vi.fn().mockResolvedValue(undefined),
   } as unknown as IContainer;

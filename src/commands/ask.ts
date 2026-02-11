@@ -5,6 +5,7 @@
 
 import { spawn } from 'child_process';
 import { Command } from 'commander';
+import pLimit from 'p-limit';
 import type { IContainer } from '../container/types';
 import type { AskOptions, AskResult, AskSource } from '../types/ask';
 import { fmt, icons } from '../utils/theme';
@@ -97,14 +98,17 @@ export async function executeAsk(
       fmt.dim(`${icons.processing} Retrieving full document content...`)
     );
 
-    // Step 2: Retrieve full documents
+    // Step 2: Retrieve full documents (concurrency-limited)
+    const concurrencyLimit = pLimit(5);
     const retrieveResults = await Promise.all(
       uniqueUrls.map((item) =>
-        executeRetrieve(container, {
-          url: item.url,
-          collection,
-          json: true,
-        })
+        concurrencyLimit(() =>
+          executeRetrieve(container, {
+            url: item.url,
+            collection,
+            json: true,
+          })
+        )
       )
     );
 
@@ -140,11 +144,15 @@ export async function executeAsk(
 
     const context = `I have a question about these documents:\n\n${documentsContext}\n\n${separator}\n\nQuestion: ${options.query}`;
 
-    const sources: AskSource[] = uniqueUrls.map((item) => ({
-      url: item.url,
-      title: item.title,
-      score: item.score,
-    }));
+    // Only include sources whose content was actually retrieved
+    const retrievedUrls = new Set(successfulRetrieves.map((r) => r.data!.url));
+    const sources: AskSource[] = uniqueUrls
+      .filter((item) => retrievedUrls.has(item.url))
+      .map((item) => ({
+        url: item.url,
+        title: item.title,
+        score: item.score,
+      }));
 
     // Step 4: Spawn AI CLI subprocess and pipe context to it
     // Supports both claude and gemini CLIs.
@@ -182,7 +190,8 @@ async function callAICLI(context: string, model: string): Promise<string> {
     const cliTool = isGemini ? 'gemini' : 'claude';
 
     // Build arguments - both CLIs use --model
-    const args = ['--model', model];
+    // Claude CLI requires -p (print mode) for non-interactive stdin piping
+    const args = isGemini ? ['--model', model] : ['-p', '--model', model];
 
     // Spawn the appropriate CLI
     const aiProcess = spawn(cliTool, args, {
@@ -198,13 +207,24 @@ async function callAICLI(context: string, model: string): Promise<string> {
       process.stdout.write(text); // Stream to terminal in real-time
     });
 
+    // Handle stdin errors (e.g. child exits before stdin is flushed)
+    aiProcess.stdin.on('error', () => {
+      // Ignore stdin write errors - the close handler will report the real error
+    });
+
     // Write context to stdin
     aiProcess.stdin.write(context);
     aiProcess.stdin.end();
 
     // Handle process exit
-    aiProcess.on('close', (code: number) => {
-      if (code !== 0) {
+    aiProcess.on('close', (code: number | null) => {
+      if (code === null) {
+        reject(
+          new Error(
+            `${cliTool} CLI was killed by a signal. Check stderr output above.`
+          )
+        );
+      } else if (code !== 0) {
         reject(
           new Error(
             `${cliTool} CLI exited with code ${code}. Check stderr output above.`

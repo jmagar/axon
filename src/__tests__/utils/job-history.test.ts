@@ -60,23 +60,18 @@ describe('Job History Utilities', () => {
   describe('Storage root support', () => {
     it('should use default ~/.firecrawl path when FIRECRAWL_HOME is not set', async () => {
       // Mock empty history file
-      vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === expectedHistoryPath) return;
-        if (path === legacyPath) throw new Error('not found');
-        throw new Error('not found');
-      });
       vi.mocked(fs.readFile).mockResolvedValue(
         JSON.stringify({ crawl: [], batch: [], extract: [] })
       );
 
       await getRecentJobIds('crawl');
 
-      expect(fs.access).toHaveBeenCalledWith(expectedHistoryPath);
+      expect(fs.readFile).toHaveBeenCalledWith(expectedHistoryPath, 'utf-8');
     });
 
     it('should create directory with secure permissions (0o700)', async () => {
-      // Mock directory doesn't exist
-      vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
+      // Mock no history file exists
+      vi.mocked(fs.readFile).mockRejectedValue(new Error('not found'));
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
@@ -102,16 +97,7 @@ describe('Job History Utilities', () => {
 
       let newFileCreated = false;
 
-      // Mock legacy file exists, new file doesn't initially
-      vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === legacyPath) return; // Legacy exists
-        if (path === expectedHistoryPath && !newFileCreated)
-          throw new Error('not found'); // New doesn't exist initially
-        if (path === expectedHistoryPath && newFileCreated) return; // New exists after migration
-        if (path === expectedDataDir) throw new Error('not found'); // Dir doesn't exist
-        throw new Error('not found');
-      });
-
+      // Mock: new file doesn't exist initially, legacy file exists
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (path === legacyPath) {
           return JSON.stringify(legacyData);
@@ -148,16 +134,6 @@ describe('Job History Utilities', () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === legacyPath) return;
-        if (path === expectedHistoryPath && !newFileCreated) {
-          throw new Error('not found');
-        }
-        if (path === expectedHistoryPath && newFileCreated) return;
-        if (path === expectedDataDir) throw new Error('not found');
-        throw new Error('not found');
-      });
-
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (
           path === legacyPath ||
@@ -190,8 +166,7 @@ describe('Job History Utilities', () => {
         extract: [],
       };
 
-      // Mock both files exist
-      vi.mocked(fs.access).mockResolvedValue(undefined);
+      // Mock new file already exists
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (path === expectedHistoryPath) {
           return JSON.stringify(newData);
@@ -208,7 +183,7 @@ describe('Job History Utilities', () => {
 
     it('should handle missing legacy file gracefully', async () => {
       // Mock no files exist
-      vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
+      vi.mocked(fs.readFile).mockRejectedValue(new Error('not found'));
 
       const result = await getRecentJobIds('crawl');
 
@@ -223,7 +198,7 @@ describe('Job History Utilities', () => {
       mockCwd = '/project/dir-a';
 
       // Mock empty state
-      vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
+      vi.mocked(fs.readFile).mockRejectedValue(new Error('not found'));
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
@@ -236,10 +211,6 @@ describe('Job History Utilities', () => {
       mockCwd = '/completely/different/path';
 
       // Mock file now exists with data from dir A
-      vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === expectedHistoryPath) return;
-        throw new Error('not found');
-      });
       vi.mocked(fs.readFile).mockResolvedValue(
         JSON.stringify({
           crawl: [
@@ -265,7 +236,6 @@ describe('Job History Utilities', () => {
 
   describe('recordJob', () => {
     beforeEach(() => {
-      vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     });
@@ -363,7 +333,6 @@ describe('Job History Utilities', () => {
         extract: [{ id: 'extract-1', updatedAt: '2024-01-03T00:00:00.000Z' }],
       };
 
-      vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(existingData));
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
@@ -378,10 +347,6 @@ describe('Job History Utilities', () => {
   });
 
   describe('getRecentJobIds', () => {
-    beforeEach(() => {
-      vi.mocked(fs.access).mockResolvedValue(undefined);
-    });
-
     it('should return recent job IDs', async () => {
       const data = {
         crawl: [
@@ -419,7 +384,7 @@ describe('Job History Utilities', () => {
     });
 
     it('should return empty array for missing history', async () => {
-      vi.mocked(fs.access).mockRejectedValue(new Error('not found'));
+      vi.mocked(fs.readFile).mockRejectedValue(new Error('not found'));
 
       const result = await getRecentJobIds('crawl');
 
@@ -429,7 +394,6 @@ describe('Job History Utilities', () => {
 
   describe('removeJobIds', () => {
     beforeEach(() => {
-      vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     });
 
@@ -475,7 +439,6 @@ describe('Job History Utilities', () => {
 
   describe('clearJobHistory', () => {
     beforeEach(() => {
-      vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
       vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     });

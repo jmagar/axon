@@ -1,7 +1,7 @@
 # Firecrawl CLI Testing Guide
 
-**Last Updated**: 2026-01-29
-**Version**: 1.1.1
+**Last Updated**: 2026-02-11
+**Version**: 1.1.2
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ The e2e tests use a **local Astro test website** instead of live URLs for predic
 
 **Server Details**:
 - **URL**: `http://127.0.0.1:4321`
-- **Location**: `/tmp/firecrawl/apps/test-site`
+- **Location**: `~/workspace/firecrawl-test-server/apps/test-site`
 - **Framework**: Astro v5.16.0
 - **Purpose**: Stable, deterministic content for testing
 
@@ -51,10 +51,35 @@ The e2e tests use a **local Astro test website** instead of live URLs for predic
 - Sitemap (`/sitemap-index.xml`)
 - RSS feed (`/rss.xml`)
 
+**One-time Setup (minimal checkout)**:
+```bash
+mkdir -p ~/workspace/firecrawl-test-server
+git clone --filter=blob:none --no-checkout https://github.com/firecrawl/firecrawl ~/workspace/firecrawl-test-server
+cd ~/workspace/firecrawl-test-server
+git sparse-checkout init --cone
+git sparse-checkout set apps/test-site
+git checkout main
+cd apps/test-site
+pnpm install --frozen-lockfile
+pnpm build
+```
+
 **Starting the Test Server**:
 ```bash
-cd /tmp/firecrawl/apps/test-site
+cd ~/workspace/firecrawl-test-server/apps/test-site
 pnpm preview --port 4321 --host 127.0.0.1
+```
+
+**Background Mode (optional)**:
+```bash
+cd ~/workspace/firecrawl-test-server/apps/test-site
+nohup pnpm preview --port 4321 --host 127.0.0.1 >/tmp/firecrawl-test-server.log 2>&1 &
+echo $! >/tmp/firecrawl-test-server.pid
+```
+
+**Stop Background Server**:
+```bash
+kill "$(cat /tmp/firecrawl-test-server.pid)"
 ```
 
 ### Required Services
@@ -148,7 +173,7 @@ src/__tests__/e2e/status.e2e.test.ts      (20 tests)
    docker compose up -d
 
    # Test server
-   cd /tmp/firecrawl/apps/test-site
+   cd ~/workspace/firecrawl-test-server/apps/test-site
    pnpm preview --port 4321 --host 127.0.0.1
    ```
 
@@ -615,7 +640,7 @@ pnpm test:e2e
 **Solution**:
 ```bash
 # Start the test server
-cd /tmp/firecrawl/apps/test-site
+cd ~/workspace/firecrawl-test-server/apps/test-site
 pnpm preview --port 4321 --host 127.0.0.1
 ```
 

@@ -22,13 +22,12 @@ Under the storage root:
 
 - `FIRECRAWL_HOME`
   - Overrides the storage root for all files above.
-  - Must be an absolute path (detected via `path.isAbsolute()` for cross-platform compatibility).
-  - Relative paths or paths with `~` will trigger a validation error.
+  - Supports `~` (expanded to the home directory) and relative paths (resolved from the current working directory via `path.resolve()`). Absolute paths are accepted as-is.
 
 ## .env Loading
 
-The CLI reads `<project>/.env` on startup (unless `FIRECRAWL_CLI_DISABLE_LOCAL_ENV=1`).
-The embedder daemon also reads `<project>/.env`.
+The CLI reads `<cwd>/.env` on startup (unless `FIRECRAWL_CLI_DISABLE_LOCAL_ENV=1`).
+The embedder daemon also reads `<cwd>/.env`.
 
 ## Migration
 
@@ -36,7 +35,7 @@ On first read/write, the CLI migrates legacy files when found:
 
 - Credentials/settings from older platform-specific `firecrawl-cli` config dirs.
 - Job history from old XDG/app-data locations and from legacy `<cwd>/.cache/job-history.json`.
-- Embed queue files from old `~/.config/firecrawl-cli/embed-queue`.
+- Embed queue files from old `~/.config/firecrawl-cli/embed-queue` (when queue dir override is not set).
 
 ## Migration Status and Legacy Paths
 
@@ -44,4 +43,4 @@ On first read/write, the CLI migrates legacy files when found:
 - Legacy directories are no longer active storage locations:
   - `~/.config/firecrawl-cli`
   - `~/.local/share/firecrawl-cli`
-- Embed queue location is always `<storageRoot>/embed-queue`.
+- Embed queue location defaults to `<storageRoot>/embed-queue` unless `FIRECRAWL_EMBEDDER_QUEUE_DIR` is set (relative paths resolve from the current working directory).

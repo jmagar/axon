@@ -43,6 +43,7 @@ describe('E2E: help command', () => {
     expect(result.stdout).toContain('map');
     expect(result.stdout).toContain('search');
     expect(result.stdout).toContain('extract');
+    expect(result.stdout).toContain('doctor');
   });
 
   it('should display scrape command help', async () => {

@@ -236,7 +236,7 @@ describe('QdrantService', () => {
       } as Response);
 
       await expect(service.deleteAll('test_collection')).rejects.toThrow(
-        'Qdrant delete failed: 500'
+        'Qdrant delete all failed: 500'
       );
     });
   });

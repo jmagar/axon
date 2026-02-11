@@ -20,7 +20,7 @@ _firecrawl_completions() {
     _init_completion || return
 
     # Top-level commands
-    local commands="scrape crawl map search extract batch embed query retrieve list status config view-config login logout version sources stats domains delete history info completion help"
+    local commands="scrape crawl map search extract batch embed query retrieve list status config view-config login logout version doctor sources stats domains delete history info completion help"
 
     # If we're on the first word, complete commands
     if [[ $cword -eq 1 ]]; then
@@ -76,6 +76,7 @@ _firecrawl() {
         'login:Login to Firecrawl'
         'logout:Logout and clear credentials'
         'version:Display version information'
+        'doctor:Run local diagnostics for services and config'
         'sources:List all indexed source URLs'
         'stats:Show vector database statistics'
         'domains:List unique indexed domains'
@@ -103,6 +104,14 @@ _firecrawl() {
                         '(-o --output)'{-o,--output}'[Output file path]:file:_files' \\
                         '--pretty[Pretty print JSON]' \\
                         '--json[Output as JSON]'
+                    ;;
+                doctor)
+                    _arguments \\
+                        '--help[Display help]' \\
+                        '--json[Output JSON (compact)]' \\
+                        '--pretty[Pretty print JSON output]' \\
+                        '--timeout[Probe timeout in milliseconds]:ms' \\
+                        '--ai-timeout[AI debug timeout in milliseconds]:ms'
                     ;;
                 embed|query|retrieve)
                     _arguments \\
@@ -147,6 +156,7 @@ complete -c firecrawl -f -n "__fish_use_subcommand" -a view-config -d "View curr
 complete -c firecrawl -f -n "__fish_use_subcommand" -a login -d "Login to Firecrawl"
 complete -c firecrawl -f -n "__fish_use_subcommand" -a logout -d "Logout and clear credentials"
 complete -c firecrawl -f -n "__fish_use_subcommand" -a version -d "Display version information"
+complete -c firecrawl -f -n "__fish_use_subcommand" -a doctor -d "Run local diagnostics"
 complete -c firecrawl -f -n "__fish_use_subcommand" -a sources -d "List indexed source URLs"
 complete -c firecrawl -f -n "__fish_use_subcommand" -a stats -d "Show vector database statistics"
 complete -c firecrawl -f -n "__fish_use_subcommand" -a domains -d "List indexed domains"

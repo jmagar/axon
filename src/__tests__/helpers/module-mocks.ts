@@ -175,6 +175,48 @@ export function mockDeleteModule(): {
 }
 
 /**
+ * Setup mock for credentials module
+ *
+ * Mocks all exported functions from credentials.ts including the internal
+ * setSecurePermissions behavior (handled via chmodSync in fs mock)
+ *
+ * @returns Mock implementation object
+ */
+export function mockCredentialsModule(): {
+  getConfigDirectoryPath: Mock;
+  loadCredentials: Mock;
+  saveCredentials: Mock;
+  deleteCredentials: Mock;
+} {
+  return {
+    getConfigDirectoryPath: vi.fn().mockReturnValue('/tmp/firecrawl-home'),
+    loadCredentials: vi.fn().mockReturnValue(null),
+    saveCredentials: vi.fn(),
+    deleteCredentials: vi.fn(),
+  };
+}
+
+/**
+ * Setup mock for settings module
+ *
+ * Mocks all exported functions from settings.ts including the internal
+ * setSecurePermissions behavior (handled via chmodSync in fs mock)
+ *
+ * @returns Mock implementation object
+ */
+export function mockSettingsModule(): {
+  loadSettings: Mock;
+  saveSettings: Mock;
+  clearSetting: Mock;
+} {
+  return {
+    loadSettings: vi.fn().mockReturnValue({}),
+    saveSettings: vi.fn(),
+    clearSetting: vi.fn(),
+  };
+}
+
+/**
  * Setup common module mocks for command tests
  *
  * Sets up output, command, job, and job-history mocks

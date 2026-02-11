@@ -8,10 +8,17 @@
  *   pnpm tsx scripts/check-qdrant-quality.ts --collection name   # Check specific collection
  *   pnpm tsx scripts/check-qdrant-quality.ts --all               # Check all collections
  *   pnpm tsx scripts/check-qdrant-quality.ts --delete-duplicates # Delete duplicates
+ *   pnpm tsx scripts/check-qdrant-quality.ts --delete-excluded   # Delete points matching exclude rules
  *   pnpm tsx scripts/check-qdrant-quality.ts --collection firecrawl --delete-duplicates
  */
 
 import { config as loadDotenv } from 'dotenv';
+import {
+  mergeExcludeExtensions,
+  mergeExcludePaths,
+} from '../src/commands/crawl/options';
+import { extensionsToPaths } from '../src/utils/extensions';
+import { matchesPattern } from '../src/utils/url-filter';
 
 loadDotenv();
 
@@ -44,6 +51,13 @@ interface DataQualityIssues {
   missingContent: number;
   emptyContent: number;
   missingChunkIndex: number;
+}
+
+interface ExcludeViolationStats {
+  matchedPoints: number;
+  matchedUrls: number;
+  matchedIds: string[];
+  topUrls: Array<{ url: string; points: number; pattern: string }>;
 }
 
 interface CollectionInfo {
@@ -116,7 +130,24 @@ async function getCollectionInfo(collection: string): Promise<CollectionInfo> {
   }
 
   const data = await response.json();
+  if (!data.result) {
+    throw new Error(
+      `No result in collection info response for "${collection}"`
+    );
+  }
   return data.result;
+}
+
+/**
+ * Resolve effective exclude patterns used by crawl/map defaults:
+ * - user-configured exclude paths
+ * - user-configured or built-in exclude extensions (converted to path regex)
+ * - built-in default exclude paths (unless disabled; this script never disables)
+ */
+function getEffectiveExcludePatterns(): string[] {
+  const extensions = mergeExcludeExtensions(undefined, false);
+  const extensionPatterns = extensionsToPaths(extensions);
+  return mergeExcludePaths(undefined, false, extensionPatterns);
 }
 
 /**
@@ -132,17 +163,78 @@ function checkDataQuality(points: QdrantPoint[]): DataQualityIssues {
 
   for (const point of points) {
     if (!point.payload.url) issues.missingUrl++;
-    if (!point.payload.chunk_text) issues.missingContent++;
-    if (
-      typeof point.payload.chunk_text === 'string' &&
-      point.payload.chunk_text.trim().length === 0
-    ) {
+    if (point.payload.chunk_text == null) {
+      // null or undefined — content is missing entirely
+      issues.missingContent++;
+    } else if (point.payload.chunk_text.trim().length === 0) {
+      // present but blank — mutually exclusive with missingContent
       issues.emptyContent++;
     }
     if (point.payload.chunk_index === undefined) issues.missingChunkIndex++;
   }
 
   return issues;
+}
+
+/**
+ * Count points/URLs that match effective exclude patterns.
+ */
+function checkExcludeViolations(
+  points: QdrantPoint[],
+  excludePatterns: string[]
+): ExcludeViolationStats {
+  if (excludePatterns.length === 0) {
+    return { matchedPoints: 0, matchedUrls: 0, matchedIds: [], topUrls: [] };
+  }
+
+  const matchedByUrl = new Map<string, { points: number; pattern: string }>();
+  const matchedIds: string[] = [];
+  let matchedPoints = 0;
+
+  for (const point of points) {
+    const url = point.payload.url;
+    if (!url) continue;
+
+    let matchedPattern: string | null = null;
+    for (const pattern of excludePatterns) {
+      try {
+        if (matchesPattern(url, pattern)) {
+          matchedPattern = pattern;
+          break;
+        }
+      } catch {
+        // Ignore invalid patterns here; config command should validate,
+        // but we keep this script resilient.
+      }
+    }
+
+    if (!matchedPattern) continue;
+
+    matchedPoints++;
+    matchedIds.push(point.id);
+    const existing = matchedByUrl.get(url);
+    if (existing) {
+      existing.points += 1;
+    } else {
+      matchedByUrl.set(url, { points: 1, pattern: matchedPattern });
+    }
+  }
+
+  const topUrls = Array.from(matchedByUrl.entries())
+    .map(([url, value]) => ({
+      url,
+      points: value.points,
+      pattern: value.pattern,
+    }))
+    .sort((a, b) => b.points - a.points)
+    .slice(0, 10);
+
+  return {
+    matchedPoints,
+    matchedUrls: matchedByUrl.size,
+    matchedIds,
+    topUrls,
+  };
 }
 
 /**
@@ -343,7 +435,8 @@ async function displayHealthInfo(): Promise<void> {
  */
 async function checkCollection(
   collection: string,
-  deleteDuplicates: boolean
+  deleteDuplicates: boolean,
+  deleteExcluded: boolean
 ): Promise<void> {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`🔍 Collection: ${collection}`);
@@ -351,6 +444,7 @@ async function checkCollection(
 
   // Fetch all points
   const points = await fetchAllPoints(collection);
+  const excludePatterns = getEffectiveExcludePatterns();
 
   if (points.length === 0) {
     console.log('No points found in collection\n');
@@ -381,6 +475,34 @@ async function checkCollection(
     }
     if (qualityIssues.missingChunkIndex > 0) {
       console.log(`  Missing chunk_index: ${qualityIssues.missingChunkIndex}`);
+    }
+  }
+
+  // Check exclude violations
+  console.log(`\n🚫 Exclude Rules Check`);
+  const excludeViolations = checkExcludeViolations(points, excludePatterns);
+  if (excludeViolations.matchedPoints === 0) {
+    console.log('✅ No points matched configured/default exclude rules');
+  } else {
+    console.log(
+      `⚠️  Found ${excludeViolations.matchedPoints} points across ${excludeViolations.matchedUrls} URLs that match exclude rules`
+    );
+    console.log('Top 10 excluded-pattern matches:');
+    for (const entry of excludeViolations.topUrls) {
+      console.log(`  ${entry.points}x - ${entry.url}`);
+      console.log(`       pattern: ${entry.pattern}`);
+    }
+
+    if (deleteExcluded) {
+      const uniqueIds = Array.from(new Set(excludeViolations.matchedIds));
+      await deletePoints(collection, uniqueIds);
+      console.log(
+        `🗑️  Deleted ${uniqueIds.length} points matching exclude rules`
+      );
+    } else {
+      console.log(
+        `\n💡 To delete exclude-rule matches, run:\n   pnpm tsx scripts/check-qdrant-quality.ts --collection ${collection} --delete-excluded`
+      );
     }
   }
 
@@ -435,8 +557,8 @@ async function checkCollection(
   console.log(`\n📊 Chunk Distribution`);
   const counts = Array.from(urlChunkCounts.values()).sort((a, b) => a - b);
   if (counts.length > 0) {
-    const min = Math.min(...counts);
-    const max = Math.max(...counts);
+    const min = counts.reduce((a, b) => Math.min(a, b), Infinity);
+    const max = counts.reduce((a, b) => Math.max(a, b), -Infinity);
     const median = counts[Math.floor(counts.length / 2)];
     const avgChunksPerUrl = points.length / urlChunkCounts.size;
 
@@ -457,6 +579,9 @@ async function checkCollection(
   console.log(`  Unique URLs: ${urlChunkCounts.size}`);
   console.log(`  Duplicate chunks: ${duplicates.length}`);
   console.log(`  Data quality issues: ${totalIssues}`);
+  console.log(
+    `  Exclude rule matches: ${excludeViolations.matchedPoints} points (${excludeViolations.matchedUrls} URLs)`
+  );
   console.log();
 }
 
@@ -466,6 +591,7 @@ async function checkCollection(
 async function main() {
   const args = process.argv.slice(2);
   const deleteDuplicates = args.includes('--delete-duplicates');
+  const deleteExcluded = args.includes('--delete-excluded');
   const checkAll = args.includes('--all');
   const healthOnly = args.includes('--health');
 
@@ -478,6 +604,8 @@ async function main() {
 
   console.log(`\n🔍 Qdrant Quality Check`);
   console.log(`URL: ${QDRANT_URL}`);
+  const effectiveExcludes = getEffectiveExcludePatterns();
+  console.log(`Exclude patterns loaded: ${effectiveExcludes.length}`);
 
   // Always show health info first (unless checking a specific collection)
   if (healthOnly) {
@@ -501,13 +629,13 @@ async function main() {
     }
 
     for (const collection of collections) {
-      await checkCollection(collection, deleteDuplicates);
+      await checkCollection(collection, deleteDuplicates, deleteExcluded);
     }
   } else {
     // Check single collection
     const collection =
       specifiedCollection || process.env.QDRANT_COLLECTION || 'firecrawl';
-    await checkCollection(collection, deleteDuplicates);
+    await checkCollection(collection, deleteDuplicates, deleteExcluded);
   }
 }
 

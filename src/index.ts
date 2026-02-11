@@ -26,6 +26,7 @@ import {
 } from './commands/config';
 import { createCrawlCommand } from './commands/crawl';
 import { createDeleteCommand } from './commands/delete';
+import { createDoctorCommand } from './commands/doctor';
 import { createDomainsCommand } from './commands/domains';
 import { createEmbedCommand } from './commands/embed';
 import { createExtractCommand } from './commands/extract';
@@ -142,6 +143,7 @@ const TOP_LEVEL_COMMANDS = new Set([
   'login',
   'logout',
   'version',
+  'doctor',
   'sources',
   'stats',
   'domains',
@@ -244,6 +246,7 @@ function renderTopLevelHelp(): string {
       commands: [
         ['list', 'List active crawl jobs'],
         ['status', 'Show active jobs and embedding queue status'],
+        ['doctor', 'Run local diagnostics for service health/config'],
         ['config', 'Configure Firecrawl (login if not authenticated)'],
         ['view-config', 'View current configuration and auth status'],
         ['login', 'Login to Firecrawl (alias for config)'],
@@ -409,6 +412,7 @@ program.addCommand(createLogoutCommand());
 program.addCommand(createVersionCommand());
 
 program.addCommand(createSourcesCommand());
+program.addCommand(createDoctorCommand());
 program.addCommand(createStatsCommand());
 program.addCommand(createDomainsCommand());
 program.addCommand(createDeleteCommand());

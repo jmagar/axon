@@ -81,11 +81,13 @@ export {
   mockCrawlExecuteModule,
   mockCrawlFormatModule,
   mockCrawlPollingModule,
+  mockCredentialsModule,
   mockDeleteModule,
   mockExtractModule,
   mockJobHistoryModule,
   mockJobModule,
   mockOutputModule,
+  mockSettingsModule,
   setupCommonCommandMocks,
   setupCrawlCommandMocks,
 } from './module-mocks';

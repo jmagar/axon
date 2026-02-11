@@ -10,7 +10,9 @@ const NETWORK_ERROR_INDICATORS = [
   'etimedout',
   'enotfound',
   'eai_again',
-  'socket',
+  'socket hang up',
+  'socket timeout',
+  'epipe',
 ];
 
 function isLocalApiUrl(apiUrl: string | undefined): boolean {

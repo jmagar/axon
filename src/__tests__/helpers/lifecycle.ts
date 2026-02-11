@@ -153,7 +153,14 @@ export function createTestContext<T>(
   });
 
   return {
-    getContext: () => context,
+    getContext: () => {
+      if (context === undefined) {
+        throw new Error(
+          'Test context not initialized - ensure beforeEach has run'
+        );
+      }
+      return context;
+    },
   };
 }
 
@@ -200,7 +207,7 @@ export function setupFileSystemMocks(
   const originalFirecrawlHome = process.env.FIRECRAWL_HOME;
 
   // Setup mocks
-  vi.mock('node:os', () => ({
+  vi.doMock('node:os', () => ({
     homedir: vi.fn(() => homedir),
   }));
 
@@ -216,7 +223,7 @@ export function setupFileSystemMocks(
       } else {
         process.env.FIRECRAWL_HOME = originalFirecrawlHome;
       }
-      vi.unmock('node:os');
+      vi.doUnmock('node:os');
     },
     setFirecrawlHome: (path: string | undefined) => {
       if (path === undefined) {

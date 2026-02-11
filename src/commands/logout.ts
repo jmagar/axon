@@ -3,6 +3,7 @@
  * Clears stored credentials
  */
 
+import { getAuthSource, isAuthenticated } from '../utils/auth';
 import { deleteCredentials, loadCredentials } from '../utils/credentials';
 import { fmt, icons } from '../utils/theme';
 
@@ -11,14 +12,36 @@ import { fmt, icons } from '../utils/theme';
  */
 export async function handleLogoutCommand(): Promise<void> {
   const credentials = loadCredentials();
+  const hasStoredCredentials = Boolean(credentials?.apiKey);
+  const authSource = getAuthSource();
 
-  if (!credentials || !credentials.apiKey) {
+  if (!hasStoredCredentials) {
+    if (authSource === 'env' && isAuthenticated()) {
+      console.log(
+        fmt.dim(
+          'No stored credentials found. Authentication is from environment.'
+        )
+      );
+      console.log(fmt.dim('Unset FIRECRAWL_API_KEY to fully log out.'));
+      return;
+    }
+
     console.log(fmt.dim('No credentials found. You are not logged in.'));
     return;
   }
 
   try {
     deleteCredentials();
+
+    if (authSource === 'env') {
+      console.log(
+        fmt.success(
+          `${icons.success} Stored credentials cleared (environment authentication still active)`
+        )
+      );
+      console.log(fmt.dim('Unset FIRECRAWL_API_KEY to fully log out.'));
+      return;
+    }
 
     console.log(fmt.success(`${icons.success} Logged out successfully`));
   } catch (error) {

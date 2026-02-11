@@ -892,6 +892,51 @@ firecrawl config clear exclude-extensions
 Shows authentication status, stored credentials location, user settings, command defaults, and runtime environment values.
 Use `--json` for machine-readable diagnostics.
 
+---
+
+### `doctor` - Diagnose local environment and services
+
+Run connectivity and environment diagnostics for local/self-hosted setups.
+
+```bash
+# Human-readable diagnostics
+firecrawl doctor
+
+# JSON diagnostics for automation
+firecrawl doctor --json
+firecrawl doctor --json --pretty
+
+# Run doctor, then stream AI troubleshooting guidance
+firecrawl doctor debug
+```
+
+Checks include:
+
+- Docker compose container status/health
+- Service URL reachability (docker hostname checks use localhost published ports when available, otherwise probe from a running compose container)
+- Directory write access (`FIRECRAWL_HOME`, embed queue, `QDRANT_DATA_DIR`)
+- AI CLI install check for configured model (`ASK_CLI` => gemini/claude `--version`)
+- Storage config files existence (`credentials.json`, `settings.json`, `job-history.json`)
+
+#### Doctor Options
+
+| Option           | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `--json`         | Output machine-readable JSON                 |
+| `--pretty`       | Pretty print JSON output                     |
+| `--timeout <ms>` | Per-check timeout in milliseconds (default: 3000) |
+
+#### Doctor Debug Options
+
+| Option              | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| `--timeout <ms>`    | Per-check timeout in milliseconds (default: 3000)  |
+| `--ai-timeout <ms>` | AI debug analysis timeout in milliseconds (default: 120000) |
+
+`doctor debug` backend selection:
+- Uses `ASK_CLI` (Gemini/Claude CLI) when configured.
+- Falls back to OpenAI-compatible endpoint when `ASK_CLI` is not set and all of `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` are configured.
+
 #### Binary File Exclusion
 
 The CLI automatically excludes common binary files during crawls to prevent worker crashes. By default, these extensions are excluded:
@@ -952,6 +997,40 @@ export QDRANT_URL=http://localhost:53333        # Qdrant vector database
 export QDRANT_COLLECTION=firecrawl              # optional, this is the default
 ```
 
+### TEI Deployment Options
+
+This repo includes two standalone TEI compose profiles:
+
+| Profile | Compose File | Env File | Recommended For | Default Port |
+| --- | --- | --- | --- | --- |
+| General GPU profile | `docker-compose.tei.yaml` | `.env.tei` | NVIDIA GPU hosts (optimized defaults) | `53020` |
+| Broad compatibility (Mixedbread) | `docker-compose.tei.mxbai.yaml` | `.env.tei.mxbai` | CPU-first or mixed hardware environments | `53021` |
+
+#### 1) General GPU TEI
+
+```bash
+cp .env.tei.example .env.tei
+docker compose --env-file .env.tei -f docker-compose.tei.yaml up -d
+```
+
+#### 2) Mixedbread (1024-dim, broader hardware)
+
+```bash
+cp .env.tei.mxbai.example .env.tei.mxbai
+docker compose --env-file .env.tei.mxbai -f docker-compose.tei.mxbai.yaml up -d
+```
+
+Notes:
+- CPU image defaults to `float32` in the Mixedbread profile (required for TEI CPU backend).
+- For RTX 40xx users on Mixedbread, set:
+  - `TEI_IMAGE=ghcr.io/huggingface/text-embeddings-inference:89-1.8.1`
+
+#### Choosing a collection for crawl auto-embedding
+
+`scrape`/`embed`/`query`/`retrieve` commands use the current CLI environment.
+
+`crawl` auto-embedding is processed asynchronously by `firecrawl-embedder`, so collection routing comes from the compose/runtime environment of that service (`QDRANT_COLLECTION` in `.env` for `docker-compose.yaml`), not from one-off shell overrides.
+
 ### Auto-Embed Behavior
 
 Content-producing commands automatically embed their output when TEI and Qdrant are configured. Use `--no-embed` on any command to skip:
@@ -966,8 +1045,8 @@ Without TEI/Qdrant configured, the CLI works normally and silently skips embeddi
 ### Queue Maintenance & Stale Recovery
 
 - `firecrawl embed cleanup` removes only failed/stale/stalled embedding jobs.
-- `firecrawl embed clear` removes all embedding queue jobs.
-- `firecrawl crawl cleanup` removes only failed/stale/stalled/not-found crawl queue/history entries.
+- To wipe the entire embedding queue, use `firecrawl embed clear`.
+- For crawl history, `firecrawl crawl cleanup` prunes failed/stale/stalled/not-found entries.
 - Crawl jobs that are actively progressing (for example, `completed < total`) are not removed by cleanup.
 - Crawl jobs in an in-progress state (`scraping`/`processing`/`running`) with `completed >= total` are treated as stale and removed by cleanup.
 - `firecrawl crawl clear` clears crawl queue/history and attempts to cancel active crawls.

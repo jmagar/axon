@@ -134,7 +134,7 @@ export async function executeSearch(
     const extractResults = <T>(
       field: 'web' | 'images' | 'news'
     ): T[] | undefined => {
-      return (result?.[field] || result?.data?.[field]) as T[] | undefined;
+      return (result?.[field] ?? result?.data?.[field]) as T[] | undefined;
     };
 
     // Check if result has the expected structure
@@ -155,7 +155,7 @@ export async function executeSearch(
     const errorMessage = buildApiErrorMessage(error, container.config.apiUrl);
     return {
       success: false,
-      error: `Search failed: ${errorMessage}`,
+      error: `Search operation failed: ${errorMessage}`,
     };
   }
 }

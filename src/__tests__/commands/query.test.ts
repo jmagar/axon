@@ -202,9 +202,11 @@ describe('executeQuery', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(2);
-    expect(result.data?.every((item) => item.url.includes('example.com'))).toBe(
-      true
-    );
+    expect(
+      result.data?.every((item) =>
+        new URL(item.url).hostname.endsWith('example.com')
+      )
+    ).toBe(true);
   });
 
   it('should rerank URL groups using lexical relevance', async () => {

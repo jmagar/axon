@@ -1,0 +1,62 @@
+name: tei
+
+services:
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    container_name: tei
+    restart: unless-stopped
+    ports:
+      - "${TEI_HTTP_PORT:-53020}:80"
+    volumes:
+      - ${TEI_DATA_DIR:-/home/jmagar/appdata/tei}:/data
+    command:
+      - --model-id
+      - ${TEI_EMBEDDING_MODEL:-Qwen/Qwen3-Embedding-0.6B}
+      - --dtype
+      - ${TEI_DTYPE:-float16}
+      - --default-prompt
+      - "${TEI_DEFAULT_PROMPT:-Instruct: Given a web search query, retrieve relevant passages that answer the query\\nQuery: }"
+      - --max-concurrent-requests
+      - "${TEI_MAX_CONCURRENT_REQUESTS:-80}"
+      - --max-batch-tokens
+      - "${TEI_MAX_BATCH_TOKENS:-163840}"
+      - --max-batch-requests
+      - "${TEI_MAX_BATCH_REQUESTS:-80}"
+      - --max-client-batch-size
+      - "${TEI_MAX_CLIENT_BATCH_SIZE:-128}"
+      - --pooling
+      - ${TEI_POOLING:-last-token}
+      - --tokenization-workers
+      - "${TEI_TOKENIZATION_WORKERS:-8}"
+      - --auto-truncate
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-0}
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:1024}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-8}
+      MKL_NUM_THREADS: ${MKL_NUM_THREADS:-8}
+      TOKENIZERS_PARALLELISM: "${TOKENIZERS_PARALLELISM:-true}"
+      CUDA_CACHE_DISABLE: "${CUDA_CACHE_DISABLE:-0}"
+      RUST_LOG: ${RUST_LOG:-text_embeddings_router=info}
+      HF_HUB_CACHE: /data/cache
+      HF_HUB_ENABLE_HF_TRANSFER: "${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+      HF_TOKEN: ${HF_TOKEN}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - jakenet
+
+networks:
+  jakenet:
+    external: true

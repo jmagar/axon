@@ -372,6 +372,22 @@ export const completionTree = {
     options: {},
   },
 
+  doctor: {
+    options: {
+      '--json': [],
+      '--pretty': [],
+      '--timeout': '<ms>',
+    },
+    subcommands: {
+      debug: {
+        options: {
+          '--timeout': '<ms>',
+          '--ai-timeout': '<ms>',
+        },
+      },
+    },
+  },
+
   sources: {
     options: {
       '--collection': '<name>',

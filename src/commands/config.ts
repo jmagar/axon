@@ -3,12 +3,13 @@
  * Handles configuration and authentication
  */
 
+import packageJson from '../../package.json';
 import { getAuthSource, isAuthenticated } from '../utils/auth';
 import { DEFAULT_EXCLUDE_EXTENSIONS } from '../utils/constants';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
 import { DEFAULT_API_URL, DEFAULT_QDRANT_COLLECTION } from '../utils/defaults';
 import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
-import { fmt, icons } from '../utils/theme';
+import { colorize, colors, fmt, icons } from '../utils/theme';
 
 export interface ConfigureOptions {
   apiKey?: string;
@@ -65,6 +66,9 @@ const COMMAND_DEFAULTS: Record<string, Record<string, string>> = {
   },
 };
 
+// EnvItem stores the raw value from the environment. Sensitive values (masked: true)
+// are only masked at display time — raw values are needed for config validation and
+// diagnostics. This is safe because the CLI process is short-lived and single-user.
 type EnvItem = {
   key: string;
   value: string;
@@ -95,7 +99,7 @@ type ConfigDiagnostics = {
 
 function maskValue(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length === 0) return 'Not set';
+  if (trimmed.length === 0 || trimmed === 'Not set') return 'Not set';
   if (trimmed.length >= 16) {
     return `${trimmed.substring(0, 6)}...${trimmed.slice(-4)}`;
   }
@@ -188,7 +192,7 @@ function buildRuntimeEnvItems(): EnvItem[] {
 
 function printCommandDefaults(): void {
   console.log('');
-  console.log(fmt.primary('Command Defaults'));
+  console.log(fmt.bold(colorize(colors.primary, 'Command Defaults')));
   for (const [command, defaults] of Object.entries(COMMAND_DEFAULTS)) {
     console.log(`  ${fmt.dim(`${command}:`)}`);
     for (const [key, value] of Object.entries(defaults)) {
@@ -199,7 +203,7 @@ function printCommandDefaults(): void {
 
 function printRuntimeEnvironment(): void {
   console.log('');
-  console.log(fmt.primary('Runtime Environment'));
+  console.log(fmt.bold(colorize(colors.primary, 'Runtime Environment')));
   for (const item of buildRuntimeEnvItems()) {
     const value = item.masked ? maskValue(item.value) : item.value;
     const warning = item.warning ? ` ${fmt.warning(`(${item.warning})`)}` : '';
@@ -261,10 +265,10 @@ function buildConfigDiagnostics(): ConfigDiagnostics {
 }
 
 /**
- * Validate setting key and show error if invalid
- * @returns true if valid, false if invalid
+ * Validate setting key, throwing (via process.exit) if invalid.
+ * Always returns true for valid keys; never returns false.
  */
-function validateSettingKey(key: string): boolean {
+function validateSettingKey(key: string): true {
   if (key !== 'exclude-paths' && key !== 'exclude-extensions') {
     console.error(fmt.error(`Unknown setting "${key}".`));
     console.error(
@@ -311,28 +315,41 @@ export async function viewConfig(
   }
 
   console.log('');
-  console.log(fmt.bold('Firecrawl Configuration'));
+  console.log(
+    `  ${fmt.primary(`${icons.success} firecrawl`)} ${fmt.dim('cli')} ${fmt.dim(`v${packageJson.version}`)}`
+  );
+  console.log('');
+  console.log(`  ${fmt.bold(colorize(colors.primary, 'Configuration'))}`);
   console.log('');
 
   if (diagnostics.authenticated) {
     console.log(
-      `${fmt.success(icons.success)} Authenticated${diagnostics.authSourceLabel ? ` ${fmt.dim(diagnostics.authSourceLabel)}` : ''}`
+      `  ${fmt.success(icons.active)} Authenticated${diagnostics.authSourceLabel ? ` ${fmt.dim(diagnostics.authSourceLabel)}` : ''}`
     );
     console.log('');
-    console.log(`  ${fmt.dim('API Key:')}  ${diagnostics.apiKeyMasked}`);
-    console.log(`  ${fmt.dim('API URL:')}  ${diagnostics.apiUrl}`);
-    console.log(`  ${fmt.dim('Config:')}   ${diagnostics.configPath}`);
+    console.log(
+      `  ${colorize(colors.primary, 'API URL:')} ${diagnostics.apiUrl}`
+    );
+    console.log(`  ${fmt.dim('API Key:')} ${diagnostics.apiKeyMasked}`);
+    console.log(`  ${fmt.dim('Config:')} ${diagnostics.configPath}`);
 
     // Show settings
+    console.log('');
+    console.log(fmt.bold(colorize(colors.primary, 'Settings')));
     if (diagnostics.settings.excludePaths.length > 0) {
-      console.log('');
       console.log(
         `  ${fmt.dim('Exclude Paths:')} ${diagnostics.settings.excludePaths.join(', ')}`
       );
+    } else {
+      console.log(`  ${fmt.dim('Exclude Paths:')} Not configured`);
     }
     if (diagnostics.settings.excludeExtensions.length > 0) {
       console.log(
         `  ${fmt.dim('Exclude Extensions:')} ${diagnostics.settings.excludeExtensions.join(', ')}`
+      );
+    } else {
+      console.log(
+        `  ${fmt.dim('Exclude Extensions:')} Not configured (using built-in defaults)`
       );
     }
 
@@ -340,11 +357,11 @@ export async function viewConfig(
     printRuntimeEnvironment();
 
     console.log('');
-    console.log(fmt.dim('Commands:'));
+    console.log(fmt.bold(colorize(colors.primary, 'Commands')));
     console.log(fmt.dim('  firecrawl logout       Clear credentials'));
     console.log(fmt.dim('  firecrawl config       Re-authenticate'));
   } else {
-    console.log(`${fmt.warning(icons.pending)} Not authenticated`);
+    console.log(`  ${fmt.error(icons.active)} Not authenticated`);
     console.log('');
     console.log(fmt.dim('Run any command to start authentication, or use:'));
     console.log(

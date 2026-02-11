@@ -58,11 +58,7 @@ const HISTORY_DIR = getStorageRoot();
 const HISTORY_PATH = getJobHistoryPath();
 
 async function ensureHistoryDir(): Promise<void> {
-  try {
-    await fs.access(HISTORY_DIR);
-  } catch {
-    await fs.mkdir(HISTORY_DIR, { recursive: true, mode: 0o700 });
-  }
+  await fs.mkdir(HISTORY_DIR, { recursive: true, mode: 0o700 });
 }
 
 /**
@@ -71,7 +67,7 @@ async function ensureHistoryDir(): Promise<void> {
 async function migrateLegacyHistory(): Promise<void> {
   // Skip if already migrated (idempotency check)
   try {
-    await fs.access(HISTORY_PATH);
+    await fs.readFile(HISTORY_PATH, 'utf-8');
     return; // Already migrated
   } catch {
     // HISTORY_PATH doesn't exist, proceed with migration
@@ -100,12 +96,6 @@ async function migrateLegacyHistory(): Promise<void> {
 async function loadHistory(): Promise<JobHistoryData> {
   // Attempt migration first (idempotent)
   await migrateLegacyHistory();
-
-  try {
-    await fs.access(HISTORY_PATH);
-  } catch {
-    return { crawl: [], batch: [], extract: [] };
-  }
 
   try {
     const data = await fs.readFile(HISTORY_PATH, 'utf-8');

@@ -9,6 +9,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
+import { isJobNotFoundError } from './job-errors';
 import { getEmbedQueueDir } from './storage-paths';
 import { fmt } from './theme';
 
@@ -564,12 +565,7 @@ export async function cleanupOldJobs(
 
 function isIrrecoverableError(error: string | undefined): boolean {
   if (!error) return false;
-  const normalized = error.toLowerCase();
-  return (
-    normalized.includes('job not found') ||
-    normalized.includes('invalid job id') ||
-    normalized.includes('invalid job id format')
-  );
+  return isJobNotFoundError(error);
 }
 
 /**

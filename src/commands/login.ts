@@ -3,8 +3,16 @@
  * Handles API key entry for authentication
  */
 
-import { interactiveLogin, isAuthenticated } from '../utils/auth';
-import { getConfigDirectoryPath, saveCredentials } from '../utils/credentials';
+import {
+  getAuthSource,
+  interactiveLogin,
+  isAuthenticated,
+} from '../utils/auth';
+import {
+  getConfigDirectoryPath,
+  loadCredentials,
+  saveCredentials,
+} from '../utils/credentials';
 import { DEFAULT_API_URL } from '../utils/defaults';
 import { fmt, icons } from '../utils/theme';
 
@@ -23,8 +31,32 @@ export async function handleLoginCommand(
 
   // If already authenticated, let them know
   if (isAuthenticated() && !options.apiKey) {
+    const authSource = getAuthSource();
+    const storedCredentials = loadCredentials();
+
     console.log(`${icons.success} You are already logged in.`);
-    console.log(fmt.dim(`Credentials stored at: ${getConfigDirectoryPath()}`));
+    if (authSource === 'env') {
+      console.log(fmt.dim('Authentication source: FIRECRAWL_API_KEY'));
+      if (storedCredentials?.apiKey) {
+        console.log(
+          fmt.dim(
+            `Stored credentials also exist at: ${getConfigDirectoryPath()}`
+          )
+        );
+      }
+      console.log('');
+      console.log(fmt.dim('To login with a different account, either:'));
+      console.log(fmt.dim('  unset FIRECRAWL_API_KEY'));
+      console.log(fmt.dim('  firecrawl login'));
+      console.log(fmt.dim('Or use: firecrawl login --api-key <key>'));
+      return;
+    }
+
+    if (storedCredentials?.apiKey) {
+      console.log(
+        fmt.dim(`Credentials stored at: ${getConfigDirectoryPath()}`)
+      );
+    }
     console.log('');
     console.log(fmt.dim('To login with a different account, run:'));
     console.log(fmt.dim('  firecrawl logout'));

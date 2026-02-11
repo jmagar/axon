@@ -10,6 +10,7 @@ import type {
   CrawlErrorsResult,
   CrawlStatusResult,
 } from '../../types/crawl';
+import { isJobNotFoundError } from '../../utils/job-errors';
 import {
   clearJobTypeHistory,
   getRecentJobIds,
@@ -119,14 +120,6 @@ export async function executeCrawlErrors(
   }
 }
 
-function isNotFoundError(error: string): boolean {
-  const normalized = error.toLowerCase();
-  return (
-    normalized.includes('job not found') ||
-    normalized.includes('invalid job id')
-  );
-}
-
 function isStaleInProgressStatus(status: {
   status?: string;
   total?: number;
@@ -155,6 +148,8 @@ export async function executeCrawlClear(
 ): Promise<CrawlClearResult> {
   try {
     const app = container.getFirecrawlClient();
+    // Note: capped at 100 most-recent IDs, so clearedHistory may underreport
+    // if more than 100 crawl jobs exist in the local history file.
     const recentCrawlIds = await getRecentJobIds('crawl', 100);
 
     let cancelledActive = 0;
@@ -203,6 +198,8 @@ export async function executeCrawlCleanup(
     let removedNotFound = 0;
     const toRemove: string[] = [];
 
+    // Sequential API calls: acceptable for a CLI tool where cleanup runs
+    // infrequently and the Firecrawl API has no batch-status endpoint.
     for (const id of recentCrawlIds) {
       try {
         const status = await app.getCrawlStatus(id, { autoPaginate: false });
@@ -230,7 +227,7 @@ export async function executeCrawlCleanup(
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (isNotFoundError(message)) {
+        if (isJobNotFoundError(message)) {
           removedNotFound++;
           toRemove.push(id);
         }

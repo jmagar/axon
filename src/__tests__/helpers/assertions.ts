@@ -60,6 +60,26 @@ export function expectErrorResult(
 }
 
 /**
+ * Assert that a mock was called once with a first argument and optional second argument
+ *
+ * @param mockFn - The mock function to check
+ * @param expectedFirst - Expected first argument (URL, query, etc.)
+ * @param expectedOptions - Expected options object (second argument)
+ */
+function expectCalledWithFirstArgAndOptions(
+  mockFn: Mock,
+  expectedFirst: string,
+  expectedOptions?: Record<string, unknown>
+) {
+  expect(mockFn).toHaveBeenCalledTimes(1);
+  if (expectedOptions) {
+    expect(mockFn).toHaveBeenCalledWith(expectedFirst, expectedOptions);
+  } else {
+    expect(mockFn).toHaveBeenCalledWith(expectedFirst);
+  }
+}
+
+/**
  * Assert that a mock was called with expected URL and options
  *
  * @param mockFn - The mock function to check
@@ -71,12 +91,7 @@ export function expectCalledWithUrlAndOptions(
   expectedUrl: string,
   expectedOptions?: Record<string, unknown>
 ) {
-  expect(mockFn).toHaveBeenCalledTimes(1);
-  if (expectedOptions) {
-    expect(mockFn).toHaveBeenCalledWith(expectedUrl, expectedOptions);
-  } else {
-    expect(mockFn).toHaveBeenCalledWith(expectedUrl);
-  }
+  expectCalledWithFirstArgAndOptions(mockFn, expectedUrl, expectedOptions);
 }
 
 /**
@@ -91,12 +106,7 @@ export function expectCalledWithQueryAndOptions(
   expectedQuery: string,
   expectedOptions?: Record<string, unknown>
 ) {
-  expect(mockFn).toHaveBeenCalledTimes(1);
-  if (expectedOptions) {
-    expect(mockFn).toHaveBeenCalledWith(expectedQuery, expectedOptions);
-  } else {
-    expect(mockFn).toHaveBeenCalledWith(expectedQuery);
-  }
+  expectCalledWithFirstArgAndOptions(mockFn, expectedQuery, expectedOptions);
 }
 
 /**
@@ -228,6 +238,6 @@ export function expectProperties<T extends Record<string, unknown>>(
 ) {
   for (const [key, value] of Object.entries(properties)) {
     expect(obj).toHaveProperty(key);
-    expect(obj[key]).toBe(value);
+    expect(obj[key]).toEqual(value);
   }
 }

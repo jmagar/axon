@@ -180,7 +180,7 @@ QDRANT_URL=http://localhost:53333
 
 1. Runtime flags (`--api-key`)
 2. Environment variables (`FIRECRAWL_API_KEY`, `TEI_URL`, `QDRANT_URL`)
-3. OS credential store / fallback file (`~/.config/firecrawl-cli/`)
+3. OS credential store / fallback file (`~/.firecrawl`)
 4. Defaults
 
 ## Ask Command
@@ -198,6 +198,7 @@ The `firecrawl ask` command provides Q&A capabilities over your embedded documen
 6. Stream response back to stdout
 
 **Usage**:
+
 ```bash
 # Basic usage - uses Haiku by default for speed and cost
 firecrawl ask "How do I create a Claude Code skill?"
@@ -238,6 +239,7 @@ firecrawl ask "What is Qdrant?" --limit 5 --model opus --domain qdrant.tech
 - **Maintained**: `claude` CLI is officially maintained by Anthropic
 
 **Example Session**:
+
 ```bash
 $ firecrawl ask "What are the main features of Firecrawl?"
   ◉ Searching for relevant documents...

@@ -14,7 +14,6 @@ import { MAX_CONCURRENT_EMBEDS } from '../utils/constants';
 import { normalizeJobId } from '../utils/job';
 import { recordJob } from '../utils/job-history';
 import { buildApiErrorMessage } from '../utils/network-error';
-import { fmt } from '../utils/theme';
 import {
   normalizeUrlArgs,
   requireContainer,
@@ -201,15 +200,15 @@ import { Command } from 'commander';
 async function handleExtractStatusCommand(
   container: IContainer,
   jobId: string,
-  options: { output?: string; pretty?: boolean }
+  options: { output?: string; pretty?: boolean },
+  command: Command
 ): Promise<void> {
   try {
     const app = container.getFirecrawlClient();
     const status = await app.getExtractStatus(jobId);
 
     if (status.error) {
-      console.error(fmt.error(status.error));
-      process.exit(1);
+      command.error(status.error);
     }
 
     await recordJob('extract', jobId);
@@ -230,8 +229,7 @@ async function handleExtractStatusCommand(
     writeCommandOutput(outputContent, options);
   } catch (error: unknown) {
     const errorMessage = buildApiErrorMessage(error, container.config.apiUrl);
-    console.error(fmt.error(errorMessage));
-    process.exit(1);
+    command.error(errorMessage);
   }
 }
 
@@ -292,8 +290,7 @@ export function createExtractCommand(container?: IContainer): Command {
 
       // Validate at least one URL provided
       if (urls.length === 0) {
-        console.error(fmt.error('At least one URL is required.'));
-        process.exit(1);
+        command.error('At least one URL is required.');
       }
 
       await handleExtractCommand(container, {
@@ -326,10 +323,15 @@ export function createExtractCommand(container?: IContainer): Command {
       // Normalize job ID to support both raw IDs and URLs
       const normalizedJobId = normalizeJobId(jobId);
 
-      await handleExtractStatusCommand(container, normalizedJobId, {
-        output: options.output,
-        pretty: options.pretty,
-      });
+      await handleExtractStatusCommand(
+        container,
+        normalizedJobId,
+        {
+          output: options.output,
+          pretty: options.pretty,
+        },
+        command
+      );
     });
 
   // Store container if provided (mainly for testing)

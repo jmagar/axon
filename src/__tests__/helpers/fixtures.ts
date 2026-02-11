@@ -131,6 +131,7 @@ export interface QdrantPointOptions {
   contentType?: string;
   scrapedAt?: string;
   chunkIndex?: number;
+  totalChunks?: number;
   chunkHeader?: string;
   chunkText?: string;
   vector?: number[];
@@ -156,6 +157,7 @@ export function createQdrantPoint(
       content_type: options?.contentType ?? 'text/html',
       scraped_at: options?.scrapedAt ?? new Date().toISOString(),
       chunk_index: options?.chunkIndex ?? 0,
+      total_chunks: options?.totalChunks ?? 1,
       chunk_header: options?.chunkHeader ?? 'Introduction',
       chunk_text: options?.chunkText ?? 'Test content',
     },

@@ -1,0 +1,52 @@
+name: tei-mxbai
+
+services:
+  tei:
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.8.1}
+    container_name: tei-mxbai
+    restart: unless-stopped
+    ports:
+      - "${TEI_HTTP_PORT:-53021}:80"
+    volumes:
+      - ${TEI_DATA_DIR:-/home/jmagar/appdata/tei-mxbai}:/data
+    command:
+      - --model-id
+      - ${TEI_EMBEDDING_MODEL:-mixedbread-ai/mxbai-embed-large-v1}
+      - --dtype
+      - ${TEI_DTYPE:-float32}
+      - --default-prompt
+      - "${TEI_DEFAULT_PROMPT:-Represent this sentence for searching relevant passages: }"
+      - --max-concurrent-requests
+      - "${TEI_MAX_CONCURRENT_REQUESTS:-16}"
+      - --max-batch-tokens
+      - "${TEI_MAX_BATCH_TOKENS:-8192}"
+      - --max-batch-requests
+      - "${TEI_MAX_BATCH_REQUESTS:-16}"
+      - --max-client-batch-size
+      - "${TEI_MAX_CLIENT_BATCH_SIZE:-16}"
+      - --pooling
+      - ${TEI_POOLING:-cls}
+      - --tokenization-workers
+      - "${TEI_TOKENIZATION_WORKERS:-4}"
+      - --auto-truncate
+    environment:
+      HF_HUB_CACHE: /data/cache
+      HF_HUB_ENABLE_HF_TRANSFER: "${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+      HF_TOKEN: ${HF_TOKEN}
+      RUST_LOG: ${RUST_LOG:-text_embeddings_router=info}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+      MKL_NUM_THREADS: ${MKL_NUM_THREADS:-4}
+      TOKENIZERS_PARALLELISM: "${TOKENIZERS_PARALLELISM:-true}"
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:512}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - jakenet
+
+networks:
+  jakenet:
+    external: true

@@ -220,6 +220,9 @@ export class QdrantService implements IQdrantService {
 
   /**
    * Delete points with filter
+   * Skips the request if the filter has no conditions (empty must array),
+   * since that would either be a no-op or unexpectedly delete all points.
+   * Use deleteAll() explicitly to remove all points in a collection.
    */
   private async deleteWithFilter(
     collection: string,
@@ -227,6 +230,8 @@ export class QdrantService implements IQdrantService {
       must: Array<{ key: string; match: { value: string | number | boolean } }>;
     }
   ): Promise<void> {
+    if (filter.must.length === 0) return;
+
     await this.postToQdrant(
       `/collections/${collection}/points/delete`,
       { filter },
@@ -549,9 +554,16 @@ export class QdrantService implements IQdrantService {
   /**
    * Delete all points in collection
    *
+   * Uses an empty must filter which Qdrant interprets as "match all points".
+   * Bypasses deleteWithFilter's empty-array guard since this is intentional.
+   *
    * @param collection Collection name
    */
   async deleteAll(collection: string): Promise<void> {
-    await this.deleteWithFilter(collection, { must: [] });
+    await this.postToQdrant(
+      `/collections/${collection}/points/delete`,
+      { filter: { must: [] } },
+      'Qdrant delete all failed'
+    );
   }
 }

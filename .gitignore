@@ -16,6 +16,8 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+.env.tei
+.env.tei.mxbai
 
 # IDE
 .vscode/

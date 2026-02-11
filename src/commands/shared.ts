@@ -1,6 +1,5 @@
 import type { Command } from 'commander';
 import type { IContainer } from '../container/types';
-import { fmt } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 
 interface CommandWithContainer extends Command {
@@ -82,7 +81,9 @@ export function addVectorOutputOptions(command: Command): Command {
  */
 export function normalizeUrlArgs(rawUrls: string[]): string[] {
   return rawUrls
-    .flatMap((u) => (u.includes('\n') ? u.split('\n').filter(Boolean) : [u]))
+    .flatMap((u) => (u.includes('\n') ? u.split('\n') : [u]))
+    .map((url) => url.trim())
+    .filter(Boolean)
     .map(normalizeUrl);
 }
 
@@ -146,10 +147,9 @@ export function resolveRequiredUrl(
 ): string {
   const url = positionalUrl || optionsUrl;
   if (!url) {
-    console.error(
-      fmt.error('URL is required. Provide it as argument or use --url option.')
+    throw new Error(
+      'URL is required. Provide it as argument or use --url option.'
     );
-    process.exit(1);
   }
   return url;
 }

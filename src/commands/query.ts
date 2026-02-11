@@ -580,13 +580,19 @@ function formatCompact(
   items: QueryResultItem[],
   query: string,
   verboseSnippets: boolean,
-  limit: number = 10
+  _limit: number = 10
 ): string {
   if (items.length === 0) return fmt.dim('No results found.');
 
+  // Items are already deduplicated and limited by executeQuery;
+  // just re-group by URL for display (no re-ranking needed).
   const grouped = groupByBaseUrl(items);
-
-  const sortedGroups = rankUrlGroups(grouped, query, limit);
+  const sortedGroups = Array.from(grouped.entries()).map(
+    ([baseUrl, groupItems]) => {
+      const sorted = [...groupItems].sort((a, b) => b.score - a.score);
+      return { baseUrl, items: sorted };
+    }
+  );
 
   // Format each group (show highest-scoring chunk)
   const lines: string[] = [];
@@ -645,15 +651,25 @@ function formatCompact(
  * @param items Query result items to format
  * @returns Formatted string with full chunk text
  */
-function formatFull(items: QueryResultItem[], query: string): string {
+function formatFull(
+  items: QueryResultItem[],
+  query: string,
+  limit: number = 10
+): string {
   if (items.length === 0) return fmt.dim('No results found.');
+
+  // Items are already deduplicated and limited by executeQuery;
+  // just re-group by URL for display.
+  const grouped = groupByBaseUrl(items);
+  const limitedItems = items;
+
   const lines: string[] = [];
   lines.push('');
   lines.push(queryHeading('Query Results'));
   lines.push(`  Query: ${fmt.dim(`"${query}"`)}`);
   lines.push(`  ${fmt.primary('Results:')}`);
   lines.push('');
-  const results = items
+  const results = limitedItems
     .map((item) => {
       const header = item.chunkHeader ? ` - ${item.chunkHeader}` : '';
       return `    ${fmt.info(icons.bullet)} ${formatScore(item.score)} ${fmt.primary(item.url)}${fmt.dim(header)}\n\n${item.chunkText}`;
@@ -677,15 +693,18 @@ function formatGrouped(
   items: QueryResultItem[],
   full: boolean,
   query: string,
-  verboseSnippets: boolean
+  verboseSnippets: boolean,
+  _limit: number = 10
 ): string {
   if (items.length === 0) return fmt.dim('No results found.');
 
-  const groups = rankUrlGroups(
-    groupByBaseUrl(items),
-    query,
-    Number.MAX_SAFE_INTEGER
-  );
+  // Items are already deduplicated and limited by executeQuery;
+  // just re-group by URL for display (no re-ranking needed).
+  const grouped = groupByBaseUrl(items);
+  const groups = Array.from(grouped.entries()).map(([baseUrl, groupItems]) => {
+    const sorted = [...groupItems].sort((a, b) => b.score - a.score);
+    return { baseUrl, items: sorted };
+  });
 
   const parts: string[] = [];
   parts.push('');
@@ -773,11 +792,12 @@ export async function handleQueryCommand(
         data,
         !!options.full,
         options.query,
-        !!options.verboseSnippets
+        !!options.verboseSnippets,
+        options.limit || 10
       );
     }
     if (options.full) {
-      return formatFull(data, options.query);
+      return formatFull(data, options.query, options.limit || 10);
     }
     return formatCompact(
       data,
@@ -811,8 +831,8 @@ export async function handleQueryCommand(
     return;
   }
 
-  console.log('');
-  console.log(
+  console.error('');
+  console.error(
     fmt.dim(
       `${icons.warning} Query failed after ${durationMs}ms (${result.error ?? 'Unknown error'})`
     )

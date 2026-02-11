@@ -344,4 +344,113 @@ describe('executeCrawlCleanup', () => {
       removedTotal: 3,
     });
   });
+
+  it('should handle empty job list gracefully', async () => {
+    vi.mocked(getRecentJobIds).mockResolvedValue([]);
+    vi.mocked(removeJobIds).mockResolvedValue(undefined);
+
+    const mockClient = {
+      getCrawlStatus: vi.fn(),
+    };
+    const container = createContainer(mockClient);
+
+    const result = await executeCrawlCleanup(container);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      scanned: 0,
+      removedFailed: 0,
+      removedStale: 0,
+      removedNotFound: 0,
+      removedTotal: 0,
+    });
+    expect(mockClient.getCrawlStatus).not.toHaveBeenCalled();
+    expect(removeJobIds).toHaveBeenCalledWith('crawl', []);
+  });
+
+  it('should return error when getRecentJobIds throws', async () => {
+    vi.mocked(getRecentJobIds).mockRejectedValue(
+      new Error('File system error')
+    );
+
+    const mockClient = {
+      getCrawlStatus: vi.fn(),
+    };
+    const container = createContainer(mockClient);
+
+    const result = await executeCrawlCleanup(container);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('File system error');
+  });
+
+  it('should treat cancelled and error statuses as failed', async () => {
+    vi.mocked(getRecentJobIds).mockResolvedValue([
+      'job-cancelled',
+      'job-error',
+    ]);
+    vi.mocked(removeJobIds).mockResolvedValue(undefined);
+
+    const mockClient = {
+      getCrawlStatus: vi.fn().mockImplementation(async (id: string) => {
+        if (id === 'job-cancelled') {
+          return { id, status: 'cancelled', total: 10, completed: 3 };
+        }
+        return { id, status: 'error', total: 5, completed: 0 };
+      }),
+    };
+    const container = createContainer(mockClient);
+
+    const result = await executeCrawlCleanup(container);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.removedFailed).toBe(2);
+    expect(result.data?.removedTotal).toBe(2);
+  });
+});
+
+describe('executeCrawlClear - edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should handle empty crawl history', async () => {
+    vi.mocked(getRecentJobIds).mockResolvedValue([]);
+    vi.mocked(clearJobTypeHistory).mockResolvedValue(undefined);
+
+    const mockClient = {
+      getActiveCrawls: vi.fn().mockResolvedValue({ crawls: [] }),
+      cancelCrawl: vi.fn(),
+    };
+    const container = createContainer(mockClient);
+
+    const result = await executeCrawlClear(container);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      clearedHistory: 0,
+      cancelledActive: 0,
+    });
+    expect(mockClient.cancelCrawl).not.toHaveBeenCalled();
+  });
+
+  it('should continue clearing history when getActiveCrawls fails', async () => {
+    vi.mocked(getRecentJobIds).mockResolvedValue(['job-1']);
+    vi.mocked(clearJobTypeHistory).mockResolvedValue(undefined);
+
+    const mockClient = {
+      getActiveCrawls: vi.fn().mockRejectedValue(new Error('API unavailable')),
+      cancelCrawl: vi.fn(),
+    };
+    const container = createContainer(mockClient);
+
+    const result = await executeCrawlClear(container);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      clearedHistory: 1,
+      cancelledActive: 0,
+    });
+    expect(clearJobTypeHistory).toHaveBeenCalledWith('crawl');
+  });
 });

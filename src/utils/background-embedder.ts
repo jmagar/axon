@@ -36,6 +36,7 @@ import {
   extractEmbedderWebhookJobInfo,
   getEmbedderWebhookSettings,
 } from './embedder-webhook';
+import { isJobNotFoundError } from './job-errors';
 import { fmt } from './theme';
 
 const POLL_INTERVAL_MS = 10000; // 10 seconds (retry base)
@@ -44,14 +45,13 @@ const MAX_BACKOFF_MS = 60000; // 1 minute
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB request body limit
 
 function isPermanentJobError(error: string): boolean {
-  const normalized = error.toLowerCase();
-  return (
-    normalized.includes('job not found') ||
-    normalized.includes('invalid job id') ||
-    normalized.includes('invalid job id format')
-  );
+  return isJobNotFoundError(error);
 }
 
+// String matching is necessary here because the Firecrawl API returns plain
+// error messages (e.g. "Crawl still scraping"), not structured error codes.
+// The message is generated locally in processEmbedJob (line ~152) so the
+// format is stable within this codebase.
 function isCrawlStillRunningError(error: string): boolean {
   return error.toLowerCase().startsWith('crawl still ');
 }
