@@ -871,26 +871,91 @@ firecrawl config
 firecrawl config --json
 firecrawl view-config --json
 
-# Set default exclude paths for crawls
+# Legacy top-level settings (still supported)
 firecrawl config set exclude-paths "/admin,/api,/login"
-
-# Set default exclude extensions (overrides built-in defaults)
 firecrawl config set exclude-extensions ".pkg,.exe,.dmg,.zip"
-
-# Get current settings (individual)
 firecrawl config get exclude-paths
 firecrawl config get exclude-extensions
-
-# Get combined view of both paths and extensions
 firecrawl config get excludes
 
-# Clear settings (reverts to built-in defaults for extensions)
+# Clear legacy top-level settings
 firecrawl config clear exclude-paths
 firecrawl config clear exclude-extensions
+
+# Nested settings (new)
+firecrawl config get crawl.maxDepth
+firecrawl config set crawl.maxDepth 10
+firecrawl config set search.limit 20
+firecrawl config reset crawl.maxDepth
+firecrawl config reset
 ```
 
 Shows authentication status, stored credentials location, user settings, command defaults, and runtime environment values.
 Use `--json` for machine-readable diagnostics.
+
+#### Settings File and Precedence
+
+- Settings file path:
+  - Default: `~/.firecrawl/settings.json`
+  - Override root with `FIRECRAWL_HOME`; file becomes `$FIRECRAWL_HOME/settings.json`
+- Creation/materialization:
+  - The CLI auto-creates `settings.json` on first use.
+  - Existing partial files are normalized to a full schema so defaults are visible and editable.
+- Runtime precedence:
+  - `CLI flags > settings.json > built-in defaults`
+- Migration/recovery behavior:
+  - Legacy settings locations are migrated automatically.
+  - Invalid settings files are backed up and replaced with valid defaults.
+  - Backups are written as timestamped files beside `settings.json` (for example: `settings.json.backup-<timestamp>` or `settings.json.invalid-backup-<timestamp>`).
+
+#### Supported Nested `config` Keys
+
+`config get/set/reset` currently supports these typed nested keys:
+
+- `crawl.maxDepth`
+- `crawl.sitemap`
+- `search.limit`
+- `scrape.timeoutSeconds`
+- `http.timeoutMs`
+- `chunking.maxChunkSize`
+- `embedding.maxConcurrent`
+- `polling.intervalMs`
+
+#### Example `settings.json`
+
+```json
+{
+  "settingsVersion": 2,
+  "defaultExcludePaths": ["/admin/*", "/private/*"],
+  "defaultExcludeExtensions": [".exe", ".pkg", ".zip"],
+  "crawl": {
+    "maxDepth": 5,
+    "sitemap": "include",
+    "ignoreQueryParameters": true,
+    "allowSubdomains": true,
+    "onlyMainContent": true
+  },
+  "scrape": {
+    "timeoutSeconds": 15,
+    "formats": ["markdown"]
+  },
+  "search": {
+    "limit": 5,
+    "timeoutMs": 60000
+  },
+  "http": {
+    "timeoutMs": 30000,
+    "maxRetries": 3
+  },
+  "embedding": {
+    "maxConcurrent": 10,
+    "batchSize": 24
+  },
+  "polling": {
+    "intervalMs": 5000
+  }
+}
+```
 
 ---
 

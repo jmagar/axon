@@ -23,9 +23,9 @@ import {
   validateAllowedValues,
   writeCommandOutput,
 } from '../utils/command';
-import { MAX_CONCURRENT_EMBEDS } from '../utils/constants';
 import { displayCommandInfo } from '../utils/display';
 import { buildApiErrorMessage } from '../utils/network-error';
+import { getSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
 import { requireContainer } from './shared';
 
@@ -328,9 +328,10 @@ export async function handleSearchCommand(
   // Auto-embed only when --scrape was used (snippets are too noisy)
   if (options.embed !== false && options.scrape && result.data?.web) {
     const pipeline = container.getEmbedPipeline();
+    const maxConcurrentEmbeds = getSettings().embedding.maxConcurrent;
 
     // Use p-limit for concurrency control
-    const limit = pLimit(MAX_CONCURRENT_EMBEDS);
+    const limit = pLimit(maxConcurrentEmbeds);
     const embedTasks = result.data.web
       .filter((item) => item.markdown || item.html)
       .map((item) =>
@@ -356,6 +357,8 @@ import type { SearchCategory, SearchSource } from '../types/search';
  * Create and configure the search command
  */
 export function createSearchCommand(): Command {
+  const settings = getSettings();
+
   const searchCmd = new Command('search')
     .description('Search the web using Firecrawl')
     .argument('<query>', 'Search query')
@@ -363,7 +366,7 @@ export function createSearchCommand(): Command {
       '--limit <number>',
       'Maximum number of results (default: 5, max: 100)',
       (val) => parseInt(val, 10),
-      5
+      settings.search.limit
     )
     .option(
       '--sources <sources>',
@@ -389,12 +392,12 @@ export function createSearchCommand(): Command {
       '--timeout <ms>',
       'Timeout in milliseconds (default: 60000)',
       (val) => parseInt(val, 10),
-      60000
+      settings.search.timeoutMs
     )
     .option(
       '--ignore-invalid-urls',
       'Exclude URLs invalid for other Firecrawl endpoints (default: true)',
-      true
+      settings.search.ignoreInvalidUrls
     )
     .option(
       '--no-ignore-invalid-urls',
@@ -403,7 +406,7 @@ export function createSearchCommand(): Command {
     .option(
       '--scrape',
       'Enable scraping of search results (default: true)',
-      true
+      settings.search.scrape
     )
     .option('--no-scrape', 'Disable scraping of search results')
     .option(
@@ -413,7 +416,7 @@ export function createSearchCommand(): Command {
     .option(
       '--only-main-content',
       'Include only main content when scraping (default: true)',
-      true
+      settings.search.onlyMainContent
     )
     .option('--no-embed', 'Skip auto-embedding of search results')
     .option(
@@ -460,6 +463,8 @@ export function createSearchCommand(): Command {
         scrapeFormats = options.scrapeFormats
           .split(',')
           .map((f: string) => f.trim()) as ScrapeFormat[];
+      } else {
+        scrapeFormats = settings.search.scrapeFormats as ScrapeFormat[];
       }
 
       const searchOptions = {

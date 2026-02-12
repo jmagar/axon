@@ -12,6 +12,7 @@ export interface AskOptions {
   domain?: string;
   collection?: string;
   model?: string;
+  maxContext?: number;
 }
 
 /**

@@ -120,7 +120,7 @@ async function streamCliDebug(
   timeoutMs: number
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const aiProcess = spawn(backend.cli, ['--model', backend.model], {
+    const aiProcess = spawn(backend.cli, ['--model', backend.model, '-p'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stderrOutput = '';

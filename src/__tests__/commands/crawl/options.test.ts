@@ -8,15 +8,19 @@ import type { CrawlOptions } from '../../../types/crawl';
 
 // Mock the settings module
 vi.mock('../../../utils/settings', () => ({
-  loadSettings: vi.fn(),
+  getSettings: vi.fn(),
 }));
 
-import { loadSettings } from '../../../utils/settings';
+import { getSettings } from '../../../utils/settings';
+
+const mockGetSettings = getSettings as unknown as {
+  mockReturnValue: (value: unknown) => void;
+};
 
 describe('buildCrawlOptions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
   });
 
   afterEach(() => {});
@@ -224,7 +228,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should merge CLI excludes with defaults', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/login', '/logout'],
     });
 
@@ -234,7 +238,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should deduplicate merged paths', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/admin', '/logout'],
     });
 
@@ -244,7 +248,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should skip defaults when requested', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/login', '/logout'],
     });
 
@@ -254,7 +258,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should handle undefined CLI excludes', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/login', '/logout'],
     });
 
@@ -264,7 +268,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should handle missing default excludes', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const result = mergeExcludePaths(['/admin'], false);
 
@@ -273,7 +277,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should return empty array when defaults are skipped and settings/CLI are empty', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const result = mergeExcludePaths(undefined, true);
 
@@ -281,7 +285,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should include built-in defaults when settings and CLI are empty', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const result = mergeExcludePaths(undefined, false);
 
@@ -291,7 +295,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should preserve order of defaults first, then CLI', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/default1', '/default2'],
     });
 
@@ -302,7 +306,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should merge extension patterns with exclude paths', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/admin'],
     });
 
@@ -313,7 +317,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should deduplicate extension patterns with paths', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['\\.pkg$', '/admin'],
     });
 
@@ -324,7 +328,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should handle empty extension patterns', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/admin'],
     });
 
@@ -334,7 +338,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should filter empty strings from extension patterns', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const extensionPatterns = ['\\.pkg$', '', '  ', '\\.exe$'];
     const result = mergeExcludePaths(undefined, false, extensionPatterns);
@@ -345,7 +349,7 @@ describe('mergeExcludePaths', () => {
   });
 
   it('should escape leading query-string patterns for regex safety', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['?output=print'],
     });
 
@@ -361,7 +365,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should use built-in defaults when no settings exist', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const result = mergeExcludeExtensions(undefined, false);
 
@@ -373,7 +377,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should prefer user settings over built-in defaults', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.custom', '.test'],
     });
 
@@ -383,7 +387,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should skip all defaults when requested', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.custom'],
     });
 
@@ -393,7 +397,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should handle undefined CLI extensions', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
 
@@ -403,7 +407,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should merge CLI extensions with defaults', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
 
@@ -413,7 +417,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should deduplicate extensions', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
 
@@ -423,7 +427,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should filter empty strings', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '', '.pkg'],
     });
 
@@ -433,7 +437,7 @@ describe('mergeExcludeExtensions', () => {
   });
 
   it('should return empty array when settings and CLI are empty and skipDefaults is true', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const result = mergeExcludeExtensions(undefined, true);
 
@@ -449,7 +453,7 @@ describe('buildCrawlOptions with extensions', () => {
   afterEach(() => {});
 
   it('should include default binary extensions in excludePaths', () => {
-    vi.mocked(loadSettings).mockReturnValue({});
+    mockGetSettings.mockReturnValue({});
 
     const options: CrawlOptions = {
       urlOrJobId: 'https://example.com',
@@ -467,7 +471,7 @@ describe('buildCrawlOptions with extensions', () => {
   });
 
   it('should combine extensions with custom exclude paths', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
 
@@ -485,7 +489,7 @@ describe('buildCrawlOptions with extensions', () => {
   });
 
   it('should combine extensions with default exclude paths from settings', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['/login', '/logout'],
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
@@ -503,7 +507,7 @@ describe('buildCrawlOptions with extensions', () => {
   });
 
   it('should skip extensions when noDefaultExcludes is true', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });
 
@@ -518,7 +522,7 @@ describe('buildCrawlOptions with extensions', () => {
   });
 
   it('should deduplicate paths and extension patterns', () => {
-    vi.mocked(loadSettings).mockReturnValue({
+    mockGetSettings.mockReturnValue({
       defaultExcludePaths: ['\\.exe$', '/admin'],
       defaultExcludeExtensions: ['.exe', '.pkg'],
     });

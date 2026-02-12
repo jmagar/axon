@@ -4,6 +4,7 @@
  */
 
 import { sleep } from '../../utils/http';
+import { getSettings } from '../../utils/settings';
 import {
   assertTeiOk,
   parseTeiInfo,
@@ -13,17 +14,8 @@ import {
 import { fmt } from '../../utils/theme';
 import type { IHttpClient, ITeiService, TeiInfo } from '../types';
 
-/** Batch size for embedding requests */
-const BATCH_SIZE = 24;
-
-/** Maximum concurrent batch requests */
-const MAX_CONCURRENT = 4;
-
 /** HTTP timeout for TEI /info endpoint (30 seconds) */
 const TEI_INFO_TIMEOUT_MS = 30000;
-
-/** Number of retries for TEI requests */
-const TEI_MAX_RETRIES = 3;
 
 /** Number of batch-level retries (in addition to HTTP retries) */
 const BATCH_RETRY_ATTEMPTS = 2;
@@ -74,12 +66,13 @@ export class TeiService implements ITeiService {
       return this.cachedInfo;
     }
 
+    const embeddingSettings = getSettings().embedding;
     const response = await this.httpClient.fetchWithRetry(
       `${this.teiUrl}/info`,
       undefined,
       {
         timeoutMs: TEI_INFO_TIMEOUT_MS,
-        maxRetries: TEI_MAX_RETRIES,
+        maxRetries: embeddingSettings.maxRetries,
       }
     );
 
@@ -100,6 +93,7 @@ export class TeiService implements ITeiService {
    * @returns Array of embedding vectors
    */
   async embedBatch(inputs: string[]): Promise<number[][]> {
+    const embeddingSettings = getSettings().embedding;
     const timeoutMs = calculateBatchTimeout(inputs.length);
     let lastError: Error | null = null;
 
@@ -121,7 +115,7 @@ export class TeiService implements ITeiService {
           inputs,
           {
             timeoutMs,
-            maxRetries: TEI_MAX_RETRIES,
+            maxRetries: embeddingSettings.maxRetries,
           }
         );
 
@@ -175,8 +169,12 @@ export class TeiService implements ITeiService {
    * @returns Array of embedding vectors in same order as input
    */
   async embedChunks(texts: string[]): Promise<number[][]> {
-    return runConcurrentBatches(texts, BATCH_SIZE, MAX_CONCURRENT, (batch) =>
-      this.embedBatch(batch)
+    const embeddingSettings = getSettings().embedding;
+    return runConcurrentBatches(
+      texts,
+      embeddingSettings.batchSize,
+      embeddingSettings.maxConcurrentBatches,
+      (batch) => this.embedBatch(batch)
     );
   }
 }

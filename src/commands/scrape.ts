@@ -14,6 +14,7 @@ import { displayCommandInfo } from '../utils/display';
 import { buildApiErrorMessage } from '../utils/network-error';
 import { parseScrapeOptions } from '../utils/options';
 import { handleScrapeOutput } from '../utils/output';
+import { getSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
 import { normalizeUrl } from '../utils/url';
 import { requireContainer, resolveRequiredUrl } from './shared';
@@ -258,6 +259,8 @@ export async function handleScrapeCommand(
  * Create and configure the scrape command
  */
 export function createScrapeCommand(): Command {
+  const settings = getSettings();
+
   const scrapeCmd = new Command('scrape')
     .description('Scrape a URL using Firecrawl')
     .argument('[url]', 'URL to scrape')
@@ -274,20 +277,29 @@ export function createScrapeCommand(): Command {
       '-f, --format <formats>',
       'Output format(s). Multiple formats can be specified with commas (e.g., "markdown,links,images"). Available: markdown, html, rawHtml, links, images, screenshot, summary, changeTracking, json, attributes, branding. Single format outputs raw content; multiple formats output JSON.'
     )
-    .option('--only-main-content', 'Include only main content', true)
+    .option(
+      '--only-main-content',
+      'Include only main content',
+      settings.scrape.onlyMainContent
+    )
     .option('--no-only-main-content', 'Include full page content')
     .option(
       '--wait-for <ms>',
       'Wait time before scraping in milliseconds',
       (val) => parseInt(val, 10)
     )
-    .option('--timeout <seconds>', 'Request timeout in seconds', parseFloat, 15)
+    .option(
+      '--timeout <seconds>',
+      'Request timeout in seconds',
+      parseFloat,
+      settings.scrape.timeoutSeconds
+    )
     .option('--screenshot', 'Take a screenshot', false)
     .option('--include-tags <tags>', 'Comma-separated list of tags to include')
     .option(
       '--exclude-tags <tags>',
       'Comma-separated list of tags to exclude',
-      'nav,footer'
+      settings.scrape.excludeTags.join(',')
     )
     .option(
       '-k, --api-key <key>',
@@ -325,8 +337,8 @@ export function createScrapeCommand(): Command {
           // Use --format option
           format = options.format;
         } else {
-          // Default to markdown
-          format = 'markdown';
+          // Default to configured scrape formats
+          format = settings.scrape.formats.join(',');
         }
 
         const scrapeOptions = parseScrapeOptions({

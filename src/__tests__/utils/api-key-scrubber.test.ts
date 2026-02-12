@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   maskApiKey,
+  sanitizeUrlCredentials,
   scrubApiKeys,
   scrubErrorApiKeys,
   scrubHeaderApiKeys,
@@ -348,6 +349,69 @@ describe('API Key Scrubber', () => {
       scrubObjectApiKeys(obj);
 
       expect(obj.apiKey).toBe('fc-abc123def456ghi789xyz012345');
+    });
+  });
+
+  describe('sanitizeUrlCredentials', () => {
+    it('should sanitize password in Redis URL', () => {
+      const url = 'redis://user:secret@localhost:6379';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('redis://user:***@localhost:6379');
+      expect(sanitized).toContain('user');
+      expect(sanitized).not.toContain('secret');
+    });
+
+    it('should sanitize password in PostgreSQL URL', () => {
+      const url = 'postgres://admin:password123@db.example.com:5432/mydb';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('postgres://admin:***@db.example.com:5432/mydb');
+      expect(sanitized).toContain('admin');
+      expect(sanitized).not.toContain('password123');
+    });
+
+    it('should sanitize password in RabbitMQ URL', () => {
+      const url = 'amqp://guest:guest@rabbitmq:5672';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('amqp://guest:***@rabbitmq:5672');
+      expect(sanitized).toContain('guest:***');
+    });
+
+    it('should handle URL without credentials unchanged', () => {
+      const url = 'http://localhost:3000';
+      const sanitized = sanitizeUrlCredentials(url);
+      // URL class may add trailing slash
+      expect(sanitized).toMatch(/^http:\/\/localhost:3000\/?$/);
+      expect(sanitized).not.toContain('***');
+    });
+
+    it('should handle URL with username but no password', () => {
+      const url = 'redis://user@localhost:6379';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('redis://user@localhost:6379');
+      expect(sanitized).not.toContain('***');
+    });
+
+    it('should handle invalid URLs gracefully with regex fallback', () => {
+      const url = 'not-a-valid://url:format';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('not-a-valid://url:format');
+    });
+
+    it('should handle empty or invalid input', () => {
+      expect(sanitizeUrlCredentials('')).toBe('');
+      expect(sanitizeUrlCredentials(null as unknown as string)).toBe(null);
+      expect(sanitizeUrlCredentials(undefined as unknown as string)).toBe(
+        undefined
+      );
+    });
+
+    it('should use regex fallback for URLs with credentials', () => {
+      // Test the regex fallback path by creating an intentionally malformed URL
+      const url = 'scheme://user:pass@host:port';
+      const sanitized = sanitizeUrlCredentials(url);
+      // This will use regex fallback since URL parsing fails
+      expect(sanitized).toContain('user:***');
+      expect(sanitized).not.toContain(':pass');
     });
   });
 });

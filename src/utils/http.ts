@@ -8,6 +8,7 @@
  *
  * @module utils/http
  */
+import { getSettings } from './settings';
 
 /**
  * Configuration options for HTTP requests
@@ -23,15 +24,15 @@ export interface HttpOptions {
   maxDelayMs?: number;
 }
 
-/**
- * Default HTTP configuration
- */
-const DEFAULT_HTTP_OPTIONS: Required<HttpOptions> = {
-  timeoutMs: 30000,
-  maxRetries: 3,
-  baseDelayMs: 5000, // Increased from 1000ms to give TEI time to clear permits
-  maxDelayMs: 60000, // Increased from 30000ms to handle longer backpressure
-};
+function getDefaultHttpOptions(): Required<HttpOptions> {
+  const settings = getSettings();
+  return {
+    timeoutMs: settings.http.timeoutMs,
+    maxRetries: settings.http.maxRetries,
+    baseDelayMs: settings.http.baseDelayMs,
+    maxDelayMs: settings.http.maxDelayMs,
+  };
+}
 
 /**
  * HTTP status codes that should trigger a retry
@@ -117,7 +118,7 @@ export async function fetchWithRetry(
   init?: RequestInit,
   options?: HttpOptions
 ): Promise<Response> {
-  const config = { ...DEFAULT_HTTP_OPTIONS, ...options };
+  const config = { ...getDefaultHttpOptions(), ...options };
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
@@ -232,7 +233,7 @@ export async function fetchWithRetry(
  */
 export async function withTimeout<T>(
   promise: Promise<T>,
-  timeoutMs: number = DEFAULT_HTTP_OPTIONS.timeoutMs,
+  timeoutMs: number = getDefaultHttpOptions().timeoutMs,
   errorMessage?: string
 ): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -270,7 +271,7 @@ export async function withTimeout<T>(
 export async function fetchWithTimeout(
   url: string,
   init?: RequestInit,
-  timeoutMs: number = DEFAULT_HTTP_OPTIONS.timeoutMs
+  timeoutMs: number = getDefaultHttpOptions().timeoutMs
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

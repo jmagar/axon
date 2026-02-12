@@ -169,55 +169,40 @@ This skill spawns the `[agent-name]` agent for deep analysis when:
 
 ---
 
-## Script Requirements
+## Script Development Guide
 
-### Template: scripts/skill-name.sh
+### Script Template with Required Elements
 
 ```bash
 #!/bin/bash
 # Skill Name - Brief description
 # Usage: skill-name.sh [args]
 
-set -e
+set -e  # Fail-fast behavior
 
-# Colors (only if TTY)
+# Colors (only if TTY) - preserves pipe compatibility
 if [ -t 1 ]; then
-  GREEN='\033[0;32m'
-  RED='\033[0;31m'
-  YELLOW='\033[1;33m'
-  BLUE='\033[0;36m'
-  DIM='\033[2m'
-  BOLD='\033[1m'
-  NC='\033[0m' # No Color
+  GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
+  BLUE='\033[0;36m'; DIM='\033[2m'; BOLD='\033[1m'; NC='\033[0m'
 else
-  GREEN=''
-  RED=''
-  YELLOW=''
-  BLUE=''
-  DIM=''
-  BOLD=''
-  NC=''
+  GREEN=''; RED=''; YELLOW=''; BLUE=''; DIM=''; BOLD=''; NC=''
 fi
 
-# Parse arguments
+# Argument validation
 ARG="${1:-}"
-
 if [ -z "$ARG" ]; then
   echo -e "${RED}✗ Error: Argument required${NC}"
-  echo ""
   echo "Usage: skill-name.sh <arg>"
   exit 1
 fi
 
-# Change to project root (4 levels up from scripts/)
-# Path: .claude/skills/skill-name/scripts/ → .claude/skills/skill-name/ → .claude/skills/ → .claude/ → project root
+# Project root resolution (4 levels up: scripts/ → skill/ → skills/ → .claude/ → root)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Step 1: Validation
-echo -e "${BOLD}→ Validating...${NC}"
-# Validation logic here
+# Step-by-step execution with progress messages
+echo -e "${BOLD}→ Step 1: Validation...${NC}"
 if [ condition ]; then
   echo -e "${GREEN}✓${NC} Validation passed"
 else
@@ -225,45 +210,35 @@ else
   exit 1
 fi
 
-# Step 2: Main Operation
 echo ""
-echo -e "${BOLD}→ Running main operation...${NC}"
-# Main logic here
-
-# Capture exit code
-set +e
+echo -e "${BOLD}→ Step 2: Main operation...${NC}"
+set +e  # Capture exit code without failing
 main_command
 EXIT_CODE=$?
 set -e
 
-# Step 3: Output Results
+# Color-coded results with agent spawning suggestion
 echo ""
 if [ $EXIT_CODE -eq 0 ]; then
   echo -e "${GREEN}✓ Operation successful${NC}"
-  echo ""
   echo -e "${BLUE}Success message${NC}"
   exit 0
 else
   echo -e "${RED}✗ Operation failed${NC}"
-  echo ""
-  echo -e "${YELLOW}Failure message${NC}"
-  echo ""
+  echo -e "${YELLOW}Failure details${NC}"
   echo -e "${DIM}For detailed diagnostics, ask Claude to spawn the [agent-name] agent${NC}"
   exit 1
 fi
 ```
 
-### Script Requirements Checklist
-
-- [ ] Shebang: `#!/bin/bash`
-- [ ] `set -e` for fail-fast behavior
-- [ ] Color codes with TTY detection
-- [ ] Argument validation with usage message
-- [ ] Project root resolution (4 levels up from scripts/)
-- [ ] Step-by-step execution with status messages
-- [ ] Color-coded output (green ✓, red ✗, yellow ⚠, blue info)
-- [ ] Proper exit codes (0 = success, 1 = failure)
-- [ ] Suggestion to spawn agent on failures
+**Required elements (checklist)**:
+- [ ] Shebang + `set -e`
+- [ ] TTY-safe colors (no ANSI codes in pipes)
+- [ ] Argument validation + usage message
+- [ ] Project root resolution (4 levels up)
+- [ ] Step-by-step progress (→ ... ✓)
+- [ ] Exit codes (0 = success, 1 = failure)
+- [ ] Agent spawning suggestion on failure
 - [ ] Executable permissions (`chmod +x`)
 
 ---
@@ -387,166 +362,114 @@ fi
 
 ## Example Skills in This Project
 
-### test-command
+This project includes two reference skills demonstrating the Script-First pattern:
 
-**Structure:**
-```
-test-command/
-├── SKILL.md (569 words)
-├── scripts/test-command.sh ✅
-├── references/bash-implementation.md
-└── examples/test-outputs.md (7 scenarios)
-```
+- **test-command**: Automated testing with type-check prerequisite
+- **docker-health**: Comprehensive health checks with embedding model banner
 
-**Pattern Demonstrated:**
-- Script-first execution
-- Type-check before tests (fail fast)
-- Spawns cli-tester agent on test failures
-- Progressive disclosure (references + examples)
-
-### docker-health
-
-**Structure:**
-```
-docker-health/
-├── SKILL.md (1057 words)
-└── scripts/health-check.sh ✅
-```
-
-**Pattern Demonstrated:**
-- Script checks all 7 services automatically
-- Displays embedding model info banner first
-- Color-coded status with metadata
-- Spawns docker-debugger agent on degraded status
+**For detailed implementation analysis**, see `references/example-skills.md` which covers:
+- Complete directory structures
+- Script patterns and techniques
+- Agent spawning strategies
+- Anti-patterns to avoid
+- Real-world output examples
 
 ---
 
 ## Testing Your Skill
 
-### Checklist Before Committing
+### 1. Make Script Executable
 
-1. **Frontmatter:**
-   - [ ] Third-person description
-   - [ ] 3-5 specific trigger phrases
-   - [ ] Under 300 characters
+```bash
+chmod +x .claude/skills/skill-name/scripts/skill-name.sh
+```
 
-2. **SKILL.md:**
-   - [ ] Uses MUST/REQUIRED language
-   - [ ] Clear "When to use" section
-   - [ ] Script execution command with examples
-   - [ ] Agent spawning conditions
-   - [ ] 500-1500 words (lean)
+### 2. Test Valid Input (Should Exit 0)
 
-3. **Script:**
-   - [ ] Executable (`chmod +x`)
-   - [ ] TTY-safe color codes
-   - [ ] Argument validation
-   - [ ] Project root resolution (4 levels up)
-   - [ ] Color-coded output (✓ ✗ ⚠)
-   - [ ] Proper exit codes (0 = success, 1 = fail)
-   - [ ] Suggests spawning agent on failures
+```bash
+bash .claude/skills/skill-name/scripts/skill-name.sh valid-arg
+echo "Exit code: $?"  # Should print: Exit code: 0
+```
 
-4. **Testing:**
-   - [ ] Script runs successfully with valid input
-   - [ ] Script fails gracefully with invalid input
-   - [ ] Exit codes are correct
-   - [ ] Output is readable and color-coded
-   - [ ] Can be run standalone outside Claude
+**Verify:**
+- Script runs without errors
+- Output shows green ✓ for success
+- Exit code is 0
 
-5. **Documentation:**
-   - [ ] references/ for detailed implementation (if needed)
-   - [ ] examples/ for real-world scenarios (if needed)
-   - [ ] All referenced files exist
+### 3. Test Invalid Input (Should Exit 1)
+
+```bash
+# Test missing argument
+bash .claude/skills/skill-name/scripts/skill-name.sh
+echo "Exit code: $?"  # Should print: Exit code: 1
+
+# Test invalid argument
+bash .claude/skills/skill-name/scripts/skill-name.sh invalid-arg
+echo "Exit code: $?"  # Should print: Exit code: 1
+```
+
+**Verify:**
+- Script shows usage message
+- Output shows red ✗ for failure
+- Suggests spawning agent for diagnostics
+- Exit code is 1
+
+### 4. Verify TTY-Safe Colors
+
+```bash
+# In terminal (should have colors)
+bash .claude/skills/skill-name/scripts/skill-name.sh valid-arg
+
+# Piped (should have NO ANSI codes)
+bash .claude/skills/skill-name/scripts/skill-name.sh valid-arg | cat
+```
+
+**Verify:**
+- Terminal output has colors
+- Piped output has no escape sequences (`\033[...m`)
+
+### 5. Test from Different Directories
+
+```bash
+# From project root
+bash .claude/skills/skill-name/scripts/skill-name.sh valid-arg
+
+# From random directory
+cd /tmp
+bash /path/to/project/.claude/skills/skill-name/scripts/skill-name.sh valid-arg
+cd -
+```
+
+**Verify:**
+- Script works from any directory
+- Project root resolution is correct
+
+### Quick Validation Checklist
+
+**Before committing:**
+- [ ] Script executable, TTY-safe colors, proper exit codes
+- [ ] SKILL.md: MUST language, 500-1500 words, references supporting files
+- [ ] Frontmatter: Third-person, specific triggers, <300 chars
+- [ ] Tested: Valid input (exit 0), invalid input (exit 1), piped output
 
 ---
 
 ## Common Mistakes to Avoid
 
-### ❌ Don't: Put Everything in SKILL.md
+### ❌ Bloated SKILL.md
+Put detailed content in `references/` and `examples/`, keep SKILL.md under 1,500 words.
 
-**Bad:**
-```
-skill-name/
-└── SKILL.md (5,000 words - bloated)
-```
+### ❌ Vague Language
+Use "MUST use when user asks to 'test the scrape command'" not "use when testing".
 
-**Good:**
-```
-skill-name/
-├── SKILL.md (800 words - lean)
-├── references/implementation.md (3,000 words)
-└── examples/scenarios.md (1,200 words)
-```
+### ❌ Skipping the Script
+Always run the script FIRST, don't list manual commands as the primary workflow.
 
-### ❌ Don't: Use Vague Language
+### ❌ Missing Exit Codes
+Scripts must exit 0 (success) or 1 (failure) to enable agent spawning logic.
 
-**Bad:**
-- "Use this skill when testing"
-- "Can spawn agent if needed"
-- "Consider running the script"
-
-**Good:**
-- "MUST use when user asks to 'test the scrape command'"
-- "MUST spawn cli-tester agent when script exits 1"
-- "MUST run the script FIRST before manual execution"
-
-### ❌ Don't: Skip the Script
-
-**Bad:**
-```markdown
-## Instructions
-
-Run these manual commands:
-1. Command 1
-2. Command 2
-3. Command 3
-```
-
-**Good:**
-```markdown
-## Instructions
-
-**MUST run the script FIRST:**
-```bash
-bash .claude/skills/skill-name/scripts/skill-name.sh
-```
-```
-
-### ❌ Don't: Forget Exit Codes
-
-**Bad:**
-```bash
-# Script always exits 0
-main_command
-echo "Done!"
-```
-
-**Good:**
-```bash
-# Script uses proper exit codes
-set +e
-main_command
-EXIT_CODE=$?
-set -e
-
-if [ $EXIT_CODE -eq 0 ]; then
-  echo "✓ Success"
-  exit 0
-else
-  echo "✗ Failed - spawn agent for diagnostics"
-  exit 1
-fi
-```
-
-### ❌ Don't: Use Second Person
-
-**Bad:**
-- "You should use this skill when..."
-- "You are a testing assistant..."
-
-**Good:**
-- "This skill should be used when..."
-- "To verify testing, execute the script..."
+### ❌ Second Person
+Use "This skill should be used..." not "You should use..." in descriptions.
 
 ---
 

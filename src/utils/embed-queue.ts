@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import { join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
 import { isJobNotFoundError } from './job-errors';
+import { getSettings } from './settings';
 import { getEmbedQueueDir } from './storage-paths';
 import { fmt } from './theme';
 
@@ -49,8 +50,6 @@ export interface EmbedJob {
   failedDocuments?: number;
   progressUpdatedAt?: string;
 }
-
-const MAX_RETRIES = 3;
 
 function getQueueDir(): string {
   return getEmbedQueueDir();
@@ -140,7 +139,7 @@ export async function enqueueEmbedJob(
     url,
     status: 'pending',
     retries: 0,
-    maxRetries: MAX_RETRIES,
+    maxRetries: getSettings().embedding.maxRetries,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     apiKey,

@@ -4,11 +4,17 @@
  */
 
 import packageJson from '../../package.json';
+import { type UserSettings, UserSettingsSchema } from '../schemas/storage';
 import { getAuthSource, isAuthenticated } from '../utils/auth';
-import { DEFAULT_EXCLUDE_EXTENSIONS } from '../utils/constants';
 import { getConfigDirectoryPath, loadCredentials } from '../utils/credentials';
+import { getDefaultSettings } from '../utils/default-settings';
 import { DEFAULT_API_URL, DEFAULT_QDRANT_COLLECTION } from '../utils/defaults';
-import { clearSetting, loadSettings, saveSettings } from '../utils/settings';
+import {
+  clearSetting,
+  getSettings,
+  loadSettings,
+  saveSettings,
+} from '../utils/settings';
 import { colorize, colors, fmt, icons } from '../utils/theme';
 
 export interface ConfigureOptions {
@@ -16,55 +22,6 @@ export interface ConfigureOptions {
   apiUrl?: string;
   json?: boolean;
 }
-
-const COMMAND_DEFAULTS: Record<string, Record<string, string>> = {
-  scrape: {
-    formats: 'markdown',
-    onlyMainContent: 'true',
-    timeoutSeconds: '15',
-    excludeTags: 'nav,footer',
-    autoEmbed: 'true',
-  },
-  crawl: {
-    wait: 'false',
-    progress: 'false',
-    pollIntervalSeconds: '5 (when --wait/--progress)',
-    maxDepth: '3',
-    sitemap: 'include',
-    ignoreQueryParameters: 'true',
-    allowSubdomains: 'true',
-    onlyMainContent: 'true',
-    excludeTags: 'nav,footer',
-    autoEmbed: 'true',
-  },
-  map: {
-    wait: 'false',
-    sitemap: 'include',
-    includeSubdomains: 'auto (defer to API)',
-    ignoreQueryParameters: 'auto (defer to API)',
-    ignoreCache: 'auto (defer to API)',
-    filtering: 'enabled',
-    defaultExcludes: 'enabled',
-  },
-  search: {
-    limit: '5',
-    sources: 'web',
-    timeoutMs: '60000',
-    ignoreInvalidUrls: 'true',
-    scrape: 'true',
-    scrapeFormats: 'markdown',
-    onlyMainContent: 'true',
-    autoEmbed: 'true',
-  },
-  extract: {
-    allowExternalLinks: 'false',
-    enableWebSearch: 'true',
-    includeSubdomains: 'true',
-    showSources: 'true',
-    ignoreInvalidUrls: 'true',
-    autoEmbed: 'true',
-  },
-};
 
 // EnvItem stores the raw value from the environment. Sensitive values (masked: true)
 // are only masked at display time — raw values are needed for config validation and
@@ -96,6 +53,42 @@ type ConfigDiagnostics = {
   commandDefaults: Record<string, Record<string, string>>;
   runtimeEnvironment: Record<string, RuntimeEnvJsonItem>;
 };
+
+const COMMAND_DEFAULT_COLORS = {
+  command: colors.primary,
+  option: colors.materialLightBlue,
+} as const;
+
+function configHeading(text: string): string {
+  return fmt.bold(colorize(colors.primary, text));
+}
+
+function configLabel(text: string): string {
+  return colorize(colors.primary, `${text}:`);
+}
+
+type SettingPath =
+  | 'crawl.maxDepth'
+  | 'crawl.sitemap'
+  | 'search.limit'
+  | 'scrape.timeoutSeconds'
+  | 'http.timeoutMs'
+  | 'chunking.maxChunkSize'
+  | 'embedding.maxConcurrent'
+  | 'polling.intervalMs';
+
+const SETTING_PATHS: readonly SettingPath[] = [
+  'crawl.maxDepth',
+  'crawl.sitemap',
+  'search.limit',
+  'scrape.timeoutSeconds',
+  'http.timeoutMs',
+  'chunking.maxChunkSize',
+  'embedding.maxConcurrent',
+  'polling.intervalMs',
+];
+
+const LEGACY_SETTING_KEYS = ['exclude-paths', 'exclude-extensions'] as const;
 
 function maskValue(value: string): string {
   const trimmed = value.trim();
@@ -235,23 +228,94 @@ function buildRuntimeEnvItems(): EnvItem[] {
 }
 
 function printCommandDefaults(): void {
+  const commandDefaults = getCommandDefaults();
   console.log('');
-  console.log(fmt.bold(colorize(colors.primary, 'Command Defaults')));
-  for (const [command, defaults] of Object.entries(COMMAND_DEFAULTS)) {
-    console.log(`  ${fmt.dim(`${command}:`)}`);
-    for (const [key, value] of Object.entries(defaults)) {
-      console.log(`    ${fmt.dim(`${key}:`)} ${value}`);
+  console.log(configHeading('Command Defaults'));
+  const commandEntries = Object.entries(commandDefaults);
+  for (const [, [command, defaults]] of commandEntries.entries()) {
+    console.log(`  ${colorize(COMMAND_DEFAULT_COLORS.command, `${command}:`)}`);
+    const defaultEntries = Object.entries(defaults);
+    for (const [, [key, value]] of defaultEntries.entries()) {
+      console.log(
+        `    ${icons.bullet} ${colorize(COMMAND_DEFAULT_COLORS.option, `${key}:`)} ${fmt.dim(value)}`
+      );
     }
   }
 }
 
+function getCommandDefaults(): Record<string, Record<string, string>> {
+  const settings = getSettings();
+
+  return {
+    scrape: {
+      formats: settings.scrape.formats.join(','),
+      onlyMainContent: String(settings.scrape.onlyMainContent),
+      timeoutSeconds: String(settings.scrape.timeoutSeconds),
+      excludeTags: settings.scrape.excludeTags.join(','),
+      autoEmbed: String(settings.scrape.autoEmbed),
+    },
+    crawl: {
+      wait: 'false',
+      progress: 'false',
+      pollIntervalSeconds: String(settings.crawl.pollIntervalSeconds),
+      maxDepth: String(settings.crawl.maxDepth),
+      sitemap: settings.crawl.sitemap,
+      ignoreQueryParameters: String(settings.crawl.ignoreQueryParameters),
+      crawlEntireDomain: String(settings.crawl.crawlEntireDomain),
+      allowSubdomains: String(settings.crawl.allowSubdomains),
+      onlyMainContent: String(settings.crawl.onlyMainContent),
+      excludeTags: settings.crawl.excludeTags.join(','),
+      autoEmbed: String(settings.crawl.autoEmbed),
+    },
+    map: {
+      wait: 'false',
+      sitemap: settings.map.sitemap,
+      includeSubdomains:
+        settings.map.includeSubdomains === null
+          ? 'auto (defer to API)'
+          : String(settings.map.includeSubdomains),
+      ignoreQueryParameters:
+        settings.map.ignoreQueryParameters === null
+          ? 'auto (defer to API)'
+          : String(settings.map.ignoreQueryParameters),
+      ignoreCache:
+        settings.map.ignoreCache === null
+          ? 'auto (defer to API)'
+          : String(settings.map.ignoreCache),
+      filtering: 'enabled',
+      defaultExcludes: 'enabled',
+    },
+    search: {
+      limit: String(settings.search.limit),
+      sources: settings.search.sources.join(','),
+      timeoutMs: String(settings.search.timeoutMs),
+      ignoreInvalidUrls: String(settings.search.ignoreInvalidUrls),
+      scrape: String(settings.search.scrape),
+      scrapeFormats: settings.search.scrapeFormats.join(','),
+      onlyMainContent: String(settings.search.onlyMainContent),
+      autoEmbed: String(settings.search.autoEmbed),
+    },
+    extract: {
+      allowExternalLinks: String(settings.extract.allowExternalLinks),
+      enableWebSearch: String(settings.extract.enableWebSearch),
+      includeSubdomains: String(settings.extract.includeSubdomains),
+      showSources: String(settings.extract.showSources),
+      ignoreInvalidUrls: String(settings.extract.ignoreInvalidUrls),
+      autoEmbed: String(settings.extract.autoEmbed),
+    },
+  };
+}
+
 function printRuntimeEnvironment(): void {
   console.log('');
-  console.log(fmt.bold(colorize(colors.primary, 'Runtime Environment')));
-  for (const item of buildRuntimeEnvItems()) {
+  console.log(configHeading('Runtime Environment'));
+  const runtimeItems = buildRuntimeEnvItems();
+  for (const [, item] of runtimeItems.entries()) {
     const value = item.masked ? maskValue(item.value) : item.value;
     const warning = item.warning ? ` ${fmt.warning(`(${item.warning})`)}` : '';
-    console.log(`  ${fmt.dim(`${item.key}:`)} ${value}${warning}`);
+    console.log(
+      `  ${icons.bullet} ${colorize(COMMAND_DEFAULT_COLORS.option, `${item.key}:`)} ${fmt.dim(value)}${warning}`
+    );
   }
 }
 
@@ -302,7 +366,7 @@ function buildConfigDiagnostics(): ConfigDiagnostics {
       excludePaths: settings.defaultExcludePaths ?? [],
       excludeExtensions: settings.defaultExcludeExtensions ?? [],
     },
-    commandDefaults: COMMAND_DEFAULTS,
+    commandDefaults: getCommandDefaults(),
     runtimeEnvironment,
   };
 }
@@ -312,14 +376,122 @@ function buildConfigDiagnostics(): ConfigDiagnostics {
  * Always returns true for valid keys; never returns false.
  */
 function validateSettingKey(key: string): true {
-  if (key !== 'exclude-paths' && key !== 'exclude-extensions') {
+  if (
+    !LEGACY_SETTING_KEYS.includes(key as (typeof LEGACY_SETTING_KEYS)[number])
+  ) {
     console.error(fmt.error(`Unknown setting "${key}".`));
     console.error(
-      fmt.dim('Available settings: exclude-paths, exclude-extensions')
+      fmt.dim(`Available legacy settings: ${LEGACY_SETTING_KEYS.join(', ')}`)
     );
+    console.error(fmt.dim(`Nested setting paths: ${SETTING_PATHS.join(', ')}`));
     process.exit(1);
   }
   return true;
+}
+
+function isSettingPath(value: string): value is SettingPath {
+  return SETTING_PATHS.includes(value as SettingPath);
+}
+
+function formatValue(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function getSettingByPath(
+  settings: ReturnType<typeof getSettings>,
+  key: SettingPath
+): unknown {
+  switch (key) {
+    case 'crawl.maxDepth':
+      return settings.crawl.maxDepth;
+    case 'crawl.sitemap':
+      return settings.crawl.sitemap;
+    case 'search.limit':
+      return settings.search.limit;
+    case 'scrape.timeoutSeconds':
+      return settings.scrape.timeoutSeconds;
+    case 'http.timeoutMs':
+      return settings.http.timeoutMs;
+    case 'chunking.maxChunkSize':
+      return settings.chunking.maxChunkSize;
+    case 'embedding.maxConcurrent':
+      return settings.embedding.maxConcurrent;
+    case 'polling.intervalMs':
+      return settings.polling.intervalMs;
+  }
+}
+
+function parseIntegerSetting(key: SettingPath, value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid numeric value for ${key}: ${value}`);
+  }
+  return parsed;
+}
+
+function parseValueForPath(key: SettingPath, value: string): unknown {
+  if (key === 'crawl.sitemap') {
+    if (value !== 'skip' && value !== 'include') {
+      throw new Error(`Invalid value for crawl.sitemap: ${value}`);
+    }
+    return value;
+  }
+
+  return parseIntegerSetting(key, value);
+}
+
+function setSettingByPath(
+  settings: UserSettings,
+  key: SettingPath,
+  value: unknown
+): UserSettings {
+  switch (key) {
+    case 'crawl.maxDepth':
+      return {
+        ...settings,
+        crawl: { ...settings.crawl, maxDepth: value as number },
+      };
+    case 'crawl.sitemap':
+      return {
+        ...settings,
+        crawl: { ...settings.crawl, sitemap: value as 'skip' | 'include' },
+      };
+    case 'search.limit':
+      return {
+        ...settings,
+        search: { ...settings.search, limit: value as number },
+      };
+    case 'scrape.timeoutSeconds':
+      return {
+        ...settings,
+        scrape: { ...settings.scrape, timeoutSeconds: value as number },
+      };
+    case 'http.timeoutMs':
+      return {
+        ...settings,
+        http: { ...settings.http, timeoutMs: value as number },
+      };
+    case 'chunking.maxChunkSize':
+      return {
+        ...settings,
+        chunking: { ...settings.chunking, maxChunkSize: value as number },
+      };
+    case 'embedding.maxConcurrent':
+      return {
+        ...settings,
+        embedding: { ...settings.embedding, maxConcurrent: value as number },
+      };
+    case 'polling.intervalMs':
+      return {
+        ...settings,
+        polling: { ...settings.polling, intervalMs: value as number },
+      };
+  }
 }
 
 /**
@@ -362,7 +534,7 @@ export async function viewConfig(
     `  ${fmt.primary(`${icons.success} firecrawl`)} ${fmt.dim('cli')} ${fmt.dim(`v${packageJson.version}`)}`
   );
   console.log('');
-  console.log(`  ${fmt.bold(colorize(colors.primary, 'Configuration'))}`);
+  console.log(`  ${configHeading('Configuration')}`);
   console.log('');
 
   if (diagnostics.authenticated) {
@@ -370,29 +542,29 @@ export async function viewConfig(
       `  ${fmt.success(icons.active)} Authenticated${diagnostics.authSourceLabel ? ` ${fmt.dim(diagnostics.authSourceLabel)}` : ''}`
     );
     console.log('');
-    console.log(
-      `  ${colorize(colors.primary, 'API URL:')} ${diagnostics.apiUrl}`
-    );
-    console.log(`  ${fmt.dim('API Key:')} ${diagnostics.apiKeyMasked}`);
-    console.log(`  ${fmt.dim('Config:')} ${diagnostics.configPath}`);
+    console.log(`  ${configLabel('API URL')} ${diagnostics.apiUrl}`);
+    console.log(`  ${configLabel('API Key')} ${diagnostics.apiKeyMasked}`);
+    console.log(`  ${configLabel('Config')} ${diagnostics.configPath}`);
 
     // Show settings
     console.log('');
-    console.log(fmt.bold(colorize(colors.primary, 'Settings')));
+    console.log(configHeading('Settings'));
     if (diagnostics.settings.excludePaths.length > 0) {
       console.log(
-        `  ${fmt.dim('Exclude Paths:')} ${diagnostics.settings.excludePaths.join(', ')}`
+        `  ${icons.bullet} ${configLabel('Exclude Paths')} ${diagnostics.settings.excludePaths.join(', ')}`
       );
     } else {
-      console.log(`  ${fmt.dim('Exclude Paths:')} Not configured`);
+      console.log(
+        `  ${icons.bullet} ${configLabel('Exclude Paths')} Not configured`
+      );
     }
     if (diagnostics.settings.excludeExtensions.length > 0) {
       console.log(
-        `  ${fmt.dim('Exclude Extensions:')} ${diagnostics.settings.excludeExtensions.join(', ')}`
+        `  ${icons.bullet} ${configLabel('Exclude Extensions')} ${diagnostics.settings.excludeExtensions.join(', ')}`
       );
     } else {
       console.log(
-        `  ${fmt.dim('Exclude Extensions:')} Not configured (using built-in defaults)`
+        `  ${icons.bullet} ${configLabel('Exclude Extensions')} Not configured (using built-in defaults)`
       );
     }
 
@@ -400,9 +572,13 @@ export async function viewConfig(
     printRuntimeEnvironment();
 
     console.log('');
-    console.log(fmt.bold(colorize(colors.primary, 'Commands')));
-    console.log(fmt.dim('  firecrawl logout       Clear credentials'));
-    console.log(fmt.dim('  firecrawl config       Re-authenticate'));
+    console.log(configHeading('Commands'));
+    console.log(
+      `  ${icons.bullet} ${colorize(colors.primary, 'firecrawl logout')} ${fmt.dim('      Clear credentials')}`
+    );
+    console.log(
+      `  ${icons.bullet} ${colorize(colors.primary, 'firecrawl config')} ${fmt.dim('      Re-authenticate')}`
+    );
   } else {
     console.log(`  ${fmt.error(icons.active)} Not authenticated`);
     console.log('');
@@ -418,6 +594,40 @@ export async function viewConfig(
  * Handle config set <key> <value>
  */
 export function handleConfigSet(key: string, value: string): void {
+  if (key.includes('.') && !isSettingPath(key)) {
+    console.error(fmt.error(`Unknown setting path "${key}".`));
+    console.error(fmt.dim(`Nested setting paths: ${SETTING_PATHS.join(', ')}`));
+    return;
+  }
+
+  if (isSettingPath(key)) {
+    try {
+      const parsedValue = parseValueForPath(key, value);
+      const current = loadSettings();
+      const next = setSettingByPath(current, key, parsedValue);
+      const validation = UserSettingsSchema.safeParse(next);
+      if (!validation.success) {
+        console.error(
+          fmt.error(
+            `Invalid setting value for ${key}: ${validation.error.message}`
+          )
+        );
+        return;
+      }
+
+      saveSettings(validation.data);
+      console.log(`${icons.success} ${key} set to ${formatValue(parsedValue)}`);
+      return;
+    } catch (error) {
+      console.error(
+        fmt.error(
+          error instanceof Error ? error.message : 'Invalid setting value'
+        )
+      );
+      return;
+    }
+  }
+
   validateSettingKey(key);
 
   const values = value
@@ -447,6 +657,19 @@ export function handleConfigSet(key: string, value: string): void {
  * Handle config get <key>
  */
 export function handleConfigGet(key: string): void {
+  if (key.includes('.') && !isSettingPath(key)) {
+    console.error(fmt.error(`Unknown setting path "${key}".`));
+    console.error(fmt.dim(`Nested setting paths: ${SETTING_PATHS.join(', ')}`));
+    return;
+  }
+
+  if (isSettingPath(key)) {
+    const settings = getSettings();
+    const value = getSettingByPath(settings, key);
+    console.log(`${key}: ${formatValue(value)}`);
+    return;
+  }
+
   if (
     key !== 'exclude-paths' &&
     key !== 'exclude-extensions' &&
@@ -456,6 +679,7 @@ export function handleConfigGet(key: string): void {
     console.error(
       fmt.dim('Available settings: exclude-paths, exclude-extensions, excludes')
     );
+    console.error(fmt.dim(`Nested setting paths: ${SETTING_PATHS.join(', ')}`));
     process.exit(1);
   }
 
@@ -486,9 +710,8 @@ export function handleConfigGet(key: string): void {
     const paths = settings.defaultExcludePaths;
     const extensions = settings.defaultExcludeExtensions;
     const activeExtensions =
-      extensions && extensions.length > 0
-        ? extensions
-        : DEFAULT_EXCLUDE_EXTENSIONS;
+      getSettings()?.defaultExcludeExtensions ??
+      getDefaultSettings().defaultExcludeExtensions;
 
     console.log('');
     console.log(fmt.bold('Exclude Configuration'));
@@ -562,6 +785,37 @@ export function handleConfigClear(key: string): void {
   }
 }
 
+/**
+ * Handle config reset [key]
+ */
+export function handleConfigReset(key?: string): void {
+  const defaults = getDefaultSettings();
+
+  if (!key) {
+    saveSettings(defaults);
+    console.log(`${icons.success} All settings reset to defaults.`);
+    return;
+  }
+
+  if (!isSettingPath(key)) {
+    console.error(fmt.error(`Unknown setting path "${key}".`));
+    return;
+  }
+
+  const current = loadSettings();
+  const next = setSettingByPath(current, key, getSettingByPath(defaults, key));
+  const validation = UserSettingsSchema.safeParse(next);
+  if (!validation.success) {
+    console.error(
+      fmt.error(`Invalid reset for ${key}: ${validation.error.message}`)
+    );
+    return;
+  }
+
+  saveSettings(validation.data);
+  console.log(`${icons.success} ${key} reset to default.`);
+}
+
 import { Command } from 'commander';
 
 /**
@@ -611,6 +865,13 @@ export function createConfigCommand(): Command {
     .argument('<key>', 'Setting key (e.g., exclude-paths)')
     .action((key: string) => {
       handleConfigClear(key);
+    });
+
+  configCmd
+    .command('reset [key]')
+    .description('Reset setting to default value')
+    .action((key?: string) => {
+      handleConfigReset(key);
     });
 
   return configCmd;

@@ -38,6 +38,7 @@ export function setupExitCodeCapture(): ExitCodeCapture {
     getExitCode: () => capturedExitCode,
     resetExitCode: () => {
       process.exitCode = 0;
+      capturedExitCode = undefined;
     },
   };
 }
@@ -193,12 +194,23 @@ export function setupCommandTestCapture() {
   const logs: string[] = [];
   const errors: string[] = [];
 
-  const mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
+  let mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
     logs.push(args.join(' '));
   });
 
-  const mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
+  let mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
     errors.push(args.join(' '));
+  });
+
+  beforeEach(() => {
+    // Re-create spies for each test after previous cleanup
+    mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
+      logs.push(args.join(' '));
+    });
+
+    mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      errors.push(args.join(' '));
+    });
   });
 
   afterEach(() => {
@@ -212,7 +224,11 @@ export function setupCommandTestCapture() {
     ...exitCodeCapture,
     logs,
     errors,
-    mockLog,
-    mockError,
+    get mockLog() {
+      return mockLog;
+    },
+    get mockError() {
+      return mockError;
+    },
   };
 }

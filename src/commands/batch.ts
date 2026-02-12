@@ -14,6 +14,7 @@ import {
 } from '../utils/command';
 import { recordJob } from '../utils/job-history';
 import { parseFormats } from '../utils/options';
+import { getSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
 import { normalizeUrlArgs, requireContainerFromCommandTree } from './shared';
 
@@ -310,6 +311,8 @@ async function handleBatchErrorsCommand(
 }
 
 export function createBatchCommand(): Command {
+  const settings = getSettings();
+
   const batchCmd = new Command('batch')
     .description('Batch scrape multiple URLs using Firecrawl')
     .argument('[urls...]', 'URLs to scrape')
@@ -321,7 +324,11 @@ export function createBatchCommand(): Command {
     )
     .option('--timeout <seconds>', 'Timeout in seconds for wait', parseFloat)
     .option('--format <formats>', 'Scrape format(s) for batch results')
-    .option('--only-main-content', 'Only return main content', false)
+    .option(
+      '--only-main-content',
+      'Only return main content',
+      settings.batch.onlyMainContent
+    )
     .option(
       '--wait-for <ms>',
       'Wait time before scraping in milliseconds',
@@ -335,7 +342,11 @@ export function createBatchCommand(): Command {
       'Max concurrency for batch scraping',
       (val) => parseInt(val, 10)
     )
-    .option('--ignore-invalid-urls', 'Ignore invalid URLs', false)
+    .option(
+      '--ignore-invalid-urls',
+      'Ignore invalid URLs',
+      settings.batch.ignoreInvalidUrls
+    )
     .option('--webhook <url>', 'Webhook URL for batch completion')
     .option('--zero-data-retention', 'Enable zero data retention', false)
     .option('--idempotency-key <key>', 'Idempotency key for batch job')

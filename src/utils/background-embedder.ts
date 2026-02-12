@@ -37,11 +37,10 @@ import {
   getEmbedderWebhookSettings,
 } from './embedder-webhook';
 import { isJobNotFoundError } from './job-errors';
+import { getSettings } from './settings';
 import { fmt } from './theme';
 
-const POLL_INTERVAL_MS = 10000; // 10 seconds (retry base)
 const BACKOFF_MULTIPLIER = 2;
-const MAX_BACKOFF_MS = 60000; // 1 minute
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB request body limit
 
 function isPermanentJobError(error: string): boolean {
@@ -80,9 +79,12 @@ export function logEmbedderConfig(config: Partial<ImmutableConfig>): void {
  * Calculate backoff delay with exponential backoff
  */
 function getBackoffDelay(retries: number): number {
+  const settings = getSettings();
+  const pollIntervalMs = settings.polling.intervalMs;
+  const maxBackoffMs = settings.http.maxDelayMs;
   const delay = Math.min(
-    POLL_INTERVAL_MS * BACKOFF_MULTIPLIER ** retries,
-    MAX_BACKOFF_MS
+    pollIntervalMs * BACKOFF_MULTIPLIER ** retries,
+    maxBackoffMs
   );
   return delay;
 }

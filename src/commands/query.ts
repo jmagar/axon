@@ -51,6 +51,15 @@ export async function executeQuery(
     // Build filter for Qdrant query
     const filter = options.domain ? { domain: options.domain } : undefined;
 
+    // Validate limit parameter
+    if (options.limit !== undefined && options.limit < 1) {
+      return {
+        success: false,
+        error:
+          'Limit must be a positive integer (received: ' + options.limit + ')',
+      };
+    }
+
     // Determine fetch strategy based on output mode
     // Compact/grouped modes deduplicate by URL, so fetch extra chunks to ensure enough unique URLs
     // Full mode shows all chunks, so no need to overfetch
@@ -91,15 +100,23 @@ export async function executeQuery(
       sourceCommand: getString(r.payload.source_command),
     }));
 
-    // Group by base URL to deduplicate and respect --limit
-    // We keep ALL chunks for the top N unique URLs (by highest score)
-    const grouped = groupByBaseUrl(items);
+    // Apply deduplication only for compact/grouped modes, not full mode
+    let limitedItems: QueryResultItem[];
 
-    // Rank URLs with light lexical signals, then keep top N URLs.
-    const topGroups = rankUrlGroups(grouped, options.query, requestedLimit);
+    if (needsDeduplication) {
+      // Group by base URL to deduplicate and respect --limit
+      // We keep ALL chunks for the top N unique URLs (by highest score)
+      const grouped = groupByBaseUrl(items);
 
-    // Flatten: return ALL chunks for the top N unique URLs
-    const limitedItems: QueryResultItem[] = topGroups.flatMap((g) => g.items);
+      // Rank URLs with light lexical signals, then keep top N URLs.
+      const topGroups = rankUrlGroups(grouped, options.query, requestedLimit);
+
+      // Flatten: return ALL chunks for the top N unique URLs
+      limitedItems = topGroups.flatMap((g) => g.items);
+    } else {
+      // Full mode: return raw chunks without deduplication, just apply limit
+      limitedItems = items.slice(0, requestedLimit);
+    }
 
     return { success: true, data: limitedItems };
   } catch (error) {
@@ -459,6 +476,11 @@ export function selectBestPreviewItem(
   query: string
 ): PreviewSelection {
   const candidates = buildPreviewCandidates(groupItems, query);
+
+  if (candidates.length === 0) {
+    throw new Error('Cannot select preview item from empty candidates list');
+  }
+
   let selected = candidates[0];
 
   for (let i = 1; i < candidates.length; i++) {
@@ -828,8 +850,8 @@ export async function handleQueryCommand(
   if (result.success) {
     const totalChunks = result.data?.length ?? 0;
     const uniqueUrls = groupByBaseUrl(result.data ?? []).size;
-    console.log('');
-    console.log(
+    console.error('');
+    console.error(
       fmt.dim(
         `${icons.info} Query completed in ${durationMs}ms (${uniqueUrls} URLs, ${totalChunks} chunks scanned)`
       )

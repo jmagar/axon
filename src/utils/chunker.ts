@@ -1,17 +1,13 @@
 /**
  * Markdown-aware hybrid text chunker
  */
+import { getSettings } from './settings';
 
 export interface Chunk {
   text: string;
   index: number;
   header: string | null;
 }
-
-const MAX_CHUNK_SIZE = 1500;
-const TARGET_CHUNK_SIZE = 1000;
-const OVERLAP_SIZE = 100;
-const MIN_CHUNK_SIZE = 50;
 
 /**
  * Split text into chunks using markdown-aware hybrid strategy:
@@ -21,6 +17,7 @@ const MIN_CHUNK_SIZE = 50;
  * 4. Merge tiny chunks into previous
  */
 export function chunkText(text: string): Chunk[] {
+  const config = getSettings().chunking;
   const trimmed = text.trim();
   if (!trimmed) return [];
 
@@ -30,7 +27,7 @@ export function chunkText(text: string): Chunk[] {
   // Step 2: Split large sections on paragraphs
   const paragraphed: { text: string; header: string | null }[] = [];
   for (const section of sections) {
-    if (section.text.length <= MAX_CHUNK_SIZE) {
+    if (section.text.length <= config.maxChunkSize) {
       paragraphed.push(section);
     } else {
       const paragraphs = splitOnParagraphs(section.text);
@@ -43,10 +40,14 @@ export function chunkText(text: string): Chunk[] {
   // Step 3: Fixed-size split for remaining large blocks
   const sized: { text: string; header: string | null }[] = [];
   for (const block of paragraphed) {
-    if (block.text.length <= MAX_CHUNK_SIZE) {
+    if (block.text.length <= config.maxChunkSize) {
       sized.push(block);
     } else {
-      const pieces = fixedSizeSplit(block.text);
+      const pieces = fixedSizeSplit(
+        block.text,
+        config.targetChunkSize,
+        config.overlapSize
+      );
       for (const piece of pieces) {
         sized.push({ text: piece, header: block.header });
       }
@@ -54,7 +55,7 @@ export function chunkText(text: string): Chunk[] {
   }
 
   // Step 4: Merge tiny chunks backward (same header) or forward (next chunk)
-  const merged = mergeTinyChunks(sized);
+  const merged = mergeTinyChunks(sized, config.minChunkSize);
 
   // Assign indices
   return merged.map((chunk, index) => ({
@@ -117,16 +118,20 @@ function splitOnParagraphs(text: string): string[] {
 /**
  * Split text into fixed-size pieces with overlap
  */
-function fixedSizeSplit(text: string): string[] {
+function fixedSizeSplit(
+  text: string,
+  targetChunkSize: number,
+  overlapSize: number
+): string[] {
   const pieces: string[] = [];
   let start = 0;
 
   while (start < text.length) {
-    const end = Math.min(start + TARGET_CHUNK_SIZE, text.length);
+    const end = Math.min(start + targetChunkSize, text.length);
     pieces.push(text.slice(start, end));
 
     if (end >= text.length) break;
-    start = end - OVERLAP_SIZE;
+    start = end - overlapSize;
   }
 
   return pieces;
@@ -139,7 +144,8 @@ function fixedSizeSplit(text: string): string[] {
  * Chunks with headers are never forward-merged (header is semantic).
  */
 function mergeTinyChunks(
-  chunks: { text: string; header: string | null }[]
+  chunks: { text: string; header: string | null }[],
+  minChunkSize: number
 ): { text: string; header: string | null }[] {
   if (chunks.length === 0) return [];
 
@@ -149,7 +155,7 @@ function mergeTinyChunks(
     const prev =
       afterBackward.length > 0 ? afterBackward[afterBackward.length - 1] : null;
     const canMergeBack =
-      chunk.text.length < MIN_CHUNK_SIZE &&
+      chunk.text.length < minChunkSize &&
       prev !== null &&
       prev.header === chunk.header;
     if (canMergeBack && prev !== null) {
@@ -165,10 +171,10 @@ function mergeTinyChunks(
   const result: { text: string; header: string | null }[] = [];
   for (let i = 0; i < afterBackward.length; i++) {
     const chunk = afterBackward[i];
-    const isTiny = chunk.text.length < MIN_CHUNK_SIZE;
+    const isTiny = chunk.text.length < minChunkSize;
     const hasNext = i + 1 < afterBackward.length;
     const nextIsLarge =
-      hasNext && afterBackward[i + 1].text.length >= MIN_CHUNK_SIZE;
+      hasNext && afterBackward[i + 1].text.length >= minChunkSize;
     if (isTiny && nextIsLarge) {
       // Merge tiny chunk into the next (larger) chunk
       afterBackward[i + 1].text =

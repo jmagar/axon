@@ -65,6 +65,16 @@ function statusHeading(text: string): string {
   return fmt.bold(colorize(colors.primary, text));
 }
 
+function accentJobId(id: string): string {
+  return colorize(colors.materialLightBlue, id);
+}
+
+function accentProgressText(text: string): string {
+  return text.replace(/(\d+%|\(\d+\/\d+\))/g, (segment) =>
+    colorize(colors.materialLightBlue, segment)
+  );
+}
+
 /**
  * Get status information
  */
@@ -759,11 +769,11 @@ function renderCrawlStatusSection(
         ? formatProgress(completedValue, totalValue)
         : null;
 
-      let line = `${colorize(statusColor, icon)} ${crawl.id} `;
+      let line = `${colorize(statusColor, icon)} ${accentJobId(crawl.id)} `;
       if (isFailed) {
         line += `${colorize(statusColor, 'error')} ${fmt.dim(`(${crawlError ?? 'Unknown error'})`)}`;
       } else if (progress) {
-        line += `${colorize(statusColor, status)} ${progress}`;
+        line += `${colorize(statusColor, status)} ${accentProgressText(progress)}`;
       } else {
         line += `${colorize(statusColor, status)}`;
       }
@@ -852,7 +862,7 @@ function renderBatchSection(
 
       if (batchError) {
         console.log(
-          `  ${colorize(statusColor, icon)} ${batch.id} ${colorize(statusColor, 'error')} ${fmt.dim(`(${batchError})`)}`
+          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, 'error')} ${fmt.dim(`(${batchError})`)}`
         );
       } else if ('completed' in batch && 'total' in batch) {
         const progress = formatProgress(
@@ -860,11 +870,11 @@ function renderBatchSection(
           batch.total as number
         );
         console.log(
-          `  ${colorize(statusColor, icon)} ${batch.id} ${colorize(statusColor, batch.status)} ${progress}`
+          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, batch.status)} ${accentProgressText(progress)}`
         );
       } else {
         console.log(
-          `  ${colorize(statusColor, icon)} ${batch.id} ${colorize(statusColor, batch.status ?? 'unknown')}`
+          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, batch.status ?? 'unknown')}`
         );
       }
     }
@@ -886,6 +896,7 @@ function renderExtractSection(
   } else {
     for (const extract of data.extracts) {
       const extractError = (extract as { error?: string }).error;
+      const extractId = extract.id ?? 'unknown';
       const icon = getStatusIcon(extract.status ?? 'unknown', !!extractError);
       const statusColor = getStatusColor(
         extract.status ?? 'unknown',
@@ -894,11 +905,11 @@ function renderExtractSection(
 
       if (extractError) {
         console.log(
-          `  ${colorize(statusColor, icon)} ${extract.id} ${colorize(statusColor, 'error')} ${fmt.dim(`(${extractError})`)}`
+          `  ${colorize(statusColor, icon)} ${accentJobId(extractId)} ${colorize(statusColor, 'error')} ${fmt.dim(`(${extractError})`)}`
         );
       } else {
         console.log(
-          `  ${colorize(statusColor, icon)} ${extract.id} ${colorize(statusColor, extract.status ?? 'unknown')}`
+          `  ${colorize(statusColor, icon)} ${accentJobId(extractId)} ${colorize(statusColor, extract.status ?? 'unknown')}`
         );
       }
     }
@@ -942,7 +953,7 @@ function renderEmbeddingSection(
     const statusColor = getStatusColor(job.status);
     const icon = getStatusIcon(job.status);
     console.log(
-      `  ${colorize(statusColor, icon)} job ${job.jobId} ${colorize(statusColor, job.status)} ${fmt.dim(`(retries ${job.retries}/${job.maxRetries})`)}`
+      `  ${colorize(statusColor, icon)} job ${accentJobId(job.jobId)} ${colorize(statusColor, job.status)} ${fmt.dim(`(retries ${job.retries}/${job.maxRetries})`)}`
     );
     if (job.lastError) {
       console.log(
@@ -970,7 +981,7 @@ function renderEmbeddingSection(
         undefined
       );
 
-      let line = `    ${colorize(colors.error, icons.error)} ${job.jobId} ${context.message}`;
+      let line = `    ${colorize(colors.error, icons.error)} ${accentJobId(job.jobId)} ${context.message}`;
       if (context.metadata) {
         line += ` ${fmt.dim(`(${context.metadata})`)}`;
       }
@@ -1005,7 +1016,7 @@ function renderEmbeddingSection(
         crawlData
       );
 
-      let line = `    ${colorize(colors.warning, icons.processing)} ${job.jobId} ${context.message}`;
+      let line = `    ${colorize(colors.warning, icons.processing)} ${accentJobId(job.jobId)} ${context.message}`;
       if (context.metadata) {
         line += ` ${fmt.dim(`(${context.metadata})`)}`;
       }
@@ -1033,7 +1044,7 @@ function renderEmbeddingSection(
         undefined
       );
       console.log(
-        `    ${colorize(colors.success, icons.success)} ${job.jobId} ${context.message} ${fmt.dim(displayUrl)}`
+        `    ${colorize(colors.success, icons.success)} ${accentJobId(job.jobId)} ${context.message} ${fmt.dim(displayUrl)}`
       );
     }
   }

@@ -10,9 +10,9 @@
 
 import pLimit from 'p-limit';
 import { chunkText } from '../../utils/chunker';
-import { MAX_CONCURRENT_EMBEDS } from '../../utils/constants';
 import { DEFAULT_QDRANT_COLLECTION } from '../../utils/defaults';
 import { buildEmbeddingPoints, runEmbedSafely } from '../../utils/embed-core';
+import { getSettings } from '../../utils/settings';
 import { fmt, icons } from '../../utils/theme';
 import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
 
@@ -21,7 +21,7 @@ import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
  * Composes TEI and Qdrant services for end-to-end embedding workflow
  */
 export class EmbedPipeline implements IEmbedPipeline {
-  private collectionEnsured = false;
+  private collectionPromise: Promise<void> | null = null;
 
   constructor(
     private readonly teiService: ITeiService,
@@ -31,15 +31,22 @@ export class EmbedPipeline implements IEmbedPipeline {
 
   /**
    * Ensure the target collection exists (only calls Qdrant once per pipeline instance)
+   * Uses promise caching to prevent race conditions from concurrent calls
    */
   private async ensureCollectionReady(): Promise<void> {
-    if (this.collectionEnsured) return;
-    const teiInfo = await this.teiService.getTeiInfo();
-    await this.qdrantService.ensureCollection(
-      this.collectionName,
-      teiInfo.dimension
-    );
-    this.collectionEnsured = true;
+    if (this.collectionPromise) {
+      return this.collectionPromise;
+    }
+
+    this.collectionPromise = (async () => {
+      const teiInfo = await this.teiService.getTeiInfo();
+      await this.qdrantService.ensureCollection(
+        this.collectionName,
+        teiInfo.dimension
+      );
+    })();
+
+    return this.collectionPromise;
   }
 
   /**
@@ -156,7 +163,8 @@ export class EmbedPipeline implements IEmbedPipeline {
 
     if (items.length === 0) return result;
 
-    const concurrency = options.concurrency ?? MAX_CONCURRENT_EMBEDS;
+    const concurrency =
+      options.concurrency ?? getSettings().embedding.maxConcurrent;
     const limit = pLimit(concurrency);
     const { onProgress } = options;
     const total = items.length;

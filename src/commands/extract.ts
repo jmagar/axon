@@ -10,10 +10,10 @@ import {
   handleCommandError,
   writeCommandOutput,
 } from '../utils/command';
-import { MAX_CONCURRENT_EMBEDS } from '../utils/constants';
 import { normalizeJobId } from '../utils/job';
 import { recordJob } from '../utils/job-history';
 import { buildApiErrorMessage } from '../utils/network-error';
+import { getSettings } from '../utils/settings';
 import {
   normalizeUrlArgs,
   requireContainer,
@@ -162,7 +162,7 @@ export async function handleExtractCommand(
     const extractedText = extractionToText(result.data.extracted);
 
     // Use p-limit for concurrency control
-    const limit = pLimit(MAX_CONCURRENT_EMBEDS);
+    const limit = pLimit(getSettings().embedding.maxConcurrent);
     const embedTasks = embedTargets.map((targetUrl) =>
       limit(() =>
         pipeline.autoEmbed(extractedText, {
@@ -243,6 +243,8 @@ async function handleExtractStatusCommand(
  * - Follows standard CLI conventions (resource action target)
  */
 export function createExtractCommand(container?: IContainer): Command {
+  const settings = getSettings();
+
   const extractCmd = new Command('extract')
     .description('Extract structured data from URLs using Firecrawl')
     .argument('[urls...]', 'URL(s) to extract from')
@@ -252,12 +254,12 @@ export function createExtractCommand(container?: IContainer): Command {
     .option(
       '--allow-external-links',
       'Allow following external links (default: false)',
-      false
+      settings.extract.allowExternalLinks
     )
     .option(
       '--enable-web-search',
       'Enable web search for additional context (default: true)',
-      true
+      settings.extract.enableWebSearch
     )
     .option(
       '--no-enable-web-search',
@@ -266,13 +268,13 @@ export function createExtractCommand(container?: IContainer): Command {
     .option(
       '--include-subdomains',
       'Include subdomains when extracting (default: true)',
-      true
+      settings.extract.includeSubdomains
     )
     .option('--no-include-subdomains', 'Exclude subdomains when extracting')
     .option(
       '--show-sources',
       'Include source URLs in result (default: true)',
-      true
+      settings.extract.showSources
     )
     .option('--no-show-sources', 'Hide source URLs in result')
     .option(

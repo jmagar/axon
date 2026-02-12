@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import pLimit from 'p-limit';
 import type { IContainer } from '../container/types';
 import type { AskOptions, AskResult, AskSource } from '../types/ask';
+import { getSettings } from '../utils/settings';
 import { fmt, icons } from '../utils/theme';
 import { executeQuery } from './query';
 import { executeRetrieve } from './retrieve';
@@ -49,7 +50,7 @@ export async function executeAsk(
       };
     }
 
-    const limit = options.limit || 10;
+    const limit = options.limit || getSettings().ask.limit;
     // Model precedence: --model > ASK_CLI > default
     const model = resolveAskModel(options.model);
 
@@ -135,15 +136,44 @@ export async function executeAsk(
 
     // Step 3: Build formatted context
     const separator = '---';
-    const documentsContext = successfulRetrieves
-      .map((r, idx) => {
-        if (!r.data) return '';
-        const data = r.data;
-        return `## Document ${idx + 1}: ${data.url}\n\n${data.content}`;
-      })
-      .filter(Boolean)
-      .join(`\n\n${separator}\n\n`);
+    const MAX_CONTEXT_CHARS = options.maxContext || 100000; // Default: 100k chars
 
+    // Build documents context incrementally with size limit
+    const documentParts: string[] = [];
+    let totalChars = 0;
+    let includedDocs = 0;
+
+    for (let idx = 0; idx < successfulRetrieves.length; idx++) {
+      const r = successfulRetrieves[idx];
+      if (!r.data) continue;
+
+      const docPart = `## Document ${idx + 1}: ${r.data.url}\n\n${r.data.content}`;
+      const docSize = docPart.length + separator.length + 2; // +2 for newlines
+
+      // Check if adding this document would exceed limit
+      if (totalChars + docSize > MAX_CONTEXT_CHARS) {
+        // If we haven't included any documents yet, the limit is too small
+        if (includedDocs === 0) {
+          return {
+            success: false,
+            error: `Context size limit (${MAX_CONTEXT_CHARS} chars) too small to include any documents. Try increasing --max-context.`,
+          };
+        }
+        // Otherwise, stop adding more documents
+        console.error(
+          fmt.warning(
+            `${icons.warning} Context size limit reached (${MAX_CONTEXT_CHARS} chars). Included ${includedDocs}/${successfulRetrieves.length} documents.`
+          )
+        );
+        break;
+      }
+
+      documentParts.push(docPart);
+      totalChars += docSize;
+      includedDocs++;
+    }
+
+    const documentsContext = documentParts.join(`\n\n${separator}\n\n`);
     const context = `I have a question about these documents:\n\n${documentsContext}\n\n${separator}\n\nQuestion: ${options.query}`;
 
     // Only include sources whose content was actually retrieved
@@ -294,6 +324,8 @@ export async function handleAskCommand(
  * Create ask command
  */
 export function createAskCommand(): Command {
+  const settings = getSettings();
+
   const askCmd = new Command('ask')
     .description(
       'Ask a question about your embedded documents (calls claude or gemini CLI)'
@@ -303,7 +335,7 @@ export function createAskCommand(): Command {
       '--limit <number>',
       'Maximum number of documents to retrieve (default: 10)',
       (val) => parseInt(val, 10),
-      10
+      settings.ask.limit
     )
     .option('--domain <domain>', 'Filter results by domain')
     .option(
@@ -314,6 +346,11 @@ export function createAskCommand(): Command {
       '--model <name>',
       'Model: opus/sonnet/haiku (claude) or gemini-3-pro-preview/gemini-3-flash-preview (gemini). Defaults: ASK_CLI, then haiku.'
     )
+    .option(
+      '--max-context <chars>',
+      'Maximum context size in characters (default: 100000)',
+      (val) => parseInt(val, 10)
+    )
     .action(async (query: string, options, command: Command) => {
       const container = requireContainer(command);
 
@@ -323,6 +360,7 @@ export function createAskCommand(): Command {
         domain: options.domain,
         collection: options.collection,
         model: options.model,
+        maxContext: options.maxContext,
       });
     });
 

@@ -14,8 +14,9 @@ export const colors = {
   info: '\x1b[36m', // Cyan
 
   // Emphasis
-  primary: '\x1b[38;5;208m', // Orange (firecrawl brand)
+  primary: '\x1b[38;2;244;143;177m', // Pink (#F48FB1)
   secondary: '\x1b[35m', // Magenta
+  materialLightBlue: '\x1b[38;2;144;202;249m', // Light blue (#90CAF9)
 
   // Utility
   dim: '\x1b[2m', // Gray/dimmed

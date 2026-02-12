@@ -27,6 +27,15 @@ vi.mock('../../utils/settings', () => ({
     defaultExcludePaths: [],
     defaultExcludeExtensions: [],
   })),
+  getSettings: vi.fn(() => ({
+    http: {
+      timeoutMs: 30000,
+    },
+    map: {
+      sitemap: 'include',
+      ignoreQueryParameters: true,
+    },
+  })),
 }));
 
 /**

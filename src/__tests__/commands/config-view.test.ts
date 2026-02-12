@@ -13,14 +13,88 @@ vi.mock('../../utils/credentials', () => ({
 
 vi.mock('../../utils/settings', () => ({
   loadSettings: vi.fn().mockReturnValue({}),
+  getSettings: vi.fn().mockReturnValue({
+    settingsVersion: 2,
+    defaultExcludePaths: [],
+    defaultExcludeExtensions: [],
+    crawl: {
+      maxDepth: 5,
+      crawlEntireDomain: true,
+      allowSubdomains: true,
+      onlyMainContent: true,
+      excludeTags: ['nav', 'footer'],
+      sitemap: 'include',
+      ignoreQueryParameters: true,
+      autoEmbed: true,
+      pollIntervalSeconds: 5,
+    },
+    scrape: {
+      formats: ['markdown'],
+      onlyMainContent: true,
+      timeoutSeconds: 15,
+      excludeTags: ['nav', 'footer'],
+      autoEmbed: true,
+    },
+    map: {
+      sitemap: 'include',
+      includeSubdomains: null,
+      ignoreQueryParameters: true,
+      ignoreCache: null,
+    },
+    search: {
+      limit: 5,
+      sources: ['web'],
+      timeoutMs: 60000,
+      ignoreInvalidUrls: true,
+      scrape: true,
+      scrapeFormats: ['markdown'],
+      onlyMainContent: true,
+      autoEmbed: true,
+    },
+    extract: {
+      allowExternalLinks: false,
+      enableWebSearch: true,
+      includeSubdomains: true,
+      showSources: true,
+      ignoreInvalidUrls: true,
+      autoEmbed: true,
+    },
+    batch: { onlyMainContent: false, ignoreInvalidUrls: false },
+    ask: { limit: 10 },
+    http: {
+      timeoutMs: 30000,
+      maxRetries: 3,
+      baseDelayMs: 5000,
+      maxDelayMs: 60000,
+    },
+    chunking: {
+      maxChunkSize: 1500,
+      targetChunkSize: 1000,
+      overlapSize: 100,
+      minChunkSize: 50,
+    },
+    embedding: {
+      maxConcurrent: 10,
+      batchSize: 24,
+      maxConcurrentBatches: 4,
+      maxRetries: 3,
+    },
+    polling: { intervalMs: 5000 },
+  }),
   saveSettings: vi.fn(),
   clearSetting: vi.fn(),
 }));
 
 vi.mock('../../utils/theme', () => ({
-  colorize: (_color: string, text: string) => text,
+  colorize: vi.fn((_color: string, text: string) => text),
   colors: {
     primary: '',
+    info: '',
+    warning: '',
+    secondary: '',
+    success: '',
+    error: '',
+    materialLightBlue: '',
   },
   fmt: {
     error: (msg: string) => msg,
@@ -43,6 +117,7 @@ vi.mock('../../utils/theme', () => ({
 
 import { getAuthSource, isAuthenticated } from '../../utils/auth';
 import { loadCredentials } from '../../utils/credentials';
+import { colorize } from '../../utils/theme';
 
 describe('viewConfig', () => {
   beforeEach(() => {
@@ -150,6 +225,25 @@ describe('viewConfig', () => {
     expect(console.log).toHaveBeenCalledWith(
       expect.stringContaining('sk-ope...7890')
     );
+  });
+
+  it('colors section labels and nested settings labels', async () => {
+    vi.mocked(isAuthenticated).mockReturnValue(true);
+    vi.mocked(getAuthSource).mockReturnValue('env');
+    vi.mocked(loadCredentials).mockReturnValue(null);
+
+    await viewConfig();
+
+    expect(colorize).toHaveBeenCalledWith('', 'API URL:');
+    expect(colorize).toHaveBeenCalledWith('', 'API Key:');
+    expect(colorize).toHaveBeenCalledWith('', 'Config:');
+    expect(colorize).toHaveBeenCalledWith('', 'Exclude Paths:');
+    expect(colorize).toHaveBeenCalledWith('', 'Exclude Extensions:');
+    expect(colorize).toHaveBeenCalledWith('', 'scrape:');
+    expect(colorize).toHaveBeenCalledWith('', 'formats:');
+    expect(colorize).toHaveBeenCalledWith('', 'onlyMainContent:');
+    expect(colorize).toHaveBeenCalledWith('', 'Runtime Environment');
+    expect(colorize).toHaveBeenCalledWith('', 'Commands');
   });
 
   it('shows OPENAI_MODEL as not set when not configured', async () => {

@@ -15,6 +15,7 @@ import { processCommandResult } from '../utils/command';
 import { displayCommandInfo } from '../utils/display';
 import { extensionsToPaths } from '../utils/extensions';
 import { buildApiErrorMessage } from '../utils/network-error';
+import { getSettings } from '../utils/settings';
 import { fmt } from '../utils/theme';
 import { filterUrls } from '../utils/url-filter';
 import { mergeExcludePaths } from './crawl/options';
@@ -244,7 +245,7 @@ async function executeMapWithUserAgent(
       headers,
       body: JSON.stringify(body),
     },
-    { timeoutMs: 30000 }
+    { timeoutMs: getSettings().http.timeoutMs }
   );
 
   if (!response.ok) {
@@ -492,6 +493,8 @@ import { normalizeUrl } from '../utils/url';
  * Create and configure the map command
  */
 export function createMapCommand(): Command {
+  const settings = getSettings();
+
   const mapCmd = new Command('map')
     .description('Map URLs on a website using Firecrawl')
     .argument('[url]', 'URL to map')
@@ -506,11 +509,16 @@ export function createMapCommand(): Command {
     .option('--search <query>', 'Search query to filter URLs')
     .option(
       '--sitemap <mode>',
-      'Sitemap handling: only, include, skip (default: include)'
+      'Sitemap handling: only, include, skip (default: include)',
+      settings.map.sitemap
     )
     .option('--include-subdomains', 'Include subdomains')
     .option('--no-include-subdomains', 'Exclude subdomains')
-    .option('--ignore-query-parameters', 'Ignore query parameters', true)
+    .option(
+      '--ignore-query-parameters',
+      'Ignore query parameters',
+      settings.map.ignoreQueryParameters ?? true
+    )
     .option('--no-ignore-query-parameters', 'Include query parameters')
     .option('--ignore-cache', 'Bypass sitemap cache for fresh URLs')
     .option('--no-ignore-cache', 'Use cached sitemap data')

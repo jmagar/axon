@@ -76,6 +76,19 @@ function setSecurePermissions(filePath: string): void {
 
 /**
  * Migrate credentials from legacy paths to FIRECRAWL_HOME path.
+ *
+ * KNOWN LIMITATION (#74): TOCTOU race condition possible if multiple CLI processes
+ * run simultaneously during migration. This is acceptable for a single-user CLI tool
+ * where concurrent execution during first-time setup is extremely rare.
+ *
+ * Potential race:
+ * - Process A: checks newPath doesn't exist
+ * - Process B: checks newPath doesn't exist
+ * - Process A: writes credentials
+ * - Process B: writes credentials (overwrites A's write)
+ *
+ * Impact: Benign - both processes write the same data from legacy source.
+ * Migration is idempotent and only runs once per process lifetime.
  */
 function migrateLegacyCredentials(): void {
   if (migrationDone) {

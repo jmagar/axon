@@ -13,7 +13,8 @@ import { formatJson, writeCommandOutput } from '../../utils/command';
 import { displayCommandInfo } from '../../utils/display';
 import { isJobId, normalizeJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
-import { fmt } from '../../utils/theme';
+import { getSettings } from '../../utils/settings';
+import { fmt, icons } from '../../utils/theme';
 import { normalizeUrl } from '../../utils/url';
 import { requireContainer, requireContainerFromCommandTree } from '../shared';
 import {
@@ -292,7 +293,7 @@ async function handleCrawlClearCommand(
     const { askForConfirmation } = await import('../../utils/prompts');
     const confirmed = await askForConfirmation(
       fmt.warning(
-        '\n  ⚠️  Are you sure you want to clear the entire crawl queue?\n  This action cannot be undone. (y/N) '
+        `\n  ${icons.warning}  Are you sure you want to clear the entire crawl queue?\n  This action cannot be undone. (y/N) `
       )
     );
 
@@ -324,6 +325,8 @@ async function handleCrawlCleanupCommand(
  * @returns Configured Commander.js command
  */
 export function createCrawlCommand(): Command {
+  const settings = getSettings();
+
   const crawlCmd = new Command('crawl')
     .description('Crawl a website using Firecrawl')
     .argument('[url]', 'URL to crawl')
@@ -354,7 +357,7 @@ export function createCrawlCommand(): Command {
       '--max-depth <number>',
       'Maximum crawl depth',
       (value: string) => parseInt(value, 10),
-      3
+      settings.crawl.maxDepth
     )
     .option(
       '--exclude-paths <paths>',
@@ -367,31 +370,39 @@ export function createCrawlCommand(): Command {
     .option(
       '--sitemap <mode>',
       'Sitemap handling: skip, include (default: include)',
-      'include'
+      settings.crawl.sitemap
     )
     .option(
       '--ignore-query-parameters',
       'Ignore query parameters when crawling',
-      true
+      settings.crawl.ignoreQueryParameters
     )
     .option(
       '--no-ignore-query-parameters',
       'Include query parameters when crawling'
     )
-    .option('--crawl-entire-domain', 'Crawl entire domain', false)
+    .option(
+      '--crawl-entire-domain',
+      'Crawl entire domain',
+      settings.crawl.crawlEntireDomain
+    )
     .option('--allow-external-links', 'Allow external links', false)
-    .option('--allow-subdomains', 'Allow subdomains', true)
+    .option(
+      '--allow-subdomains',
+      'Allow subdomains',
+      settings.crawl.allowSubdomains
+    )
     .option('--no-allow-subdomains', 'Disallow subdomains')
     .option(
       '--only-main-content',
       'Include only main content when scraping pages',
-      true
+      settings.crawl.onlyMainContent
     )
     .option('--no-only-main-content', 'Include full page content')
     .option(
       '--exclude-tags <tags>',
       'Comma-separated list of tags to exclude from scraped content',
-      'nav,footer'
+      settings.crawl.excludeTags.join(',')
     )
     .option(
       '--include-tags <tags>',

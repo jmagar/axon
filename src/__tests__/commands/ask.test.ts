@@ -348,4 +348,85 @@ describe('executeAsk', () => {
     expect(result.data?.documentsRetrieved).toBe(2);
     expect(result.data?.answer).toBe('Answer text');
   });
+
+  it('should enforce context size limit and truncate documents', async () => {
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc as never);
+
+    const largeContent = 'x'.repeat(60000); // 60k chars per doc
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('https://example.com/doc1', 0.95),
+        createMockQueryResult('https://example.com/doc2', 0.85),
+      ],
+    });
+    vi.mocked(executeRetrieve)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          url: 'https://example.com/doc1',
+          totalChunks: 1,
+          content: largeContent,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          url: 'https://example.com/doc2',
+          totalChunks: 1,
+          content: largeContent,
+        },
+      });
+
+    // Set maxContext to 80k - should include first doc but not second
+    const resultPromise = executeAsk(container, {
+      query: 'test',
+      maxContext: 80000,
+    });
+
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+
+    // Verify only 1 document was included (check stdin write)
+    expect(mockProc.stdin.write).toHaveBeenCalledWith(
+      expect.stringContaining('https://example.com/doc1')
+    );
+    expect(mockProc.stdin.write).toHaveBeenCalledWith(
+      expect.not.stringContaining('https://example.com/doc2')
+    );
+
+    mockProc.stdout.emit('data', Buffer.from('Answer'));
+    mockProc.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+  });
+
+  it('should fail when maxContext is too small for any document', async () => {
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [createMockQueryResult('https://example.com/doc1', 0.95)],
+    });
+    vi.mocked(executeRetrieve).mockResolvedValueOnce({
+      success: true,
+      data: {
+        url: 'https://example.com/doc1',
+        totalChunks: 1,
+        content: 'x'.repeat(1000),
+      },
+    });
+
+    // Set maxContext to 100 - too small for any doc (no spawn expected)
+    const result = await executeAsk(container, {
+      query: 'test',
+      maxContext: 100,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Context size limit');
+    expect(result.error).toContain('100');
+    expect(result.error).toContain('too small to include any documents');
+    // Verify spawn was NOT called since we failed early
+    expect(spawn).not.toHaveBeenCalled();
+  });
 });

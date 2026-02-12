@@ -202,10 +202,12 @@ describe('executeQuery', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(2);
+    // Use exact hostname matching or subdomain check to avoid false positives
     expect(
-      result.data?.every((item) =>
-        new URL(item.url).hostname.endsWith('example.com')
-      )
+      result.data?.every((item) => {
+        const hostname = new URL(item.url).hostname;
+        return hostname === 'example.com' || hostname.endsWith('.example.com');
+      })
     ).toBe(true);
   });
 
@@ -251,6 +253,28 @@ describe('executeQuery', () => {
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
     expect(result.data?.[0].url).toBe('https://example.com/subagents');
+  });
+
+  it('should reject negative limit values', async () => {
+    const result = await executeQuery(container, {
+      query: 'test',
+      limit: -5,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Limit must be a positive integer');
+    expect(result.error).toContain('-5');
+  });
+
+  it('should reject zero limit values', async () => {
+    const result = await executeQuery(container, {
+      query: 'test',
+      limit: 0,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Limit must be a positive integer');
+    expect(result.error).toContain('0');
   });
 });
 
@@ -360,5 +384,11 @@ describe('selectBestPreviewItem', () => {
     expect(selection.selected.chunkIndex).toBe(2);
     expect(selection.candidates).toHaveLength(2);
     expect(selection.selectedPreviewScore).toBeGreaterThan(0);
+  });
+
+  it('throws error when candidates array is empty', () => {
+    expect(() => selectBestPreviewItem([], 'test query')).toThrow(
+      'Cannot select preview item from empty candidates list'
+    );
   });
 });

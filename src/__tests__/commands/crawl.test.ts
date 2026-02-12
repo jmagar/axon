@@ -26,6 +26,22 @@ const { mockAutoEmbed } = vi.hoisted(() => ({
 // Mock settings to avoid reading real user settings from disk
 vi.mock('../../utils/settings', () => ({
   loadSettings: vi.fn().mockReturnValue({}),
+  getSettings: vi.fn().mockReturnValue({
+    defaultExcludePaths: [],
+    defaultExcludeExtensions: [],
+    polling: { intervalMs: 5000 },
+    crawl: {
+      maxDepth: 5,
+      sitemap: 'include',
+      ignoreQueryParameters: true,
+      crawlEntireDomain: true,
+      allowSubdomains: true,
+      onlyMainContent: true,
+      excludeTags: ['nav', 'footer'],
+      pollIntervalSeconds: 5,
+      autoEmbed: true,
+    },
+  }),
 }));
 
 vi.mock('../../utils/embed-queue', () => ({

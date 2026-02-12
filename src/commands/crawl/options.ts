@@ -10,12 +10,7 @@ import {
 } from '../../utils/constants.js';
 import { extensionsToPaths } from '../../utils/extensions.js';
 import { OptionsBuilder } from '../../utils/options-builder';
-import { loadSettings } from '../../utils/settings';
-
-/**
- * Default polling interval in milliseconds when in wait/progress mode
- */
-const DEFAULT_POLL_INTERVAL_MS = 5000;
+import { getSettings } from '../../utils/settings';
 
 /**
  * Normalize user-facing exclude path literals to regex-safe patterns
@@ -56,6 +51,8 @@ export type ExtendedCrawlOptions = FirecrawlCrawlOptions & {
 export function buildCrawlOptions(
   options: CrawlOptions
 ): Partial<ExtendedCrawlOptions> {
+  const settings = getSettings();
+
   const builder = new OptionsBuilder<ExtendedCrawlOptions>()
     .add('limit', options.limit)
     .addMapped('maxDiscoveryDepth', options.maxDepth)
@@ -105,7 +102,7 @@ export function buildCrawlOptions(
     builder.add('pollInterval', options.pollInterval * 1000); // Convert seconds to milliseconds
   } else if (options.wait || options.progress) {
     // Default poll interval when in wait/progress mode
-    builder.add('pollInterval', DEFAULT_POLL_INTERVAL_MS);
+    builder.add('pollInterval', settings.polling?.intervalMs ?? 5000);
   }
 
   if (options.timeout !== undefined) {
@@ -132,7 +129,7 @@ export function mergeExcludeExtensions(
   cliExtensions: string[] | undefined,
   skipDefaults: boolean
 ): string[] {
-  const settingsExtensions = loadSettings().defaultExcludeExtensions ?? [];
+  const settingsExtensions = getSettings().defaultExcludeExtensions ?? [];
 
   // If user has custom settings, use those; otherwise use built-in defaults
   const defaultExtensions = skipDefaults
@@ -175,7 +172,7 @@ export function mergeExcludePaths(
   skipDefaults: boolean,
   extensionPatterns: string[] = []
 ): string[] {
-  const settingsPaths = loadSettings().defaultExcludePaths ?? [];
+  const settingsPaths = getSettings().defaultExcludePaths ?? [];
   const defaultExcludes = skipDefaults
     ? []
     : settingsPaths.length > 0

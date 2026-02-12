@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   handleConfigClear,
   handleConfigGet,
+  handleConfigReset,
   handleConfigSet,
   maskUrlCredentials,
 } from '../../commands/config';
@@ -11,10 +12,25 @@ vi.mock('../../utils/settings', () => ({
   loadSettings: vi.fn(),
   saveSettings: vi.fn(),
   clearSetting: vi.fn(),
+  getSettings: vi.fn(),
+}));
+
+vi.mock('../../utils/default-settings', () => ({
+  getDefaultSettings: vi.fn(),
 }));
 
 // Mock the theme module to avoid ANSI codes
 vi.mock('../../utils/theme', () => ({
+  colorize: (_color: string, text: string) => text,
+  colors: {
+    primary: '',
+    info: '',
+    warning: '',
+    secondary: '',
+    success: '',
+    error: '',
+    materialLightBlue: '',
+  },
   fmt: {
     error: (msg: string) => msg,
     dim: (msg: string) => msg,
@@ -33,7 +49,13 @@ vi.mock('../../utils/theme', () => ({
   },
 }));
 
-import { clearSetting, loadSettings, saveSettings } from '../../utils/settings';
+import { getDefaultSettings } from '../../utils/default-settings';
+import {
+  clearSetting,
+  getSettings,
+  loadSettings,
+  saveSettings,
+} from '../../utils/settings';
 
 describe('handleConfigSet', () => {
   beforeEach(() => {
@@ -161,6 +183,16 @@ describe('handleConfigGet', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+    vi.mocked(getDefaultSettings).mockReturnValue({
+      defaultExcludeExtensions: [
+        '.exe',
+        '.pkg',
+        '.dmg',
+        '.zip',
+        '.jpg',
+        '.ttf',
+      ],
+    } as unknown as ReturnType<typeof getDefaultSettings>);
   });
 
   afterEach(() => {
@@ -333,6 +365,121 @@ describe('handleConfigGet', () => {
       );
       expect(process.exit).toHaveBeenCalledWith(1);
     });
+  });
+});
+
+describe('nested settings', () => {
+  const effectiveSettings = {
+    settingsVersion: 2 as const,
+    defaultExcludePaths: [],
+    defaultExcludeExtensions: [],
+    crawl: {
+      maxDepth: 7,
+      crawlEntireDomain: true,
+      allowSubdomains: true,
+      onlyMainContent: true,
+      excludeTags: ['nav', 'footer'],
+      sitemap: 'include' as const,
+      ignoreQueryParameters: true,
+      autoEmbed: true,
+      pollIntervalSeconds: 5,
+    },
+    scrape: {
+      formats: ['markdown'],
+      onlyMainContent: true,
+      timeoutSeconds: 15,
+      excludeTags: ['nav', 'footer'],
+      autoEmbed: true,
+    },
+    map: {
+      sitemap: 'include' as const,
+      includeSubdomains: null,
+      ignoreQueryParameters: true,
+      ignoreCache: null,
+    },
+    search: {
+      limit: 5,
+      sources: ['web'],
+      timeoutMs: 60000,
+      ignoreInvalidUrls: true,
+      scrape: true,
+      scrapeFormats: ['markdown'],
+      onlyMainContent: true,
+      autoEmbed: true,
+    },
+    extract: {
+      allowExternalLinks: false,
+      enableWebSearch: true,
+      includeSubdomains: true,
+      showSources: true,
+      ignoreInvalidUrls: true,
+      autoEmbed: true,
+    },
+    batch: { onlyMainContent: false, ignoreInvalidUrls: false },
+    ask: { limit: 10 },
+    http: {
+      timeoutMs: 30000,
+      maxRetries: 3,
+      baseDelayMs: 5000,
+      maxDelayMs: 60000,
+    },
+    chunking: {
+      maxChunkSize: 1500,
+      targetChunkSize: 1000,
+      overlapSize: 100,
+      minChunkSize: 50,
+    },
+    embedding: {
+      maxConcurrent: 10,
+      batchSize: 24,
+      maxConcurrentBatches: 4,
+      maxRetries: 3,
+    },
+    polling: { intervalMs: 5000 },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(getSettings).mockReturnValue(effectiveSettings);
+    vi.mocked(getDefaultSettings).mockReturnValue(effectiveSettings);
+  });
+
+  it('gets a nested setting path', () => {
+    handleConfigGet('crawl.maxDepth');
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('crawl.maxDepth: 7')
+    );
+  });
+
+  it('sets a nested setting path', () => {
+    vi.mocked(loadSettings).mockReturnValue({ crawl: { sitemap: 'include' } });
+
+    handleConfigSet('crawl.maxDepth', '10');
+
+    expect(saveSettings).toHaveBeenCalledWith({
+      crawl: { sitemap: 'include', maxDepth: 10 },
+    });
+  });
+
+  it('resets a nested setting path to defaults', () => {
+    vi.mocked(loadSettings).mockReturnValue({ crawl: { maxDepth: 17 } });
+
+    handleConfigReset('crawl.maxDepth');
+
+    expect(saveSettings).toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('crawl.maxDepth reset')
+    );
+  });
+
+  it('rejects unknown nested setting path', () => {
+    handleConfigSet('crawl.unknownField', '10');
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Unknown setting path')
+    );
+    expect(saveSettings).not.toHaveBeenCalled();
   });
 });
 

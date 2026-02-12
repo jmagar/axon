@@ -104,6 +104,60 @@ describe('E2E: config command', () => {
     });
   });
 
+  describe('nested config set/get/reset', () => {
+    it('should set and get crawl.maxDepth', async () => {
+      const setResult = await runCLI(
+        ['config', 'set', 'crawl.maxDepth', '10'],
+        {
+          env: {
+            HOME: tempDir,
+            XDG_CONFIG_HOME: tempDir,
+          },
+        }
+      );
+      expect(setResult.exitCode).toBe(0);
+
+      const getResult = await runCLI(['config', 'get', 'crawl.maxDepth'], {
+        env: {
+          HOME: tempDir,
+          XDG_CONFIG_HOME: tempDir,
+        },
+      });
+
+      expect(getResult.exitCode).toBe(0);
+      expect(getResult.stdout).toContain('crawl.maxDepth');
+      expect(getResult.stdout).toContain('10');
+    });
+
+    it('should reset crawl.maxDepth to defaults', async () => {
+      await runCLI(['config', 'set', 'crawl.maxDepth', '10'], {
+        env: {
+          HOME: tempDir,
+          XDG_CONFIG_HOME: tempDir,
+        },
+      });
+
+      const resetResult = await runCLI(['config', 'reset', 'crawl.maxDepth'], {
+        env: {
+          HOME: tempDir,
+          XDG_CONFIG_HOME: tempDir,
+        },
+      });
+      expect(resetResult.exitCode).toBe(0);
+
+      const getResult = await runCLI(['config', 'get', 'crawl.maxDepth'], {
+        env: {
+          HOME: tempDir,
+          XDG_CONFIG_HOME: tempDir,
+        },
+      });
+
+      expect(getResult.exitCode).toBe(0);
+      expect(getResult.stdout).toContain('crawl.maxDepth');
+      expect(getResult.stdout).toContain('5');
+    });
+  });
+
   describe('view-config command', () => {
     it('should display view-config command help', async () => {
       const result = await runCLISuccess(['view-config', '--help']);

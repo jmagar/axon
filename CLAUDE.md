@@ -185,88 +185,29 @@ QDRANT_URL=http://localhost:53333
 
 ## Ask Command
 
-The `firecrawl ask` command provides Q&A capabilities over your embedded documents by integrating with the `claude` CLI tool.
+Q&A over your embedded documents using the `claude` CLI tool.
 
-**Purpose**: Ask questions about your embedded documents and get Claude's answer. Handles everything internally - no manual piping required.
-
-**Architecture**:
-1. Query Qdrant for relevant documents (semantic search)
-2. Retrieve full content from top results
-3. Format documents + question into context
-4. Spawn `claude` CLI as subprocess
-5. Pipe context to Claude's stdin
-6. Stream response back to stdout
-
-**Usage**:
+**Quick Usage**:
 
 ```bash
-# Basic usage - uses Haiku by default for speed and cost
+# Basic query (uses Haiku, 10 docs)
 firecrawl ask "How do I create a Claude Code skill?"
 
-# Limit number of documents (default: 10)
-firecrawl ask "What is FastAPI?" --limit 3
-
-# Use a different Claude model (sonnet, opus, haiku)
-firecrawl ask "Complex analysis needed" --model sonnet
+# Limit documents and choose model
+firecrawl ask "Complex analysis needed" --limit 5 --model sonnet
 
 # Filter by domain
 firecrawl ask "Explain React hooks" --domain react.dev
-
-# Use different collection
-firecrawl ask "What is Qdrant?" --collection docs
-
-# Combine options
-firecrawl ask "What is Qdrant?" --limit 5 --model opus --domain qdrant.tech
 ```
-
-**Output**:
-- **stdout**: Claude's response (streamed in real-time, pipe-safe)
-- **stderr**: Progress messages and source citations (visible but don't interfere with piping)
 
 **Requirements**:
-- TEI embeddings service (for semantic search)
-- Qdrant vector database (for document storage)
-- `claude` CLI tool installed and in PATH (uses Claude Max subscription - no API costs)
+- TEI embeddings service (semantic search)
+- Qdrant vector database (document storage)
+- `claude` CLI tool in PATH (uses Max subscription - no API costs)
 
-**Defaults**:
-- **Model**: Haiku (fast and cost-effective) - override with `--model sonnet` or `--model opus`
-- **Limit**: 10 documents - override with `--limit N`
+**Why `claude` CLI**: Free with Max subscription, no API key management, officially maintained by Anthropic.
 
-**Why Subprocess Instead of API?**
-- **Free**: Uses Max subscription, no per-token costs
-- **Simple**: No API key management, no SDK dependencies
-- **Standard**: Same pattern as tools that call `git`, `docker`, `npm` as subprocesses
-- **Maintained**: `claude` CLI is officially maintained by Anthropic
-
-**Example Session**:
-
-```bash
-$ firecrawl ask "What are the main features of Firecrawl?"
-  ◉ Searching for relevant documents...
-  ✓ Found 5 relevant documents
-  ◉ Retrieving full document content...
-  ✓ Retrieved 5 documents
-  → Asking Claude...
-
-Based on the documentation, Firecrawl's main features include:
-
-1. **Web Scraping**: Single URL scraping with browser automation
-2. **Crawling**: Multi-page crawling with depth and path controls
-3. **Semantic Search**: Vector embeddings via TEI and Qdrant
-4. **Structured Extraction**: Schema-based data extraction
-5. **Batch Operations**: Parallel scraping of multiple URLs
-...
-
-────────────────────────────────────────────────────────────
-Sources:
-  1. [0.92] https://docs.firecrawl.dev/features
-     Firecrawl Features Overview
-  2. [0.88] https://docs.firecrawl.dev/getting-started
-     Getting Started Guide
-  ...
-
-  i Retrieved 5 documents
-```
+**For comprehensive examples, troubleshooting, and advanced usage**, see `.claude/skills/firecrawl/examples/ask-command-usage.md`
 
 ## Important Patterns
 

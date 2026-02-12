@@ -154,6 +154,45 @@ export function scrubUrlApiKeys(url: string): string {
 }
 
 /**
+ * Sanitize URL credentials (username/password)
+ *
+ * Redacts passwords in URLs while preserving username in format: username:***
+ * This prevents credential leakage in logs and outputs.
+ *
+ * @param url The URL to sanitize
+ * @returns Sanitized URL with password redacted
+ *
+ * @example
+ * sanitizeUrlCredentials('redis://user:secret@localhost:6379')
+ * // Returns: 'redis://user:***@localhost:6379'
+ */
+export function sanitizeUrlCredentials(url: string): string {
+  if (!url || typeof url !== 'string') {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    // If URL has password, redact it while keeping username
+    if (parsed.password) {
+      parsed.password = '***';
+    }
+
+    return parsed.toString();
+  } catch {
+    // If URL parsing fails, use regex fallback
+    // Matches protocol://username:password@host pattern
+    return url.replace(
+      /(:\/\/)([^:@]+):([^@]+)@/,
+      (_match, protocol, username, _password) => {
+        return `${protocol}${username}:***@`;
+      }
+    );
+  }
+}
+
+/**
  * Scrub API keys from HTTP headers
  *
  * @param headers Headers object or Record

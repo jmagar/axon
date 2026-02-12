@@ -52,6 +52,7 @@ The e2e tests use a **local Astro test website** instead of live URLs for predic
 - RSS feed (`/rss.xml`)
 
 **One-time Setup (minimal checkout)**:
+
 ```bash
 mkdir -p ~/workspace/firecrawl-test-server
 git clone --filter=blob:none --no-checkout https://github.com/firecrawl/firecrawl ~/workspace/firecrawl-test-server

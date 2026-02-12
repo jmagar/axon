@@ -15,6 +15,7 @@ import type {
   DoctorReport,
   DoctorSummaryCounts,
 } from '../types/doctor';
+import { sanitizeUrlCredentials } from '../utils/api-key-scrubber';
 import { getAuthSource } from '../utils/auth';
 import { formatJson, writeCommandOutput } from '../utils/command';
 import {
@@ -343,6 +344,8 @@ async function runContainerWriteProbe(
   containerPath: string,
   timeoutMs: number
 ): Promise<{ ok: boolean; error?: string }> {
+  // Note: randomUUID() is called in Node.js context, not in container
+  // Container only needs POSIX sh (touch, rm), no Node.js required
   const probeFile = `${containerPath}/.doctor-write-test-${randomUUID()}`;
   const shellCmd = `touch "${probeFile}" && rm -f "${probeFile}"`;
 
@@ -384,19 +387,52 @@ async function getCliVersion(
   timeoutMs: number
 ): Promise<{ ok: boolean; version?: string; error?: string }> {
   return await new Promise((resolve) => {
+    // Use --help instead of --version for more robust detection
+    // Claude CLI has distinct help output; version may not be available
     execFile(
       cli,
-      ['--version'],
+      ['--help'],
       { timeout: timeoutMs },
       (error, stdout, stderr) => {
         const out = stdout.trim();
         const err = stderr.trim();
+
         if (error) {
           const details = err || out || error.message;
           resolve({ ok: false, error: details });
           return;
         }
-        resolve({ ok: true, version: out || err || 'version detected' });
+
+        // Verify it's actually the expected CLI by checking help output
+        const output = out || err;
+        const isValidClaude =
+          cli === 'claude' &&
+          (output.includes('Anthropic') ||
+            output.includes('claude') ||
+            output.includes('conversation'));
+        const isValidGemini =
+          cli === 'gemini' &&
+          (output.includes('Google') ||
+            output.includes('gemini') ||
+            output.includes('Gemini'));
+
+        if (
+          (cli === 'claude' && !isValidClaude) ||
+          (cli === 'gemini' && !isValidGemini)
+        ) {
+          resolve({
+            ok: false,
+            error: `Binary '${cli}' found but does not appear to be the correct CLI tool`,
+          });
+          return;
+        }
+
+        // Try to extract version from help output or indicate CLI is valid
+        const versionMatch = output.match(/version[:\s]+([0-9.]+)/i);
+        resolve({
+          ok: true,
+          version: versionMatch ? versionMatch[1] : 'CLI detected and verified',
+        });
       }
     );
   });
@@ -407,6 +443,11 @@ function printHumanReport(report: DoctorReport): void {
     fmt.bold(colorize(colors.primary, text));
   const toStatusWord = (status: DoctorCheckStatus): string =>
     status === 'pass' ? 'completed' : status === 'warn' ? 'pending' : 'failed';
+  const shouldAccentCheckName = (category: DoctorCheck['category']): boolean =>
+    category === 'docker' ||
+    category === 'services' ||
+    category === 'directories' ||
+    category === 'config_files';
 
   console.log('');
   console.log(
@@ -440,8 +481,11 @@ function printHumanReport(report: DoctorReport): void {
       const statusWord = toStatusWord(check.status);
       const statusColor = getStatusColor(statusWord);
       const icon = getStatusIcon(statusWord);
+      const checkName = shouldAccentCheckName(check.category)
+        ? colorize(colors.materialLightBlue, check.name)
+        : check.name;
       console.log(
-        `    ${colorize(statusColor, icon)} ${check.name} ${colorize(statusColor, statusWord)} ${fmt.dim(`(${check.message})`)}`
+        `    ${colorize(statusColor, icon)} ${checkName} ${colorize(statusColor, statusWord)} ${fmt.dim(`(${check.message})`)}`
       );
     }
     console.log('');
@@ -611,7 +655,7 @@ async function collectServiceChecks(
         name: input.key,
         status: 'fail',
         message: 'Invalid service URL',
-        details: { raw: input.raw },
+        details: { raw: sanitizeUrlCredentials(input.raw) },
       });
       continue;
     }
@@ -633,7 +677,7 @@ async function collectServiceChecks(
             ? `Reachable via docker network (${probeContainer} -> ${parsed.host}:${parsed.port})`
             : `Unreachable from host and docker network (${networkCheck.error || 'Unknown error'})`,
           details: {
-            raw: parsed.raw,
+            raw: sanitizeUrlCredentials(parsed.raw),
             host: parsed.host,
             port: parsed.port,
             resolution: resolved.resolution,
@@ -649,7 +693,7 @@ async function collectServiceChecks(
         status: 'fail',
         message: resolved.reason || 'Service URL not reachable from host',
         details: {
-          raw: parsed.raw,
+          raw: sanitizeUrlCredentials(parsed.raw),
           host: parsed.host,
           port: parsed.port,
         },
@@ -670,8 +714,8 @@ async function collectServiceChecks(
           ? `Reachable (${check.status})`
           : `Unreachable (${check.error || 'Unknown error'})`,
         details: {
-          raw: parsed.raw,
-          checked: resolved.resolvedUrl || parsed.raw,
+          raw: sanitizeUrlCredentials(parsed.raw),
+          checked: sanitizeUrlCredentials(resolved.resolvedUrl || parsed.raw),
           resolution: resolved.resolution,
         },
       });
@@ -691,7 +735,7 @@ async function collectServiceChecks(
         ? `TCP reachable (${resolved.resolvedHost}:${resolved.resolvedPort})`
         : `TCP unreachable (${tcp.error || 'Unknown error'})`,
       details: {
-        raw: parsed.raw,
+        raw: sanitizeUrlCredentials(parsed.raw),
         checkedHost: resolved.resolvedHost,
         checkedPort: resolved.resolvedPort,
         resolution: resolved.resolution,
