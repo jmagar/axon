@@ -196,6 +196,12 @@ describe('API Key Scrubber', () => {
       expect(scrubbed).not.toContain('fc-abc123');
       expect(scrubbed).toContain('REDACTED');
     });
+
+    it('should handle empty or invalid scrub URL input', () => {
+      expect(scrubUrlApiKeys('')).toBe('');
+      expect(scrubUrlApiKeys(null as unknown as string)).toBe(null);
+      expect(scrubUrlApiKeys(undefined as unknown as string)).toBe(undefined);
+    });
   });
 
   describe('scrubHeaderApiKeys', () => {
@@ -374,6 +380,29 @@ describe('API Key Scrubber', () => {
       const sanitized = sanitizeUrlCredentials(url);
       expect(sanitized).toBe('amqp://guest:***@rabbitmq:5672');
       expect(sanitized).toContain('guest:***');
+    });
+
+    it('should sanitize password in IPv6 host URL', () => {
+      const url = 'postgres://user:pass@[::1]:5432/db';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('postgres://user:***@[::1]:5432/db');
+      expect(sanitized).not.toContain(':pass@');
+    });
+
+    it('should sanitize password while preserving query parameters', () => {
+      const url = 'redis://user:pass@host:6379?tls=true';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('redis://user:***@host:6379?tls=true');
+      expect(sanitized).toContain('?tls=true');
+      expect(sanitized).not.toContain(':pass@');
+    });
+
+    it('should sanitize password while preserving encoded path', () => {
+      const url = 'amqp://user:pass@host/%2Fvhost';
+      const sanitized = sanitizeUrlCredentials(url);
+      expect(sanitized).toBe('amqp://user:***@host/%2Fvhost');
+      expect(sanitized).toContain('/%2Fvhost');
+      expect(sanitized).not.toContain(':pass@');
     });
 
     it('should handle URL without credentials unchanged', () => {

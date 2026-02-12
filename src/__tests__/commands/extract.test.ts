@@ -87,6 +87,83 @@ describe('executeExtract', () => {
     );
   });
 
+  it('should reject null schema payload', async () => {
+    const result = await executeExtract(mockContainer, {
+      urls: ['https://example.com'],
+      schema: 'null',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'Invalid JSON schema. Schema must be a non-null JSON object.'
+    );
+    expect(mockClient.extract).not.toHaveBeenCalled();
+  });
+
+  it('should reject undefined literal schema payload', async () => {
+    const result = await executeExtract(mockContainer, {
+      urls: ['https://example.com'],
+      schema: 'undefined',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'Invalid JSON schema. Provide valid JSON string.'
+    );
+    expect(mockClient.extract).not.toHaveBeenCalled();
+  });
+
+  it('should reject deeply nested schema payloads', async () => {
+    const deepSchema: Record<string, unknown> = {};
+    let cursor = deepSchema;
+
+    for (let depth = 0; depth < 55; depth += 1) {
+      cursor.child = {};
+      cursor = cursor.child as Record<string, unknown>;
+    }
+
+    const result = await executeExtract(mockContainer, {
+      urls: ['https://example.com'],
+      schema: JSON.stringify(deepSchema),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'Invalid JSON schema. Schema nesting exceeds maximum depth of 50.'
+    );
+    expect(mockClient.extract).not.toHaveBeenCalled();
+  });
+
+  it('should accept deeply nested schema payloads within max depth', async () => {
+    const deepSchema: Record<string, unknown> = {
+      type: 'object',
+      properties: {},
+    };
+    let cursor = deepSchema.properties as Record<string, unknown>;
+
+    for (let depth = 0; depth < 20; depth += 1) {
+      cursor.nested = {
+        type: 'object',
+        properties: {},
+      };
+      cursor = (cursor.nested as { properties: Record<string, unknown> })
+        .properties;
+    }
+
+    mockClient.extract.mockResolvedValue({
+      success: true,
+      data: { ok: true },
+    });
+
+    const result = await executeExtract(mockContainer, {
+      urls: ['https://example.com'],
+      schema: JSON.stringify(deepSchema),
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockClient.extract).toHaveBeenCalledTimes(1);
+  });
+
   it('should handle SDK error response', async () => {
     mockClient.extract.mockResolvedValue({
       success: false,

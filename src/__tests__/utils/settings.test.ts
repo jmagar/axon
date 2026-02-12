@@ -1,4 +1,6 @@
 import {
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -16,20 +18,30 @@ import {
 
 describe('settings materialization', () => {
   const originalHome = process.env.FIRECRAWL_HOME;
+  const originalUserHome = process.env.HOME;
   let testHome: string;
+  let testUserHome: string;
 
   beforeEach(() => {
     testHome = mkdtempSync(join(tmpdir(), 'firecrawl-settings-'));
+    testUserHome = mkdtempSync(join(tmpdir(), 'firecrawl-legacy-home-'));
     process.env.FIRECRAWL_HOME = testHome;
+    process.env.HOME = testUserHome;
     __resetSettingsStateForTests();
   });
 
   afterEach(() => {
     rmSync(testHome, { recursive: true, force: true });
+    rmSync(testUserHome, { recursive: true, force: true });
     if (originalHome === undefined) {
       delete process.env.FIRECRAWL_HOME;
     } else {
       process.env.FIRECRAWL_HOME = originalHome;
+    }
+    if (originalUserHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalUserHome;
     }
     __resetSettingsStateForTests();
   });
@@ -93,5 +105,23 @@ describe('settings materialization', () => {
 
     const persisted = loadSettings();
     expect(persisted.crawl?.maxDepth).toBe(7);
+  });
+
+  it('migrates valid legacy settings from ~/.config/firecrawl-cli/settings.json', () => {
+    const legacyDir = join(testUserHome, '.config', 'firecrawl-cli');
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(
+      join(legacyDir, 'settings.json'),
+      JSON.stringify({ crawl: { maxDepth: 8 } })
+    );
+
+    const persisted = loadSettings();
+
+    expect(persisted.crawl?.maxDepth).toBe(8);
+    expect(existsSync(join(testHome, 'settings.json'))).toBe(true);
+    const migrated = JSON.parse(
+      readFileSync(join(testHome, 'settings.json'), 'utf-8')
+    ) as { crawl?: { maxDepth?: number } };
+    expect(migrated.crawl?.maxDepth).toBe(8);
   });
 });

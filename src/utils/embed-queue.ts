@@ -5,8 +5,17 @@
  * Supports background processing with retries and exponential backoff.
  */
 
-import { promises as fs } from 'node:fs';
-import * as os from 'node:os';
+import {
+  access,
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as lockfile from 'proper-lockfile';
 import { isJobNotFoundError } from './job-errors';
@@ -19,7 +28,7 @@ import { fmt } from './theme';
  */
 async function pathExists(path: string): Promise<boolean> {
   try {
-    await fs.access(path);
+    await access(path);
     return true;
   } catch {
     return false;
@@ -30,7 +39,7 @@ async function pathExists(path: string): Promise<boolean> {
  * Write file with secure permissions (owner-only read/write)
  */
 async function writeSecureFile(filePath: string, data: string): Promise<void> {
-  await fs.writeFile(filePath, data, { mode: 0o600 });
+  await writeFile(filePath, data, { mode: 0o600 });
 }
 
 export interface EmbedJob {
@@ -56,7 +65,7 @@ function getQueueDir(): string {
 }
 
 function getLegacyQueueDir(): string {
-  const homeDir = os.homedir();
+  const homeDir = homedir();
   return join(homeDir, '.config', 'firecrawl-cli', 'embed-queue');
 }
 
@@ -75,13 +84,13 @@ async function migrateLegacyQueueDir(): Promise<void> {
     return;
   }
 
-  await fs.mkdir(queueDir, { recursive: true, mode: 0o700 });
-  const files = await fs.readdir(legacyDir);
+  await mkdir(queueDir, { recursive: true, mode: 0o700 });
+  const files = await readdir(legacyDir);
   for (const file of files) {
     try {
       const source = join(legacyDir, file);
       const target = join(queueDir, file);
-      await fs.copyFile(source, target);
+      await copyFile(source, target);
     } catch (error) {
       // Continue on individual file copy errors
       console.error(
@@ -105,12 +114,12 @@ async function ensureQueueDir(): Promise<void> {
   await migrateLegacyQueueDir();
 
   if (!(await pathExists(getQueueDir()))) {
-    await fs.mkdir(getQueueDir(), { recursive: true, mode: 0o700 });
+    await mkdir(getQueueDir(), { recursive: true, mode: 0o700 });
     return;
   }
 
   try {
-    await fs.chmod(getQueueDir(), 0o700);
+    await chmod(getQueueDir(), 0o700);
   } catch {
     // Ignore errors on Windows
   }
@@ -171,7 +180,7 @@ export async function getEmbedJobDetailed(
   }
 
   try {
-    const data = await fs.readFile(path, 'utf-8');
+    const data = await readFile(path, 'utf-8');
     const job = JSON.parse(data);
     return { job, status: 'found' };
   } catch (error) {
@@ -218,7 +227,7 @@ export async function tryClaimJob(jobId: string): Promise<boolean> {
     release = await lockfile.lock(jobPath, { retries: 0, stale: 60000 });
 
     // Read job file directly while holding lock (don't use getEmbedJob which doesn't know about our lock)
-    const data = await fs.readFile(jobPath, 'utf-8');
+    const data = await readFile(jobPath, 'utf-8');
     const job: EmbedJob = JSON.parse(data);
 
     // Check status while holding lock
@@ -292,7 +301,7 @@ export async function tryClaimJob(jobId: string): Promise<boolean> {
 export async function removeEmbedJob(jobId: string): Promise<void> {
   const path = getJobPath(jobId);
   if (await pathExists(path)) {
-    await fs.unlink(path);
+    await unlink(path);
   }
 }
 
@@ -311,7 +320,7 @@ export interface QueueListResult {
 export async function listEmbedJobsDetailed(): Promise<QueueListResult> {
   await ensureQueueDir();
 
-  const files = (await fs.readdir(getQueueDir())).filter((f) =>
+  const files = (await readdir(getQueueDir())).filter((f) =>
     f.endsWith('.json')
   );
   const jobs: EmbedJob[] = [];
@@ -319,7 +328,7 @@ export async function listEmbedJobsDetailed(): Promise<QueueListResult> {
 
   for (const file of files) {
     try {
-      const data = await fs.readFile(join(getQueueDir(), file), 'utf-8');
+      const data = await readFile(join(getQueueDir(), file), 'utf-8');
       jobs.push(JSON.parse(data));
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

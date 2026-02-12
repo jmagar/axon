@@ -11,12 +11,20 @@ import {
   type UserSettings,
   UserSettingsSchema,
 } from '../schemas/storage';
-import { getConfigDirectoryPath } from './credentials';
+import {
+  getConfigDirectoryPath,
+  migrateLegacyJsonFile,
+  parseJsonWithSchema,
+} from './credentials';
 import { mergeWithDefaults } from './default-settings';
 import { getSettingsPath as getUnifiedSettingsPath } from './storage-paths';
 import { fmt } from './theme';
 
 export type { EffectiveUserSettings, UserSettings };
+
+type ParsedLegacySettings =
+  | { kind: 'valid'; data: UserSettings }
+  | { kind: 'invalid' };
 
 let migrationDone = false;
 let settingsCache: EffectiveUserSettings | null = null;
@@ -228,48 +236,30 @@ function migrateLegacySettings(): void {
   }
 
   const newPath = getSettingsPath();
-  if (fs.existsSync(newPath)) {
-    migrationDone = true;
-    return;
-  }
+  const parseAndValidateLegacySettings = (
+    raw: string
+  ): ParsedLegacySettings => {
+    const parsed = parseJsonWithSchema(raw, UserSettingsSchema);
+    return parsed.kind === 'valid'
+      ? { kind: 'valid', data: parsed.data }
+      : { kind: 'invalid' };
+  };
 
-  for (const legacyPath of getLegacySettingsPaths()) {
-    if (!fs.existsSync(legacyPath)) {
-      continue;
-    }
+  const result = migrateLegacyJsonFile<UserSettings>({
+    legacyPaths: getLegacySettingsPaths(),
+    targetPath: newPath,
+    ensureTargetDir: ensureConfigDir,
+    parseAndValidate: parseAndValidateLegacySettings,
+    writeMode: 'exclusive',
+  });
 
-    try {
-      const data = fs.readFileSync(legacyPath, 'utf-8');
-      const parsed = JSON.parse(data);
-      const validation = UserSettingsSchema.safeParse(parsed);
-      if (!validation.success) {
-        continue;
-      }
-
-      ensureConfigDir();
-      try {
-        fs.writeFileSync(newPath, JSON.stringify(validation.data, null, 2), {
-          encoding: 'utf-8',
-          flag: 'wx', // Atomic exclusive create - prevents race condition winner collision
-        });
-        setSecurePermissions(newPath);
-        console.error(
-          fmt.dim(
-            `[Settings] Migrated settings from ${legacyPath} to ${newPath}`
-          )
-        );
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw error;
-        }
-        // EEXIST is benign - another process won the migration race
-      }
-
-      migrationDone = true;
-      return;
-    } catch {
-      // Ignore invalid legacy files.
-    }
+  if (result.status === 'migrated') {
+    setSecurePermissions(newPath);
+    console.error(
+      fmt.dim(
+        `[Settings] Migrated settings from ${result.sourcePath} to ${newPath}`
+      )
+    );
   }
 
   migrationDone = true;

@@ -123,6 +123,19 @@ describe('executeAsk', () => {
     expect(result.error).toContain('No relevant documents found');
   });
 
+  it('should fail early on invalid maxContext before query/retrieve', async () => {
+    const result = await executeAsk(container, {
+      query: 'test',
+      maxContext: 0,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid --max-context value');
+    expect(executeQuery).not.toHaveBeenCalled();
+    expect(executeRetrieve).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it('should fail when query fails', async () => {
     vi.mocked(executeQuery).mockResolvedValue({
       success: false,
@@ -132,6 +145,16 @@ describe('executeAsk', () => {
     const result = await executeAsk(container, { query: 'test' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Query error');
+  });
+
+  it('should surface query timeout errors', async () => {
+    vi.mocked(executeQuery).mockRejectedValue(
+      new Error('Query timeout after 10000ms')
+    );
+
+    const result = await executeAsk(container, { query: 'test timeout' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('timeout');
   });
 
   it('should fail when all retrieves fail', async () => {
@@ -147,6 +170,20 @@ describe('executeAsk', () => {
     const result = await executeAsk(container, { query: 'test' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Failed to retrieve any documents');
+  });
+
+  it('should surface retrieve network failures', async () => {
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [createMockQueryResult('https://example.com/doc')],
+    });
+    vi.mocked(executeRetrieve).mockRejectedValue(
+      new Error('ECONNRESET while retrieving document')
+    );
+
+    const result = await executeAsk(container, { query: 'network issue' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ECONNRESET');
   });
 
   it('should pass -p flag to claude CLI for non-interactive mode', async () => {

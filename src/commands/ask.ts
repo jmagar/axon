@@ -22,6 +22,19 @@ function resolveAskModel(explicitModel?: string): string {
   return explicitModel || process.env.ASK_CLI || 'haiku';
 }
 
+function resolveAndValidateMaxContext(
+  maxContext?: number
+): { valid: true; value: number } | { valid: false; error: string } {
+  const resolved = maxContext ?? 100000;
+  if (!Number.isSafeInteger(resolved) || resolved < 1) {
+    return {
+      valid: false,
+      error: `Invalid --max-context value: ${String(maxContext)}. It must be a positive safe integer.`,
+    };
+  }
+  return { valid: true, value: resolved };
+}
+
 /**
  * Execute ask command
  * 1. Query Qdrant for relevant documents
@@ -53,6 +66,16 @@ export async function executeAsk(
     const limit = options.limit || getSettings().ask.limit;
     // Model precedence: --model > ASK_CLI > default
     const model = resolveAskModel(options.model);
+    const maxContextValidation = resolveAndValidateMaxContext(
+      options.maxContext
+    );
+    if (!maxContextValidation.valid) {
+      return {
+        success: false,
+        error: maxContextValidation.error,
+      };
+    }
+    const maxContextChars = maxContextValidation.value;
 
     // Step 1: Query Qdrant for relevant documents
     console.error(
@@ -136,7 +159,6 @@ export async function executeAsk(
 
     // Step 3: Build formatted context
     const separator = '---';
-    const MAX_CONTEXT_CHARS = options.maxContext || 100000; // Default: 100k chars
 
     // Build documents context incrementally with size limit
     const documentParts: string[] = [];
@@ -151,18 +173,18 @@ export async function executeAsk(
       const docSize = docPart.length + separator.length + 2; // +2 for newlines
 
       // Check if adding this document would exceed limit
-      if (totalChars + docSize > MAX_CONTEXT_CHARS) {
+      if (totalChars + docSize > maxContextChars) {
         // If we haven't included any documents yet, the limit is too small
         if (includedDocs === 0) {
           return {
             success: false,
-            error: `Context size limit (${MAX_CONTEXT_CHARS} chars) too small to include any documents. Try increasing --max-context.`,
+            error: `Context size limit (${maxContextChars} chars) too small to include any documents. Try increasing --max-context.`,
           };
         }
         // Otherwise, stop adding more documents
         console.error(
           fmt.warning(
-            `${icons.warning} Context size limit reached (${MAX_CONTEXT_CHARS} chars). Included ${includedDocs}/${successfulRetrieves.length} documents.`
+            `${icons.warning} Context size limit reached (${maxContextChars} chars). Included ${includedDocs}/${successfulRetrieves.length} documents.`
           )
         );
         break;

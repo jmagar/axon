@@ -6,6 +6,41 @@
 
 import { afterEach, beforeEach, vi } from 'vitest';
 
+type ConsoleMethod = 'log' | 'error' | 'warn' | 'info' | 'debug';
+
+function createConsoleMethodSpy(
+  method: ConsoleMethod,
+  sink?: string[]
+): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(console, method).mockImplementation((...args) => {
+    if (sink) {
+      sink.push(args.join(' '));
+    }
+  });
+}
+
+function setupConsoleSpies(
+  methods: ConsoleMethod[],
+  sinks: Partial<Record<ConsoleMethod, string[]>> = {}
+): Record<ConsoleMethod, ReturnType<typeof vi.spyOn>> {
+  const entries = methods.map((method) => [
+    method,
+    createConsoleMethodSpy(method, sinks[method]),
+  ]);
+  return Object.fromEntries(entries) as Record<
+    ConsoleMethod,
+    ReturnType<typeof vi.spyOn>
+  >;
+}
+
+function restoreConsoleSpies(
+  spies: Partial<Record<ConsoleMethod, ReturnType<typeof vi.spyOn>>>
+): void {
+  Object.values(spies).forEach((spy) => {
+    spy?.mockRestore();
+  });
+}
+
 /**
  * Result from capturing process exit code
  */
@@ -88,29 +123,21 @@ export function setupConsoleCapture(): ConsoleCapture {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
-    logs.push(args.join(' '));
-  });
-
-  const mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-    errors.push(args.join(' '));
-  });
-
-  const mockWarn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
-    warnings.push(args.join(' '));
+  const spies = setupConsoleSpies(['log', 'error', 'warn'], {
+    log: logs,
+    error: errors,
+    warn: warnings,
   });
 
   return {
     logs,
     errors,
     warnings,
-    mockLog,
-    mockError,
-    mockWarn,
+    mockLog: spies.log,
+    mockError: spies.error,
+    mockWarn: spies.warn,
     restore: () => {
-      mockLog.mockRestore();
-      mockError.mockRestore();
-      mockWarn.mockRestore();
+      restoreConsoleSpies(spies);
     },
   };
 }
@@ -127,20 +154,16 @@ export async function withConsoleCapture<T>(
   const logs: string[] = [];
   const errors: string[] = [];
 
-  const mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
-    logs.push(args.join(' '));
-  });
-
-  const mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-    errors.push(args.join(' '));
+  const spies = setupConsoleSpies(['log', 'error'], {
+    log: logs,
+    error: errors,
   });
 
   try {
     const result = await fn();
     return [result, logs, errors];
   } finally {
-    mockLog.mockRestore();
-    mockError.mockRestore();
+    restoreConsoleSpies(spies);
   }
 }
 
@@ -155,7 +178,7 @@ export async function withConsoleCapture<T>(
 export function createConsoleSpy(
   method: 'log' | 'error' | 'warn' | 'info' | 'debug' = 'error'
 ): ReturnType<typeof vi.spyOn> {
-  return vi.spyOn(console, method).mockImplementation(() => {});
+  return createConsoleMethodSpy(method);
 }
 
 /**
@@ -169,16 +192,12 @@ export function createConsoleSpy(
 export async function withSuppressedConsole<T>(
   fn: () => T | Promise<T>
 ): Promise<T> {
-  const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {});
-  const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const spies = setupConsoleSpies(['log', 'error', 'warn']);
 
   try {
     return await fn();
   } finally {
-    mockLog.mockRestore();
-    mockError.mockRestore();
-    mockWarn.mockRestore();
+    restoreConsoleSpies(spies);
   }
 }
 
@@ -194,30 +213,20 @@ export function setupCommandTestCapture() {
   const logs: string[] = [];
   const errors: string[] = [];
 
-  let mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
-    logs.push(args.join(' '));
-  });
-
-  let mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-    errors.push(args.join(' '));
-  });
+  let spies = {} as Record<ConsoleMethod, ReturnType<typeof vi.spyOn>>;
 
   beforeEach(() => {
-    // Re-create spies for each test after previous cleanup
-    mockLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
-      logs.push(args.join(' '));
-    });
-
-    mockError = vi.spyOn(console, 'error').mockImplementation((...args) => {
-      errors.push(args.join(' '));
+    // Re-create spies for each test after previous cleanup.
+    spies = setupConsoleSpies(['log', 'error'], {
+      log: logs,
+      error: errors,
     });
   });
 
   afterEach(() => {
     logs.length = 0;
     errors.length = 0;
-    mockLog.mockRestore();
-    mockError.mockRestore();
+    restoreConsoleSpies(spies);
   });
 
   return {
@@ -225,10 +234,10 @@ export function setupCommandTestCapture() {
     logs,
     errors,
     get mockLog() {
-      return mockLog;
+      return spies.log;
     },
     get mockError() {
-      return mockError;
+      return spies.error;
     },
   };
 }

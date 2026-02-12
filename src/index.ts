@@ -51,7 +51,7 @@ import {
 import type { IContainer } from './container/types';
 import { ensureAuthenticated, printBanner } from './utils/auth';
 import { loadCredentials } from './utils/credentials';
-import { fmt, icons, isTTY } from './utils/theme';
+import { colorize, colors, fmt, icons, isTTY } from './utils/theme';
 import { isUrl, normalizeUrl } from './utils/url';
 
 /**
@@ -167,33 +167,6 @@ function isCloudApiUrl(apiUrl?: string): boolean {
 }
 
 const program = new Command();
-const ANSI_RESET = '\x1b[0m';
-
-function fg256(color: number, text: string): string {
-  if (!isTTY()) {
-    return text;
-  }
-  return `\x1b[38;5;${color}m${text}${ANSI_RESET}`;
-}
-
-function bg256(color: number, text: string): string {
-  if (!isTTY()) {
-    return text;
-  }
-  return `\x1b[48;5;${color}m${text}${ANSI_RESET}`;
-}
-
-function gradientText(text: string, palette: number[]): string {
-  if (!isTTY() || palette.length === 0) {
-    return text;
-  }
-
-  return text
-    .split('')
-    .map((char, index) => fg256(palette[index % palette.length], char))
-    .join('');
-}
-
 function isTopLevelHelpInvocation(): boolean {
   const nonOptionArgs = process.argv
     .slice(2)
@@ -259,20 +232,21 @@ function renderTopLevelHelp(): string {
   const optionWidth = Math.max(...globalOptions.map(([name]) => name.length));
   const commandWidth = 30;
   const formatRow = (left: string, right: string, width: number): string =>
-    `  ${fg256(81, left.padEnd(width, ' '))}  ${fg256(252, right)}`;
+    `  ${colorize(colors.materialLightBlue, left.padEnd(width, ' '))}  ${fmt.dim(right)}`;
 
-  const title = gradientText('FIRECRAWL CLI', [196, 202, 208, 214, 220, 226]);
-  const titleRule = gradientText(
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-    [196, 202, 208, 214, 220, 226]
+  const title = fmt.bold(colorize(colors.primary, 'FIRECRAWL CLI'));
+  const titleRule = colorize(
+    colors.primary,
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   );
-  const section = (text: string): string => fg256(208, text);
-  const muted = (text: string): string => fg256(245, text);
+  const section = (text: string): string =>
+    fmt.bold(colorize(colors.primary, text));
+  const muted = (text: string): string => fmt.dim(text);
   const chip = (text: string): string => {
     if (!isTTY()) {
       return text;
     }
-    return `${bg256(236, fg256(229, ` ${text} `))}`;
+    return `${colorize(colors.materialLightBlue, `[${text}]`)}`;
   };
 
   const lines = [
@@ -454,6 +428,13 @@ async function main() {
   // Handle top-level help with custom formatted output
   // Keep subcommand help delegated to Commander.
   const hasHelpFlag = args.includes('--help') || args.includes('-h');
+  const isRootHelpCommand =
+    args[0] === 'help' &&
+    (args.length === 1 || args[1] === '--help' || args[1] === '-h');
+  if (isRootHelpCommand) {
+    console.log(renderTopLevelHelp());
+    return;
+  }
   if (hasHelpFlag && isTopLevelHelpInvocation()) {
     console.log(renderTopLevelHelp());
     return;

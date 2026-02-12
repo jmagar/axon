@@ -1,85 +1,96 @@
 import type { EffectiveUserSettings, UserSettings } from '../schemas/storage';
 import { DEFAULT_EXCLUDE_EXTENSIONS, DEFAULT_EXCLUDE_PATHS } from './constants';
 
+type DefaultSettingsTemplate = Omit<
+  EffectiveUserSettings,
+  'defaultExcludePaths' | 'defaultExcludeExtensions'
+>;
+
+const DEFAULT_SETTINGS_TEMPLATE: DefaultSettingsTemplate = {
+  settingsVersion: 2,
+  crawl: {
+    maxDepth: 5,
+    crawlEntireDomain: true,
+    allowSubdomains: true,
+    onlyMainContent: true,
+    excludeTags: ['nav', 'footer'],
+    sitemap: 'include',
+    ignoreQueryParameters: true,
+    autoEmbed: true,
+    pollIntervalSeconds: 5,
+  },
+  scrape: {
+    formats: ['markdown'],
+    onlyMainContent: true,
+    timeoutSeconds: 15,
+    excludeTags: ['nav', 'footer'],
+    autoEmbed: true,
+  },
+  map: {
+    sitemap: 'include',
+    includeSubdomains: null,
+    ignoreQueryParameters: true,
+    ignoreCache: null,
+  },
+  search: {
+    limit: 5,
+    sources: ['web'],
+    timeoutMs: 60000,
+    ignoreInvalidUrls: true,
+    scrape: true,
+    scrapeFormats: ['markdown'],
+    onlyMainContent: true,
+    autoEmbed: true,
+  },
+  extract: {
+    allowExternalLinks: false,
+    enableWebSearch: true,
+    includeSubdomains: true,
+    showSources: true,
+    ignoreInvalidUrls: true,
+    autoEmbed: true,
+  },
+  batch: {
+    onlyMainContent: false,
+    ignoreInvalidUrls: false,
+  },
+  ask: {
+    limit: 10,
+  },
+  http: {
+    timeoutMs: 30000,
+    maxRetries: 3,
+    baseDelayMs: 5000,
+    maxDelayMs: 60000,
+  },
+  chunking: {
+    maxChunkSize: 1500,
+    targetChunkSize: 1000,
+    overlapSize: 100,
+    minChunkSize: 50,
+  },
+  embedding: {
+    maxConcurrent: 10,
+    batchSize: 24,
+    maxConcurrentBatches: 4,
+    maxRetries: 3,
+  },
+  polling: {
+    intervalMs: 5000,
+  },
+};
+
 /**
  * Generate complete default settings object.
  * This is the single source of truth for configurable defaults.
  */
 export function getDefaultSettings(): EffectiveUserSettings {
+  const defaults = structuredClone(DEFAULT_SETTINGS_TEMPLATE);
+
   return {
-    settingsVersion: 2,
+    ...defaults,
     defaultExcludePaths: [...DEFAULT_EXCLUDE_PATHS],
     defaultExcludeExtensions: [...DEFAULT_EXCLUDE_EXTENSIONS],
-    crawl: {
-      maxDepth: 5,
-      crawlEntireDomain: true,
-      allowSubdomains: true,
-      onlyMainContent: true,
-      excludeTags: ['nav', 'footer'],
-      sitemap: 'include',
-      ignoreQueryParameters: true,
-      autoEmbed: true,
-      pollIntervalSeconds: 5,
-    },
-    scrape: {
-      formats: ['markdown'],
-      onlyMainContent: true,
-      timeoutSeconds: 15,
-      excludeTags: ['nav', 'footer'],
-      autoEmbed: true,
-    },
-    map: {
-      sitemap: 'include',
-      includeSubdomains: null,
-      ignoreQueryParameters: true,
-      ignoreCache: null,
-    },
-    search: {
-      limit: 5,
-      sources: ['web'],
-      timeoutMs: 60000,
-      ignoreInvalidUrls: true,
-      scrape: true,
-      scrapeFormats: ['markdown'],
-      onlyMainContent: true,
-      autoEmbed: true,
-    },
-    extract: {
-      allowExternalLinks: false,
-      enableWebSearch: true,
-      includeSubdomains: true,
-      showSources: true,
-      ignoreInvalidUrls: true,
-      autoEmbed: true,
-    },
-    batch: {
-      onlyMainContent: false,
-      ignoreInvalidUrls: false,
-    },
-    ask: {
-      limit: 10,
-    },
-    http: {
-      timeoutMs: 30000,
-      maxRetries: 3,
-      baseDelayMs: 5000,
-      maxDelayMs: 60000,
-    },
-    chunking: {
-      maxChunkSize: 1500,
-      targetChunkSize: 1000,
-      overlapSize: 100,
-      minChunkSize: 50,
-    },
-    embedding: {
-      maxConcurrent: 10,
-      batchSize: 24,
-      maxConcurrentBatches: 4,
-      maxRetries: 3,
-    },
-    polling: {
-      intervalMs: 5000,
-    },
   };
 }
 

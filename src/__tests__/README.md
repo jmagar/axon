@@ -19,6 +19,17 @@ pnpm test:ui
 
 - `commands/` - Tests for command implementations (scrape, crawl, search, extract, embed, query, retrieve)
 - `utils/` - Test utilities, helpers, and utility module tests (chunker, auth, embed queue)
+- `container/` - Container and service tests for dependency wiring and runtime services
+- `e2e/` - End-to-end CLI behavior tests
+
+## Test File Naming
+
+Use these naming rules for consistency:
+
+1. Unit tests: `kebab-case.test.ts`
+2. Integration tests: `kebab-case.integration.test.ts`
+3. End-to-end tests: `kebab-case.e2e.test.ts`
+4. New tests should prefer kebab-case filenames even if older files in nearby folders still use legacy names.
 
 ## Writing Tests
 

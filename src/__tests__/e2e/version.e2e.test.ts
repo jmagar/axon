@@ -46,6 +46,14 @@ describe('E2E: help command', () => {
     expect(result.stdout).toContain('doctor');
   });
 
+  it('should display themed top-level help with help command', async () => {
+    const result = await runCLISuccess(['help']);
+    expect(result.stdout).toContain('FIRECRAWL CLI');
+    expect(result.stdout).toContain('Core Web Operations');
+    expect(result.stdout).toContain('Vector Search');
+    expect(result.stdout).toContain('Jobs & Account');
+  });
+
   it('should display scrape command help', async () => {
     const result = await runCLISuccess(['scrape', '--help']);
     expect(result.stdout).toContain('Scrape a URL');

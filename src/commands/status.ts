@@ -52,6 +52,10 @@ interface JobStatusOptions {
   output?: string;
   json?: boolean;
   pretty?: boolean;
+  compact?: boolean;
+  wide?: boolean;
+  watch?: boolean;
+  intervalSeconds?: number;
 }
 
 interface EmbedQueueSummary {
@@ -73,6 +77,87 @@ function accentProgressText(text: string): string {
   return text.replace(/(\d+%|\(\d+\/\d+\))/g, (segment) =>
     colorize(colors.materialLightBlue, segment)
   );
+}
+
+type RenderStatusOptions = {
+  compact: boolean;
+  wide: boolean;
+  changedKeys: Set<string>;
+};
+
+function statusBucket(
+  status: string,
+  hasError: boolean
+): 'failed' | 'pending' | 'completed' | 'other' {
+  if (hasError) return 'failed';
+  const normalized = status.toLowerCase();
+  if (['failed', 'error', 'cancelled'].includes(normalized)) return 'failed';
+  if (['completed', 'success'].includes(normalized)) return 'completed';
+  if (
+    ['pending', 'queued', 'running', 'processing', 'scraping'].includes(
+      normalized
+    )
+  ) {
+    return 'pending';
+  }
+  return 'other';
+}
+
+function formatRelativeAge(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  const diffMs = Math.max(0, Date.now() - then);
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `updated ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `updated ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `updated ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `updated ${days}d ago`;
+}
+
+function formatQueueLag(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  const diffMs = Math.max(0, Date.now() - then);
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `queue ${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `queue ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `queue ${hours}h`;
+}
+
+function domainFromUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function changedPrefix(key: string, changedKeys: Set<string>): string {
+  if (!changedKeys.has(key)) return '';
+  return `${colorize(colors.info, '↺')} `;
+}
+
+function computeChangedKeys(
+  previous: Map<string, string> | null,
+  current: Map<string, string>
+): Set<string> {
+  if (!previous) return new Set();
+  const changed = new Set<string>();
+  for (const [key, value] of current.entries()) {
+    const prior = previous.get(key);
+    if (prior && prior !== value) {
+      changed.add(key);
+    }
+  }
+  return changed;
 }
 
 /**
@@ -709,16 +794,21 @@ async function executeJobStatus(
  * @param data - Job status data containing active crawls
  */
 function renderActiveCrawlsSection(
-  data: Awaited<ReturnType<typeof executeJobStatus>>
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  options: RenderStatusOptions
 ): void {
   console.log('');
-  console.log(statusHeading('Crawls'));
+  console.log(statusHeading(`${icons.processing} Crawls`));
   if (data.activeCrawls.crawls.length === 0) {
     console.log(fmt.dim('  No active crawls.'));
   } else {
     for (const crawl of data.activeCrawls.crawls) {
+      const changed = changedPrefix(`active:${crawl.id}`, options.changedKeys);
+      const domain = options.wide ? domainFromUrl(crawl.url) : null;
       console.log(
-        `  ${colorize(colors.warning, icons.processing)} ${crawl.id} ${crawl.url}`
+        `  ${changed}${colorize(colors.warning, icons.processing)} ${accentJobId(crawl.id)}${
+          options.compact ? '' : ` ${crawl.url}`
+        }${domain ? ` ${fmt.dim(`(${domain})`)}` : ''}`
       );
     }
   }
@@ -732,14 +822,15 @@ function renderActiveCrawlsSection(
  */
 function renderCrawlStatusSection(
   data: Awaited<ReturnType<typeof executeJobStatus>>,
-  crawlUrlById: Map<string, string>
+  crawlUrlById: Map<string, string>,
+  options: RenderStatusOptions
 ): void {
   const hasCrawlLookup =
     data.crawls.length > 0 || data.resolvedIds.crawls.length > 0;
 
   if (hasCrawlLookup) {
     console.log('');
-    console.log(statusHeading('Crawl Status'));
+    console.log(statusHeading(`${icons.bullet} Crawl Status`));
     if (data.crawls.length === 0) {
       console.log(fmt.dim('  No crawl jobs found.'));
     }
@@ -768,8 +859,10 @@ function renderCrawlStatusSection(
       const progress = hasProgress
         ? formatProgress(completedValue, totalValue)
         : null;
+      const updatedAt = (crawl as { updatedAt?: string }).updatedAt;
+      const age = formatRelativeAge(updatedAt);
 
-      let line = `${colorize(statusColor, icon)} ${accentJobId(crawl.id)} `;
+      let line = `${changedPrefix(`crawl:${crawl.id}`, options.changedKeys)}${colorize(statusColor, icon)} ${accentJobId(crawl.id)} `;
       if (isFailed) {
         line += `${colorize(statusColor, 'error')} ${fmt.dim(`(${crawlError ?? 'Unknown error'})`)}`;
       } else if (progress) {
@@ -778,10 +871,17 @@ function renderCrawlStatusSection(
         line += `${colorize(statusColor, status)}`;
       }
       if (isStaleScraping) {
-        line += ` ${colorize(colors.warning, '[stale: reached total but not completed]')}`;
+        line += ` ${colorize(colors.warning, `${icons.warning} [stale: reached total but not completed]`)}`;
       }
-      if (displayUrl) {
+      if (!options.compact && displayUrl) {
         line += ` ${fmt.dim(displayUrl)}`;
+      }
+      const domain = options.wide ? domainFromUrl(displayUrl) : null;
+      if (domain) {
+        line += ` ${fmt.dim(`(${domain})`)}`;
+      }
+      if (age) {
+        line += ` ${fmt.dim(age)}`;
       }
       return {
         crawl,
@@ -799,7 +899,9 @@ function renderCrawlStatusSection(
     );
     const staleCrawls = pendingCrawls.filter((row) => row.isStaleScraping);
 
-    console.log(`  ${colorize(colors.primary, 'Failed crawls:')}`);
+    console.log(
+      `  ${colorize(colors.primary, 'Failed crawls:')} ${fmt.dim(`(${failedCrawls.length})`)}`
+    );
     if (failedCrawls.length === 0) {
       console.log(fmt.dim('    No failed crawl jobs.'));
     } else {
@@ -808,7 +910,9 @@ function renderCrawlStatusSection(
       }
     }
 
-    console.log(`  ${colorize(colors.primary, 'Pending crawls:')}`);
+    console.log(
+      `  ${colorize(colors.primary, 'Pending crawls:')} ${fmt.dim(`(${pendingCrawls.length})`)}`
+    );
     if (pendingCrawls.length === 0) {
       console.log(fmt.dim('    No pending crawl jobs.'));
     } else {
@@ -818,13 +922,17 @@ function renderCrawlStatusSection(
     }
 
     if (staleCrawls.length > 0) {
-      console.log(`  ${colorize(colors.warning, 'Stale pending crawls:')}`);
+      console.log(
+        `  ${colorize(colors.warning, 'Stale pending crawls:')} ${fmt.dim(`(${staleCrawls.length})`)}`
+      );
       for (const row of staleCrawls) {
         console.log(`    ${row.line}`);
       }
     }
 
-    console.log(`  ${colorize(colors.primary, 'Completed crawls:')}`);
+    console.log(
+      `  ${colorize(colors.primary, 'Completed crawls:')} ${fmt.dim(`(${completedCrawls.length})`)}`
+    );
     if (completedCrawls.length === 0) {
       console.log(fmt.dim('    No completed crawl jobs.'));
     } else {
@@ -845,37 +953,84 @@ function renderCrawlStatusSection(
  * @param data - Job status data containing batch job results
  */
 function renderBatchSection(
-  data: Awaited<ReturnType<typeof executeJobStatus>>
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  options: RenderStatusOptions
 ): void {
   console.log('');
-  console.log(statusHeading('Batch Status'));
+  console.log(statusHeading(`${icons.bullet} Batch Status`));
   if (data.batches.length === 0) {
     console.log(fmt.dim('  No recent batch job IDs found.'));
   } else {
-    for (const batch of data.batches) {
+    const rows = data.batches.map((batch) => {
       const batchError = (batch as { error?: string }).error;
+      const batchId = batch.id ?? 'unknown';
       const icon = getStatusIcon(batch.status ?? 'unknown', !!batchError);
       const statusColor = getStatusColor(
         batch.status ?? 'unknown',
         !!batchError
       );
+      const bucket = statusBucket(batch.status ?? 'unknown', !!batchError);
+      const updatedAt = (batch as { updatedAt?: string }).updatedAt;
+      const age = formatRelativeAge(updatedAt);
+      const displayUrl = (batch as { url?: string }).url;
+      const domain = options.wide ? domainFromUrl(displayUrl) : null;
 
+      let line = `${changedPrefix(`batch:${batchId}`, options.changedKeys)}${colorize(statusColor, icon)} ${accentJobId(batchId)} `;
       if (batchError) {
-        console.log(
-          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, 'error')} ${fmt.dim(`(${batchError})`)}`
-        );
+        line += `${colorize(statusColor, 'error')} ${fmt.dim(`(${batchError})`)}`;
       } else if ('completed' in batch && 'total' in batch) {
         const progress = formatProgress(
           batch.completed as number,
           batch.total as number
         );
-        console.log(
-          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, batch.status)} ${accentProgressText(progress)}`
-        );
+        line += `${colorize(statusColor, batch.status)} ${accentProgressText(progress)}`;
       } else {
-        console.log(
-          `  ${colorize(statusColor, icon)} ${accentJobId(batch.id)} ${colorize(statusColor, batch.status ?? 'unknown')}`
-        );
+        line += `${colorize(statusColor, batch.status ?? 'unknown')}`;
+      }
+      if (!options.compact && displayUrl) {
+        line += ` ${fmt.dim(displayUrl)}`;
+      }
+      if (domain) line += ` ${fmt.dim(`(${domain})`)}`;
+      if (age) line += ` ${fmt.dim(age)}`;
+      return { bucket, line };
+    });
+
+    const failed = rows.filter((row) => row.bucket === 'failed');
+    const pending = rows.filter((row) => row.bucket === 'pending');
+    const completed = rows.filter((row) => row.bucket === 'completed');
+    const other = rows.filter((row) => row.bucket === 'other');
+
+    const groups: Array<{ label: string; rows: typeof rows; color: string }> = [
+      {
+        label: `Failed batches (${failed.length})`,
+        rows: failed,
+        color: colors.primary,
+      },
+      {
+        label: `Pending batches (${pending.length})`,
+        rows: pending,
+        color: colors.primary,
+      },
+      {
+        label: `Completed batches (${completed.length})`,
+        rows: completed,
+        color: colors.primary,
+      },
+      {
+        label: `Other batches (${other.length})`,
+        rows: other,
+        color: colors.primary,
+      },
+    ];
+
+    for (const group of groups) {
+      console.log(`  ${colorize(group.color, `${group.label}:`)}`);
+      if (group.rows.length === 0) {
+        console.log(fmt.dim('    None.'));
+      } else {
+        for (const row of group.rows) {
+          console.log(`    ${row.line}`);
+        }
       }
     }
   }
@@ -887,14 +1042,15 @@ function renderBatchSection(
  * @param data - Job status data containing extract job results
  */
 function renderExtractSection(
-  data: Awaited<ReturnType<typeof executeJobStatus>>
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  options: RenderStatusOptions
 ): void {
   console.log('');
-  console.log(statusHeading('Extract Status'));
+  console.log(statusHeading(`${icons.bullet} Extract Status`));
   if (data.extracts.length === 0) {
     console.log(fmt.dim('  No recent extract job IDs found.'));
   } else {
-    for (const extract of data.extracts) {
+    const rows = data.extracts.map((extract) => {
       const extractError = (extract as { error?: string }).error;
       const extractId = extract.id ?? 'unknown';
       const icon = getStatusIcon(extract.status ?? 'unknown', !!extractError);
@@ -902,15 +1058,46 @@ function renderExtractSection(
         extract.status ?? 'unknown',
         !!extractError
       );
+      const bucket = statusBucket(extract.status ?? 'unknown', !!extractError);
+      const updatedAt = (extract as { updatedAt?: string }).updatedAt;
+      const age = formatRelativeAge(updatedAt);
+      const displayUrl = (extract as { url?: string }).url;
+      const domain = options.wide ? domainFromUrl(displayUrl) : null;
 
+      let line = `${changedPrefix(`extract:${extractId}`, options.changedKeys)}${colorize(statusColor, icon)} ${accentJobId(extractId)} `;
       if (extractError) {
-        console.log(
-          `  ${colorize(statusColor, icon)} ${accentJobId(extractId)} ${colorize(statusColor, 'error')} ${fmt.dim(`(${extractError})`)}`
-        );
+        line += `${colorize(statusColor, 'error')} ${fmt.dim(`(${extractError})`)}`;
       } else {
-        console.log(
-          `  ${colorize(statusColor, icon)} ${accentJobId(extractId)} ${colorize(statusColor, extract.status ?? 'unknown')}`
-        );
+        line += `${colorize(statusColor, extract.status ?? 'unknown')}`;
+      }
+      if (!options.compact && displayUrl) {
+        line += ` ${fmt.dim(displayUrl)}`;
+      }
+      if (domain) line += ` ${fmt.dim(`(${domain})`)}`;
+      if (age) line += ` ${fmt.dim(age)}`;
+      return { bucket, line };
+    });
+
+    const failed = rows.filter((row) => row.bucket === 'failed');
+    const pending = rows.filter((row) => row.bucket === 'pending');
+    const completed = rows.filter((row) => row.bucket === 'completed');
+    const other = rows.filter((row) => row.bucket === 'other');
+
+    const groups: Array<{ label: string; rows: typeof rows }> = [
+      { label: `Failed extracts (${failed.length})`, rows: failed },
+      { label: `Pending extracts (${pending.length})`, rows: pending },
+      { label: `Completed extracts (${completed.length})`, rows: completed },
+      { label: `Other extracts (${other.length})`, rows: other },
+    ];
+
+    for (const group of groups) {
+      console.log(`  ${colorize(colors.primary, `${group.label}:`)}`);
+      if (group.rows.length === 0) {
+        console.log(fmt.dim('    None.'));
+      } else {
+        for (const row of group.rows) {
+          console.log(`    ${row.line}`);
+        }
       }
     }
   }
@@ -929,10 +1116,11 @@ function renderEmbeddingSection(
   crawlDataById: Map<
     string,
     { status: string; completed: number; total: number }
-  >
+  >,
+  options: RenderStatusOptions
 ): void {
   console.log('');
-  console.log(statusHeading('Embeddings'));
+  console.log(statusHeading(`${icons.bullet} Embeddings`));
   const summary = data.embeddings.summary;
   const total =
     summary.pending + summary.processing + summary.completed + summary.failed;
@@ -962,7 +1150,9 @@ function renderEmbeddingSection(
     }
   }
 
-  console.log(`  ${colorize(colors.primary, 'Failed embeds:')}`);
+  console.log(
+    `  ${colorize(colors.primary, 'Failed embeds:')} ${fmt.dim(`(${data.embeddings.failed.length})`)}`
+  );
   if (data.embeddings.failed.length === 0) {
     console.log(fmt.dim('    No failed embedding jobs.'));
   } else {
@@ -981,11 +1171,20 @@ function renderEmbeddingSection(
         undefined
       );
 
-      let line = `    ${colorize(colors.error, icons.error)} ${accentJobId(job.jobId)} ${context.message}`;
+      const changed = changedPrefix(`embed:${job.jobId}`, options.changedKeys);
+      const age = formatRelativeAge(job.updatedAt);
+      const queueLag = options.wide ? formatQueueLag(job.updatedAt) : null;
+      const domain = options.wide ? domainFromUrl(displayUrl) : null;
+      let line = `    ${changed}${colorize(colors.error, icons.error)} ${accentJobId(job.jobId)} ${context.message}`;
       if (context.metadata) {
         line += ` ${fmt.dim(`(${context.metadata})`)}`;
       }
-      line += ` ${fmt.dim(displayUrl)}`;
+      if (!options.compact) {
+        line += ` ${fmt.dim(displayUrl)}`;
+      }
+      if (domain) line += ` ${fmt.dim(`(${domain})`)}`;
+      if (queueLag) line += ` ${fmt.dim(queueLag)}`;
+      if (age) line += ` ${fmt.dim(age)}`;
 
       if (job.lastError) {
         console.log(line);
@@ -996,7 +1195,9 @@ function renderEmbeddingSection(
     }
   }
 
-  console.log(`  ${colorize(colors.primary, 'Pending embeds:')}`);
+  console.log(
+    `  ${colorize(colors.primary, 'Pending embeds:')} ${fmt.dim(`(${data.embeddings.pending.length})`)}`
+  );
   if (data.embeddings.pending.length === 0) {
     console.log(fmt.dim('    No pending embedding jobs.'));
   } else {
@@ -1016,16 +1217,27 @@ function renderEmbeddingSection(
         crawlData
       );
 
-      let line = `    ${colorize(colors.warning, icons.processing)} ${accentJobId(job.jobId)} ${context.message}`;
+      const changed = changedPrefix(`embed:${job.jobId}`, options.changedKeys);
+      const age = formatRelativeAge(job.updatedAt);
+      const queueLag = options.wide ? formatQueueLag(job.updatedAt) : null;
+      const domain = options.wide ? domainFromUrl(displayUrl) : null;
+      let line = `    ${changed}${colorize(colors.warning, icons.processing)} ${accentJobId(job.jobId)} ${context.message}`;
       if (context.metadata) {
         line += ` ${fmt.dim(`(${context.metadata})`)}`;
       }
-      line += ` ${fmt.dim(displayUrl)}`;
+      if (!options.compact) {
+        line += ` ${fmt.dim(displayUrl)}`;
+      }
+      if (domain) line += ` ${fmt.dim(`(${domain})`)}`;
+      if (queueLag) line += ` ${fmt.dim(queueLag)}`;
+      if (age) line += ` ${fmt.dim(age)}`;
       console.log(line);
     }
   }
 
-  console.log(`  ${colorize(colors.primary, 'Completed embeds:')}`);
+  console.log(
+    `  ${colorize(colors.primary, 'Completed embeds:')} ${fmt.dim(`(${data.embeddings.completed.length})`)}`
+  );
   if (data.embeddings.completed.length === 0) {
     console.log(fmt.dim('    No completed embedding jobs.'));
   } else {
@@ -1044,7 +1256,21 @@ function renderEmbeddingSection(
         undefined
       );
       console.log(
-        `    ${colorize(colors.success, icons.success)} ${accentJobId(job.jobId)} ${context.message} ${fmt.dim(displayUrl)}`
+        `    ${changedPrefix(`embed:${job.jobId}`, options.changedKeys)}${colorize(colors.success, icons.success)} ${accentJobId(job.jobId)} ${context.message}${
+          options.compact ? '' : ` ${fmt.dim(displayUrl)}`
+        }${
+          options.wide && domainFromUrl(displayUrl)
+            ? ` ${fmt.dim(`(${domainFromUrl(displayUrl)})`)}`
+            : ''
+        }${
+          options.wide && formatQueueLag(job.updatedAt)
+            ? ` ${fmt.dim(formatQueueLag(job.updatedAt) as string)}`
+            : ''
+        }${
+          formatRelativeAge(job.updatedAt)
+            ? ` ${fmt.dim(formatRelativeAge(job.updatedAt) as string)}`
+            : ''
+        }`
       );
     }
   }
@@ -1057,7 +1283,10 @@ function renderEmbeddingSection(
  *
  * @param data - Job status data from executeJobStatus
  */
-function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
+function renderHumanStatus(
+  data: Awaited<ReturnType<typeof executeJobStatus>>,
+  options: RenderStatusOptions
+): Map<string, string> {
   // Build URL mapping for all crawls (used throughout the function)
   const activeUrlById = new Map(
     data.activeCrawls.crawls.map((crawl) => [crawl.id, crawl.url])
@@ -1099,12 +1328,115 @@ function renderHumanStatus(data: Awaited<ReturnType<typeof executeJobStatus>>) {
     }
   }
 
+  const statusSnapshot = new Map<string, string>();
+  for (const crawl of data.activeCrawls.crawls) {
+    statusSnapshot.set(`active:${crawl.id}`, 'active');
+  }
+  for (const crawl of data.crawls) {
+    if (crawl.id && crawl.status) {
+      statusSnapshot.set(`crawl:${crawl.id}`, crawl.status);
+    }
+  }
+  for (const batch of data.batches) {
+    if (batch.id && batch.status) {
+      statusSnapshot.set(`batch:${batch.id}`, batch.status);
+    }
+  }
+  for (const extract of data.extracts) {
+    if (extract.id && extract.status) {
+      statusSnapshot.set(`extract:${extract.id}`, extract.status);
+    }
+  }
+  for (const job of [
+    ...data.embeddings.pending,
+    ...data.embeddings.failed,
+    ...data.embeddings.completed,
+  ]) {
+    statusSnapshot.set(
+      `embed:${job.jobId}`,
+      data.embeddings.pending.some((p) => p.jobId === job.jobId)
+        ? 'pending'
+        : data.embeddings.failed.some((f) => f.jobId === job.jobId)
+          ? 'failed'
+          : 'completed'
+    );
+  }
+
+  const pendingCounts =
+    data.crawls.filter(
+      (c) =>
+        statusBucket(
+          c.status ?? 'unknown',
+          !!(c as { error?: string }).error
+        ) === 'pending'
+    ).length +
+    data.batches.filter(
+      (b) =>
+        statusBucket(
+          b.status ?? 'unknown',
+          !!(b as { error?: string }).error
+        ) === 'pending'
+    ).length +
+    data.extracts.filter(
+      (e) =>
+        statusBucket(
+          e.status ?? 'unknown',
+          !!(e as { error?: string }).error
+        ) === 'pending'
+    ).length +
+    data.embeddings.pending.length;
+  const failedCounts =
+    data.crawls.filter(
+      (c) =>
+        statusBucket(
+          c.status ?? 'unknown',
+          !!(c as { error?: string }).error
+        ) === 'failed'
+    ).length +
+    data.batches.filter(
+      (b) =>
+        statusBucket(
+          b.status ?? 'unknown',
+          !!(b as { error?: string }).error
+        ) === 'failed'
+    ).length +
+    data.extracts.filter(
+      (e) =>
+        statusBucket(
+          e.status ?? 'unknown',
+          !!(e as { error?: string }).error
+        ) === 'failed'
+    ).length +
+    data.embeddings.failed.length;
+  const totalJobs =
+    data.activeCrawls.crawls.length +
+    data.crawls.length +
+    data.batches.length +
+    data.extracts.length +
+    data.embeddings.pending.length +
+    data.embeddings.failed.length +
+    data.embeddings.completed.length;
+  const activeCount =
+    data.activeCrawls.crawls.length + data.embeddings.summary.processing;
+
+  console.log(
+    `  ${fmt.dim('jobs:')} ${colorize(colors.materialLightBlue, String(totalJobs))} ${fmt.dim('| active:')} ${colorize(colors.warning, String(activeCount))} ${fmt.dim('| pending:')} ${colorize(colors.info, String(pendingCounts))} ${fmt.dim('| failed:')} ${colorize(colors.error, String(failedCounts))}`
+  );
+
   // Render sections
-  renderActiveCrawlsSection(data);
-  renderCrawlStatusSection(data, crawlUrlById);
-  renderBatchSection(data);
-  renderExtractSection(data);
-  renderEmbeddingSection(data, crawlUrlById, crawlDataById);
+  renderActiveCrawlsSection(data, options);
+  renderCrawlStatusSection(data, crawlUrlById, options);
+  renderBatchSection(data, options);
+  renderExtractSection(data, options);
+  renderEmbeddingSection(data, crawlUrlById, crawlDataById, options);
+
+  if (process.stdout.isTTY) {
+    console.log(
+      `  ${fmt.dim('Legend:')} ${colorize(colors.success, icons.success)} completed  ${colorize(colors.warning, icons.processing)} processing  ${colorize(colors.info, icons.pending)} pending  ${colorize(colors.error, icons.error)} failed`
+    );
+  }
+  console.log('');
+  return statusSnapshot;
 }
 
 export async function handleJobStatusCommand(
@@ -1112,10 +1444,57 @@ export async function handleJobStatusCommand(
   options: JobStatusOptions
 ): Promise<void> {
   try {
-    const data = await executeJobStatus(container, options);
     const wantsJson = options.json || options.pretty || options.output;
+    const renderOptionsBase: Omit<RenderStatusOptions, 'changedKeys'> = {
+      compact: options.compact ?? false,
+      wide: options.wide ?? false,
+    };
+
+    if (options.watch && !wantsJson) {
+      const intervalMs = Math.max(1, options.intervalSeconds ?? 3) * 1000;
+      let previousSnapshot: Map<string, string> | null = null;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const data = await executeJobStatus(container, options);
+        const nextSnapshot = new Map<string, string>();
+        for (const crawl of data.activeCrawls.crawls) {
+          nextSnapshot.set(`active:${crawl.id}`, 'active');
+        }
+        for (const crawl of data.crawls) {
+          if (crawl.id && crawl.status)
+            nextSnapshot.set(`crawl:${crawl.id}`, crawl.status);
+        }
+        for (const batch of data.batches) {
+          if (batch.id && batch.status)
+            nextSnapshot.set(`batch:${batch.id}`, batch.status);
+        }
+        for (const extract of data.extracts) {
+          if (extract.id && extract.status) {
+            nextSnapshot.set(`extract:${extract.id}`, extract.status);
+          }
+        }
+        for (const job of data.embeddings.pending) {
+          nextSnapshot.set(`embed:${job.jobId}`, 'pending');
+        }
+        for (const job of data.embeddings.failed) {
+          nextSnapshot.set(`embed:${job.jobId}`, 'failed');
+        }
+        for (const job of data.embeddings.completed) {
+          nextSnapshot.set(`embed:${job.jobId}`, 'completed');
+        }
+        const changedKeys = computeChangedKeys(previousSnapshot, nextSnapshot);
+        if (process.stdout.isTTY) {
+          process.stdout.write('\x1bc');
+        }
+        renderHumanStatus(data, { ...renderOptionsBase, changedKeys });
+        previousSnapshot = nextSnapshot;
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    }
+
+    const data = await executeJobStatus(container, options);
     if (!wantsJson) {
-      renderHumanStatus(data);
+      renderHumanStatus(data, { ...renderOptionsBase, changedKeys: new Set() });
       return;
     }
 
@@ -1154,6 +1533,15 @@ export function createStatusCommand(): Command {
     .description('Show active jobs and embedding queue status')
     .option('-k, --api-key <key>', 'Firecrawl API key override')
     .option('--clear', 'Clear job history cache', false)
+    .option('--compact', 'Compact one-line rows', false)
+    .option('--wide', 'Show extra columns (domain/queue lag)', false)
+    .option('--watch', 'Refresh continuously and highlight changes', false)
+    .option(
+      '--interval <seconds>',
+      'Refresh interval in seconds for --watch mode',
+      (value) => Number.parseInt(value, 10),
+      3
+    )
     .option('--json', 'Output JSON (compact)', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .option('-o, --output <path>', 'Output file path (default: stdout)')
@@ -1173,6 +1561,10 @@ export function createStatusCommand(): Command {
         output: options.output,
         json: options.json,
         pretty: options.pretty,
+        compact: options.compact,
+        wide: options.wide,
+        watch: options.watch,
+        intervalSeconds: options.interval,
       });
     });
 

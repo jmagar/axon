@@ -31,7 +31,14 @@ export class EmbedPipeline implements IEmbedPipeline {
 
   /**
    * Ensure the target collection exists (only calls Qdrant once per pipeline instance)
-   * Uses promise caching to prevent race conditions from concurrent calls
+   *
+   * Concurrency note:
+   * - Multiple `autoEmbed`/`batchEmbed` calls can race into this method.
+   * - We cache the in-flight Promise immediately, before awaiting any I/O.
+   * - Every concurrent caller awaits the same Promise instead of starting its own
+   *   `getTeiInfo -> ensureCollection` sequence.
+   * This prevents TOCTOU-style races where two callers both observe "not created yet"
+   * and then issue duplicate collection-creation attempts.
    */
   private async ensureCollectionReady(): Promise<void> {
     if (this.collectionPromise) {

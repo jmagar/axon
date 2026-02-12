@@ -128,6 +128,55 @@ describe('executeQuery', () => {
     );
   });
 
+  it('should not deduplicate in full mode', async () => {
+    vi.mocked(mockTeiService.embedBatch).mockResolvedValue([[0.1]]);
+    vi.mocked(mockQdrantService.queryPoints).mockResolvedValue([
+      {
+        id: 'uuid-1',
+        vector: [0.1, 0.2, 0.3],
+        score: 0.9,
+        payload: {
+          url: 'https://example.com/docs/?utm_source=test#intro',
+          title: 'Docs Intro',
+          chunk_text: 'Chunk A',
+          chunk_index: 0,
+          total_chunks: 2,
+          domain: 'example.com',
+          source_command: 'crawl',
+        },
+      },
+      {
+        id: 'uuid-2',
+        vector: [0.1, 0.2, 0.3],
+        score: 0.88,
+        payload: {
+          url: 'https://example.com/docs',
+          title: 'Docs Intro',
+          chunk_text: 'Chunk B',
+          chunk_index: 1,
+          total_chunks: 2,
+          domain: 'example.com',
+          source_command: 'crawl',
+        },
+      },
+    ]);
+
+    const result = await executeQuery(container, {
+      query: 'docs intro',
+      full: true,
+      limit: 2,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toHaveLength(2);
+    expect(mockQdrantService.queryPoints).toHaveBeenCalledWith(
+      'test_col',
+      [0.1],
+      2,
+      undefined
+    );
+  });
+
   it('should fail when TEI_URL not configured', async () => {
     const badContainer = createTestContainer(undefined, {
       teiUrl: undefined,
@@ -146,6 +195,27 @@ describe('executeQuery', () => {
     const result = await executeQuery(container, { query: 'nonexistent' });
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(0);
+  });
+
+  it('should return failure when embedding service has network error', async () => {
+    vi.mocked(mockTeiService.embedBatch).mockRejectedValue(
+      new Error('connect ECONNREFUSED 127.0.0.1:52000')
+    );
+
+    const result = await executeQuery(container, { query: 'test' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ECONNREFUSED');
+  });
+
+  it('should return failure when vector query times out', async () => {
+    vi.mocked(mockTeiService.embedBatch).mockResolvedValue([[0.1]]);
+    vi.mocked(mockQdrantService.queryPoints).mockRejectedValue(
+      new Error('Request timeout after 5000ms')
+    );
+
+    const result = await executeQuery(container, { query: 'test timeout' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('timeout');
   });
 
   it('should dedupe canonical URL variants into one group', async () => {

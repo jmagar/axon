@@ -18,6 +18,23 @@ import { fmt } from './theme';
 
 export type { StoredCredentials };
 
+type ParsedMigrationData<T> = { kind: 'valid'; data: T } | { kind: 'invalid' };
+
+type MigrationWriteMode = 'overwrite' | 'exclusive';
+
+interface LegacyJsonMigrationOptions<T> {
+  legacyPaths: readonly string[];
+  targetPath: string;
+  ensureTargetDir: () => void;
+  parseAndValidate: (raw: string) => ParsedMigrationData<T>;
+  writeMode?: MigrationWriteMode;
+}
+
+type LegacyJsonMigrationResult =
+  | { status: 'target_exists' }
+  | { status: 'migrated'; sourcePath: string }
+  | { status: 'not_migrated' };
+
 /**
  * Module-level flag to avoid repeated filesystem checks for migration
  */
@@ -74,6 +91,74 @@ function setSecurePermissions(filePath: string): void {
   }
 }
 
+export function parseJsonWithSchema<T>(
+  raw: string,
+  schema: {
+    safeParse: (
+      value: unknown
+    ) => { success: true; data: T } | { success: false };
+  }
+): ParsedMigrationData<T> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      return { kind: 'invalid' };
+    }
+    return { kind: 'valid', data: result.data };
+  } catch {
+    return { kind: 'invalid' };
+  }
+}
+
+export function migrateLegacyJsonFile<T>(
+  options: LegacyJsonMigrationOptions<T>
+): LegacyJsonMigrationResult {
+  const writeMode = options.writeMode ?? 'overwrite';
+
+  if (fs.existsSync(options.targetPath)) {
+    return { status: 'target_exists' };
+  }
+
+  for (const legacyPath of options.legacyPaths) {
+    if (!fs.existsSync(legacyPath)) {
+      continue;
+    }
+
+    try {
+      const raw = fs.readFileSync(legacyPath, 'utf-8');
+      const candidate = options.parseAndValidate(raw);
+      if (candidate.kind !== 'valid') {
+        continue;
+      }
+
+      options.ensureTargetDir();
+      const writeOptions =
+        writeMode === 'exclusive'
+          ? { encoding: 'utf-8' as const, flag: 'wx' as const }
+          : ('utf-8' as const);
+
+      fs.writeFileSync(
+        options.targetPath,
+        JSON.stringify(candidate.data, null, 2),
+        writeOptions
+      );
+
+      return { status: 'migrated', sourcePath: legacyPath };
+    } catch (error) {
+      const isExclusiveCollision =
+        writeMode === 'exclusive' &&
+        (error as NodeJS.ErrnoException).code === 'EEXIST';
+      if (isExclusiveCollision) {
+        return { status: 'target_exists' };
+      }
+      // Ignore invalid legacy files and continue checking others
+    }
+  }
+
+  return { status: 'not_migrated' };
+}
+
 /**
  * Migrate credentials from legacy paths to FIRECRAWL_HOME path.
  *
@@ -96,41 +181,21 @@ function migrateLegacyCredentials(): void {
   }
 
   const newPath = getCredentialsPath();
-  if (fs.existsSync(newPath)) {
-    migrationDone = true;
-    return;
-  }
+  const result = migrateLegacyJsonFile<StoredCredentials>({
+    legacyPaths: getLegacyCredentialsPaths(),
+    targetPath: newPath,
+    ensureTargetDir: ensureConfigDir,
+    parseAndValidate: (raw) =>
+      parseJsonWithSchema(raw, StoredCredentialsSchema),
+  });
 
-  for (const legacyPath of getLegacyCredentialsPaths()) {
-    if (!fs.existsSync(legacyPath)) {
-      continue;
-    }
-
-    try {
-      const data = fs.readFileSync(legacyPath, 'utf-8');
-      const parsed = JSON.parse(data);
-      const validation = StoredCredentialsSchema.safeParse(parsed);
-      if (!validation.success) {
-        continue;
-      }
-
-      ensureConfigDir();
-      fs.writeFileSync(
-        newPath,
-        JSON.stringify(validation.data, null, 2),
-        'utf-8'
-      );
-      setSecurePermissions(newPath);
-      console.error(
-        fmt.dim(
-          `[Credentials] Migrated credentials from ${legacyPath} to ${newPath}`
-        )
-      );
-      migrationDone = true;
-      return;
-    } catch {
-      // Ignore invalid legacy files and continue checking others
-    }
+  if (result.status === 'migrated') {
+    setSecurePermissions(newPath);
+    console.error(
+      fmt.dim(
+        `[Credentials] Migrated credentials from ${result.sourcePath} to ${newPath}`
+      )
+    );
   }
 
   migrationDone = true;
@@ -144,13 +209,11 @@ export function loadCredentials(): StoredCredentials | null {
     migrateLegacyCredentials();
     const credentialsPath = getCredentialsPath();
 
-    let data: string;
-    try {
-      data = fs.readFileSync(credentialsPath, 'utf-8');
-    } catch {
+    if (!fs.existsSync(credentialsPath)) {
       return null;
     }
 
+    const data = fs.readFileSync(credentialsPath, 'utf-8');
     const parsed = JSON.parse(data);
 
     // Validate with Zod schema for runtime type safety
@@ -223,4 +286,11 @@ export function deleteCredentials(): void {
  */
 export function getConfigDirectoryPath(): string {
   return getConfigDir();
+}
+
+/**
+ * Test helper to reset module state between tests.
+ */
+export function __resetCredentialsStateForTests(): void {
+  migrationDone = false;
 }

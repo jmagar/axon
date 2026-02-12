@@ -463,6 +463,28 @@ describe('nested settings', () => {
     });
   });
 
+  it('rejects unsafe integer values for nested numeric settings', () => {
+    vi.mocked(loadSettings).mockReturnValue({ crawl: { sitemap: 'include' } });
+
+    handleConfigSet('crawl.maxDepth', '9007199254740992');
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('safe integer range')
+    );
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('rejects out-of-range nested numeric values', () => {
+    vi.mocked(loadSettings).mockReturnValue({ crawl: { sitemap: 'include' } });
+
+    handleConfigSet('scrape.timeoutSeconds', '999999');
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('expected 1-300')
+    );
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
   it('resets a nested setting path to defaults', () => {
     vi.mocked(loadSettings).mockReturnValue({ crawl: { maxDepth: 17 } });
 

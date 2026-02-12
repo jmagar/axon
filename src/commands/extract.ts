@@ -44,6 +44,54 @@ type ExtractResponse = {
   warning?: string;
 };
 
+const MAX_SCHEMA_NESTING_DEPTH = 50;
+
+function validateExtractSchema(schema: unknown): string | undefined {
+  if (schema === null || schema === undefined) {
+    return 'Invalid JSON schema. Schema must be a non-null JSON object.';
+  }
+
+  if (typeof schema !== 'object' || Array.isArray(schema)) {
+    return 'Invalid JSON schema. Schema must be a JSON object.';
+  }
+
+  const queue: Array<{ node: unknown; depth: number }> = [
+    { node: schema, depth: 1 },
+  ];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+
+    if (current.depth > MAX_SCHEMA_NESTING_DEPTH) {
+      return `Invalid JSON schema. Schema nesting exceeds maximum depth of ${MAX_SCHEMA_NESTING_DEPTH}.`;
+    }
+
+    if (
+      current.node !== null &&
+      typeof current.node === 'object' &&
+      !Array.isArray(current.node)
+    ) {
+      const values = Object.values(current.node as Record<string, unknown>);
+      queue.push(
+        ...values.map((value) => ({
+          node: value,
+          depth: current.depth + 1,
+        }))
+      );
+    } else if (Array.isArray(current.node)) {
+      queue.push(
+        ...current.node.map((value) => ({
+          node: value,
+          depth: current.depth + 1,
+        }))
+      );
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Execute extract command
  */
@@ -66,7 +114,16 @@ export async function executeExtract(
 
     if (options.schema) {
       try {
-        extractArgs.schema = JSON.parse(options.schema);
+        const parsedSchema = JSON.parse(options.schema) as unknown;
+        const schemaValidationError = validateExtractSchema(parsedSchema);
+        if (schemaValidationError) {
+          return {
+            success: false,
+            error: schemaValidationError,
+          };
+        }
+
+        extractArgs.schema = parsedSchema;
       } catch {
         return {
           success: false,

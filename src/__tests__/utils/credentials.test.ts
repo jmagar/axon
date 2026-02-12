@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  __resetCredentialsStateForTests,
   deleteCredentials,
   getConfigDirectoryPath,
   loadCredentials,
@@ -34,6 +35,7 @@ describe('Credentials Utilities', () => {
     vi.clearAllMocks();
     vi.mocked(os.homedir).mockReturnValue('/home/testuser');
     delete process.env.FIRECRAWL_HOME;
+    __resetCredentialsStateForTests();
   });
 
   afterEach(() => {
@@ -43,6 +45,7 @@ describe('Credentials Utilities', () => {
     } else {
       process.env.FIRECRAWL_HOME = originalFirecrawlHome;
     }
+    __resetCredentialsStateForTests();
   });
 
   describe('getConfigDirectoryPath', () => {
@@ -103,6 +106,69 @@ describe('Credentials Utilities', () => {
 
       const result = loadCredentials();
 
+      expect(result).toBeNull();
+    });
+
+    it('migrates valid legacy credentials from ~/.config/firecrawl-cli', () => {
+      const targetPath = '/home/testuser/.firecrawl/credentials.json';
+      const legacyPath =
+        '/home/testuser/.config/firecrawl-cli/credentials.json';
+      let targetExists = false;
+
+      vi.mocked(fs.existsSync).mockImplementation((filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath === targetPath) {
+          return targetExists;
+        }
+        return normalizedPath === legacyPath;
+      });
+      vi.mocked(fs.writeFileSync).mockImplementation(() => {
+        targetExists = true;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath === legacyPath) {
+          return JSON.stringify({ apiKey: 'fc-migrated-key' });
+        }
+        if (normalizedPath === targetPath) {
+          return JSON.stringify({ apiKey: 'fc-migrated-key' });
+        }
+        throw new Error(`Unexpected read: ${normalizedPath}`);
+      });
+
+      const result = loadCredentials();
+
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        targetPath,
+        expect.stringContaining('"apiKey": "fc-migrated-key"'),
+        'utf-8'
+      );
+      expect(result).toEqual({ apiKey: 'fc-migrated-key' });
+    });
+
+    it('skips invalid legacy credentials and returns null when target is missing', () => {
+      const targetPath = '/home/testuser/.firecrawl/credentials.json';
+      const legacyPath =
+        '/home/testuser/.config/firecrawl-cli/credentials.json';
+
+      vi.mocked(fs.existsSync).mockImplementation((filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath === targetPath) {
+          return false;
+        }
+        return normalizedPath === legacyPath;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((filePath) => {
+        const normalizedPath = String(filePath);
+        if (normalizedPath === legacyPath) {
+          return '{invalid-json';
+        }
+        throw new Error(`Missing file: ${normalizedPath}`);
+      });
+
+      const result = loadCredentials();
+
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
   });

@@ -10,6 +10,7 @@ import type {
   QueryResultItem,
 } from '../types/query';
 import { processCommandResult } from '../utils/command';
+import { deduplicateQueryItems, groupByBaseUrl } from '../utils/deduplication';
 import { colorize, colors, fmt, icons } from '../utils/theme';
 import {
   requireContainer,
@@ -104,15 +105,11 @@ export async function executeQuery(
     let limitedItems: QueryResultItem[];
 
     if (needsDeduplication) {
-      // Group by base URL to deduplicate and respect --limit
-      // We keep ALL chunks for the top N unique URLs (by highest score)
-      const grouped = groupByBaseUrl(items);
-
-      // Rank URLs with light lexical signals, then keep top N URLs.
-      const topGroups = rankUrlGroups(grouped, options.query, requestedLimit);
-
-      // Flatten: return ALL chunks for the top N unique URLs
-      limitedItems = topGroups.flatMap((g) => g.items);
+      limitedItems = deduplicateQueryItems(
+        items,
+        options.query,
+        requestedLimit
+      );
     } else {
       // Full mode: return raw chunks without deduplication, just apply limit
       limitedItems = items.slice(0, requestedLimit);
@@ -125,62 +122,6 @@ export async function executeQuery(
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
   }
-}
-
-/**
- * Strip fragment identifier from URL
- * @param url URL with possible fragment
- * @returns URL without fragment
- */
-function stripFragment(url: string): string {
-  const hashIndex = url.indexOf('#');
-  return hashIndex === -1 ? url : url.substring(0, hashIndex);
-}
-
-function canonicalizeUrl(url: string): string {
-  try {
-    const parsed = new URL(stripFragment(url));
-    parsed.hash = '';
-    if (
-      (parsed.protocol === 'https:' && parsed.port === '443') ||
-      (parsed.protocol === 'http:' && parsed.port === '80')
-    ) {
-      parsed.port = '';
-    }
-    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
-    const keepParams = new URLSearchParams();
-    for (const [key, value] of parsed.searchParams.entries()) {
-      const normalizedKey = key.toLowerCase();
-      if (
-        normalizedKey.startsWith('utm_') ||
-        normalizedKey === 'gclid' ||
-        normalizedKey === 'fbclid'
-      ) {
-        continue;
-      }
-      keepParams.append(key, value);
-    }
-    parsed.search = keepParams.toString() ? `?${keepParams.toString()}` : '';
-    return parsed.toString();
-  } catch {
-    return stripFragment(url).replace(/\/+$/, '');
-  }
-}
-
-/**
- * Group query result items by base URL (without fragment)
- */
-function groupByBaseUrl(
-  items: QueryResultItem[]
-): Map<string, QueryResultItem[]> {
-  const grouped = new Map<string, QueryResultItem[]>();
-  for (const item of items) {
-    const baseUrl = canonicalizeUrl(item.url);
-    const existing = grouped.get(baseUrl) || [];
-    existing.push(item);
-    grouped.set(baseUrl, existing);
-  }
-  return grouped;
 }
 
 function queryHeading(text: string): string {
@@ -329,16 +270,6 @@ function scoreSentenceForQuery(
   return score;
 }
 
-function countTermMatches(text: string, queryTerms: string[]): number {
-  if (queryTerms.length === 0) return 0;
-  const lower = text.toLowerCase();
-  let matches = 0;
-  for (const term of queryTerms) {
-    if (lower.includes(term)) matches++;
-  }
-  return matches;
-}
-
 function collectRelevantSentences(text: string): string[] {
   return cleanSnippetSource(text)
     .split(/(?<=[.!?])\s+/)
@@ -375,84 +306,6 @@ export type PreviewSelection = {
   selectedPreviewScore: number;
   candidates: PreviewCandidate[];
 };
-
-type RankedUrlGroup = {
-  baseUrl: string;
-  items: QueryResultItem[];
-  topScore: number;
-  rankScore: number;
-  coverageCount: number;
-};
-
-function scoreUrlGroupForQuery(
-  groupItems: QueryResultItem[],
-  query: string
-): { rankScore: number; coverageCount: number } {
-  const queryTerms = extractQueryTerms(query);
-  const queryLower = query.toLowerCase().trim();
-  const topVector = groupItems[0]?.score ?? 0;
-
-  if (groupItems.length === 0) {
-    return { rankScore: topVector, coverageCount: 0 };
-  }
-
-  let maxCoverage = 0;
-  let maxTitleHeaderCoverage = 0;
-  let phraseHit = 0;
-
-  for (const item of groupItems.slice(0, 6)) {
-    const merged = `${item.title} ${item.chunkHeader ?? ''} ${item.chunkText}`;
-    const titleAndHeader = `${item.title} ${item.chunkHeader ?? ''}`;
-    maxCoverage = Math.max(maxCoverage, countTermMatches(merged, queryTerms));
-    maxTitleHeaderCoverage = Math.max(
-      maxTitleHeaderCoverage,
-      countTermMatches(titleAndHeader, queryTerms)
-    );
-    if (
-      queryLower.length >= 6 &&
-      queryTerms.length >= 2 &&
-      merged.toLowerCase().includes(queryLower)
-    ) {
-      phraseHit = 1;
-    }
-  }
-
-  const queryTermCount = queryTerms.length || 1;
-  const coverageBoost = (maxCoverage / queryTermCount) * 0.16;
-  const titleHeaderBoost = (maxTitleHeaderCoverage / queryTermCount) * 0.06;
-  const phraseBoost = phraseHit ? 0.08 : 0;
-
-  return {
-    rankScore: topVector + coverageBoost + titleHeaderBoost + phraseBoost,
-    coverageCount: maxCoverage,
-  };
-}
-
-function rankUrlGroups(
-  grouped: Map<string, QueryResultItem[]>,
-  query: string,
-  limit: number
-): RankedUrlGroup[] {
-  return Array.from(grouped.entries())
-    .map(([baseUrl, groupItems]) => {
-      const sorted = [...groupItems].sort((a, b) => b.score - a.score);
-      const { rankScore, coverageCount } = scoreUrlGroupForQuery(sorted, query);
-      return {
-        baseUrl,
-        items: sorted,
-        topScore: sorted[0].score,
-        rankScore,
-        coverageCount,
-      };
-    })
-    .sort(
-      (a, b) =>
-        b.rankScore - a.rankScore ||
-        b.coverageCount - a.coverageCount ||
-        b.topScore - a.topScore
-    )
-    .slice(0, limit);
-}
 
 function buildPreviewCandidates(
   groupItems: QueryResultItem[],

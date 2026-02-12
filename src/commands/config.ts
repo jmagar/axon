@@ -77,17 +77,139 @@ type SettingPath =
   | 'embedding.maxConcurrent'
   | 'polling.intervalMs';
 
-const SETTING_PATHS: readonly SettingPath[] = [
-  'crawl.maxDepth',
-  'crawl.sitemap',
-  'search.limit',
-  'scrape.timeoutSeconds',
-  'http.timeoutMs',
-  'chunking.maxChunkSize',
-  'embedding.maxConcurrent',
-  'polling.intervalMs',
-];
+type IntegerSettingPath = Exclude<SettingPath, 'crawl.sitemap'>;
+type SettingValueByPath = {
+  'crawl.maxDepth': number;
+  'crawl.sitemap': 'skip' | 'include';
+  'search.limit': number;
+  'scrape.timeoutSeconds': number;
+  'http.timeoutMs': number;
+  'chunking.maxChunkSize': number;
+  'embedding.maxConcurrent': number;
+  'polling.intervalMs': number;
+};
 
+type SettingDefinition<K extends SettingPath> = {
+  parse: (value: string) => SettingValueByPath[K];
+  get: (settings: ReturnType<typeof getSettings>) => SettingValueByPath[K];
+  set: (settings: UserSettings, value: SettingValueByPath[K]) => UserSettings;
+};
+
+type IntegerSettingBounds = {
+  min: number;
+  max: number;
+};
+
+const INTEGER_SETTING_BOUNDS: Record<IntegerSettingPath, IntegerSettingBounds> =
+  {
+    'crawl.maxDepth': { min: 1, max: 100 },
+    'search.limit': { min: 1, max: 100 },
+    'scrape.timeoutSeconds': { min: 1, max: 300 },
+    'http.timeoutMs': { min: 1000, max: 300000 },
+    'chunking.maxChunkSize': { min: 100, max: 10000 },
+    'embedding.maxConcurrent': { min: 1, max: 50 },
+    'polling.intervalMs': { min: 1000, max: 60000 },
+  };
+
+function parseIntegerSetting(key: IntegerSettingPath, value: string): number {
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) {
+    throw new Error(`Invalid numeric value for ${key}: ${value}`);
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Numeric value for ${key} is out of safe integer range`);
+  }
+
+  const bounds = INTEGER_SETTING_BOUNDS[key];
+  if (parsed < bounds.min || parsed > bounds.max) {
+    throw new Error(
+      `Invalid value for ${key}: ${parsed} (expected ${bounds.min}-${bounds.max})`
+    );
+  }
+
+  return parsed;
+}
+
+const SETTING_DEFINITIONS: {
+  [K in SettingPath]: SettingDefinition<K>;
+} = {
+  'crawl.maxDepth': {
+    parse: (value) => parseIntegerSetting('crawl.maxDepth', value),
+    get: (settings) => settings.crawl.maxDepth,
+    set: (settings, value) => ({
+      ...settings,
+      crawl: { ...settings.crawl, maxDepth: value },
+    }),
+  },
+  'crawl.sitemap': {
+    parse: (value) => {
+      if (value !== 'skip' && value !== 'include') {
+        throw new Error(`Invalid value for crawl.sitemap: ${value}`);
+      }
+      return value;
+    },
+    get: (settings) => settings.crawl.sitemap,
+    set: (settings, value) => ({
+      ...settings,
+      crawl: { ...settings.crawl, sitemap: value },
+    }),
+  },
+  'search.limit': {
+    parse: (value) => parseIntegerSetting('search.limit', value),
+    get: (settings) => settings.search.limit,
+    set: (settings, value) => ({
+      ...settings,
+      search: { ...settings.search, limit: value },
+    }),
+  },
+  'scrape.timeoutSeconds': {
+    parse: (value) => parseIntegerSetting('scrape.timeoutSeconds', value),
+    get: (settings) => settings.scrape.timeoutSeconds,
+    set: (settings, value) => ({
+      ...settings,
+      scrape: { ...settings.scrape, timeoutSeconds: value },
+    }),
+  },
+  'http.timeoutMs': {
+    parse: (value) => parseIntegerSetting('http.timeoutMs', value),
+    get: (settings) => settings.http.timeoutMs,
+    set: (settings, value) => ({
+      ...settings,
+      http: { ...settings.http, timeoutMs: value },
+    }),
+  },
+  'chunking.maxChunkSize': {
+    parse: (value) => parseIntegerSetting('chunking.maxChunkSize', value),
+    get: (settings) => settings.chunking.maxChunkSize,
+    set: (settings, value) => ({
+      ...settings,
+      chunking: { ...settings.chunking, maxChunkSize: value },
+    }),
+  },
+  'embedding.maxConcurrent': {
+    parse: (value) => parseIntegerSetting('embedding.maxConcurrent', value),
+    get: (settings) => settings.embedding.maxConcurrent,
+    set: (settings, value) => ({
+      ...settings,
+      embedding: { ...settings.embedding, maxConcurrent: value },
+    }),
+  },
+  'polling.intervalMs': {
+    parse: (value) => parseIntegerSetting('polling.intervalMs', value),
+    get: (settings) => settings.polling.intervalMs,
+    set: (settings, value) => ({
+      ...settings,
+      polling: { ...settings.polling, intervalMs: value },
+    }),
+  },
+};
+
+const SETTING_PATHS = Object.keys(SETTING_DEFINITIONS) as SettingPath[];
+
+// These keys are legacy aliases that users may still have in scripts.
+// Keep them explicit for compatibility with pre-nested config commands.
 const LEGACY_SETTING_KEYS = ['exclude-paths', 'exclude-extensions'] as const;
 
 function maskValue(value: string): string {
@@ -390,7 +512,7 @@ function validateSettingKey(key: string): true {
 }
 
 function isSettingPath(value: string): value is SettingPath {
-  return SETTING_PATHS.includes(value as SettingPath);
+  return Object.hasOwn(SETTING_DEFINITIONS, value);
 }
 
 function formatValue(value: unknown): string {
@@ -402,96 +524,19 @@ function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function getSettingByPath(
+function getSettingByPath<K extends SettingPath>(
   settings: ReturnType<typeof getSettings>,
-  key: SettingPath
-): unknown {
-  switch (key) {
-    case 'crawl.maxDepth':
-      return settings.crawl.maxDepth;
-    case 'crawl.sitemap':
-      return settings.crawl.sitemap;
-    case 'search.limit':
-      return settings.search.limit;
-    case 'scrape.timeoutSeconds':
-      return settings.scrape.timeoutSeconds;
-    case 'http.timeoutMs':
-      return settings.http.timeoutMs;
-    case 'chunking.maxChunkSize':
-      return settings.chunking.maxChunkSize;
-    case 'embedding.maxConcurrent':
-      return settings.embedding.maxConcurrent;
-    case 'polling.intervalMs':
-      return settings.polling.intervalMs;
-  }
+  key: K
+): SettingValueByPath[K] {
+  return SETTING_DEFINITIONS[key].get(settings);
 }
 
-function parseIntegerSetting(key: SettingPath, value: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid numeric value for ${key}: ${value}`);
-  }
-  return parsed;
-}
-
-function parseValueForPath(key: SettingPath, value: string): unknown {
-  if (key === 'crawl.sitemap') {
-    if (value !== 'skip' && value !== 'include') {
-      throw new Error(`Invalid value for crawl.sitemap: ${value}`);
-    }
-    return value;
-  }
-
-  return parseIntegerSetting(key, value);
-}
-
-function setSettingByPath(
+function setSettingByPath<K extends SettingPath>(
   settings: UserSettings,
-  key: SettingPath,
-  value: unknown
+  key: K,
+  value: SettingValueByPath[K]
 ): UserSettings {
-  switch (key) {
-    case 'crawl.maxDepth':
-      return {
-        ...settings,
-        crawl: { ...settings.crawl, maxDepth: value as number },
-      };
-    case 'crawl.sitemap':
-      return {
-        ...settings,
-        crawl: { ...settings.crawl, sitemap: value as 'skip' | 'include' },
-      };
-    case 'search.limit':
-      return {
-        ...settings,
-        search: { ...settings.search, limit: value as number },
-      };
-    case 'scrape.timeoutSeconds':
-      return {
-        ...settings,
-        scrape: { ...settings.scrape, timeoutSeconds: value as number },
-      };
-    case 'http.timeoutMs':
-      return {
-        ...settings,
-        http: { ...settings.http, timeoutMs: value as number },
-      };
-    case 'chunking.maxChunkSize':
-      return {
-        ...settings,
-        chunking: { ...settings.chunking, maxChunkSize: value as number },
-      };
-    case 'embedding.maxConcurrent':
-      return {
-        ...settings,
-        embedding: { ...settings.embedding, maxConcurrent: value as number },
-      };
-    case 'polling.intervalMs':
-      return {
-        ...settings,
-        polling: { ...settings.polling, intervalMs: value as number },
-      };
-  }
+  return SETTING_DEFINITIONS[key].set(settings, value);
 }
 
 /**
@@ -602,7 +647,7 @@ export function handleConfigSet(key: string, value: string): void {
 
   if (isSettingPath(key)) {
     try {
-      const parsedValue = parseValueForPath(key, value);
+      const parsedValue = SETTING_DEFINITIONS[key].parse(value);
       const current = loadSettings();
       const next = setSettingByPath(current, key, parsedValue);
       const validation = UserSettingsSchema.safeParse(next);
