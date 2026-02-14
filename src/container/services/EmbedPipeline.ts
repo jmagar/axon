@@ -9,6 +9,7 @@
  */
 
 import pLimit from 'p-limit';
+import type { EffectiveUserSettings } from '../../schemas/storage';
 import { chunkText } from '../../utils/chunker';
 import { DEFAULT_QDRANT_COLLECTION } from '../../utils/defaults';
 import { buildEmbeddingPoints, runEmbedSafely } from '../../utils/embed-core';
@@ -22,12 +23,20 @@ import type { IEmbedPipeline, IQdrantService, ITeiService } from '../types';
  */
 export class EmbedPipeline implements IEmbedPipeline {
   private collectionPromise: Promise<void> | null = null;
+  private readonly embeddingSettings: EffectiveUserSettings['embedding'];
+  private readonly chunkingSettings: EffectiveUserSettings['chunking'];
 
   constructor(
     private readonly teiService: ITeiService,
     private readonly qdrantService: IQdrantService,
-    private readonly collectionName: string = DEFAULT_QDRANT_COLLECTION
-  ) {}
+    private readonly collectionName: string = DEFAULT_QDRANT_COLLECTION,
+    settings?: EffectiveUserSettings
+  ) {
+    // Capture settings once at construction time to avoid per-call getSettings() I/O (PERF-02/ARCH-07)
+    const resolved = settings ?? getSettings();
+    this.embeddingSettings = resolved.embedding;
+    this.chunkingSettings = resolved.chunking;
+  }
 
   /**
    * Ensure the target collection exists (only calls Qdrant once per pipeline instance)
@@ -83,7 +92,7 @@ export class EmbedPipeline implements IEmbedPipeline {
     await this.ensureCollectionReady();
 
     // Chunk content
-    const chunks = chunkText(trimmed);
+    const chunks = chunkText(trimmed, this.chunkingSettings);
     if (chunks.length === 0) return;
 
     // Generate embeddings
@@ -176,7 +185,7 @@ export class EmbedPipeline implements IEmbedPipeline {
     if (items.length === 0) return result;
 
     const concurrency =
-      options.concurrency ?? getSettings().embedding.maxConcurrent;
+      options.concurrency ?? this.embeddingSettings.maxConcurrent;
     const limit = pLimit(concurrency);
     const { onProgress } = options;
     const total = items.length;

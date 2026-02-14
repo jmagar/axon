@@ -6,7 +6,9 @@
  * This service provides a DI-container compatible interface
  */
 
+import type { EffectiveUserSettings } from '../../schemas/storage';
 import {
+  type HttpOptions,
   fetchWithRetry as utilFetchWithRetry,
   fetchWithTimeout as utilFetchWithTimeout,
 } from '../../utils/http';
@@ -23,8 +25,24 @@ function omitUndefinedValues<T extends Record<string, unknown>>(
 /**
  * HttpClient service implementation
  * Delegates to centralized HTTP utilities
+ *
+ * When settings are provided (via container), pre-computes default HTTP options
+ * to avoid per-call getSettings() filesystem I/O (PERF-02/ARCH-07)
  */
 export class HttpClient implements IHttpClient {
+  private readonly defaultOptions: Required<HttpOptions> | undefined;
+
+  constructor(settings?: EffectiveUserSettings) {
+    if (settings) {
+      this.defaultOptions = {
+        timeoutMs: settings.http.timeoutMs,
+        maxRetries: settings.http.maxRetries,
+        baseDelayMs: settings.http.baseDelayMs,
+        maxDelayMs: settings.http.maxDelayMs,
+      };
+    }
+  }
+
   /**
    * Fetch with automatic retry on transient errors
    *
@@ -46,17 +64,14 @@ export class HttpClient implements IHttpClient {
       maxDelayMs?: number;
     }
   ): Promise<Response> {
-    const retryOptions =
-      options === undefined
+    // Merge caller options over pre-computed defaults (avoids getSettings() I/O)
+    const mergedOptions = this.defaultOptions
+      ? { ...this.defaultOptions, ...omitUndefinedValues(options ?? {}) }
+      : options === undefined
         ? undefined
-        : (omitUndefinedValues({
-            timeoutMs: options.timeoutMs,
-            maxRetries: options.maxRetries,
-            baseDelayMs: options.baseDelayMs,
-            maxDelayMs: options.maxDelayMs,
-          }) as typeof options);
+        : (omitUndefinedValues(options) as typeof options);
 
-    return utilFetchWithRetry(url, init, retryOptions);
+    return utilFetchWithRetry(url, init, mergedOptions);
   }
 
   /**
@@ -75,6 +90,7 @@ export class HttpClient implements IHttpClient {
     init?: RequestInit,
     timeoutMs?: number
   ): Promise<Response> {
-    return utilFetchWithTimeout(url, init, timeoutMs);
+    const effectiveTimeout = timeoutMs ?? this.defaultOptions?.timeoutMs;
+    return utilFetchWithTimeout(url, init, effectiveTimeout);
   }
 }

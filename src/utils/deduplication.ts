@@ -1,6 +1,6 @@
 import type { QueryResultItem } from '../types/query';
 
-const STOP_WORDS = new Set([
+export const STOP_WORDS = new Set([
   'the',
   'and',
   'for',
@@ -105,7 +105,7 @@ export function groupByBaseUrl(
   return grouped;
 }
 
-function extractQueryTerms(query?: string): string[] {
+export function extractQueryTerms(query?: string): string[] {
   if (!query) return [];
   return query
     .toLowerCase()

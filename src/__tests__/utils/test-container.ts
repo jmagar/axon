@@ -5,6 +5,7 @@
 import type { Mock } from 'vitest';
 import { vi } from 'vitest';
 import type { IContainer } from '../../container/types';
+import { getDefaultSettings } from '../../utils/default-settings';
 import type { MockFirecrawlClient } from './mock-client';
 
 /**
@@ -88,6 +89,7 @@ export function createTestContainer(
     embedderWebhookSecret: options?.embedderWebhookSecret,
     embedderWebhookPort: options?.embedderWebhookPort,
     embedderWebhookPath: options?.embedderWebhookPath,
+    settings: getDefaultSettings(),
   });
 
   return {

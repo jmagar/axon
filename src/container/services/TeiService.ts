@@ -3,8 +3,8 @@
  * Handles batched embedding generation with concurrency control
  */
 
+import type { EffectiveUserSettings } from '../../schemas/storage';
 import { sleep } from '../../utils/http';
-import { getSettings } from '../../utils/settings';
 import {
   assertTeiOk,
   parseTeiInfo,
@@ -51,11 +51,15 @@ function calculateBatchTimeout(batchSize: number): number {
  */
 export class TeiService implements ITeiService {
   private cachedInfo: TeiInfo | null = null;
+  private readonly embeddingSettings: EffectiveUserSettings['embedding'];
 
   constructor(
     private readonly teiUrl: string,
-    private readonly httpClient: IHttpClient
-  ) {}
+    private readonly httpClient: IHttpClient,
+    settings: EffectiveUserSettings
+  ) {
+    this.embeddingSettings = settings.embedding;
+  }
 
   /**
    * Get TEI server info (cached after first call)
@@ -66,13 +70,12 @@ export class TeiService implements ITeiService {
       return this.cachedInfo;
     }
 
-    const embeddingSettings = getSettings().embedding;
     const response = await this.httpClient.fetchWithRetry(
       `${this.teiUrl}/info`,
       undefined,
       {
         timeoutMs: TEI_INFO_TIMEOUT_MS,
-        maxRetries: embeddingSettings.maxRetries,
+        maxRetries: this.embeddingSettings.maxRetries,
       }
     );
 
@@ -93,7 +96,6 @@ export class TeiService implements ITeiService {
    * @returns Array of embedding vectors
    */
   async embedBatch(inputs: string[]): Promise<number[][]> {
-    const embeddingSettings = getSettings().embedding;
     const timeoutMs = calculateBatchTimeout(inputs.length);
     let lastError: Error | null = null;
 
@@ -115,7 +117,7 @@ export class TeiService implements ITeiService {
           inputs,
           {
             timeoutMs,
-            maxRetries: embeddingSettings.maxRetries,
+            maxRetries: this.embeddingSettings.maxRetries,
           }
         );
 
@@ -169,11 +171,10 @@ export class TeiService implements ITeiService {
    * @returns Array of embedding vectors in same order as input
    */
   async embedChunks(texts: string[]): Promise<number[][]> {
-    const embeddingSettings = getSettings().embedding;
     return runConcurrentBatches(
       texts,
-      embeddingSettings.batchSize,
-      embeddingSettings.maxConcurrentBatches,
+      this.embeddingSettings.batchSize,
+      this.embeddingSettings.maxConcurrentBatches,
       (batch) => this.embedBatch(batch)
     );
   }

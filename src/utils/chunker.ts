@@ -1,6 +1,7 @@
 /**
  * Markdown-aware hybrid text chunker
  */
+import type { EffectiveUserSettings } from '../schemas/storage';
 import { getSettings } from './settings';
 
 export interface Chunk {
@@ -10,14 +11,30 @@ export interface Chunk {
 }
 
 /**
+ * Chunking configuration
+ */
+interface ChunkingConfig {
+  maxChunkSize: number;
+  targetChunkSize: number;
+  overlapSize: number;
+  minChunkSize: number;
+}
+
+/**
  * Split text into chunks using markdown-aware hybrid strategy:
  * 1. Split on markdown headers
  * 2. Split large blocks on double newlines (paragraphs)
  * 3. Fixed-size split with overlap for remaining large blocks
  * 4. Merge tiny chunks into previous
+ *
+ * @param text Text to chunk
+ * @param chunkingConfig Optional chunking config (avoids getSettings() I/O when provided)
  */
-export function chunkText(text: string): Chunk[] {
-  const config = getSettings().chunking;
+export function chunkText(
+  text: string,
+  chunkingConfig?: EffectiveUserSettings['chunking']
+): Chunk[] {
+  const config: ChunkingConfig = chunkingConfig ?? getSettings().chunking;
   const trimmed = text.trim();
   if (!trimmed) return [];
 

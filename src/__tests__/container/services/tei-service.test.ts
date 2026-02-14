@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TeiService } from '../../../container/services/TeiService';
 import type { IHttpClient } from '../../../container/types';
+import { getDefaultSettings } from '../../../utils/default-settings';
 
 describe('TeiService', () => {
   let service: TeiService;
@@ -17,7 +18,7 @@ describe('TeiService', () => {
       fetchWithRetry: vi.fn(),
       fetchWithTimeout: vi.fn(),
     };
-    service = new TeiService(teiUrl, mockHttpClient);
+    service = new TeiService(teiUrl, mockHttpClient, getDefaultSettings());
   });
 
   afterEach(() => {

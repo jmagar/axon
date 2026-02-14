@@ -4,6 +4,7 @@
  */
 
 import type Firecrawl from '@mendable/firecrawl-js';
+import type { EffectiveUserSettings } from '../schemas/storage';
 
 /**
  * Immutable configuration for a container instance
@@ -28,6 +29,10 @@ export interface ImmutableConfig {
   readonly embedderWebhookSecret?: string;
   readonly embedderWebhookPort?: number;
   readonly embedderWebhookPath?: string;
+
+  // Resolved user settings (captured at container creation time)
+  // Avoids per-call filesystem I/O in hot paths (PERF-02/ARCH-07)
+  readonly settings: EffectiveUserSettings;
 }
 
 /**
@@ -53,6 +58,9 @@ export interface ConfigOptions {
   embedderWebhookSecret?: string;
   embedderWebhookPort?: number;
   embedderWebhookPath?: string;
+
+  // Resolved user settings (optional - resolved at container creation if not provided)
+  settings?: EffectiveUserSettings;
 }
 
 /**

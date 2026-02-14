@@ -78,7 +78,7 @@ export class Container implements IContainer {
       return this.httpClient;
     }
 
-    this.httpClient = new HttpClient();
+    this.httpClient = new HttpClient(this.config.settings);
     return this.httpClient;
   }
 
@@ -98,7 +98,11 @@ export class Container implements IContainer {
       );
     }
 
-    this.teiService = new TeiService(this.config.teiUrl, this.getHttpClient());
+    this.teiService = new TeiService(
+      this.config.teiUrl,
+      this.getHttpClient(),
+      this.config.settings
+    );
     return this.teiService;
   }
 
@@ -138,7 +142,8 @@ export class Container implements IContainer {
     this.embedPipeline = new EmbedPipeline(
       this.getTeiService(),
       this.getQdrantService(),
-      this.config.qdrantCollection || 'firecrawl'
+      this.config.qdrantCollection || 'firecrawl',
+      this.config.settings
     );
     return this.embedPipeline;
   }

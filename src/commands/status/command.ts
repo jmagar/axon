@@ -174,7 +174,7 @@ export async function handleJobStatusCommand(
       },
       options.pretty ?? false
     );
-    writeCommandOutput(outputContent, options);
+    await writeCommandOutput(outputContent, options);
   } catch (error) {
     console.error(
       fmt.error(error instanceof Error ? error.message : String(error))

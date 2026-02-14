@@ -3,6 +3,7 @@ import {
   DEFAULT_QDRANT_COLLECTION,
   DEFAULT_USER_AGENT,
 } from '../utils/defaults';
+import { getSettings } from '../utils/settings';
 import { fmt } from '../utils/theme';
 import type { ConfigOptions, ImmutableConfig } from './types';
 
@@ -118,5 +119,8 @@ export function resolveContainerConfig({
     embedderWebhookPath:
       options.embedderWebhookPath ||
       process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PATH,
+
+    // Resolved settings (captured once, avoids per-call file I/O in hot paths)
+    settings: options.settings ?? getSettings(),
   };
 }
