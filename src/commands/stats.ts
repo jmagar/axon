@@ -136,7 +136,8 @@ function formatHuman(
         { header: 'Metric', width: 12 },
         { header: 'Value', width: 24 },
       ],
-      overviewRows
+      overviewRows,
+      false
     )
   );
   lines.push('');

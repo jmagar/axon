@@ -189,4 +189,62 @@ describe('handleStatsCommand output', () => {
     expect(output).toContain('By domain');
     expect(output).toContain('By source command');
   });
+
+  it('should not show dash row in overview table when database is empty', async () => {
+    const mockQdrantService: IQdrantService = {
+      ensureCollection: vi.fn(),
+      deleteByUrl: vi.fn(),
+      deleteByDomain: vi.fn(),
+      countByDomain: vi.fn(),
+      countByUrl: vi.fn(),
+      upsertPoints: vi.fn(),
+      queryPoints: vi.fn(),
+      scrollByUrl: vi.fn(),
+      scrollAll: vi.fn().mockResolvedValue([]),
+      getCollectionInfo: vi.fn().mockResolvedValue({
+        status: 'green',
+        vectorsCount: 0,
+        pointsCount: 0,
+        segmentsCount: 0,
+        config: { dimension: 768, distance: 'Cosine' },
+      }),
+      countPoints: vi.fn().mockResolvedValue(0),
+      deleteAll: vi.fn(),
+    };
+    const container = createTestContainer(undefined, {
+      qdrantUrl: 'http://localhost:53333',
+      qdrantCollection: 'test_col',
+    });
+    vi.spyOn(container, 'getQdrantService').mockReturnValue(mockQdrantService);
+
+    await handleStatsCommand(container, {
+      collection: 'test_col',
+    });
+
+    const output = vi.mocked(writeOutput).mock.calls.at(-1)?.[0] as string;
+
+    // Should NOT contain em-dash placeholders (—) in overview table
+    // Bug: formatAlignedTable defaults emptyWithDashRow=true, creating a row like "—  —"
+    const lines = output.split('\n');
+    const metricHeaderIdx = lines.findIndex((l) => l.includes('Metric'));
+    const byDomainIdx = lines.findIndex(
+      (l, i) => i > metricHeaderIdx && l.includes('By domain')
+    );
+
+    const overviewLines = lines.slice(metricHeaderIdx, byDomainIdx);
+
+    // Filter to data rows (skip header and divider which is all dashes)
+    const dataRows = overviewLines.slice(2).filter((l) => l.trim().length > 0);
+
+    // No data row should contain only em-dashes (—)
+    const hasEmDashRow = dataRows.some((line) => {
+      const cells = line
+        .split(/\s{2,}/)
+        .map((c) => c.trim())
+        .filter(Boolean);
+      return cells.length > 0 && cells.every((cell) => cell === '—');
+    });
+
+    expect(hasEmDashRow).toBe(false);
+  });
 });
