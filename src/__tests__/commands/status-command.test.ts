@@ -1008,13 +1008,13 @@ describe('createStatusCommand', () => {
     expect(activeClient.getActiveCrawls).toHaveBeenCalledTimes(1);
   });
 
-  it('should not expose per-job status flags', () => {
+  it('should expose per-job filter flags', () => {
     const cmd = createStatusCommand();
     const longFlags = cmd.options.map((opt) => opt.long);
 
-    expect(longFlags).not.toContain('--crawl');
-    expect(longFlags).not.toContain('--batch');
-    expect(longFlags).not.toContain('--extract');
-    expect(longFlags).not.toContain('--embed');
+    expect(longFlags).toContain('--crawl');
+    expect(longFlags).toContain('--batch');
+    expect(longFlags).toContain('--extract');
+    expect(longFlags).toContain('--embed');
   });
 });
