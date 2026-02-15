@@ -196,6 +196,94 @@ describe('SEC-04: SSRF URL safety checks', () => {
     expect(checkUrlSafety('http://[FE80::1]/')).not.toBeNull();
     expect(checkUrlSafety('http://[fc00::ABCD]/')).not.toBeNull();
   });
+
+  it('should block IPv4-mapped IPv6 addresses (loopback)', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // Node.js normalizes [::ffff:127.0.0.1] to [::ffff:7f00:1]
+    // These should be detected and blocked as loopback
+    expect(checkUrlSafety('http://[::ffff:127.0.0.1]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:127.0.0.1]:8080/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:127.1.2.3]/')).not.toBeNull();
+  });
+
+  it('should block IPv4-mapped IPv6 addresses (private ranges)', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // 10.0.0.0/8
+    expect(checkUrlSafety('http://[::ffff:10.0.0.1]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:10.255.255.255]/')).not.toBeNull();
+
+    // 172.16.0.0/12
+    expect(checkUrlSafety('http://[::ffff:172.16.0.1]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:172.31.255.255]/')).not.toBeNull();
+
+    // 192.168.0.0/16
+    expect(checkUrlSafety('http://[::ffff:192.168.1.1]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:192.168.255.255]/')).not.toBeNull();
+  });
+
+  it('should block IPv4-mapped IPv6 addresses (cloud metadata)', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // AWS/Azure metadata endpoint
+    expect(checkUrlSafety('http://[::ffff:169.254.169.254]/')).not.toBeNull();
+    expect(
+      checkUrlSafety('http://[::ffff:169.254.169.254]/latest/meta-data/')
+    ).not.toBeNull();
+
+    // Other link-local addresses
+    expect(checkUrlSafety('http://[::ffff:169.254.1.1]/')).not.toBeNull();
+  });
+
+  it('should block IPv4-mapped IPv6 addresses (current network)', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // 0.0.0.0/8
+    expect(checkUrlSafety('http://[::ffff:0.0.0.0]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::ffff:0.1.2.3]/')).not.toBeNull();
+  });
+
+  it('should allow IPv4-mapped IPv6 addresses (public IPs)', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // Public IPs should be allowed
+    expect(checkUrlSafety('http://[::ffff:8.8.8.8]/')).toBeNull(); // Google DNS
+    expect(checkUrlSafety('http://[::ffff:1.1.1.1]/')).toBeNull(); // Cloudflare DNS
+    expect(checkUrlSafety('http://[::ffff:93.184.216.34]/')).toBeNull(); // example.com
+  });
+
+  it('should handle IPv4-mapped IPv6 case insensitivity', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // Hex digits are case-insensitive
+    expect(checkUrlSafety('http://[::FFFF:127.0.0.1]/')).not.toBeNull();
+    expect(checkUrlSafety('http://[::FfFf:10.0.0.1]/')).not.toBeNull();
+  });
+
+  it('should detect IPv4-mapped IPv6 after Node.js normalization', async () => {
+    const { checkUrlSafety } = await import('../../utils/url');
+
+    // These are already in normalized hex form (as Node.js would parse them)
+    // Manually construct URLs to bypass Node.js parsing for this test
+    const testCases = [
+      { url: 'http://[::ffff:7f00:1]/', shouldBlock: true }, // 127.0.0.1
+      { url: 'http://[::ffff:a00:1]/', shouldBlock: true }, // 10.0.0.1
+      { url: 'http://[::ffff:c0a8:101]/', shouldBlock: true }, // 192.168.1.1
+      { url: 'http://[::ffff:a9fe:a9fe]/', shouldBlock: true }, // 169.254.169.254
+      { url: 'http://[::ffff:808:808]/', shouldBlock: false }, // 8.8.8.8 (public)
+    ];
+
+    for (const { url, shouldBlock } of testCases) {
+      const result = checkUrlSafety(url);
+      if (shouldBlock) {
+        expect(result).not.toBeNull();
+        expect(result).toContain('via IPv4-mapped IPv6');
+      } else {
+        expect(result).toBeNull();
+      }
+    }
+  });
 });
 
 describe('SEC-05: Zod schema validation for embed job files', () => {
