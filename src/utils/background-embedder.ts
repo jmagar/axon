@@ -439,40 +439,55 @@ async function startEmbedderWebhookServer(container: IContainer): Promise<{
   const intervalMs = Math.max(60_000, Math.floor(staleMs / 2));
 
   // SEC-01: Track whether a secret was explicitly configured.
-  // When no secret is set, auth is skipped (server binds to localhost by default).
+  // When no secret is set, auth is skipped only when the server is localhost-bound.
   // Previously an ephemeral secret was generated, but buildEmbedderWebhookConfig
   // (client side) has no access to it, causing all webhook requests to get 401.
   const hasExplicitSecret = !!settings.secret;
   const effectiveSecret = settings.secret || '';
-  if (!hasExplicitSecret) {
-    console.error(
-      fmt.warning(
-        '[Embedder] No webhook secret configured. Auth disabled (localhost-only).'
-      )
-    );
-    console.error(
-      fmt.dim(
-        '[Embedder] For authenticated webhooks, set FIRECRAWL_EMBEDDER_WEBHOOK_SECRET in .env'
-      )
-    );
-  }
 
-  // SEC-01: Determine bind address. Default to 127.0.0.1 (localhost only).
-  // Only bind to 0.0.0.0 if explicitly opted in via env var.
+  // SEC-01: Determine bind address before emitting warnings so the message is accurate.
+  // Default to 127.0.0.1 (localhost only). Only bind to 0.0.0.0 if explicitly opted in.
   const bindAddress =
     process.env.FIRECRAWL_EMBEDDER_BIND_ADDRESS === '0.0.0.0'
       ? '0.0.0.0'
       : '127.0.0.1';
 
+  if (!hasExplicitSecret) {
+    if (bindAddress !== '127.0.0.1') {
+      console.error(
+        fmt.warning(
+          '[Embedder] No webhook secret configured but server is bound to 0.0.0.0. All requests will be rejected (401). Set FIRECRAWL_EMBEDDER_WEBHOOK_SECRET to enable access.'
+        )
+      );
+    } else {
+      console.error(
+        fmt.warning(
+          '[Embedder] No webhook secret configured. Auth disabled (localhost-only).'
+        )
+      );
+      console.error(
+        fmt.dim(
+          '[Embedder] For authenticated webhooks, set FIRECRAWL_EMBEDDER_WEBHOOK_SECRET in .env'
+        )
+      );
+    }
+  }
+
   /** Authenticate an incoming request using the webhook secret.
-   *  When no secret is explicitly configured, auth is skipped
-   *  (server is bound to localhost by default). */
+   *  When no secret is explicitly configured, auth is skipped only if the
+   *  server is bound to localhost. If binding to 0.0.0.0, a secret is required. */
   function authenticateRequest(
     req: { headers: Record<string, string | string[] | undefined> },
     res: { statusCode: number; end: () => void }
   ): boolean {
-    // No explicit secret configured — skip auth (localhost-only by default)
+    // No explicit secret configured — only skip auth when localhost-bound.
+    // Reject all requests when binding to non-localhost without a secret.
     if (!hasExplicitSecret) {
+      if (bindAddress !== '127.0.0.1') {
+        res.statusCode = 401;
+        res.end();
+        return false;
+      }
       return true;
     }
 

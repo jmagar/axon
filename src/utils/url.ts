@@ -62,8 +62,24 @@ export function checkUrlSafety(url: string): string | null {
   }
 
   // Check against blocked IP patterns.
+  // Note: URL.hostname already strips IPv6 brackets, so no manual stripping needed.
   // This does NOT catch alternate numeric IP encodings (decimal 2130706433, hex 0x7f000001,
   // octal 0177.0.0.1) -- DNS/encoding normalization would be required for those.
+  // Also check IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1 → ::ffff:7f00:1)
+  const ipv4MappedMatch = hostname.match(
+    /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i
+  );
+  if (ipv4MappedMatch) {
+    const hi = parseInt(ipv4MappedMatch[1], 16);
+    const lo = parseInt(ipv4MappedMatch[2], 16);
+    const dotted = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    for (const { pattern, description } of BLOCKED_IP_PATTERNS) {
+      if (pattern.test(dotted)) {
+        return `Blocked: ${description} (via IPv4-mapped IPv6)`;
+      }
+    }
+  }
+
   for (const { pattern, description } of BLOCKED_IP_PATTERNS) {
     if (pattern.test(hostname)) {
       return `Blocked: ${description}`;

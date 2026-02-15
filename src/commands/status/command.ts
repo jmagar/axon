@@ -182,6 +182,7 @@ export async function handleJobStatusCommand(
           if (!running) break;
           await new Promise<void>((resolve) => {
             const earlyExit = () => {
+              running = false;
               clearTimeout(timer);
               resolve();
             };
