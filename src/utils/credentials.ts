@@ -92,7 +92,9 @@ function setSecurePermissions(filePath: string): void {
     fs.chmodSync(filePath, 0o600); // rw-------
   } catch (error) {
     console.error(
-      `Warning: Could not set secure permissions on ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+      fmt.warning(
+        `Could not set secure permissions on ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+      )
     );
   }
 }
