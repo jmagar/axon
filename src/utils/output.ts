@@ -240,9 +240,7 @@ export async function writeOutput(
     // Validate path to prevent traversal attacks
     const safePath = validateOutputPath(outputPath);
     const dir = path.dirname(safePath);
-    if (dir && !fs.existsSync(dir)) {
-      await fsPromises.mkdir(dir, { recursive: true });
-    }
+    await fsPromises.mkdir(dir, { recursive: true });
     await fsPromises.writeFile(safePath, content, 'utf-8');
     if (!silent) {
       // Always use stderr for file confirmation messages
