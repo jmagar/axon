@@ -204,6 +204,13 @@ export function createStatusCommand(): Command {
       (value) => Number.parseInt(value, 10),
       3
     )
+    .option('--crawl <ids>', 'Filter by crawl job IDs (comma-separated)')
+    .option('--batch <ids>', 'Filter by batch job IDs (comma-separated)')
+    .option('--extract <ids>', 'Filter by extract job IDs (comma-separated)')
+    .option(
+      '--embed [id]',
+      'Show embed queue status, optionally filter by job ID'
+    )
     .option('--json', 'Output JSON (compact)', false)
     .option('--pretty', 'Pretty print JSON output', false)
     .option('-o, --output <path>', 'Output file path (default: stdout)')
@@ -220,6 +227,10 @@ export function createStatusCommand(): Command {
 
       await handleJobStatusCommand(container, {
         apiKey: options.apiKey,
+        crawl: options.crawl,
+        batch: options.batch,
+        extract: options.extract,
+        embed: options.embed,
         output: options.output,
         json: options.json,
         pretty: options.pretty,

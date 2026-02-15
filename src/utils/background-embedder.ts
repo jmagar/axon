@@ -428,18 +428,21 @@ async function startEmbedderWebhookServer(container: IContainer): Promise<{
       : 10 * 60_000;
   const intervalMs = Math.max(60_000, Math.floor(staleMs / 2));
 
-  // SEC-01: Ensure webhook secret is always present.
-  // If no secret was explicitly configured, generate one automatically.
-  const effectiveSecret = settings.secret || generateWebhookSecret();
-  if (!settings.secret) {
+  // SEC-01: Track whether a secret was explicitly configured.
+  // When no secret is set, auth is skipped (server binds to localhost by default).
+  // Previously an ephemeral secret was generated, but buildEmbedderWebhookConfig
+  // (client side) has no access to it, causing all webhook requests to get 401.
+  const hasExplicitSecret = !!settings.secret;
+  const effectiveSecret = settings.secret || '';
+  if (!hasExplicitSecret) {
     console.error(
       fmt.warning(
-        '[Embedder] No webhook secret configured. Generated an ephemeral secret for this session.'
+        '[Embedder] No webhook secret configured. Auth disabled (localhost-only).'
       )
     );
     console.error(
       fmt.dim(
-        '[Embedder] For persistent secret, set FIRECRAWL_EMBEDDER_WEBHOOK_SECRET in .env'
+        '[Embedder] For authenticated webhooks, set FIRECRAWL_EMBEDDER_WEBHOOK_SECRET in .env'
       )
     );
   }
@@ -451,11 +454,18 @@ async function startEmbedderWebhookServer(container: IContainer): Promise<{
       ? '0.0.0.0'
       : '127.0.0.1';
 
-  /** Authenticate an incoming request using the webhook secret */
+  /** Authenticate an incoming request using the webhook secret.
+   *  When no secret is explicitly configured, auth is skipped
+   *  (server is bound to localhost by default). */
   function authenticateRequest(
     req: { headers: Record<string, string | string[] | undefined> },
     res: { statusCode: number; end: () => void }
   ): boolean {
+    // No explicit secret configured — skip auth (localhost-only by default)
+    if (!hasExplicitSecret) {
+      return true;
+    }
+
     const provided = req.headers[EMBEDDER_WEBHOOK_HEADER];
 
     if (!provided || typeof provided !== 'string') {
