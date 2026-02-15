@@ -85,7 +85,7 @@ export function renderCrawlStatusSection(
         completedValue >= totalValue;
       const icon = getStatusIcon(status, isFailed);
       const statusColor = getStatusColor(status, isFailed);
-      const progress = hasProgress
+      const progress = hasProgress && totalValue > 0
         ? formatProgress(completedValue, totalValue)
         : null;
       const age = formatRelativeAge(crawl.updatedAt);

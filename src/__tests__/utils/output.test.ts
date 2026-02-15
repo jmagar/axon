@@ -13,8 +13,8 @@ import {
   writeOutput,
 } from '../../utils/output';
 
-// Mock fs module
-vi.mock('fs', () => ({
+// Mock fs module (use node: prefix to match production imports)
+vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
