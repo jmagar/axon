@@ -5,13 +5,7 @@
  * Each describe block maps to a specific security finding from the audit.
  */
 
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,7 +49,7 @@ describe('SEC-02: API keys stripped from job files on disk', () => {
   });
 
   it('should not persist apiKey when updating a job', async () => {
-    const { enqueueEmbedJob, updateEmbedJob, getEmbedJob } = await import(
+    const { enqueueEmbedJob, updateEmbedJob } = await import(
       '../../utils/embed-queue'
     );
     const job = await enqueueEmbedJob(
