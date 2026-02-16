@@ -108,7 +108,7 @@ All Docker Compose commands must be run from the **project root** (not the `dock
 # Correct - from project root
 docker compose up -d
 docker compose ps
-docker compose logs -f firecrawl
+docker compose logs -f axon-api
 
 # Using alternative TEI configs
 docker compose -f docker-compose.yaml -f docker/docker-compose.tei.yaml up -d
@@ -120,12 +120,12 @@ See `docker/README.md` for detailed Docker configuration documentation.
 
 | Container | Image | Port | Purpose | Status |
 |-----------|-------|------|---------|--------|
-| `firecrawl` | ghcr.io/firecrawl/firecrawl | 53002 | Main Firecrawl API (upstream) | Active |
+| `axon-api` | ghcr.io/firecrawl/firecrawl | 53002 | Main Firecrawl API (upstream) | Active |
 | `axon-embedder` | node:20-alpine | 53000 | Async embedding daemon | Active |
-| `firecrawl-playwright` | loorisr/patchright-scrape-api | 53006 (internal) | Browser scraping backend | Active |
+| `axon-playwright` | loorisr/patchright-scrape-api | 53006 (internal) | Browser scraping backend | Active |
 | `axon-qdrant` | qdrant/qdrant | 53333 | Vector database | Active |
-| `firecrawl-redis` | redis:alpine | 53379 (internal) | Job queue/cache | Active |
-| `firecrawl-rabbitmq` | rabbitmq:3-management | (internal) | Message broker | Active |
+| `axon-redis` | redis:alpine | 53379 (internal) | Job queue/cache | Active |
+| `axon-rabbitmq` | rabbitmq:3-management | (internal) | Message broker | Active |
 
 ### Scraping Architecture
 
@@ -168,8 +168,8 @@ QDRANT_URL=http://localhost:53333
 
 ### Debugging Scrape Failures
 
-1. Check Firecrawl logs: `docker logs firecrawl --tail 100`
-2. Check Patchright logs: `docker logs firecrawl-playwright --tail 100`
+1. Check Firecrawl logs: `docker logs axon-api --tail 100`
+2. Check Patchright logs: `docker logs axon-playwright --tail 100`
 3. Check embedder daemon: `docker logs axon-embedder --tail 100`
 4. Verify Qdrant health: `curl http://localhost:53333/collections/axon`
 5. Check port availability: `ss -tuln | grep -E '(53002|53000|53333)'`

@@ -65,14 +65,14 @@ echo "${BOLD}Docker Service Health Check${NC}"
 echo ""
 
 # 1. Firecrawl API (Port 53002)
-echo -n "Checking firecrawl (53002)... "
+echo -n "Checking axon-api (53002)... "
 if STATUS=$(curl -sf --max-time 5 http://localhost:53002/health 2>/dev/null); then
   echo -e "${GREEN}✓ healthy${NC}"
   ((HEALTHY_COUNT++))
 else
   echo -e "${RED}✗ unhealthy${NC} [Connection refused]"
-  echo -e "${DIM}  → docker restart firecrawl${NC}"
-  echo -e "${DIM}  → docker logs firecrawl --tail 50${NC}"
+  echo -e "${DIM}  → docker restart axon-api${NC}"
+  echo -e "${DIM}  → docker logs axon-api --tail 50${NC}"
 fi
 
 # 2. Embedder Daemon (Port 53000)
@@ -89,29 +89,29 @@ if HEALTH=$(curl -sf --max-time 5 http://localhost:53000/health 2>/dev/null); th
   fi
 else
   echo -e "${RED}✗ unhealthy${NC} [Connection refused]"
-  echo -e "${DIM}  → docker restart firecrawl-embedder${NC}"
-  echo -e "${DIM}  → docker logs firecrawl-embedder --tail 50${NC}"
+  echo -e "${DIM}  → docker restart axon-embedder${NC}"
+  echo -e "${DIM}  → docker logs axon-embedder --tail 50${NC}"
 fi
 
 # 3. Patchright (Port 53006 - Internal)
-echo -n "Checking patchright (53006)... "
-if STATUS=$(docker inspect firecrawl-playwright --format '{{.State.Status}}' 2>/dev/null); then
+echo -n "Checking axon-playwright (53006)... "
+if STATUS=$(docker inspect axon-playwright --format '{{.State.Status}}' 2>/dev/null); then
   if [ "$STATUS" = "running" ]; then
     echo -e "${GREEN}✓ running${NC}"
     ((HEALTHY_COUNT++))
   else
     echo -e "${RED}✗ ${STATUS}${NC}"
-    echo -e "${DIM}  → docker restart firecrawl-playwright${NC}"
+    echo -e "${DIM}  → docker restart axon-playwright${NC}"
   fi
 else
   echo -e "${RED}✗ not found${NC}"
-  echo -e "${DIM}  → docker compose up -d firecrawl-playwright${NC}"
+  echo -e "${DIM}  → docker compose up -d axon-playwright${NC}"
 fi
 
 # 4. Qdrant (Port 53333)
-echo -n "Checking qdrant (53333)... "
+echo -n "Checking axon-qdrant (53333)... "
 if HEALTH=$(curl -sf --max-time 5 http://localhost:53333/health 2>/dev/null); then
-  if COLLECTION=$(curl -sf --max-time 5 http://localhost:53333/collections/firecrawl 2>/dev/null); then
+  if COLLECTION=$(curl -sf --max-time 5 http://localhost:53333/collections/axon 2>/dev/null); then
     VECTORS=$(echo "$COLLECTION" | jq -r '.result.vectors_count // 0' 2>/dev/null || echo "0")
     echo -e "${GREEN}✓ healthy${NC} ${DIM}[${VECTORS} vectors]${NC}"
     ((HEALTHY_COUNT++))
@@ -121,28 +121,28 @@ if HEALTH=$(curl -sf --max-time 5 http://localhost:53333/health 2>/dev/null); th
   fi
 else
   echo -e "${RED}✗ unhealthy${NC} [Connection refused]"
-  echo -e "${DIM}  → docker restart firecrawl-qdrant${NC}"
-  echo -e "${DIM}  → docker logs firecrawl-qdrant --tail 50${NC}"
+  echo -e "${DIM}  → docker restart axon-qdrant${NC}"
+  echo -e "${DIM}  → docker logs axon-qdrant --tail 50${NC}"
 fi
 
 # 5. Redis (Port 53379 - Internal)
-echo -n "Checking redis (53379)... "
-if PING=$(docker exec firecrawl-redis redis-cli -p 53379 PING 2>/dev/null); then
+echo -n "Checking axon-redis (53379)... "
+if PING=$(docker exec axon-redis redis-cli -p 53379 PING 2>/dev/null); then
   if [ "$PING" = "PONG" ]; then
     echo -e "${GREEN}✓ healthy${NC}"
     ((HEALTHY_COUNT++))
   else
     echo -e "${RED}✗ unhealthy${NC} [No PONG response]"
-    echo -e "${DIM}  → docker restart firecrawl-redis${NC}"
+    echo -e "${DIM}  → docker restart axon-redis${NC}"
   fi
 else
   echo -e "${RED}✗ unhealthy${NC} [Cannot connect]"
-  echo -e "${DIM}  → docker restart firecrawl-redis${NC}"
+  echo -e "${DIM}  → docker restart axon-redis${NC}"
 fi
 
 # 6. RabbitMQ (Internal)
-echo -n "Checking rabbitmq... "
-if HEALTH=$(docker inspect firecrawl-rabbitmq --format '{{.State.Health.Status}}' 2>/dev/null); then
+echo -n "Checking axon-rabbitmq... "
+if HEALTH=$(docker inspect axon-rabbitmq --format '{{.State.Health.Status}}' 2>/dev/null); then
   if [ "$HEALTH" = "healthy" ]; then
     echo -e "${GREEN}✓ healthy${NC}"
     ((HEALTHY_COUNT++))
@@ -150,12 +150,12 @@ if HEALTH=$(docker inspect firecrawl-rabbitmq --format '{{.State.Health.Status}}
     echo -e "${YELLOW}⚠ starting${NC} ${DIM}(wait 30-60s)${NC}"
   else
     echo -e "${RED}✗ ${HEALTH}${NC}"
-    echo -e "${DIM}  → docker restart firecrawl-rabbitmq${NC}"
-    echo -e "${DIM}  → docker logs firecrawl-rabbitmq --tail 50${NC}"
+    echo -e "${DIM}  → docker restart axon-rabbitmq${NC}"
+    echo -e "${DIM}  → docker logs axon-rabbitmq --tail 50${NC}"
   fi
 else
   echo -e "${RED}✗ not found${NC}"
-  echo -e "${DIM}  → docker compose up -d firecrawl-rabbitmq${NC}"
+  echo -e "${DIM}  → docker compose up -d axon-rabbitmq${NC}"
 fi
 
 # 7. Remote TEI (from TEI_URL env var)

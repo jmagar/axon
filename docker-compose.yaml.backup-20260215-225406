@@ -7,7 +7,7 @@ x-common-service: &common-service
       hard: 65535
   restart: unless-stopped
   networks:
-    - axon-net
+    - jakenet
   extra_hosts:
     - "host.docker.internal:host-gateway"
   logging:
@@ -29,7 +29,7 @@ services:
       - .:/app
       - ${EMBEDDER_QUEUE_DIR:-${AXON_HOME:-${HOME}/.axon}/embed-queue}:/root/.axon/embed-queue
     environment:
-      FIRECRAWL_API_URL: http://axon-api:53002
+      FIRECRAWL_API_URL: http://firecrawl:53002
       QDRANT_URL: http://axon-qdrant:6333
       AXON_EMBEDDER_QUEUE_DIR: /root/.axon/embed-queue
     command: node dist/embedder-daemon.js
@@ -42,14 +42,10 @@ services:
       retries: 3
       start_period: 10s
 
-  axon-playwright:
+  firecrawl-playwright:
     <<: *common-service
     image: loorisr/patchright-scrape-api:latest
-    container_name: axon-playwright
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-playwright
+    container_name: firecrawl-playwright
     environment:
       PORT: "${PLAYWRIGHT_PORT:-53006}"
     volumes:
@@ -63,18 +59,18 @@ services:
       retries: 3
       start_period: 30s
 
-  axon-api:
+  firecrawl:
     <<: *common-service
     image: ghcr.io/firecrawl/firecrawl:latest
-    container_name: axon-api
+    container_name: firecrawl
     environment:
       PORT: ${FIRECRAWL_PORT:-53002}
     depends_on:
-      axon-redis:
+      firecrawl-redis:
         condition: service_healthy
-      axon-playwright:
+      firecrawl-playwright:
         condition: service_healthy
-      axon-rabbitmq:
+      firecrawl-rabbitmq:
         condition: service_healthy
     ports:
       - "${FIRECRAWL_PORT:-53002}:${FIRECRAWL_PORT:-53002}"
@@ -86,17 +82,13 @@ services:
       retries: 3
       start_period: 60s
 
-  axon-redis:
+  firecrawl-redis:
     <<: *common-service
     image: redis:alpine
-    container_name: axon-redis
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-redis
+    container_name: firecrawl-redis
     command: redis-server --bind 0.0.0.0 --port "${REDIS_PORT:-53379}" --appendonly yes
     volumes:
-      - axon_redis_data:/data
+      - firecrawl_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-53379}", "ping"]
       interval: 10s
@@ -104,14 +96,10 @@ services:
       retries: 3
       start_period: 5s
 
-  axon-rabbitmq:
+  firecrawl-rabbitmq:
     <<: *common-service
     image: rabbitmq:3-management
-    container_name: axon-rabbitmq
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-rabbitmq
+    container_name: firecrawl-rabbitmq
     command: rabbitmq-server
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -120,16 +108,12 @@ services:
       retries: 3
       start_period: 5s
 
-  axon-postgres:
+  nuq-postgres:
     <<: *common-service
-    build: apps/axon-postgres
-    container_name: axon-postgres
-    networks:
-      axon-net:
-        aliases:
-          - nuq-postgres
+    build: apps/nuq-postgres
+    container_name: nuq-postgres
     volumes:
-      - axon_postgres_data:/var/lib/postgresql/data
+      - firecrawl_postgres_data:/var/lib/postgresql/data
     command:
       [
         "postgres",
@@ -168,9 +152,9 @@ services:
       start_period: 20s
 
 networks:
-  axon-net:
+  jakenet:
     driver: bridge
 
 volumes:
-  axon_redis_data:
-  axon_postgres_data:
+  firecrawl_redis_data:
+  firecrawl_postgres_data:
