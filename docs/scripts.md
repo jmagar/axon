@@ -4,6 +4,35 @@ Utility scripts for maintaining and analyzing the Axon CLI project.
 
 ## Available Scripts
 
+### install.sh
+
+One-liner installer for Axon deployment and local CLI integration.
+
+**Usage:**
+```bash
+./scripts/install.sh
+```
+
+**One-liner usage:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash
+```
+
+**Options:**
+- `--install-dir <path>` - Install/update repo in custom location when run outside a repo
+- `--repo-url <url>` - Override git source URL
+- `--skip-docker` - Do not run Docker deployment
+- `--skip-links` - Skip CLI skill/command symlink setup
+- `--skip-port-check` - Skip host port conflict auto-adjustment
+
+**What it does:**
+- Clones or updates the Axon repository
+- Creates `.env` from `.env.example` when missing
+- Generates secrets (`FIRECRAWL_API_KEY`, `AXON_EMBEDDER_WEBHOOK_SECRET`) if unset/default
+- Detects host port conflicts and auto-adjusts configured Axon ports
+- Installs symlinks for Claude/Codex/Gemini/OpenCode skill integration
+- Deploys the Docker stack with `docker compose up -d --build`
+
 ### extract-base-urls.sh
 
 Extract all unique base URLs from the Qdrant vector database.

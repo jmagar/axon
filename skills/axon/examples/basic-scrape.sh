@@ -18,10 +18,14 @@ else
     exit 1
 fi
 
-# Validate required credentials
-if [[ -z "${FIRECRAWL_API_KEY:-}" ]]; then
-    echo "ERROR: FIRECRAWL_API_KEY must be set in .env" >&2
-    exit 1
+# Validate credentials for cloud mode.
+# Self-hosted mode may legitimately run without an API key.
+API_URL="${FIRECRAWL_API_URL:-https://api.firecrawl.dev}"
+if [[ "$API_URL" == "https://api.firecrawl.dev" || "$API_URL" == "https://api.firecrawl.dev/" ]]; then
+    if [[ -z "${FIRECRAWL_API_KEY:-}" ]]; then
+        echo "ERROR: FIRECRAWL_API_KEY must be set when using Firecrawl cloud API" >&2
+        exit 1
+    fi
 fi
 
 # ============================================================================
@@ -83,11 +87,11 @@ echo
 # Target: Sites with dynamic content loaded by JavaScript
 # Options:
 #   --wait-for 3000: Wait 3 seconds for JavaScript to execute
-#   --timeout 30000: Set 30 second timeout for slow sites
+#   --timeout 30: Set 30 second timeout for slow sites
 
 axon scrape "https://docs.firecrawl.dev/features/crawl" \
     --wait-for 3000 \
-    --timeout 30000 \
+    --timeout 30 \
     --only-main-content \
     --format markdown \
     -o /tmp/axon-js-page.md

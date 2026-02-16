@@ -107,8 +107,8 @@ for url in "${MONITORED_PAGES[@]}"; do
             echo "  → Diff saved to: $DIFF_FILE"
 
             # Count lines changed
-            ADDED=$(grep -c '^+' "$DIFF_FILE" || echo 0)
-            REMOVED=$(grep -c '^-' "$DIFF_FILE" || echo 0)
+            ADDED=$(grep -c '^+[^+]' "$DIFF_FILE" || echo 0)
+            REMOVED=$(grep -c '^-[^-]' "$DIFF_FILE" || echo 0)
             echo "  → Lines added: $ADDED, removed: $REMOVED"
 
             ((CHANGES_DETECTED++))

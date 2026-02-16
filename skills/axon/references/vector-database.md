@@ -472,7 +472,7 @@ axon info https://example.com -o info.json
   "url": "https://docs.example.com/guide",
   "domain": "docs.example.com",
   "source": "crawl",
-  "chunks": 15,
+  "totalChunks": 15,
   "totalVectors": 15,
   "timestamp": "2026-02-06T10:00:00Z",
   "chunks": [

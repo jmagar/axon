@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script Name: map-site.sh
 # Purpose: Map all URLs on a website with Axon
-# Usage: ./map-site.sh <url> [output-file]
+# Usage: ./map-site.sh <url> [output-file] [-- <extra-axon-flags...>]
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ fi
 
 usage() {
     cat <<EOF
-Usage: $0 <url> [output-file]
+Usage: $0 <url> [output-file] [-- <extra-axon-flags...>]
 
 Map all URLs on a website without scraping content.
 
@@ -36,6 +36,7 @@ Examples:
     $0 https://example.com
     $0 https://example.com sitemap.json
     $0 https://example.com --limit 1000
+    $0 https://example.com sitemap.json -- --limit 1000
 
 Environment Variables:
     FIRECRAWL_API_KEY    API key for Firecrawl cloud API
@@ -64,7 +65,13 @@ main() {
     fi
 
     local url="$1"
-    local output_file="${2:-}"
+    shift
+    local output_file=""
+    if [[ $# -gt 0 ]] && [[ "${1:-}" != -* ]]; then
+        output_file="$1"
+        shift
+    fi
+    local -a passthrough_args=("$@")
 
     # Validate URL format
     if [[ ! "$url" =~ ^https?:// ]]; then
@@ -104,3 +111,7 @@ main() {
 }
 
 main "$@"
+    # Forward any additional Axon map flags.
+    if [[ ${#passthrough_args[@]} -gt 0 ]]; then
+        cmd+=("${passthrough_args[@]}")
+    fi

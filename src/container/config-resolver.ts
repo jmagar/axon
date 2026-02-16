@@ -91,7 +91,10 @@ export function resolveContainerConfig({
     maxRetries: options.maxRetries,
     backoffFactor: options.backoffFactor,
     userAgent:
-      options.userAgent || process.env.AXON_USER_AGENT || DEFAULT_USER_AGENT,
+      options.userAgent ||
+      process.env.AXON_USER_AGENT ||
+      process.env.FIRECRAWL_USER_AGENT ||
+      DEFAULT_USER_AGENT,
 
     // Embeddings
     teiUrl: options.teiUrl || process.env.TEI_URL,
@@ -105,14 +108,18 @@ export function resolveContainerConfig({
     embedderWebhookUrl:
       options.embedderWebhookUrl ||
       process.env.AXON_EMBEDDER_WEBHOOK_URL ||
+      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL ||
       process.env.SELF_HOSTED_WEBHOOK_URL,
     embedderWebhookSecret:
       options.embedderWebhookSecret ||
       process.env.AXON_EMBEDDER_WEBHOOK_SECRET ||
+      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET ||
       process.env.SELF_HOSTED_WEBHOOK_HMAC_SECRET,
     embedderWebhookPort,
     embedderWebhookPath:
-      options.embedderWebhookPath || process.env.AXON_EMBEDDER_WEBHOOK_PATH,
+      options.embedderWebhookPath ||
+      process.env.AXON_EMBEDDER_WEBHOOK_PATH ||
+      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PATH,
 
     // Resolved settings (captured once, avoids per-call file I/O in hot paths)
     settings: options.settings ?? getSettings(),

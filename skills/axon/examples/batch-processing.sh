@@ -99,7 +99,7 @@ while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
 
     # Wait before next check
     sleep $SLEEP_INTERVAL
-    ((ATTEMPT++))
+    ATTEMPT=$((ATTEMPT + 1))
 done
 
 if [[ $ATTEMPT -ge $MAX_ATTEMPTS ]]; then

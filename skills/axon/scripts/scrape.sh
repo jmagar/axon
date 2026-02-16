@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script Name: scrape.sh
 # Purpose: Scrape a single URL with Axon
-# Usage: ./scrape.sh <url> [output-file]
+# Usage: ./scrape.sh <url> [output-file] [-- <extra-axon-flags...>]
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ fi
 
 usage() {
     cat <<EOF
-Usage: $0 <url> [output-file]
+Usage: $0 <url> [output-file] [-- <extra-axon-flags...>]
 
 Scrape a single URL and extract main content in markdown format.
 
@@ -36,6 +36,7 @@ Examples:
     $0 https://example.com
     $0 https://example.com output.md
     $0 https://example.com --format markdown,html
+    $0 https://example.com output.md -- --timeout 30
 
 Environment Variables:
     FIRECRAWL_API_KEY    API key for Firecrawl cloud API
@@ -61,7 +62,13 @@ main() {
     fi
 
     local url="$1"
-    local output_file="${2:-}"
+    shift
+    local output_file=""
+    if [[ $# -gt 0 ]] && [[ "${1:-}" != -* ]]; then
+        output_file="$1"
+        shift
+    fi
+    local -a passthrough_args=("$@")
 
     # Validate URL format
     if [[ ! "$url" =~ ^https?:// ]]; then
@@ -70,7 +77,7 @@ main() {
     fi
 
     # Build firecrawl command
-    local -a cmd=(axon "$url" --only-main-content)
+    local -a cmd=(axon scrape "$url" --only-main-content)
 
     # Add API key if set (cloud API)
     if [[ -n "${FIRECRAWL_API_KEY:-}" ]]; then
@@ -85,6 +92,11 @@ main() {
     # Add output file if provided
     if [[ -n "$output_file" ]]; then
         cmd+=(-o "$output_file")
+    fi
+
+    # Forward any additional Axon scrape flags.
+    if [[ ${#passthrough_args[@]} -gt 0 ]]; then
+        cmd+=("${passthrough_args[@]}")
     fi
 
     # Execute command

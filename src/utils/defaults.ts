@@ -12,4 +12,4 @@ export const DEFAULT_USER_AGENT =
  * Used across all embedding operations (scrape, crawl, extract, search)
  * Can be overridden via QDRANT_COLLECTION env var or --collection flag
  */
-export const DEFAULT_QDRANT_COLLECTION = 'axon';
+export const DEFAULT_QDRANT_COLLECTION = 'firecrawl';

@@ -72,8 +72,9 @@ main() {
         exit 1
     fi
 
-    # Build firecrawl command
-    local -a cmd=(axon search "$query" --scrape --pretty)
+    # Build command. Place query after `--` so leading-dash queries
+    # are treated as positional input, not options.
+    local -a cmd=(axon search --scrape --pretty)
 
     # Add limit only if provided
     if [[ -n "$limit" ]]; then
@@ -89,6 +90,8 @@ main() {
     if [[ -n "${FIRECRAWL_API_URL:-}" ]]; then
         cmd+=(--api-url "$FIRECRAWL_API_URL")
     fi
+
+    cmd+=(-- "$query")
 
     # Execute command
     if [[ -n "$limit" ]]; then

@@ -1,6 +1,6 @@
 ---
 description: Ask questions grounded in indexed docs (AI-powered Q&A)
-argument-hint: "<question>" [--limit N] [--domain example.com] [--model haiku|sonnet|opus]
+argument-hint: "<question>" [--limit N] [--domain example.com] [--model haiku|sonnet|opus|gemini-3-flash-preview|gemini-3-pro-preview]
 allowed-tools: Bash(axon *)
 ---
 
@@ -46,7 +46,7 @@ Unlike `/axon:query` which returns raw search results, `ask` implements **RAG (R
 | `--limit` | number | 10 | Maximum documents to retrieve |
 | `--domain` | string | none | Filter results by domain |
 | `--collection` | string | axon | Qdrant collection name |
-| `--model` | string | haiku | Model: `haiku/sonnet/opus` (Claude) or `gemini-2.5-flash/gemini-2.5-pro` |
+| `--model` | string | haiku | Model: `haiku/sonnet/opus` (Claude) or `gemini-3-flash-preview/gemini-3-pro-preview` |
 | `--max-context` | number | 100000 | Maximum context size in characters |
 
 ## Expected Output
@@ -77,8 +77,8 @@ Sources:
 | **haiku** | Quick factual questions, 3-5 documents | Fast | Good |
 | **sonnet** | Complex analysis, 5-10 documents | Medium | Excellent |
 | **opus** | Deep research, 10-15+ documents | Slow | Best |
-| **gemini-2.5-flash** | Fast alternative to Haiku | Fast | Good |
-| **gemini-2.5-pro** | Claude Opus alternative | Medium | Excellent |
+| **gemini-3-flash-preview** | Fast alternative to Haiku | Fast | Good |
+| **gemini-3-pro-preview** | Claude Opus alternative | Medium | Excellent |
 
 ## Usage Examples
 

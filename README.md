@@ -10,6 +10,21 @@ Self-hosted RAG pipeline for web scraping, semantic search, and AI-powered Q&A. 
 npm install -g @jmagar/axon
 ```
 
+### One-Liner Installer (curl | bash)
+
+Bootstrap Axon in one command. This installer will clone/update the repo, create/update `.env`, generate secrets, detect and adjust conflicting ports, install CLI skill/command links, and start the Docker stack.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash
+```
+
+Optional flags:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --skip-docker
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --install-dir \"$HOME/src/axon\"
+```
+
 ### Claude Code Plugin
 
 Install the complete Axon plugin for Claude Code with skills and slash commands:

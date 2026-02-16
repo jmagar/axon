@@ -166,7 +166,7 @@ The official CLI has a dedicated `credit-usage` command:
 
 ```bash
 # Official CLI
-axon credit-usage --json --pretty
+firecrawl credit-usage --json --pretty
 ```
 
 **Our workaround**: Use the global `--status` flag which shows credits:

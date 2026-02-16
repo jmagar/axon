@@ -198,8 +198,8 @@ All examples are designed to be easily customizable:
 ### "RAG infrastructure not configured"
 **Solution**: Set up Qdrant and TEI (see [../SKILL.md Setup](../SKILL.md#setup))
 
-### "Command not found: firecrawl"
-**Solution**: Install Firecrawl CLI:
+### "Command not found: axon"
+**Solution**: Install Axon CLI:
 ```bash
 npm install -g @jmagar/axon
 # or

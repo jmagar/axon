@@ -362,7 +362,6 @@ describe('Status command - Filter combinations', () => {
   const crawl2 = '019c161c-8a80-7051-a438-2ec8707e1bc2';
   const crawl3 = '019c161c-8a80-7051-a438-2ec8707e1bc3';
   const batch1 = '019c161c-8a80-7051-a438-2ec8707e1bb1';
-  const extract1 = '019c161c-8a80-7051-a438-2ec8707e1ba1';
 
   const mockClient = {
     getActiveCrawls: vi.fn().mockResolvedValue({ success: true, crawls: [] }),

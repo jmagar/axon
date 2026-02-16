@@ -490,4 +490,6 @@ Without PTY mode, command output will not be visible even though commands execut
 ```typescript
 <invoke name="mcp__plugin_zsh-tool_zsh-tool__zsh">
 <parameter name="command">./skills/axon/scripts/SCRIPT.sh [args]</parameter>
-<parameter name="pty">true
+<parameter name="pty">true</parameter>
+</invoke>
+```

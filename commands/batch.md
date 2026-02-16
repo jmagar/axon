@@ -32,10 +32,10 @@ axon batch $ARGUMENTS
 ## Expected Output
 
 The command returns JSON containing:
-- `job_id`: Batch job identifier
+- `id`: Batch job identifier
 - `status`: Current status (queued/running/completed/failed)
-- `total_urls`: Total URLs in batch
+- `total`: Total URLs in batch
 - `completed`: Number of URLs processed
 - `results`: Array of scraped content (when complete)
 
-Present batch processing status and confirm successful embedding to Qdrant.
+Present batch processing status and any per-URL failures.

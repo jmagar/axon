@@ -250,10 +250,11 @@ async function callAICLI(context: string, model: string): Promise<string> {
 
     // Spawn the appropriate CLI
     const aiProcess = spawn(cliTool, args, {
-      stdio: ['pipe', 'pipe', 'ignore'], // stdin: pipe, stdout: pipe, stderr: ignore (suppress MCP/diagnostic output)
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let output = '';
+    let errorOutput = '';
 
     // Capture stdout (AI's response)
     aiProcess.stdout.on('data', (chunk: Buffer) => {
@@ -261,6 +262,12 @@ async function callAICLI(context: string, model: string): Promise<string> {
       output += text;
       process.stdout.write(text); // Stream to terminal in real-time
     });
+
+    if (aiProcess.stderr) {
+      aiProcess.stderr.on('data', (chunk: Buffer) => {
+        errorOutput += chunk.toString();
+      });
+    }
 
     // Handle stdin errors (e.g. child exits before stdin is flushed)
     aiProcess.stdin.on('error', () => {
@@ -274,15 +281,21 @@ async function callAICLI(context: string, model: string): Promise<string> {
     // Handle process exit
     aiProcess.on('close', (code: number | null) => {
       if (code === null) {
+        const stderrTail = errorOutput.trim().split('\n').slice(-8).join('\n');
         reject(
           new Error(
-            `${cliTool} CLI was killed by a signal. Check stderr output above.`
+            stderrTail
+              ? `${cliTool} CLI was killed by a signal.\n${stderrTail}`
+              : `${cliTool} CLI was killed by a signal.`
           )
         );
       } else if (code !== 0) {
+        const stderrTail = errorOutput.trim().split('\n').slice(-8).join('\n');
         reject(
           new Error(
-            `${cliTool} CLI exited with code ${code}. Check stderr output above.`
+            stderrTail
+              ? `${cliTool} CLI exited with code ${code}.\n${stderrTail}`
+              : `${cliTool} CLI exited with code ${code}.`
           )
         );
       } else {

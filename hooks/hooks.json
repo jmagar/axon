@@ -3,7 +3,7 @@
     {
       "name": "axon-dependency-check",
       "event": "SessionStart",
-      "command": "command -v docker >/dev/null 2>&1 && docker compose ps axon >/dev/null 2>&1 || echo '⚠️  Axon services not running. Run: docker compose up -d'",
+      "command": "command -v docker >/dev/null 2>&1 && docker compose ps --status running 2>/dev/null | grep -Eq '(axon-|firecrawl)' || echo '⚠️  Axon services not running. Run: docker compose up -d'",
       "description": "Check if Axon Docker services are running on session start"
     }
   ]

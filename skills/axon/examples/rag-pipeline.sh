@@ -17,10 +17,14 @@ else
     exit 1
 fi
 
-# Validate Firecrawl credentials
-if [[ -z "${FIRECRAWL_API_KEY:-}" ]]; then
-    echo "ERROR: FIRECRAWL_API_KEY must be set in .env" >&2
-    exit 1
+# Validate credentials for cloud mode.
+# Self-hosted mode may legitimately run without an API key.
+API_URL="${FIRECRAWL_API_URL:-https://api.firecrawl.dev}"
+if [[ "$API_URL" == "https://api.firecrawl.dev" || "$API_URL" == "https://api.firecrawl.dev/" ]]; then
+    if [[ -z "${FIRECRAWL_API_KEY:-}" ]]; then
+        echo "ERROR: FIRECRAWL_API_KEY must be set when using Firecrawl cloud API" >&2
+        exit 1
+    fi
 fi
 
 # Validate RAG infrastructure is available

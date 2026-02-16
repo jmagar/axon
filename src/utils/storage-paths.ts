@@ -22,7 +22,7 @@ function expandLeadingTilde(inputPath: string): string {
  * Get the root directory for all persistent CLI storage.
  */
 export function getStorageRoot(): string {
-  const configuredRoot = process.env.AXON_HOME;
+  const configuredRoot = process.env.AXON_HOME || process.env.FIRECRAWL_HOME;
   if (configuredRoot && configuredRoot.trim().length > 0) {
     return path.resolve(expandLeadingTilde(configuredRoot.trim()));
   }
@@ -58,7 +58,10 @@ export function getJobHistoryPath(): string {
 }
 
 export function getEmbedQueueDir(): string {
-  const trimmedConfiguredDir = process.env.AXON_EMBEDDER_QUEUE_DIR?.trim();
+  const trimmedConfiguredDir = (
+    process.env.AXON_EMBEDDER_QUEUE_DIR ||
+    process.env.FIRECRAWL_EMBEDDER_QUEUE_DIR
+  )?.trim();
   if (trimmedConfiguredDir) {
     return path.isAbsolute(trimmedConfiguredDir)
       ? trimmedConfiguredDir
