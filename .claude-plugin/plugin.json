@@ -19,10 +19,5 @@
     "url": "https://github.com/jmagar"
   },
   "repository": "https://github.com/jmagar/axon",
-  "homepage": "https://github.com/jmagar/axon#readme",
-  "dependencies": {
-    "docker": ">=20.10.0",
-    "nodejs": ">=18.0.0",
-    "pnpm": ">=8.0.0"
-  }
+  "homepage": "https://github.com/jmagar/axon#readme"
 }
