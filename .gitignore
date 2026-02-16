@@ -53,3 +53,5 @@ docs/reports/
 
 # Git worktrees
 .worktrees/
+
+INITIAL_REQUEST.md

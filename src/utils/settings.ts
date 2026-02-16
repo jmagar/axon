@@ -131,12 +131,53 @@ function writeValidatedSettings(
     throw new Error(`Settings validation failed: ${validated.error.message}`);
   }
 
-  fs.writeFileSync(
+  writeSettingsFileAtomically(
     settingsPath,
-    JSON.stringify(validated.data, null, 2),
-    'utf-8'
+    JSON.stringify(validated.data, null, 2)
   );
-  setSecurePermissions(settingsPath);
+}
+
+function writeSettingsFileAtomically(
+  settingsPath: string,
+  content: string
+): void {
+  const tempPath = `${settingsPath}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`;
+
+  try {
+    fs.writeFileSync(tempPath, content, { encoding: 'utf-8', flag: 'wx' });
+    setSecurePermissions(tempPath);
+    fs.renameSync(tempPath, settingsPath);
+    setSecurePermissions(settingsPath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch (unlinkError) {
+      if ((unlinkError as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw unlinkError;
+      }
+    }
+    throw error;
+  }
+}
+
+type SettingsValidationResult =
+  | { kind: 'valid'; data: UserSettings }
+  | { kind: 'invalid' };
+
+function parseAndValidateSettings(raw: string): SettingsValidationResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { kind: 'invalid' };
+  }
+
+  const validation = UserSettingsSchema.safeParse(parsed);
+  if (!validation.success) {
+    return { kind: 'invalid' };
+  }
+
+  return { kind: 'valid', data: validation.data };
 }
 
 /**
@@ -174,43 +215,33 @@ function ensureSettingsFileMaterialized(): void {
       }
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      fs.copyFileSync(
-        settingsPath,
-        `${settingsPath}.invalid-backup-${randomBytes(8).toString('hex')}`
-      );
-      fs.writeFileSync(
-        settingsPath,
-        JSON.stringify(defaults, null, 2),
-        'utf-8'
-      );
-      setSecurePermissions(settingsPath);
-      return;
+    let validation = parseAndValidateSettings(raw);
+    if (validation.kind === 'invalid') {
+      // Retry once to avoid false-positive invalid backups caused by
+      // cross-process read/write races.
+      const retriedRaw = fs.readFileSync(settingsPath, 'utf-8');
+      validation = parseAndValidateSettings(retriedRaw);
     }
 
-    const validation = UserSettingsSchema.safeParse(parsed);
-    if (!validation.success) {
+    if (validation.kind === 'invalid') {
       fs.copyFileSync(
         settingsPath,
         `${settingsPath}.invalid-backup-${randomBytes(8).toString('hex')}`
       );
-      fs.writeFileSync(
+      writeSettingsFileAtomically(
         settingsPath,
-        JSON.stringify(defaults, null, 2),
-        'utf-8'
+        JSON.stringify(defaults, null, 2)
       );
-      setSecurePermissions(settingsPath);
       return;
     }
 
     const merged = mergeWithDefaults(validation.data);
     if (!isDeepStrictEqual(validation.data, merged)) {
       fs.copyFileSync(settingsPath, `${settingsPath}.backup-${Date.now()}`);
-      fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
-      setSecurePermissions(settingsPath);
+      writeSettingsFileAtomically(
+        settingsPath,
+        JSON.stringify(merged, null, 2)
+      );
     }
   } catch (error) {
     console.error(

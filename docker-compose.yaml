@@ -46,10 +46,6 @@ services:
     <<: *common-service
     image: loorisr/patchright-scrape-api:latest
     container_name: axon-playwright
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-playwright
     environment:
       PORT: "${PLAYWRIGHT_PORT:-53006}"
     volumes:
@@ -66,7 +62,7 @@ services:
   axon-api:
     <<: *common-service
     image: ghcr.io/firecrawl/firecrawl:latest
-    container_name: axon-api
+    container_name: firecrawl
     environment:
       PORT: ${FIRECRAWL_PORT:-53002}
     depends_on:
@@ -90,10 +86,6 @@ services:
     <<: *common-service
     image: redis:alpine
     container_name: axon-redis
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-redis
     command: redis-server --bind 0.0.0.0 --port "${REDIS_PORT:-53379}" --appendonly yes
     volumes:
       - axon_redis_data:/data
@@ -108,10 +100,6 @@ services:
     <<: *common-service
     image: rabbitmq:3-management
     container_name: axon-rabbitmq
-    networks:
-      axon-net:
-        aliases:
-          - firecrawl-rabbitmq
     command: rabbitmq-server
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -124,10 +112,6 @@ services:
     <<: *common-service
     build: apps/axon-postgres
     container_name: axon-postgres
-    networks:
-      axon-net:
-        aliases:
-          - nuq-postgres
     volumes:
       - axon_postgres_data:/var/lib/postgresql/data
     command:

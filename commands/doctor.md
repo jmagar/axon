@@ -16,7 +16,7 @@ Run comprehensive diagnostics on the Axon infrastructure stack and provide troub
 ### Steps
 
 1. **Check if we're in the Axon project**
-   - If `axon` is not in PATH, check if we're in `/home/jmagar/workspace/cli-firecrawl`
+   - If `axon` is not in PATH, check if we're in `/home/jmagar/workspace/axon`
    - If we are, use `pnpm local doctor` instead of `axon doctor`
    - If not in project and `axon` not available, inform user they need to either:
      - Navigate to the Axon project directory
@@ -72,7 +72,7 @@ Run comprehensive diagnostics on the Axon infrastructure stack and provide troub
 
 **Docker services not running:**
 ```bash
-cd /home/jmagar/workspace/cli-firecrawl
+cd /home/jmagar/workspace/axon
 docker compose up -d
 ```
 
