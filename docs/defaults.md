@@ -107,7 +107,19 @@ Crawl multiple pages starting from a URL.
 | `--progress` | `false` | boolean | Show progress while waiting (implies --wait) | |
 | `--poll-interval` | `5` | number | Status check interval when using --wait | Unit: seconds. Auto-applied when --wait or --progress is set |
 | `--embed` | `true` | boolean | Auto-embed results | Has negation: `--no-embed`. Async or sync based on --wait |
+| `--preflight-map` | `true` | boolean | Run map baseline before crawl | Has negation: `--no-preflight-map` |
+| `--auto-sitemap-retry` | `true` | boolean | Auto-start sitemap-only retry for low-discovery completed crawls | Has negation: `--no-auto-sitemap-retry` |
+| `--hard-sync` | `false` | boolean | Immediately delete crawl-missing URLs from Qdrant | Bypasses safe reconciliation grace/threshold |
 | `--no-default-excludes` | `false` | boolean | Skip settings excludes | |
+
+#### Crawl reconciliation defaults
+
+- Mode: enabled by default for crawl auto-embedding (async and `--wait`).
+- Safe-delete threshold: delete only after URL is missing in `2` consecutive successful crawls.
+- Grace period: URL must be missing for at least `7 days` before deletion.
+- Scope: stale pruning is constrained to `source_command=crawl` vectors.
+- Override: `--hard-sync` deletes missing URLs immediately (no threshold or grace).
+- Operational guide: `docs/crawl-guardrails.md`
 
 ### map
 
@@ -153,6 +165,17 @@ Semantic search in Qdrant vector database.
 | `--limit` | `5` | number | Maximum number of results | |
 | `--full` | `false` | boolean | Show full chunk text instead of truncated | |
 | `--group` | `false` | boolean | Group results by URL | |
+
+### reconcile
+
+Inspect and control crawl reconciliation state.
+
+| Subcommand | Flag | Default | Type | Description | Notes |
+|------------|------|---------|------|-------------|-------|
+| `status [domain]` | (uses global `--json`, `--pretty`, `--output`) | | | Show reconciliation status | Domain argument optional |
+| `run <domain>` | `--apply` | `false` | boolean | Apply deletes to Qdrant | Default is preview (no state write/delete) |
+| `run <domain>` | `--collection` | `axon` | string | Qdrant collection to delete from | Delete scope remains `source_command=crawl` |
+| `reset [domain]` | `--yes` | `false` | boolean | Skip confirmation prompt | Required in non-interactive mode |
 
 ### retrieve
 

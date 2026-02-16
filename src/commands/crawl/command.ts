@@ -2,6 +2,7 @@
  * CLI command definition for crawl
  */
 
+import type { MapOptions as SdkMapOptions } from '@mendable/firecrawl-js';
 import { Command } from 'commander';
 import type { IContainer } from '../../container/types';
 import type {
@@ -10,6 +11,12 @@ import type {
   CrawlStatusResult,
 } from '../../types/crawl';
 import { formatJson, writeCommandOutput } from '../../utils/command';
+import {
+  type CrawlBaselineEntry,
+  getCrawlBaseline,
+  markSitemapRetry,
+  recordCrawlBaseline,
+} from '../../utils/crawl-baselines';
 import { displayCommandInfo } from '../../utils/display';
 import { isJobId, normalizeJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
@@ -86,7 +93,8 @@ async function handleSubcommandResult<T>(
 
 function formatCrawlStartedResponse(
   data: { jobId: string; status: string; url: string },
-  options: CrawlOptions
+  options: CrawlOptions,
+  mapPreflightCount?: number
 ): string {
   const lines = formatHeaderBlock({
     title: `Crawl Job ${data.jobId}`,
@@ -104,7 +112,174 @@ function formatCrawlStartedResponse(
   lines.push(`Job ID: ${data.jobId}`);
   lines.push(`Status: ${data.status}`);
   lines.push(`URL: ${data.url}`);
+  if (mapPreflightCount !== undefined) {
+    lines.push(`Preflight map URLs: ${mapPreflightCount}`);
+  }
   return lines.join('\n');
+}
+
+const LOW_DISCOVERY_RATIO = 0.1;
+
+async function runMapPreflight(
+  container: IContainer,
+  options: CrawlOptions
+): Promise<number | undefined> {
+  if (!options.urlOrJobId || options.preflightMap === false) {
+    return undefined;
+  }
+
+  if (isJobId(options.urlOrJobId)) {
+    return undefined;
+  }
+
+  try {
+    const app = container.getAxonClient() as {
+      map?: (
+        url: string,
+        options?: SdkMapOptions
+      ) => Promise<{ links?: unknown[] }>;
+    };
+    if (typeof app.map !== 'function') {
+      return undefined;
+    }
+
+    const mapOptions: SdkMapOptions = {};
+    if (options.limit !== undefined) {
+      mapOptions.limit = options.limit;
+    }
+    if (options.sitemap !== undefined) {
+      mapOptions.sitemap = options.sitemap;
+    }
+    if (options.allowSubdomains !== undefined) {
+      mapOptions.includeSubdomains = options.allowSubdomains;
+    }
+    if (options.ignoreQueryParameters !== undefined) {
+      mapOptions.ignoreQueryParameters = options.ignoreQueryParameters;
+    }
+
+    const mapped = await app.map(options.urlOrJobId, mapOptions);
+    return Array.isArray(mapped.links) ? mapped.links.length : 0;
+  } catch (error) {
+    console.error(
+      fmt.dim(
+        `[Guardrail] Map preflight failed, continuing crawl: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    );
+    return undefined;
+  }
+}
+
+function formatDiscoveryGuardrail(
+  status: NonNullable<CrawlStatusResult['data']>,
+  baseline?: CrawlBaselineEntry,
+  autoRetryJobId?: string
+): string {
+  if (!baseline) {
+    return '';
+  }
+
+  const lines = [`Preflight map URLs: ${baseline.mapCount}`];
+  if (
+    status.status === 'completed' &&
+    baseline.mapCount > 0 &&
+    Number.isFinite(status.total)
+  ) {
+    const ratio = status.total / baseline.mapCount;
+    if (ratio < LOW_DISCOVERY_RATIO) {
+      const percent = (ratio * 100).toFixed(1);
+      lines.push(
+        fmt.warning(
+          `Guardrail warning: low discovery (${status.total}/${baseline.mapCount}, ${percent}%).`
+        )
+      );
+      if (autoRetryJobId) {
+        lines.push(
+          fmt.primary(
+            `Auto-recrawl started with sitemap=only. New job: ${autoRetryJobId}`
+          )
+        );
+      } else if (baseline.sitemapRetryJobId) {
+        lines.push(
+          fmt.dim(
+            `Auto-recrawl already started. Retry job: ${baseline.sitemapRetryJobId}`
+          )
+        );
+      } else {
+        lines.push(
+          fmt.dim(`Try rerun with: axon crawl ${baseline.url} --sitemap only`)
+        );
+      }
+    }
+  }
+
+  return lines.length > 0 ? `\n${lines.join('\n')}\n` : '';
+}
+
+function isLowDiscovery(
+  status: NonNullable<CrawlStatusResult['data']>,
+  baseline?: CrawlBaselineEntry
+): boolean {
+  if (!baseline) return false;
+  if (status.status !== 'completed') return false;
+  if (!Number.isFinite(status.total)) return false;
+  if (baseline.mapCount <= 0) return false;
+  return status.total / baseline.mapCount < LOW_DISCOVERY_RATIO;
+}
+
+async function maybeAutoRecrawlSitemapOnly(
+  container: IContainer,
+  status: NonNullable<CrawlStatusResult['data']>,
+  baseline?: CrawlBaselineEntry
+): Promise<string | undefined> {
+  if (!isLowDiscovery(status, baseline)) {
+    return undefined;
+  }
+  if (!baseline) {
+    return undefined;
+  }
+  if (baseline.sitemapRetryJobId) {
+    return undefined;
+  }
+
+  try {
+    const settings = getSettings();
+    const app = container.getAxonClient();
+    const retryLimit = Math.max(status.total, baseline.mapCount);
+    const retry = await app.startCrawl(baseline.url, {
+      sitemap: 'only',
+      limit: retryLimit > 0 ? retryLimit : undefined,
+      maxDiscoveryDepth: settings.crawl.maxDepth,
+      ignoreQueryParameters: settings.crawl.ignoreQueryParameters,
+      crawlEntireDomain: settings.crawl.crawlEntireDomain,
+      allowSubdomains: settings.crawl.allowSubdomains,
+      scrapeOptions: {
+        onlyMainContent: settings.crawl.onlyMainContent,
+        excludeTags: settings.crawl.excludeTags,
+      },
+    });
+
+    await recordJob('crawl', retry.id);
+    await recordCrawlBaseline({
+      jobId: retry.id,
+      url: baseline.url,
+      mapCount: baseline.mapCount,
+      createdAt: new Date().toISOString(),
+    });
+    await markSitemapRetry(status.id, retry.id);
+
+    return retry.id;
+  } catch (error) {
+    console.error(
+      fmt.warning(
+        `[Guardrail] Auto-recrawl failed for ${status.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    );
+    return undefined;
+  }
 }
 
 function formatCrawlErrorsHuman(
@@ -258,7 +433,15 @@ export async function handleCrawlCommand(
     excludePaths: options.excludePaths,
     wait: options.wait,
     progress: options.progress,
+    preflightMap: options.preflightMap,
   });
+
+  const mapPreflightCount = await runMapPreflight(container, options);
+  if (mapPreflightCount !== undefined) {
+    console.error(
+      fmt.dim(`[Guardrail] Preflight map found ${mapPreflightCount} URLs.`)
+    );
+  }
 
   // Execute crawl
   const result = await executeCrawl(container, options);
@@ -275,11 +458,21 @@ export async function handleCrawlCommand(
   if (result.data && isStatusOnlyResult(result.data)) {
     const statusResult = result as CrawlStatusResult;
     if (statusResult.data) {
+      const baseline = await getCrawlBaseline(statusResult.data.id);
+      const autoRetryJobId = await maybeAutoRecrawlSitemapOnly(
+        container,
+        statusResult.data,
+        options.autoSitemapRetry !== false ? baseline : undefined
+      );
       const outputContent =
         options.pretty || !options.output
-          ? formatCrawlStatus(statusResult.data, {
+          ? `${formatCrawlStatus(statusResult.data, {
               filters: [['jobId', statusResult.data.id]],
-            })
+            })}${formatDiscoveryGuardrail(
+              statusResult.data,
+              baseline,
+              autoRetryJobId
+            )}`
           : formatJson(
               { success: true, data: statusResult.data },
               options.pretty
@@ -313,11 +506,15 @@ export async function handleCrawlCommand(
         crawlResult.data.jobId,
         options.urlOrJobId ?? crawlResult.data.url,
         container.config,
-        options.apiKey
+        options.apiKey,
+        options.hardSync
       );
     } else {
       // Synchronous result (--wait or --progress) - embed inline
-      await handleSyncEmbedding(container, crawlResult.data);
+      await handleSyncEmbedding(container, crawlResult.data, {
+        startUrl: options.urlOrJobId,
+        hardSync: options.hardSync,
+      });
     }
   }
 
@@ -326,6 +523,18 @@ export async function handleCrawlCommand(
   if ('jobId' in crawlResult.data) {
     // Job ID response
     await recordJob('crawl', crawlResult.data.jobId);
+    if (
+      mapPreflightCount !== undefined &&
+      options.urlOrJobId &&
+      !isJobId(options.urlOrJobId)
+    ) {
+      await recordCrawlBaseline({
+        jobId: crawlResult.data.jobId,
+        url: options.urlOrJobId,
+        mapCount: mapPreflightCount,
+        createdAt: new Date().toISOString(),
+      });
+    }
     const jobData = {
       jobId: crawlResult.data.jobId,
       url: crawlResult.data.url,
@@ -337,10 +546,32 @@ export async function handleCrawlCommand(
         options.pretty
       );
     } else {
-      outputContent = formatCrawlStartedResponse(jobData, options);
+      outputContent = formatCrawlStartedResponse(
+        jobData,
+        options,
+        mapPreflightCount
+      );
     }
   } else {
     // Completed crawl - output the data
+    if (mapPreflightCount !== undefined && mapPreflightCount > 0) {
+      const ratio = crawlResult.data.total / mapPreflightCount;
+      if (ratio < LOW_DISCOVERY_RATIO) {
+        const percent = (ratio * 100).toFixed(1);
+        console.error(
+          fmt.warning(
+            `[Guardrail] Low discovery: ${crawlResult.data.total}/${mapPreflightCount} (${percent}%).`
+          )
+        );
+        if (options.urlOrJobId && !isJobId(options.urlOrJobId)) {
+          console.error(
+            fmt.dim(
+              `[Guardrail] Try rerun with: axon crawl ${options.urlOrJobId} --sitemap only`
+            )
+          );
+        }
+      }
+    }
     outputContent = formatJson(crawlResult.data, options.pretty);
   }
 
@@ -365,11 +596,27 @@ export async function handleCrawlCommand(
 async function handleCrawlStatusCommand(
   container: IContainer,
   jobId: string,
-  options: { output?: string; pretty?: boolean }
+  options: {
+    output?: string;
+    pretty?: boolean;
+    autoSitemapRetry?: boolean;
+  }
 ): Promise<void> {
   const result = await checkCrawlStatus(container, jobId);
-  await handleSubcommandResult(result, options, (data) =>
-    formatCrawlStatus(data, { filters: [['jobId', jobId]] })
+  const baseline = await getCrawlBaseline(jobId);
+  const autoRetryJobId =
+    options.autoSitemapRetry !== false && result.success && result.data
+      ? await maybeAutoRecrawlSitemapOnly(container, result.data, baseline)
+      : undefined;
+  await handleSubcommandResult(
+    result,
+    options,
+    (data) =>
+      `${formatCrawlStatus(data, { filters: [['jobId', jobId]] })}${formatDiscoveryGuardrail(
+        data,
+        baseline,
+        autoRetryJobId
+      )}`
   );
 }
 
@@ -563,6 +810,18 @@ export function createCrawlCommand(): Command {
     .option('--pretty', 'Pretty print JSON output', false)
     .option('--embed', 'Manually trigger embedding for a completed crawl job')
     .option('--no-embed', 'Skip auto-embedding of crawl results')
+    .option(
+      '--no-preflight-map',
+      'Skip map preflight before crawl (disables discovery guardrail)'
+    )
+    .option(
+      '--no-auto-sitemap-retry',
+      'Disable automatic sitemap=only retry when discovery is unexpectedly low'
+    )
+    .option(
+      '--hard-sync',
+      'Immediately delete crawl-missing URLs from Qdrant (bypasses safe reconciliation grace)'
+    )
     .option('--no-default-excludes', 'Skip default exclude paths from settings')
     .action(async (positionalUrlOrJobId, options, command: Command) => {
       const container = requireContainer(command);
@@ -619,6 +878,9 @@ export function createCrawlCommand(): Command {
         delay: options.delay,
         maxConcurrency: options.maxConcurrency,
         embed: options.embed,
+        preflightMap: options.preflightMap,
+        autoSitemapRetry: options.autoSitemapRetry,
+        hardSync: options.hardSync,
         noDefaultExcludes: options.defaultExcludes === false,
         onlyMainContent: options.onlyMainContent,
         excludeTags: options.excludeTags
@@ -638,6 +900,10 @@ export function createCrawlCommand(): Command {
     .argument('<job-id>', 'Crawl job ID or URL containing job ID')
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--pretty', 'Pretty print JSON output', false)
+    .option(
+      '--no-auto-sitemap-retry',
+      'Disable automatic sitemap=only retry when discovery is unexpectedly low'
+    )
     .action(async (jobId: string, options, command: Command) => {
       const container = requireContainerFromCommandTree(command);
       const normalizedJobId = normalizeJobId(jobId);

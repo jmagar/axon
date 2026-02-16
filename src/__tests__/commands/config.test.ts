@@ -434,7 +434,7 @@ describe('nested settings', () => {
       autoEmbed: true,
     },
     batch: { onlyMainContent: false, ignoreInvalidUrls: false },
-    ask: { limit: 10 },
+    ask: { limit: 10, fullDocs: 5, backfillChunks: 3 },
     http: {
       timeoutMs: 30000,
       maxRetries: 3,

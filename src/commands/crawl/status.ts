@@ -10,6 +10,7 @@ import type {
   CrawlErrorsResult,
   CrawlStatusResult,
 } from '../../types/crawl';
+import { removeCrawlBaselines } from '../../utils/crawl-baselines';
 import { isJobNotFoundError } from '../../utils/job-errors';
 import {
   clearJobTypeHistory,
@@ -185,6 +186,7 @@ export async function executeCrawlClear(
     }
 
     await clearJobTypeHistory('crawl');
+    await removeCrawlBaselines(recentCrawlIds);
 
     return {
       success: true,
@@ -254,6 +256,7 @@ export async function executeCrawlCleanup(
     }
 
     await removeJobIds('crawl', toRemove);
+    await removeCrawlBaselines(toRemove);
 
     return {
       success: true,

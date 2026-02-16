@@ -60,6 +60,10 @@ export const DEFAULT_EXCLUDE_EXTENSIONS = [
  * Patterns use glob syntax: /ar/* matches /ar/page.html but not /params/
  */
 export const DEFAULT_EXCLUDE_PATHS = [
+  // Nested docs locale routes (e.g., /docs/it/*, /docs/es/*).
+  // Keep English docs (en, en-US, en-GB) included.
+  '\\/(?:docs|reference|guides|guide|how-tos)\\/(?!en(?:-[A-Za-z]{2,4})?\\/)[a-z]{2}(?:-[A-Za-z]{2,4})?\\/',
+
   '/ar/*',
   '/bg/*',
   '/bn/*',

@@ -95,6 +95,7 @@ export function createMockQdrantService(): IQdrantService {
   return {
     ensureCollection: vi.fn(),
     deleteByUrl: vi.fn(),
+    deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
     deleteByDomain: vi.fn(),
     countByDomain: vi.fn(),
     countByUrl: vi.fn(),

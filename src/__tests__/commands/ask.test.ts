@@ -10,11 +10,10 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
-// Mock query and retrieve commands
+// Mock query command
 vi.mock('../../commands/query', () => ({
   executeQuery: vi.fn(),
 }));
-
 vi.mock('../../commands/retrieve', () => ({
   executeRetrieve: vi.fn(),
 }));
@@ -52,24 +51,30 @@ function createMockProcess() {
  */
 function createMockQueryResult(
   url: string,
-  score: number = 0.9
+  score: number = 0.9,
+  chunkText: string = 'content',
+  metadata?: {
+    fileModifiedAt?: string;
+    scrapedAt?: string;
+    sourcePathRel?: string;
+  }
 ): QueryResultItem {
   return {
     url,
     title: 'Doc',
     score,
     chunkHeader: null,
-    chunkText: 'content',
+    chunkText,
     chunkIndex: 0,
     totalChunks: 1,
     domain: 'example.com',
     sourceCommand: 'crawl',
+    fileModifiedAt: metadata?.fileModifiedAt,
+    scrapedAt: metadata?.scrapedAt,
+    sourcePathRel: metadata?.sourcePathRel,
   };
 }
 
-/**
- * Helper to create properly typed mock retrieve result
- */
 function createMockRetrieveResult(url: string): RetrieveResult {
   return {
     success: true,
@@ -83,21 +88,36 @@ function createMockRetrieveResult(url: string): RetrieveResult {
 
 describe('executeAsk', () => {
   let container: IContainer;
+  let originalFetch: typeof global.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    originalFetch = global.fetch;
     // Suppress console.error output from the command
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    process.env.ASK_CLI = 'haiku';
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_MODEL;
 
     container = createTestContainer(undefined, {
       teiUrl: 'http://localhost:52000',
       qdrantUrl: 'http://localhost:53333',
       qdrantCollection: 'test_col',
     });
+
+    vi.mocked(executeRetrieve).mockImplementation(async (_container, options) =>
+      createMockRetrieveResult(options.url)
+    );
   });
 
   afterEach(() => {
+    delete process.env.ASK_CLI;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_MODEL;
+    global.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
@@ -123,7 +143,7 @@ describe('executeAsk', () => {
     expect(result.error).toContain('No relevant documents found');
   });
 
-  it('should fail early on invalid maxContext before query/retrieve', async () => {
+  it('should fail early on invalid maxContext before query', async () => {
     const result = await executeAsk(container, {
       query: 'test',
       maxContext: 0,
@@ -132,8 +152,20 @@ describe('executeAsk', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Invalid --max-context value');
     expect(executeQuery).not.toHaveBeenCalled();
-    expect(executeRetrieve).not.toHaveBeenCalled();
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('should fail when no ask backend is configured', async () => {
+    delete process.env.ASK_CLI;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_MODEL;
+
+    const result = await executeAsk(container, { query: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No ask backend configured');
+    expect(executeQuery).not.toHaveBeenCalled();
   });
 
   it('should fail when query fails', async () => {
@@ -157,35 +189,6 @@ describe('executeAsk', () => {
     expect(result.error).toContain('timeout');
   });
 
-  it('should fail when all retrieves fail', async () => {
-    vi.mocked(executeQuery).mockResolvedValue({
-      success: true,
-      data: [createMockQueryResult('https://example.com/doc')],
-    });
-    vi.mocked(executeRetrieve).mockResolvedValue({
-      success: false,
-      error: 'Retrieve failed',
-    });
-
-    const result = await executeAsk(container, { query: 'test' });
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Failed to retrieve any documents');
-  });
-
-  it('should surface retrieve network failures', async () => {
-    vi.mocked(executeQuery).mockResolvedValue({
-      success: true,
-      data: [createMockQueryResult('https://example.com/doc')],
-    });
-    vi.mocked(executeRetrieve).mockRejectedValue(
-      new Error('ECONNRESET while retrieving document')
-    );
-
-    const result = await executeAsk(container, { query: 'network issue' });
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('ECONNRESET');
-  });
-
   it('should pass -p flag to claude CLI for non-interactive mode', async () => {
     const mockProc = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProc as never);
@@ -194,9 +197,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     // Simulate process completing after spawn
     const resultPromise = executeAsk(container, { query: 'what is this?' });
@@ -220,7 +220,7 @@ describe('executeAsk', () => {
     expect(result.data?.answer).toBe('AI response');
   });
 
-  it('should NOT pass -p flag to gemini CLI', async () => {
+  it('should use non-interactive prompt mode for gemini CLI', async () => {
     const mockProc = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProc as never);
 
@@ -228,9 +228,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     const resultPromise = executeAsk(container, {
       query: 'what is this?',
@@ -239,10 +236,15 @@ describe('executeAsk', () => {
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
 
-    // Gemini should NOT have -p flag
+    // Gemini should use explicit prompt mode for non-interactive execution
     expect(spawn).toHaveBeenCalledWith(
       'gemini',
-      ['--model', 'gemini-2.5-pro'],
+      [
+        '--model',
+        'gemini-2.5-pro',
+        '--prompt',
+        'Answer only from stdin context. Do not use tools.',
+      ],
       expect.any(Object)
     );
 
@@ -253,6 +255,67 @@ describe('executeAsk', () => {
     expect(result.success).toBe(true);
   });
 
+  it('should use OpenAI-compatible fallback when ASK_CLI is not set', async () => {
+    delete process.env.ASK_CLI;
+    process.env.OPENAI_BASE_URL = 'https://cli-api.tootie.tv/v1';
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.OPENAI_MODEL = 'gemini-3-flash-preview';
+
+    const sseChunks = [
+      'data: {"choices":[{"delta":{"content":"OpenAI"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":" fallback"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const reader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(sseChunks[0]),
+        })
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(sseChunks[1]),
+        })
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(sseChunks[2]),
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined }),
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: {
+        get: vi.fn().mockReturnValue('text/event-stream'),
+      },
+      body: {
+        getReader: vi.fn().mockReturnValue(reader),
+      },
+    } as unknown as Response);
+
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [createMockQueryResult('https://example.com/doc')],
+    });
+
+    const result = await executeAsk(container, {
+      query: 'test openai fallback',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.answer).toBe('OpenAI fallback');
+    expect(spawn).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://cli-api.tootie.tv/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+  });
+
   it('should handle null exit code (process killed by signal)', async () => {
     const mockProc = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProc as never);
@@ -261,9 +324,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     const resultPromise = executeAsk(container, { query: 'test' });
 
@@ -285,9 +345,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     const resultPromise = executeAsk(container, { query: 'test' });
 
@@ -308,9 +365,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     const resultPromise = executeAsk(container, { query: 'test' });
 
@@ -336,9 +390,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc')],
     });
-    vi.mocked(executeRetrieve).mockResolvedValue(
-      createMockRetrieveResult('https://example.com/doc')
-    );
 
     const resultPromise = executeAsk(container, { query: 'test' });
 
@@ -363,13 +414,6 @@ describe('executeAsk', () => {
         createMockQueryResult('https://example.com/doc2', 0.85),
       ],
     });
-    vi.mocked(executeRetrieve)
-      .mockResolvedValueOnce(
-        createMockRetrieveResult('https://example.com/doc1')
-      )
-      .mockResolvedValueOnce(
-        createMockRetrieveResult('https://example.com/doc2')
-      );
 
     const resultPromise = executeAsk(container, { query: 'what is this?' });
 
@@ -382,41 +426,91 @@ describe('executeAsk', () => {
     expect(result.success).toBe(true);
     expect(result.data?.sources).toHaveLength(2);
     expect(result.data?.sources[0].score).toBe(0.95);
-    expect(result.data?.documentsRetrieved).toBe(2);
+    expect(result.data?.fullDocumentsUsed).toBe(2);
+    expect(result.data?.chunksUsed).toBe(0);
+    expect(result.data?.responseDurationSeconds).toBeGreaterThanOrEqual(0);
     expect(result.data?.answer).toBe('Answer text');
   });
 
-  it('should enforce context size limit and truncate documents', async () => {
+  it('should backfill up to 3 supplemental chunks from non-full-document URLs', async () => {
     const mockProc = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProc as never);
 
-    const largeContent = 'x'.repeat(60000); // 60k chars per doc
     vi.mocked(executeQuery).mockResolvedValue({
       success: true,
       data: [
-        createMockQueryResult('https://example.com/doc1', 0.95),
-        createMockQueryResult('https://example.com/doc2', 0.85),
+        createMockQueryResult('https://example.com/doc1', 0.99, 'chunk1'),
+        createMockQueryResult('https://example.com/doc2', 0.98, 'chunk2'),
+        createMockQueryResult('https://example.com/doc3', 0.97, 'chunk3'),
+        createMockQueryResult('https://example.com/doc4', 0.96, 'chunk4'),
+        createMockQueryResult('https://example.com/doc5', 0.95, 'chunk5'),
+        createMockQueryResult('https://example.com/doc6', 0.94, 'chunk6'),
+        createMockQueryResult('https://example.com/doc7', 0.93, 'chunk7'),
+        createMockQueryResult('https://example.com/doc8', 0.92, 'chunk8'),
       ],
     });
-    vi.mocked(executeRetrieve)
-      .mockResolvedValueOnce({
+
+    const resultPromise = executeAsk(container, { query: 'test backfill' });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+
+    const writes = vi
+      .mocked(mockProc.stdin.write)
+      .mock.calls.map((call) => String(call[0]));
+    const combined = writes.join('');
+    expect(combined).toContain(
+      'Source Document 1 [S1]: https://example.com/doc1'
+    );
+    expect(combined).toContain(
+      'Source Document 5 [S5]: https://example.com/doc5'
+    );
+    expect(combined).toContain(
+      'Supplemental Chunk 1 [S6]: https://example.com/doc6'
+    );
+    expect(combined).toContain(
+      'Supplemental Chunk 2 [S7]: https://example.com/doc7'
+    );
+    expect(combined).toContain(
+      'Supplemental Chunk 3 [S8]: https://example.com/doc8'
+    );
+    expect(combined).not.toContain(
+      'Supplemental Chunk 1 [S6]: https://example.com/doc1'
+    );
+
+    mockProc.stdout.emit('data', Buffer.from('Answer'));
+    mockProc.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.data?.fullDocumentsUsed).toBe(5);
+    expect(result.data?.chunksUsed).toBe(3);
+    expect(result.data?.sources).toHaveLength(8);
+  });
+
+  it('should enforce context size limit and truncate full documents', async () => {
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc as never);
+
+    const largeContent = 'x'.repeat(60000); // 60k chars per document
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('https://example.com/doc1', 0.95, largeContent),
+        createMockQueryResult('https://example.com/doc2', 0.85, largeContent),
+      ],
+    });
+
+    vi.mocked(executeRetrieve).mockImplementation(
+      async (_container, options) => ({
         success: true,
         data: {
-          url: 'https://example.com/doc1',
+          url: options.url,
           totalChunks: 1,
           content: largeContent,
         },
       })
-      .mockResolvedValueOnce({
-        success: true,
-        data: {
-          url: 'https://example.com/doc2',
-          totalChunks: 1,
-          content: largeContent,
-        },
-      });
+    );
 
-    // Set maxContext to 80k - should include first doc but not second
+    // Set maxContext to 80k - should include first full document but not second
     const resultPromise = executeAsk(container, {
       query: 'test',
       maxContext: 80000,
@@ -424,7 +518,7 @@ describe('executeAsk', () => {
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
 
-    // Verify only 1 document was included (check stdin write)
+    // Verify only 1 full document was included (check stdin write)
     expect(mockProc.stdin.write).toHaveBeenCalledWith(
       expect.stringContaining('https://example.com/doc1')
     );
@@ -440,19 +534,24 @@ describe('executeAsk', () => {
     expect(result.success).toBe(true);
   });
 
-  it('should fail when maxContext is too small for any document', async () => {
+  it('should fail when maxContext is too small for any full document', async () => {
+    const hugeContent = 'x'.repeat(2000);
     vi.mocked(executeQuery).mockResolvedValue({
       success: true,
-      data: [createMockQueryResult('https://example.com/doc1', 0.95)],
+      data: [
+        createMockQueryResult('https://example.com/doc1', 0.95, hugeContent),
+      ],
     });
-    vi.mocked(executeRetrieve).mockResolvedValueOnce({
-      success: true,
-      data: {
-        url: 'https://example.com/doc1',
-        totalChunks: 1,
-        content: 'x'.repeat(1000),
-      },
-    });
+    vi.mocked(executeRetrieve).mockImplementation(
+      async (_container, options) => ({
+        success: true,
+        data: {
+          url: options.url,
+          totalChunks: 1,
+          content: hugeContent,
+        },
+      })
+    );
 
     // Set maxContext to 100 - too small for any doc (no spawn expected)
     const result = await executeAsk(container, {
@@ -463,7 +562,7 @@ describe('executeAsk', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Context size limit');
     expect(result.error).toContain('100');
-    expect(result.error).toContain('too small to include any documents');
+    expect(result.error).toContain('too small to include any full documents');
     // Verify spawn was NOT called since we failed early
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -476,9 +575,6 @@ describe('executeAsk', () => {
       success: true,
       data: [createMockQueryResult('https://example.com/doc1', 0.91)],
     });
-    vi.mocked(executeRetrieve).mockResolvedValueOnce(
-      createMockRetrieveResult('https://example.com/doc1')
-    );
 
     const commandPromise = handleAskCommand(container, {
       query: 'summarize this',
@@ -491,13 +587,184 @@ describe('executeAsk', () => {
     await commandPromise;
 
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('Ask Sources for "summarize this"')
+      expect.stringContaining('Ask Sources: "summarize this"')
     );
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('documents retrieved: 1 | sources: 1')
+      expect.stringContaining('Docs: 1')
     );
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('1. [0.91] https://example.com/doc1')
+      expect.stringContaining('Chunks: 0')
     );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Sources: 1')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('URLs: 1')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Candidates: 1')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Response Time:')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Ordering:')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Reranked')
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Raw:'));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Vector Similarity')
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Rank'));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('https://example.com/doc1')
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Inspect a source document with: axon retrieve <url>'
+      )
+    );
+  });
+
+  it('should auto-scope "today" queries by metadata timestamp', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc as never);
+
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('https://example.com/today', 0.9, 'today chunk', {
+          fileModifiedAt: '2026-02-16T09:00:00Z',
+        }),
+        createMockQueryResult(
+          'https://example.com/yesterday',
+          0.8,
+          'old chunk',
+          { fileModifiedAt: '2026-02-15T09:00:00Z' }
+        ),
+      ],
+    });
+
+    const resultPromise = executeAsk(container, {
+      query: 'what have we accomplished today?',
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    mockProc.stdout.emit('data', Buffer.from('Answer'));
+    mockProc.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.data?.sources.map((s) => s.url)).toEqual([
+      'https://example.com/today',
+    ]);
+    expect(result.data?.appliedScope).toContain('today (2026-02-16)');
+    expect(result.data?.scopeFallback).toBeUndefined();
+
+    vi.useRealTimers();
+  });
+
+  it('should fail strict "today" queries when scoped results are empty', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('https://example.com/old', 0.9, 'old chunk', {
+          fileModifiedAt: '2026-01-10T09:00:00Z',
+        }),
+      ],
+    });
+
+    const result = await executeAsk(container, {
+      query: 'what changed today?',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No today (2026-02-16) matches found');
+    expect(spawn).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it('should fallback to unscoped retrieval for non-strict temporal scopes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc as never);
+
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('https://example.com/old', 0.9, 'old chunk', {
+          fileModifiedAt: '2026-01-10T09:00:00Z',
+        }),
+      ],
+    });
+
+    const resultPromise = executeAsk(container, {
+      query: 'what changed this week?',
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    mockProc.stdout.emit('data', Buffer.from('Answer'));
+    mockProc.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.data?.scopeFallback).toBe(true);
+    expect(result.data?.scopeStrict).toBe(false);
+    expect(result.data?.rawCandidateChunks).toBe(1);
+    expect(result.data?.candidateChunks).toBe(1);
+    expect(result.data?.uniqueSourceUrls).toBe(1);
+
+    vi.useRealTimers();
+  });
+
+  it('should prioritize same-day session paths for temporal queries', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc as never);
+
+    vi.mocked(executeQuery).mockResolvedValue({
+      success: true,
+      data: [
+        createMockQueryResult('axon/docs/notes/summary.md', 0.8, 'summary', {
+          fileModifiedAt: '2026-02-16T10:00:00Z',
+          sourcePathRel: 'docs/notes/summary.md',
+        }),
+        createMockQueryResult(
+          'axon/docs/sessions/2026-02-16-focus.md',
+          0.75,
+          'session',
+          {
+            fileModifiedAt: '2026-02-16T10:30:00Z',
+            sourcePathRel: 'docs/sessions/2026-02-16-focus.md',
+          }
+        ),
+      ],
+    });
+
+    const resultPromise = executeAsk(container, {
+      query: 'what did we do today?',
+      fullDocs: 1,
+      backfillChunks: 0,
+      limit: 1,
+    });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    mockProc.stdout.emit('data', Buffer.from('Answer'));
+    mockProc.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.data?.sources[0]?.url).toContain('/docs/sessions/2026-02-16');
+
+    vi.useRealTimers();
   });
 });

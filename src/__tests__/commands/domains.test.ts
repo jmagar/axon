@@ -20,6 +20,7 @@ describe('executeDomains', () => {
     mockQdrantService = {
       ensureCollection: vi.fn(),
       deleteByUrl: vi.fn(),
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
       deleteByDomain: vi.fn(),
       countByDomain: vi.fn(),
       countByUrl: vi.fn(),
@@ -114,6 +115,7 @@ describe('handleDomainsCommand output', () => {
     const mockQdrantService: IQdrantService = {
       ensureCollection: vi.fn(),
       deleteByUrl: vi.fn(),
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
       deleteByDomain: vi.fn(),
       countByDomain: vi.fn(),
       countByUrl: vi.fn(),

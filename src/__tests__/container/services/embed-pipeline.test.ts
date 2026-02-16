@@ -37,6 +37,7 @@ describe('EmbedPipeline', () => {
       ensureCollection: vi.fn().mockResolvedValue(undefined),
       upsertPoints: vi.fn().mockResolvedValue(undefined),
       deleteByUrl: vi.fn().mockResolvedValue(undefined),
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
       deleteByDomain: vi.fn(),
       countByDomain: vi.fn(),
       queryPoints: vi.fn(),
@@ -172,6 +173,37 @@ describe('EmbedPipeline', () => {
           }),
         ])
       );
+    });
+
+    it('should fallback title from source_path_rel when title is missing', async () => {
+      await pipeline.autoEmbed('local content', {
+        url: 'axon/docs/sessions/2026-02-16-note.md',
+        source_path_rel: 'docs/sessions/2026-02-16-note.md',
+      });
+
+      expect(mockQdrantService.upsertPoints).toHaveBeenCalledWith(
+        collectionName,
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              title: 'docs/sessions/2026-02-16-note.md',
+            }),
+          }),
+        ])
+      );
+    });
+
+    it('should normalize legacy timestamp metadata to ISO format', async () => {
+      await pipeline.autoEmbed('time content', {
+        url: 'https://example.com/time',
+        scraped_at: '2026-02-16T10:00:00',
+        file_modified_at: '2026-02-16 09:00:00',
+      });
+
+      const points = vi.mocked(mockQdrantService.upsertPoints).mock.calls[0][1];
+      const payload = points[0].payload as Record<string, unknown>;
+      expect(payload.scraped_at).toMatch(/Z$/);
+      expect(payload.file_modified_at).toMatch(/Z$/);
     });
 
     it('should not throw on TEI errors (logs instead)', async () => {

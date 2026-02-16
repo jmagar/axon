@@ -117,6 +117,9 @@ export async function executeQuery(
       totalChunks: getNumber(r.payload.total_chunks, 1),
       domain: getString(r.payload.domain),
       sourceCommand: getString(r.payload.source_command),
+      sourcePathRel: getString(r.payload.source_path_rel) || undefined,
+      scrapedAt: getString(r.payload.scraped_at) || undefined,
+      fileModifiedAt: getString(r.payload.file_modified_at) || undefined,
     }));
 
     // Apply mode-specific deduplication first, then enforce a hard output cap

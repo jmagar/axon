@@ -11,15 +11,17 @@ This directory contains Docker-related configuration files and patches for the A
 - **`docker-compose.tei.yaml`** - Alternative compose file for local TEI (Text Embeddings Inference) setup
   - Use when running TEI locally instead of remote steamy-wsl
   - Includes TEI service with GPU support
-  - Companion env file: `.env.tei.example`
+  - Companion env files: `.env.tei.example`, `.env.tei.rtx4070.example`
 
 - **`docker-compose.tei.mxbai.yaml`** - Alternative compose file using mxbai embedding model
   - Variant using mixedbread-ai/mxbai-embed-large-v1 model
   - Use when testing different embedding models
-  - Companion env file: `.env.tei.mxbai.example`
+  - Companion env files: `.env.tei.mxbai.example`, `.env.tei.rtx3050.example`
 
 - **`.env.tei.example`** - Environment template for local TEI setup
 - **`.env.tei.mxbai.example`** - Environment template for mxbai variant
+- **`.env.tei.rtx4070.example`** - RTX 4070-optimized TEI template
+- **`.env.tei.rtx3050.example`** - RTX 3050 (8GB)-optimized TEI template
 
 ## Deployment
 
@@ -41,7 +43,7 @@ docker compose -f docker-compose.yaml -f docker/docker-compose.tei.mxbai.yaml up
 - `docker-compose.yaml` is in project root
 - `.env` file is in project root
 - Volume mounts reference project root (`.:/app`)
-- Build contexts reference subdirectories (`apps/nuq-postgres`)
+- Build contexts reference subdirectories (`apps/axon-postgres`)
 
 ## Directory Structure
 
@@ -56,7 +58,9 @@ axon/
     ├── docker-compose.tei.yaml       # Local TEI variant
     ├── docker-compose.tei.mxbai.yaml # mxbai variant
     ├── .env.tei.example              # TEI env template
-    └── .env.tei.mxbai.example        # mxbai env template
+    ├── .env.tei.rtx4070.example      # RTX 4070 TEI template
+    ├── .env.tei.mxbai.example        # mxbai env template
+    └── .env.tei.rtx3050.example      # RTX 3050 TEI template
 ```
 
 ## Patchright Patch Details

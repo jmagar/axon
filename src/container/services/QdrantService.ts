@@ -391,6 +391,24 @@ export class QdrantService implements IQdrantService {
   }
 
   /**
+   * Delete all points for a URL and source command pair
+   *
+   * @param collection Collection name
+   * @param url URL to delete points for
+   * @param sourceCommand Source command to constrain deletion
+   */
+  async deleteByUrlAndSourceCommand(
+    collection: string,
+    url: string,
+    sourceCommand: string
+  ): Promise<void> {
+    await this.deleteWithFilter(
+      collection,
+      this.buildFilter({ url, source_command: sourceCommand })
+    );
+  }
+
+  /**
    * Query points by vector similarity
    *
    * @param collection Collection name

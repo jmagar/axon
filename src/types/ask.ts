@@ -9,10 +9,13 @@ import type { CommandResult } from './common';
 export interface AskOptions {
   query: string;
   limit?: number;
+  fullDocs?: number;
+  backfillChunks?: number;
   domain?: string;
   collection?: string;
   model?: string;
   maxContext?: number;
+  diagnostics?: boolean;
 }
 
 /**
@@ -32,7 +35,18 @@ export interface AskResultData {
   context: string;
   answer: string;
   sources: AskSource[];
-  documentsRetrieved: number;
+  appliedScope?: string;
+  scopeFallback?: boolean;
+  scopeStrict?: boolean;
+  fullDocumentsUsed: number;
+  chunksUsed: number;
+  rawCandidateChunks: number;
+  scopedCandidateChunks: number;
+  uniqueSourceUrls: number;
+  candidateChunks: number;
+  contextCharsUsed: number;
+  contextCharsLimit: number;
+  responseDurationSeconds: number;
 }
 
 /**

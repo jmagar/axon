@@ -106,20 +106,12 @@ export function resolveContainerConfig({
 
     // Webhook
     embedderWebhookUrl:
-      options.embedderWebhookUrl ||
-      process.env.AXON_EMBEDDER_WEBHOOK_URL ||
-      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_URL ||
-      process.env.SELF_HOSTED_WEBHOOK_URL,
+      options.embedderWebhookUrl || process.env.AXON_EMBEDDER_WEBHOOK_URL,
     embedderWebhookSecret:
-      options.embedderWebhookSecret ||
-      process.env.AXON_EMBEDDER_WEBHOOK_SECRET ||
-      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_SECRET ||
-      process.env.SELF_HOSTED_WEBHOOK_HMAC_SECRET,
+      options.embedderWebhookSecret || process.env.AXON_EMBEDDER_WEBHOOK_SECRET,
     embedderWebhookPort,
     embedderWebhookPath:
-      options.embedderWebhookPath ||
-      process.env.AXON_EMBEDDER_WEBHOOK_PATH ||
-      process.env.FIRECRAWL_EMBEDDER_WEBHOOK_PATH,
+      options.embedderWebhookPath || process.env.AXON_EMBEDDER_WEBHOOK_PATH,
 
     // Resolved settings (captured once, avoids per-call file I/O in hot paths)
     settings: options.settings ?? getSettings(),

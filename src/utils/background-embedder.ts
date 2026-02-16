@@ -7,12 +7,18 @@
 
 import { spawn } from 'node:child_process';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import type { Document } from '@mendable/firecrawl-js';
 import { createDaemonContainer } from '../container/DaemonContainerFactory';
 import type { IContainer, ImmutableConfig } from '../container/types';
 import { createEmbedItems } from '../container/utils/embed-helpers';
+import {
+  collectCrawlPageUrls,
+  getDomainFromUrl,
+  reconcileCrawlDomainState,
+} from './crawl-reconciliation';
 import {
   cleanupIrrecoverableFailedJobs,
   cleanupOldJobs,
@@ -42,6 +48,26 @@ import { fmt } from './theme';
 
 const BACKOFF_MULTIPLIER = 2;
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB request body limit
+
+function isRunningInContainer(): boolean {
+  return (
+    existsSync('/.dockerenv') ||
+    existsSync('/run/.containerenv') ||
+    process.env.CONTAINER === 'true' ||
+    !!process.env.KUBERNETES_SERVICE_HOST
+  );
+}
+
+export function resolveEmbedderBindAddress(
+  env: NodeJS.ProcessEnv = process.env,
+  runningInContainer: boolean = isRunningInContainer()
+): '0.0.0.0' | '127.0.0.1' {
+  const configured = env.AXON_EMBEDDER_BIND_ADDRESS?.trim();
+  if (configured === '0.0.0.0' || configured === '127.0.0.1') {
+    return configured;
+  }
+  return runningInContainer ? '0.0.0.0' : '127.0.0.1';
+}
 
 /**
  * Generate a cryptographically random secret for webhook authentication.
@@ -196,6 +222,41 @@ async function processEmbedJob(
       return;
     }
 
+    const domain = getDomainFromUrl(job.url);
+    if (domain) {
+      try {
+        const seenUrls = collectCrawlPageUrls(pages);
+        const reconciliation = await reconcileCrawlDomainState({
+          domain,
+          seenUrls,
+          hardSync: job.hardSync,
+        });
+
+        if (reconciliation.urlsToDelete.length > 0) {
+          const qdrant = jobContainer.getQdrantService();
+          const collection = jobContainer.config.qdrantCollection || 'axon';
+          for (const staleUrl of reconciliation.urlsToDelete) {
+            await qdrant.deleteByUrlAndSourceCommand(
+              collection,
+              staleUrl,
+              'crawl'
+            );
+          }
+          console.error(
+            fmt.dim(
+              `[Reconcile] Pruned ${reconciliation.urlsToDelete.length} stale crawl URL(s) for ${domain}`
+            )
+          );
+        }
+      } catch (reconcileError) {
+        console.error(
+          fmt.warning(
+            `[Embedder] Reconciliation skipped: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}`
+          )
+        );
+      }
+    }
+
     // Initialize progress tracking
     job.totalDocuments = pages.length;
     job.processedDocuments = 0;
@@ -214,6 +275,9 @@ async function processEmbedJob(
         title: item.metadata.title,
         sourceCommand: item.metadata.sourceCommand,
         contentType: item.metadata.contentType,
+        scraped_at: item.metadata.scraped_at,
+        file_modified_at: item.metadata.file_modified_at,
+        source_path_rel: item.metadata.source_path_rel,
       },
     }));
     const pipeline = jobContainer.getEmbedPipeline();
@@ -446,11 +510,11 @@ async function startEmbedderWebhookServer(container: IContainer): Promise<{
   const effectiveSecret = settings.secret || '';
 
   // SEC-01: Determine bind address before emitting warnings so the message is accurate.
-  // Default to 127.0.0.1 (localhost only). Only bind to 0.0.0.0 if explicitly opted in.
-  const bindAddress =
-    process.env.AXON_EMBEDDER_BIND_ADDRESS === '0.0.0.0'
-      ? '0.0.0.0'
-      : '127.0.0.1';
+  // Defaults:
+  // - Containerized runtime: 0.0.0.0 (required for inter-container webhook delivery)
+  // - Non-container runtime: 127.0.0.1 (localhost only)
+  // AXON_EMBEDDER_BIND_ADDRESS can explicitly override either mode.
+  const bindAddress = resolveEmbedderBindAddress();
 
   if (!hasExplicitSecret) {
     if (bindAddress !== '127.0.0.1') {

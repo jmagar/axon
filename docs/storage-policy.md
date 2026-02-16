@@ -15,6 +15,10 @@ Under the storage root:
   - User defaults (exclude paths/extensions, etc.)
 - `job-history.json`
   - Recent crawl/batch/extract job IDs
+- `crawl-baselines.json`
+  - Preflight `map` URL-count baselines keyed by crawl job ID (used by low-discovery guardrail + auto sitemap retry)
+- `crawl-reconciliation.json`
+  - Per-domain crawl URL reconciliation state (missing counters + grace tracking for stale URL pruning)
 - `embed-queue/`
   - Background embedding queue (`<jobId>.json` and lock files)
 

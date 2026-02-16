@@ -24,15 +24,22 @@ curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh
 - `--skip-docker` - Do not run Docker deployment
 - `--skip-links` - Skip CLI skill/command symlink setup
 - `--skip-port-check` - Skip host port conflict auto-adjustment
+- `--skip-health-check` - Skip post-deploy health probes for services
+- `--deployment-mode <mode>` - Select deployment profile (`full-local`, `full-remote-tei`, `external-firecrawl`, `external-vector`)
+- `--cli-targets <csv>` - Select CLI targets for skill install (`claude,codex,gemini,opencode`)
+- `--non-interactive` - Disable prompts and use flags/env defaults
 - `--dry-run` - Print all planned actions without changing files, links, git state, or Docker state
 
 **What it does:**
+- Prompts for deployment profile (interactive mode)
+- Detects installed CLIs and prompts for which targets to install skill/commands to
 - Clones or updates the Axon repository
 - Creates `.env` from `.env.example` when missing
 - Generates secrets (`FIRECRAWL_API_KEY`, `AXON_EMBEDDER_WEBHOOK_SECRET`) if unset/default
 - Detects host port conflicts and auto-adjusts configured Axon ports
 - Installs symlinks for Claude/Codex/Gemini/OpenCode skill integration
 - Deploys the Docker stack with `docker compose up -d --build`
+- Verifies deployment health (embedder HTTP, Qdrant HTTP, Firecrawl TCP)
 
 ### extract-base-urls.sh
 

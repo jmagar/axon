@@ -5,6 +5,11 @@
 import type { CrawlOptions as AxonCrawlOptions } from '@mendable/firecrawl-js';
 import type { IContainer, ImmutableConfig } from '../../container/types';
 import type { CrawlJobData } from '../../types/crawl';
+import {
+  collectCrawlPageUrls,
+  getDomainFromUrl,
+  reconcileCrawlDomainState,
+} from '../../utils/crawl-reconciliation';
 import { buildEmbedderWebhookConfig } from '../../utils/embedder-webhook';
 import { recordJob } from '../../utils/job-history';
 import { fmt, icons } from '../../utils/theme';
@@ -57,12 +62,13 @@ export async function handleAsyncEmbedding(
   jobId: string,
   url: string,
   config: ImmutableConfig,
-  apiKey?: string
+  apiKey?: string,
+  hardSync?: boolean
 ): Promise<void> {
   const { enqueueEmbedJob } = await import('../../utils/embed-queue');
   const webhookConfig = buildEmbedderWebhookConfig(config);
 
-  await enqueueEmbedJob(jobId, url, apiKey);
+  await enqueueEmbedJob(jobId, url, apiKey, { hardSync });
   console.error();
   console.error(
     `  ${fmt.primary(icons.pending)} Queued embedding job for background processing: ${fmt.dim(jobId)}`
@@ -101,7 +107,8 @@ export async function handleAsyncEmbedding(
  */
 export async function handleSyncEmbedding(
   container: IContainer,
-  crawlJobData: CrawlJobData
+  crawlJobData: CrawlJobData,
+  options?: { startUrl?: string; hardSync?: boolean }
 ): Promise<void> {
   if (crawlJobData.id) {
     await recordJob('crawl', crawlJobData.id);
@@ -112,6 +119,31 @@ export async function handleSyncEmbedding(
     return;
   }
 
+  const domain =
+    (options?.startUrl ? getDomainFromUrl(options.startUrl) : undefined) ??
+    getDomainFromUrl(pagesToEmbed[0]?.metadata?.sourceURL ?? '');
+  if (domain) {
+    const seenUrls = collectCrawlPageUrls(pagesToEmbed);
+    const reconciliation = await reconcileCrawlDomainState({
+      domain,
+      seenUrls,
+      hardSync: options?.hardSync,
+    });
+
+    if (reconciliation.urlsToDelete.length > 0) {
+      const qdrant = container.getQdrantService();
+      const collection = container.config.qdrantCollection || 'axon';
+      for (const staleUrl of reconciliation.urlsToDelete) {
+        await qdrant.deleteByUrlAndSourceCommand(collection, staleUrl, 'crawl');
+      }
+      console.error(
+        fmt.dim(
+          `[Reconcile] Pruned ${reconciliation.urlsToDelete.length} stale crawl URL(s) for ${domain}`
+        )
+      );
+    }
+  }
+
   const pipeline = container.getEmbedPipeline();
   const jobId = crawlJobData.id || 'unknown';
 
@@ -120,14 +152,31 @@ export async function handleSyncEmbedding(
     const page = pagesToEmbed[i];
     const content = page.markdown || page.html;
     if (content) {
+      const metadata = (page.metadata ?? {}) as Record<string, unknown>;
       // Use deterministic fallback to prevent dedupe collisions from empty URLs
       const url =
-        page.metadata?.sourceURL || page.metadata?.url || `${jobId}:page-${i}`;
+        (typeof metadata.sourceURL === 'string'
+          ? metadata.sourceURL
+          : undefined) ||
+        (typeof metadata.url === 'string' ? metadata.url : undefined) ||
+        `${jobId}:page-${i}`;
       await pipeline.autoEmbed(content, {
         url,
-        title: page.metadata?.title,
+        title: typeof metadata.title === 'string' ? metadata.title : undefined,
         sourceCommand: 'crawl',
         contentType: page.markdown ? 'markdown' : 'html',
+        scraped_at:
+          typeof metadata.scraped_at === 'string'
+            ? metadata.scraped_at
+            : undefined,
+        file_modified_at:
+          typeof metadata.file_modified_at === 'string'
+            ? metadata.file_modified_at
+            : undefined,
+        source_path_rel:
+          typeof metadata.source_path_rel === 'string'
+            ? metadata.source_path_rel
+            : undefined,
       });
     }
   }

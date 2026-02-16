@@ -818,7 +818,8 @@ describe('executeCrawl', () => {
       expect(enqueueEmbedJob).toHaveBeenCalledWith(
         mockResponse.id,
         'https://example.com',
-        undefined
+        undefined,
+        { hardSync: undefined }
       );
     });
 

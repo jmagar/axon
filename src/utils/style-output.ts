@@ -119,7 +119,8 @@ export function formatHeaderBlock(input: {
 export function formatAlignedTable(
   columns: TableColumn[],
   rows: string[][],
-  emptyWithDashRow: boolean = true
+  emptyWithDashRow: boolean = true,
+  dividerChar: string = '-'
 ): string {
   const safeRows =
     rows.length === 0 && emptyWithDashRow
@@ -130,7 +131,10 @@ export function formatAlignedTable(
     .map((column) => padValue(column.header, column.width, column.align))
     .join('  ');
 
-  const divider = columns.map((column) => '-'.repeat(column.width)).join('  ');
+  const dividerGlyph = dividerChar.length > 0 ? dividerChar[0] : '-';
+  const divider = columns
+    .map((column) => dividerGlyph.repeat(column.width))
+    .join('  ');
 
   const body = safeRows.map((row) =>
     row

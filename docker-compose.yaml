@@ -29,12 +29,12 @@ services:
       - .:/app
       - ${EMBEDDER_QUEUE_DIR:-${AXON_HOME:-${HOME}/.axon}/embed-queue}:/root/.axon/embed-queue
     environment:
-      FIRECRAWL_API_URL: http://axon-api:53002
-      QDRANT_URL: http://axon-qdrant:6333
+      FIRECRAWL_API_URL: ${AXON_EMBEDDER_FIRECRAWL_API_URL:-http://axon-api:${FIRECRAWL_PORT:-53002}}
+      QDRANT_URL: ${AXON_EMBEDDER_QDRANT_URL:-http://axon-qdrant:6333}
       AXON_EMBEDDER_QUEUE_DIR: /root/.axon/embed-queue
     command: node dist/embedder-daemon.js
     ports:
-      - "53000:53000"
+      - "${AXON_EMBEDDER_WEBHOOK_PORT:-53000}:53000"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:53000/health"]
       interval: 30s
@@ -101,6 +101,8 @@ services:
     image: rabbitmq:3-management
     container_name: axon-rabbitmq
     command: rabbitmq-server
+    volumes:
+      - axon_rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 5s
@@ -157,4 +159,5 @@ networks:
 
 volumes:
   axon_redis_data:
+  axon_rabbitmq_data:
   axon_postgres_data:

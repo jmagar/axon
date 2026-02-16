@@ -38,6 +38,7 @@ describe('executeQuery', () => {
     mockQdrantService = {
       ensureCollection: vi.fn().mockResolvedValue(undefined),
       deleteByUrl: vi.fn().mockResolvedValue(undefined),
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
       deleteByDomain: vi.fn().mockResolvedValue(undefined),
       countByDomain: vi.fn().mockResolvedValue(0),
       upsertPoints: vi.fn().mockResolvedValue(undefined),

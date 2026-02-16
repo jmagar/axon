@@ -305,7 +305,10 @@ async function updateEmbedJobUrls(
 }
 
 /**
- * Filters and sorts embed jobs by status, returning top 10
+ * Filters and sorts embed jobs by status.
+ *
+ * Intentionally returns the full set (no truncation) so `axon status`
+ * can show every queued embed job.
  */
 function filterAndSortEmbeds<T extends { status: string; updatedAt: string }>(
   jobs: T[],
@@ -313,8 +316,7 @@ function filterAndSortEmbeds<T extends { status: string; updatedAt: string }>(
 ): T[] {
   return jobs
     .filter((job) => job.status === status)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 10);
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 /**

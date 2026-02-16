@@ -21,7 +21,7 @@ _axon_completions() {
     _init_completion || return
 
     # Top-level commands
-    local commands="scrape crawl map search extract batch embed query retrieve list status config view-config login logout version doctor sources stats domains delete history info completion help"
+    local commands="scrape crawl map search extract batch embed query reconcile retrieve list status config view-config login logout version doctor sources stats domains delete history info completion help"
 
     # If we're on the first word, complete commands
     if [[ $cword -eq 1 ]]; then
@@ -69,6 +69,7 @@ _axon() {
         'batch:Batch scrape multiple URLs'
         'embed:Embed content into Qdrant'
         'query:Semantic search over embedded content'
+        'reconcile:Inspect and control crawl reconciliation state'
         'retrieve:Retrieve full document from Qdrant'
         'list:List active crawl jobs'
         'status:Show active jobs and embedding queue status'
@@ -149,6 +150,7 @@ complete -c axon -f -n "__fish_use_subcommand" -a extract -d "Extract structured
 complete -c axon -f -n "__fish_use_subcommand" -a batch -d "Batch scrape multiple URLs"
 complete -c axon -f -n "__fish_use_subcommand" -a embed -d "Embed content into Qdrant"
 complete -c axon -f -n "__fish_use_subcommand" -a query -d "Semantic search over embedded content"
+complete -c axon -f -n "__fish_use_subcommand" -a reconcile -d "Inspect and control crawl reconciliation state"
 complete -c axon -f -n "__fish_use_subcommand" -a retrieve -d "Retrieve document from Qdrant"
 complete -c axon -f -n "__fish_use_subcommand" -a list -d "List active crawl jobs"
 complete -c axon -f -n "__fish_use_subcommand" -a status -d "Show active jobs status"

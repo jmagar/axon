@@ -240,4 +240,26 @@ describe('QdrantService', () => {
       );
     });
   });
+
+  describe('deleteByUrlAndSourceCommand', () => {
+    it('should delete points constrained by url and source command', async () => {
+      vi.mocked(mockHttpClient.fetchWithRetry).mockResolvedValue({
+        ok: true,
+      } as Response);
+
+      await service.deleteByUrlAndSourceCommand(
+        'test_collection',
+        'https://example.com/page',
+        'crawl'
+      );
+
+      expect(mockHttpClient.fetchWithRetry).toHaveBeenCalledWith(
+        expect.stringContaining('/points/delete'),
+        expect.objectContaining({
+          body: expect.stringContaining('"source_command"'),
+        }),
+        expect.any(Object)
+      );
+    });
+  });
 });

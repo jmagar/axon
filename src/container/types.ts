@@ -200,6 +200,18 @@ export interface IQdrantService {
   deleteByUrl(collection: string, url: string): Promise<void>;
 
   /**
+   * Delete all points for a URL limited to a source command
+   * @param collection Collection name
+   * @param url URL to delete points for
+   * @param sourceCommand Source command (e.g. crawl, scrape)
+   */
+  deleteByUrlAndSourceCommand(
+    collection: string,
+    url: string,
+    sourceCommand: string
+  ): Promise<void>;
+
+  /**
    * Query points by vector similarity
    * @param collection Collection name
    * @param vector Query vector

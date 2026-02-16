@@ -56,6 +56,12 @@ export interface CrawlOptions {
   excludeTags?: string[];
   /** Tags to include in scraped content */
   includeTags?: string[];
+  /** Run map preflight before crawl for discovery guardrails */
+  preflightMap?: boolean;
+  /** Auto-start sitemap-only retry for low-discovery completed crawls */
+  autoSitemapRetry?: boolean;
+  /** Immediately delete crawl-missing URLs (skip safety grace/threshold) */
+  hardSync?: boolean;
 }
 
 /** Response when starting an async crawl job */

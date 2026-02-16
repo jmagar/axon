@@ -15,6 +15,9 @@ export interface EmbedMetadata {
   title?: string;
   sourceCommand: string;
   contentType?: string;
+  scraped_at?: string;
+  file_modified_at?: string;
+  source_path_rel?: string;
 }
 
 /**
@@ -41,7 +44,17 @@ export function createEmbedItems<
     html?: string;
     url?: string;
     title?: string;
-    metadata?: { sourceURL?: string; url?: string; title?: string };
+    metadata?: {
+      sourceURL?: string;
+      url?: string;
+      title?: string;
+      scrapedAt?: string;
+      scraped_at?: string;
+      fileModifiedAt?: string;
+      file_modified_at?: string;
+      sourcePathRel?: string;
+      source_path_rel?: string;
+    };
   },
 >(pages: T[], sourceCommand: string): EmbedItem[] {
   const validPages = pages.filter((page) => page.markdown || page.html);
@@ -60,6 +73,11 @@ export function createEmbedItems<
       title: page.title || page.metadata?.title,
       sourceCommand,
       contentType: page.markdown ? 'markdown' : 'html',
+      scraped_at: page.metadata?.scraped_at || page.metadata?.scrapedAt,
+      file_modified_at:
+        page.metadata?.file_modified_at || page.metadata?.fileModifiedAt,
+      source_path_rel:
+        page.metadata?.source_path_rel || page.metadata?.sourcePathRel,
     },
   }));
 }

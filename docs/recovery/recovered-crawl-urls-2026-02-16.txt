@@ -1,0 +1,15 @@
+https://docs.ansible.com/
+https://developer.plex.tv/
+https://rustdesk.com/docs/en/
+https://developer.android.com
+https://developer.chrome.com/
+https://fastapi.tiangolo.com/
+https://docs.cloud.google.com/docs
+https://docs.warp.dev/
+https://help.ui.com/hc/en-us
+https://platejs.org/docs/
+https://zed.dev/docs/
+https://tailscale.com/docs
+https://docs.unraid.net
+https://docs.docker.com/
+https://docs.github.com/copilot/

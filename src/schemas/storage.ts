@@ -95,6 +95,8 @@ const BatchSettingsSchema = z
 const AskSettingsSchema = z
   .object({
     limit: z.number().int().min(1).max(100).optional(),
+    fullDocs: z.number().int().min(1).max(20).optional(),
+    backfillChunks: z.number().int().min(0).max(20).optional(),
   })
   .strict();
 
@@ -175,6 +177,7 @@ export const EmbedJobSchema = z
     processedDocuments: z.number().int().min(0).optional(),
     failedDocuments: z.number().int().min(0).optional(),
     progressUpdatedAt: z.string().datetime().optional(),
+    hardSync: z.boolean().optional(),
   })
   .strict();
 

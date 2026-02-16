@@ -70,6 +70,7 @@ export interface EmbedJob {
   processedDocuments?: number;
   failedDocuments?: number;
   progressUpdatedAt?: string;
+  hardSync?: boolean;
 }
 
 function getQueueDir(): string {
@@ -208,7 +209,10 @@ function getJobPath(jobId: string): string {
 export async function enqueueEmbedJob(
   jobId: string,
   url: string,
-  apiKey?: string
+  apiKey?: string,
+  options?: {
+    hardSync?: boolean;
+  }
 ): Promise<EmbedJob> {
   await ensureQueueDir();
 
@@ -229,6 +233,7 @@ export async function enqueueEmbedJob(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     apiKey,
+    hardSync: options?.hardSync,
   };
 
   // SEC-02: Strip apiKey before persisting to disk

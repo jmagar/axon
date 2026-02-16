@@ -16,6 +16,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+!docker/.env.*.example
 
 # IDE
 .vscode/

@@ -22,6 +22,13 @@ vi.mock('../../../utils/job-history', () => ({
   recordJob: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../utils/crawl-baselines', () => ({
+  getCrawlBaseline: vi.fn().mockResolvedValue(undefined),
+  markSitemapRetry: vi.fn().mockResolvedValue(undefined),
+  recordCrawlBaseline: vi.fn().mockResolvedValue(undefined),
+  removeCrawlBaselines: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../commands/crawl/execute', () => ({
   executeCrawl: vi.fn(),
 }));
@@ -44,6 +51,10 @@ import {
 import { executeCrawl } from '../../../commands/crawl/execute';
 import { formatCrawlStatus } from '../../../commands/crawl/format';
 import { formatJson, writeCommandOutput } from '../../../utils/command';
+import {
+  markSitemapRetry,
+  recordCrawlBaseline,
+} from '../../../utils/crawl-baselines';
 import { isJobId } from '../../../utils/job';
 import { recordJob } from '../../../utils/job-history';
 import { writeOutput } from '../../../utils/output';
@@ -185,6 +196,7 @@ describe('handleCrawlCommand', () => {
       'job-222',
       'https://example.com',
       container.config,
+      undefined,
       undefined
     );
     expect(recordJob).toHaveBeenCalledWith('crawl', 'job-222');
@@ -192,6 +204,88 @@ describe('handleCrawlCommand', () => {
       expect.stringContaining('Job ID:'),
       undefined,
       false
+    );
+  });
+
+  it('should record map preflight baseline for async crawl jobs', async () => {
+    const container = createTestContainer({
+      map: vi
+        .fn()
+        .mockResolvedValue({ links: [{ url: 'https://example.com/page-1' }] }),
+    });
+    const mockJobResult = {
+      jobId: 'job-preflight-1',
+      url: 'https://example.com',
+      status: 'processing',
+    };
+
+    vi.mocked(isJobId).mockReturnValue(false);
+    vi.mocked(executeCrawl).mockResolvedValue({
+      success: true,
+      data: mockJobResult,
+    } as never);
+
+    const options: CrawlOptions = {
+      urlOrJobId: 'https://example.com',
+    };
+
+    await handleCrawlCommand(container, options);
+
+    expect(recordCrawlBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job-preflight-1',
+        url: 'https://example.com',
+        mapCount: 1,
+      })
+    );
+  });
+
+  it('should auto-start sitemap-only recrawl for low discovery status', async () => {
+    const container = createTestContainer({
+      startCrawl: vi.fn().mockResolvedValue({
+        id: 'job-sitemap-retry',
+        url: 'https://example.com',
+      }),
+    });
+    const mockStatusData = {
+      id: 'job-low-discovery',
+      status: 'completed' as const,
+      total: 1,
+      completed: 1,
+      creditsUsed: 1,
+      expiresAt: '2026-02-15T10:00:00Z',
+    };
+
+    const { getCrawlBaseline } = await import('../../../utils/crawl-baselines');
+    vi.mocked(getCrawlBaseline).mockResolvedValue({
+      jobId: 'job-low-discovery',
+      url: 'https://example.com',
+      mapCount: 100,
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.mocked(isJobId).mockReturnValue(false);
+    vi.mocked(executeCrawl).mockResolvedValue({
+      success: true,
+      data: mockStatusData,
+    } as never);
+    vi.mocked(formatCrawlStatus).mockReturnValue('Status: completed');
+
+    await handleCrawlCommand(container, {
+      urlOrJobId: 'https://example.com',
+      pretty: true,
+    });
+
+    const client = container.getAxonClient() as unknown as {
+      startCrawl: ReturnType<typeof vi.fn>;
+    };
+    expect(client.startCrawl).toHaveBeenCalledWith(
+      'https://example.com',
+      expect.objectContaining({ sitemap: 'only' })
+    );
+    expect(markSitemapRetry).toHaveBeenCalledWith(
+      'job-low-discovery',
+      'job-sitemap-retry'
     );
   });
 
@@ -221,7 +315,11 @@ describe('handleCrawlCommand', () => {
 
     expect(handleSyncEmbedding).toHaveBeenCalledWith(
       expect.any(Object),
-      mockCrawlData
+      mockCrawlData,
+      {
+        startUrl: 'https://example.com',
+        hardSync: undefined,
+      }
     );
     expect(formatJson).toHaveBeenCalledWith(mockCrawlData, undefined);
     expect(writeOutput).toHaveBeenCalledWith(
@@ -365,7 +463,37 @@ describe('handleCrawlCommand', () => {
       'job-777',
       'https://example.com',
       container.config,
-      'test-key'
+      'test-key',
+      undefined
+    );
+  });
+
+  it('should pass hardSync to async embedding functions', async () => {
+    const container = createTestContainer();
+    const mockJobResult = {
+      jobId: 'job-778',
+      url: 'https://example.com',
+      status: 'processing',
+    };
+
+    vi.mocked(isJobId).mockReturnValue(false);
+    vi.mocked(executeCrawl).mockResolvedValue({
+      success: true,
+      data: mockJobResult,
+    } as never);
+    vi.mocked(formatJson).mockReturnValue('{"jobId":"job-778"}');
+
+    await handleCrawlCommand(container, {
+      urlOrJobId: 'https://example.com',
+      hardSync: true,
+    });
+
+    expect(handleAsyncEmbedding).toHaveBeenCalledWith(
+      'job-778',
+      'https://example.com',
+      container.config,
+      undefined,
+      true
     );
   });
 });

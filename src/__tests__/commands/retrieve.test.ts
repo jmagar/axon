@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   executeRetrieve,
   handleRetrieveCommand,
+  normalizeRetrieveInput,
 } from '../../commands/retrieve';
 import type { IContainer, IQdrantService } from '../../container/types';
 import { createTestContainer } from '../utils/test-container';
@@ -19,6 +20,7 @@ describe('executeRetrieve', () => {
     mockQdrantService = {
       ensureCollection: vi.fn().mockResolvedValue(undefined),
       deleteByUrl: vi.fn().mockResolvedValue(undefined),
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
       deleteByDomain: vi.fn().mockResolvedValue(undefined),
       countByDomain: vi.fn().mockResolvedValue(0),
       upsertPoints: vi.fn().mockResolvedValue(undefined),
@@ -180,5 +182,22 @@ describe('executeRetrieve', () => {
     expect(output).not.toContain('Filters:');
 
     stdoutSpy.mockRestore();
+  });
+});
+
+describe('normalizeRetrieveInput', () => {
+  it('should normalize URL-like input', () => {
+    expect(normalizeRetrieveInput('example.com/path')).toBe(
+      'https://example.com/path'
+    );
+  });
+
+  it('should preserve synthetic local source IDs', () => {
+    expect(normalizeRetrieveInput('axon/docs/design/auth.md')).toBe(
+      'axon/docs/design/auth.md'
+    );
+    expect(normalizeRetrieveInput('test://e2e-embed-test')).toBe(
+      'test://e2e-embed-test'
+    );
   });
 });

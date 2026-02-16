@@ -354,25 +354,36 @@ function findDuplicates(points: QdrantPoint[]): DuplicateGroup[] {
 async function deletePoints(collection: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
 
-  console.log(`Deleting ${ids.length} points...`);
+  const BATCH_SIZE = 1000;
+  let deleted = 0;
+  console.log(`Deleting ${ids.length} points in batches of ${BATCH_SIZE}...`);
 
-  const response = await qdrantFetch(
-    `/collections/${collection}/points/delete`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        points: ids,
-      }),
-    },
-    30000
-  );
+  for (let offset = 0; offset < ids.length; offset += BATCH_SIZE) {
+    const batch = ids.slice(offset, offset + BATCH_SIZE);
+    const response = await qdrantFetch(
+      `/collections/${collection}/points/delete?wait=true`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          points: batch,
+        }),
+      },
+      60000
+    );
 
-  if (!response.ok) {
-    throw new Error(`Failed to delete points: ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete points batch at offset ${offset}: ${response.statusText}`
+      );
+    }
+
+    deleted += batch.length;
+    process.stderr.write(`\rDeleted ${deleted}/${ids.length} points...`);
   }
 
-  console.log(`Deleted ${ids.length} points`);
+  process.stderr.write('\n');
+  console.log(`Deleted ${deleted} points`);
 }
 
 /**

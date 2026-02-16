@@ -7,7 +7,7 @@
  * 3. Optionally, an Axon API key for URL scraping in embed command
  */
 
-import { writeFile } from 'node:fs/promises';
+import { mkdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -55,6 +55,27 @@ function skipIfNoVectorServices(vectorServicesAvailable: boolean): boolean {
     return false;
   }
   return skipWithPrerequisiteMessage('Vector services not available');
+}
+
+function hasAskBackend(): boolean {
+  const hasCli = Boolean(process.env.ASK_CLI?.trim());
+  const hasOpenAiFallback = Boolean(
+    process.env.OPENAI_BASE_URL?.trim() &&
+      process.env.OPENAI_API_KEY?.trim() &&
+      process.env.OPENAI_MODEL?.trim()
+  );
+  return hasCli || hasOpenAiFallback;
+}
+
+function skipIfAskPrerequisitesMissing(
+  vectorServicesAvailable: boolean
+): boolean {
+  if (vectorServicesAvailable && hasAskBackend()) {
+    return false;
+  }
+  return skipWithPrerequisiteMessage(
+    'Ask prerequisites missing (requires vector services and ASK_CLI or OPENAI_* fallback env)'
+  );
 }
 
 function skipIfEmbedPrerequisitesMissing(
@@ -127,6 +148,24 @@ describe('E2E: embed command', () => {
         'Usage: axon embed [options] [command] [input]'
       );
     });
+
+    it('should accept implicit stdin input without "-"', async () => {
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
+        return;
+      }
+
+      const result = await runCLI(['embed', '--collection', 'e2e-test'], {
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        input: '# Implicit stdin\n\nNo dash input mode.',
+      });
+
+      expect(result.stdout).not.toContain(
+        'Usage: axon embed [options] [command] [input]'
+      );
+    });
   });
 
   describe('embed options', () => {
@@ -138,6 +177,11 @@ describe('E2E: embed command', () => {
     it('should support --url flag', async () => {
       const result = await runCLISuccess(['embed', '--help']);
       expect(result.stdout).toContain('--url');
+    });
+
+    it('should support --source-id flag', async () => {
+      const result = await runCLISuccess(['embed', '--help']);
+      expect(result.stdout).toContain('--source-id');
     });
 
     it('should support --collection flag', async () => {
@@ -192,6 +236,39 @@ describe('E2E: embed command', () => {
 
       if (result.exitCode === 0) {
         expect(result.stdout).toBeDefined();
+      }
+    });
+
+    it('should derive repo-root source ID from subdirectory execution', async () => {
+      if (skipIfNoVectorServices(vectorServicesAvailable)) {
+        return;
+      }
+
+      const repoRoot = join(tempDir, 'repo-root');
+      const docsDir = join(repoRoot, 'docs', 'design');
+      const subDir = join(repoRoot, 'packages', 'cli');
+      await mkdir(join(repoRoot, '.git'), { recursive: true });
+      await mkdir(docsDir, { recursive: true });
+      await mkdir(subDir, { recursive: true });
+
+      await writeFile(
+        join(docsDir, 'auth.md'),
+        '# Auth Design\n\nRepo-root source ID test.'
+      );
+
+      const result = await runCLI(
+        ['embed', '../../docs/design/auth.md', '--collection', 'e2e-test'],
+        {
+          cwd: subDir,
+          env: {
+            TEI_URL: process.env.TEI_URL || '',
+            QDRANT_URL: process.env.QDRANT_URL || '',
+          },
+        }
+      );
+
+      if (result.exitCode === 0) {
+        expect(result.stdout).toContain('URL: repo-root/docs/design/auth.md');
       }
     });
 
@@ -481,5 +558,168 @@ describe('E2E: retrieve command', () => {
 
       expect(result.exitCode).toBeDefined();
     });
+  });
+});
+
+describe('E2E: ask command temporal scope', () => {
+  let tempDir: string;
+  let vectorServicesAvailable: boolean;
+
+  beforeAll(async () => {
+    vectorServicesAvailable = await hasVectorServices();
+  });
+
+  registerTempDirLifecycle(
+    (dir) => {
+      tempDir = dir;
+    },
+    () => tempDir
+  );
+
+  it('should scope "today" queries to today-dated local session docs', async () => {
+    if (skipIfAskPrerequisitesMissing(vectorServicesAvailable)) {
+      return;
+    }
+
+    const today = new Date();
+    const todayYmd = today.toISOString().slice(0, 10);
+    const collection = `e2e-ask-today-${Date.now()}`;
+    const repoRoot = join(tempDir, 'repo');
+    const sessionsDir = join(repoRoot, 'docs', 'sessions');
+    const todayFile = join(sessionsDir, `${todayYmd}-today-note.md`);
+
+    await mkdir(join(repoRoot, '.git'), { recursive: true });
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(todayFile, `# Today\n\nAccomplished item ${Date.now()}.`);
+
+    const embedResult = await runCLI(
+      ['embed', todayFile, '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 60000,
+      }
+    );
+    expect(embedResult.exitCode).toBe(0);
+
+    const askResult = await runCLI(
+      ['ask', 'what have we accomplished today?', '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 120000,
+      }
+    );
+
+    expect(askResult.exitCode).toBe(0);
+    expect(askResult.stderr).toContain('Scope:');
+    expect(askResult.stderr).toContain(todayYmd);
+    expect(askResult.stderr).toContain('Fallback:');
+    expect(askResult.stderr).toContain('no');
+  });
+
+  it('should fail strict today scope when no today documents exist', async () => {
+    if (skipIfAskPrerequisitesMissing(vectorServicesAvailable)) {
+      return;
+    }
+
+    const now = new Date();
+    const old = new Date(now);
+    old.setDate(old.getDate() - 10);
+    const oldYmd = old.toISOString().slice(0, 10);
+    const collection = `e2e-ask-strict-${Date.now()}`;
+    const repoRoot = join(tempDir, 'repo-strict');
+    const docsDir = join(repoRoot, 'docs');
+    const oldFile = join(docsDir, `${oldYmd}-old-note.md`);
+
+    await mkdir(join(repoRoot, '.git'), { recursive: true });
+    await mkdir(docsDir, { recursive: true });
+    await writeFile(oldFile, '# Old\n\nOld accomplishments.');
+    await utimes(oldFile, old, old);
+
+    const embedResult = await runCLI(
+      ['embed', oldFile, '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 60000,
+      }
+    );
+    expect(embedResult.exitCode).toBe(0);
+
+    const askResult = await runCLI(
+      ['ask', 'what changed today?', '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 120000,
+      }
+    );
+
+    expect(askResult.exitCode).not.toBe(0);
+    expect(askResult.stderr).toContain('No today');
+    expect(askResult.stderr).toContain('matches found');
+  });
+
+  it('should show fallback messaging for non-strict temporal scopes', async () => {
+    if (skipIfAskPrerequisitesMissing(vectorServicesAvailable)) {
+      return;
+    }
+
+    const now = new Date();
+    const old = new Date(now);
+    old.setDate(old.getDate() - 45);
+    const oldYmd = old.toISOString().slice(0, 10);
+    const collection = `e2e-ask-fallback-${Date.now()}`;
+    const repoRoot = join(tempDir, 'repo-fallback');
+    const docsDir = join(repoRoot, 'docs', 'sessions');
+    const oldFile = join(docsDir, `${oldYmd}-archive-note.md`);
+
+    await mkdir(join(repoRoot, '.git'), { recursive: true });
+    await mkdir(docsDir, { recursive: true });
+    await writeFile(oldFile, '# Archive\n\nThis is old context.');
+    await utimes(oldFile, old, old);
+
+    const embedResult = await runCLI(
+      ['embed', oldFile, '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 60000,
+      }
+    );
+    expect(embedResult.exitCode).toBe(0);
+
+    const askResult = await runCLI(
+      ['ask', 'what changed this week?', '--collection', collection],
+      {
+        cwd: repoRoot,
+        env: {
+          TEI_URL: process.env.TEI_URL || '',
+          QDRANT_URL: process.env.QDRANT_URL || '',
+        },
+        timeout: 120000,
+      }
+    );
+
+    expect(askResult.exitCode).toBe(0);
+    expect(askResult.stderr).toContain('Fallback:');
+    expect(askResult.stderr).toContain('yes');
+    expect(askResult.stderr).toContain('Temporal scope had no direct matches');
   });
 });

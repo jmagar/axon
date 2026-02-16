@@ -56,6 +56,8 @@ const DEFAULT_SETTINGS_TEMPLATE: DefaultSettingsTemplate = {
   },
   ask: {
     limit: 10,
+    fullDocs: 5,
+    backfillChunks: 3,
   },
   http: {
     timeoutMs: 30000,

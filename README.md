@@ -12,7 +12,14 @@ npm install -g @jmagar/axon
 
 ### One-Liner Installer (curl | bash)
 
-Bootstrap Axon in one command. This installer will clone/update the repo, create/update `.env`, generate secrets, detect and adjust conflicting ports, install CLI skill/command links, and start the Docker stack.
+Bootstrap Axon in one command. The installer is interactive by default and will:
+- Ask which deployment profile you want (full local, remote TEI, external Firecrawl, external vector stack)
+- Clone/update the repo
+- Create/update `.env`
+- Generate secrets
+- Detect and adjust conflicting ports
+- Install CLI skill/command links
+- Deploy the selected Docker services
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash
@@ -24,7 +31,12 @@ Optional flags:
 curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --skip-docker
 curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --install-dir \"$HOME/src/axon\"
 curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --skip-health-check
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --non-interactive --deployment-mode external-firecrawl
+curl -fsSL https://raw.githubusercontent.com/jmagar/axon/main/scripts/install.sh | bash -s -- --cli-targets claude,codex
 ```
+
+CLI targets currently supported for automatic skill install: `claude`, `codex`, `gemini`, `opencode`.
 
 ### Claude Code Plugin
 
@@ -179,7 +191,7 @@ axon batch <TAB>         # Shows batch subcommands
 
 - ✅ All command names (scrape, crawl, map, search, extract, batch, embed, query, retrieve, ask, etc.)
 - ✅ All option flags (--wait, --format, --output, --pretty, etc.)
-- ✅ Subcommand completion (batch status/cancel/errors, crawl status/cancel/clear/cleanup/errors, embed cancel/clear/cleanup, extract status)
+- ✅ Subcommand completion (batch status/cancel/errors, crawl status/cancel/clear/cleanup/errors, embed cancel/clear/cleanup, extract status, reconcile status/run/reset)
 - ✅ File path completion for --output option
 - ✅ Context-aware option suggestions based on command
 
@@ -468,6 +480,9 @@ axon crawl https://example.com --limit 100 --max-depth 3
 | `--max-concurrency <n>`     | Max concurrent requests                                |
 | `--timeout <seconds>`       | Overall crawl timeout when waiting                     |
 | `--poll-interval <seconds>` | Status check interval                                  |
+| `--no-preflight-map`        | Skip preflight map baseline for discovery guardrails   |
+| `--no-auto-sitemap-retry`   | Disable automatic `sitemap=only` retry on low discovery |
+| `--hard-sync`               | Immediately delete crawl-missing URLs (skip grace/threshold) |
 
 #### Embedding Behavior
 
@@ -490,6 +505,39 @@ $ ls ~/.axon/embed-queue/
 
 # Manually process/retry embeddings
 $ axon crawl <job-id> --embed
+```
+
+**Reconciliation (default-safe)**:
+- Crawl embeddings keep append/upsert behavior.
+- Missing URLs are marked first, then deleted only after:
+  - 2 consecutive successful crawls where they are missing, and
+  - at least 7 days since first missing detection.
+- Applies to both async crawl auto-embedding and `crawl --wait` inline embedding.
+- Deletions are restricted to crawl-sourced vectors (`source_command=crawl`).
+- Use `--hard-sync` for immediate delete-on-miss behavior.
+
+#### Discovery Guardrail
+
+By default, `crawl` runs a map preflight to estimate expected URL count and stores that baseline per crawl job.
+When a crawl later completes with very low discovery (below 10% of preflight map count), `axon crawl status <job-id>`
+automatically starts a `sitemap=only` retry once and shows the new retry job ID.
+
+For full guardrail behavior (including stale URL reconciliation and `--hard-sync`), see `docs/crawl-guardrails.md`.
+
+Use these flags to opt out:
+
+```bash
+# Skip preflight baseline and guardrail checks
+axon crawl https://example.com --no-preflight-map
+
+# Keep preflight baseline, but disable auto-retry behavior
+axon crawl https://example.com --no-auto-sitemap-retry
+
+# Disable auto-retry when checking an existing job
+axon crawl status <job-id> --no-auto-sitemap-retry
+
+# Force immediate delete-on-miss (no reconciliation grace/threshold)
+axon crawl https://example.com --hard-sync
 ```
 
 #### Examples
@@ -671,10 +719,21 @@ Embed content from a URL, file, or stdin into a Qdrant vector database via TEI. 
 axon embed https://example.com
 
 # Embed a local file
-axon embed /path/to/file.md --url https://example.com/page
+axon embed /path/to/file.md
+# (auto source ID uses git repo root, e.g. axon/docs/design/auth.md)
+
+# Embed all files in a directory (recursive)
+axon embed /path/to/docs
 
 # Embed from stdin
-cat document.md | axon embed - --url https://example.com/doc
+cat document.md | axon embed -
+
+# Embed from stdin (implicit; "-" is optional)
+cat document.md | axon embed
+
+# Override source ID explicitly
+axon embed /path/to/file.md --source-id axon/docs/design/custom-id.md
+# Note: --source-id/--url are not supported with directory input.
 
 # Embed without chunking
 axon embed https://example.com --no-chunk
@@ -699,11 +758,16 @@ axon embed cleanup
 
 | Option                | Description                                             |
 | --------------------- | ------------------------------------------------------- |
-| `--url <url>`         | Source URL for metadata (required for file/stdin input) |
+| `--url <url>`         | Source ID override for metadata (optional for file/stdin) |
+| `--source-id <id>`    | Alias for `--url`                                       |
 | `--collection <name>` | Override Qdrant collection name                         |
 | `--no-chunk`          | Embed as single vector, skip chunking                   |
 | `--json`              | Output as JSON format                                   |
 | `-o, --output <path>` | Save to file                                            |
+
+Collection routing note:
+- URL embeds use the configured default collection (for example `firecrawl`).
+- File/stdin embeds default to the git repo-name collection (for example `axon`) unless `--collection` is set.
 
 #### Embed Subcommands
 
@@ -754,6 +818,49 @@ axon query "authentication" --json
 
 ---
 
+### `reconcile` - Manage Crawl Reconciliation State
+
+Inspect and control crawl reconciliation (stale crawl URL pruning safety state).
+
+```bash
+# Show reconciliation status for all domains
+axon reconcile status
+
+# Show one domain
+axon reconcile status docs.example.com
+
+# Manual reconciliation preview (default)
+axon reconcile run docs.example.com
+
+# Apply reconciliation deletes to Qdrant (crawl-sourced vectors only)
+axon reconcile run docs.example.com --apply
+
+# Reset one domain
+axon reconcile reset docs.example.com --yes
+
+# Reset all domains
+axon reconcile reset --yes
+
+# Machine-readable status output
+axon reconcile status --json
+```
+
+#### Reconcile Subcommands
+
+| Subcommand | Description |
+| ---------- | ----------- |
+| `status [domain]` | Show tracked/missing/eligible reconciliation counts |
+| `run <domain>` | Run manual reconciliation against latest map URL set (preview by default) |
+| `reset [domain]` | Reset reconciliation state for one domain or all (`--yes` required in non-interactive mode) |
+
+#### Reconcile Notes
+
+- `run` preview mode computes candidate deletes but does not mutate state or delete vectors.
+- `run --apply` writes reconciliation state and deletes only `source_command=crawl` vectors.
+- `run` uses `map` to obtain the current URL set for the target domain.
+
+---
+
 ### `retrieve` - Retrieve full document from Qdrant
 
 Reconstruct a full document from its stored chunks in Qdrant. Requires `QDRANT_URL` environment variable.
@@ -782,6 +889,12 @@ axon retrieve https://example.com -o document.md
 ### `ask` - Ask questions about your embedded documents
 
 Ask natural language questions about your embedded documents and get AI-powered answers. Automatically queries Qdrant, retrieves relevant documents, and uses Claude or Gemini CLI to generate responses.
+
+Temporal intent is auto-scoped during retrieval: queries containing phrases like `today`, `yesterday`, `this week`, or `this month` automatically filter candidates by metadata timestamps (`file_modified_at` for local files, fallback to `scraped_at`).
+
+- `today` / `yesterday` are strict by default: if no scoped matches exist, `ask` fails with a clear scope-specific message.
+- `this week` / `this month` use a single fallback to unscoped retrieval when scoped candidates are empty.
+- Ask Sources always reports confidence diagnostics (`unique urls`, scoped/raw candidate counts, and whether fallback was used).
 
 ```bash
 # Basic usage (uses haiku by default)
@@ -1107,21 +1220,21 @@ This repo includes two standalone TEI compose profiles:
 
 | Profile | Compose File | Env File | Recommended For | Default Port |
 | --- | --- | --- | --- | --- |
-| General GPU profile | `docker-compose.tei.yaml` | `.env.tei` | NVIDIA GPU hosts (optimized defaults) | `53020` |
-| Broad compatibility (Mixedbread) | `docker-compose.tei.mxbai.yaml` | `.env.tei.mxbai` | CPU-first or mixed hardware environments | `53021` |
+| General GPU profile | `docker/docker-compose.tei.yaml` | `.env.tei` (from `docker/.env.tei.rtx4070.example`) | NVIDIA GPU hosts (optimized defaults) | `53020` |
+| Broad compatibility (Mixedbread) | `docker/docker-compose.tei.mxbai.yaml` | `.env.tei.mxbai` (from `docker/.env.tei.rtx3050.example`) | CPU-first or mixed hardware environments | `53021` |
 
 #### 1) General GPU TEI
 
 ```bash
-cp .env.tei.example .env.tei
-docker compose --env-file .env.tei -f docker-compose.tei.yaml up -d
+cp docker/.env.tei.rtx4070.example .env.tei
+docker compose --env-file .env.tei -f docker/docker-compose.tei.yaml up -d
 ```
 
 #### 2) Mixedbread (1024-dim, broader hardware)
 
 ```bash
-cp .env.tei.mxbai.example .env.tei.mxbai
-docker compose --env-file .env.tei.mxbai -f docker-compose.tei.mxbai.yaml up -d
+cp docker/.env.tei.rtx3050.example .env.tei.mxbai
+docker compose --env-file .env.tei.mxbai -f docker/docker-compose.tei.mxbai.yaml up -d
 ```
 
 Notes:
@@ -1162,6 +1275,9 @@ Without TEI/Qdrant configured, the CLI works normally and silently skips embeddi
   - embedder daemon startup: jobs older than `24h`
 - Irrecoverable failed embedding jobs (for example, `Job not found` / `invalid job id`) are auto-pruned during daemon stale cycles.
 - Active crawls that are still scraping do not consume embedding retry attempts.
+- Crawl URL reconciliation is enabled by default:
+  - Missing crawl URLs are deleted only after 2 consecutive misses and 7 days grace.
+  - Use `axon crawl ... --hard-sync` for immediate delete-on-miss behavior.
 
 ---
 

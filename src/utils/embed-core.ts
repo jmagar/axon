@@ -13,11 +13,24 @@ interface BaseEmbedMetadata {
   title?: string;
   sourceCommand?: string;
   contentType?: string;
+  sourcePathRel?: string;
+  source_path_rel?: string;
+  fileModifiedAt?: string;
+  file_modified_at?: string;
+  scrapedAt?: string;
+  scraped_at?: string;
 }
 
 interface BuildPointOptions {
   sourceCommandFallback: string;
   includeExtraMetadata: boolean;
+}
+
+function normalizeTimestamp(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = /[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
 }
 
 /**
@@ -32,12 +45,32 @@ export function buildEmbeddingPoints<T extends BaseEmbedMetadata>(
   const now = new Date().toISOString();
   const domain = extractDomain(metadata.url);
   const totalChunks = chunks.length;
+  const sourcePathRel =
+    metadata.sourcePathRel || metadata.source_path_rel || '';
+  const fallbackTitle =
+    sourcePathRel ||
+    metadata.url.replace(/^https?:\/\//, '').replace(/^\/+/, '') ||
+    'Untitled';
+  const normalizedScrapedAt =
+    normalizeTimestamp(metadata.scrapedAt || metadata.scraped_at) || now;
+  const normalizedFileModifiedAt = normalizeTimestamp(
+    metadata.fileModifiedAt || metadata.file_modified_at
+  );
 
   const additionalPayload = options.includeExtraMetadata
     ? Object.fromEntries(
         Object.entries(metadata).filter(
           ([key]) =>
-            !['url', 'title', 'sourceCommand', 'contentType'].includes(key)
+            ![
+              'url',
+              'title',
+              'sourceCommand',
+              'contentType',
+              'scrapedAt',
+              'scraped_at',
+              'fileModifiedAt',
+              'file_modified_at',
+            ].includes(key)
         )
       )
     : {};
@@ -47,7 +80,7 @@ export function buildEmbeddingPoints<T extends BaseEmbedMetadata>(
     vector: vectors[i],
     payload: {
       url: metadata.url,
-      title: metadata.title || '',
+      title: metadata.title || fallbackTitle,
       domain,
       chunk_index: chunk.index,
       chunk_text: chunk.text,
@@ -55,7 +88,10 @@ export function buildEmbeddingPoints<T extends BaseEmbedMetadata>(
       total_chunks: totalChunks,
       source_command: metadata.sourceCommand || options.sourceCommandFallback,
       content_type: metadata.contentType || 'text',
-      scraped_at: now,
+      scraped_at: normalizedScrapedAt,
+      ...(normalizedFileModifiedAt
+        ? { file_modified_at: normalizedFileModifiedAt }
+        : {}),
       ...(additionalPayload as Record<string, unknown>),
     },
   }));

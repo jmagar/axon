@@ -37,6 +37,7 @@ import { createLoginCommand } from './commands/login';
 import { createLogoutCommand } from './commands/logout';
 import { createMapCommand } from './commands/map';
 import { createQueryCommand } from './commands/query';
+import { createReconcileCommand } from './commands/reconcile';
 import { createRetrieveCommand } from './commands/retrieve';
 import { createScrapeCommand } from './commands/scrape';
 import { createSearchCommand } from './commands/search';
@@ -119,6 +120,7 @@ const TOP_LEVEL_COMMANDS = new Set([
   'extract',
   'embed',
   'query',
+  'reconcile',
   'retrieve',
   'ask',
   'batch',
@@ -176,6 +178,7 @@ function renderTopLevelHelp(): string {
       commands: [
         ['embed [input]', 'Embed content into Qdrant vector database'],
         ['query <query>', 'Semantic search over embedded content'],
+        ['reconcile', 'Inspect and control crawl reconciliation state'],
         ['retrieve <url>', 'Retrieve full document from Qdrant by URL'],
         ['ask <query>', 'Ask questions about your embedded documents'],
         ['sources', 'List all indexed source URLs'],
@@ -327,6 +330,7 @@ program.addCommand(createSearchCommand());
 program.addCommand(createExtractCommand());
 program.addCommand(createEmbedCommand());
 program.addCommand(createQueryCommand());
+program.addCommand(createReconcileCommand());
 program.addCommand(createRetrieveCommand());
 program.addCommand(createAskCommand());
 program.addCommand(createBatchCommand());

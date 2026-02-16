@@ -21,6 +21,17 @@ vi.mock('../../../utils/job-history', () => ({
   recordJob: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../utils/crawl-reconciliation', () => ({
+  collectCrawlPageUrls: vi.fn().mockReturnValue([]),
+  getDomainFromUrl: vi.fn().mockReturnValue(undefined),
+  reconcileCrawlDomainState: vi.fn().mockResolvedValue({
+    urlsToDelete: [],
+    trackedBefore: 0,
+    trackedAfter: 0,
+    seen: 0,
+  }),
+}));
+
 import { buildEmbedderWebhookConfig } from '../../../utils/embedder-webhook';
 import { recordJob } from '../../../utils/job-history';
 
@@ -118,7 +129,8 @@ describe('handleAsyncEmbedding', () => {
     expect(mockEnqueueEmbedJob).toHaveBeenCalledWith(
       'job-123',
       'https://example.com',
-      'test-key'
+      'test-key',
+      { hardSync: undefined }
     );
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -156,6 +168,29 @@ describe('handleAsyncEmbedding', () => {
     );
 
     consoleError.mockRestore();
+  });
+
+  it('should pass hardSync option to queue job', async () => {
+    const mockEnqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(buildEmbedderWebhookConfig).mockReturnValue(null);
+    vi.doMock('../../../utils/embed-queue', () => ({
+      enqueueEmbedJob: mockEnqueueEmbedJob,
+    }));
+
+    await handleAsyncEmbedding(
+      'job-457',
+      'https://example.com',
+      { settings: getDefaultSettings() },
+      undefined,
+      true
+    );
+
+    expect(mockEnqueueEmbedJob).toHaveBeenCalledWith(
+      'job-457',
+      'https://example.com',
+      undefined,
+      { hardSync: true }
+    );
   });
 });
 

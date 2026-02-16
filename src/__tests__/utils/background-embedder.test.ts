@@ -39,6 +39,17 @@ vi.mock('../../container/DaemonContainerFactory', () => ({
   createDaemonContainer: vi.fn(),
 }));
 
+vi.mock('../../utils/crawl-reconciliation', () => ({
+  collectCrawlPageUrls: vi.fn().mockReturnValue(['https://example.com']),
+  getDomainFromUrl: vi.fn().mockReturnValue('example.com'),
+  reconcileCrawlDomainState: vi.fn().mockResolvedValue({
+    urlsToDelete: [],
+    trackedBefore: 0,
+    trackedAfter: 0,
+    seen: 1,
+  }),
+}));
+
 function createMockContainer(options?: {
   config?: {
     apiKey?: string;
@@ -68,7 +79,9 @@ function createMockContainer(options?: {
     getAxonClient: vi.fn().mockReturnValue(options?.axonClient),
     getHttpClient: vi.fn(),
     getTeiService: vi.fn(),
-    getQdrantService: vi.fn(),
+    getQdrantService: vi.fn().mockReturnValue({
+      deleteByUrlAndSourceCommand: vi.fn().mockResolvedValue(undefined),
+    }),
     getEmbedPipeline: vi.fn().mockReturnValue(options?.embedPipeline),
     dispose: vi.fn(),
   } as IContainer;
@@ -612,6 +625,46 @@ describe('isEmbedderRunning', () => {
     const result = await isEmbedderRunning();
 
     expect(result).toBe(false);
+  });
+});
+
+describe('resolveEmbedderBindAddress', () => {
+  it('uses explicit AXON_EMBEDDER_BIND_ADDRESS=0.0.0.0 override', async () => {
+    const { resolveEmbedderBindAddress } = await import(
+      '../../utils/background-embedder'
+    );
+    const result = resolveEmbedderBindAddress(
+      { AXON_EMBEDDER_BIND_ADDRESS: '0.0.0.0' },
+      false
+    );
+    expect(result).toBe('0.0.0.0');
+  });
+
+  it('uses explicit AXON_EMBEDDER_BIND_ADDRESS=127.0.0.1 override', async () => {
+    const { resolveEmbedderBindAddress } = await import(
+      '../../utils/background-embedder'
+    );
+    const result = resolveEmbedderBindAddress(
+      { AXON_EMBEDDER_BIND_ADDRESS: '127.0.0.1' },
+      true
+    );
+    expect(result).toBe('127.0.0.1');
+  });
+
+  it('defaults to 0.0.0.0 when running in container', async () => {
+    const { resolveEmbedderBindAddress } = await import(
+      '../../utils/background-embedder'
+    );
+    const result = resolveEmbedderBindAddress({}, true);
+    expect(result).toBe('0.0.0.0');
+  });
+
+  it('defaults to 127.0.0.1 when not running in container', async () => {
+    const { resolveEmbedderBindAddress } = await import(
+      '../../utils/background-embedder'
+    );
+    const result = resolveEmbedderBindAddress({}, false);
+    expect(result).toBe('127.0.0.1');
   });
 });
 

@@ -164,7 +164,15 @@ export async function handleRetrieveCommand(
 }
 
 import { Command } from 'commander';
-import { normalizeUrl } from '../utils/url';
+import { isUrl, normalizeUrl } from '../utils/url';
+
+/**
+ * Normalize retrieve input only when it is URL-like.
+ * Preserves synthetic/local source IDs like "axon/docs/design/auth.md".
+ */
+export function normalizeRetrieveInput(input: string): string {
+  return isUrl(input) ? normalizeUrl(input) : input;
+}
 
 /**
  * Create and configure the retrieve command
@@ -178,7 +186,7 @@ export function createRetrieveCommand(): Command {
     const container = requireContainer(command);
 
     await handleRetrieveCommand(container, {
-      url: normalizeUrl(url),
+      url: normalizeRetrieveInput(url),
       collection: options.collection,
       output: options.output,
       json: options.json,

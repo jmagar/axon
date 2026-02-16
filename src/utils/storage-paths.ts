@@ -22,7 +22,7 @@ function expandLeadingTilde(inputPath: string): string {
  * Get the root directory for all persistent CLI storage.
  */
 export function getStorageRoot(): string {
-  const configuredRoot = process.env.AXON_HOME || process.env.FIRECRAWL_HOME;
+  const configuredRoot = process.env.AXON_HOME;
   if (configuredRoot && configuredRoot.trim().length > 0) {
     return path.resolve(expandLeadingTilde(configuredRoot.trim()));
   }

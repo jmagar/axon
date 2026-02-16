@@ -26,6 +26,9 @@ export interface QueryResultItem {
   totalChunks: number;
   domain: string;
   sourceCommand: string;
+  sourcePathRel?: string;
+  scrapedAt?: string;
+  fileModifiedAt?: string;
 }
 
 export type QueryResult = CommandResult<QueryResultItem[]>;
