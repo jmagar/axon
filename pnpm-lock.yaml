@@ -24,8 +24,8 @@ importers:
         specifier: ^11.2.5
         version: 11.2.5
       p-limit:
-        specifier: ^7.2.0
-        version: 7.2.0
+        specifier: ^7.3.0
+        version: 7.3.0
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2
@@ -763,8 +763,8 @@ packages:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
 
-  p-limit@7.2.0:
-    resolution: {integrity: sha512-ATHLtwoTNDloHRFFxFJdHnG6n2WUeFjaR8XQMFdKIv0xkXjrER8/iG9iu265jOM95zXHAfv9oTkqhrfbIzosrQ==}
+  p-limit@7.3.0:
+    resolution: {integrity: sha512-7cIXg/Z0M5WZRblrsOla88S4wAK+zOQQWeBYfV3qJuJXMr+LnbYjaadrFaS0JILfEDPVqHyKnZ1Z/1d6J9VVUw==}
     engines: {node: '>=20'}
 
   pathe@2.0.3:
@@ -1577,7 +1577,7 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
-  p-limit@7.2.0:
+  p-limit@7.3.0:
     dependencies:
       yocto-queue: 1.2.2
 
