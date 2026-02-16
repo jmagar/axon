@@ -1,0 +1,49 @@
+# Docker Compose overrides for GitHub Codespaces
+# Use with: docker compose -f docker-compose.yaml -f docker-compose.codespaces.yaml up -d
+
+services:
+  axon-api:
+    environment:
+      # Lower resource settings for Codespaces
+      - REDIS_RATE_LIMIT_BY_IP=10
+      - BULL_MAX_QUEUE_SIZE=100
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  axon-playwright:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  axon-embedder:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  axon-qdrant:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  axon-redis:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  axon-rabbitmq:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M

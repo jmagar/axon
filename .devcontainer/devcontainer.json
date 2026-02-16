@@ -1,0 +1,62 @@
+{
+  "name": "Axon Development",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "forwardPorts": [
+    53000, // Embedder daemon
+    53002, // Firecrawl API
+    53021, // TEI (CPU)
+    53333 // Qdrant
+  ],
+
+  "portsAttributes": {
+    "53000": {
+      "label": "Embedder Daemon",
+      "onAutoForward": "notify"
+    },
+    "53002": {
+      "label": "Firecrawl API",
+      "onAutoForward": "notify"
+    },
+    "53021": {
+      "label": "TEI Embeddings",
+      "onAutoForward": "notify"
+    },
+    "53333": {
+      "label": "Qdrant Vector DB",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "biomejs.biome",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteUser": "node",
+
+  "runArgs": ["--init"],
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/.cache,target=${containerWorkspaceFolder}/.cache,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.firecrawl,target=${containerWorkspaceFolder}/.firecrawl,type=bind,consistency=cached"
+  ]
+}
