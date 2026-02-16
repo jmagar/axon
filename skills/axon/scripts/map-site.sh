@@ -7,7 +7,6 @@ set -euo pipefail
 
 # === Configuration ===
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load environment variables from .env
 ENV_FILE="$HOME/claude-homelab/.env"
