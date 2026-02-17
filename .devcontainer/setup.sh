@@ -38,11 +38,13 @@ POSTGRES_PORT=53432
 # Firecrawl Database Connection
 NUQ_DATABASE_URL=postgresql://postgres:local-dev-password@axon-postgres:53432/firecrawl
 
-# Redis/RabbitMQ (using standard ports internally)
-REDIS_URL=redis://axon-redis:6379
-NUQ_REDIS_URL=redis://axon-redis:6379
+# Redis/RabbitMQ (match project defaults: non-standard Redis port)
+REDIS_URL=redis://axon-redis:53379
+REDIS_RATE_LIMIT_URL=redis://axon-redis:53379
+REDIS_EVICT_URL=redis://axon-redis:53379
+NUQ_REDIS_URL=redis://axon-redis:53379
 REDIS_HOST=axon-redis
-REDIS_PORT=6379
+REDIS_PORT=53379
 REDIS_RATE_LIMIT_BY_IP=10
 RABBITMQ_URL=amqp://axon-rabbitmq:5672
 NUQ_RABBITMQ_URL=amqp://axon-rabbitmq:5672

@@ -66,6 +66,8 @@ services:
     environment:
       PORT: ${FIRECRAWL_PORT:-53002}
       REDIS_URL: ${NUQ_REDIS_URL:-redis://axon-redis:53379}
+      REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-redis://axon-redis:53379}
+      REDIS_EVICT_URL: ${REDIS_EVICT_URL:-redis://axon-redis:53379}
       DATABASE_URL: ${NUQ_DATABASE_URL}
       RABBITMQ_URL: ${NUQ_RABBITMQ_URL:-amqp://axon-rabbitmq:5672}
       PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_URL:-http://axon-playwright:53006}
@@ -92,11 +94,11 @@ services:
     <<: *common-service
     image: redis:alpine
     container_name: axon-redis
-    command: redis-server --bind 0.0.0.0 --appendonly yes
+    command: redis-server --bind 0.0.0.0 --port "${REDIS_PORT:-53379}" --appendonly yes
     volumes:
       - axon_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-53379}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
