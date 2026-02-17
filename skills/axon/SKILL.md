@@ -81,7 +81,7 @@ This skill enables comprehensive web data extraction and semantic indexing throu
 
 2. **Add credentials to `.env` file:** `~/.claude-homelab/.env`
    ```bash
-   # Firecrawl API (Cloud or Self-Hosted)
+   # Axon Backend API (uses Firecrawl engine - Cloud or Self-Hosted)
    FIRECRAWL_API_KEY="fc-your-api-key"
    FIRECRAWL_API_URL="https://api.firecrawl.dev"  # Optional
 
@@ -96,7 +96,7 @@ This skill enables comprehensive web data extraction and semantic indexing throu
    TEI_DIMENSIONS=384
    ```
 
-3. **Get Firecrawl API key (for upstream API):** Visit https://firecrawl.dev/ → Account → API Keys → Generate New Key
+3. **Get API key (for Axon backend):** Visit https://firecrawl.dev/ → Account → API Keys → Generate New Key
 
 **For detailed setup instructions, see [README.md](./README.md)**
 
@@ -379,10 +379,10 @@ axon map example.com --verbose
 
 ### Authentication
 
-- **Cloud API**: Requires API key (get from https://firecrawl.dev/)
-- **Self-hosted**: Skip authentication automatically
+- **Cloud Backend**: Requires API key (get from https://firecrawl.dev/)
+- **Self-hosted Backend**: Skip authentication automatically
 - **API key sources**: `.env` file, CLI login, or `--api-key` flag
-- **Environment variable**: `FIRECRAWL_API_KEY` is read by CLI
+- **Environment variable**: `FIRECRAWL_API_KEY` is read by Axon CLI
 
 ### Output Behavior
 
@@ -413,10 +413,12 @@ axon map example.com --verbose
 
 **Core Documentation:**
 - [README.md](./README.md) - Complete user-facing documentation with setup
-- [Firecrawl Official Docs](https://docs.firecrawl.dev/) - Official Firecrawl documentation
-- [Firecrawl CLI Docs](https://docs.firecrawl.dev/sdks/cli) - Official CLI documentation
-- [Firecrawl GitHub](https://github.com/firecrawl/firecrawl) - Firecrawl repository
-- [Firecrawl CLI GitHub](https://github.com/firecrawl/cli) - CLI repository
+
+**Backend Engine Documentation (Firecrawl):**
+- [Firecrawl Official Docs](https://docs.firecrawl.dev/) - Backend scraping engine documentation
+- [Firecrawl CLI Docs](https://docs.firecrawl.dev/sdks/cli) - Official backend CLI documentation
+- [Firecrawl GitHub](https://github.com/firecrawl/firecrawl) - Backend engine repository
+- [Firecrawl CLI GitHub](https://github.com/firecrawl/cli) - Backend CLI repository
 
 **Reference Files (Detailed Documentation):**
 - [references/best-practices.md](./references/best-practices.md) - File organization, reading patterns, parallelization

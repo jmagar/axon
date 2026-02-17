@@ -106,6 +106,19 @@ describe('buildCrawlOptions', () => {
     expect(result.includePaths).toEqual(['/blog', '/docs']);
   });
 
+  it('should map scrape formats into nested scrapeOptions', () => {
+    const options: CrawlOptions = {
+      urlOrJobId: 'https://example.com',
+      formats: ['markdown', 'links'],
+    };
+
+    const result = buildCrawlOptions(options);
+
+    expect(result.scrapeOptions).toEqual({
+      formats: [{ type: 'markdown' }, { type: 'links' }],
+    });
+  });
+
   it('should skip empty include paths', () => {
     const options: CrawlOptions = {
       urlOrJobId: 'https://example.com',

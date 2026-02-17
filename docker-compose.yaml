@@ -70,8 +70,12 @@ services:
       REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-redis://axon-redis:53379}
       REDIS_EVICT_URL: ${REDIS_EVICT_URL:-redis://axon-redis:53379}
       DATABASE_URL: ${NUQ_DATABASE_URL}
+      NUQ_RABBITMQ_URL: ${NUQ_RABBITMQ_URL:-amqp://axon-rabbitmq:5672}
       RABBITMQ_URL: ${NUQ_RABBITMQ_URL:-amqp://axon-rabbitmq:5672}
-      PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_URL:-http://axon-playwright:53006}
+      PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_URL:-http://axon-playwright:53006/scrape}
+      EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-53004}
+      WORKER_PORT: ${WORKER_PORT:-53005}
+      MODEL_NAME: ${MODEL_NAME:-${OPENAI_MODEL:-gpt-4o-mini}}
     depends_on:
       axon-redis:
         condition: service_healthy
@@ -83,7 +87,7 @@ services:
         condition: service_healthy
     ports:
       - "${FIRECRAWL_PORT:-53002}:${FIRECRAWL_PORT:-53002}"
-    command: node dist/src/index.js
+    command: node dist/src/harness.js --start-docker
     healthcheck:
       test: ["CMD", "bash", "-c", "timeout 5 bash -c '</dev/tcp/localhost/${FIRECRAWL_PORT:-53002}' 2>/dev/null"]
       interval: 30s

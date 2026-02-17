@@ -4,6 +4,7 @@
 
 import type { Document } from '@mendable/firecrawl-js';
 import type { CommandResult } from './common';
+import type { ScrapeFormat } from './scrape';
 
 export interface CrawlOptions {
   /** API key */
@@ -24,6 +25,8 @@ export interface CrawlOptions {
   output?: string;
   /** Pretty print JSON output */
   pretty?: boolean;
+  /** Force JSON output */
+  json?: boolean;
   /** Maximum number of pages to crawl */
   limit?: number;
   /** Maximum crawl depth */
@@ -52,6 +55,8 @@ export interface CrawlOptions {
   noDefaultExcludes?: boolean;
   /** Include only main content when scraping pages */
   onlyMainContent?: boolean;
+  /** Scrape format(s) for crawled pages */
+  formats?: ScrapeFormat[];
   /** Tags to exclude from scraped content */
   excludeTags?: string[];
   /** Tags to include in scraped content */

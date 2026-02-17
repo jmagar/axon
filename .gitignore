@@ -56,3 +56,9 @@ docs/reports/
 .worktrees/
 
 INITIAL_REQUEST.md
+
+# THC intel local tooling
+scripts/thc-*.mjs
+thc-*.schema.json
+scripts/highrise-catalog-export.mjs
+scripts/parse-highrise-coa-batch.mjs

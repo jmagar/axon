@@ -1240,4 +1240,75 @@ describe('createCrawlCommand', () => {
       autoPaginate: false,
     });
   });
+
+  it('should parse --format and pass formats to crawl scrapeOptions', async () => {
+    const mockClient: Partial<MockAxonClient> = {
+      scrape: vi.fn(),
+      startCrawl: vi.fn().mockResolvedValue({
+        id: 'job-format-1',
+        url: 'https://example.com',
+      }),
+    };
+    const container = createContainer(mockClient);
+    const cmd = createCrawlCommand();
+    cmd._container = container;
+
+    await cmd.parseAsync(
+      ['node', 'test', 'https://example.com', '--format', 'markdown,links'],
+      {
+        from: 'node',
+      }
+    );
+
+    expect(mockClient.startCrawl).toHaveBeenCalledWith(
+      'https://example.com',
+      expect.objectContaining({
+        scrapeOptions: expect.objectContaining({
+          formats: [{ type: 'markdown' }, { type: 'links' }],
+        }),
+      })
+    );
+  });
+
+  it('should treat --format json as output format and not as scrape format', async () => {
+    const mockClient: Partial<MockAxonClient> = {
+      scrape: vi.fn(),
+      startCrawl: vi.fn().mockResolvedValue({
+        id: 'job-format-json',
+        url: 'https://example.com',
+      }),
+    };
+    const container = createContainer(mockClient);
+    const cmd = createCrawlCommand();
+    cmd._container = container;
+
+    await cmd.parseAsync(
+      ['node', 'test', 'https://example.com', '--format', 'json'],
+      {
+        from: 'node',
+      }
+    );
+
+    expect(mockClient.startCrawl).toHaveBeenCalledWith(
+      'https://example.com',
+      expect.objectContaining({
+        scrapeOptions: expect.objectContaining({
+          onlyMainContent: true,
+        }),
+      })
+    );
+    expect(mockClient.startCrawl).not.toHaveBeenCalledWith(
+      'https://example.com',
+      expect.objectContaining({
+        scrapeOptions: expect.objectContaining({
+          formats: [{ type: 'json' }],
+        }),
+      })
+    );
+    expect(writeOutput).toHaveBeenCalledWith(
+      expect.stringContaining('"jobId":"job-format-json"'),
+      undefined,
+      false
+    );
+  });
 });

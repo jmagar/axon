@@ -2,6 +2,7 @@
  * Batch scrape command implementation
  */
 
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import type { IContainer } from '../container/types';
 import type { BatchOptions } from '../types/batch';
@@ -26,13 +27,72 @@ import { normalizeUrlArgs, requireContainerFromCommandTree } from './shared';
 // Commander module augmentation (container injection)
 import '../types/commander';
 
+function parseJsonSchemaInput(
+  options: BatchOptions
+): Record<string, unknown> | undefined {
+  if (options.jsonSchema && options.jsonSchemaFile) {
+    throw new Error(
+      'Use either --json-schema or --json-schema-file, not both.'
+    );
+  }
+
+  const rawSchema = options.jsonSchemaFile
+    ? readFileSync(options.jsonSchemaFile, 'utf-8')
+    : options.jsonSchema;
+
+  if (!rawSchema) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawSchema);
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON schema: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('JSON schema must be a JSON object.');
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
 function buildBatchScrapeOptions(options: BatchOptions) {
   const scrapeOptions: Record<string, unknown> = {};
+  const schema = parseJsonSchemaInput(options);
+  const formats: Array<Record<string, unknown>> = [];
 
   if (options.format) {
-    scrapeOptions.formats = parseFormats(options.format).map((type) => ({
-      type,
-    }));
+    const parsedFormats = parseFormats(options.format);
+    const includeJson = parsedFormats.includes('json');
+
+    for (const type of parsedFormats) {
+      if (type === 'json') {
+        continue;
+      }
+      formats.push({ type });
+    }
+
+    if (includeJson) {
+      if (!options.jsonPrompt && !schema) {
+        throw new Error(
+          'When using --format json, provide --json-prompt or --json-schema/--json-schema-file.'
+        );
+      }
+      const jsonFormat: Record<string, unknown> = { type: 'json' };
+      if (options.jsonPrompt) {
+        jsonFormat.prompt = options.jsonPrompt;
+      }
+      if (schema) {
+        jsonFormat.schema = schema;
+      }
+      formats.push(jsonFormat);
+    }
   }
   if (options.onlyMainContent !== undefined) {
     scrapeOptions.onlyMainContent = options.onlyMainContent;
@@ -41,11 +101,11 @@ function buildBatchScrapeOptions(options: BatchOptions) {
     scrapeOptions.waitFor = options.waitFor;
   }
   if (options.screenshot) {
-    const formats =
-      (scrapeOptions.formats as Array<{ type: string }> | undefined) ?? [];
     if (!formats.find((f) => f.type === 'screenshot')) {
       formats.push({ type: 'screenshot' });
     }
+  }
+  if (formats.length > 0) {
     scrapeOptions.formats = formats;
   }
   if (options.includeTags && options.includeTags.length > 0) {
@@ -358,6 +418,18 @@ export function createBatchCommand(): Command {
     .option('--timeout <seconds>', 'Timeout in seconds for wait', parseFloat)
     .option('--format <formats>', 'Scrape format(s) for batch results')
     .option(
+      '--json-prompt <prompt>',
+      'Prompt for structured extraction when using --format json'
+    )
+    .option(
+      '--json-schema <json>',
+      'Inline JSON schema for structured extraction when using --format json'
+    )
+    .option(
+      '--json-schema-file <path>',
+      'Path to JSON schema file for structured extraction when using --format json'
+    )
+    .option(
       '--only-main-content',
       'Only return main content',
       settings.batch.onlyMainContent
@@ -400,6 +472,9 @@ export function createBatchCommand(): Command {
         pollInterval: options.pollInterval,
         timeout: options.timeout,
         format: options.format,
+        jsonPrompt: options.jsonPrompt,
+        jsonSchema: options.jsonSchema,
+        jsonSchemaFile: options.jsonSchemaFile,
         onlyMainContent: options.onlyMainContent,
         waitFor: options.waitFor,
         screenshot: options.screenshot,

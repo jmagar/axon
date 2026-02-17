@@ -81,6 +81,71 @@ describe('executeBatch', () => {
       'completed'
     );
   });
+
+  it('should send json format with prompt for structured extraction', async () => {
+    mockClient.startBatchScrape?.mockResolvedValue({
+      id: 'batch-json-1',
+      url: 'https://api.axon.dev/v2/batch/scrape/batch-json-1',
+    });
+
+    const result = await executeBatch(container, {
+      urls: ['https://a.com'],
+      wait: false,
+      format: 'json',
+      jsonPrompt: 'Extract product data',
+    });
+
+    expect(mockClient.startBatchScrape).toHaveBeenCalledWith(
+      ['https://a.com'],
+      expect.objectContaining({
+        options: expect.objectContaining({
+          formats: [{ type: 'json', prompt: 'Extract product data' }],
+        }),
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('should support mixed scrape formats including json extraction', async () => {
+    mockClient.startBatchScrape?.mockResolvedValue({
+      id: 'batch-json-2',
+      url: 'https://api.axon.dev/v2/batch/scrape/batch-json-2',
+    });
+
+    const result = await executeBatch(container, {
+      urls: ['https://a.com'],
+      wait: false,
+      format: 'markdown,links,json',
+      jsonPrompt: 'Extract headline and author',
+    });
+
+    expect(mockClient.startBatchScrape).toHaveBeenCalledWith(
+      ['https://a.com'],
+      expect.objectContaining({
+        options: expect.objectContaining({
+          formats: [
+            { type: 'markdown' },
+            { type: 'links' },
+            { type: 'json', prompt: 'Extract headline and author' },
+          ],
+        }),
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('should fail when json format is used without prompt or schema', async () => {
+    const result = await executeBatch(container, {
+      urls: ['https://a.com'],
+      wait: false,
+      format: 'json',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(
+      'When using --format json, provide --json-prompt or --json-schema/--json-schema-file.'
+    );
+  });
 });
 
 describe('createBatchCommand', () => {

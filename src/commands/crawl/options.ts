@@ -91,6 +91,13 @@ export function buildCrawlOptions(
     builder.addNested('scrapeOptions.onlyMainContent', options.onlyMainContent);
   }
 
+  if (options.formats && options.formats.length > 0) {
+    builder.addNested(
+      'scrapeOptions.formats',
+      options.formats.map((type) => ({ type }))
+    );
+  }
+
   if (options.excludeTags && options.excludeTags.length > 0) {
     builder.addNested('scrapeOptions.excludeTags', options.excludeTags);
   }

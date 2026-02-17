@@ -6,6 +6,9 @@ export interface BatchOptions {
   timeout?: number;
   // scrape options
   format?: string;
+  jsonPrompt?: string;
+  jsonSchema?: string;
+  jsonSchemaFile?: string;
   onlyMainContent?: boolean;
   waitFor?: number;
   screenshot?: boolean;

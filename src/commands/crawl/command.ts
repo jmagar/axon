@@ -20,6 +20,7 @@ import {
 import { displayCommandInfo } from '../../utils/display';
 import { isJobId, normalizeJobId } from '../../utils/job';
 import { recordJob } from '../../utils/job-history';
+import { parseFormats } from '../../utils/options';
 import { getSettings } from '../../utils/settings';
 import {
   buildFiltersEcho,
@@ -65,7 +66,7 @@ function isStatusOnlyResult(data: unknown): boolean {
  */
 async function handleSubcommandResult<T>(
   result: { success: boolean; error?: string; data?: T },
-  options: { output?: string; pretty?: boolean },
+  options: { output?: string; pretty?: boolean; json?: boolean },
   formatOutput: (data: T) => string
 ): Promise<void> {
   if (!result.success) {
@@ -78,9 +79,10 @@ async function handleSubcommandResult<T>(
     return;
   }
 
-  const outputContent = options.output
-    ? formatJson({ success: true, data: result.data }, options.pretty)
-    : formatOutput(result.data);
+  const outputContent =
+    options.output || options.json
+      ? formatJson({ success: true, data: result.data }, options.pretty)
+      : formatOutput(result.data);
   try {
     await writeCommandOutput(outputContent, options);
   } catch (error) {
@@ -429,6 +431,7 @@ export async function handleCrawlCommand(
     allowSubdomains: options.allowSubdomains,
     ignoreQueryParameters: options.ignoreQueryParameters,
     onlyMainContent: options.onlyMainContent,
+    formats: options.formats,
     excludeTags: options.excludeTags,
     excludePaths: options.excludePaths,
     wait: options.wait,
@@ -465,7 +468,7 @@ export async function handleCrawlCommand(
         options.autoSitemapRetry !== false ? baseline : undefined
       );
       const outputContent =
-        options.pretty || !options.output
+        !options.output && !options.json && options.pretty
           ? `${formatCrawlStatus(statusResult.data, {
               filters: [['jobId', statusResult.data.id]],
             })}${formatDiscoveryGuardrail(
@@ -540,7 +543,7 @@ export async function handleCrawlCommand(
       url: crawlResult.data.url,
       status: crawlResult.data.status,
     };
-    if (options.output) {
+    if (options.output || options.json) {
       outputContent = formatJson(
         { success: true, data: jobData },
         options.pretty
@@ -789,6 +792,12 @@ export function createCrawlCommand(): Command {
     )
     .option('--no-only-main-content', 'Include full page content')
     .option(
+      '--format <formats>',
+      'Comma-separated scrape format(s) for crawled pages: markdown, html, rawHtml, links, images, screenshot, summary, changeTracking, json, attributes, branding',
+      (settings.scrape?.formats ?? ['markdown']).join(',')
+    )
+    .option('--json', 'Output as compact JSON', false)
+    .option(
       '--exclude-tags <tags>',
       'Comma-separated list of tags to exclude from scraped content',
       settings.crawl.excludeTags.join(',')
@@ -849,6 +858,23 @@ export function createCrawlCommand(): Command {
         return;
       }
 
+      let formats: CrawlOptions['formats'];
+      let jsonFromFormat = false;
+      try {
+        const parsedFormats = parseFormats(options.format);
+        jsonFromFormat = parsedFormats.includes('json');
+        const scrapeFormats = parsedFormats.filter(
+          (format) => format !== 'json'
+        );
+        formats = scrapeFormats.length > 0 ? scrapeFormats : undefined;
+      } catch (error) {
+        console.error(
+          fmt.error(error instanceof Error ? error.message : String(error))
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       const crawlOptions = {
         urlOrJobId:
           options.embed && isJobId(urlOrJobId)
@@ -861,6 +887,7 @@ export function createCrawlCommand(): Command {
         progress: options.progress,
         output: options.output,
         pretty: options.pretty,
+        json: options.json || jsonFromFormat,
         apiKey: options.apiKey,
         limit: options.limit,
         maxDepth: options.maxDepth,
@@ -883,6 +910,7 @@ export function createCrawlCommand(): Command {
         hardSync: options.hardSync,
         noDefaultExcludes: options.defaultExcludes === false,
         onlyMainContent: options.onlyMainContent,
+        formats,
         excludeTags: options.excludeTags
           ? options.excludeTags.split(',').map((t: string) => t.trim())
           : undefined,
