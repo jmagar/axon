@@ -64,6 +64,7 @@ services:
     image: ghcr.io/firecrawl/firecrawl:latest
     container_name: firecrawl
     environment:
+      HOST: ${FIRECRAWL_HOST:-0.0.0.0}
       PORT: ${FIRECRAWL_PORT:-53002}
       REDIS_URL: ${NUQ_REDIS_URL:-redis://axon-redis:53379}
       REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-redis://axon-redis:53379}

@@ -24,22 +24,29 @@ sleep 10
 # Check service health
 echo "🔍 Checking service health..."
 
-services=(
-    "http://localhost:53002/health:Firecrawl API"
-    "http://localhost:53333:Qdrant"
-    "http://localhost:53021/health:TEI Embeddings"
-)
-
 all_healthy=true
-for service in "${services[@]}"; do
-    IFS=':' read -r url name <<< "$service"
-    if curl -sf "$url" > /dev/null 2>&1; then
-        echo "  ✅ $name"
-    else
-        echo "  ❌ $name (not responding)"
-        all_healthy=false
-    fi
-done
+
+# Firecrawl doesn't reliably expose a /health endpoint in this image.
+if timeout 5 bash -c "</dev/tcp/localhost/53002" 2>/dev/null; then
+    echo "  ✅ Firecrawl API (TCP)"
+else
+    echo "  ❌ Firecrawl API (TCP not responding)"
+    all_healthy=false
+fi
+
+if curl -sf "http://localhost:53333/" > /dev/null 2>&1; then
+    echo "  ✅ Qdrant"
+else
+    echo "  ❌ Qdrant (not responding)"
+    all_healthy=false
+fi
+
+if curl -sf "http://localhost:53021/health" > /dev/null 2>&1; then
+    echo "  ✅ TEI Embeddings"
+else
+    echo "  ❌ TEI Embeddings (not responding)"
+    all_healthy=false
+fi
 
 if [ "$all_healthy" = true ]; then
     echo ""

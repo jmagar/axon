@@ -19,6 +19,7 @@ cat > .env << 'EOF'
 # Firecrawl Configuration
 FIRECRAWL_API_KEY=local-dev
 FIRECRAWL_API_URL=http://localhost:53002
+HOST=0.0.0.0
 
 # TEI Configuration (CPU-based for Codespaces)
 TEI_URL=http://localhost:53021
