@@ -1,0 +1,38 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+container/.env
+container/.env.*
+!container/.env.example
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Runtime output and caches
+.cache/
+.firecrawl/
+output/
+logs/
+tmp/
+*.log
+*.pid
+
+# Coverage / reports
+coverage/
+*.profraw
+*.profdata
+
+# IDE/editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local container/dev overrides
+container/*.local.yml
+container/*.local.yaml

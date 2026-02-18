@@ -1,0 +1,2 @@
+#!/command/with-contenv sh
+exec s6-log n20 s1000000 T /var/log/axon/crawl-worker
