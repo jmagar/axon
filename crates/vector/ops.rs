@@ -274,7 +274,11 @@ fn chunk_text(text: &str) -> Vec<String> {
     while i < char_count {
         let end = (i + MAX).min(char_count);
         let byte_start = offsets[i];
-        let byte_end = if end < char_count { offsets[end] } else { text.len() };
+        let byte_end = if end < char_count {
+            offsets[end]
+        } else {
+            text.len()
+        };
         out.push(text[byte_start..byte_end].to_string());
         if end == char_count {
             break;
@@ -410,7 +414,11 @@ pub async fn run_query_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         let payload = h.get("payload").cloned().unwrap_or_default();
         let url = payload_url(&payload);
         let text = payload_text(&payload).replace('\n', " ");
-        let end = text.char_indices().nth(140).map(|(i, _)| i).unwrap_or(text.len());
+        let end = text
+            .char_indices()
+            .nth(140)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len());
         let snippet = &text[..end];
         if cfg.json_output {
             println!(
@@ -578,78 +586,6 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_chunk_text_short_returns_single() {
-        let text = "hello world";
-        let chunks = chunk_text(text);
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], text);
-    }
-
-    #[test]
-    fn test_chunk_text_exactly_2000_chars() {
-        let text = "a".repeat(2000);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 1);
-    }
-
-    #[test]
-    fn test_chunk_text_2001_chars_gives_two() {
-        let text = "a".repeat(2001);
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 2);
-        // Second chunk should have 201 chars (1 new + 200 overlap)
-        assert_eq!(chunks[1].len(), 201);
-    }
-
-    #[test]
-    fn test_chunk_text_multibyte_utf8_no_panic() {
-        // CJK characters --- 3 bytes each
-        let text = "\u{4e2d}".repeat(2500);
-        let chunks = chunk_text(&text);
-        // Must not panic; each chunk must be valid UTF-8
-        for chunk in &chunks {
-            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
-        }
-    }
-
-    #[test]
-    fn test_chunk_text_empty_string() {
-        let chunks = chunk_text("");
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], "");
-    }
-
-    #[test]
-    fn test_chunk_text_overlap_content() {
-        // Create text that's 2200 chars: chunks should overlap by 200
-        let text: String = (0..2200).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
-        let chunks = chunk_text(&text);
-        assert_eq!(chunks.len(), 2);
-        // The last 200 chars of chunk[0] should equal the first 200 chars of chunk[1]
-        let overlap_from_first = &chunks[0][chunks[0].len() - 200..];
-        let overlap_from_second = &chunks[1][..200];
-        assert_eq!(overlap_from_first, overlap_from_second);
-    }
-
-    #[test]
-    fn test_chunk_text_large_document() {
-        let text = "x".repeat(10_000);
-        let chunks = chunk_text(&text);
-        // With 2000 char chunks and 200 overlap, step is 1800
-        // ceil((10000 - 2000) / 1800) + 1 = ceil(8000/1800) + 1 = 5 + 1 = 6
-        assert!(chunks.len() >= 5);
-        // All chunks except possibly the last should be exactly 2000 chars
-        for chunk in &chunks[..chunks.len() - 1] {
-            assert_eq!(chunk.len(), 2000);
-        }
-    }
-}
-
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     const MAX_CONTEXT_CHARS: usize = 12_000;
 
@@ -729,4 +665,78 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!("  {} {}", primary("Assistant:"), answer);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunk_text_short_returns_single() {
+        let text = "hello world";
+        let chunks = chunk_text(text);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn test_chunk_text_exactly_2000_chars() {
+        let text = "a".repeat(2000);
+        let chunks = chunk_text(&text);
+        assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn test_chunk_text_2001_chars_gives_two() {
+        let text = "a".repeat(2001);
+        let chunks = chunk_text(&text);
+        assert_eq!(chunks.len(), 2);
+        // Second chunk should have 201 chars (1 new + 200 overlap)
+        assert_eq!(chunks[1].len(), 201);
+    }
+
+    #[test]
+    fn test_chunk_text_multibyte_utf8_no_panic() {
+        // CJK characters --- 3 bytes each
+        let text = "\u{4e2d}".repeat(2500);
+        let chunks = chunk_text(&text);
+        // Must not panic; each chunk must be valid UTF-8
+        for chunk in &chunks {
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_chunk_text_empty_string() {
+        let chunks = chunk_text("");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
+    }
+
+    #[test]
+    fn test_chunk_text_overlap_content() {
+        // Create text that's 2200 chars: chunks should overlap by 200
+        let text: String = (0..2200)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
+        let chunks = chunk_text(&text);
+        assert_eq!(chunks.len(), 2);
+        // The last 200 chars of chunk[0] should equal the first 200 chars of chunk[1]
+        let overlap_from_first = &chunks[0][chunks[0].len() - 200..];
+        let overlap_from_second = &chunks[1][..200];
+        assert_eq!(overlap_from_first, overlap_from_second);
+    }
+
+    #[test]
+    fn test_chunk_text_large_document() {
+        let text = "x".repeat(10_000);
+        let chunks = chunk_text(&text);
+        // With 2000 char chunks and 200 overlap, step is 1800
+        // ceil((10000 - 2000) / 1800) + 1 = ceil(8000/1800) + 1 = 5 + 1 = 6
+        assert!(chunks.len() >= 5);
+        // All chunks except possibly the last should be exactly 2000 chars
+        for chunk in &chunks[..chunks.len() - 1] {
+            assert_eq!(chunk.len(), 2000);
+        }
+    }
 }

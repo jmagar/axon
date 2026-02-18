@@ -48,8 +48,12 @@ pub async fn open_amqp_channel(cfg: &Config, queue_name: &str) -> Result<Channel
     })?
     .context("amqp connect failed")?;
     let ch = conn.create_channel().await?;
-    ch.queue_declare(queue_name, QueueDeclareOptions::default(), FieldTable::default())
-        .await?;
+    ch.queue_declare(
+        queue_name,
+        QueueDeclareOptions::default(),
+        FieldTable::default(),
+    )
+    .await?;
     Ok(ch)
 }
 

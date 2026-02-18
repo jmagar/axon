@@ -61,8 +61,9 @@ pub fn validate_url(url: &str) -> Result<(), Box<dyn Error>> {
                 let [a, b, ..] = v4.octets();
                 let octets = v4.octets();
                 let is_link_local = octets[0] == 169 && octets[1] == 254;
-                let is_private =
-                    octets[0] == 10 || (a == 172 && (16..=31).contains(&b)) || octets[0..2] == [192, 168];
+                let is_private = octets[0] == 10
+                    || (a == 172 && (16..=31).contains(&b))
+                    || octets[0..2] == [192, 168];
                 if is_link_local {
                     return Err(format!(
                         "blocked IP '{v4}': link-local address (169.254.x.x) not allowed"
@@ -70,10 +71,9 @@ pub fn validate_url(url: &str) -> Result<(), Box<dyn Error>> {
                     .into());
                 }
                 if is_private {
-                    return Err(format!(
-                        "blocked IP '{v4}': private/RFC-1918 address not allowed"
-                    )
-                    .into());
+                    return Err(
+                        format!("blocked IP '{v4}': private/RFC-1918 address not allowed").into(),
+                    );
                 }
             }
             IpAddr::V6(v6) => {
