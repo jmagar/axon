@@ -1,0 +1,16 @@
+# Standalone axon_cli extraction: keep build context small.
+.git
+.github
+.cache
+.serena
+target
+docs
+storage
+**/.DS_Store
+**/*.log
+**/*.tmp
+
+# Secrets — never bake into the image; inject at runtime via env vars or Docker secrets.
+.env
+.env.*
+!.env.example

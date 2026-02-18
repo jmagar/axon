@@ -1,0 +1,109 @@
+name: cortex
+
+x-common-service: &common-service
+  env_file:
+    - .env
+  networks:
+    - cortex
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+      compress: "true"
+
+services:
+  axon-postgres:
+    <<: *common-service
+    image: postgres:17-alpine
+    container_name: axon-postgres
+    ports:
+      - "53432:5432"
+    volumes:
+      - /home/jmagar/appdata/axon-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  axon-redis:
+    <<: *common-service
+    image: redis:alpine
+    container_name: axon-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "53379:6379"
+    volumes:
+      - /home/jmagar/appdata/axon-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  axon-rabbitmq:
+    <<: *common-service
+    image: rabbitmq:management
+    container_name: axon-rabbitmq
+    ports:
+      - "45535:5672"
+    volumes:
+      - /home/jmagar/appdata/axon-rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  axon-qdrant:
+    <<: *common-service
+    image: qdrant/qdrant:latest
+    container_name: axon-qdrant
+    ports:
+      - "53333:6333"
+      - "53334:6334"
+    volumes:
+      - /home/jmagar/appdata/axon-qdrant:/qdrant/storage
+
+  axon-workers:
+    <<: *common-service
+    container_name: axon-workers
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      axon-postgres:
+        condition: service_healthy
+      axon-redis:
+        condition: service_healthy
+      axon-rabbitmq:
+        condition: service_healthy
+      axon-qdrant:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck-workers.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - /home/jmagar/appdata/axon-worker-output:/app/.cache/axon-rust/output
+
+networks:
+  cortex:
+    driver: bridge
