@@ -310,7 +310,18 @@ pub async fn run_crawl_once(
                 "Clearing output directory before crawl: {}",
                 output_dir.display()
             ));
-            tokio::fs::remove_dir_all(output_dir).await?;
+            // Output dir may be a bind mount root in containers; removing the
+            // mountpoint itself can fail with EBUSY. Clear contents instead.
+            let mut entries = tokio::fs::read_dir(output_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                let ft = entry.file_type().await?;
+                if ft.is_dir() {
+                    tokio::fs::remove_dir_all(&path).await?;
+                } else {
+                    tokio::fs::remove_file(&path).await?;
+                }
+            }
         }
     }
     tokio::fs::create_dir_all(output_dir.join("markdown")).await?;

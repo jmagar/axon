@@ -30,16 +30,16 @@ RUN set -eux; \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz"; \
     curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz.sha256 \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz.sha256"; \
-    curl -fsSL -o /tmp/s6-overlay-arch.tar.xz \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz" \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz"; \
-    curl -fsSL -o /tmp/s6-overlay-arch.tar.xz.sha256 \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256" \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz.sha256"; \
     cd /tmp && sha256sum -c s6-overlay-noarch.tar.xz.sha256; \
-    cd /tmp && sha256sum -c s6-overlay-arch.tar.xz.sha256; \
+    cd /tmp && sha256sum -c "s6-overlay-${s6_arch}.tar.xz.sha256"; \
     tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
-    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz; \
-    rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz \
-          /tmp/s6-overlay-noarch.tar.xz.sha256 /tmp/s6-overlay-arch.tar.xz.sha256
+    tar -C / -Jxpf "/tmp/s6-overlay-${s6_arch}.tar.xz"; \
+    rm -f /tmp/s6-overlay-noarch.tar.xz "/tmp/s6-overlay-${s6_arch}.tar.xz" \
+          /tmp/s6-overlay-noarch.tar.xz.sha256 "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256"
 
 WORKDIR /app
 
