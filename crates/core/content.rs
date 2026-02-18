@@ -3,7 +3,6 @@ use spider_transformations::transformation::content::{
     transform_content_input, ReturnFormat, TransformConfig, TransformInput,
 };
 
-
 pub fn build_transform_config() -> TransformConfig {
     TransformConfig {
         return_format: ReturnFormat::Markdown,

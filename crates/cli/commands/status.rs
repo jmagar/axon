@@ -8,10 +8,26 @@ use std::error::Error;
 
 pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let (crawl_jobs, batch_jobs, extract_jobs, embed_jobs) = spider::tokio::try_join!(
-        async { list_jobs(cfg, 20).await.map_err(|e| format!("crawl status lookup failed: {e}")) },
-        async { list_batch_jobs(cfg, 20).await.map_err(|e| format!("batch status lookup failed: {e}")) },
-        async { list_extract_jobs(cfg, 20).await.map_err(|e| format!("extract status lookup failed: {e}")) },
-        async { list_embed_jobs(cfg, 20).await.map_err(|e| format!("embed status lookup failed: {e}")) },
+        async {
+            list_jobs(cfg, 20)
+                .await
+                .map_err(|e| format!("crawl status lookup failed: {e}"))
+        },
+        async {
+            list_batch_jobs(cfg, 20)
+                .await
+                .map_err(|e| format!("batch status lookup failed: {e}"))
+        },
+        async {
+            list_extract_jobs(cfg, 20)
+                .await
+                .map_err(|e| format!("extract status lookup failed: {e}"))
+        },
+        async {
+            list_embed_jobs(cfg, 20)
+                .await
+                .map_err(|e| format!("embed status lookup failed: {e}"))
+        },
     )?;
 
     if cfg.json_output {
@@ -55,10 +71,7 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                             .get("md_created")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        let thin_md = metrics
-                            .get("thin_md")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
+                        let thin_md = metrics.get("thin_md").and_then(|v| v.as_u64()).unwrap_or(0);
                         let filtered_urls = metrics
                             .get("filtered_urls")
                             .and_then(|v| v.as_u64())

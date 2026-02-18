@@ -31,16 +31,16 @@ pub async fn run_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Erro
                             println!(
                                 "{}",
                                 serde_json::to_string_pretty(&serde_json::json!({
-                                    "id": job.id,
-                                    "url": job.url,
-                                    "status": job.status,
-                                    "created_at": job.created_at,
-                                "updated_at": job.updated_at,
-                                "started_at": job.started_at,
-                                "finished_at": job.finished_at,
-                                "error": job.error_text,
-                                "metrics": job.result_json,
-                            }))?
+                                        "id": job.id,
+                                        "url": job.url,
+                                        "status": job.status,
+                                        "created_at": job.created_at,
+                                    "updated_at": job.updated_at,
+                                    "started_at": job.started_at,
+                                    "finished_at": job.finished_at,
+                                    "error": job.error_text,
+                                    "metrics": job.result_json,
+                                }))?
                             );
                         } else {
                             print_kv("Crawl Status for", &job.id.to_string());
@@ -60,10 +60,8 @@ pub async fn run_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Erro
                                     .get("md_created")
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
-                                let thin_md = metrics
-                                    .get("thin_md")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0);
+                                let thin_md =
+                                    metrics.get("thin_md").and_then(|v| v.as_u64()).unwrap_or(0);
                                 let filtered_urls = metrics
                                     .get("filtered_urls")
                                     .and_then(|v| v.as_u64())

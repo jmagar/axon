@@ -208,10 +208,7 @@ pub async fn crawl_sitemap_urls(
     let start_host = host.clone();
     let start_path = parsed.path().trim_end_matches('/').to_string();
     let scoped_to_root = start_path.is_empty();
-    let worker_limit = cfg
-        .sitemap_concurrency_limit
-        .unwrap_or(64)
-        .clamp(1, 1024);
+    let worker_limit = cfg.sitemap_concurrency_limit.unwrap_or(64).clamp(1, 1024);
     let max_sitemaps = cfg.max_sitemaps.max(1);
     let mut parsed_sitemaps = 0usize;
 
@@ -279,7 +276,7 @@ pub async fn crawl_sitemap_urls(
                     out.insert(loc);
                 }
             }
-            if parsed_sitemaps % 64 == 0 {
+            if parsed_sitemaps.is_multiple_of(64) {
                 log_info(&format!(
                     "command=sitemap parsed={} discovered_urls={} queue={}",
                     parsed_sitemaps,
@@ -371,11 +368,16 @@ pub async fn run_crawl_once(
             summary.markdown_files += 1;
             let filename = url_to_filename(&url, summary.markdown_files);
             let path = markdown_dir.join(filename);
-            tokio::fs::write(&path, trimmed).await.map_err(|e| format!("write failed: {e}"))?;
+            tokio::fs::write(&path, trimmed)
+                .await
+                .map_err(|e| format!("write failed: {e}"))?;
             let rec = serde_json::json!({"url": url, "file_path": path.to_string_lossy(), "markdown_chars": chars});
             let mut line = rec.to_string();
             line.push('\n');
-            manifest.write_all(line.as_bytes()).await.map_err(|e| format!("manifest failed: {e}"))?;
+            manifest
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| format!("manifest failed: {e}"))?;
         }
 
         manifest

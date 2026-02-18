@@ -41,7 +41,7 @@ services:
 
   axon-redis:
     <<: *common-service
-    image: redis:7.4-alpine
+    image: redis:8.2-alpine
     container_name: axon-redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     ports:
@@ -83,7 +83,11 @@ services:
     volumes:
       - /home/jmagar/appdata/axon-qdrant:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test:
+        [
+          "CMD-SHELL",
+          "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/6333'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5

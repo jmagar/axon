@@ -299,7 +299,10 @@ pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 .ok()
                 .and_then(|s| Uuid::parse_str(s.trim()).ok());
             if let Some(job_id) = parsed {
-                if claim_pending_by_id(&pool, TABLE, job_id).await.unwrap_or(false) {
+                if claim_pending_by_id(&pool, TABLE, job_id)
+                    .await
+                    .unwrap_or(false)
+                {
                     if let Err(err) = process_extract_job(cfg, &pool, job_id).await {
                         let error_text = err.to_string();
                         mark_job_failed(&pool, TABLE, job_id, &error_text).await;

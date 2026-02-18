@@ -267,7 +267,12 @@ struct GlobalArgs {
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     embed: bool,
 
-    #[arg(global = true, long, env = "AXON_COLLECTION", default_value = "spider_rust")]
+    #[arg(
+        global = true,
+        long,
+        env = "AXON_COLLECTION",
+        default_value = "spider_rust"
+    )]
     collection: String,
 
     #[arg(global = true, long, default_value_t = 16)]
@@ -717,7 +722,9 @@ fn print_top_level_help() {
     );
     println!(
         "  {}",
-        dim(&format!("{bin_name} crawl https://docs.rs/spider --wait false"))
+        dim(&format!(
+            "{bin_name} crawl https://docs.rs/spider --wait false"
+        ))
     );
     println!(
         "  {}",
