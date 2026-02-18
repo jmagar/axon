@@ -4,6 +4,7 @@ use crate::axon_cli::crates::jobs::batch_jobs::list_batch_jobs;
 use crate::axon_cli::crates::jobs::crawl_jobs::list_jobs;
 use crate::axon_cli::crates::jobs::embed_jobs::list_embed_jobs;
 use crate::axon_cli::crates::jobs::extract_jobs::list_extract_jobs;
+use console::style;
 use std::error::Error;
 
 pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
@@ -86,10 +87,14 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                             .unwrap_or(0);
                         metrics_suffix = format!(
                             " {}",
-                            muted(&format!(
-                                "m{} t{} f{} c{} d{}",
-                                md_created, thin_md, filtered_urls, pages_crawled, pages_discovered
-                            ))
+                            [
+                                style(format!("m{md_created}")).green().to_string(),
+                                style(format!("t{thin_md}")).yellow().to_string(),
+                                style(format!("f{filtered_urls}")).yellow().to_string(),
+                                style(format!("c{pages_crawled}")).cyan().to_string(),
+                                style(format!("d{pages_discovered}")).blue().to_string(),
+                            ]
+                            .join(" ")
                         );
                     }
                 }

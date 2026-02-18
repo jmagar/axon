@@ -11,21 +11,4 @@ if [[ -f "$CLI_ENV" ]]; then
   set +a
 fi
 
-BIN=""
-for candidate in \
-  "$REPO/target/debug/cortex" \
-  "$REPO/target/release/cortex" \
-  "/home/jmagar/workspace/spider/target/debug/examples/axon_cli_rust"
-do
-  if [[ -x "$candidate" ]]; then
-    BIN="$candidate"
-    break
-  fi
-done
-
-if [[ -z "$BIN" ]]; then
-  cargo build -q --manifest-path "$REPO/Cargo.toml" --bin cortex
-  BIN="$REPO/target/debug/cortex"
-fi
-
-exec "$BIN" "$@"
+exec cargo run -q --manifest-path "$REPO/Cargo.toml" --bin cortex -- "$@"

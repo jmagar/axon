@@ -222,7 +222,7 @@ struct GlobalArgs {
     #[arg(global = true, long, default_value = "https://example.com")]
     start_url: String,
 
-    #[arg(global = true, long, default_value_t = 200)]
+    #[arg(global = true, long, default_value_t = 0)]
     max_pages: u32,
 
     #[arg(global = true, long, default_value_t = 5)]
