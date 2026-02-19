@@ -110,37 +110,34 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                             .get("filtered_urls")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        let pages_crawled = metrics
-                            .get("pages_crawled")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
                         let pages_discovered = metrics
                             .get("pages_discovered")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        let skipped = thin_md + filtered_urls;
-                        let thin_pct = if pages_crawled > 0 {
-                            (thin_md as f64 / pages_crawled as f64) * 100.0
+                        let pages_target = pages_discovered.saturating_sub(filtered_urls);
+                        let thin_pct = if pages_discovered > 0 {
+                            (thin_md as f64 / pages_discovered as f64) * 100.0
                         } else {
                             0.0
                         };
                         metrics_suffix = format!(
-                            " | {pages_crawled}/{pages_discovered} 🕷️ | {md_created} 📄 | {skipped} ⏭️ | thin {thin_md}/{pages_crawled} ({thin_pct:.1}%)"
+                            " | {md_created}/{pages_target} 📄 | filtered {filtered_urls} ⏭️ | thin {thin_md}/{pages_discovered} ({thin_pct:.1}%)"
                         );
                     } else if matches!(
                         job.status.as_str(),
                         "pending" | "running" | "processing" | "scraping"
                     ) {
-                        let pages_crawled = metrics
-                            .get("pages_crawled")
+                        let md_created = metrics
+                            .get("md_created")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        let pages_discovered = metrics
-                            .get("pages_discovered")
+                        let filtered_urls = metrics
+                            .get("filtered_urls")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
-                        if pages_crawled > 0 || pages_discovered > 0 {
-                            metrics_suffix = format!(" | {pages_crawled}/{pages_discovered} 🕷️");
+                        if md_created > 0 || filtered_urls > 0 {
+                            metrics_suffix =
+                                format!(" | kept {md_created} 📄 | filtered {filtered_urls} ⏭️");
                         }
                     }
                 }
@@ -232,8 +229,6 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                     .and_then(|v| v.as_u64())
                 {
                     metrics.push(styled_metric(format!("d{docs}"), "blue"));
-                } else {
-                    metrics.push(styled_metric("d1".to_string(), "blue"));
                 }
                 if let Some(chunks) = job
                     .result_json

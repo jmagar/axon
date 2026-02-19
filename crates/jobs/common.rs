@@ -61,6 +61,14 @@ pub async fn make_pool(cfg: &Config) -> Result<PgPool> {
 
 /// Open an AMQP channel with a 5-second connection timeout and declare the given queue.
 pub async fn open_amqp_channel(cfg: &Config, queue_name: &str) -> Result<Channel> {
+    let (_, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
+    Ok(ch)
+}
+
+async fn open_amqp_connection_and_channel(
+    cfg: &Config,
+    queue_name: &str,
+) -> Result<(Connection, Channel)> {
     let props = ConnectionProperties::default()
         .with_executor(TokioExecutor::current())
         .with_reactor(TokioReactor);
@@ -85,7 +93,7 @@ pub async fn open_amqp_channel(cfg: &Config, queue_name: &str) -> Result<Channel
     .await
     .map_err(|_| anyhow::anyhow!("amqp channel/queue declare timeout for queue={queue_name}"))?
     .context("amqp create channel/declare queue failed")?;
-    Ok(ch)
+    Ok((conn, ch))
 }
 
 /// Atomically claim the next pending job from the given table.
@@ -137,31 +145,7 @@ pub async fn enqueue_job(cfg: &Config, queue_name: &str, job_id: Uuid) -> Result
     use lapin::options::BasicPublishOptions;
     use lapin::BasicProperties;
 
-    let props = ConnectionProperties::default()
-        .with_executor(TokioExecutor::current())
-        .with_reactor(TokioReactor);
-    let conn = tokio::time::timeout(
-        Duration::from_secs(5),
-        Connection::connect(&cfg.amqp_url, props),
-    )
-    .await
-    .map_err(|_| {
-        anyhow::anyhow!(
-            "amqp connect timeout: {} (if running in Docker without published ports, run from same Docker network or expose rabbitmq)",
-            redact_url(&cfg.amqp_url)
-        )
-    })?
-    .context("amqp connect failed")?;
-
-    let ch = tokio::time::timeout(Duration::from_secs(5), async {
-        let ch = conn.create_channel().await?;
-        ch.queue_declare(queue_name, durable_queue_options(), FieldTable::default())
-            .await?;
-        Ok::<Channel, lapin::Error>(ch)
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("amqp channel/queue declare timeout for queue={queue_name}"))?
-    .context("amqp create channel/declare queue failed")?;
+    let (conn, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
 
     let payload = job_id.to_string();
     ch.basic_publish(

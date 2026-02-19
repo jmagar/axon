@@ -4,7 +4,7 @@ use std::net::IpAddr;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-pub static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> =
+pub(crate) static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> =
     LazyLock::new(|| build_client(30).map_err(|e| e.to_string()));
 
 pub fn http_client() -> Result<&'static reqwest::Client, Box<dyn Error>> {

@@ -271,12 +271,7 @@ struct GlobalArgs {
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     embed: bool,
 
-    #[arg(
-        global = true,
-        long,
-        env = "AXON_COLLECTION",
-        default_value = "cortex"
-    )]
+    #[arg(global = true, long, env = "AXON_COLLECTION", default_value = "cortex")]
     collection: String,
 
     #[arg(global = true, long, default_value_t = 16)]
@@ -413,6 +408,18 @@ fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExcludePrefixes {
     let disable_by_empty = input.len() == 1 && matches!(input[0].trim(), "" | "/");
     let disable_by_none = input.iter().any(|v| v.trim().eq_ignore_ascii_case("none"));
     if disable_by_none {
+        let ignored: Vec<&str> = input
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.eq_ignore_ascii_case("none"))
+            .filter(|value| !value.is_empty() && *value != "/")
+            .collect();
+        if !ignored.is_empty() {
+            eprintln!(
+                "warning: --exclude-path-prefix 'none' disables exclusions; ignoring additional prefixes: {}",
+                ignored.join(", ")
+            );
+        }
         return NormalizedExcludePrefixes {
             prefixes: Vec::new(),
             disable_defaults: true,
@@ -879,4 +886,23 @@ fn print_top_level_help() {
             "→ Run {bin_name} <command> --help for command-specific flags"
         ))
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_exclude_prefixes;
+
+    #[test]
+    fn normalize_exclude_prefixes_none_disables_defaults() {
+        let normalized = normalize_exclude_prefixes(vec!["none".to_string()]);
+        assert!(normalized.disable_defaults);
+        assert!(normalized.prefixes.is_empty());
+    }
+
+    #[test]
+    fn normalize_exclude_prefixes_none_with_values_still_disables() {
+        let normalized = normalize_exclude_prefixes(vec!["none".to_string(), "/fr".to_string()]);
+        assert!(normalized.disable_defaults);
+        assert!(normalized.prefixes.is_empty());
+    }
 }

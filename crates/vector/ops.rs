@@ -1,8 +1,9 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::content::to_markdown;
-use crate::axon_cli::crates::core::http::{build_client, fetch_html, http_client};
+use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::ui::{accent, muted, primary, status_text, symbol_for_status};
 use chrono::Utc;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::StatusCode;
 use spider::url::Url;
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,6 +17,15 @@ fn qdrant_base(cfg: &Config) -> String {
     cfg.qdrant_url.trim_end_matches('/').to_string()
 }
 
+fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
+    env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v >= min)
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
 async fn tei_embed(cfg: &Config, inputs: &[String]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
     if inputs.is_empty() {
         return Ok(Vec::new());
@@ -24,11 +34,7 @@ async fn tei_embed(cfg: &Config, inputs: &[String]) -> Result<Vec<Vec<f32>>, Box
     let mut vectors = Vec::new();
 
     // Respect TEI max client batch size when provided, but cap default to avoid huge request bodies.
-    let configured = env::var("TEI_MAX_CLIENT_BATCH_SIZE")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|v| *v > 0)
-        .unwrap_or(64);
+    let configured = env_usize_clamped("TEI_MAX_CLIENT_BATCH_SIZE", 64, 1, 4096);
     let batch_size = configured.min(128);
 
     let mut stack: Vec<&[String]> = inputs.chunks(batch_size).collect();
@@ -70,12 +76,13 @@ async fn qdrant_upsert(cfg: &Config, points: &[serde_json::Value]) -> Result<(),
         return Ok(());
     }
     let client = http_client()?;
+    let upsert_batch_size = env_usize_clamped("AXON_QDRANT_UPSERT_BATCH_SIZE", 256, 1, 4096);
     let url = format!(
         "{}/collections/{}/points?wait=true",
         qdrant_base(cfg),
         cfg.collection
     );
-    for batch in points.chunks(256) {
+    for batch in points.chunks(upsert_batch_size) {
         client
             .put(&url)
             .json(&serde_json::json!({"points": batch}))
@@ -310,6 +317,51 @@ pub struct EmbedSummary {
     pub chunks_embedded: usize,
 }
 
+#[derive(Debug)]
+struct PreparedDoc {
+    url: String,
+    domain: String,
+    chunks: Vec<String>,
+}
+
+async fn embed_prepared_doc(
+    cfg: &Config,
+    doc: PreparedDoc,
+) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
+    let vectors = tei_embed(cfg, &doc.chunks).await?;
+    if vectors.is_empty() {
+        return Err(format!("TEI returned no vectors for {}", doc.url).into());
+    }
+    if vectors.len() != doc.chunks.len() {
+        return Err(format!(
+            "TEI vector count mismatch for {}: {} vectors for {} chunks",
+            doc.url,
+            vectors.len(),
+            doc.chunks.len()
+        )
+        .into());
+    }
+    let dim = vectors[0].len();
+    let timestamp = Utc::now().to_rfc3339();
+    let mut points = Vec::with_capacity(vectors.len());
+    for (idx, (chunk, vecv)) in doc.chunks.into_iter().zip(vectors.into_iter()).enumerate() {
+        points.push(serde_json::json!({
+            "id": Uuid::new_v4().to_string(),
+            "vector": vecv,
+            "payload": {
+                "url": doc.url,
+                "domain": doc.domain,
+                "source_command": "embed",
+                "content_type": "markdown",
+                "chunk_index": idx,
+                "chunk_text": chunk,
+                "scraped_at": timestamp,
+            }
+        }));
+    }
+    Ok((dim, points))
+}
+
 pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary, Box<dyn Error>> {
     if cfg.tei_url.is_empty() {
         return Err("TEI_URL not configured".into());
@@ -321,68 +373,105 @@ pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary
     let mut docs = read_inputs(input).await?;
 
     if docs.len() == 1 && !Path::new(input).exists() && input.starts_with("http") {
-        let client = build_client(20)?;
+        let client = http_client()?.clone();
         let html = fetch_html(&client, input).await?;
         docs = vec![(input.to_string(), to_markdown(&html))];
     }
 
-    let mut all_points = Vec::new();
-    let mut docs_embedded = 0usize;
-    let mut collection_ensured = false;
+    let mut prepared = Vec::new();
     for (url, raw) in docs {
-        let chunks = chunk_text(&raw);
-        if chunks.is_empty() {
+        if raw.trim().is_empty() {
             continue;
         }
-        docs_embedded += 1;
-        let vectors = tei_embed(cfg, &chunks).await?;
-        if vectors.is_empty() {
-            return Err("TEI returned no vectors for this document".into());
-        }
-        if !collection_ensured {
-            ensure_collection(cfg, vectors[0].len()).await?;
-            collection_ensured = true;
-        }
-
+        let chunks = chunk_text(&raw);
         let domain = Url::parse(&url)
             .ok()
             .and_then(|u| u.host_str().map(|s| s.to_string()))
             .unwrap_or_else(|| "unknown".to_string());
+        prepared.push(PreparedDoc {
+            url,
+            domain,
+            chunks,
+        });
+    }
+    if prepared.is_empty() {
+        return Ok(EmbedSummary {
+            docs_embedded: 0,
+            chunks_embedded: 0,
+        });
+    }
 
-        for (idx, (chunk, vecv)) in chunks.into_iter().zip(vectors.into_iter()).enumerate() {
-            all_points.push(serde_json::json!({
-                "id": Uuid::new_v4().to_string(),
-                "vector": vecv,
-                "payload": {
-                    "url": url,
-                    "domain": domain,
-                    "source_command": "embed",
-                    "content_type": "markdown",
-                    "chunk_index": idx,
-                    "chunk_text": chunk,
-                    "scraped_at": Utc::now().to_rfc3339(),
-                }
-            }));
+    let docs_embedded = prepared.len();
+    let doc_concurrency = env_usize_clamped(
+        "AXON_EMBED_DOC_CONCURRENCY",
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8)
+            .clamp(2, 16),
+        1,
+        64,
+    );
+    let flush_point_threshold = env_usize_clamped("AXON_QDRANT_POINT_BUFFER", 2048, 128, 16384);
+
+    let mut work = prepared.into_iter();
+    let mut inflight = FuturesUnordered::new();
+    for _ in 0..doc_concurrency {
+        if let Some(doc) = work.next() {
+            inflight.push(embed_prepared_doc(cfg, doc));
         }
     }
 
-    qdrant_upsert(cfg, &all_points).await?;
+    let mut chunks_embedded = 0usize;
+    let mut pending_points: Vec<serde_json::Value> = Vec::new();
+    let mut collection_dim: Option<usize> = None;
+
+    while let Some(result) = inflight.next().await {
+        let (dim, mut points) = result?;
+        match collection_dim {
+            None => {
+                ensure_collection(cfg, dim).await?;
+                collection_dim = Some(dim);
+            }
+            Some(existing) if existing != dim => {
+                return Err(format!(
+                    "TEI embedding dimension mismatch: expected {}, got {}",
+                    existing, dim
+                )
+                .into())
+            }
+            _ => {}
+        }
+        chunks_embedded += points.len();
+        pending_points.append(&mut points);
+        if pending_points.len() >= flush_point_threshold {
+            qdrant_upsert(cfg, &pending_points).await?;
+            pending_points.clear();
+        }
+
+        if let Some(doc) = work.next() {
+            inflight.push(embed_prepared_doc(cfg, doc));
+        }
+    }
+    if !pending_points.is_empty() {
+        qdrant_upsert(cfg, &pending_points).await?;
+    }
+
     if cfg.json_output {
         println!(
             "{}",
-            serde_json::json!({"chunks_embedded": all_points.len(), "collection": cfg.collection})
+            serde_json::json!({"chunks_embedded": chunks_embedded, "collection": cfg.collection})
         );
     } else {
         println!(
             "{} embedded {} chunks into {}",
             symbol_for_status("completed"),
-            all_points.len(),
+            chunks_embedded,
             accent(&cfg.collection)
         );
     }
     Ok(EmbedSummary {
         docs_embedded,
-        chunks_embedded: all_points.len(),
+        chunks_embedded,
     })
 }
 

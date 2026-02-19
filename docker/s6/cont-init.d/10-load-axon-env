@@ -3,7 +3,6 @@
 set -euo pipefail
 
 env_file="${AXON_ENV_FILE:-/app/.env}"
-output_dir="${AXON_OUTPUT_DIR:-/app/.cache/axon-rust/output}"
 
 if [[ ! -f "$env_file" ]]; then
   echo "[cont-init] env file not found at $env_file, using runtime environment only"
@@ -15,11 +14,17 @@ else
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
     line="${line#export }"
+    line="${line%$'\r'}"
     key="${line%%=*}"
     value="${line#*=}"
 
     key="$(echo "$key" | tr -d '[:space:]')"
     [[ -z "$key" ]] && continue
+
+    if [[ "$value" != \"* && "$value" != \'* ]]; then
+      value="${value%%[[:space:]]#*}"
+      value="${value%"${value##*[![:space:]]}"}"
+    fi
 
     if [[ "$value" =~ ^\".*\"$ ]]; then
       value="${value#\"}"
@@ -35,6 +40,7 @@ else
   done < "$env_file"
 fi
 
+output_dir="${AXON_OUTPUT_DIR:-/app/.cache/axon-rust/output}"
 mkdir -p "$output_dir"
 chown -R axon:axon "$output_dir"
 chmod -R u+rwX,g+rwX "$output_dir"
