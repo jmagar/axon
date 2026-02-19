@@ -357,10 +357,17 @@
                     "notes": "All 6 issues pass. common.rs clean, anyhow migration solid, format! SQL safe with const TABLE."
                 }
             ],
-            "peer_reviews": [],
+            "peer_reviews": [
+                {
+                    "reviewer": "Miles Morales",
+                    "verdict": "APPROVED",
+                    "timestamp": "2026-02-18T07:20:00Z",
+                    "notes": "P0-06 shared pool with timeout+redaction clean. P0-09 async BufWriter correct. P1-05 common.rs extraction with FOR UPDATE SKIP LOCKED solid. P2-01 anyhow with .context() good. P2-13 12K char context cap prevents unbounded LLM payloads. P2-20 RenderMode Serialize/Deserialize enables typed job configs."
+                }
+            ],
             "superpowers_skills_used": [],
             "full_completion": true,
-            "status": "partner_reviewed",
+            "status": "peer_reviewed",
             "last_check_in": "2026-02-18T07:15:00Z",
             "blockers": [],
             "questions_pending": [],
@@ -403,10 +410,17 @@
                     "notes": "LazyLock pattern clean, qdrant_scroll_pages closure-based pagination solid, AMQP timeout correctly superseded by common.rs."
                 }
             ],
-            "peer_reviews": [],
+            "peer_reviews": [
+                {
+                    "reviewer": "Miles Morales",
+                    "verdict": "APPROVED",
+                    "timestamp": "2026-02-18T07:20:00Z",
+                    "notes": "P0-07 AMQP 5s timeout with redacted URL error clean. P1-03 LazyLock HTTP_CLIENT fully wired to all 8+ call sites in ops.rs and remote_extract.rs. P1-10 qdrant_scroll_pages callback pattern memory-efficient — pages dropped after processing."
+                }
+            ],
             "superpowers_skills_used": [],
             "full_completion": true,
-            "status": "partner_reviewed",
+            "status": "peer_reviewed",
             "last_check_in": "2026-02-18T06:50:00Z",
             "blockers": [],
             "questions_pending": [],
@@ -506,7 +520,14 @@
                 "P2-17",
                 "P2-18"
             ],
-            "partner_reviews": [],
+            "partner_reviews": [
+                {
+                    "reviewer": "Miles Morales",
+                    "verdict": "APPROVED",
+                    "timestamp": "2026-02-18T07:20:00Z",
+                    "notes": "All 9 issues verified. tokio::fs migration complete, tracing wired up, AXON_NO_WIPE guard defensive, url_to_filename deterministic, docker resource limits and Qdrant healthcheck correct, Dockerfile pins + checksum + HEALTHCHECK all solid."
+                }
+            ],
             "peer_reviews": [],
             "superpowers_skills_used": [],
             "full_completion": true,

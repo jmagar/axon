@@ -1,10 +1,10 @@
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.93-bookworm AS builder
 
 WORKDIR /src
 
 COPY . .
 
-RUN cargo build --release --bin cortex
+RUN cargo build --release --bin axon
 
 FROM debian:12.9-slim
 
@@ -30,29 +30,29 @@ RUN set -eux; \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz"; \
     curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz.sha256 \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz.sha256"; \
-    curl -fsSL -o /tmp/s6-overlay-arch.tar.xz \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz" \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz"; \
-    curl -fsSL -o /tmp/s6-overlay-arch.tar.xz.sha256 \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256" \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz.sha256"; \
     cd /tmp && sha256sum -c s6-overlay-noarch.tar.xz.sha256; \
-    cd /tmp && sha256sum -c s6-overlay-arch.tar.xz.sha256; \
+    cd /tmp && sha256sum -c "s6-overlay-${s6_arch}.tar.xz.sha256"; \
     tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
-    tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz; \
-    rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz \
-          /tmp/s6-overlay-noarch.tar.xz.sha256 /tmp/s6-overlay-arch.tar.xz.sha256
+    tar -C / -Jxpf "/tmp/s6-overlay-${s6_arch}.tar.xz"; \
+    rm -f "/tmp/s6-overlay-noarch.tar.xz" "/tmp/s6-overlay-noarch.tar.xz.sha256" \
+          "/tmp/s6-overlay-${s6_arch}.tar.xz" "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256"
 
 WORKDIR /app
 
-COPY --from=builder /src/target/release/cortex /usr/local/bin/cortex
+COPY --from=builder /src/target/release/axon /usr/local/bin/axon
 
 COPY docker/s6/cont-init.d/ /etc/cont-init.d/
-COPY docker/s6/services.d/ /etc/services.d/
+COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 COPY docker/scripts/healthcheck-workers.sh /usr/local/bin/healthcheck-workers.sh
 
 RUN groupadd -r axon && useradd -r -g axon -u 1001 axon
 
 RUN chmod +x /etc/cont-init.d/* \
-    && find /etc/services.d -type f -name run -exec chmod +x {} + \
+    && find /etc/s6-overlay/s6-rc.d -type f -name run -exec chmod +x {} + \
     && chmod +x /usr/local/bin/healthcheck-workers.sh \
     && mkdir -p \
         /var/log/axon/crawl-worker \
