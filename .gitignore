@@ -17,13 +17,27 @@ target/
 output/
 logs/
 tmp/
+tmp_manifest*.jsonl
 *.log
 *.pid
 
-# Coverage / reports
+# Coverage / test artifacts
 coverage/
 *.profraw
 *.profdata
+
+# Docs (session-specific, regenerated)
+docs/sessions/
+docs/reports/
+docs/plans/
+specs/
+
+# Tool artifacts
+.full-review/
+.serena/
+.1code/
+.emdash.json
+.docs/
 
 # IDE/editor artifacts
 .idea/

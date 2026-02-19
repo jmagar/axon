@@ -13,10 +13,12 @@ pub enum CommandKind {
     Extract,
     Search,
     Embed,
+    Debug,
     Doctor,
     Query,
     Retrieve,
     Ask,
+    Suggest,
     Sources,
     Domains,
     Stats,
@@ -33,10 +35,12 @@ impl CommandKind {
             Self::Extract => "extract",
             Self::Search => "search",
             Self::Embed => "embed",
+            Self::Debug => "debug",
             Self::Doctor => "doctor",
             Self::Query => "query",
             Self::Retrieve => "retrieve",
             Self::Ask => "ask",
+            Self::Suggest => "suggest",
             Self::Sources => "sources",
             Self::Domains => "domains",
             Self::Stats => "stats",
@@ -78,18 +82,33 @@ pub struct Config {
     pub start_url: String,
     pub positional: Vec<String>,
     pub urls_csv: Option<String>,
+    pub url_glob: Vec<String>,
     pub query: Option<String>,
     pub search_limit: usize,
     pub max_pages: u32,
     pub max_depth: usize,
     pub include_subdomains: bool,
+    pub exclude_path_prefix: Vec<String>,
     pub output_dir: PathBuf,
     pub output_path: Option<PathBuf>,
     pub render_mode: RenderMode,
+    pub chrome_remote_url: Option<String>,
+    pub chrome_proxy: Option<String>,
+    pub chrome_user_agent: Option<String>,
+    pub chrome_headless: bool,
+    pub chrome_anti_bot: bool,
+    pub chrome_intercept: bool,
+    pub chrome_stealth: bool,
+    pub chrome_bootstrap: bool,
+    pub chrome_bootstrap_timeout_ms: u64,
+    pub chrome_bootstrap_retries: usize,
+    pub webdriver_url: Option<String>,
     pub respect_robots: bool,
     pub min_markdown_chars: usize,
     pub drop_thin_markdown: bool,
     pub discover_sitemaps: bool,
+    pub cache: bool,
+    pub cache_skip_browser: bool,
     pub format: ScrapeFormat,
     pub collection: String,
     pub embed: bool,
@@ -118,11 +137,16 @@ pub struct Config {
     pub openai_base_url: String,
     pub openai_api_key: String,
     pub openai_model: String,
+    pub ask_diagnostics: bool,
+    pub cron_every_seconds: Option<u64>,
+    pub cron_max_runs: Option<usize>,
+    pub watchdog_stale_timeout_secs: i64,
+    pub watchdog_confirm_secs: i64,
     pub json_output: bool,
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "cortex", about = "Axon CLI (Rust + Spider.rs)")]
+#[command(name = "axon", about = "Axon CLI (Rust + Spider.rs)")]
 struct Cli {
     #[command(subcommand)]
     command: CliCommand,
@@ -140,10 +164,12 @@ enum CliCommand {
     Extract(ExtractArgs),
     Search(TextArg),
     Embed(EmbedArgs),
+    Debug(TextArg),
     Doctor,
     Query(TextArg),
     Retrieve(UrlArg),
-    Ask(TextArg),
+    Ask(AskArgs),
+    Suggest(TextArg),
     Sources,
     Domains,
     Stats,
@@ -158,6 +184,14 @@ struct UrlArg {
 
 #[derive(Debug, Args)]
 struct TextArg {
+    #[arg(value_name = "TEXT")]
+    value: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct AskArgs {
+    #[arg(long, action = ArgAction::SetTrue)]
+    diagnostics: bool,
     #[arg(value_name = "TEXT")]
     value: Vec<String>,
 }
@@ -213,6 +247,7 @@ enum JobSubcommand {
     Cleanup,
     Clear,
     Worker,
+    Recover,
     #[command(hide = true)]
     Doctor,
 }
@@ -222,7 +257,7 @@ struct GlobalArgs {
     #[arg(global = true, long, default_value = "https://example.com")]
     start_url: String,
 
-    #[arg(global = true, long, default_value_t = 200)]
+    #[arg(global = true, long, default_value_t = 0)]
     max_pages: u32,
 
     #[arg(global = true, long, default_value_t = 5)]
@@ -230,6 +265,9 @@ struct GlobalArgs {
 
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     include_subdomains: bool,
+
+    #[arg(global = true, long = "exclude-path-prefix", value_delimiter = ',')]
+    exclude_path_prefix: Vec<String>,
 
     #[arg(global = true, long, default_value = ".cache/axon-rust/output")]
     output_dir: PathBuf,
@@ -239,6 +277,39 @@ struct GlobalArgs {
 
     #[arg(global = true, long, value_enum, default_value_t = RenderMode::AutoSwitch)]
     render_mode: RenderMode,
+
+    #[arg(global = true, long, env = "AXON_CHROME_REMOTE_URL")]
+    chrome_remote_url: Option<String>,
+
+    #[arg(global = true, long, env = "AXON_CHROME_PROXY")]
+    chrome_proxy: Option<String>,
+
+    #[arg(global = true, long, env = "AXON_CHROME_USER_AGENT")]
+    chrome_user_agent: Option<String>,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    chrome_headless: bool,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    chrome_anti_bot: bool,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    chrome_intercept: bool,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    chrome_stealth: bool,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    chrome_bootstrap: bool,
+
+    #[arg(global = true, long, default_value_t = 3000)]
+    chrome_bootstrap_timeout_ms: u64,
+
+    #[arg(global = true, long, default_value_t = 2)]
+    chrome_bootstrap_retries: usize,
+
+    #[arg(global = true, long, env = "AXON_WEBDRIVER_URL")]
+    webdriver_url: Option<String>,
 
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
     respect_robots: bool,
@@ -252,6 +323,12 @@ struct GlobalArgs {
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     discover_sitemaps: bool,
 
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    cache: bool,
+
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
+    cache_skip_browser: bool,
+
     #[arg(global = true, long, value_enum, default_value_t = ScrapeFormat::Markdown)]
     format: ScrapeFormat,
 
@@ -264,10 +341,13 @@ struct GlobalArgs {
     #[arg(global = true, long)]
     urls: Option<String>,
 
+    #[arg(global = true, long = "url-glob", value_delimiter = ',')]
+    url_glob: Vec<String>,
+
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     embed: bool,
 
-    #[arg(global = true, long, env = "AXON_COLLECTION", default_value = "spider_rust")]
+    #[arg(global = true, long, env = "AXON_COLLECTION", default_value = "cortex")]
     collection: String,
 
     #[arg(global = true, long, default_value_t = 16)]
@@ -350,6 +430,28 @@ struct GlobalArgs {
 
     #[arg(global = true, long)]
     openai_model: Option<String>,
+
+    #[arg(
+        global = true,
+        long,
+        env = "AXON_JOB_STALE_TIMEOUT_SECS",
+        default_value_t = 300
+    )]
+    watchdog_stale_timeout_secs: i64,
+
+    #[arg(
+        global = true,
+        long,
+        env = "AXON_JOB_STALE_CONFIRM_SECS",
+        default_value_t = 60
+    )]
+    watchdog_confirm_secs: i64,
+
+    #[arg(global = true, long)]
+    cron_every_seconds: Option<u64>,
+
+    #[arg(global = true, long)]
+    cron_max_runs: Option<usize>,
 }
 
 fn normalize_local_service_url(url: String) -> String {
@@ -384,6 +486,65 @@ fn normalize_local_service_url(url: String) -> String {
     url
 }
 
+fn default_exclude_prefixes() -> Vec<String> {
+    vec![
+        "/fr", "/de", "/es", "/ja", "/zh", "/zh-cn", "/zh-tw", "/ko", "/pt", "/pt-br", "/it",
+        "/nl", "/pl", "/ru", "/tr", "/ar", "/id", "/vi", "/th", "/cs", "/da", "/fi", "/no", "/sv",
+        "/he", "/uk", "/ro", "/hu", "/el",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+struct NormalizedExcludePrefixes {
+    prefixes: Vec<String>,
+    disable_defaults: bool,
+}
+
+fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExcludePrefixes {
+    let disable_by_empty = input.iter().any(|v| matches!(v.trim(), "" | "/"));
+    let disable_by_none = input.iter().any(|v| v.trim().eq_ignore_ascii_case("none"));
+    if disable_by_none {
+        let ignored: Vec<&str> = input
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.eq_ignore_ascii_case("none"))
+            .filter(|value| !value.is_empty() && *value != "/")
+            .collect();
+        if !ignored.is_empty() {
+            eprintln!(
+                "warning: --exclude-path-prefix 'none' disables exclusions; ignoring additional prefixes: {}",
+                ignored.join(", ")
+            );
+        }
+        return NormalizedExcludePrefixes {
+            prefixes: Vec::new(),
+            disable_defaults: true,
+        };
+    }
+
+    let mut out = Vec::new();
+    for raw in input {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed == "/" {
+            continue;
+        }
+        let normalized = if trimmed.starts_with('/') {
+            trimmed.to_string()
+        } else {
+            format!("/{trimmed}")
+        };
+        out.push(normalized);
+    }
+    out.sort();
+    out.dedup();
+    NormalizedExcludePrefixes {
+        prefixes: out,
+        disable_defaults: disable_by_empty,
+    }
+}
+
 fn positional_from_job(job: JobSubcommand) -> Vec<String> {
     match job {
         JobSubcommand::Status { job_id } => vec!["status".to_string(), job_id],
@@ -393,6 +554,7 @@ fn positional_from_job(job: JobSubcommand) -> Vec<String> {
         JobSubcommand::Cleanup => vec!["cleanup".to_string()],
         JobSubcommand::Clear => vec!["clear".to_string()],
         JobSubcommand::Worker => vec!["worker".to_string()],
+        JobSubcommand::Recover => vec!["recover".to_string()],
         JobSubcommand::Doctor => vec!["doctor".to_string()],
     }
 }
@@ -441,6 +603,7 @@ fn performance_defaults(profile: PerformanceProfile) -> (usize, usize, usize, u6
 fn into_config(cli: Cli) -> Config {
     let global = cli.global;
 
+    let mut ask_diagnostics = false;
     let (command, positional) = match cli.command {
         CliCommand::Scrape(args) => (
             CommandKind::Scrape,
@@ -483,13 +646,18 @@ fn into_config(cli: Cli) -> Config {
                 args.input.into_iter().collect()
             },
         ),
+        CliCommand::Debug(args) => (CommandKind::Debug, args.value),
         CliCommand::Doctor => (CommandKind::Doctor, Vec::new()),
         CliCommand::Query(args) => (CommandKind::Query, args.value),
         CliCommand::Retrieve(args) => (
             CommandKind::Retrieve,
             args.value.into_iter().collect::<Vec<String>>(),
         ),
-        CliCommand::Ask(args) => (CommandKind::Ask, args.value),
+        CliCommand::Ask(args) => {
+            ask_diagnostics = args.diagnostics;
+            (CommandKind::Ask, args.value)
+        }
+        CliCommand::Suggest(args) => (CommandKind::Suggest, args.value),
         CliCommand::Sources => (CommandKind::Sources, Vec::new()),
         CliCommand::Domains => (CommandKind::Domains, Vec::new()),
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
@@ -539,23 +707,49 @@ fn into_config(cli: Cli) -> Config {
         backfill_concurrency_limit = Some(limit);
     }
 
+    let normalized_excludes = normalize_exclude_prefixes(global.exclude_path_prefix);
+
     let mut cfg = Config {
         command,
         start_url: global.start_url,
         positional,
         urls_csv: global.urls,
+        url_glob: global.url_glob,
         query: global.query,
         search_limit: global.limit,
         max_pages: global.max_pages,
         max_depth: global.max_depth,
         include_subdomains: global.include_subdomains,
+        exclude_path_prefix: normalized_excludes.prefixes,
         output_dir: global.output_dir,
         output_path: global.output,
         render_mode: global.render_mode,
+        chrome_remote_url: global
+            .chrome_remote_url
+            .or_else(|| env::var("AXON_CHROME_REMOTE_URL").ok()),
+        chrome_proxy: global
+            .chrome_proxy
+            .or_else(|| env::var("AXON_CHROME_PROXY").ok()),
+        chrome_user_agent: global
+            .chrome_user_agent
+            .or_else(|| env::var("AXON_CHROME_USER_AGENT").ok()),
+        chrome_headless: global.chrome_headless,
+        chrome_anti_bot: global.chrome_anti_bot,
+        chrome_intercept: global.chrome_intercept,
+        chrome_stealth: global.chrome_stealth,
+        chrome_bootstrap: global.chrome_bootstrap,
+        chrome_bootstrap_timeout_ms: global.chrome_bootstrap_timeout_ms.max(250),
+        chrome_bootstrap_retries: global.chrome_bootstrap_retries.min(10),
+        webdriver_url: global
+            .webdriver_url
+            .or_else(|| env::var("AXON_WEBDRIVER_URL").ok())
+            .or_else(|| env::var("WEBDRIVER_URL").ok()),
         respect_robots: global.respect_robots,
         min_markdown_chars: global.min_markdown_chars,
         drop_thin_markdown: global.drop_thin_markdown,
         discover_sitemaps: global.discover_sitemaps,
+        cache: global.cache,
+        cache_skip_browser: global.cache_skip_browser,
         format: global.format,
         collection: global.collection,
         embed: global.embed,
@@ -612,8 +806,17 @@ fn into_config(cli: Cli) -> Config {
             .openai_model
             .or_else(|| env::var("OPENAI_MODEL").ok())
             .unwrap_or_default(),
+        ask_diagnostics,
+        cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
+        cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
+        watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),
+        watchdog_confirm_secs: global.watchdog_confirm_secs.max(10),
         json_output: global.json,
     };
+
+    if cfg.exclude_path_prefix.is_empty() && !normalized_excludes.disable_defaults {
+        cfg.exclude_path_prefix = default_exclude_prefixes();
+    }
 
     let (
         crawl_default,
@@ -661,7 +864,7 @@ fn maybe_print_top_level_help_and_exit() {
 }
 
 fn print_top_level_help() {
-    let colors_enabled = env::var("CORTEX_NO_COLOR").is_err();
+    let colors_enabled = env::var("AXON_NO_COLOR").is_err();
     let colorize = |code: &str, text: &str| {
         if colors_enabled {
             format!("{code}{text}\x1b[0m")
@@ -682,7 +885,7 @@ fn print_top_level_help() {
     let primary = "\x1b[38;2;244;143;177m"; // #F48FB1
     let accent = "\x1b[38;2;144;202;249m"; // #90CAF9
 
-    let title = bold(&colorize(primary, "CORTEX CLI"));
+    let title = bold(&colorize(primary, "AXON CLI"));
     let divider = colorize(primary, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     let section = |name: &str| bold(&colorize(primary, name));
     let cmd = |name: &str| colorize(accent, name);
@@ -695,7 +898,7 @@ fn print_top_level_help() {
                 .map(|s| s.to_string())
         })
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "cortex".to_string());
+        .unwrap_or_else(|| "axon".to_string());
 
     println!("  {title}");
     println!("  {divider}");
@@ -717,12 +920,14 @@ fn print_top_level_help() {
     );
     println!(
         "  {}",
-        dim(&format!("{bin_name} crawl https://docs.rs/spider --wait false"))
+        dim(&format!(
+            "{bin_name} crawl https://docs.rs/spider --wait false"
+        ))
     );
     println!(
         "  {}",
         dim(&format!(
-            "{bin_name} query \"embedding pipeline\" --collection axon"
+            "{bin_name} query \"embedding pipeline\" --collection cortex"
         ))
     );
     println!();
@@ -736,7 +941,7 @@ fn print_top_level_help() {
     println!(
         "  {:<28} {}",
         cmd("--collection <name>"),
-        dim("vector collection (default spider_rust)")
+        dim("vector collection (default cortex)")
     );
     println!(
         "  {:<28} {}",
@@ -745,8 +950,33 @@ fn print_top_level_help() {
     );
     println!(
         "  {:<28} {}",
+        cmd("--cache <bool>"),
+        dim("reuse prior crawl artifacts when possible")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("--cache-skip-browser <bool>"),
+        dim("force HTTP crawl path when cache flow is enabled")
+    );
+    println!(
+        "  {:<28} {}",
         cmd("--max-pages <n>"),
         dim("crawl page limit (0 = uncapped)")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("--url-glob <pattern[,..]>"),
+        dim("expand URL seeds via brace globs (e.g. {1..10}, {a,b})")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("--cron-every-seconds <n>"),
+        dim("repeat command every n seconds")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("--cron-max-runs <n>"),
+        dim("stop cron loop after n runs")
     );
     println!("  {:<28} {}", cmd("--max-depth <n>"), dim("crawl depth"));
     println!(
@@ -800,12 +1030,22 @@ fn print_top_level_help() {
         cmd("ask <query>"),
         dim("Ask over embedded documents")
     );
+    println!(
+        "  {:<28} {}",
+        cmd("suggest [focus]"),
+        dim("Suggest new docs URLs to crawl")
+    );
     println!("  {:<28} {}", cmd("sources"), dim("List indexed sources"));
     println!("  {:<28} {}", cmd("domains"), dim("List indexed domains"));
     println!("  {:<28} {}", cmd("stats"), dim("Show vector statistics"));
     println!();
     println!("  {}", section("Jobs & Diagnostics"));
     println!("  {:<28} {}", cmd("status"), dim("Show queued job status"));
+    println!(
+        "  {:<28} {}",
+        cmd("debug [context]"),
+        dim("LLM-assisted stack troubleshooting")
+    );
     println!("  {:<28} {}", cmd("doctor"), dim("Run local diagnostics"));
     println!();
     println!(
@@ -814,4 +1054,23 @@ fn print_top_level_help() {
             "→ Run {bin_name} <command> --help for command-specific flags"
         ))
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_exclude_prefixes;
+
+    #[test]
+    fn normalize_exclude_prefixes_none_disables_defaults() {
+        let normalized = normalize_exclude_prefixes(vec!["none".to_string()]);
+        assert!(normalized.disable_defaults);
+        assert!(normalized.prefixes.is_empty());
+    }
+
+    #[test]
+    fn normalize_exclude_prefixes_none_with_values_still_disables() {
+        let normalized = normalize_exclude_prefixes(vec!["none".to_string(), "/fr".to_string()]);
+        assert!(normalized.disable_defaults);
+        assert!(normalized.prefixes.is_empty());
+    }
 }
