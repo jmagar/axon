@@ -8,13 +8,15 @@ Web crawl, scrape, batch, extract, embed, and query — all in one binary backed
 # Start infrastructure (Postgres, Redis, RabbitMQ, Qdrant)
 docker compose up -d
 
-# Build the CLI
-cargo build --release --bin axon
+# Recommended: use the wrapper script (auto-sources .env)
+./scripts/axon doctor
+./scripts/axon scrape https://example.com --wait true
 
-# Run the CLI (binary lives in target/release/)
+# Or build and run the binary directly
+cargo build --release --bin axon
 ./target/release/axon --help
 
-# Or build + run in one shot
+# Or build + run in one shot (does NOT auto-source .env)
 cargo run --bin axon -- scrape https://example.com --wait true
 ```
 
@@ -139,8 +141,8 @@ All flags are `--global` (usable with any subcommand).
 ## Architecture
 
 ```
-axon_cli/
-├── mod.rs                  # Entry: parse_args() → run() dispatch
+axon_rust/
+├── mod.rs                  # Library root — run() dispatch (parse_args() is in crates/core/config.rs)
 ├── crates/
 │   ├── mod.rs              # pub mod cli, core, crawl, extract, jobs, vector
 │   ├── cli/
@@ -152,7 +154,7 @@ axon_cli/
 │   │   ├── config.rs       # CLI parsing (clap), Config struct, performance profiles
 │   │   ├── content.rs      # HTML→markdown, URL→filename, transform pipeline
 │   │   ├── health.rs       # redis_healthy() connectivity check
-│   │   ├── http.rs         # build_client(), fetch_html()
+│   │   ├── http.rs         # build_client(), fetch_html(), validate_url() (SSRF guard — blocks private IPs/ports)
 │   │   ├── logging.rs      # log_info(), log_warn(), log_done() structured output
 │   │   └── ui.rs           # ANSI color helpers (primary, accent, muted, status_text)
 │   ├── crawl/
@@ -176,7 +178,7 @@ axon_cli/
 │   ├── Dockerfile          # Multi-stage build; s6-overlay for service supervision
 │   └── s6/
 │       ├── cont-init.d/    # 10-load-axon-env: loads .env on container startup
-│       └── services.d/     # crawl-worker, batch-worker, extract-worker, embed-worker
+│       └── s6-rc.d/        # crawl-worker, batch-worker, extract-worker, embed-worker (+ user bundle)
 ├── docker-compose.yaml     # Full stack: postgres, redis, rabbitmq, qdrant, axon-workers
 ├── .env                    # Secrets (gitignored)
 └── .env.example            # Template — copy to .env and fill in
@@ -189,12 +191,13 @@ axon_cli/
 | Service | Image | Exposed Port | Purpose |
 |---------|-------|-------------|---------|
 | `axon-postgres` | postgres:17-alpine | `53432` | Job persistence |
-| `axon-redis` | redis:7.4-alpine | `53379` | Queue state / caching |
+| `axon-redis` | redis:8.2-alpine | `53379` | Queue state / caching |
 | `axon-rabbitmq` | rabbitmq:4.0-management | `45535` | AMQP job queue |
 | `axon-qdrant` | qdrant/qdrant:v1.13.1 | `53333`, `53334` (gRPC) | Vector store |
+| `axon-webdriver` | selenium/standalone-chrome:4.34.0 | `4444` (WebDriver), `7900` (VNC) | Browser fallback |
 | `axon-workers` | built from Dockerfile | — | 4 workers (crawl/batch/extract/embed) |
 
-All services live on the `cortex` bridge network. Data persisted to `/home/jmagar/appdata/axon-*`.
+All services live on the `axon` bridge network. Data persisted to `/home/jmagar/appdata/axon-*`.
 
 ```bash
 # Start all services
@@ -227,10 +230,10 @@ Copy `.env.example` → `.env` and fill in values:
 AXON_PG_URL=postgresql://axon:postgres@axon-postgres:5432/axon
 
 # Redis
-AXON_REDIS_URL=redis://axon-redis:6379
+AXON_REDIS_URL=redis://:CHANGE_ME@axon-redis:6379
 
 # RabbitMQ
-AXON_AMQP_URL=amqp://axon-rabbitmq:5672
+AXON_AMQP_URL=amqp://axon:CHANGE_ME@axon-rabbitmq:5672
 
 # Qdrant
 QDRANT_URL=http://axon-qdrant:6333
@@ -243,11 +246,15 @@ OPENAI_BASE_URL=http://YOUR_LLM_HOST/v1
 OPENAI_API_KEY=your-key-or-empty
 OPENAI_MODEL=your-model-name
 
+# WebDriver for browser fallback (axon-webdriver runs at localhost:4444)
+AXON_WEBDRIVER_URL=http://127.0.0.1:4444
+
 # Optional queue name overrides
 AXON_CRAWL_QUEUE=axon.crawl.jobs
 AXON_BATCH_QUEUE=axon.batch.jobs
 AXON_EXTRACT_QUEUE=axon.extract.jobs
 AXON_EMBED_QUEUE=axon.embed.jobs
+AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
 ```
 
 ### Dev vs Container URL Resolution
@@ -290,9 +297,9 @@ Pages with fewer than `--min-markdown-chars` (default: 200) are flagged as thin.
 After a crawl, `append_sitemap_backfill()` discovers URLs via sitemap.xml that the crawler missed and fetches them individually. Respects `--max-sitemaps` (default: 512) and `--include-subdomains`.
 
 ### Docker build context
-The `Dockerfile` builds from this directory. The build command inside the container is:
+The `Dockerfile` builds from `docker/Dockerfile`. The build command inside the container is:
 ```
-cargo build --release --bin cortex
+cargo build --release --bin axon
 ```
 `docker-compose.yaml` sets `context: .` — run `docker compose build` from this directory, not from a parent workspace.
 
@@ -300,21 +307,31 @@ cargo build --release --bin cortex
 
 Concurrency tuned relative to available CPU cores:
 
-| Profile | Crawl concurrency | Sitemap concurrency | Timeout | Retries | Backoff |
-|---------|------------------|---------------------|---------|---------|---------|
-| `high-stable` (default) | CPUs×8 (64–192) | CPUs×12 (64–256) | 20s | 2 | 250ms |
-| `balanced` | CPUs×4 (32–96) | CPUs×6 (32–128) | 30s | 2 | 300ms |
-| `extreme` | CPUs×16 (128–384) | CPUs×20 (128–512) | 15s | 1 | 100ms |
-| `max` | CPUs×24 (256–1024) | CPUs×32 (256–1536) | 12s | 1 | 50ms |
+| Profile | Crawl concurrency | Sitemap concurrency | Backfill concurrency | Timeout | Retries | Backoff |
+|---------|------------------|---------------------|----------------------|---------|---------|---------|
+| `high-stable` (default) | CPUs×8 (64–192) | CPUs×12 (64–256) | CPUs×6 (32–128) | 20s | 2 | 250ms |
+| `balanced` | CPUs×4 (32–96) | CPUs×6 (32–128) | CPUs×3 (16–64) | 30s | 2 | 300ms |
+| `extreme` | CPUs×16 (128–384) | CPUs×20 (128–512) | CPUs×10 (64–256) | 15s | 1 | 100ms |
+| `max` | CPUs×24 (256–1024) | CPUs×32 (256–1536) | CPUs×20 (128–1024) | 12s | 1 | 50ms |
 
 ## Development
 
 ### Build
 
 ```bash
-cargo build --bin cortex                        # debug
-cargo build --release --bin cortex              # release
+cargo build --bin axon                          # debug
+cargo build --release --bin axon                # release
 cargo check                                     # fast type check
+```
+
+### Test
+
+```bash
+cargo test                    # run all tests
+cargo test http               # SSRF / URL validation tests (21)
+cargo test engine             # crawl engine tests (8)
+cargo test chunk_text         # text chunking tests (7)
+cargo test -- --nocapture     # show println! output
 ```
 
 ### Lint
@@ -328,87 +345,46 @@ cargo fmt --check
 
 ```bash
 # Debug binary
-./target/debug/cortex scrape https://example.com
+./target/debug/axon scrape https://example.com
 
 # With env overrides
 QDRANT_URL=http://localhost:53333 \
 TEI_URL=http://myserver:52000 \
-./target/release/cortex query "embedding pipeline" --collection my_col
+./target/release/axon query "embedding pipeline" --collection my_col
+```
+
+### Monolith Policy
+
+Changed `.rs` files are enforced at CI and via lefthook pre-commit:
+- File size: ≤ 500 lines
+- Function size: ≤ 80 lines
+- Exempt: `tests/**`, `benches/**`, `config/**`, `**/config.rs`
+- Exceptions: add to `.monolith-allowlist`
+
+```bash
+./scripts/install-git-hooks.sh  # install lefthook once
 ```
 
 ### Diagnose service connectivity
 
 ```bash
-cortex doctor
+axon doctor
 ```
 
 Checks: Postgres, Redis, RabbitMQ, Qdrant, TEI, LLM endpoint reachability.
 
 ## Database Schema
 
-Tables are auto-created on first worker/command start via `CREATE TABLE IF NOT EXISTS` in each `*_jobs.rs` file's `ensure_schema()` function.
+Tables are auto-created via `ensure_schema()` in each `*_jobs.rs`. Full column detail: [`docs/schema.md`](docs/schema.md).
 
-### axon_crawl_jobs
+| Table | Key columns |
+|-------|-------------|
+| `axon_crawl_jobs` | `id`, `url`, `status`, `config_json`, `result_json` — index on `status` |
+| `axon_batch_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
+| `axon_extract_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
+| `axon_embed_jobs` | `id`, `status`, `input_text`, `config_json`, `result_json` |
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NOT NULL | — | Primary key, job identifier |
-| `url` | TEXT | NOT NULL | — | Target URL for the crawl |
-| `status` | TEXT | NOT NULL | — | `pending` / `running` / `completed` / `failed` / `canceled` |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Job creation timestamp |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last status change |
-| `started_at` | TIMESTAMPTZ | NULL | — | When worker began processing |
-| `finished_at` | TIMESTAMPTZ | NULL | — | When job completed/failed/canceled |
-| `error_text` | TEXT | NULL | — | Error message on failure |
-| `result_json` | JSONB | NULL | — | Crawl results (pages found, stats) |
-| `config_json` | JSONB | NOT NULL | — | Serialized job configuration |
-
-**Index:** `idx_axon_crawl_jobs_status` on `status`.
-
-### axon_batch_jobs
-
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NOT NULL | — | Primary key |
-| `status` | TEXT | NOT NULL | — | `pending` / `running` / `completed` / `failed` / `canceled` |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Job creation timestamp |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last status change |
-| `started_at` | TIMESTAMPTZ | NULL | — | When worker began processing |
-| `finished_at` | TIMESTAMPTZ | NULL | — | When job completed/failed/canceled |
-| `error_text` | TEXT | NULL | — | Error message on failure |
-| `urls_json` | JSONB | NOT NULL | — | Array of URLs to batch-scrape |
-| `result_json` | JSONB | NULL | — | Batch results |
-| `config_json` | JSONB | NOT NULL | — | Serialized job configuration |
-
-### axon_extract_jobs
-
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NOT NULL | — | Primary key |
-| `status` | TEXT | NOT NULL | — | `pending` / `running` / `completed` / `failed` / `canceled` |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Job creation timestamp |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last status change |
-| `started_at` | TIMESTAMPTZ | NULL | — | When worker began processing |
-| `finished_at` | TIMESTAMPTZ | NULL | — | When job completed/failed/canceled |
-| `error_text` | TEXT | NULL | — | Error message on failure |
-| `urls_json` | JSONB | NOT NULL | — | Array of URLs for LLM extraction |
-| `result_json` | JSONB | NULL | — | Extracted structured data |
-| `config_json` | JSONB | NOT NULL | — | Serialized job configuration |
-
-### axon_embed_jobs
-
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NOT NULL | — | Primary key |
-| `status` | TEXT | NOT NULL | — | `pending` / `running` / `completed` / `failed` / `canceled` |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Job creation timestamp |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last status change |
-| `started_at` | TIMESTAMPTZ | NULL | — | When worker began processing |
-| `finished_at` | TIMESTAMPTZ | NULL | — | When job completed/failed/canceled |
-| `error_text` | TEXT | NULL | — | Error message on failure |
-| `input_text` | TEXT | NOT NULL | — | Input path, URL, or text to embed |
-| `result_json` | JSONB | NULL | — | Embedding results (chunk count, point IDs) |
-| `config_json` | JSONB | NOT NULL | — | Serialized job configuration |
+All tables share: `created_at`, `updated_at`, `started_at`, `finished_at` (TIMESTAMPTZ), `error_text` (TEXT).
 
 ## Code Style
 

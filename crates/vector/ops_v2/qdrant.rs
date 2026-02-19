@@ -2,6 +2,7 @@ use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::http::http_client;
 use crate::axon_cli::crates::core::ui::{accent, muted, primary};
 use serde::Deserialize;
+use spider::url::Url;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::error::Error;
@@ -89,6 +90,17 @@ fn payload_domain(payload: &serde_json::Value) -> String {
         .to_string()
 }
 
+pub fn base_url(url: &str) -> Option<String> {
+    let parsed = Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    let mut out = format!("{}://{host}", parsed.scheme());
+    if let Some(port) = parsed.port() {
+        out.push(':');
+        out.push_str(&port.to_string());
+    }
+    Some(out)
+}
+
 pub fn render_full_doc_from_points(mut points: Vec<QdrantPoint>) -> String {
     points.sort_by_key(|p| p.payload.chunk_index.unwrap_or(i64::MAX));
     let mut text = String::new();
@@ -160,6 +172,26 @@ async fn qdrant_scroll_pages(
     }
 
     Ok(())
+}
+
+pub async fn qdrant_indexed_urls(cfg: &Config) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut seen = HashSet::new();
+    qdrant_scroll_pages(cfg, |points| {
+        for p in points {
+            let Some(payload) = p.get("payload") else {
+                continue;
+            };
+            let url = payload_url(payload);
+            if !url.is_empty() {
+                seen.insert(url);
+            }
+        }
+    })
+    .await?;
+
+    let mut urls: Vec<String> = seen.into_iter().collect();
+    urls.sort();
+    Ok(urls)
 }
 
 async fn qdrant_domain_facets(

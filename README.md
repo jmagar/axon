@@ -8,7 +8,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `sources`, `domains`, `stats`, `status`, `doctor`, `debug`
+- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `suggest`, `sources`, `domains`, `stats`, `status`, `doctor`, `debug`
 - Async queue-backed jobs for `crawl`/`batch`/`extract`/`embed`
 - TEI embeddings + Qdrant vector storage
 - OpenAI-compatible extraction and answer generation
@@ -24,7 +24,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - `crates/crawl` — crawling engine and sitemap backfill
 - `crates/extract` — remote structured extraction
 - `crates/jobs` — queue workers for crawl/batch/extract/embed (includes v2 crawl pipeline)
-- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/sources/domains/stats`, includes v2 ops)
+- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/suggest/sources/domains/stats`, includes v2 ops)
 
 ```
 axon_rust/
@@ -150,7 +150,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_AMQP_URL` | AMQP DSN for queue-backed jobs |
 | `QDRANT_URL` | Qdrant base URL |
 | `TEI_URL` | TEI embeddings base URL (external — not in compose) |
-| `OPENAI_BASE_URL` | OpenAI-compatible base URL for extract/ask/debug (e.g. `http://host/v1`) |
+| `OPENAI_BASE_URL` | OpenAI-compatible base URL for extract/ask/suggest/debug (e.g. `http://host/v1`) |
 | `OPENAI_API_KEY` | API key for OPENAI_BASE_URL |
 | `OPENAI_MODEL` | Model name for completions |
 
@@ -229,6 +229,7 @@ Worker behavior notes:
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer | No |
+| `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
