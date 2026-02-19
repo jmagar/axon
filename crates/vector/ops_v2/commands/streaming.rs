@@ -3,6 +3,66 @@ use futures_util::StreamExt;
 use std::error::Error;
 use std::io::Write;
 
+fn judge_system_prompt() -> &'static str {
+    "You are an expert evaluator with access to authoritative reference material.\n\
+Compare two AI responses to the same question.\n\
+\n\
+IMPORTANT INSTRUCTIONS:\n\
+- Do NOT score higher simply because an answer is longer or more technical. Concise and accurate beats verbose and wandering.\n\
+- First, enumerate the key factual claims in each answer. Then verify each claim against the Reference Material using [R#] citations.\n\
+- If reference chunks contain version numbers or dates, note whether the baseline answer may be out of date relative to the indexed material.\n\
+\n\
+Produce your analysis in this EXACT format:\n\
+\n\
+## Accuracy        RAG: X/5 | Baseline: X/5\n\
+[Reasoning with [R#] citations for specific claims. Note any factual errors or omissions.]\n\
+\n\
+## Relevance       RAG: X/5 | Baseline: X/5\n\
+[Did each answer address what was actually asked?]\n\
+\n\
+## Completeness    RAG: X/5 | Baseline: X/5\n\
+[Did each answer cover the important details?]\n\
+\n\
+## Specificity     RAG: X/5 | Baseline: X/5\n\
+[Did each answer give concrete, actionable information?]\n\
+\n\
+## Timing\n\
+[Was the RAG latency overhead justified by the quality improvement?]\n\
+\n\
+## Did RAG Add Value?\n\
+YES/NO — [Did the indexed knowledge base provide information the LLM could not have had from training alone? Be specific.]\n\
+\n\
+## Verdict\n\
+[1-2 sentences: which response is better overall and why?]"
+}
+
+#[allow(clippy::too_many_arguments)]
+fn judge_user_msg(
+    query: &str,
+    rag_answer: &str,
+    baseline_answer: &str,
+    reference_chunks: &str,
+    rag_sources_list: &str,
+    ref_quality_note: &str,
+    rag_ms: u128,
+    baseline_ms: u128,
+    source_count: usize,
+    context_chars: usize,
+) -> String {
+    format!(
+        "Question: {query}\n\n\
+## RAG Answer (WITH context — {source_count} sources, {context_chars} chars, {rag_ms}ms)\n\
+Sources the RAG answer was built from:\n{rag_sources_list}\n\n\
+{rag_answer}\n\n\
+## Baseline Answer (WITHOUT context, {baseline_ms}ms)\n\
+{baseline_answer}\n\n\
+## Reference Material (independent retrieval for accuracy grounding)\n\
+{ref_quality_note}\
+{reference_chunks}\n\n\
+Analyze and compare the two responses following the format in your instructions."
+    )
+}
+
 fn extract_sse_token(data: &str) -> Option<String> {
     let value = serde_json::from_str::<serde_json::Value>(data).ok()?;
     value["choices"][0]["delta"]["content"]
@@ -41,32 +101,10 @@ fn process_sse_line(
     Ok(false)
 }
 
-pub(super) async fn ask_llm_streaming(
-    cfg: &Config,
-    client: &reqwest::Client,
-    query: &str,
-    context: &str,
+async fn run_sse_stream(
+    req: reqwest::RequestBuilder,
     print_tokens: bool,
 ) -> Result<String, Box<dyn Error>> {
-    let mut req = client
-        .post(format!(
-            "{}/chat/completions",
-            cfg.openai_base_url.trim_end_matches('/')
-        ))
-        .json(&serde_json::json!({
-            "model": cfg.openai_model,
-            "messages": [
-                {"role": "system", "content": "Answer only using provided context. Cite sources like [S1]."},
-                {"role": "user", "content": format!("Question: {}\n\nContext:\n{}", query, context)}
-            ],
-            "temperature": 0.1,
-            "stream": true
-        }));
-
-    if !cfg.openai_api_key.is_empty() {
-        req = req.bearer_auth(&cfg.openai_api_key);
-    }
-
     let response = req.send().await?;
     if !response.status().is_success() {
         return Err(format!("streaming request failed with status {}", response.status()).into());
@@ -98,14 +136,43 @@ pub(super) async fn ask_llm_streaming(
         let _ = process_sse_line(&pending, &mut answer, print_tokens, &mut saw_stream_payload)?;
     }
 
-    if saw_stream_payload {
+    if saw_stream_payload && !answer.trim().is_empty() {
         return Ok(answer);
     }
 
     Err("streaming response returned no token payload".into())
 }
 
-pub(super) async fn ask_llm_non_streaming(
+pub(crate) async fn ask_llm_streaming(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    context: &str,
+    print_tokens: bool,
+) -> Result<String, Box<dyn Error>> {
+    let mut req = client
+        .post(format!(
+            "{}/chat/completions",
+            cfg.openai_base_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "model": cfg.openai_model,
+            "messages": [
+                {"role": "system", "content": "You are a precise technical research assistant. You answer questions exclusively from the retrieved source documents provided in the context. Your rules:\n\n1. CITATIONS — Cite inline immediately after each claim using [S#] labels. When multiple sources support the same point, cite all of them: [S1][S3]. Never make a claim without a citation.\n2. FOOTER — After your answer, add a \"## Sources\" section listing each cited source number and its URL, e.g. \"[S1] https://...\"\n3. SYNTHESIS — Integrate information from multiple sources into a unified answer. Do not quote or summarize sources one by one.\n4. GAPS — If the sources do not fully answer the question, explicitly state what is covered and what is not. Do not fill gaps from general knowledge.\n5. PRECISION — For technical questions, be specific: include exact values, function names, file paths, and configuration keys when the sources provide them."},
+                {"role": "user", "content": format!("Question: {}\n\nContext:\n{}", query, context)}
+            ],
+            "temperature": 0.1,
+            "stream": true
+        }));
+
+    if !cfg.openai_api_key.is_empty() {
+        req = req.bearer_auth(&cfg.openai_api_key);
+    }
+
+    run_sse_stream(req, print_tokens).await
+}
+
+pub(crate) async fn ask_llm_non_streaming(
     cfg: &Config,
     client: &reqwest::Client,
     query: &str,
@@ -119,7 +186,7 @@ pub(super) async fn ask_llm_non_streaming(
         .json(&serde_json::json!({
             "model": cfg.openai_model,
             "messages": [
-                {"role": "system", "content": "Answer only using provided context. Cite sources like [S1]."},
+                {"role": "system", "content": "You are a precise technical research assistant. You answer questions exclusively from the retrieved source documents provided in the context. Your rules:\n\n1. CITATIONS — Cite inline immediately after each claim using [S#] labels. When multiple sources support the same point, cite all of them: [S1][S3]. Never make a claim without a citation.\n2. FOOTER — After your answer, add a \"## Sources\" section listing each cited source number and its URL, e.g. \"[S1] https://...\"\n3. SYNTHESIS — Integrate information from multiple sources into a unified answer. Do not quote or summarize sources one by one.\n4. GAPS — If the sources do not fully answer the question, explicitly state what is covered and what is not. Do not fill gaps from general knowledge.\n5. PRECISION — For technical questions, be specific: include exact values, function names, file paths, and configuration keys when the sources provide them."},
                 {"role": "user", "content": format!("Question: {}\n\nContext:\n{}", query, context)}
             ],
             "temperature": 0.1
@@ -134,5 +201,163 @@ pub(super) async fn ask_llm_non_streaming(
     Ok(json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("(no answer)")
+        .to_string())
+}
+
+pub(crate) async fn baseline_llm_streaming(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    print_tokens: bool,
+) -> Result<String, Box<dyn Error>> {
+    let mut req = client
+        .post(format!(
+            "{}/chat/completions",
+            cfg.openai_base_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "model": cfg.openai_model,
+            "messages": [
+                {"role": "system", "content": "You are a knowledgeable technical assistant. Answer the following question accurately and thoroughly, drawing on your full training knowledge. Where you are uncertain or your knowledge may be outdated, say so explicitly rather than presenting uncertain information as fact. For technical questions, be specific: include exact values, function names, and configuration details where you know them."},
+                {"role": "user", "content": query}
+            ],
+            "temperature": 0.1,
+            "stream": true
+        }));
+
+    if !cfg.openai_api_key.is_empty() {
+        req = req.bearer_auth(&cfg.openai_api_key);
+    }
+
+    run_sse_stream(req, print_tokens).await
+}
+
+pub(crate) async fn baseline_llm_non_streaming(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+) -> Result<String, Box<dyn Error>> {
+    let mut req = client
+        .post(format!(
+            "{}/chat/completions",
+            cfg.openai_base_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "model": cfg.openai_model,
+            "messages": [
+                {"role": "system", "content": "You are a knowledgeable technical assistant. Answer the following question accurately and thoroughly, drawing on your full training knowledge. Where you are uncertain or your knowledge may be outdated, say so explicitly rather than presenting uncertain information as fact. For technical questions, be specific: include exact values, function names, and configuration details where you know them."},
+                {"role": "user", "content": query}
+            ],
+            "temperature": 0.1
+        }));
+
+    if !cfg.openai_api_key.is_empty() {
+        req = req.bearer_auth(&cfg.openai_api_key);
+    }
+
+    let response = req.send().await?.error_for_status()?;
+    let json: serde_json::Value = response.json().await?;
+    Ok(json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("(no answer)")
+        .to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn judge_llm_streaming(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    rag_answer: &str,
+    baseline_answer: &str,
+    reference_chunks: &str,
+    rag_sources_list: &str,
+    ref_quality_note: &str,
+    rag_ms: u128,
+    baseline_ms: u128,
+    source_count: usize,
+    context_chars: usize,
+    print_tokens: bool,
+) -> Result<String, Box<dyn Error>> {
+    let user_msg = judge_user_msg(
+        query,
+        rag_answer,
+        baseline_answer,
+        reference_chunks,
+        rag_sources_list,
+        ref_quality_note,
+        rag_ms,
+        baseline_ms,
+        source_count,
+        context_chars,
+    );
+    let mut req = client
+        .post(format!(
+            "{}/chat/completions",
+            cfg.openai_base_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "model": cfg.openai_model,
+            "messages": [
+                {"role": "system", "content": judge_system_prompt()},
+                {"role": "user", "content": user_msg}
+            ],
+            "temperature": 0.3,
+            "stream": true
+        }));
+    if !cfg.openai_api_key.is_empty() {
+        req = req.bearer_auth(&cfg.openai_api_key);
+    }
+    run_sse_stream(req, print_tokens).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn judge_llm_non_streaming(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    rag_answer: &str,
+    baseline_answer: &str,
+    reference_chunks: &str,
+    rag_sources_list: &str,
+    ref_quality_note: &str,
+    rag_ms: u128,
+    baseline_ms: u128,
+    source_count: usize,
+    context_chars: usize,
+) -> Result<String, Box<dyn Error>> {
+    let user_msg = judge_user_msg(
+        query,
+        rag_answer,
+        baseline_answer,
+        reference_chunks,
+        rag_sources_list,
+        ref_quality_note,
+        rag_ms,
+        baseline_ms,
+        source_count,
+        context_chars,
+    );
+    let mut req = client
+        .post(format!(
+            "{}/chat/completions",
+            cfg.openai_base_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "model": cfg.openai_model,
+            "messages": [
+                {"role": "system", "content": judge_system_prompt()},
+                {"role": "user", "content": user_msg}
+            ],
+            "temperature": 0.3
+        }));
+    if !cfg.openai_api_key.is_empty() {
+        req = req.bearer_auth(&cfg.openai_api_key);
+    }
+    let response = req.send().await?.error_for_status()?;
+    let json: serde_json::Value = response.json().await?;
+    Ok(json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("(no analysis)")
         .to_string())
 }

@@ -1,5 +1,6 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::http::http_client;
+use crate::axon_cli::crates::core::logging::log_warn;
 use crate::axon_cli::crates::core::ui::{muted, primary};
 use crate::axon_cli::crates::vector::ops_v2::{qdrant, ranking, tei};
 use futures_util::stream::{self, StreamExt};
@@ -30,24 +31,26 @@ fn push_context_entry(
     true
 }
 
-pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+pub(crate) struct AskContext {
+    pub context: String,
+    pub candidate_count: usize,
+    pub reranked_count: usize,
+    pub chunks_selected: usize,
+    pub full_docs_selected: usize,
+    pub supplemental_count: usize,
+    pub retrieval_elapsed_ms: u128,
+    pub context_elapsed_ms: u128,
+    /// Pre-built source descriptions for diagnostics display.
+    pub diagnostic_sources: Vec<String>,
+}
+
+pub(crate) async fn build_ask_context(
+    cfg: &Config,
+    query: &str,
+) -> Result<AskContext, Box<dyn Error>> {
     let max_context_chars = cfg.ask_max_context_chars;
-    let ask_started = std::time::Instant::now();
-
-    let query = cfg
-        .query
-        .clone()
-        .or_else(|| {
-            if cfg.positional.is_empty() {
-                None
-            } else {
-                Some(cfg.positional.join(" "))
-            }
-        })
-        .ok_or("ask requires query")?;
-
     let retrieval_started = std::time::Instant::now();
-    let mut ask_vectors = tei::tei_embed(cfg, std::slice::from_ref(&query)).await?;
+    let mut ask_vectors = tei::tei_embed(cfg, &[query.to_string()]).await?;
     if ask_vectors.is_empty() {
         return Err("TEI returned no vector for ask query".into());
     }
@@ -59,7 +62,7 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let doc_fetch_concurrency = cfg.ask_doc_fetch_concurrency;
     let doc_chunk_limit = cfg.ask_doc_chunk_limit;
     let min_relevance_score = cfg.ask_min_relevance_score;
-    let query_tokens = ranking::tokenize_query(&query);
+    let query_tokens = ranking::tokenize_query(query);
 
     let hits = qdrant::qdrant_search(cfg, &vecq, candidate_pool_limit).await?;
     let mut candidates = Vec::new();
@@ -207,41 +210,80 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Err("Failed to retrieve any context sources for ask".into());
     }
 
-    let context = format!(
-        "Answer only from the provided sources.\nCite supporting sources inline using [S#] labels.\nIf the sources are incomplete, say so explicitly.\n\nSources:\n{}",
-        context_entries.join(separator)
-    );
+    let context = format!("Sources:\n{}", context_entries.join(separator));
     let context_elapsed_ms = context_started.elapsed().as_millis();
 
+    let mut diagnostic_sources: Vec<String> = Vec::new();
+    diagnostic_sources.extend(
+        top_chunk_indices
+            .iter()
+            .take(top_chunks_selected)
+            .map(|&idx| &reranked[idx])
+            .map(|c| format!("chunk score={:.3} url={}", c.score, c.url)),
+    );
+    diagnostic_sources.extend(
+        top_full_doc_indices
+            .iter()
+            .map(|&idx| &reranked[idx])
+            .map(|c| format!("full-doc score={:.3} url={}", c.score, c.url)),
+    );
+    diagnostic_sources.extend(
+        supplemental
+            .iter()
+            .map(|&idx| &reranked[idx])
+            .take(supplemental_count)
+            .map(|c| format!("chunk score={:.3} url={}", c.score, c.url)),
+    );
+
+    Ok(AskContext {
+        context,
+        candidate_count: candidates.len(),
+        reranked_count: reranked.len(),
+        chunks_selected: top_chunks_selected,
+        full_docs_selected,
+        supplemental_count,
+        retrieval_elapsed_ms,
+        context_elapsed_ms,
+        diagnostic_sources,
+    })
+}
+
+pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let ask_started = std::time::Instant::now();
+
+    let query = cfg
+        .query
+        .clone()
+        .or_else(|| {
+            if cfg.positional.is_empty() {
+                None
+            } else {
+                Some(cfg.positional.join(" "))
+            }
+        })
+        .ok_or("ask requires query")?;
+
+    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
+        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for ask".into());
+    }
+
+    let ctx = build_ask_context(cfg, &query).await?;
+
     if cfg.ask_diagnostics {
-        let mut diagnostic_sources: Vec<String> = Vec::new();
-        diagnostic_sources.extend(
-            top_full_doc_indices
-                .iter()
-                .map(|&idx| &reranked[idx])
-                .map(|c| format!("full-doc score={:.3} url={}", c.score, c.url)),
-        );
-        diagnostic_sources.extend(
-            supplemental
-                .iter()
-                .map(|&idx| &reranked[idx])
-                .take(supplemental_count)
-                .map(|c| format!("chunk score={:.3} url={}", c.score, c.url)),
-        );
         if cfg.json_output {
             eprintln!(
                 "{}",
                 serde_json::json!({
                     "ask_diagnostics": {
-                        "candidate_pool": candidates.len(),
-                        "reranked_pool": reranked.len(),
-                        "chunks_selected": top_chunks_selected,
-                        "full_docs_selected": full_docs_selected,
-                        "supplemental_selected": supplemental_count,
-                        "context_chars": context.len(),
-                        "min_relevance_score": min_relevance_score,
-                        "doc_fetch_concurrency": doc_fetch_concurrency,
-                        "sources": diagnostic_sources,
+                        "candidate_pool": ctx.candidate_count,
+                        "reranked_pool": ctx.reranked_count,
+                        "chunks_selected": ctx.chunks_selected,
+                        "full_docs_selected": ctx.full_docs_selected,
+                        "supplemental_selected": ctx.supplemental_count,
+                        "context_chars": ctx.context.len(),
+                        "min_relevance_score": cfg.ask_min_relevance_score,
+                        "doc_fetch_concurrency": cfg.ask_doc_fetch_concurrency,
+                        "sources": ctx.diagnostic_sources,
                     }
                 })
             );
@@ -250,22 +292,18 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
             eprintln!(
                 "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
                 muted("Retrieval:"),
-                candidates.len(),
-                reranked.len(),
-                top_chunks_selected,
-                full_docs_selected,
-                supplemental_count,
-                context.len()
+                ctx.candidate_count,
+                ctx.reranked_count,
+                ctx.chunks_selected,
+                ctx.full_docs_selected,
+                ctx.supplemental_count,
+                ctx.context.len()
             );
-            for source in diagnostic_sources {
+            for source in &ctx.diagnostic_sources {
                 eprintln!("  • {source}");
             }
             eprintln!();
         }
-    }
-
-    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
-        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for ask".into());
     }
 
     let client = http_client()?;
@@ -276,11 +314,15 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         print!("  {} ", primary("Assistant:"));
         std::io::stdout().flush()?;
     }
-    let streamed_answer = ask_llm_streaming(cfg, client, &query, &context, !cfg.json_output).await;
+    let streamed_answer =
+        ask_llm_streaming(cfg, client, &query, &ctx.context, !cfg.json_output).await;
     let answer = match streamed_answer {
         Ok(value) => value,
-        Err(_) => {
-            let fallback = ask_llm_non_streaming(cfg, client, &query, &context).await?;
+        Err(e) => {
+            log_warn(&format!(
+                "streaming failed, falling back to non-streaming: {e}"
+            ));
+            let fallback = ask_llm_non_streaming(cfg, client, &query, &ctx.context).await?;
             if !cfg.json_output {
                 print!("{fallback}");
             }
@@ -300,21 +342,21 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 "answer": answer,
                 "diagnostics": if cfg.ask_diagnostics {
                     serde_json::json!({
-                        "candidate_pool": candidates.len(),
-                        "reranked_pool": reranked.len(),
-                        "chunks_selected": top_chunks_selected,
-                        "full_docs_selected": full_docs_selected,
-                        "supplemental_selected": supplemental_count,
-                        "context_chars": context.len(),
-                        "min_relevance_score": min_relevance_score,
-                        "doc_fetch_concurrency": doc_fetch_concurrency,
+                        "candidate_pool": ctx.candidate_count,
+                        "reranked_pool": ctx.reranked_count,
+                        "chunks_selected": ctx.chunks_selected,
+                        "full_docs_selected": ctx.full_docs_selected,
+                        "supplemental_selected": ctx.supplemental_count,
+                        "context_chars": ctx.context.len(),
+                        "min_relevance_score": cfg.ask_min_relevance_score,
+                        "doc_fetch_concurrency": cfg.ask_doc_fetch_concurrency,
                     })
                 } else {
                     serde_json::Value::Null
                 },
                 "timing_ms": {
-                    "retrieval": retrieval_elapsed_ms,
-                    "context_build": context_elapsed_ms,
+                    "retrieval": ctx.retrieval_elapsed_ms,
+                    "context_build": ctx.context_elapsed_ms,
                     "llm": llm_elapsed_ms,
                     "total": total_elapsed_ms,
                 }
@@ -325,19 +367,19 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
             println!(
                 "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
                 muted("Diagnostics:"),
-                candidates.len(),
-                reranked.len(),
-                top_chunks_selected,
-                full_docs_selected,
-                supplemental_count,
-                context.len()
+                ctx.candidate_count,
+                ctx.reranked_count,
+                ctx.chunks_selected,
+                ctx.full_docs_selected,
+                ctx.supplemental_count,
+                ctx.context.len()
             );
         }
         println!(
             "  {} retrieval={}ms | context={}ms | llm={}ms | total={}ms",
             muted("Timing:"),
-            retrieval_elapsed_ms,
-            context_elapsed_ms,
+            ctx.retrieval_elapsed_ms,
+            ctx.context_elapsed_ms,
             llm_elapsed_ms,
             total_elapsed_ms
         );

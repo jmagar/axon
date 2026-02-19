@@ -12,8 +12,8 @@ pub mod search;
 pub mod status;
 
 pub use crate::axon_cli::crates::vector::ops::{
-    run_ask_native, run_domains_native, run_query_native, run_retrieve_native, run_sources_native,
-    run_stats_native, run_suggest_native,
+    run_ask_native, run_domains_native, run_evaluate_native, run_query_native, run_retrieve_native,
+    run_sources_native, run_stats_native, run_suggest_native,
 };
 pub use batch::run_batch;
 pub use common::start_url_from_cfg;
