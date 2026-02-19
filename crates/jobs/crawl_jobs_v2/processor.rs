@@ -1,6 +1,3 @@
-#[allow(dead_code)]
-pub(crate) const STAGE_NAME: &str = "processor";
-
 use crate::axon_cli::crates::core::config::RenderMode;
 use crate::axon_cli::crates::jobs::crawl_jobs_v2::sitemap;
 use std::error::Error;
