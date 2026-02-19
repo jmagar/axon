@@ -1,11 +1,11 @@
-#[allow(dead_code)]
-pub(crate) const STAGE_NAME: &str = "manifest";
-
+#[cfg(test)]
 use crate::axon_cli::crates::jobs::batch_jobs::InjectionCandidate;
+#[cfg(test)]
 use std::collections::HashSet;
+#[cfg(test)]
 use std::path::Path;
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, std::io::Error> {
     if !path.exists() {
         return Ok(HashSet::new());
@@ -28,7 +28,7 @@ pub(crate) async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, s
     Ok(out)
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) async fn read_manifest_candidates(
     path: &Path,
 ) -> Result<Vec<InjectionCandidate>, std::io::Error> {

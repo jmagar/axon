@@ -1,6 +1,3 @@
-#[allow(dead_code)]
-pub(crate) const STAGE_NAME: &str = "watchdog";
-
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::jobs::crawl_jobs;
 use std::error::Error;

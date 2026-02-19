@@ -3,7 +3,6 @@ use crate::axon_cli::crates::jobs::crawl_jobs::CrawlJob;
 use std::error::Error;
 use uuid::Uuid;
 
-pub mod config;
 pub mod manifest;
 pub mod processor;
 pub mod repo;

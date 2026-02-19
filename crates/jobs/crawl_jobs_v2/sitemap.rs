@@ -1,8 +1,5 @@
 pub(crate) use crate::axon_cli::crates::core::content::{canonicalize_url, is_excluded_url_path};
 
-#[allow(dead_code)]
-pub(crate) const STAGE_NAME: &str = "sitemap";
-
 #[cfg(test)]
 mod tests {
     use crate::axon_cli::crates::core::content::{
