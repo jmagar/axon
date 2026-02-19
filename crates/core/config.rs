@@ -18,6 +18,7 @@ pub enum CommandKind {
     Query,
     Retrieve,
     Ask,
+    Evaluate,
     Suggest,
     Sources,
     Domains,
@@ -40,6 +41,7 @@ impl CommandKind {
             Self::Query => "query",
             Self::Retrieve => "retrieve",
             Self::Ask => "ask",
+            Self::Evaluate => "evaluate",
             Self::Suggest => "suggest",
             Self::Sources => "sources",
             Self::Domains => "domains",
@@ -177,6 +179,7 @@ enum CliCommand {
     Query(TextArg),
     Retrieve(UrlArg),
     Ask(AskArgs),
+    Evaluate(EvaluateArgs),
     Suggest(TextArg),
     Sources,
     Domains,
@@ -198,6 +201,14 @@ struct TextArg {
 
 #[derive(Debug, Args)]
 struct AskArgs {
+    #[arg(long, action = ArgAction::SetTrue)]
+    diagnostics: bool,
+    #[arg(value_name = "TEXT")]
+    value: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct EvaluateArgs {
     #[arg(long, action = ArgAction::SetTrue)]
     diagnostics: bool,
     #[arg(value_name = "TEXT")]
@@ -682,6 +693,10 @@ fn into_config(cli: Cli) -> Config {
             ask_diagnostics = args.diagnostics;
             (CommandKind::Ask, args.value)
         }
+        CliCommand::Evaluate(args) => {
+            ask_diagnostics = args.diagnostics;
+            (CommandKind::Evaluate, args.value)
+        }
         CliCommand::Suggest(args) => (CommandKind::Suggest, args.value),
         CliCommand::Sources => (CommandKind::Sources, Vec::new()),
         CliCommand::Domains => (CommandKind::Domains, Vec::new()),
@@ -1067,6 +1082,11 @@ fn print_top_level_help() {
         "  {:<28} {}",
         cmd("ask <query>"),
         dim("Ask over embedded documents")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("evaluate <question>"),
+        dim("RAG vs baseline side-by-side comparison")
     );
     println!(
         "  {:<28} {}",

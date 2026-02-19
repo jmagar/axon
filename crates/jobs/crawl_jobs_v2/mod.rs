@@ -2,10 +2,10 @@ use crate::axon_cli::crates::core::config::Config;
 use std::error::Error;
 use uuid::Uuid;
 
-pub mod runtime;
 pub mod manifest;
 pub mod processor;
 pub mod repo;
+pub mod runtime;
 pub mod sitemap;
 pub mod watchdog;
 pub mod worker;
