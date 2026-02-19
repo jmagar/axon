@@ -217,7 +217,7 @@ async fn process_batch_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
     if job_cfg.embed {
         let mut embed_cfg = cfg.clone();
         embed_cfg.collection = job_cfg.collection;
-        let _ = embed_path_native(&embed_cfg, &out_dir.to_string_lossy()).await;
+        embed_path_native(&embed_cfg, &out_dir.to_string_lossy()).await?;
     }
 
     sqlx::query(

@@ -305,16 +305,14 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
     let progress_job_id = id;
     let progress_task = tokio::spawn(async move {
         while let Some(progress) = progress_rx.recv().await {
-            let pages_discovered = progress.pages_seen as u64;
-            let filtered_urls = pages_discovered.saturating_sub(progress.markdown_files as u64);
             let pages_crawled = progress.pages_seen as u64;
+            let filtered_urls = pages_crawled.saturating_sub(progress.markdown_files as u64);
             let progress_json = serde_json::json!({
                 "phase": "crawling",
                 "md_created": progress.markdown_files,
                 "thin_md": progress.thin_pages,
                 "filtered_urls": filtered_urls,
                 "pages_crawled": pages_crawled,
-                "pages_discovered": pages_discovered,
                 "crawl_stream_pages": progress.pages_seen,
             });
             let _ = sqlx::query(
@@ -392,7 +390,7 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
 
     if let Err(err) = progress_task.await {
         log_warn(&format!(
-            "progress_task panicked while serializing progress for crawl job {id}: {err}"
+            "progress_task panicked while serializing progress for crawl job {id}: {err:?}"
         ));
     }
 

@@ -36,6 +36,30 @@ pub struct SitemapBackfillStats {
     pub filtered: usize,
 }
 
+fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
+    let mut parsed = Url::parse(url).ok()?;
+
+    // Fragments never change page content for crawling/storage purposes.
+    parsed.set_fragment(None);
+
+    // Normalize default ports so equivalent URLs share one dedupe key.
+    match (parsed.scheme(), parsed.port()) {
+        ("http", Some(80)) | ("https", Some(443)) => {
+            let _ = parsed.set_port(None);
+        }
+        _ => {}
+    }
+
+    // Normalize trailing slash variants except root.
+    let path = parsed.path().to_string();
+    if path.len() > 1 {
+        let normalized_path = path.trim_end_matches('/').to_string();
+        parsed.set_path(&normalized_path);
+    }
+
+    Some(parsed.to_string())
+}
+
 fn is_excluded_url_path(url: &str, excludes: &[String]) -> bool {
     if excludes.is_empty() {
         return false;
@@ -69,7 +93,8 @@ fn regex_escape(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len() + 8);
     for ch in value.chars() {
         match ch {
-            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\' => {
+            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+            | '-' => {
                 escaped.push('\\');
                 escaped.push(ch);
             }
@@ -226,14 +251,18 @@ pub async fn crawl_and_collect_map(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
 
-            summary.pages_seen += 1;
             let page_url = page.get_url().to_string();
             if is_excluded_url_path(&page_url, &exclude_path_prefix) {
                 continue;
             }
-            if seen.insert(page_url.clone()) {
-                urls.push(page_url);
+            let Some(canonical_url) = canonicalize_url_for_dedupe(&page_url) else {
+                continue;
+            };
+            if !seen.insert(canonical_url.clone()) {
+                continue;
             }
+            summary.pages_seen += 1;
+            urls.push(canonical_url);
 
             let input = TransformInput {
                 url: None,
@@ -353,12 +382,16 @@ pub async fn crawl_sitemap_urls(
                     }
                 }
 
+                let Some(canonical_loc) = canonicalize_url_for_dedupe(&loc) else {
+                    continue;
+                };
+
                 if is_index {
-                    if !seen_sitemaps.contains(&loc) {
-                        queue.push_back(loc);
+                    if !seen_sitemaps.contains(&canonical_loc) {
+                        queue.push_back(canonical_loc);
                     }
                 } else {
-                    out.insert(loc);
+                    out.insert(canonical_loc);
                 }
             }
             if parsed_sitemaps.is_multiple_of(64) {
@@ -430,6 +463,7 @@ pub async fn run_crawl_once(
         let mut manifest = tokio::io::BufWriter::new(manifest_file);
         let mut summary = CrawlSummary::default();
         let mut urls = HashSet::new();
+        let mut seen_canonical = HashSet::new();
 
         loop {
             let page = match rx.recv().await {
@@ -437,11 +471,17 @@ pub async fn run_crawl_once(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
-            summary.pages_seen += 1;
-            let url = page.get_url().to_string();
-            if is_excluded_url_path(&url, &exclude_path_prefix) {
+            let raw_url = page.get_url().to_string();
+            if is_excluded_url_path(&raw_url, &exclude_path_prefix) {
                 continue;
             }
+            let Some(url) = canonicalize_url_for_dedupe(&raw_url) else {
+                continue;
+            };
+            if !seen_canonical.insert(url.clone()) {
+                continue;
+            }
+            summary.pages_seen += 1;
             urls.insert(url.clone());
 
             let input = TransformInput {
@@ -802,5 +842,26 @@ mod tests {
             "https://example.com/developer",
             &excludes
         ));
+    }
+
+    #[test]
+    fn test_canonicalize_url_for_dedupe_trailing_slash_and_fragment() {
+        let a = canonicalize_url_for_dedupe("https://example.com/docs/");
+        let b = canonicalize_url_for_dedupe("https://example.com/docs#intro");
+        assert_eq!(a, b);
+        assert_eq!(a.as_deref(), Some("https://example.com/docs"));
+    }
+
+    #[test]
+    fn test_canonicalize_url_for_dedupe_root_and_default_port() {
+        let a = canonicalize_url_for_dedupe("https://example.com:443/");
+        let b = canonicalize_url_for_dedupe("https://example.com/");
+        assert_eq!(a, b);
+        assert_eq!(a.as_deref(), Some("https://example.com/"));
+    }
+
+    #[test]
+    fn test_regex_escape_escapes_hyphen() {
+        assert_eq!(regex_escape("foo-bar"), "foo\\-bar");
     }
 }
