@@ -119,6 +119,7 @@ pub struct Config {
     pub openai_base_url: String,
     pub openai_api_key: String,
     pub openai_model: String,
+    pub ask_diagnostics: bool,
     pub json_output: bool,
 }
 
@@ -144,7 +145,7 @@ enum CliCommand {
     Doctor,
     Query(TextArg),
     Retrieve(UrlArg),
-    Ask(TextArg),
+    Ask(AskArgs),
     Sources,
     Domains,
     Stats,
@@ -159,6 +160,14 @@ struct UrlArg {
 
 #[derive(Debug, Args)]
 struct TextArg {
+    #[arg(value_name = "TEXT")]
+    value: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct AskArgs {
+    #[arg(long, action = ArgAction::SetTrue)]
+    diagnostics: bool,
     #[arg(value_name = "TEXT")]
     value: Vec<String>,
 }
@@ -504,6 +513,7 @@ fn performance_defaults(profile: PerformanceProfile) -> (usize, usize, usize, u6
 fn into_config(cli: Cli) -> Config {
     let global = cli.global;
 
+    let mut ask_diagnostics = false;
     let (command, positional) = match cli.command {
         CliCommand::Scrape(args) => (
             CommandKind::Scrape,
@@ -552,7 +562,10 @@ fn into_config(cli: Cli) -> Config {
             CommandKind::Retrieve,
             args.value.into_iter().collect::<Vec<String>>(),
         ),
-        CliCommand::Ask(args) => (CommandKind::Ask, args.value),
+        CliCommand::Ask(args) => {
+            ask_diagnostics = args.diagnostics;
+            (CommandKind::Ask, args.value)
+        }
         CliCommand::Sources => (CommandKind::Sources, Vec::new()),
         CliCommand::Domains => (CommandKind::Domains, Vec::new()),
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
@@ -678,6 +691,7 @@ fn into_config(cli: Cli) -> Config {
             .openai_model
             .or_else(|| env::var("OPENAI_MODEL").ok())
             .unwrap_or_default(),
+        ask_diagnostics,
         json_output: global.json,
     };
 

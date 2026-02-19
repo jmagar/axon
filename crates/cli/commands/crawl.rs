@@ -60,8 +60,6 @@ pub async fn run_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Erro
                                     .get("md_created")
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
-                                let thin_md =
-                                    metrics.get("thin_md").and_then(|v| v.as_u64()).unwrap_or(0);
                                 let filtered_urls = metrics
                                     .get("filtered_urls")
                                     .and_then(|v| v.as_u64())
@@ -74,11 +72,36 @@ pub async fn run_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Erro
                                     .get("pages_discovered")
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
+                                let sitemap_written = metrics
+                                    .get("sitemap_written")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let sitemap_candidates = metrics
+                                    .get("sitemap_candidates")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let pages_target = pages_discovered.saturating_sub(filtered_urls);
+                                let thin_md =
+                                    metrics.get("thin_md").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let thin_pct = if pages_discovered > 0 {
+                                    (thin_md as f64 / pages_discovered as f64) * 100.0
+                                } else {
+                                    0.0
+                                };
                                 println!("  {} {}", muted("md created:"), md_created);
-                                println!("  {} {}", muted("thin md:"), thin_md);
+                                println!("  {} {}", muted("pages target:"), pages_target);
+                                println!("  {} {:.1}%", muted("thin % of discovered:"), thin_pct);
                                 println!("  {} {}", muted("filtered urls:"), filtered_urls);
                                 println!("  {} {}", muted("pages crawled:"), pages_crawled);
                                 println!("  {} {}", muted("pages discovered:"), pages_discovered);
+                                if sitemap_candidates > 0 || sitemap_written > 0 {
+                                    println!(
+                                        "  {} {}/{}",
+                                        muted("sitemap written/candidates:"),
+                                        sitemap_written,
+                                        sitemap_candidates
+                                    );
+                                }
                             }
                             println!();
                             println!("Job ID: {}", job.id);

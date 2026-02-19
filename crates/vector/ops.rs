@@ -6,15 +6,50 @@ use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::StatusCode;
 use spider::url::Url;
-use std::collections::{BTreeMap, BTreeSet};
+use sqlx::{postgres::PgPoolOptions, Row};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use uuid::Uuid;
 
 fn qdrant_base(cfg: &Config) -> String {
     cfg.qdrant_url.trim_end_matches('/').to_string()
+}
+
+async fn pg_pool_for_stats(cfg: &Config) -> Option<sqlx::PgPool> {
+    if cfg.pg_url.is_empty() {
+        return None;
+    }
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        PgPoolOptions::new().max_connections(2).connect(&cfg.pg_url),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+}
+
+async fn table_exists(pool: &sqlx::PgPool, table: &str) -> Result<bool, sqlx::Error> {
+    let exists: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
+        .bind(table)
+        .fetch_one(pool)
+        .await?;
+    Ok(exists)
+}
+
+async fn count_table_rows(pool: &sqlx::PgPool, table: &str) -> Result<i64, sqlx::Error> {
+    let sql = format!("SELECT COUNT(*) FROM {table}");
+    sqlx::query_scalar::<_, i64>(&sql).fetch_one(pool).await
+}
+
+async fn command_count(pool: &sqlx::PgPool, command: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM axon_command_runs WHERE command = $1")
+        .bind(command)
+        .fetch_one(pool)
+        .await
 }
 
 fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
@@ -129,8 +164,8 @@ async fn qdrant_scroll_pages(
 
         let points = val["result"]["points"]
             .as_array()
-            .cloned()
-            .unwrap_or_default();
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         if points.is_empty() {
             break;
         }
@@ -143,6 +178,40 @@ async fn qdrant_scroll_pages(
     }
 
     Ok(())
+}
+
+async fn qdrant_domain_facets(
+    cfg: &Config,
+    limit: usize,
+) -> Result<Vec<(String, usize)>, Box<dyn Error>> {
+    let client = http_client()?;
+    let url = format!("{}/collections/{}/facet", qdrant_base(cfg), cfg.collection);
+    let value = client
+        .post(url)
+        .json(&serde_json::json!({
+            "key": "domain",
+            "limit": limit,
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let mut out = Vec::new();
+    if let Some(hits) = value["result"]["hits"].as_array() {
+        for hit in hits {
+            let domain = hit
+                .get("value")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let vectors = hit.get("count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            out.push((domain, vectors));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
 }
 
 async fn qdrant_search(
@@ -311,9 +380,151 @@ fn payload_domain(payload: &serde_json::Value) -> String {
         .to_string()
 }
 
+#[derive(Debug, Clone)]
+struct AskCandidate {
+    score: f64,
+    url: String,
+    chunk_text: String,
+}
+
+fn tokenize_query(text: &str) -> Vec<String> {
+    let stop = [
+        "the", "and", "for", "with", "that", "this", "from", "into", "how", "what", "where",
+        "when", "you", "your", "are", "can", "does", "create", "make",
+    ];
+    let stop_words: HashSet<&str> = stop.into_iter().collect();
+    text.to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() >= 3 && !stop_words.contains(*t))
+        .map(str::to_string)
+        .collect()
+}
+
+fn tokenize_text_set(text: &str) -> HashSet<String> {
+    tokenize_query(text).into_iter().collect()
+}
+
+fn tokenize_path_set(path_or_url: &str) -> HashSet<String> {
+    let path = Url::parse(path_or_url)
+        .ok()
+        .map(|u| u.path().to_string())
+        .unwrap_or_else(|| path_or_url.to_string());
+    path.to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .map(str::to_string)
+        .collect()
+}
+
+fn rerank_ask_candidates(candidates: &[AskCandidate], query: &str) -> Vec<AskCandidate> {
+    let tokens: Vec<String> = tokenize_query(query);
+    if tokens.is_empty() {
+        return candidates.to_vec();
+    }
+
+    let mut reranked = candidates.to_vec();
+    reranked.sort_by(|a, b| {
+        let adjusted = |candidate: &AskCandidate| -> f64 {
+            let mut lexical_boost = 0.0f64;
+            let url_tokens = tokenize_path_set(&candidate.url);
+            let chunk_tokens = tokenize_text_set(&candidate.chunk_text);
+            for token in &tokens {
+                if url_tokens.contains(token) {
+                    lexical_boost += 0.045;
+                }
+                if chunk_tokens.contains(token) {
+                    lexical_boost += 0.015;
+                }
+            }
+            lexical_boost = lexical_boost.min(0.30);
+
+            let docs_boost = if candidate.url.contains("/docs/")
+                || candidate.url.contains("/guides/")
+                || candidate.url.contains("/api/")
+                || candidate.url.contains("/reference/")
+            {
+                0.04
+            } else {
+                0.0
+            };
+
+            candidate.score + lexical_boost + docs_boost
+        };
+
+        adjusted(b)
+            .partial_cmp(&adjusted(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    reranked
+}
+
+fn select_diverse_candidates(
+    candidates: &[AskCandidate],
+    target_count: usize,
+    max_per_url: usize,
+) -> Vec<AskCandidate> {
+    if candidates.len() <= target_count {
+        return candidates.to_vec();
+    }
+
+    let mut selected: Vec<AskCandidate> = Vec::new();
+    let mut per_url_count: HashMap<String, usize> = HashMap::new();
+
+    // Pass 1: one per URL for source diversity.
+    for candidate in candidates {
+        if selected.len() >= target_count {
+            break;
+        }
+        if per_url_count.contains_key(&candidate.url) {
+            continue;
+        }
+        selected.push(candidate.clone());
+        per_url_count.insert(candidate.url.clone(), 1);
+    }
+
+    // Pass 2: fill remaining slots up to max-per-url.
+    for candidate in candidates {
+        if selected.len() >= target_count {
+            break;
+        }
+        let used = *per_url_count.get(&candidate.url).unwrap_or(&0);
+        if used >= max_per_url {
+            continue;
+        }
+        selected.push(candidate.clone());
+        per_url_count.insert(candidate.url.clone(), used + 1);
+    }
+
+    selected
+}
+
+fn render_full_doc_from_points(mut points: Vec<serde_json::Value>) -> String {
+    points.sort_by_key(|p| p["payload"]["chunk_index"].as_i64().unwrap_or(i64::MAX));
+    let mut text = String::new();
+    for point in points {
+        let Some(payload) = point.get("payload") else {
+            continue;
+        };
+        let chunk = payload_text(payload);
+        if chunk.is_empty() {
+            continue;
+        }
+        text.push_str(&chunk);
+        text.push('\n');
+    }
+    text.trim().to_string()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct EmbedSummary {
     pub docs_embedded: usize,
+    pub chunks_embedded: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EmbedProgress {
+    pub docs_total: usize,
+    pub docs_completed: usize,
     pub chunks_embedded: usize,
 }
 
@@ -363,6 +574,14 @@ async fn embed_prepared_doc(
 }
 
 pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary, Box<dyn Error>> {
+    embed_path_native_with_progress(cfg, input, None).await
+}
+
+pub async fn embed_path_native_with_progress(
+    cfg: &Config,
+    input: &str,
+    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+) -> Result<EmbedSummary, Box<dyn Error>> {
     if cfg.tei_url.is_empty() {
         return Err("TEI_URL not configured".into());
     }
@@ -395,6 +614,13 @@ pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary
         });
     }
     if prepared.is_empty() {
+        if let Some(tx) = &progress_tx {
+            let _ = tx.send(EmbedProgress {
+                docs_total: 0,
+                docs_completed: 0,
+                chunks_embedded: 0,
+            });
+        }
         return Ok(EmbedSummary {
             docs_embedded: 0,
             chunks_embedded: 0,
@@ -422,6 +648,7 @@ pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary
     }
 
     let mut chunks_embedded = 0usize;
+    let mut docs_completed = 0usize;
     let mut pending_points: Vec<serde_json::Value> = Vec::new();
     let mut collection_dim: Option<usize> = None;
 
@@ -442,6 +669,14 @@ pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary
             _ => {}
         }
         chunks_embedded += points.len();
+        docs_completed += 1;
+        if let Some(tx) = &progress_tx {
+            let _ = tx.send(EmbedProgress {
+                docs_total: docs_embedded,
+                docs_completed,
+                chunks_embedded,
+            });
+        }
         pending_points.append(&mut points);
         if pending_points.len() >= flush_point_threshold {
             qdrant_upsert(cfg, &pending_points).await?;
@@ -571,8 +806,10 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let mut by_url: BTreeMap<String, usize> = BTreeMap::new();
     qdrant_scroll_pages(cfg, |points| {
         for p in points {
-            let payload = p.get("payload").cloned().unwrap_or_default();
-            let url = payload_url(&payload);
+            let Some(payload) = p.get("payload") else {
+                continue;
+            };
+            let url = payload_url(payload);
             if url.is_empty() {
                 continue;
             }
@@ -596,13 +833,60 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let mut by_domain: BTreeMap<String, (usize, BTreeSet<String>)> = BTreeMap::new();
+    let detailed_mode = env::var("AXON_DOMAINS_DETAILED")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false);
+
+    if !detailed_mode {
+        let facet_limit = env_usize_clamped("AXON_DOMAINS_FACET_LIMIT", 100_000, 1, 1_000_000);
+        match qdrant_domain_facets(cfg, facet_limit).await {
+            Ok(domains) => {
+                if cfg.json_output {
+                    let mut out: BTreeMap<String, usize> = BTreeMap::new();
+                    for (domain, vectors) in domains {
+                        out.insert(domain, vectors);
+                    }
+                    println!("{}", serde_json::to_string_pretty(&out)?);
+                } else {
+                    println!("{}", primary("Domains"));
+                    for (domain, vectors) in domains {
+                        println!(
+                            "  • {} {}",
+                            accent(&domain),
+                            muted(&format!("vectors={vectors}"))
+                        );
+                    }
+                    println!(
+                        "{}",
+                        muted(
+                            "Tip: set AXON_DOMAINS_DETAILED=1 for exact per-domain unique URL counts (slower)."
+                        )
+                    );
+                }
+                return Ok(());
+            }
+            Err(err) => {
+                eprintln!(
+                    "warning: fast domain facet query failed ({err}); falling back to detailed scan"
+                );
+            }
+        }
+    }
+
+    let mut by_domain: HashMap<String, (usize, HashSet<String>)> = HashMap::new();
     qdrant_scroll_pages(cfg, |points| {
         for p in points {
-            let payload = p.get("payload").cloned().unwrap_or_default();
-            let domain = payload_domain(&payload);
-            let url = payload_url(&payload);
-            let entry = by_domain.entry(domain).or_insert((0, BTreeSet::new()));
+            let Some(payload) = p.get("payload") else {
+                continue;
+            };
+            let domain = payload_domain(payload);
+            let url = payload_url(payload);
+            let entry = by_domain.entry(domain).or_insert((0, HashSet::new()));
             entry.0 += 1;
             if !url.is_empty() {
                 entry.1.insert(url);
@@ -611,10 +895,16 @@ pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     })
     .await?;
     if cfg.json_output {
-        println!("{}", serde_json::to_string_pretty(&by_domain)?);
+        let mut out: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        for (domain, (vectors, urls)) in by_domain {
+            out.insert(domain, (vectors, urls.len()));
+        }
+        println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         println!("{}", primary("Domains"));
-        for (domain, (vectors, urls)) in by_domain {
+        let mut rows: Vec<_> = by_domain.into_iter().collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        for (domain, (vectors, urls)) in rows {
             println!(
                 "  • {} {}",
                 accent(&domain),
@@ -650,14 +940,249 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         .error_for_status()?
         .json::<serde_json::Value>()
         .await?;
+    let docs_count = client
+        .post(format!(
+            "{}/collections/{}/points/count",
+            qdrant_base(cfg),
+            cfg.collection
+        ))
+        .json(&serde_json::json!({
+            "exact": true,
+            "filter": {
+                "must": [
+                    {
+                        "key": "chunk_index",
+                        "match": { "value": 0 }
+                    }
+                ]
+            }
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let points_count = count["result"]["count"].as_u64().unwrap_or(0);
+    let docs_embedded = docs_count["result"]["count"].as_u64().unwrap_or(0);
+    let avg_chunks_per_doc = if docs_embedded > 0 {
+        points_count as f64 / docs_embedded as f64
+    } else {
+        0.0
+    };
+    let indexed_vectors = info["result"]["indexed_vectors_count"]
+        .as_u64()
+        .or_else(|| info["result"]["vectors_count"].as_u64());
+    let segments_count = info["result"]["segments_count"].as_u64();
+    let payload_schema = info["result"]["payload_schema"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    let payload_fields: Vec<String> = payload_schema.keys().cloned().collect();
+    let payload_fields_count = payload_fields.len();
+
+    let mut crawl_count: Option<i64> = None;
+    let mut batch_count: Option<i64> = None;
+    let mut extract_count: Option<i64> = None;
+    let mut average_pages_per_second: Option<f64> = None;
+    let mut average_crawl_duration_seconds: Option<f64> = None;
+    let mut average_embedding_duration_seconds: Option<f64> = None;
+    let mut average_overall_crawl_duration_seconds: Option<f64> = None;
+    let mut longest_crawl: Option<serde_json::Value> = None;
+    let mut most_chunks: Option<serde_json::Value> = None;
+    let mut total_chunks: Option<i64> = None;
+    let mut total_docs: Option<i64> = None;
+    let mut base_urls_count: Option<i64> = None;
+
+    let mut scrape_count: Option<i64> = None;
+    let mut query_count: Option<i64> = None;
+    let mut ask_count: Option<i64> = None;
+    let mut retrieve_count: Option<i64> = None;
+    let mut map_count: Option<i64> = None;
+    let mut search_count: Option<i64> = None;
+
+    if let Some(pool) = pg_pool_for_stats(cfg).await {
+        if table_exists(&pool, "axon_crawl_jobs")
+            .await
+            .unwrap_or(false)
+        {
+            crawl_count = count_table_rows(&pool, "axon_crawl_jobs").await.ok();
+            base_urls_count =
+                sqlx::query_scalar::<_, i64>("SELECT COUNT(DISTINCT url) FROM axon_crawl_jobs")
+                    .fetch_one(&pool)
+                    .await
+                    .ok();
+            average_pages_per_second = sqlx::query_scalar::<_, Option<f64>>(
+                r#"
+                SELECT AVG(
+                    COALESCE((result_json->>'pages_discovered')::double precision, 0.0)
+                    / GREATEST(EXTRACT(EPOCH FROM (finished_at - started_at))::double precision, 0.001::double precision)
+                )
+                FROM axon_crawl_jobs
+                WHERE status='completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL
+                "#,
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+            average_crawl_duration_seconds = sqlx::query_scalar::<_, Option<f64>>(
+                "SELECT AVG(EXTRACT(EPOCH FROM (finished_at - started_at))::double precision) FROM axon_crawl_jobs WHERE status='completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL",
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+            if let Ok(Some(row)) = sqlx::query(
+                r#"
+                SELECT id::text AS id, url, EXTRACT(EPOCH FROM (finished_at - started_at))::double precision AS seconds
+                FROM axon_crawl_jobs
+                WHERE status='completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL
+                ORDER BY (finished_at - started_at) DESC
+                LIMIT 1
+                "#,
+            )
+            .fetch_optional(&pool)
+            .await
+            {
+                let id: String = row.get("id");
+                let url: String = row.get("url");
+                let seconds: f64 = row.get("seconds");
+                longest_crawl = Some(serde_json::json!({
+                    "id": id,
+                    "url": url,
+                    "seconds": seconds
+                }));
+            }
+            average_overall_crawl_duration_seconds = sqlx::query_scalar::<_, Option<f64>>(
+                r#"
+                SELECT AVG(
+                    EXTRACT(EPOCH FROM (
+                        COALESCE(e.finished_at, c.finished_at) - c.started_at
+                    ))::double precision
+                )
+                FROM axon_crawl_jobs c
+                LEFT JOIN LATERAL (
+                    SELECT finished_at
+                    FROM axon_embed_jobs e
+                    WHERE e.status='completed'
+                      AND e.input_text LIKE ('%' || c.id::text || '/markdown')
+                    ORDER BY finished_at DESC
+                    LIMIT 1
+                ) e ON TRUE
+                WHERE c.status='completed' AND c.started_at IS NOT NULL AND c.finished_at IS NOT NULL
+                "#,
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+        }
+        if table_exists(&pool, "axon_batch_jobs")
+            .await
+            .unwrap_or(false)
+        {
+            batch_count = count_table_rows(&pool, "axon_batch_jobs").await.ok();
+        }
+        if table_exists(&pool, "axon_extract_jobs")
+            .await
+            .unwrap_or(false)
+        {
+            extract_count = count_table_rows(&pool, "axon_extract_jobs").await.ok();
+        }
+        if table_exists(&pool, "axon_embed_jobs")
+            .await
+            .unwrap_or(false)
+        {
+            average_embedding_duration_seconds = sqlx::query_scalar::<_, Option<f64>>(
+                "SELECT AVG(EXTRACT(EPOCH FROM (finished_at - started_at))::double precision) FROM axon_embed_jobs WHERE status='completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL",
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+            total_chunks = sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT SUM(COALESCE((result_json->>'chunks_embedded')::bigint, 0)) FROM axon_embed_jobs WHERE status='completed'",
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+            total_docs = sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT SUM(COALESCE((result_json->>'docs_embedded')::bigint, 0)) FROM axon_embed_jobs WHERE status='completed'",
+            )
+            .fetch_one(&pool)
+            .await
+            .ok()
+            .flatten();
+            if let Ok(Some(row)) = sqlx::query(
+                r#"
+                SELECT id::text AS id,
+                       COALESCE((result_json->>'chunks_embedded')::bigint, 0) AS chunks
+                FROM axon_embed_jobs
+                WHERE status='completed'
+                ORDER BY COALESCE((result_json->>'chunks_embedded')::bigint, 0) DESC
+                LIMIT 1
+                "#,
+            )
+            .fetch_optional(&pool)
+            .await
+            {
+                let id: String = row.get("id");
+                let chunks: i64 = row.get("chunks");
+                most_chunks = Some(serde_json::json!({
+                    "embed_job_id": id,
+                    "chunks": chunks
+                }));
+            }
+        }
+        if table_exists(&pool, "axon_command_runs")
+            .await
+            .unwrap_or(false)
+        {
+            scrape_count = command_count(&pool, "scrape").await.ok();
+            query_count = command_count(&pool, "query").await.ok();
+            ask_count = command_count(&pool, "ask").await.ok();
+            retrieve_count = command_count(&pool, "retrieve").await.ok();
+            map_count = command_count(&pool, "map").await.ok();
+            search_count = command_count(&pool, "search").await.ok();
+        }
+    }
 
     let stats = serde_json::json!({
         "collection": cfg.collection,
         "status": info["result"]["status"],
         "vectors_count": info["result"]["vectors_count"],
-        "points_count": count["result"]["count"],
+        "indexed_vectors_count": indexed_vectors,
+        "points_count": points_count,
         "dimension": info["result"]["config"]["params"]["vectors"]["size"],
-        "distance": info["result"]["config"]["params"]["vectors"]["distance"]
+        "distance": info["result"]["config"]["params"]["vectors"]["distance"],
+        "segments_count": segments_count,
+        "docs_embedded_estimate": docs_embedded,
+        "avg_chunks_per_doc": avg_chunks_per_doc,
+        "payload_fields_count": payload_fields_count,
+        "payload_fields": payload_fields,
+        "avg_pages_crawled_per_second": average_pages_per_second,
+        "avg_crawl_duration_seconds": average_crawl_duration_seconds,
+        "avg_embedding_duration_seconds": average_embedding_duration_seconds,
+        "avg_overall_crawl_duration_seconds": average_overall_crawl_duration_seconds,
+        "longest_crawl": longest_crawl,
+        "most_chunks": most_chunks,
+        "total_chunks": total_chunks,
+        "total_docs": total_docs,
+        "base_urls_count": base_urls_count,
+        "counts": {
+            "crawls": crawl_count,
+            "scrapes": scrape_count,
+            "extracts": extract_count,
+            "batches": batch_count,
+            "queries": query_count,
+            "asks": ask_count,
+            "retrieves": retrieve_count,
+            "maps": map_count,
+            "searches": search_count
+        },
+        "usage_counts_note": "scrape/query/ask/retrieve/map/search are tracked in axon_command_runs from this release onward"
     });
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&stats)?);
@@ -670,15 +1195,108 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
             status_text(stats["status"].as_str().unwrap_or("unknown"))
         );
         println!("  {} {}", muted("Vectors:"), stats["vectors_count"]);
+        println!(
+            "  {} {}",
+            muted("Indexed Vectors:"),
+            stats["indexed_vectors_count"]
+        );
         println!("  {} {}", muted("Points:"), stats["points_count"]);
+        println!(
+            "  {} {}",
+            muted("Docs (est):"),
+            stats["docs_embedded_estimate"]
+        );
+        println!(
+            "  {} {:.2}",
+            muted("Avg Chunks/Doc:"),
+            stats["avg_chunks_per_doc"].as_f64().unwrap_or(0.0)
+        );
         println!("  {} {}", muted("Dimension:"), stats["dimension"]);
         println!("  {} {}", muted("Distance:"), stats["distance"]);
+        println!("  {} {}", muted("Segments:"), stats["segments_count"]);
+        println!(
+            "  {} {}",
+            muted("Payload Fields:"),
+            stats["payload_fields_count"]
+        );
+        if let Some(fields) = stats["payload_fields"].as_array() {
+            let rendered = fields
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !rendered.is_empty() {
+                println!("  {} {}", muted("Field Names:"), rendered);
+            }
+        }
+        println!();
+        println!("{}", primary("Pipeline Stats"));
+        let avg_pages = stats["avg_pages_crawled_per_second"]
+            .as_f64()
+            .map(|v| format!("{v:.2}"))
+            .unwrap_or_else(|| "n/a".to_string());
+        let avg_crawl = stats["avg_crawl_duration_seconds"]
+            .as_f64()
+            .map(|v| format!("{v:.2}s"))
+            .unwrap_or_else(|| "n/a".to_string());
+        let avg_embed = stats["avg_embedding_duration_seconds"]
+            .as_f64()
+            .map(|v| format!("{v:.2}s"))
+            .unwrap_or_else(|| "n/a".to_string());
+        let avg_overall = stats["avg_overall_crawl_duration_seconds"]
+            .as_f64()
+            .map(|v| format!("{v:.2}s"))
+            .unwrap_or_else(|| "n/a".to_string());
+        println!("  {} {}", muted("Avg Pages/sec:"), avg_pages);
+        println!("  {} {}", muted("Avg Crawl Duration:"), avg_crawl);
+        println!("  {} {}", muted("Avg Embedding Duration:"), avg_embed);
+        println!("  {} {}", muted("Avg Overall Crawl:"), avg_overall);
+        println!("  {} {}", muted("Total Chunks:"), stats["total_chunks"]);
+        println!("  {} {}", muted("Total Docs:"), stats["total_docs"]);
+        println!("  {} {}", muted("Base URLs:"), stats["base_urls_count"]);
+        if let Some(longest) = stats["longest_crawl"].as_object() {
+            println!(
+                "  {} {} ({:.2}s)",
+                muted("Longest Crawl:"),
+                longest.get("id").and_then(|v| v.as_str()).unwrap_or("n/a"),
+                longest
+                    .get("seconds")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+            );
+        }
+        if let Some(most) = stats["most_chunks"].as_object() {
+            println!(
+                "  {} {} ({})",
+                muted("Most Chunks:"),
+                most.get("embed_job_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("n/a"),
+                most.get("chunks").and_then(|v| v.as_i64()).unwrap_or(0)
+            );
+        }
+        println!();
+        println!("{}", primary("Command Counts"));
+        println!("  {} {}", muted("Crawls:"), stats["counts"]["crawls"]);
+        println!("  {} {}", muted("Scrapes:"), stats["counts"]["scrapes"]);
+        println!("  {} {}", muted("Extracts:"), stats["counts"]["extracts"]);
+        println!("  {} {}", muted("Batches:"), stats["counts"]["batches"]);
+        println!("  {} {}", muted("Queries:"), stats["counts"]["queries"]);
+        println!("  {} {}", muted("Asks:"), stats["counts"]["asks"]);
+        println!("  {} {}", muted("Retrieves:"), stats["counts"]["retrieves"]);
+        println!("  {} {}", muted("Maps:"), stats["counts"]["maps"]);
+        println!("  {} {}", muted("Searches:"), stats["counts"]["searches"]);
+        println!(
+            "  {}",
+            muted(stats["usage_counts_note"].as_str().unwrap_or(""))
+        );
     }
     Ok(())
 }
 
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    const MAX_CONTEXT_CHARS: usize = 12_000;
+    const MAX_CONTEXT_CHARS: usize = 120_000;
+    let ask_started = std::time::Instant::now();
 
     let query = cfg
         .query
@@ -692,28 +1310,163 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         })
         .ok_or("ask requires query")?;
 
+    let retrieval_started = std::time::Instant::now();
     let mut ask_vectors = tei_embed(cfg, std::slice::from_ref(&query)).await?;
     if ask_vectors.is_empty() {
         return Err("TEI returned no vector for ask query".into());
     }
     let vecq = ask_vectors.remove(0);
-    let hits = qdrant_search(cfg, &vecq, 8).await?;
-    let mut context = String::new();
-    for h in hits {
-        let payload = h.get("payload").cloned().unwrap_or_default();
-        let url = payload_url(&payload);
-        let txt = payload_text(&payload);
-        if !txt.is_empty() {
-            let entry = format!("Source: {}\n{}\n\n", url, txt);
-            if context.len() + entry.len() > MAX_CONTEXT_CHARS {
-                eprintln!(
-                    "warning: context truncated at {} chars (max {}); some chunks omitted",
-                    context.len(),
-                    MAX_CONTEXT_CHARS
-                );
-                break;
+    let candidate_pool_limit = env_usize_clamped("AXON_ASK_CANDIDATE_LIMIT", 64, 8, 200);
+    let chunk_limit = env_usize_clamped("AXON_ASK_CHUNK_LIMIT", 10, 3, 40);
+    let full_docs_limit = env_usize_clamped("AXON_ASK_FULL_DOCS", 4, 1, 20);
+    let backfill_limit = env_usize_clamped("AXON_ASK_BACKFILL_CHUNKS", 3, 0, 20);
+
+    let hits = qdrant_search(cfg, &vecq, candidate_pool_limit).await?;
+    let mut candidates = Vec::new();
+    for hit in hits {
+        let score = hit["score"].as_f64().unwrap_or(0.0);
+        let Some(payload) = hit.get("payload") else {
+            continue;
+        };
+        let url = payload_url(payload);
+        let chunk_text = payload_text(payload);
+        if url.is_empty() || chunk_text.len() < 40 {
+            continue;
+        }
+        candidates.push(AskCandidate {
+            score,
+            url,
+            chunk_text,
+        });
+    }
+    if candidates.is_empty() {
+        return Err("No relevant documents found for ask query".into());
+    }
+
+    let reranked = rerank_ask_candidates(&candidates, &query);
+    let top_chunks = select_diverse_candidates(&reranked, chunk_limit, 2);
+    let top_full_docs = select_diverse_candidates(&reranked, full_docs_limit, 1);
+    let retrieval_elapsed_ms = retrieval_started.elapsed().as_millis();
+
+    let context_started = std::time::Instant::now();
+    let mut full_docs_context: Vec<String> = Vec::new();
+    let mut context_char_count = 0usize;
+    let separator = "\n\n---\n\n";
+    for (idx, doc) in top_full_docs.iter().enumerate() {
+        let points = qdrant_retrieve_by_url(cfg, &doc.url).await?;
+        let text = render_full_doc_from_points(points);
+        if text.is_empty() {
+            continue;
+        }
+        let entry = format!(
+            "## Source Document {} [S{}]: {}\n\n{}",
+            idx + 1,
+            idx + 1,
+            doc.url,
+            text
+        );
+        let projected = context_char_count + entry.len() + separator.len();
+        if projected > MAX_CONTEXT_CHARS {
+            break;
+        }
+        full_docs_context.push(entry);
+        context_char_count = projected;
+    }
+
+    if full_docs_context.is_empty() {
+        return Err("Failed to retrieve any full source documents for ask".into());
+    }
+
+    let full_doc_urls: HashSet<String> = top_full_docs.iter().map(|c| c.url.clone()).collect();
+    let supplemental = select_diverse_candidates(
+        &reranked
+            .iter()
+            .filter(|c| !full_doc_urls.contains(&c.url))
+            .cloned()
+            .collect::<Vec<_>>(),
+        backfill_limit,
+        1,
+    );
+
+    let mut supplemental_context: Vec<String> = Vec::new();
+    for (idx, chunk) in supplemental.iter().enumerate() {
+        let entry = format!(
+            "## Supplemental Chunk {} [S{}]: {}\n\n{}",
+            idx + 1,
+            full_docs_context.len() + idx + 1,
+            chunk.url,
+            chunk.chunk_text
+        );
+        let projected = context_char_count + entry.len() + separator.len();
+        if projected > MAX_CONTEXT_CHARS {
+            break;
+        }
+        supplemental_context.push(entry);
+        context_char_count = projected;
+    }
+
+    let supplemental_count = supplemental_context.len();
+    let context = [
+        "Answer only from the provided sources.",
+        "Cite supporting sources inline using [S#] labels.",
+        "If the sources are incomplete, say so explicitly.",
+        "",
+        "Sources:",
+        &(full_docs_context
+            .into_iter()
+            .chain(supplemental_context.into_iter())
+            .collect::<Vec<_>>()
+            .join(separator)),
+        "",
+        &format!("Question: {query}"),
+    ]
+    .join("\n");
+    let context_elapsed_ms = context_started.elapsed().as_millis();
+
+    if cfg.ask_diagnostics {
+        let mut diagnostic_sources: Vec<String> = Vec::new();
+        diagnostic_sources.extend(
+            top_full_docs
+                .iter()
+                .map(|c| format!("full-doc score={:.3} url={}", c.score, c.url)),
+        );
+        diagnostic_sources.extend(
+            supplemental
+                .iter()
+                .take(supplemental_count)
+                .map(|c| format!("chunk score={:.3} url={}", c.score, c.url)),
+        );
+        if cfg.json_output {
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "ask_diagnostics": {
+                        "candidate_pool": candidates.len(),
+                        "reranked_pool": reranked.len(),
+                        "chunks_selected": top_chunks.len(),
+                        "full_docs_selected": top_full_docs.len(),
+                        "supplemental_selected": supplemental_count,
+                        "context_chars": context.len(),
+                        "sources": diagnostic_sources,
+                    }
+                })
+            );
+        } else {
+            eprintln!("{}", primary("Ask Diagnostics"));
+            eprintln!(
+                "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
+                muted("Retrieval:"),
+                candidates.len(),
+                reranked.len(),
+                top_chunks.len(),
+                top_full_docs.len(),
+                supplemental_count,
+                context.len()
+            );
+            for source in diagnostic_sources {
+                eprintln!("  • {source}");
             }
-            context.push_str(&entry);
+            eprintln!();
         }
     }
 
@@ -730,7 +1483,7 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         .json(&serde_json::json!({
             "model": cfg.openai_model,
             "messages": [
-                {"role": "system", "content": "Answer only using provided context."},
+                {"role": "system", "content": "Answer only using provided context. Cite sources like [S1]."},
                 {"role": "user", "content": format!("Question: {}\n\nContext:\n{}", query, context)}
             ],
             "temperature": 0.1
@@ -740,20 +1493,64 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         req = req.bearer_auth(&cfg.openai_api_key);
     }
 
+    let llm_started = std::time::Instant::now();
     let response = req.send().await?.error_for_status()?;
     let json: serde_json::Value = response.json().await?;
     let answer = json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("(no answer)");
+    let llm_elapsed_ms = llm_started.elapsed().as_millis();
+    let total_elapsed_ms = ask_started.elapsed().as_millis();
     if cfg.json_output {
         println!(
             "{}",
-            serde_json::to_string_pretty(&serde_json::json!({"query": query, "answer": answer}))?
+            serde_json::to_string_pretty(&serde_json::json!({
+                "query": query,
+                "answer": answer,
+                "diagnostics": if cfg.ask_diagnostics {
+                    serde_json::json!({
+                        "candidate_pool": candidates.len(),
+                        "reranked_pool": reranked.len(),
+                        "chunks_selected": top_chunks.len(),
+                        "full_docs_selected": top_full_docs.len(),
+                        "supplemental_selected": supplemental_count,
+                        "context_chars": context.len(),
+                    })
+                } else {
+                    serde_json::Value::Null
+                },
+                "timing_ms": {
+                    "retrieval": retrieval_elapsed_ms,
+                    "context_build": context_elapsed_ms,
+                    "llm": llm_elapsed_ms,
+                    "total": total_elapsed_ms,
+                }
+            }))?
         );
     } else {
         println!("{}", primary("Conversation"));
         println!("  {} {}", primary("You:"), query);
         println!("  {} {}", primary("Assistant:"), answer);
+        if cfg.ask_diagnostics {
+            println!(
+                "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
+                muted("Diagnostics:"),
+                candidates.len(),
+                reranked.len(),
+                top_chunks.len(),
+                top_full_docs.len(),
+                supplemental_count,
+                context.len()
+            );
+        }
+        println!(
+            "  {} retrieval={}ms | context={}ms | llm={}ms | total={}ms",
+            muted("Timing:"),
+            retrieval_elapsed_ms,
+            context_elapsed_ms,
+            llm_elapsed_ms,
+            total_elapsed_ms
+        );
     }
     Ok(())
 }

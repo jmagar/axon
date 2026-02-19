@@ -5,7 +5,7 @@ use crate::axon_cli::crates::jobs::common::{
     claim_next_pending, claim_pending_by_id, enqueue_job, make_pool, mark_job_failed,
     open_amqp_channel, JobTable,
 };
-use crate::axon_cli::crates::vector::ops::embed_path_native;
+use crate::axon_cli::crates::vector::ops::{embed_path_native_with_progress, EmbedProgress};
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions};
@@ -180,7 +180,35 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
         let job_cfg: EmbedJobConfig = serde_json::from_value(cfg_json)?;
         let mut embed_cfg = cfg.clone();
         embed_cfg.collection = job_cfg.collection.clone();
-        let summary = embed_path_native(&embed_cfg, &input_text).await?;
+        let (progress_tx, mut progress_rx) =
+            tokio::sync::mpsc::unbounded_channel::<EmbedProgress>();
+        let progress_pool = pool.clone();
+        let progress_job_id = id;
+        let progress_task = tokio::spawn(async move {
+            while let Some(progress) = progress_rx.recv().await {
+                let progress_json = serde_json::json!({
+                    "phase": "embedding",
+                    "docs_total": progress.docs_total,
+                    "docs_completed": progress.docs_completed,
+                    "chunks_embedded": progress.chunks_embedded,
+                });
+                let _ = sqlx::query(
+                    "UPDATE axon_embed_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='running'",
+                )
+                .bind(progress_job_id)
+                .bind(progress_json)
+                .execute(&progress_pool)
+                .await;
+            }
+        });
+
+        let summary =
+            embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await?;
+        if let Err(err) = progress_task.await {
+            log_warn(&format!(
+                "embed progress_task panicked for job {id}: {err:?}"
+            ));
+        }
 
         Ok(Some(serde_json::json!({
             "input": input_text,

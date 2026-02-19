@@ -121,7 +121,7 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                             0.0
                         };
                         metrics_suffix = format!(
-                            " | {md_created}/{pages_target} 📄 | filtered {filtered_urls} ⏭️ | thin {thin_md}/{pages_discovered} ({thin_pct:.1}%)"
+                            " | {md_created}/{pages_target} 📄 | filtered {filtered_urls} ⏭️ | thin {thin_pct:.1}%"
                         );
                     } else if matches!(
                         job.status.as_str(),
@@ -237,6 +237,18 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                     .and_then(|v| v.as_u64())
                 {
                     metrics.push(styled_metric(format!("c{chunks}"), "green"));
+                }
+                if let (Some(done), Some(total)) = (
+                    job.result_json
+                        .as_ref()
+                        .and_then(|r| r.get("docs_completed"))
+                        .and_then(|v| v.as_u64()),
+                    job.result_json
+                        .as_ref()
+                        .and_then(|r| r.get("docs_total"))
+                        .and_then(|v| v.as_u64()),
+                ) {
+                    metrics.push(styled_metric(format!("{done}/{total}"), "cyan"));
                 }
                 println!(
                     "  {} {} {} {} {}",

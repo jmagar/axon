@@ -8,9 +8,40 @@ use self::crates::cli::commands::{
     run_map, run_query_native, run_retrieve_native, run_scrape, run_search, run_sources_native,
     run_stats_native, run_status, start_url_from_cfg,
 };
-use self::crates::core::config::{parse_args, CommandKind};
+use self::crates::core::config::{parse_args, CommandKind, Config};
 use self::crates::core::logging::{init_tracing, log_done, log_info};
+use sqlx::postgres::PgPoolOptions;
 use std::error::Error;
+use std::time::Duration;
+
+async fn record_command_run(cfg: &Config) {
+    if cfg.pg_url.is_empty() {
+        return;
+    }
+    let attempt = async {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&cfg.pg_url)
+            .await?;
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS axon_command_runs (
+                id BIGSERIAL PRIMARY KEY,
+                command TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query("INSERT INTO axon_command_runs (command) VALUES ($1)")
+            .bind(cfg.command.as_str())
+            .execute(&pool)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(2), attempt).await;
+}
 
 fn is_job_subcommand(cfg: &self::crates::core::config::Config) -> bool {
     matches!(
@@ -52,6 +83,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         cfg.collection,
         cfg.performance_profile
     ));
+    record_command_run(&cfg).await;
 
     match cfg.command {
         CommandKind::Scrape => run_scrape(&cfg, &start_url).await?,

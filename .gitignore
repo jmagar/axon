@@ -17,6 +17,7 @@ target/
 output/
 logs/
 tmp/
+tmp_manifest*.jsonl
 *.log
 *.pid
 
