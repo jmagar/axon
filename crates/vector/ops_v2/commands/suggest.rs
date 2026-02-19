@@ -90,12 +90,33 @@ fn already_indexed(url: &str, indexed_lookup: &HashSet<String>) -> bool {
     false
 }
 
-pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.openai_base_url.trim().is_empty() || cfg.openai_model.trim().is_empty() {
-        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for suggest".into());
-    }
+struct SuggestPromptContext {
+    desired: usize,
+    indexed_urls: Vec<String>,
+    indexed_lookup: HashSet<String>,
+    ranked_base_urls: Vec<(String, usize)>,
+    focus: String,
+    base_context: String,
+    existing_url_context: String,
+}
 
-    let desired = cfg.search_limit.clamp(1, 100);
+fn suggestion_focus(cfg: &Config) -> String {
+    cfg.query
+        .clone()
+        .or_else(|| {
+            if cfg.positional.is_empty() {
+                None
+            } else {
+                Some(cfg.positional.join(" "))
+            }
+        })
+        .unwrap_or_default()
+}
+
+async fn build_suggest_prompt_context(
+    cfg: &Config,
+    desired: usize,
+) -> Result<SuggestPromptContext, Box<dyn Error>> {
     let base_url_context_limit = env_usize_clamped("AXON_SUGGEST_BASE_URL_LIMIT", 250, 10, 5_000);
     let existing_url_context_limit =
         env_usize_clamped("AXON_SUGGEST_EXISTING_URL_LIMIT", 500, 0, 5_000);
@@ -133,34 +154,40 @@ pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         .cloned()
         .collect::<Vec<_>>()
         .join("\n");
+    Ok(SuggestPromptContext {
+        desired,
+        indexed_urls,
+        indexed_lookup,
+        ranked_base_urls,
+        focus: suggestion_focus(cfg),
+        base_context,
+        existing_url_context,
+    })
+}
 
-    let focus = cfg
-        .query
-        .clone()
-        .or_else(|| {
-            if cfg.positional.is_empty() {
-                None
-            } else {
-                Some(cfg.positional.join(" "))
-            }
-        })
-        .unwrap_or_default();
-
+fn build_suggest_user_prompt(ctx: &SuggestPromptContext) -> String {
     let user_prompt = format!(
         "You are helping expand a documentation crawl set.\n\
 Return STRICT JSON only in this shape:\n\
 {{\"suggestions\":[{{\"url\":\"https://...\",\"reason\":\"...\"}}]}}\n\n\
 Rules:\n\
-- Provide exactly {desired} suggestions.\n\
+- Provide exactly {} suggestions.\n\
 - Suggest docs/reference/changelog/API/help URLs likely to complement the indexed base URLs.\n\
 - Do not suggest any URL from ALREADY_INDEXED_URLS.\n\
 - Prefer URLs likely to be crawl entrypoints or high-value docs pages.\n\
 - Use only absolute http/https URLs.\n\n\
-Focus (optional): {focus}\n\n\
-INDEXED_BASE_URLS_WITH_PAGE_COUNTS:\n{base_context}\n\n\
-ALREADY_INDEXED_URLS:\n{existing_url_context}"
+Focus (optional): {}\n\n\
+INDEXED_BASE_URLS_WITH_PAGE_COUNTS:\n{}\n\n\
+ALREADY_INDEXED_URLS:\n{}",
+        ctx.desired, ctx.focus, ctx.base_context, ctx.existing_url_context
     );
+    user_prompt
+}
 
+async fn request_suggestions_from_llm(
+    cfg: &Config,
+    user_prompt: &str,
+) -> Result<String, Box<dyn Error>> {
     let client = http_client()?;
     let mut req = client
         .post(format!(
@@ -182,17 +209,24 @@ ALREADY_INDEXED_URLS:\n{existing_url_context}"
 
     let response = req.send().await?.error_for_status()?;
     let json: serde_json::Value = response.json().await?;
-    let content = json["choices"][0]["message"]["content"]
+    Ok(json["choices"][0]["message"]["content"]
         .as_str()
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string())
+}
 
+fn filter_new_suggestions(
+    content: &str,
+    indexed_lookup: &HashSet<String>,
+    desired: usize,
+) -> (Vec<Suggestion>, Vec<String>) {
     let parsed = parse_suggestions_from_llm(content);
     let mut accepted = Vec::new();
     let mut rejected_existing = Vec::new();
     let mut accepted_seen = HashSet::new();
 
     for suggestion in parsed {
-        if already_indexed(&suggestion.url, &indexed_lookup) {
+        if already_indexed(&suggestion.url, indexed_lookup) {
             rejected_existing.push(suggestion.url);
             continue;
         }
@@ -203,15 +237,24 @@ ALREADY_INDEXED_URLS:\n{existing_url_context}"
             break;
         }
     }
+    (accepted, rejected_existing)
+}
 
+fn emit_suggest_output(
+    cfg: &Config,
+    ctx: &SuggestPromptContext,
+    accepted: &[Suggestion],
+    rejected_existing: &[String],
+    content: &str,
+) -> Result<(), Box<dyn Error>> {
     if cfg.json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "collection": cfg.collection,
-                "requested": desired,
-                "indexed_urls_count": indexed_urls.len(),
-                "indexed_base_urls_count": ranked_base_urls.len(),
+                "requested": ctx.desired,
+                "indexed_urls_count": ctx.indexed_urls.len(),
+                "indexed_base_urls_count": ctx.ranked_base_urls.len(),
                 "suggestions": accepted.iter().map(|s| serde_json::json!({"url": s.url, "reason": s.reason})).collect::<Vec<_>>(),
                 "rejected_existing": rejected_existing,
                 "raw_model_output": content,
@@ -224,7 +267,7 @@ ALREADY_INDEXED_URLS:\n{existing_url_context}"
     println!(
         "  {} requested={} accepted={} filtered_existing={}",
         muted("Summary:"),
-        desired,
+        ctx.desired,
         accepted.len(),
         rejected_existing.len()
     );
@@ -239,6 +282,19 @@ ALREADY_INDEXED_URLS:\n{existing_url_context}"
         );
     }
     Ok(())
+}
+
+pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if cfg.openai_base_url.trim().is_empty() || cfg.openai_model.trim().is_empty() {
+        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for suggest".into());
+    }
+    let desired = cfg.search_limit.clamp(1, 100);
+    let ctx = build_suggest_prompt_context(cfg, desired).await?;
+    let user_prompt = build_suggest_user_prompt(&ctx);
+    let content = request_suggestions_from_llm(cfg, &user_prompt).await?;
+    let (accepted, rejected_existing) =
+        filter_new_suggestions(&content, &ctx.indexed_lookup, desired);
+    emit_suggest_output(cfg, &ctx, &accepted, &rejected_existing, &content)
 }
 
 #[cfg(test)]
