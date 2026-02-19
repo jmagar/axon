@@ -1,7 +1,7 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::http::http_client;
 use crate::axon_cli::crates::core::ui::{accent, muted, primary};
-use futures_util::future::join_all;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde::Deserialize;
 use spider::url::Url;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -333,13 +333,14 @@ pub async fn run_retrieve_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let target = cfg.positional.first().ok_or("retrieve requires URL")?;
     let max_points = retrieve_max_points(None);
     let candidates = crate::axon_cli::crates::vector::ops_v2::input::url_lookup_candidates(target);
-    let results = join_all(candidates.iter().map(|candidate| async move {
-        qdrant_retrieve_by_url(cfg, candidate, Some(max_points)).await
-    }))
-    .await;
+
+    let mut lookups: FuturesUnordered<_> = candidates
+        .iter()
+        .map(|candidate| qdrant_retrieve_by_url(cfg, candidate, Some(max_points)))
+        .collect();
 
     let mut points = Vec::new();
-    for result in results {
+    while let Some(result) = lookups.next().await {
         let candidate_points = result?;
         if !candidate_points.is_empty() {
             points = candidate_points;
