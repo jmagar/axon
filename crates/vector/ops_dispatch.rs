@@ -51,3 +51,7 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_ask_native(cfg).await
 }
+
+pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    crate::axon_cli::crates::vector::ops_v2::run_suggest_native(cfg).await
+}

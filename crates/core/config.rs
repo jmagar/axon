@@ -18,6 +18,7 @@ pub enum CommandKind {
     Query,
     Retrieve,
     Ask,
+    Suggest,
     Sources,
     Domains,
     Stats,
@@ -39,6 +40,7 @@ impl CommandKind {
             Self::Query => "query",
             Self::Retrieve => "retrieve",
             Self::Ask => "ask",
+            Self::Suggest => "suggest",
             Self::Sources => "sources",
             Self::Domains => "domains",
             Self::Stats => "stats",
@@ -167,6 +169,7 @@ enum CliCommand {
     Query(TextArg),
     Retrieve(UrlArg),
     Ask(AskArgs),
+    Suggest(TextArg),
     Sources,
     Domains,
     Stats,
@@ -654,6 +657,7 @@ fn into_config(cli: Cli) -> Config {
             ask_diagnostics = args.diagnostics;
             (CommandKind::Ask, args.value)
         }
+        CliCommand::Suggest(args) => (CommandKind::Suggest, args.value),
         CliCommand::Sources => (CommandKind::Sources, Vec::new()),
         CliCommand::Domains => (CommandKind::Domains, Vec::new()),
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
@@ -1025,6 +1029,11 @@ fn print_top_level_help() {
         "  {:<28} {}",
         cmd("ask <query>"),
         dim("Ask over embedded documents")
+    );
+    println!(
+        "  {:<28} {}",
+        cmd("suggest [focus]"),
+        dim("Suggest new docs URLs to crawl")
     );
     println!("  {:<28} {}", cmd("sources"), dim("List indexed sources"));
     println!("  {:<28} {}", cmd("domains"), dim("List indexed domains"));

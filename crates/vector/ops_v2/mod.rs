@@ -53,3 +53,7 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     commands::run_ask_native(cfg).await
 }
+
+pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    commands::run_suggest_native(cfg).await
+}
