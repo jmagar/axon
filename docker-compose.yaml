@@ -1,10 +1,10 @@
-name: cortex
+name: axon
 
 x-common-service: &common-service
   env_file:
     - .env
   networks:
-    - cortex
+    - axon
   restart: unless-stopped
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -41,7 +41,7 @@ services:
 
   axon-redis:
     <<: *common-service
-    image: redis:7.4-alpine
+    image: redis:8.2-alpine
     container_name: axon-redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     ports:
@@ -66,6 +66,7 @@ services:
       - "127.0.0.1:45535:5672"  # homelab-only: not exposed to network
     volumes:
       - /home/jmagar/appdata/axon-rabbitmq:/var/lib/rabbitmq
+      - ./docker/rabbitmq/20-axon.conf:/etc/rabbitmq/conf.d/20-axon.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
@@ -83,11 +84,38 @@ services:
     volumes:
       - /home/jmagar/appdata/axon-qdrant:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test:
+        [
+          "CMD",
+          "/usr/bin/bash",
+          "-ec",
+          "exec 3<>/dev/tcp/127.0.0.1/6333; printf \"GET /readyz HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \"200\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  axon-webdriver:
+    <<: *common-service
+    image: selenium/standalone-chrome:4.34.0
+    container_name: axon-webdriver
+    # Override env_file to prevent app secrets from leaking into the browser container.
+    # Selenium only needs its own SE_* vars — no database credentials or API keys.
+    env_file: []
+    shm_size: "2gb"
+    ports:
+      - "127.0.0.1:4444:4444"  # WebDriver endpoint for browser fallback
+      - "127.0.0.1:7900:7900"  # Optional VNC viewer
+    environment:
+      SE_NODE_MAX_SESSIONS: "1"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4444/wd/hub/status >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
 
   axon-workers:
     <<: *common-service
@@ -113,7 +141,11 @@ services:
           cpus: '1.0'
           memory: 512M
     healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck-workers.sh"]
+      test:
+        [
+          "CMD-SHELL",
+          "/command/s6-svstat -u /run/service/crawl-worker >/dev/null && /command/s6-svstat -u /run/service/batch-worker >/dev/null && /command/s6-svstat -u /run/service/extract-worker >/dev/null && /command/s6-svstat -u /run/service/embed-worker >/dev/null",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -122,5 +154,5 @@ services:
       - /home/jmagar/appdata/axon-worker-output:/app/.cache/axon-rust/output
 
 networks:
-  cortex:
+  axon:
     driver: bridge

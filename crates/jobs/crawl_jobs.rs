@@ -1,12 +1,18 @@
 use crate::axon_cli::crates::core::config::{Config, RenderMode};
+use crate::axon_cli::crates::core::content::{
+    canonicalize_url, extract_loc_values, extract_robots_sitemaps, is_excluded_url_path,
+    to_markdown, url_to_filename,
+};
 use crate::axon_cli::crates::core::health::redis_healthy;
+use crate::axon_cli::crates::core::http::validate_url;
 use crate::axon_cli::crates::core::logging::{log_done, log_info, log_warn};
 use crate::axon_cli::crates::crawl::engine::{
-    append_sitemap_backfill, run_crawl_once, SitemapBackfillStats,
+    append_sitemap_backfill, run_crawl_once, CrawlSummary, SitemapBackfillStats,
 };
+use crate::axon_cli::crates::jobs::batch_jobs::{apply_queue_injection, InjectionCandidate};
 use crate::axon_cli::crates::jobs::common::{
     claim_next_pending, claim_pending_by_id, enqueue_job, make_pool, mark_job_failed,
-    open_amqp_channel,
+    open_amqp_channel, stale_watchdog_confirmed, stale_watchdog_payload, JobTable,
 };
 use crate::axon_cli::crates::jobs::embed_jobs::start_embed_job;
 use chrono::{DateTime, Utc};
@@ -16,19 +22,28 @@ use lapin::types::FieldTable;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use spider::tokio;
+use spider::url::Url;
 use sqlx::{FromRow, PgPool};
+use std::collections::{HashSet, VecDeque};
 use std::error::Error;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::io::{AsyncWriteExt, BufWriter};
 use uuid::Uuid;
 
-const TABLE: &str = "axon_crawl_jobs";
+const TABLE: JobTable = JobTable::Crawl;
+const MID_CRAWL_INJECTION_TRIGGER_PAGES: u32 = 25;
+const MID_CRAWL_INJECTION_MIN_CANDIDATES: usize = 3;
+const WORKER_CONCURRENCY: usize = 2;
+const STALE_SWEEP_INTERVAL_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CrawlJobConfig {
     max_pages: u32,
     max_depth: usize,
     include_subdomains: bool,
+    exclude_path_prefix: Vec<String>,
     respect_robots: bool,
     min_markdown_chars: usize,
     drop_thin_markdown: bool,
@@ -46,6 +61,15 @@ struct CrawlJobConfig {
     fetch_retries: usize,
     retry_backoff_ms: u64,
     shared_queue: bool,
+    extraction_prompt: Option<String>,
+    #[serde(default = "default_cache_enabled")]
+    cache: bool,
+    #[serde(default)]
+    cache_skip_browser: bool,
+}
+
+fn default_cache_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, FromRow, Serialize)]
@@ -61,11 +85,28 @@ pub struct CrawlJob {
     pub result_json: Option<serde_json::Value>,
 }
 
+#[derive(Debug, FromRow)]
+struct StaleRunningJob {
+    id: Uuid,
+    url: String,
+    started_at: Option<DateTime<Utc>>,
+    updated_at: DateTime<Utc>,
+    result_json: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CrawlWatchdogSweepStats {
+    stale_candidates: u64,
+    marked_candidates: u64,
+    reclaimed_jobs: u64,
+}
+
 fn to_job_config(cfg: &Config) -> CrawlJobConfig {
     CrawlJobConfig {
         max_pages: cfg.max_pages,
         max_depth: cfg.max_depth,
         include_subdomains: cfg.include_subdomains,
+        exclude_path_prefix: cfg.exclude_path_prefix.clone(),
         respect_robots: cfg.respect_robots,
         min_markdown_chars: cfg.min_markdown_chars,
         drop_thin_markdown: cfg.drop_thin_markdown,
@@ -83,7 +124,381 @@ fn to_job_config(cfg: &Config) -> CrawlJobConfig {
         fetch_retries: cfg.fetch_retries,
         retry_backoff_ms: cfg.retry_backoff_ms,
         shared_queue: cfg.shared_queue,
+        extraction_prompt: cfg.query.clone(),
+        cache: cfg.cache,
+        cache_skip_browser: cfg.cache_skip_browser,
     }
+}
+
+#[derive(Debug, Serialize)]
+struct CrawlAuditDiff {
+    start_url: String,
+    previous_count: usize,
+    current_count: usize,
+    added_count: usize,
+    removed_count: usize,
+    unchanged_count: usize,
+    cache_hit: bool,
+    cache_source: Option<String>,
+}
+
+fn resolve_initial_mode(render_mode: RenderMode, cache_skip_browser: bool) -> RenderMode {
+    if cache_skip_browser {
+        return RenderMode::Http;
+    }
+    match render_mode {
+        RenderMode::AutoSwitch => RenderMode::Http,
+        mode => mode,
+    }
+}
+
+async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, Box<dyn Error>> {
+    if !path.exists() {
+        return Ok(HashSet::new());
+    }
+    let content = tokio::fs::read_to_string(path).await?;
+    let mut out = HashSet::new();
+    for line in content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(url) = json.get("url").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        out.insert(url.to_string());
+    }
+    Ok(out)
+}
+
+async fn read_manifest_candidates(path: &Path) -> std::io::Result<Vec<InjectionCandidate>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = tokio::fs::read_to_string(path).await?;
+    let mut out = Vec::new();
+    for line in content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(url) = json.get("url").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let Some(markdown_chars) = json.get("markdown_chars").and_then(|value| value.as_u64())
+        else {
+            continue;
+        };
+        out.push(InjectionCandidate {
+            url: url.to_string(),
+            markdown_chars: markdown_chars as usize,
+        });
+    }
+    Ok(out)
+}
+
+async fn write_audit_diff(
+    output_dir: &Path,
+    start_url: &str,
+    previous: &HashSet<String>,
+    current: &HashSet<String>,
+    cache_hit: bool,
+    cache_source: Option<String>,
+) -> Result<(PathBuf, CrawlAuditDiff), Box<dyn Error>> {
+    let unchanged_count = previous.intersection(current).count();
+    let added_count = current.difference(previous).count();
+    let removed_count = previous.difference(current).count();
+    let report = CrawlAuditDiff {
+        start_url: start_url.to_string(),
+        previous_count: previous.len(),
+        current_count: current.len(),
+        added_count,
+        removed_count,
+        unchanged_count,
+        cache_hit,
+        cache_source,
+    };
+
+    let audit_dir = output_dir.join("audit");
+    tokio::fs::create_dir_all(&audit_dir).await?;
+    let report_path = audit_dir.join("diff-report.json");
+    let payload = serde_json::to_string_pretty(&report)?;
+    tokio::fs::write(&report_path, payload).await?;
+    Ok((report_path, report))
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RobotsDiscoveryStats {
+    robots_declared_sitemaps: usize,
+    parsed_sitemap_documents: usize,
+    discovered_urls: usize,
+    filtered_out_of_scope_host: usize,
+    filtered_out_of_scope_path: usize,
+    filtered_excluded_prefix: usize,
+    failed_fetches: usize,
+    parse_errors: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RobotsDiscoveryResult {
+    urls: Vec<String>,
+    stats: RobotsDiscoveryStats,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RobotsBackfillStats {
+    discovered_urls: usize,
+    candidates: usize,
+    written: usize,
+    failed: usize,
+    filtered_existing: usize,
+}
+
+async fn fetch_text_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    retries: usize,
+    backoff_ms: u64,
+) -> Option<String> {
+    for attempt in 0..=retries {
+        let response = client.get(url).send().await;
+        if let Ok(resp) = response {
+            if resp.status().is_success() {
+                if let Ok(text) = resp.text().await {
+                    return Some(text);
+                }
+            }
+        }
+        if attempt < retries {
+            let delay = backoff_ms.saturating_mul((attempt + 1) as u64);
+            if delay > 0 {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
+        }
+    }
+    None
+}
+
+async fn discover_sitemap_urls_with_robots(
+    cfg: &Config,
+    start_url: &str,
+) -> Result<RobotsDiscoveryResult, Box<dyn Error>> {
+    let parsed = Url::parse(start_url)?;
+    let scheme = parsed.scheme().to_string();
+    let host = parsed.host_str().ok_or("missing host")?.to_string();
+    let root_path = parsed.path().trim_end_matches('/').to_string();
+    let scoped_to_root = root_path.is_empty();
+    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
+    let client = reqwest::Client::builder().timeout(timeout).build()?;
+
+    let mut queue: VecDeque<String> = VecDeque::from(vec![
+        format!("{scheme}://{host}/sitemap.xml"),
+        format!("{scheme}://{host}/sitemap_index.xml"),
+        format!("{scheme}://{host}/sitemap-index.xml"),
+    ]);
+    let mut stats = RobotsDiscoveryStats::default();
+    let robots_url = format!("{scheme}://{host}/robots.txt");
+    if let Some(robots_txt) = fetch_text_with_retry(
+        &client,
+        &robots_url,
+        cfg.fetch_retries,
+        cfg.retry_backoff_ms,
+    )
+    .await
+    {
+        let robots_sitemaps = extract_robots_sitemaps(&robots_txt);
+        stats.robots_declared_sitemaps = robots_sitemaps.len();
+        for sitemap in robots_sitemaps {
+            queue.push_back(sitemap);
+        }
+    }
+
+    let mut seen_sitemaps = HashSet::new();
+    let mut out = HashSet::new();
+    let max_sitemaps = cfg.max_sitemaps.max(1);
+    while let Some(candidate) = queue.pop_front() {
+        if seen_sitemaps.len() >= max_sitemaps {
+            break;
+        }
+        let Some(canonical_sitemap) = canonicalize_url(&candidate) else {
+            stats.parse_errors += 1;
+            continue;
+        };
+        if !seen_sitemaps.insert(canonical_sitemap.clone()) {
+            continue;
+        }
+        if validate_url(&canonical_sitemap).is_err() {
+            stats.failed_fetches += 1;
+            continue;
+        }
+        let Some(xml) = fetch_text_with_retry(
+            &client,
+            &canonical_sitemap,
+            cfg.fetch_retries,
+            cfg.retry_backoff_ms,
+        )
+        .await
+        else {
+            stats.failed_fetches += 1;
+            continue;
+        };
+        stats.parsed_sitemap_documents += 1;
+        let is_index = xml.to_ascii_lowercase().contains("<sitemapindex");
+        for loc in extract_loc_values(&xml) {
+            let Ok(url) = Url::parse(&loc) else {
+                stats.parse_errors += 1;
+                continue;
+            };
+            let Some(url_host) = url.host_str() else {
+                stats.parse_errors += 1;
+                continue;
+            };
+            let host_ok = if cfg.include_subdomains {
+                url_host == host || url_host.ends_with(&format!(".{host}"))
+            } else {
+                url_host == host
+            };
+            if !host_ok {
+                stats.filtered_out_of_scope_host += 1;
+                continue;
+            }
+            if !scoped_to_root {
+                let p = url.path();
+                let scoped_prefix = format!("{root_path}/");
+                if p != root_path && !p.starts_with(&scoped_prefix) {
+                    stats.filtered_out_of_scope_path += 1;
+                    continue;
+                }
+            }
+            if is_excluded_url_path(&loc, &cfg.exclude_path_prefix) {
+                stats.filtered_excluded_prefix += 1;
+                continue;
+            }
+            let Some(canonical_loc) = canonicalize_url(&loc) else {
+                stats.parse_errors += 1;
+                continue;
+            };
+            if is_index {
+                queue.push_back(canonical_loc);
+            } else {
+                out.insert(canonical_loc);
+            }
+        }
+    }
+    let mut urls: Vec<String> = out.into_iter().collect();
+    urls.sort();
+    stats.discovered_urls = urls.len();
+    Ok(RobotsDiscoveryResult { urls, stats })
+}
+
+async fn append_robots_backfill(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+    seen_urls: &HashSet<String>,
+    summary: &mut CrawlSummary,
+) -> Result<(RobotsBackfillStats, RobotsDiscoveryStats), Box<dyn Error>> {
+    let discovery = discover_sitemap_urls_with_robots(cfg, start_url).await?;
+    let discovery_stats = discovery.stats.clone();
+    let manifest_path = output_dir.join("manifest.jsonl");
+    let already_written = read_manifest_urls(&manifest_path).await?;
+    let candidates: Vec<String> = discovery
+        .urls
+        .iter()
+        .filter(|url| !seen_urls.contains(*url) && !already_written.contains(*url))
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        return Ok((
+            RobotsBackfillStats {
+                discovered_urls: discovery.urls.len(),
+                filtered_existing: discovery.urls.len(),
+                ..RobotsBackfillStats::default()
+            },
+            discovery_stats,
+        ));
+    }
+
+    let markdown_dir = output_dir.join("markdown");
+    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
+    let client = reqwest::Client::builder().timeout(timeout).build()?;
+    let mut manifest = BufWriter::new(
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&manifest_path)
+            .await?,
+    );
+    let mut idx = summary.markdown_files;
+    let mut stats = RobotsBackfillStats {
+        discovered_urls: discovery.urls.len(),
+        candidates: candidates.len(),
+        filtered_existing: discovery.urls.len().saturating_sub(candidates.len()),
+        ..RobotsBackfillStats::default()
+    };
+
+    for url in candidates {
+        let Some(html) =
+            fetch_text_with_retry(&client, &url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+        else {
+            stats.failed += 1;
+            continue;
+        };
+        let markdown = to_markdown(&html);
+        let markdown_chars = markdown.chars().count();
+        if markdown_chars < cfg.min_markdown_chars {
+            summary.thin_pages += 1;
+        }
+        if markdown_chars < cfg.min_markdown_chars && cfg.drop_thin_markdown {
+            continue;
+        }
+        idx += 1;
+        let file = markdown_dir.join(url_to_filename(&url, idx));
+        tokio::fs::write(&file, markdown).await?;
+        let rec = serde_json::json!({
+            "url": url,
+            "file_path": file.to_string_lossy(),
+            "markdown_chars": markdown_chars,
+            "source": "robots_sitemap_backfill"
+        });
+        let mut line = rec.to_string();
+        line.push('\n');
+        manifest.write_all(line.as_bytes()).await?;
+        summary.markdown_files += 1;
+        stats.written += 1;
+    }
+    manifest.flush().await?;
+    Ok((stats, discovery_stats))
+}
+
+async fn latest_completed_result_for_url(
+    pool: &PgPool,
+    url: &str,
+    current_job_id: Uuid,
+) -> Result<Option<(Uuid, serde_json::Value)>, Box<dyn Error>> {
+    let row = sqlx::query_as::<_, (Uuid, serde_json::Value)>(
+        r#"
+        SELECT id, result_json
+        FROM axon_crawl_jobs
+        WHERE url = $1
+          AND id <> $2
+          AND status = 'completed'
+          AND result_json IS NOT NULL
+        ORDER BY finished_at DESC NULLS LAST
+        LIMIT 1
+        "#,
+    )
+    .bind(url)
+    .bind(current_job_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
 }
 
 async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
@@ -138,8 +553,30 @@ pub async fn start_crawl_job(cfg: &Config, start_url: &str) -> Result<Uuid, Box<
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
 
-    let id = Uuid::new_v4();
     let cfg_json = serde_json::to_value(to_job_config(cfg))?;
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id
+        FROM axon_crawl_jobs
+        WHERE status IN ('pending','running')
+          AND url = $1
+          AND config_json = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(start_url)
+    .bind(cfg_json.clone())
+    .fetch_optional(&pool)
+    .await?
+    {
+        log_info(&format!(
+            "crawl dedupe hit: reusing active job {} for {}",
+            existing_id, start_url
+        ));
+        return Ok(existing_id);
+    }
+    let id = Uuid::new_v4();
 
     sqlx::query(
         r#"
@@ -248,6 +685,19 @@ pub async fn clear_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     Ok(rows)
 }
 
+pub async fn recover_stale_crawl_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    let pool = make_pool(cfg).await?;
+    ensure_schema(&pool).await?;
+    let stats = reclaim_stale_running_jobs(
+        &pool,
+        0,
+        cfg.watchdog_stale_timeout_secs,
+        cfg.watchdog_confirm_secs,
+    )
+    .await?;
+    Ok(stats.reclaimed_jobs)
+}
+
 async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dyn Error>> {
     let row = sqlx::query_as::<_, (String, serde_json::Value)>(
         "SELECT url, config_json FROM axon_crawl_jobs WHERE id=$1",
@@ -273,10 +723,12 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
     }
 
     let parsed: CrawlJobConfig = serde_json::from_value(cfg_json)?;
+    let extraction_prompt = parsed.extraction_prompt.clone();
     let mut job_cfg = cfg.clone();
     job_cfg.max_pages = parsed.max_pages;
     job_cfg.max_depth = parsed.max_depth;
     job_cfg.include_subdomains = parsed.include_subdomains;
+    job_cfg.exclude_path_prefix = parsed.exclude_path_prefix;
     job_cfg.respect_robots = parsed.respect_robots;
     job_cfg.min_markdown_chars = parsed.min_markdown_chars;
     job_cfg.drop_thin_markdown = parsed.drop_thin_markdown;
@@ -293,22 +745,174 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
     job_cfg.fetch_retries = parsed.fetch_retries;
     job_cfg.retry_backoff_ms = parsed.retry_backoff_ms;
     job_cfg.shared_queue = parsed.shared_queue;
+    job_cfg.query = parsed.extraction_prompt;
+    job_cfg.cache = parsed.cache;
+    job_cfg.cache_skip_browser = parsed.cache_skip_browser;
     job_cfg.output_dir = PathBuf::from(parsed.output_dir)
         .join("jobs")
         .join(id.to_string());
 
+    let mut previous_urls = HashSet::new();
+    let mut cache_source: Option<String> = None;
+    if job_cfg.cache {
+        if let Some((previous_job_id, previous_result_json)) =
+            latest_completed_result_for_url(pool, &url, id).await?
+        {
+            let previous_output_dir = previous_result_json
+                .get("output_dir")
+                .and_then(|value| value.as_str())
+                .map(PathBuf::from);
+            if let Some(previous_output_dir) = previous_output_dir {
+                let previous_manifest = previous_output_dir.join("manifest.jsonl");
+                previous_urls = read_manifest_urls(&previous_manifest).await?;
+                if !previous_urls.is_empty() {
+                    cache_source = Some(format!(
+                        "job:{} manifest:{}",
+                        previous_job_id,
+                        previous_manifest.to_string_lossy()
+                    ));
+                }
+            }
+        }
+    }
+
+    if job_cfg.cache && !previous_urls.is_empty() {
+        let (report_path, diff_report) = write_audit_diff(
+            &job_cfg.output_dir,
+            &url,
+            &previous_urls,
+            &previous_urls,
+            true,
+            cache_source.clone(),
+        )
+        .await?;
+
+        let result_json = serde_json::json!({
+            "phase": "completed",
+            "cache_hit": true,
+            "cache_skip_browser": job_cfg.cache_skip_browser,
+            "md_created": previous_urls.len(),
+            "thin_md": 0,
+            "filtered_urls": 0,
+            "pages_crawled": 0,
+            "pages_discovered": previous_urls.len(),
+            "crawl_stream_pages": 0,
+            "sitemap_discovered": 0,
+            "sitemap_candidates": 0,
+            "sitemap_processed": 0,
+            "sitemap_fetched_ok": 0,
+            "sitemap_written": 0,
+            "sitemap_failed": 0,
+            "sitemap_filtered": 0,
+            "elapsed_ms": 0,
+            "output_dir": job_cfg.output_dir.to_string_lossy(),
+            "audit_diff": diff_report,
+            "audit_report_path": report_path.to_string_lossy(),
+        });
+
+        sqlx::query(
+            "UPDATE axon_crawl_jobs SET status='completed', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='running'",
+        )
+        .bind(id)
+        .bind(result_json)
+        .execute(pool)
+        .await?;
+        log_done(&format!("worker completed crawl job {id} (cache hit)"));
+        return Ok(());
+    }
+
+    let manifest_path = job_cfg.output_dir.join("manifest.jsonl");
+    let mid_injection_state = Arc::new(tokio::sync::Mutex::new(None::<serde_json::Value>));
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<CrawlSummary>();
+    let progress_pool = pool.clone();
+    let progress_job_id = id;
+    let progress_cfg = job_cfg.clone();
+    let progress_prompt = extraction_prompt.clone();
+    let progress_manifest_path = manifest_path.clone();
+    let progress_injection_state = Arc::clone(&mid_injection_state);
+    let progress_task = tokio::spawn(async move {
+        let mut injection_attempted = false;
+        while let Some(progress) = progress_rx.recv().await {
+            let pages_crawled = progress.pages_seen as u64;
+            let filtered_urls = pages_crawled.saturating_sub(progress.markdown_files as u64);
+
+            if !injection_attempted && progress.pages_seen >= MID_CRAWL_INJECTION_TRIGGER_PAGES {
+                match read_manifest_candidates(&progress_manifest_path).await {
+                    Ok(candidates) if candidates.len() >= MID_CRAWL_INJECTION_MIN_CANDIDATES => {
+                        let injection = match apply_queue_injection(
+                            &progress_cfg,
+                            &candidates,
+                            progress_prompt.as_deref(),
+                            "mid-crawl",
+                            true,
+                        )
+                        .await
+                        {
+                            Ok(value) => value,
+                            Err(err) => serde_json::json!({
+                                "phase": "mid-crawl",
+                                "queue_status": "failed",
+                                "error": err.to_string(),
+                            }),
+                        };
+                        *progress_injection_state.lock().await = Some(injection);
+                        injection_attempted = true;
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        log_warn(&format!(
+                            "mid-crawl queue injection probe failed for crawl job {progress_job_id}: {err}"
+                        ));
+                    }
+                }
+            }
+
+            let mid_queue_injection = progress_injection_state.lock().await.clone();
+            let progress_json = serde_json::json!({
+                "phase": "crawling",
+                "md_created": progress.markdown_files,
+                "thin_md": progress.thin_pages,
+                "filtered_urls": filtered_urls,
+                "pages_crawled": pages_crawled,
+                "crawl_stream_pages": progress.pages_seen,
+                "mid_queue_injection": mid_queue_injection,
+            });
+            let _ = sqlx::query(
+                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='running'",
+            )
+            .bind(progress_job_id)
+            .bind(progress_json)
+            .execute(&progress_pool)
+            .await;
+        }
+    });
+
+    let final_prompt = extraction_prompt.clone();
     let result = async {
-        let initial_mode = match job_cfg.render_mode {
-            RenderMode::AutoSwitch => RenderMode::Http,
-            m => m,
-        };
-        let (summary, seen_urls) =
-            run_crawl_once(&job_cfg, &url, initial_mode, &job_cfg.output_dir).await?;
+        let initial_mode = resolve_initial_mode(job_cfg.render_mode, job_cfg.cache_skip_browser);
+        let (summary, seen_urls) = run_crawl_once(
+            &job_cfg,
+            &url,
+            initial_mode,
+            &job_cfg.output_dir,
+            Some(progress_tx),
+        )
+        .await?;
         let mut final_summary = summary.clone();
         let mut backfill_stats = SitemapBackfillStats::default();
+        let mut robots_backfill_stats = RobotsBackfillStats::default();
+        let mut robots_discovery_stats = RobotsDiscoveryStats::default();
 
         if job_cfg.discover_sitemaps {
             backfill_stats = append_sitemap_backfill(
+                &job_cfg,
+                &url,
+                &job_cfg.output_dir,
+                &seen_urls,
+                &mut final_summary,
+            )
+            .await?;
+            (robots_backfill_stats, robots_discovery_stats) = append_robots_backfill(
                 &job_cfg,
                 &url,
                 &job_cfg.output_dir,
@@ -329,11 +933,46 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
 
         let crawl_discovered = summary.pages_seen as u64;
         let sitemap_discovered = backfill_stats.sitemap_candidates as u64;
-        let pages_discovered = crawl_discovered.saturating_add(sitemap_discovered);
+        let robots_extra = robots_backfill_stats.candidates as u64;
+        let pages_discovered = crawl_discovered
+            .saturating_add(sitemap_discovered)
+            .saturating_add(robots_extra);
         let filtered_urls = pages_discovered.saturating_sub(final_summary.markdown_files as u64);
-        let pages_crawled = pages_discovered.saturating_sub(filtered_urls);
+        let pages_crawled = summary.pages_seen as u64;
+        let current_urls = read_manifest_urls(&manifest_path).await?;
+        let candidates = read_manifest_candidates(&manifest_path).await?;
+        let mid_queue_injection = mid_injection_state.lock().await.clone();
+        let mid_enqueued = mid_queue_injection
+            .as_ref()
+            .and_then(|value| value.get("queue_status"))
+            .and_then(|value| value.as_str())
+            == Some("enqueued");
+        let queue_injection = apply_queue_injection(
+            &job_cfg,
+            &candidates,
+            final_prompt.as_deref(),
+            if mid_enqueued {
+                "post-crawl-review"
+            } else {
+                "post-crawl"
+            },
+            !mid_enqueued,
+        )
+        .await?;
+        let (report_path, diff_report) = write_audit_diff(
+            &job_cfg.output_dir,
+            &url,
+            &previous_urls,
+            &current_urls,
+            false,
+            cache_source,
+        )
+        .await?;
 
         Ok::<serde_json::Value, Box<dyn Error>>(serde_json::json!({
+            "phase": "completed",
+            "cache_hit": false,
+            "cache_skip_browser": job_cfg.cache_skip_browser,
             "md_created": final_summary.markdown_files,
             "thin_md": final_summary.thin_pages,
             "filtered_urls": filtered_urls,
@@ -347,11 +986,29 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
             "sitemap_written": backfill_stats.written,
             "sitemap_failed": backfill_stats.failed,
             "sitemap_filtered": backfill_stats.filtered,
+            "robots_sitemap_docs_parsed": robots_discovery_stats.parsed_sitemap_documents,
+            "robots_declared_sitemaps": robots_discovery_stats.robots_declared_sitemaps,
+            "robots_discovered_urls": robots_backfill_stats.discovered_urls,
+            "robots_candidates": robots_backfill_stats.candidates,
+            "robots_written": robots_backfill_stats.written,
+            "robots_failed": robots_backfill_stats.failed,
+            "robots_filtered_existing": robots_backfill_stats.filtered_existing,
             "elapsed_ms": final_summary.elapsed_ms,
             "output_dir": job_cfg.output_dir.to_string_lossy(),
+            "audit_diff": diff_report,
+            "audit_report_path": report_path.to_string_lossy(),
+            "mid_queue_injection": mid_queue_injection,
+            "queue_injection": queue_injection,
+            "extraction_observability": queue_injection["observability"].clone(),
         }))
     }
     .await;
+
+    if let Err(err) = progress_task.await {
+        log_warn(&format!(
+            "progress_task panicked while serializing progress for crawl job {id}: {err:?}"
+        ));
+    }
 
     match result {
         Ok(result_json) => {
@@ -380,9 +1037,139 @@ async fn process_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dy
     Ok(())
 }
 
+async fn reclaim_stale_running_jobs(
+    pool: &PgPool,
+    lane: usize,
+    idle_timeout_secs: i64,
+    confirm_secs: i64,
+) -> Result<CrawlWatchdogSweepStats, Box<dyn Error>> {
+    let stale_jobs = sqlx::query_as::<_, StaleRunningJob>(
+        r#"
+        SELECT id, url, started_at, updated_at, result_json
+        FROM axon_crawl_jobs
+        WHERE status = 'running'
+          AND updated_at < NOW() - make_interval(secs => $1::int)
+        ORDER BY updated_at ASC
+        LIMIT 50
+        "#,
+    )
+    .bind(idle_timeout_secs as i32)
+    .fetch_all(pool)
+    .await?;
+
+    let mut stats = CrawlWatchdogSweepStats {
+        stale_candidates: stale_jobs.len() as u64,
+        ..Default::default()
+    };
+    for job in stale_jobs {
+        let idle_seconds = Utc::now()
+            .signed_duration_since(job.updated_at)
+            .num_seconds();
+        let result_json = job
+            .result_json
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        if stale_watchdog_confirmed(&result_json, job.updated_at, confirm_secs) {
+            let pages_crawled = result_json
+                .get("pages_crawled")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            let phase = result_json
+                .get("phase")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let msg = format!(
+                "watchdog reclaimed stale running crawl job (idle={}s phase={} pages_crawled={} lane={})",
+                idle_seconds, phase, pages_crawled, lane
+            );
+            let rows = sqlx::query(
+                "UPDATE axon_crawl_jobs SET status='failed', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='running'",
+            )
+            .bind(job.id)
+            .bind(msg.clone())
+            .execute(pool)
+            .await?
+            .rows_affected();
+            if rows > 0 {
+                stats.reclaimed_jobs += rows;
+                log_warn(&format!(
+                    "watchdog marked crawl job {} as failed: {}",
+                    job.id, msg
+                ));
+            }
+            continue;
+        }
+
+        let marked_json = stale_watchdog_payload(result_json, job.updated_at);
+        let _ = sqlx::query(
+            "UPDATE axon_crawl_jobs SET result_json=$2 WHERE id=$1 AND status='running'",
+        )
+        .bind(job.id)
+        .bind(marked_json)
+        .execute(pool)
+        .await?;
+        let started = job
+            .started_at
+            .map(|value| value.to_rfc3339())
+            .unwrap_or_else(|| "unknown".to_string());
+        log_warn(&format!(
+            "watchdog marked crawl job {} as stale candidate (lane={} idle={}s started_at={} url={})",
+            job.id, lane, idle_seconds, started, job.url
+        ));
+        stats.marked_candidates += 1;
+    }
+
+    Ok(stats)
+}
+
 async fn run_worker_polling_loop(cfg: &Config, pool: &PgPool) -> Result<(), Box<dyn Error>> {
     log_warn("amqp unavailable; running crawl worker in postgres polling mode");
+    if WORKER_CONCURRENCY <= 1 {
+        return run_worker_polling_lane(cfg, pool, 1).await;
+    }
+    tokio::try_join!(
+        run_worker_polling_lane(cfg, pool, 1),
+        run_worker_polling_lane(cfg, pool, 2)
+    )?;
+    Ok(())
+}
+
+async fn run_worker_polling_lane(
+    cfg: &Config,
+    pool: &PgPool,
+    lane: usize,
+) -> Result<(), Box<dyn Error>> {
+    log_info(&format!(
+        "crawl worker polling lane={} active queue={}",
+        lane, cfg.crawl_queue
+    ));
+    let mut last_sweep = Instant::now();
     loop {
+        if last_sweep.elapsed() >= Duration::from_secs(STALE_SWEEP_INTERVAL_SECS) {
+            match reclaim_stale_running_jobs(
+                pool,
+                lane,
+                cfg.watchdog_stale_timeout_secs,
+                cfg.watchdog_confirm_secs,
+            )
+            .await
+            {
+                Ok(stats) => {
+                    if stats.stale_candidates > 0 || stats.reclaimed_jobs > 0 {
+                        log_info(&format!(
+                            "watchdog crawl sweep lane={} candidates={} marked={} reclaimed={}",
+                            lane,
+                            stats.stale_candidates,
+                            stats.marked_candidates,
+                            stats.reclaimed_jobs
+                        ));
+                    }
+                }
+                Err(err) => log_warn(&format!("watchdog sweep failed (lane={}): {}", lane, err)),
+            }
+            last_sweep = Instant::now();
+        }
         if let Some(job_id) = claim_next_pending(pool, TABLE).await? {
             if let Err(err) = process_job(cfg, pool, job_id).await {
                 let error_text = err.to_string();
@@ -395,33 +1182,67 @@ async fn run_worker_polling_loop(cfg: &Config, pool: &PgPool) -> Result<(), Box<
     }
 }
 
-pub async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let pool = make_pool(cfg).await?;
-    ensure_schema(&pool).await?;
-
-    let ch = match open_amqp_channel(cfg, &cfg.crawl_queue).await {
-        Ok(ch) => ch,
-        Err(_) => return run_worker_polling_loop(cfg, &pool).await,
-    };
+async fn run_amqp_worker_lane(
+    cfg: &Config,
+    pool: &PgPool,
+    lane: usize,
+) -> Result<(), Box<dyn Error>> {
+    let ch = open_amqp_channel(cfg, &cfg.crawl_queue).await?;
+    let consumer_tag = format!("axon-rust-crawl-worker-{lane}");
     let mut consumer = ch
         .basic_consume(
             &cfg.crawl_queue,
-            "axon-rust-crawl-worker",
+            &consumer_tag,
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
         .await?;
 
     log_info(&format!(
-        "crawl worker listening on queue={}",
-        cfg.crawl_queue
+        "crawl worker lane={} listening on queue={} concurrency={}",
+        lane, cfg.crawl_queue, WORKER_CONCURRENCY
     ));
 
-    while let Some(msg) = consumer.next().await {
+    loop {
+        let msg = match tokio::time::timeout(
+            Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
+            consumer.next(),
+        )
+        .await
+        {
+            Ok(Some(msg)) => msg,
+            Ok(None) => break,
+            Err(_) => {
+                match reclaim_stale_running_jobs(
+                    pool,
+                    lane,
+                    cfg.watchdog_stale_timeout_secs,
+                    cfg.watchdog_confirm_secs,
+                )
+                .await
+                {
+                    Ok(stats) => {
+                        if stats.stale_candidates > 0 || stats.reclaimed_jobs > 0 {
+                            log_info(&format!(
+                                "watchdog crawl sweep lane={} candidates={} marked={} reclaimed={}",
+                                lane,
+                                stats.stale_candidates,
+                                stats.marked_candidates,
+                                stats.reclaimed_jobs
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        log_warn(&format!("watchdog sweep failed (lane={}): {}", lane, err))
+                    }
+                }
+                continue;
+            }
+        };
         let delivery = match msg {
             Ok(d) => d,
             Err(err) => {
-                log_warn(&format!("consumer error: {err}"));
+                log_warn(&format!("consumer error (lane={lane}): {err}"));
                 continue;
             }
         };
@@ -431,17 +1252,259 @@ pub async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
             .and_then(|s| Uuid::parse_str(s.trim()).ok());
 
         if let Some(job_id) = parsed {
-            if claim_pending_by_id(&pool, TABLE, job_id).await.unwrap_or(false) {
-                if let Err(err) = process_job(cfg, &pool, job_id).await {
+            if claim_pending_by_id(pool, TABLE, job_id)
+                .await
+                .unwrap_or(false)
+            {
+                if let Err(err) = process_job(cfg, pool, job_id).await {
                     let error_text = err.to_string();
-                    mark_job_failed(&pool, TABLE, job_id, &error_text).await;
+                    mark_job_failed(pool, TABLE, job_id, &error_text).await;
                     log_warn(&format!("worker failed crawl job {job_id}: {error_text}"));
                 }
             }
         }
 
-        delivery.ack(BasicAckOptions::default()).await?;
+        if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+            log_warn(&format!(
+                "failed to ack crawl delivery (lane={lane}): {err}"
+            ));
+        }
     }
 
+    Err(format!("crawl worker consumer stream ended unexpectedly (lane={lane})").into())
+}
+
+pub async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let pool = make_pool(cfg).await?;
+    ensure_schema(&pool).await?;
+    match reclaim_stale_running_jobs(
+        &pool,
+        0,
+        cfg.watchdog_stale_timeout_secs,
+        cfg.watchdog_confirm_secs,
+    )
+    .await
+    {
+        Ok(stats) => {
+            if stats.stale_candidates > 0 || stats.reclaimed_jobs > 0 {
+                log_info(&format!(
+                    "watchdog crawl startup sweep candidates={} marked={} reclaimed={}",
+                    stats.stale_candidates, stats.marked_candidates, stats.reclaimed_jobs
+                ));
+            }
+        }
+        Err(err) => log_warn(&format!("watchdog crawl startup sweep failed: {err}")),
+    }
+
+    match open_amqp_channel(cfg, &cfg.crawl_queue).await {
+        Ok(_) => {}
+        Err(_) => return run_worker_polling_loop(cfg, &pool).await,
+    }
+    if WORKER_CONCURRENCY <= 1 {
+        return run_amqp_worker_lane(cfg, &pool, 1).await;
+    }
+    tokio::try_join!(
+        run_amqp_worker_lane(cfg, &pool, 1),
+        run_amqp_worker_lane(cfg, &pool, 2)
+    )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::axon_cli::crates::jobs::common::test_config;
+    use chrono::Duration;
+    use std::env;
+    use tokio::time::{sleep, timeout, Duration as TokioDuration};
+
+    fn watchdog_json(observed: DateTime<Utc>, first_seen: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_watchdog": {
+                "observed_updated_at": observed.to_rfc3339(),
+                "first_seen_stale_at": first_seen
+            }
+        })
+    }
+
+    #[test]
+    fn crawl_watchdog_payload_adds_watchdog_fields() {
+        let observed = Utc::now() - Duration::seconds(30);
+        let payload = stale_watchdog_payload(serde_json::json!({}), observed);
+        let watchdog = payload.get("_watchdog").expect("missing _watchdog");
+        assert_eq!(
+            watchdog
+                .get("observed_updated_at")
+                .and_then(|v| v.as_str())
+                .expect("missing observed_updated_at"),
+            observed.to_rfc3339()
+        );
+        let first_seen = watchdog
+            .get("first_seen_stale_at")
+            .and_then(|v| v.as_str())
+            .expect("missing first_seen_stale_at");
+        assert!(DateTime::parse_from_rfc3339(first_seen).is_ok());
+    }
+
+    #[test]
+    fn crawl_watchdog_confirmed_rejects_mismatch_and_recent_marks() {
+        let observed = Utc::now() - Duration::seconds(80);
+        let payload = watchdog_json(observed, &Utc::now().to_rfc3339());
+        assert!(!stale_watchdog_confirmed(&payload, observed, 60));
+        assert!(!stale_watchdog_confirmed(
+            &payload,
+            observed + Duration::seconds(1),
+            60
+        ));
+    }
+
+    #[test]
+    fn crawl_watchdog_confirmed_true_after_confirm_window() {
+        let observed = Utc::now() - Duration::seconds(180);
+        let payload = watchdog_json(
+            observed,
+            &(Utc::now() - Duration::seconds(300)).to_rfc3339(),
+        );
+        assert!(stale_watchdog_confirmed(&payload, observed, 60));
+    }
+
+    fn pg_url() -> Option<String> {
+        env::var("AXON_TEST_PG_URL")
+            .ok()
+            .or_else(|| env::var("AXON_PG_URL").ok())
+            .filter(|v| !v.trim().is_empty())
+    }
+
+    #[tokio::test]
+    async fn crawl_start_job_dedupes_active_pending_job() -> Result<(), Box<dyn Error>> {
+        let Some(pg_url) = pg_url() else {
+            return Ok(());
+        };
+        let cfg = test_config(&pg_url);
+        let url = format!("https://example.com/crawl/{}", Uuid::new_v4());
+
+        let first_id = start_crawl_job(&cfg, &url).await?;
+        let second_id = start_crawl_job(&cfg, &url).await?;
+        assert_eq!(first_id, second_id);
+
+        let pool = make_pool(&cfg).await?;
+        let _ = sqlx::query("DELETE FROM axon_crawl_jobs WHERE id = $1")
+            .bind(first_id)
+            .execute(&pool)
+            .await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn crawl_recover_reclaims_confirmed_stale_running_job() -> Result<(), Box<dyn Error>> {
+        let Some(pg_url) = pg_url() else {
+            return Ok(());
+        };
+        let cfg = test_config(&pg_url);
+        let url = format!("https://example.com/crawl-recover/{}", Uuid::new_v4());
+        let id = start_crawl_job(&cfg, &url).await?;
+        let pool = make_pool(&cfg).await?;
+
+        sqlx::query(
+            "UPDATE axon_crawl_jobs SET status='running', updated_at=NOW() - INTERVAL '20 minutes' WHERE id=$1",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await?;
+
+        let observed_updated_at: DateTime<Utc> =
+            sqlx::query_scalar("SELECT updated_at FROM axon_crawl_jobs WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await?;
+        let watchdog = serde_json::json!({
+            "_watchdog": {
+                "observed_updated_at": observed_updated_at.to_rfc3339(),
+                "first_seen_stale_at": (Utc::now() - Duration::minutes(10)).to_rfc3339(),
+                "phase": "crawl",
+                "pages_crawled": 3
+            }
+        });
+        sqlx::query("UPDATE axon_crawl_jobs SET result_json=$2 WHERE id=$1")
+            .bind(id)
+            .bind(watchdog)
+            .execute(&pool)
+            .await?;
+
+        let reclaimed = recover_stale_crawl_jobs(&cfg).await?;
+        assert!(reclaimed >= 1);
+
+        let status: String = sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(status, "failed");
+
+        let _ = sqlx::query("DELETE FROM axon_crawl_jobs WHERE id = $1")
+            .bind(id)
+            .execute(&pool)
+            .await;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn crawl_worker_e2e_processes_pending_job_to_terminal_status(
+    ) -> Result<(), Box<dyn Error>> {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let Some(pg_url) = pg_url() else {
+                    return Ok(());
+                };
+                let cfg = test_config(&pg_url);
+                let url = format!("https://example.com/crawl-worker/{}", Uuid::new_v4());
+                let id = start_crawl_job(&cfg, &url).await?;
+
+                let worker_cfg = cfg.clone();
+                let worker = tokio::task::spawn_local(async move {
+                    let _ = run_worker(&worker_cfg).await;
+                });
+
+                let pool = make_pool(&cfg).await?;
+                let wait = timeout(TokioDuration::from_secs(8), async {
+                    loop {
+                        let status: Option<String> =
+                            sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id=$1")
+                                .bind(id)
+                                .fetch_optional(&pool)
+                                .await
+                                .ok()
+                                .flatten();
+                        if matches!(status.as_deref(), Some("completed" | "failed" | "canceled")) {
+                            break;
+                        }
+                        sleep(TokioDuration::from_millis(100)).await;
+                    }
+                })
+                .await;
+                worker.abort();
+                let _ = worker.await;
+                assert!(
+                    wait.is_ok(),
+                    "crawl worker did not reach terminal state in time"
+                );
+
+                let status: String =
+                    sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id = $1")
+                        .bind(id)
+                        .fetch_one(&pool)
+                        .await?;
+                assert!(matches!(
+                    status.as_str(),
+                    "completed" | "failed" | "canceled"
+                ));
+
+                let _ = sqlx::query("DELETE FROM axon_crawl_jobs WHERE id = $1")
+                    .bind(id)
+                    .execute(&pool)
+                    .await;
+                Ok::<(), Box<dyn Error>>(())
+            })
+            .await
+    }
 }

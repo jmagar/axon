@@ -15,6 +15,7 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Default, Clone)]
 pub struct CrawlSummary {
@@ -33,6 +34,97 @@ pub struct SitemapBackfillStats {
     pub written: usize,
     pub failed: usize,
     pub filtered: usize,
+}
+
+fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
+    let mut parsed = Url::parse(url).ok()?;
+
+    // Fragments never change page content for crawling/storage purposes.
+    parsed.set_fragment(None);
+
+    // Normalize default ports so equivalent URLs share one dedupe key.
+    match (parsed.scheme(), parsed.port()) {
+        ("http", Some(80)) | ("https", Some(443)) => {
+            let _ = parsed.set_port(None);
+        }
+        _ => {}
+    }
+
+    // Normalize trailing slash variants except root.
+    let path = parsed.path().to_string();
+    if path.len() > 1 {
+        let normalized_path = path.trim_end_matches('/').to_string();
+        parsed.set_path(&normalized_path);
+    }
+
+    Some(parsed.to_string())
+}
+
+fn is_excluded_url_path(url: &str, excludes: &[String]) -> bool {
+    if excludes.is_empty() {
+        return false;
+    }
+    let path = Url::parse(url)
+        .ok()
+        .map(|u| u.path().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    excludes
+        .iter()
+        .any(|prefix| is_path_prefix_excluded(&path, prefix))
+}
+
+fn is_path_prefix_excluded(path: &str, prefix: &str) -> bool {
+    let normalized = if prefix.starts_with('/') {
+        prefix
+    } else {
+        return is_path_prefix_excluded(path, &format!("/{prefix}"));
+    };
+    let boundary_prefix = normalized.trim_end_matches('/');
+    if boundary_prefix.is_empty() {
+        return false;
+    }
+    path == boundary_prefix
+        || path
+            .strip_prefix(boundary_prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn regex_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 8);
+    for ch in value.chars() {
+        match ch {
+            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+            | '-' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec<String> {
+    let host_pattern = Url::parse(start_url)
+        .ok()
+        .and_then(|u| u.host_str().map(regex_escape))
+        .unwrap_or_else(|| "[^/]+".to_string());
+
+    excludes
+        .iter()
+        .map(|prefix| {
+            let normalized = if prefix.starts_with('/') {
+                prefix.clone()
+            } else {
+                format!("/{prefix}")
+            };
+            format!(
+                "^https?://{}{}(?:/|$|\\?|#)",
+                host_pattern,
+                regex_escape(&normalized)
+            )
+        })
+        .collect()
 }
 
 fn configure_website(
@@ -62,11 +154,45 @@ fn configure_website(
     if cfg.shared_queue {
         website.with_shared_queue(true);
     }
+    if !cfg.exclude_path_prefix.is_empty() {
+        let blacklist_patterns: Vec<spider::compact_str::CompactString> =
+            build_exclude_blacklist_patterns(start_url, &cfg.exclude_path_prefix)
+                .into_iter()
+                .map(Into::into)
+                .collect();
+        website.with_blacklist_url(Some(blacklist_patterns));
+    }
+    if let Some(timeout_ms) = cfg.request_timeout_ms {
+        website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
+    }
 
-    if matches!(mode, RenderMode::Chrome) {
+    // Proxy and user-agent apply to both HTTP and Chrome/WebDriver modes.
+    if let Some(ref proxy) = cfg.chrome_proxy {
+        website.with_proxies(Some(vec![proxy.clone()]));
+    }
+    if let Some(ref ua) = cfg.chrome_user_agent {
+        website.with_user_agent(Some(ua.as_str()));
+    }
+
+    // WebDriver and CDP Chrome are mutually exclusive; webdriver_url takes priority.
+    if let Some(ref wd_url) = cfg.webdriver_url {
+        use spider::features::webdriver_common::WebDriverConfig;
+        let wd_cfg = WebDriverConfig {
+            server_url: wd_url.clone(),
+            headless: cfg.chrome_headless,
+            proxy: cfg.chrome_proxy.clone(),
+            user_agent: cfg.chrome_user_agent.clone(),
+            ..WebDriverConfig::default()
+        };
+        website.with_webdriver(wd_cfg);
+    } else if matches!(mode, RenderMode::Chrome) {
+        // CDP Chrome: wire all Chrome-specific fields instead of hardcoded values.
         website
-            .with_chrome_intercept(RequestInterceptConfiguration::new(false))
-            .with_stealth(true);
+            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
+            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot);
+        if let Some(ref remote_url) = cfg.chrome_remote_url {
+            website.with_chrome_connection(Some(remote_url.clone()));
+        }
         website = website
             .build()
             .map_err(|_| "Failed to build website with chrome settings")?;
@@ -135,6 +261,7 @@ pub async fn crawl_and_collect_map(
     let start = Instant::now();
 
     let transform_cfg = build_transform_config();
+    let exclude_path_prefix = cfg.exclude_path_prefix.clone();
     let join = tokio::spawn(async move {
         let mut summary = CrawlSummary::default();
         let mut urls = Vec::new();
@@ -147,11 +274,18 @@ pub async fn crawl_and_collect_map(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
 
-            summary.pages_seen += 1;
             let page_url = page.get_url().to_string();
-            if seen.insert(page_url.clone()) {
-                urls.push(page_url);
+            if is_excluded_url_path(&page_url, &exclude_path_prefix) {
+                continue;
             }
+            let Some(canonical_url) = canonicalize_url_for_dedupe(&page_url) else {
+                continue;
+            };
+            if !seen.insert(canonical_url.clone()) {
+                continue;
+            }
+            summary.pages_seen += 1;
+            urls.push(canonical_url);
 
             let input = TransformInput {
                 url: None,
@@ -208,10 +342,7 @@ pub async fn crawl_sitemap_urls(
     let start_host = host.clone();
     let start_path = parsed.path().trim_end_matches('/').to_string();
     let scoped_to_root = start_path.is_empty();
-    let worker_limit = cfg
-        .sitemap_concurrency_limit
-        .unwrap_or(64)
-        .clamp(1, 1024);
+    let worker_limit = cfg.sitemap_concurrency_limit.unwrap_or(64).clamp(1, 1024);
     let max_sitemaps = cfg.max_sitemaps.max(1);
     let mut parsed_sitemaps = 0usize;
 
@@ -262,6 +393,9 @@ pub async fn crawl_sitemap_urls(
                 if !in_scope {
                     continue;
                 }
+                if is_excluded_url_path(&loc, &cfg.exclude_path_prefix) {
+                    continue;
+                }
                 if !scoped_to_root {
                     let p = u.path();
                     let exact = p == start_path;
@@ -271,15 +405,19 @@ pub async fn crawl_sitemap_urls(
                     }
                 }
 
+                let Some(canonical_loc) = canonicalize_url_for_dedupe(&loc) else {
+                    continue;
+                };
+
                 if is_index {
-                    if !seen_sitemaps.contains(&loc) {
-                        queue.push_back(loc);
+                    if !seen_sitemaps.contains(&canonical_loc) {
+                        queue.push_back(canonical_loc);
                     }
                 } else {
-                    out.insert(loc);
+                    out.insert(canonical_loc);
                 }
             }
-            if parsed_sitemaps % 64 == 0 {
+            if parsed_sitemaps.is_multiple_of(64) {
                 log_info(&format!(
                     "command=sitemap parsed={} discovered_urls={} queue={}",
                     parsed_sitemaps,
@@ -301,6 +439,7 @@ pub async fn run_crawl_once(
     start_url: &str,
     mode: RenderMode,
     output_dir: &Path,
+    progress_tx: Option<UnboundedSender<CrawlSummary>>,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
     if output_dir.exists() {
         if std::env::var("AXON_NO_WIPE").is_ok() {
@@ -313,7 +452,18 @@ pub async fn run_crawl_once(
                 "Clearing output directory before crawl: {}",
                 output_dir.display()
             ));
-            tokio::fs::remove_dir_all(output_dir).await?;
+            // Output dir may be a bind mount root in containers; removing the
+            // mountpoint itself can fail with EBUSY. Clear contents instead.
+            let mut entries = tokio::fs::read_dir(output_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                let meta = tokio::fs::symlink_metadata(&path).await?;
+                if meta.is_symlink() || meta.is_file() {
+                    tokio::fs::remove_file(&path).await?;
+                } else if meta.is_dir() {
+                    tokio::fs::remove_dir_all(&path).await?;
+                }
+            }
         }
     }
     tokio::fs::create_dir_all(output_dir.join("markdown")).await?;
@@ -325,6 +475,7 @@ pub async fn run_crawl_once(
 
     let min_chars = cfg.min_markdown_chars;
     let drop_thin = cfg.drop_thin_markdown;
+    let exclude_path_prefix = cfg.exclude_path_prefix.clone();
     let crawl_start = Instant::now();
     let transform_cfg = build_transform_config();
 
@@ -335,6 +486,7 @@ pub async fn run_crawl_once(
         let mut manifest = tokio::io::BufWriter::new(manifest_file);
         let mut summary = CrawlSummary::default();
         let mut urls = HashSet::new();
+        let mut seen_canonical = HashSet::new();
 
         loop {
             let page = match rx.recv().await {
@@ -342,8 +494,17 @@ pub async fn run_crawl_once(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
+            let raw_url = page.get_url().to_string();
+            if is_excluded_url_path(&raw_url, &exclude_path_prefix) {
+                continue;
+            }
+            let Some(url) = canonicalize_url_for_dedupe(&raw_url) else {
+                continue;
+            };
+            if !seen_canonical.insert(url.clone()) {
+                continue;
+            }
             summary.pages_seen += 1;
-            let url = page.get_url().to_string();
             urls.insert(url.clone());
 
             let input = TransformInput {
@@ -361,27 +522,51 @@ pub async fn run_crawl_once(
             if chars < min_chars {
                 summary.thin_pages += 1;
                 if drop_thin {
+                    if summary.pages_seen.is_multiple_of(25) {
+                        if let Some(tx) = progress_tx.as_ref() {
+                            let _ = tx.send(summary.clone());
+                        }
+                    }
                     continue;
                 }
             }
             if trimmed.is_empty() {
+                if summary.pages_seen.is_multiple_of(25) {
+                    if let Some(tx) = progress_tx.as_ref() {
+                        let _ = tx.send(summary.clone());
+                    }
+                }
                 continue;
             }
 
             summary.markdown_files += 1;
             let filename = url_to_filename(&url, summary.markdown_files);
             let path = markdown_dir.join(filename);
-            tokio::fs::write(&path, trimmed).await.map_err(|e| format!("write failed: {e}"))?;
+            tokio::fs::write(&path, trimmed)
+                .await
+                .map_err(|e| format!("write failed: {e}"))?;
             let rec = serde_json::json!({"url": url, "file_path": path.to_string_lossy(), "markdown_chars": chars});
             let mut line = rec.to_string();
             line.push('\n');
-            manifest.write_all(line.as_bytes()).await.map_err(|e| format!("manifest failed: {e}"))?;
+            manifest
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| format!("manifest failed: {e}"))?;
+
+            if summary.pages_seen.is_multiple_of(25) {
+                if let Some(tx) = progress_tx.as_ref() {
+                    let _ = tx.send(summary.clone());
+                }
+            }
         }
 
         manifest
             .flush()
             .await
             .map_err(|e| format!("manifest flush failed: {e}"))?;
+        if let Some(tx) = progress_tx.as_ref() {
+            let _ = tx.send(summary.clone());
+        }
         Ok::<(CrawlSummary, HashSet<String>), String>((summary, urls))
     });
 
@@ -473,7 +658,9 @@ pub async fn append_sitemap_backfill(
     let mut pending = tokio::task::JoinSet::new();
     let candidates_vec: Vec<String> = sitemap_urls
         .into_iter()
-        .filter(|url| !seen_urls.contains(url))
+        .filter(|url| {
+            !seen_urls.contains(url) && !is_excluded_url_path(url, &cfg.exclude_path_prefix)
+        })
         .collect();
     let sitemap_candidates = candidates_vec.len();
     let mut candidates = candidates_vec.into_iter();
@@ -646,5 +833,58 @@ mod tests {
         // markdown_files = 15 >= 10 → coverage OK
         // thin_ratio = 5/50 = 0.10 → OK
         assert!(!should_fallback_to_chrome(&summary(50, 5, 15), 50));
+    }
+
+    #[test]
+    fn test_exclude_path_prefix_matches_segment_boundary() {
+        let excludes = vec!["/de".to_string()];
+        assert!(is_excluded_url_path("https://example.com/de", &excludes));
+        assert!(is_excluded_url_path(
+            "https://example.com/de/docs",
+            &excludes
+        ));
+        assert!(!is_excluded_url_path(
+            "https://example.com/developer",
+            &excludes
+        ));
+        assert!(!is_excluded_url_path(
+            "https://example.com/design",
+            &excludes
+        ));
+    }
+
+    #[test]
+    fn test_exclude_path_prefix_handles_non_normalized_input() {
+        let excludes = vec!["de/".to_string()];
+        assert!(is_excluded_url_path("https://example.com/de", &excludes));
+        assert!(is_excluded_url_path(
+            "https://example.com/de/guide",
+            &excludes
+        ));
+        assert!(!is_excluded_url_path(
+            "https://example.com/developer",
+            &excludes
+        ));
+    }
+
+    #[test]
+    fn test_canonicalize_url_for_dedupe_trailing_slash_and_fragment() {
+        let a = canonicalize_url_for_dedupe("https://example.com/docs/");
+        let b = canonicalize_url_for_dedupe("https://example.com/docs#intro");
+        assert_eq!(a, b);
+        assert_eq!(a.as_deref(), Some("https://example.com/docs"));
+    }
+
+    #[test]
+    fn test_canonicalize_url_for_dedupe_root_and_default_port() {
+        let a = canonicalize_url_for_dedupe("https://example.com:443/");
+        let b = canonicalize_url_for_dedupe("https://example.com/");
+        assert_eq!(a, b);
+        assert_eq!(a.as_deref(), Some("https://example.com/"));
+    }
+
+    #[test]
+    fn test_regex_escape_escapes_hyphen() {
+        assert_eq!(regex_escape("foo-bar"), "foo\\-bar");
     }
 }
