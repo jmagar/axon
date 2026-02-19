@@ -8,7 +8,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `suggest`, `sources`, `domains`, `stats`, `status`, `doctor`, `debug`
+- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `sources`, `domains`, `stats`, `status`, `doctor`, `debug`
 - Async queue-backed jobs for `crawl`/`batch`/`extract`/`embed`
 - TEI embeddings + Qdrant vector storage
 - OpenAI-compatible extraction and answer generation
@@ -24,7 +24,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - `crates/crawl` — crawling engine and sitemap backfill
 - `crates/extract` — remote structured extraction
 - `crates/jobs` — queue workers for crawl/batch/extract/embed (includes v2 crawl pipeline)
-- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/suggest/sources/domains/stats`, includes v2 ops)
+- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats`, includes v2 ops)
 
 ```
 axon_rust/
@@ -229,6 +229,7 @@ Worker behavior notes:
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer | No |
+| `evaluate <question>` | RAG vs baseline + LLM judge (accuracy · relevance · completeness · verdict) | No |
 | `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |

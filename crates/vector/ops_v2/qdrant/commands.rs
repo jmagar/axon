@@ -83,68 +83,64 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let detailed_mode = env::var("AXON_DOMAINS_DETAILED")
+fn domains_detailed_mode() -> bool {
+    env::var("AXON_DOMAINS_DETAILED")
         .map(|value| {
             matches!(
                 value.trim().to_ascii_lowercase().as_str(),
                 "1" | "true" | "yes"
             )
         })
-        .unwrap_or(false);
+        .unwrap_or(false)
+}
 
-    if !detailed_mode {
-        let facet_limit = env_usize_clamped("AXON_DOMAINS_FACET_LIMIT", 100_000, 1, 1_000_000);
-        match qdrant_domain_facets(cfg, facet_limit).await {
-            Ok(domains) => {
-                if cfg.json_output {
-                    let mut out: BTreeMap<String, usize> = BTreeMap::new();
-                    for (domain, vectors) in domains {
-                        out.insert(domain, vectors);
-                    }
-                    println!("{}", serde_json::to_string_pretty(&out)?);
-                } else {
-                    println!("{}", primary("Domains"));
-                    for (domain, vectors) in domains {
-                        println!(
-                            "  • {} {}",
-                            accent(&domain),
-                            muted(&format!("vectors={vectors}"))
-                        );
-                    }
-                    println!(
-                        "{}",
-                        muted(
-                            "Tip: set AXON_DOMAINS_DETAILED=1 for exact per-domain unique URL counts (slower)."
-                        )
-                    );
-                }
-                return Ok(());
-            }
-            Err(err) => {
-                eprintln!(
-                    "warning: fast domain facet query failed ({err}); falling back to detailed scan"
-                );
-            }
+fn render_fast_domain_results(
+    cfg: &Config,
+    domains: Vec<(String, usize)>,
+) -> Result<(), Box<dyn Error>> {
+    if cfg.json_output {
+        let mut out: BTreeMap<String, usize> = BTreeMap::new();
+        for (domain, vectors) in domains {
+            out.insert(domain, vectors);
+        }
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+    println!("{}", primary("Domains"));
+    for (domain, vectors) in domains {
+        println!(
+            "  • {} {}",
+            accent(&domain),
+            muted(&format!("vectors={vectors}"))
+        );
+    }
+    println!(
+        "{}",
+        muted("Tip: set AXON_DOMAINS_DETAILED=1 for exact per-domain unique URL counts (slower).")
+    );
+    Ok(())
+}
+
+async fn try_fast_domains(cfg: &Config) -> Result<bool, Box<dyn Error>> {
+    let facet_limit = env_usize_clamped("AXON_DOMAINS_FACET_LIMIT", 100_000, 1, 1_000_000);
+    match qdrant_domain_facets(cfg, facet_limit).await {
+        Ok(domains) => {
+            render_fast_domain_results(cfg, domains)?;
+            Ok(true)
+        }
+        Err(err) => {
+            eprintln!(
+                "warning: fast domain facet query failed ({err}); falling back to detailed scan"
+            );
+            Ok(false)
         }
     }
+}
 
-    let mut by_domain: HashMap<String, (usize, HashSet<String>)> = HashMap::new();
-    qdrant_scroll_pages(cfg, |points| {
-        for p in points {
-            let Some(payload) = p.get("payload") else {
-                continue;
-            };
-            let domain = payload_domain(payload);
-            let url = payload_url(payload);
-            let entry = by_domain.entry(domain).or_insert((0, HashSet::new()));
-            entry.0 += 1;
-            if !url.is_empty() {
-                entry.1.insert(url);
-            }
-        }
-    })
-    .await?;
+fn render_detailed_domains(
+    cfg: &Config,
+    by_domain: HashMap<String, (usize, HashSet<String>)>,
+) -> Result<(), Box<dyn Error>> {
     if cfg.json_output {
         let mut out: BTreeMap<String, (usize, usize)> = BTreeMap::new();
         for (domain, (vectors, urls)) in by_domain {
@@ -164,4 +160,28 @@ pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if !domains_detailed_mode() && try_fast_domains(cfg).await? {
+        return Ok(());
+    }
+
+    let mut by_domain: HashMap<String, (usize, HashSet<String>)> = HashMap::new();
+    qdrant_scroll_pages(cfg, |points| {
+        for p in points {
+            let Some(payload) = p.get("payload") else {
+                continue;
+            };
+            let domain = payload_domain(payload);
+            let url = payload_url(payload);
+            let entry = by_domain.entry(domain).or_insert((0, HashSet::new()));
+            entry.0 += 1;
+            if !url.is_empty() {
+                entry.1.insert(url);
+            }
+        }
+    })
+    .await?;
+    render_detailed_domains(cfg, by_domain)
 }
