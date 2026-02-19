@@ -3,7 +3,7 @@ use crate::axon_cli::crates::core::health::redis_healthy;
 use crate::axon_cli::crates::core::logging::{log_done, log_info, log_warn};
 use crate::axon_cli::crates::jobs::common::{
     claim_next_pending, claim_pending_by_id, enqueue_job, make_pool, mark_job_failed,
-    open_amqp_channel, reclaim_stale_running_jobs, JobTable,
+    open_amqp_channel, open_amqp_connection_and_channel, reclaim_stale_running_jobs, JobTable,
 };
 use crate::axon_cli::crates::vector::ops::{embed_path_native_with_progress, EmbedProgress};
 use chrono::{DateTime, Utc};
@@ -299,7 +299,9 @@ pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let run_amqp_lane = |lane: usize| {
         let pool = pool.clone();
         async move {
-            let ch = open_amqp_channel(cfg, &cfg.embed_queue).await?;
+            // Hold _conn for the duration of the lane so the TCP connection
+            // backing this channel stays alive for the consumer loop.
+            let (_conn, ch) = open_amqp_connection_and_channel(cfg, &cfg.embed_queue).await?;
             let tag = format!("axon-rust-embed-worker-{lane}");
             let mut consumer = ch
                 .basic_consume(
@@ -353,6 +355,9 @@ pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 let parsed = std::str::from_utf8(&delivery.data)
                     .ok()
                     .and_then(|s| Uuid::parse_str(s.trim()).ok());
+                // Ack before processing so the channel is not killed by
+                // RabbitMQ's consumer_timeout for long-running embed jobs.
+                delivery.ack(BasicAckOptions::default()).await?;
                 if let Some(job_id) = parsed {
                     if claim_pending_by_id(&pool, TABLE, job_id)
                         .await
@@ -365,7 +370,6 @@ pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                delivery.ack(BasicAckOptions::default()).await?;
             }
             Result::<(), Box<dyn Error>>::Ok(())
         }
@@ -458,142 +462,4 @@ pub async fn embed_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Err
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::axon_cli::crates::jobs::common::test_config;
-    use chrono::{Duration, Utc};
-    use std::env;
-    use tokio::time::{sleep, timeout, Duration as TokioDuration};
-
-    fn pg_url() -> Option<String> {
-        env::var("AXON_TEST_PG_URL")
-            .ok()
-            .or_else(|| env::var("AXON_PG_URL").ok())
-            .filter(|v| !v.trim().is_empty())
-    }
-
-    #[tokio::test]
-    async fn embed_start_job_dedupes_active_pending_job() -> Result<(), Box<dyn Error>> {
-        let Some(pg_url) = pg_url() else {
-            return Ok(());
-        };
-        let cfg = test_config(&pg_url);
-        let input = format!("embed-dedupe-{}", Uuid::new_v4());
-
-        let first_id = start_embed_job(&cfg, &input).await?;
-        let second_id = start_embed_job(&cfg, &input).await?;
-        assert_eq!(first_id, second_id);
-
-        let pool = make_pool(&cfg).await?;
-        let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE id = $1")
-            .bind(first_id)
-            .execute(&pool)
-            .await;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn embed_recover_reclaims_confirmed_stale_running_job() -> Result<(), Box<dyn Error>> {
-        let Some(pg_url) = pg_url() else {
-            return Ok(());
-        };
-        let cfg = test_config(&pg_url);
-        let input = format!("embed-recover-{}", Uuid::new_v4());
-        let id = start_embed_job(&cfg, &input).await?;
-        let pool = make_pool(&cfg).await?;
-
-        sqlx::query(
-            "UPDATE axon_embed_jobs SET status='running', updated_at=NOW() - INTERVAL '20 minutes' WHERE id=$1",
-        )
-        .bind(id)
-        .execute(&pool)
-        .await?;
-
-        let observed_updated_at: DateTime<Utc> =
-            sqlx::query_scalar("SELECT updated_at FROM axon_embed_jobs WHERE id = $1")
-                .bind(id)
-                .fetch_one(&pool)
-                .await?;
-        let watchdog = serde_json::json!({
-            "_watchdog": {
-                "observed_updated_at": observed_updated_at.to_rfc3339(),
-                "first_seen_stale_at": (Utc::now() - Duration::minutes(10)).to_rfc3339()
-            }
-        });
-        sqlx::query("UPDATE axon_embed_jobs SET result_json=$2 WHERE id=$1")
-            .bind(id)
-            .bind(watchdog)
-            .execute(&pool)
-            .await?;
-
-        let reclaimed = recover_stale_embed_jobs(&cfg).await?;
-        assert!(reclaimed >= 1);
-
-        let status: String = sqlx::query_scalar("SELECT status FROM axon_embed_jobs WHERE id = $1")
-            .bind(id)
-            .fetch_one(&pool)
-            .await?;
-        assert_eq!(status, "failed");
-
-        let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE id = $1")
-            .bind(id)
-            .execute(&pool)
-            .await;
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn embed_worker_e2e_processes_pending_job_to_terminal_status(
-    ) -> Result<(), Box<dyn Error>> {
-        let Some(pg_url) = pg_url() else {
-            return Ok(());
-        };
-        let cfg = test_config(&pg_url);
-        let input = format!("embed-worker-e2e-{}", Uuid::new_v4());
-        let id = start_embed_job(&cfg, &input).await?;
-
-        let worker_cfg = cfg.clone();
-        let worker = tokio::task::spawn_local(async move {
-            let _ = run_embed_worker(&worker_cfg).await;
-        });
-
-        let pool = make_pool(&cfg).await?;
-        let wait = timeout(TokioDuration::from_secs(8), async {
-            loop {
-                let status: Option<String> =
-                    sqlx::query_scalar("SELECT status FROM axon_embed_jobs WHERE id=$1")
-                        .bind(id)
-                        .fetch_optional(&pool)
-                        .await
-                        .ok()
-                        .flatten();
-                if matches!(status.as_deref(), Some("completed" | "failed" | "canceled")) {
-                    break;
-                }
-                sleep(TokioDuration::from_millis(100)).await;
-            }
-        })
-        .await;
-        worker.abort();
-        let _ = worker.await;
-        assert!(
-            wait.is_ok(),
-            "embed worker did not reach terminal state in time"
-        );
-
-        let status: String = sqlx::query_scalar("SELECT status FROM axon_embed_jobs WHERE id = $1")
-            .bind(id)
-            .fetch_one(&pool)
-            .await?;
-        assert!(matches!(
-            status.as_str(),
-            "completed" | "failed" | "canceled"
-        ));
-
-        let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE id = $1")
-            .bind(id)
-            .execute(&pool)
-            .await;
-        Ok(())
-    }
-}
+mod tests;

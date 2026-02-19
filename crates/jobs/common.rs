@@ -146,12 +146,17 @@ pub async fn make_pool(cfg: &Config) -> Result<PgPool> {
 }
 
 /// Open an AMQP channel with a 5-second connection timeout and declare the given queue.
+///
+/// **Warning:** This drops the `Connection`, so the returned channel's backing TCP
+/// connection will close asynchronously. Only use this for short-lived operations
+/// (health checks, queue_purge). For long-lived consumers, use
+/// `open_amqp_connection_and_channel` and keep the `Connection` in scope.
 pub async fn open_amqp_channel(cfg: &Config, queue_name: &str) -> Result<Channel> {
     let (_, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
     Ok(ch)
 }
 
-async fn open_amqp_connection_and_channel(
+pub(crate) async fn open_amqp_connection_and_channel(
     cfg: &Config,
     queue_name: &str,
 ) -> Result<(Connection, Channel)> {
@@ -246,9 +251,10 @@ pub async fn enqueue_job(cfg: &Config, queue_name: &str, job_id: Uuid) -> Result
 
     // Explicitly close channel then connection so lapin's AMQP CLOSE handshake
     // completes synchronously. Without this, lapin defers cleanup to background
-    // tokio tasks that race with #[tokio::main] shutdown, producing:
-    // "A Tokio 1.x context was found, but it is being shutdown."
-    drop(ch);
+    // tokio tasks that race with #[tokio::main] shutdown.
+    // Using ch.close() instead of drop(ch) avoids the "invalid channel state: Closing"
+    // log noise that occurs when conn.close() races with an in-flight channel-close frame.
+    let _ = ch.close(0, "").await;
     let _ = conn.close(200, "").await;
 
     Ok(())

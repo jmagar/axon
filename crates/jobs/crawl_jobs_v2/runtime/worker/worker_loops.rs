@@ -2,7 +2,7 @@ use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::logging::{log_info, log_warn};
 use crate::axon_cli::crates::jobs::common::{
     claim_next_pending, claim_pending_by_id, make_pool, mark_job_failed, open_amqp_channel,
-    stale_watchdog_confirmed, stale_watchdog_payload,
+    open_amqp_connection_and_channel, stale_watchdog_confirmed, stale_watchdog_payload,
 };
 use chrono::Utc;
 use futures_util::StreamExt;
@@ -170,7 +170,10 @@ async fn run_amqp_worker_lane(
     pool: &PgPool,
     lane: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let ch = open_amqp_channel(cfg, &cfg.crawl_queue).await?;
+    // Hold `_conn` in scope for the entire consumer loop. open_amqp_channel discards
+    // the Connection, which causes the backing TCP connection to close asynchronously
+    // and kills the consumer stream. Keeping _conn alive prevents that.
+    let (_conn, ch) = open_amqp_connection_and_channel(cfg, &cfg.crawl_queue).await?;
     let consumer_tag = format!("axon-rust-crawl-worker-{lane}");
     let mut consumer = ch
         .basic_consume(
@@ -234,6 +237,16 @@ async fn run_amqp_worker_lane(
             .ok()
             .and_then(|s| Uuid::parse_str(s.trim()).ok());
 
+        // Ack before processing: crawls can run for hours, and RabbitMQ's
+        // consumer_timeout (default 30 min) will forcibly close the channel if
+        // the ack comes too late. The DB is the source of truth for job state;
+        // the watchdog reclaims any job that crashes without completing.
+        if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+            log_warn(&format!(
+                "failed to ack crawl delivery (lane={lane}): {err}"
+            ));
+        }
+
         if let Some(job_id) = parsed {
             if claim_pending_by_id(pool, TABLE, job_id)
                 .await
@@ -245,12 +258,6 @@ async fn run_amqp_worker_lane(
                     log_warn(&format!("worker failed crawl job {job_id}: {error_text}"));
                 }
             }
-        }
-
-        if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
-            log_warn(&format!(
-                "failed to ack crawl delivery (lane={lane}): {err}"
-            ));
         }
     }
 
