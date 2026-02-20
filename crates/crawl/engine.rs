@@ -257,8 +257,9 @@ pub async fn crawl_and_collect_map(
 ) -> Result<(CrawlSummary, Vec<String>), Box<dyn Error>> {
     let mut website = configure_website(cfg, start_url, mode)?;
     // Buffer at least max_pages worth of messages to prevent silent page drops
-    // under high-throughput crawls (extreme/max profiles).
-    let subscribe_buf = (cfg.max_pages as usize).max(4096);
+    // under high-throughput crawls (extreme/max profiles). Clamp to 16 384 so
+    // a large --max-pages value can't allocate an unbounded broadcast ring buffer.
+    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
     let mut rx = website
         .subscribe(subscribe_buf)
         .ok_or("failed to subscribe to spider broadcast channel")?;
@@ -364,8 +365,9 @@ pub async fn run_crawl_once(
 
     let mut website = configure_website(cfg, start_url, mode)?;
     // Buffer at least max_pages worth of messages to prevent silent page drops
-    // under high-throughput crawls (extreme/max profiles).
-    let subscribe_buf = (cfg.max_pages as usize).max(4096);
+    // under high-throughput crawls (extreme/max profiles). Clamp to 16 384 so
+    // a large --max-pages value can't allocate an unbounded broadcast ring buffer.
+    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
     let mut rx = website
         .subscribe(subscribe_buf)
         .ok_or("failed to subscribe to spider broadcast channel")?;
