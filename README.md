@@ -22,9 +22,9 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - `crates/cli` — command routing and UX
 - `crates/core` — config, HTTP, health checks, logging, content transforms
 - `crates/crawl` — crawling engine and sitemap backfill
-- `crates/extract` — remote structured extraction
-- `crates/jobs` — queue workers for crawl/batch/extract/embed (includes v2 crawl pipeline)
-- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats`, includes v2 ops)
+- `crates/extract` — placeholder module (extraction logic lives in `vector/ops_v2`)
+- `crates/jobs` — queue workers for crawl/batch/extract/embed (v2 crawl pipeline)
+- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats`)
 
 ```
 axon_rust/
@@ -34,46 +34,67 @@ axon_rust/
 │   ├── mod.rs
 │   ├── cli/
 │   │   ├── mod.rs
-│   │   └── commands/       # One file per command
+│   │   └── commands/       # One file (or subdir) per command
 │   │       ├── common.rs   # URL parsing utilities (parse_urls, expand_url_glob_seed, etc.)
 │   │       ├── probe.rs    # HTTP probe helpers used by doctor
-│   │       └── scrape.rs, crawl.rs, map.rs, batch.rs, embed.rs, extract.rs,
-│   │           search.rs, status.rs, debug.rs, doctor.rs
+│   │       ├── crawl.rs    # Crawl command entry point
+│   │       ├── crawl/      # Crawl subcommand modules
+│   │       │   ├── audit.rs
+│   │       │   └── audit/audit_diff.rs
+│   │       ├── doctor/     # Doctor command subdir
+│   │       └── scrape.rs, map.rs, batch.rs, embed.rs, extract.rs,
+│   │           search.rs, status.rs, debug.rs
 │   ├── core/
-│   │   ├── config.rs       # CLI parsing (clap), Config struct, performance profiles
-│   │   ├── content.rs      # HTML→markdown, URL→filename, transform pipeline
+│   │   ├── config/         # CLI parsing (clap), Config struct, performance profiles
+│   │   │   ├── cli.rs      # clap arg definitions (GlobalArgs, subcommand args)
+│   │   │   ├── types.rs    # Config struct and enum types
+│   │   │   ├── parse.rs    # Post-parse normalization and profile application
+│   │   │   └── help.rs     # Long-form help strings
+│   │   ├── content/        # HTML→markdown, URL→filename, transform pipeline
+│   │   │   ├── deterministic.rs  # DeterministicExtractionEngine, parsers
+│   │   │   └── tests.rs
 │   │   ├── health.rs       # redis_healthy() connectivity check
-│   │   ├── http.rs         # build_client(), fetch_html(), validate_url()
+│   │   ├── http.rs         # build_client(), fetch_html(), validate_url() (SSRF guard)
 │   │   ├── logging.rs      # log_info(), log_warn(), log_done() structured output
 │   │   └── ui.rs           # ANSI color helpers (primary, accent, muted, status_text)
 │   ├── crawl/
 │   │   ├── mod.rs
-│   │   └── engine.rs       # crawl_and_collect_map(), run_crawl_once(),
-│   │                       # crawl_sitemap_urls(), append_sitemap_backfill(),
-│   │                       # try_auto_switch(), should_fallback_to_chrome()
+│   │   ├── engine.rs       # crawl_and_collect_map(), run_crawl_once(),
+│   │   │                   # try_auto_switch(), should_fallback_to_chrome()
+│   │   └── engine/
+│   │       ├── sitemap.rs  # crawl_sitemap_urls(), append_sitemap_backfill()
+│   │       └── tests.rs
 │   ├── extract/
-│   │   ├── mod.rs
-│   │   └── remote_extract.rs  # LLM extraction via OpenAI-compatible API
+│   │   └── mod.rs          # (placeholder; LLM extraction is in vector/ops_v2)
 │   ├── jobs/               # AMQP-backed async job workers
 │   │   ├── mod.rs
 │   │   ├── common.rs       # Shared infrastructure: make_pool, open_amqp_channel,
-│   │   │                   # claim_next_pending, mark_job_failed, enqueue_job
-│   │   ├── crawl_jobs.rs           # Crawl worker (v1)
-│   │   ├── crawl_jobs_dispatch.rs  # Dispatcher: routes to v1 or v2 pipeline
-│   │   ├── batch_jobs.rs
-│   │   ├── extract_jobs.rs
-│   │   ├── embed_jobs.rs
+│   │   │   + common/       # claim_next_pending, mark_job_failed, enqueue_job
+│   │   │       └── tests.rs
+│   │   ├── batch_jobs/     # Batch worker
+│   │   │   ├── worker.rs, maintenance.rs, tests.rs
+│   │   ├── embed_jobs/     # Embed worker
+│   │   │   └── tests.rs
+│   │   ├── extract_jobs/   # Extract worker
+│   │   │   ├── worker.rs, tests.rs
 │   │   └── crawl_jobs_v2/  # V2 crawl pipeline (modular)
-│   │       ├── mod.rs, config.rs, manifest.rs, processor.rs,
-│   │           repo.rs, sitemap.rs, watchdog.rs, worker.rs
+│   │       ├── mod.rs, manifest.rs, processor.rs, repo.rs,
+│   │       │   sitemap.rs, watchdog.rs, worker.rs
+│   │       └── runtime/
+│   │           ├── mod.rs, robots.rs, tests.rs, worker.rs
+│   │           └── worker/
+│   │               ├── worker_loops.rs
+│   │               └── worker_process/
 │   └── vector/
 │       ├── mod.rs
-│       ├── ops.rs           # tei_embed(), qdrant_upsert(), qdrant_search(),
-│       │                    # run_query_native(), run_ask_native(), run_sources_native()
-│       ├── ops_dispatch.rs  # Dispatcher: routes to v1 or v2 ops
+│       ├── ops_dispatch.rs  # Dispatcher: routes to v2 ops; chunk_text(), embed_path_native()
 │       └── ops_v2/          # V2 vector ops (modular)
-│           ├── mod.rs, commands.rs, input.rs, qdrant.rs,
-│               ranking.rs, stats.rs, tei.rs
+│           ├── input.rs, ranking.rs, tei.rs
+│           ├── commands/    # Per-command handlers
+│           │   ├── ask/, evaluate.rs, query.rs, streaming.rs, suggest.rs
+│           ├── qdrant/      # Qdrant client and operations
+│           │   ├── client.rs, commands.rs, types.rs, utils.rs
+│           └── stats/
 ├── docker/
 │   ├── Dockerfile          # Multi-stage build; s6-overlay for service supervision
 │   ├── rabbitmq/
@@ -163,6 +184,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_EXTRACT_QUEUE` | `axon.extract.jobs` | Extract job queue name |
 | `AXON_EMBED_QUEUE` | `axon.embed.jobs` | Embed job queue name |
 | `AXON_COLLECTION` | `cortex` | Qdrant collection name |
+| `AXON_QUEUE_INJECTION_RULES_JSON` | — | JSON rules for queue routing overrides |
 
 ### Optional Browser / WebDriver
 
@@ -171,9 +193,13 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_WEBDRIVER_URL` | — | Primary WebDriver endpoint (e.g. `http://127.0.0.1:4444`) |
 | `WEBDRIVER_URL` | — | Legacy fallback for `AXON_WEBDRIVER_URL` |
 | `AXON_CHROME_REMOTE_URL` | — | Remote Chrome DevTools endpoint |
+| `CHROME_URL` | — | spider-rs native CDP env var (alternative to `AXON_CHROME_REMOTE_URL`) |
 | `AXON_CHROME_PROXY` | — | Proxy URL for Chrome requests |
 | `AXON_CHROME_USER_AGENT` | — | User-Agent override for Chrome |
 | `AXON_CHROME_DIAGNOSTICS` | `false` | Enable browser diagnostics artifact collection |
+| `AXON_CHROME_DIAGNOSTICS_SCREENSHOT` | — | Save diagnostic screenshots to disk when set |
+| `AXON_CHROME_DIAGNOSTICS_EVENTS` | — | Log raw CDP events when set |
+| `AXON_CHROME_DIAGNOSTICS_DIR` | — | Directory for diagnostics output (default: temp dir) |
 
 ### Optional Worker / Watchdog
 
@@ -193,7 +219,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 
 ### Legacy Aliases
 
-`NUQ_DATABASE_URL`, `NUQ_RABBITMQ_URL`, `REDIS_URL` are accepted as fallbacks for `AXON_PG_URL`, `AXON_AMQP_URL`, `AXON_REDIS_URL` respectively.
+`NUQ_DATABASE_URL`, `NUQ_RABBITMQ_URL`, `REDIS_URL` are accepted as fallbacks for `AXON_PG_URL`, `AXON_AMQP_URL`, `AXON_REDIS_URL` respectively. `WEBDRIVER_URL` is accepted as a fallback for `AXON_WEBDRIVER_URL`.
 
 Notes:
 - Container runtime uses service DNS names (`axon-postgres`, `axon-redis`, etc.).
@@ -237,6 +263,7 @@ Worker behavior notes:
 | `status` | Show async job queue status | No |
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
+| `dedupe` | Remove duplicate vectors from Qdrant collection | No |
 
 ### Job Subcommands (for crawl / batch / extract / embed)
 
