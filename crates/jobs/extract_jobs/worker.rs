@@ -204,6 +204,9 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
         )))
     }
     .await;
+    // Convert Box<dyn Error> to String before the match so no !Send type
+    // is held across any await inside the match arms (tokio::spawn Send bound).
+    let run_result = run_result.map_err(|e| e.to_string());
 
     match run_result {
         Ok(Some(result_json)) => {
@@ -217,8 +220,7 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
             log_done(&format!("worker completed extract job {id}"));
         }
         Ok(None) => {}
-        Err(err) => {
-            let error_text = err.to_string();
+        Err(error_text) => {
             let _ = sqlx::query(
                 "UPDATE axon_extract_jobs SET status='failed',updated_at=NOW(),finished_at=NOW(),error_text=$2 WHERE id=$1 AND status='running'",
             )
@@ -254,8 +256,13 @@ async fn sweep_stale_extract_jobs(cfg: &Config, pool: &PgPool, source: &str, lan
 }
 
 async fn process_claimed_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) {
-    if let Err(err) = process_extract_job(cfg, pool, id).await {
-        let error_text = err.to_string();
+    // Extract error string inside the match arm so `err` (Box<dyn Error>, !Send)
+    // is dropped before any await point — required for tokio::spawn Send bound.
+    let fail_msg = match process_extract_job(cfg, pool, id).await {
+        Ok(()) => None,
+        Err(err) => Some(err.to_string()),
+    };
+    if let Some(error_text) = fail_msg {
         mark_job_failed(pool, TABLE, id, &error_text).await;
         log_warn(&format!("worker failed extract job {id}: {error_text}"));
     }
@@ -341,7 +348,17 @@ pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     ensure_schema(&pool).await?;
     sweep_stale_extract_jobs(cfg, &pool, "startup", 0).await;
 
-    if open_amqp_channel(cfg, &cfg.extract_queue).await.is_ok() {
+    // Probe AMQP connectivity with a short-lived connection+channel pair.
+    // Close both explicitly so RabbitMQ doesn't accumulate orphaned channels.
+    let amqp_available = match open_amqp_connection_and_channel(cfg, &cfg.extract_queue).await {
+        Ok((conn, ch)) => {
+            let _ = ch.close(0, "probe").await;
+            let _ = conn.close(200, "probe").await;
+            true
+        }
+        Err(_) => false,
+    };
+    if amqp_available {
         let (r1, r2) = tokio::join!(
             run_extract_amqp_lane(cfg, pool.clone(), 1),
             run_extract_amqp_lane(cfg, pool.clone(), 2)

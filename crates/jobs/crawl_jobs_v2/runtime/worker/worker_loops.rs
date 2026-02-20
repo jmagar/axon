@@ -1,7 +1,7 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::logging::{log_info, log_warn};
 use crate::axon_cli::crates::jobs::common::{
-    claim_next_pending, claim_pending_by_id, make_pool, mark_job_failed, open_amqp_channel,
+    claim_next_pending, claim_pending_by_id, make_pool, mark_job_failed,
     open_amqp_connection_and_channel, stale_watchdog_confirmed, stale_watchdog_payload,
 };
 use chrono::Utc;
@@ -179,9 +179,9 @@ async fn run_amqp_worker_lane(
     pool: &PgPool,
     lane: usize,
 ) -> Result<(), Box<dyn Error>> {
-    // Hold `_conn` in scope for the entire consumer loop. open_amqp_channel discards
-    // the Connection, which causes the backing TCP connection to close asynchronously
-    // and kills the consumer stream. Keeping _conn alive prevents that.
+    // Hold `_conn` in scope for the entire consumer loop. open_amqp_connection_and_channel
+    // returns the Connection; dropping it would close the backing TCP connection
+    // and kill the consumer stream. Keeping _conn alive prevents that.
     let (_conn, ch) = open_amqp_connection_and_channel(cfg, &cfg.crawl_queue).await?;
     let consumer_tag = format!("axon-rust-crawl-worker-{lane}");
     let mut consumer = ch
@@ -301,9 +301,19 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
         Err(err) => log_warn(&format!("watchdog crawl startup sweep failed: {err}")),
     }
 
-    match open_amqp_channel(cfg, &cfg.crawl_queue).await {
-        Ok(_) => {}
-        Err(_) => return run_worker_polling_loop(cfg, &pool).await,
+    // Probe AMQP connectivity with a short-lived connection+channel pair.
+    // Close both explicitly so RabbitMQ doesn't accumulate orphaned channels.
+    // Each lane opens its own long-lived connection for its consumer loop.
+    let amqp_available = match open_amqp_connection_and_channel(cfg, &cfg.crawl_queue).await {
+        Ok((conn, ch)) => {
+            let _ = ch.close(0, "probe").await;
+            let _ = conn.close(200, "probe").await;
+            true
+        }
+        Err(_) => false,
+    };
+    if !amqp_available {
+        return run_worker_polling_loop(cfg, &pool).await;
     }
     if WORKER_CONCURRENCY <= 1 {
         return run_amqp_worker_lane(cfg, &pool, 1).await;

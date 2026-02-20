@@ -38,3 +38,6 @@ crates/vector/ops_v2/stats.rs
 crates/vector/ops_v2/tei.rs
 
 # Module-split new files — functions carried over verbatim, tracked for refactoring (2026-02-19)
+
+# engine.rs grew to 515 lines; run_crawl_once() 157 lines — tracked for sitemap/chrome split (2026-02-19)
+crates/crawl/engine.rs

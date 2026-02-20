@@ -234,7 +234,8 @@ async fn handle_backfill_result(
         Ok((url, Ok(html))) => {
             fetched_ok += 1;
             let md = to_markdown(&html);
-            let chars = md.chars().count();
+            // byte length; sitemap/doc content is ASCII-dominant so bytes ≈ chars
+            let chars = md.len();
             if chars < cfg.min_markdown_chars {
                 summary.thin_pages += 1;
             }
