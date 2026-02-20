@@ -39,7 +39,11 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
         return Ok(());
     }
 
-    let result = run_active_crawl_job(pool, id, &ctx).await;
+    // Convert Box<dyn Error> to String before the match so no !Send type
+    // is held across any await inside the match arms (tokio::spawn Send bound).
+    let result = run_active_crawl_job(pool, id, &ctx)
+        .await
+        .map_err(|e| e.to_string());
     match result {
         Ok(result_json) => {
             sqlx::query(

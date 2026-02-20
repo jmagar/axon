@@ -245,7 +245,12 @@ pub async fn crawl_and_collect_map(
     mode: RenderMode,
 ) -> Result<(CrawlSummary, Vec<String>), Box<dyn Error>> {
     let mut website = configure_website(cfg, start_url, mode)?;
-    let mut rx = website.subscribe(4096).ok_or("subscribe failed")?;
+    // Buffer at least max_pages worth of messages to prevent silent page drops
+    // under high-throughput crawls (extreme/max profiles).
+    let subscribe_buf = (cfg.max_pages as usize).max(4096);
+    let mut rx = website
+        .subscribe(subscribe_buf)
+        .ok_or("failed to subscribe to spider broadcast channel")?;
     let start = Instant::now();
 
     let transform_cfg = build_transform_config();
@@ -258,7 +263,10 @@ pub async fn crawl_and_collect_map(
         loop {
             let page = match rx.recv().await {
                 Ok(page) => page,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log_warn(&format!("crawl broadcast lagged: {skipped} pages dropped — increase subscribe buffer or reduce concurrency"));
+                    continue;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
 
@@ -284,7 +292,8 @@ pub async fn crawl_and_collect_map(
                 ignore_tags: None,
             };
             let markdown = transform_content_input(input, &transform_cfg);
-            let chars = markdown.trim().chars().count();
+            // byte length; sitemap/doc content is ASCII-dominant so bytes ≈ chars
+            let chars = markdown.trim().len();
             if chars < 200 {
                 summary.thin_pages += 1;
             }
@@ -343,7 +352,12 @@ pub async fn run_crawl_once(
     tokio::fs::create_dir_all(output_dir.join("markdown")).await?;
 
     let mut website = configure_website(cfg, start_url, mode)?;
-    let mut rx = website.subscribe(4096).ok_or("subscribe failed")?;
+    // Buffer at least max_pages worth of messages to prevent silent page drops
+    // under high-throughput crawls (extreme/max profiles).
+    let subscribe_buf = (cfg.max_pages as usize).max(4096);
+    let mut rx = website
+        .subscribe(subscribe_buf)
+        .ok_or("failed to subscribe to spider broadcast channel")?;
     let markdown_dir = output_dir.join("markdown");
     let manifest_path = output_dir.join("manifest.jsonl");
 
@@ -365,7 +379,10 @@ pub async fn run_crawl_once(
         loop {
             let page = match rx.recv().await {
                 Ok(page) => page,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log_warn(&format!("crawl broadcast lagged: {skipped} pages dropped — increase subscribe buffer or reduce concurrency"));
+                    continue;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
             let raw_url = page.get_url().to_string();
@@ -390,8 +407,9 @@ pub async fn run_crawl_once(
                 ignore_tags: None,
             };
             let markdown = transform_content_input(input, &transform_cfg);
-            let trimmed = markdown.trim().to_string();
-            let chars = trimmed.chars().count();
+            let trimmed = markdown.trim(); // &str borrow — zero allocation
+                                           // byte length; sitemap/doc content is ASCII-dominant so bytes ≈ chars
+            let chars = trimmed.len();
 
             if chars < min_chars {
                 summary.thin_pages += 1;
@@ -416,7 +434,7 @@ pub async fn run_crawl_once(
             summary.markdown_files += 1;
             let filename = url_to_filename(&url, summary.markdown_files);
             let path = markdown_dir.join(filename);
-            tokio::fs::write(&path, trimmed)
+            tokio::fs::write(&path, trimmed.as_bytes())
                 .await
                 .map_err(|e| format!("write failed: {e}"))?;
             let rec = serde_json::json!({"url": url, "file_path": path.to_string_lossy(), "markdown_chars": chars});

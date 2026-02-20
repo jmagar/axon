@@ -151,8 +151,13 @@ async fn sweep_stale_batch_jobs(cfg: &Config, pool: &PgPool, source: &str, lane:
 }
 
 async fn process_claimed_batch_job(cfg: &Config, pool: &PgPool, id: Uuid) {
-    if let Err(err) = process_batch_job(cfg, pool, id).await {
-        let error_text = err.to_string();
+    // Extract error string inside the match arm so `err` (Box<dyn Error>, !Send)
+    // is dropped before any await point — required for tokio::spawn Send bound.
+    let fail_msg = match process_batch_job(cfg, pool, id).await {
+        Ok(()) => None,
+        Err(err) => Some(err.to_string()),
+    };
+    if let Some(error_text) = fail_msg {
         mark_job_failed(pool, TABLE, id, &error_text).await;
         log_warn(&format!("worker failed batch job {id}: {error_text}"));
     }
@@ -240,7 +245,17 @@ pub async fn run_batch_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     ensure_schema(&pool).await?;
     sweep_stale_batch_jobs(cfg, &pool, "startup", 0).await;
 
-    if open_amqp_channel(cfg, &cfg.batch_queue).await.is_ok() {
+    // Probe AMQP connectivity with a short-lived connection+channel pair.
+    // Close both explicitly so RabbitMQ doesn't accumulate orphaned channels.
+    let amqp_available = match open_amqp_connection_and_channel(cfg, &cfg.batch_queue).await {
+        Ok((conn, ch)) => {
+            let _ = ch.close(0, "probe").await;
+            let _ = conn.close(200, "probe").await;
+            true
+        }
+        Err(_) => false,
+    };
+    if amqp_available {
         let (r1, r2) = tokio::join!(
             run_batch_amqp_lane(cfg, pool.clone(), 1),
             run_batch_amqp_lane(cfg, pool.clone(), 2)
