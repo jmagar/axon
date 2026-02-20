@@ -107,7 +107,9 @@ pub fn extract_meta_description(html: &str) -> Option<String> {
         .find("</head>")
         .or_else(|| html.find("</HEAD>"))
         .unwrap_or(html.len().min(8192));
-    let head = &html[..head_end];
+    // Use .get() instead of direct index to avoid a panic when head_end falls
+    // on a UTF-8 multi-byte boundary (possible when the 8192-byte default is used).
+    let head = html.get(..head_end).unwrap_or(html);
     let lower = head.to_ascii_lowercase();
     let marker = "name=\"description\"";
     let idx = lower.find(marker)?;
