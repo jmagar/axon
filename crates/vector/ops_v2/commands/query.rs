@@ -16,7 +16,7 @@ pub async fn run_query_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
     // Over-fetch so reranking has headroom; then trim to the requested limit.
     // 8x matches the TS reference impl's strategy for dedup quality.
-    let fetch_limit = (cfg.search_limit * 8).max(cfg.search_limit).min(500);
+    let fetch_limit = (cfg.search_limit.max(1) * 8).max(cfg.search_limit).min(500);
     let hits = qdrant::qdrant_search(cfg, &vector, fetch_limit).await?;
 
     let query_tokens = ranking::tokenize_query(&query);

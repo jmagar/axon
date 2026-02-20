@@ -10,6 +10,7 @@ use crate::axon_cli::crates::jobs::embed_jobs::{
 };
 use crate::axon_cli::crates::vector::ops::embed_path_native;
 use std::error::Error;
+use std::path::Path;
 use uuid::Uuid;
 
 pub async fn run_embed(cfg: &Config) -> Result<(), Box<dyn Error>> {
@@ -31,6 +32,11 @@ async fn maybe_handle_embed_subcommand(cfg: &Config) -> Result<bool, Box<dyn Err
     let Some(subcmd) = cfg.positional.first().map(|s| s.as_str()) else {
         return Ok(false);
     };
+    if cfg.positional.len() == 1 && Path::new(subcmd).exists() {
+        // Allow embedding a local path literally named like a subcommand
+        // (for example: "./status").
+        return Ok(false);
+    }
 
     match subcmd {
         "status" => handle_embed_status(cfg).await?,

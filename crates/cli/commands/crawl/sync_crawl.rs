@@ -9,9 +9,12 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::time::SystemTime;
 
-pub(super) fn manifest_cache_is_stale(manifest_path: &std::path::Path, ttl_secs: u64) -> bool {
-    manifest_path
-        .metadata()
+pub(super) async fn manifest_cache_is_stale(
+    manifest_path: &std::path::Path,
+    ttl_secs: u64,
+) -> bool {
+    tokio::fs::metadata(manifest_path)
+        .await
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|mtime| SystemTime::now().duration_since(mtime).ok())
@@ -24,7 +27,7 @@ pub(super) async fn maybe_return_cached_result(
     manifest_path: &std::path::Path,
     previous_urls: &HashSet<String>,
 ) -> Result<bool, Box<dyn Error>> {
-    let cache_stale = manifest_cache_is_stale(manifest_path, 24 * 60 * 60);
+    let cache_stale = manifest_cache_is_stale(manifest_path, 24 * 60 * 60).await;
     if !cfg.cache || previous_urls.is_empty() || cache_stale {
         return Ok(false);
     }

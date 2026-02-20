@@ -43,10 +43,10 @@ async fn fetch_text_with_retry(
         }
 
         attempt = attempt.saturating_add(1);
-        tokio::time::sleep(Duration::from_millis(
-            backoff_ms.saturating_mul(attempt as u64).max(1),
-        ))
-        .await;
+        let exp = attempt.saturating_sub(1).min(20) as u32;
+        let multiplier = 1u64 << exp;
+        let delay_ms = backoff_ms.saturating_mul(multiplier).max(1);
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
 }
 

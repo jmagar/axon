@@ -9,7 +9,9 @@ pub fn init_tracing() {
     // (needs `method`) — so any Browserless-specific frame fails serde and the
     // chromey library logs it at ERROR. The frames are gracefully dropped and
     // crawling succeeds; the error level is a library misclassification.
-    // Suppress by default; override via RUST_LOG if raw CDP debug is needed.
+    // Suppress by default. Because this directive is added in code, same-target
+    // RUST_LOG overrides are not guaranteed to win under tracing-subscriber 0.3.
+    // To force-enable this target, change/remove this directive in code.
     const SUPPRESS_CDP_NOISE: &str = "chromiumoxide::conn::raw_ws::parse_errors=off";
 
     let filter = EnvFilter::try_from_default_env()

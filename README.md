@@ -537,7 +537,7 @@ When Chrome feature is compiled in, `crawl()` expects a Chrome instance. `crawl_
 - **Wrong:** `OPENAI_BASE_URL=http://host/v1/chat/completions` — double path
 
 ### TEI batch size / 413 handling
-`tei_embed()` in `vector/ops.rs` auto-splits batches on HTTP 413 (Payload Too Large). Set `TEI_MAX_CLIENT_BATCH_SIZE` env var to control default chunk size (default: 64, effective max: 128).
+`tei_embed()` in `vector/ops_v2/tei.rs` auto-splits batches on HTTP 413 (Payload Too Large). Set `TEI_MAX_CLIENT_BATCH_SIZE` env var to control default chunk size (default: 64, effective max: 128).
 
 ### Text chunking
 `chunk_text()` splits at 2000 chars with 200-char overlap. Each chunk = one Qdrant point. Very long pages produce many points.

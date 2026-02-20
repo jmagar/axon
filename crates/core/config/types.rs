@@ -72,7 +72,19 @@ pub enum RenderMode {
     AutoSwitch,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+impl fmt::Display for RenderMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Self::Http => "http",
+            Self::Chrome => "chrome",
+            Self::AutoSwitch => "auto-switch",
+        };
+        f.write_str(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ScrapeFormat {
     Markdown,
     Html,
@@ -81,7 +93,8 @@ pub enum ScrapeFormat {
     Json,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum PerformanceProfile {
     #[value(name = "high-stable")]
     HighStable,

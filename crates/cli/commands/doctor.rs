@@ -262,13 +262,8 @@ fn report_overall_ok(pipelines: &Value, tei_ok: bool, qdrant_ok: bool) -> bool {
         && qdrant_ok
 }
 
-// NOTE: build_doctor_report and run_doctor share nearly identical probe logic.
-// This duplication is intentional: build_doctor_report returns a structured JSON Value
-// for programmatic consumers (e.g. tests, JSON mode), while run_doctor handles
-// human-readable terminal output with ANSI formatting. Merging them would require
-// threading an output-mode enum through every branch, reducing readability for
-// marginal gain. If the probe logic grows significantly, extract a shared
-// `probe_all_services()` helper that both functions call.
+// NOTE: run_doctor delegates to build_doctor_report and only renders output.
+// Keep probe logic centralized in build_doctor_report to avoid drift.
 pub async fn build_doctor_report(cfg: &Config) -> Result<Value, Box<dyn Error>> {
     let webdriver_url = webdriver_url_from_env();
     let diagnostics = browser_diagnostics_pattern();
