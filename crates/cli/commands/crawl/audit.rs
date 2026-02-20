@@ -109,6 +109,89 @@ async fn fetch_text_with_retry(
     None
 }
 
+fn default_sitemap_queue(scheme: &str, host: &str) -> VecDeque<String> {
+    VecDeque::from(vec![
+        format!("{scheme}://{host}/sitemap.xml"),
+        format!("{scheme}://{host}/sitemap_index.xml"),
+        format!("{scheme}://{host}/sitemap-index.xml"),
+    ])
+}
+
+async fn enqueue_robots_sitemaps(
+    cfg: &Config,
+    client: &reqwest::Client,
+    scheme: &str,
+    host: &str,
+    queue: &mut VecDeque<String>,
+    stats: &mut SitemapDiscoveryStats,
+) {
+    let robots_url = format!("{scheme}://{host}/robots.txt");
+    if let Some(robots_txt) =
+        fetch_text_with_retry(client, &robots_url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+    {
+        let robots_sitemaps = extract_robots_sitemaps(&robots_txt);
+        stats.robots_declared_sitemaps = robots_sitemaps.len();
+        for sitemap in robots_sitemaps {
+            queue.push_back(sitemap);
+        }
+    }
+}
+
+fn in_host_scope(cfg: &Config, url_host: &str, host: &str) -> bool {
+    if cfg.include_subdomains {
+        url_host == host || url_host.ends_with(&format!(".{host}"))
+    } else {
+        url_host == host
+    }
+}
+
+fn in_path_scope(path: &str, root_path: &str, scoped_to_root: bool) -> bool {
+    if scoped_to_root {
+        return true;
+    }
+    let scoped_prefix = format!("{root_path}/");
+    path == root_path || path.starts_with(&scoped_prefix)
+}
+
+struct SitemapScope<'a> {
+    host: &'a str,
+    root_path: &'a str,
+    scoped_to_root: bool,
+}
+
+fn canonical_sitemap_loc(
+    cfg: &Config,
+    loc: &str,
+    scope: &SitemapScope<'_>,
+    stats: &mut SitemapDiscoveryStats,
+) -> Option<String> {
+    let Ok(url) = Url::parse(loc) else {
+        stats.parse_errors += 1;
+        return None;
+    };
+    let Some(url_host) = url.host_str() else {
+        stats.parse_errors += 1;
+        return None;
+    };
+    if !in_host_scope(cfg, url_host, scope.host) {
+        stats.filtered_out_of_scope_host += 1;
+        return None;
+    }
+    if !in_path_scope(url.path(), scope.root_path, scope.scoped_to_root) {
+        stats.filtered_out_of_scope_path += 1;
+        return None;
+    }
+    if is_excluded_url_path(loc, &cfg.exclude_path_prefix) {
+        stats.filtered_excluded_prefix += 1;
+        return None;
+    }
+    let Some(canonical_loc) = canonicalize_url(loc) else {
+        stats.parse_errors += 1;
+        return None;
+    };
+    Some(canonical_loc)
+}
+
 pub(crate) async fn discover_sitemap_urls_with_robots(
     cfg: &Config,
     start_url: &str,
@@ -123,29 +206,16 @@ pub(crate) async fn discover_sitemap_urls_with_robots(
 
     let mut stats = SitemapDiscoveryStats {
         seeded_default_sitemaps: 3,
-        ..SitemapDiscoveryStats::default()
+        ..Default::default()
     };
-    let mut queue: VecDeque<String> = VecDeque::from(vec![
-        format!("{scheme}://{host}/sitemap.xml"),
-        format!("{scheme}://{host}/sitemap_index.xml"),
-        format!("{scheme}://{host}/sitemap-index.xml"),
-    ]);
-    let robots_url = format!("{scheme}://{host}/robots.txt");
-    if let Some(robots_txt) = fetch_text_with_retry(
-        &client,
-        &robots_url,
-        cfg.fetch_retries,
-        cfg.retry_backoff_ms,
-    )
-    .await
-    {
-        let robots_sitemaps = extract_robots_sitemaps(&robots_txt);
-        stats.robots_declared_sitemaps = robots_sitemaps.len();
-        for sitemap in robots_sitemaps {
-            queue.push_back(sitemap);
-        }
-    }
+    let mut queue = default_sitemap_queue(&scheme, &host);
+    enqueue_robots_sitemaps(cfg, &client, &scheme, &host, &mut queue, &mut stats).await;
 
+    let scope = SitemapScope {
+        host: &host,
+        root_path: &root_path,
+        scoped_to_root,
+    };
     let mut seen_sitemaps = HashSet::new();
     let mut urls = HashSet::new();
     let max_sitemaps = cfg.max_sitemaps.max(1);
@@ -175,43 +245,12 @@ pub(crate) async fn discover_sitemap_urls_with_robots(
         stats.parsed_sitemap_documents += 1;
         let is_index = xml.to_ascii_lowercase().contains("<sitemapindex");
         for loc in extract_loc_values(&xml) {
-            let Ok(url) = Url::parse(&loc) else {
-                stats.parse_errors += 1;
-                continue;
-            };
-            let Some(url_host) = url.host_str() else {
-                stats.parse_errors += 1;
-                continue;
-            };
-            let host_ok = if cfg.include_subdomains {
-                url_host == host || url_host.ends_with(&format!(".{host}"))
-            } else {
-                url_host == host
-            };
-            if !host_ok {
-                stats.filtered_out_of_scope_host += 1;
-                continue;
-            }
-            if !scoped_to_root {
-                let p = url.path();
-                let scoped_prefix = format!("{root_path}/");
-                if p != root_path && !p.starts_with(&scoped_prefix) {
-                    stats.filtered_out_of_scope_path += 1;
-                    continue;
+            if let Some(canonical_loc) = canonical_sitemap_loc(cfg, &loc, &scope, &mut stats) {
+                if is_index {
+                    queue.push_back(canonical_loc);
+                } else {
+                    urls.insert(canonical_loc);
                 }
-            }
-            if is_excluded_url_path(&loc, &cfg.exclude_path_prefix) {
-                stats.filtered_excluded_prefix += 1;
-                continue;
-            }
-            let Some(canonical_loc) = canonicalize_url(&loc) else {
-                stats.parse_errors += 1;
-                continue;
-            };
-            if is_index {
-                queue.push_back(canonical_loc);
-            } else {
-                urls.insert(canonical_loc);
             }
         }
     }

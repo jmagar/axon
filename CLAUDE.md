@@ -358,8 +358,8 @@ TEI_URL=http://myserver:52000 \
 ### Monolith Policy
 
 Changed `.rs` files are enforced at CI and via lefthook pre-commit:
-- File size: ≤ 500 lines
-- Function size: ≤ 80 lines
+- File size: ≤ 500 lines (hard fail)
+- Function size: warn at 80 lines, hard fail at 120 lines
 - Exempt: `tests/**`, `benches/**`, `config/**`, `**/config.rs`
 - Exceptions: add to `.monolith-allowlist`
 

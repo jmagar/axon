@@ -3,9 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    // Structural/syntactic words only. Content verbs like "make", "create", "build"
+    // encode user intent and must NOT be stripped — they distinguish "how to USE a
+    // library" from "how to IMPLEMENT an interface."
     [
         "the", "and", "for", "with", "that", "this", "from", "into", "how", "what", "where",
-        "when", "you", "your", "are", "can", "does", "create", "make",
+        "when", "you", "your", "are", "can", "does",
     ]
     .into_iter()
     .collect()

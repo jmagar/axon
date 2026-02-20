@@ -97,6 +97,32 @@ fn test_canonicalize_url_for_dedupe_root_and_default_port() {
     assert_eq!(a.as_deref(), Some("https://example.com/"));
 }
 
+// Bug: when max_pages == 0 (uncapped), (0/10).max(10) = 10, so any site
+// with < 10 markdown files always triggers Chrome — even a complete 1-page crawl.
+#[test]
+fn test_no_fallback_uncapped_small_but_complete_site() {
+    // 1-page site, healthy content, no thin pages, max_pages uncapped (0)
+    assert!(!should_fallback_to_chrome(&summary(1, 0, 1), 0));
+}
+
+#[test]
+fn test_no_fallback_uncapped_nine_pages_healthy() {
+    // 9-page site, healthy, max_pages uncapped — should NOT trigger Chrome
+    assert!(!should_fallback_to_chrome(&summary(9, 0, 9), 0));
+}
+
+#[test]
+fn test_fallback_uncapped_thin_ratio_still_fires() {
+    // Even with uncapped, thin ratio > 60% should still trigger Chrome
+    assert!(should_fallback_to_chrome(&summary(10, 7, 9), 0));
+}
+
+#[test]
+fn test_fallback_uncapped_zero_markdown_files() {
+    // Zero markdown with max_pages=0 → still fall back
+    assert!(should_fallback_to_chrome(&summary(5, 5, 0), 0));
+}
+
 #[test]
 fn test_regex_escape_escapes_hyphen() {
     assert_eq!(regex_escape("foo-bar"), "foo\\-bar");

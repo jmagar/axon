@@ -1,6 +1,6 @@
 mod cli;
 mod help;
-mod parse;
+pub(crate) mod parse;
 mod types;
 
 pub use parse::parse_args;

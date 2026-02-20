@@ -117,7 +117,7 @@ pub(crate) fn test_config(pg_url: &str) -> Config {
         ask_backfill_chunks: 3,
         ask_doc_fetch_concurrency: 4,
         ask_doc_chunk_limit: 192,
-        ask_min_relevance_score: 0.0,
+        ask_min_relevance_score: 0.45,
         ask_diagnostics: false,
         cron_every_seconds: None,
         cron_max_runs: None,
@@ -220,15 +220,21 @@ pub async fn claim_pending_by_id(pool: &PgPool, table: JobTable, id: Uuid) -> Re
 
 /// Mark a running job as failed with an error message.
 pub async fn mark_job_failed(pool: &PgPool, table: JobTable, id: Uuid, error_text: &str) {
-    let table = table.as_str();
+    use crate::axon_cli::crates::core::logging::log_warn;
+    let table_name = table.as_str();
     let query = format!(
-        "UPDATE {table} SET status='failed', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='running'"
+        "UPDATE {table_name} SET status='failed', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='running'"
     );
-    let _ = sqlx::query(&query)
+    if let Err(err) = sqlx::query(&query)
         .bind(id)
         .bind(error_text)
         .execute(pool)
-        .await;
+        .await
+    {
+        log_warn(&format!(
+            "mark_job_failed db error for job {id} in {table_name}: {err}"
+        ));
+    }
 }
 
 /// Publish a job ID to an AMQP queue.
@@ -275,10 +281,26 @@ pub(crate) fn stale_watchdog_payload(
         result_json = serde_json::json!({});
     }
     if let Some(obj) = result_json.as_object_mut() {
+        // Preserve first_seen_stale_at if already set for the same observed_updated_at,
+        // so the confirmation timer isn't reset on every sweep.
+        let existing_first_seen = obj
+            .get("_watchdog")
+            .and_then(|w| {
+                let same_observed = w.get("observed_updated_at").and_then(|v| v.as_str())
+                    == Some(observed_updated_at.to_rfc3339().as_str());
+                if same_observed {
+                    w.get("first_seen_stale_at")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
         obj.insert(
             "_watchdog".to_string(),
             serde_json::json!({
-                "first_seen_stale_at": Utc::now().to_rfc3339(),
+                "first_seen_stale_at": existing_first_seen,
                 "observed_updated_at": observed_updated_at.to_rfc3339(),
             }),
         );

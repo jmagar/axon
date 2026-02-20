@@ -32,6 +32,7 @@ pub(super) enum CliCommand {
     Domains,
     Stats,
     Status,
+    Dedupe,
 }
 
 #[derive(Debug, Args)]

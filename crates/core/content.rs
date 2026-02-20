@@ -8,7 +8,7 @@ pub use deterministic::{
     PageExtraction,
 };
 
-use super::http::http_client;
+use super::http::{http_client, ssrf_blacklist_patterns, validate_url};
 use deterministic::{extract_items_fallback, FallbackResponse};
 use spider::url::Url;
 use spider::website::Website;
@@ -24,7 +24,11 @@ use tokio::task::JoinSet;
 pub fn build_transform_config() -> TransformConfig {
     TransformConfig {
         return_format: ReturnFormat::Markdown,
-        readability: true,
+        // Readability (Mozilla-style article scoring) discards documentation pages
+        // that lack <article> structure — doc sites with sidebar + nested divs score
+        // too low and get stripped to just the title. main_content=true already
+        // extracts <main>/<article>/role=main structurally without the scoring penalty.
+        readability: false,
         clean_html: true,
         main_content: true,
         filter_images: true,
@@ -222,10 +226,15 @@ pub async fn run_extract_with_engine(
     let model = openai_model.to_string();
     let prompt_text = prompt.to_string();
 
-    let mut website = Website::new(start_url)
-        .with_limit(limit)
-        .build()
-        .map_err(|_| "build website")?;
+    validate_url(start_url)?;
+    let ssrf_patterns: Vec<spider::compact_str::CompactString> = ssrf_blacklist_patterns()
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let mut website = Website::new(start_url);
+    website.with_limit(limit);
+    website.with_blacklist_url(Some(ssrf_patterns));
+    let mut website = website.build().map_err(|_| "build website")?;
 
     let mut rx = website.subscribe(16).ok_or("subscribe failed")?;
     let client = http_client()?.clone();

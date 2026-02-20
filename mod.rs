@@ -4,10 +4,10 @@ pub mod axon_cli {
 }
 
 use self::crates::cli::commands::{
-    run_ask_native, run_batch, run_crawl, run_debug, run_doctor, run_domains_native, run_embed,
-    run_evaluate_native, run_extract, run_map, run_query_native, run_retrieve_native, run_scrape,
-    run_search, run_sources_native, run_stats_native, run_status, run_suggest_native,
-    start_url_from_cfg,
+    run_ask_native, run_batch, run_crawl, run_debug, run_dedupe_native, run_doctor,
+    run_domains_native, run_embed, run_evaluate_native, run_extract, run_map, run_query_native,
+    run_retrieve_native, run_scrape, run_search, run_sources_native, run_stats_native, run_status,
+    run_suggest_native, start_url_from_cfg,
 };
 use self::crates::core::config::{parse_args, CommandKind, Config};
 use self::crates::core::logging::{init_tracing, log_done, log_info, log_warn};
@@ -64,6 +64,7 @@ async fn run_once(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
         CommandKind::Domains => run_domains_native(cfg).await?,
         CommandKind::Stats => run_stats_native(cfg).await?,
         CommandKind::Status => run_status(cfg).await?,
+        CommandKind::Dedupe => run_dedupe_native(cfg).await?,
     }
     Ok(())
 }

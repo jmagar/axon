@@ -5,7 +5,7 @@ use clap::Parser;
 use spider::url::Url;
 use std::env;
 
-fn normalize_local_service_url(url: String) -> String {
+pub(crate) fn normalize_local_service_url(url: String) -> String {
     if std::path::Path::new("/.dockerenv").exists() {
         return url;
     }
@@ -15,6 +15,7 @@ fn normalize_local_service_url(url: String) -> String {
         ("axon-redis", "127.0.0.1", 53379),
         ("axon-rabbitmq", "127.0.0.1", 45535),
         ("axon-qdrant", "127.0.0.1", 53333),
+        ("axon-webdriver", "127.0.0.1", 4444),
     ];
 
     let Ok(mut parsed) = Url::parse(&url) else {
@@ -231,6 +232,7 @@ fn into_config(cli: Cli) -> Config {
         CliCommand::Domains => (CommandKind::Domains, Vec::new()),
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
         CliCommand::Status => (CommandKind::Status, Vec::new()),
+        CliCommand::Dedupe => (CommandKind::Dedupe, Vec::new()),
     };
 
     let pg_url = normalize_local_service_url(
@@ -312,7 +314,8 @@ fn into_config(cli: Cli) -> Config {
         webdriver_url: global
             .webdriver_url
             .or_else(|| env::var("AXON_WEBDRIVER_URL").ok())
-            .or_else(|| env::var("WEBDRIVER_URL").ok()),
+            .or_else(|| env::var("WEBDRIVER_URL").ok())
+            .map(normalize_local_service_url),
         respect_robots: global.respect_robots,
         min_markdown_chars: global.min_markdown_chars,
         drop_thin_markdown: global.drop_thin_markdown,
@@ -388,7 +391,7 @@ fn into_config(cli: Cli) -> Config {
         ask_backfill_chunks: env_usize_clamped("AXON_ASK_BACKFILL_CHUNKS", 3, 0, 20),
         ask_doc_fetch_concurrency: env_usize_clamped("AXON_ASK_DOC_FETCH_CONCURRENCY", 4, 1, 16),
         ask_doc_chunk_limit: env_usize_clamped("AXON_ASK_DOC_CHUNK_LIMIT", 192, 8, 2000),
-        ask_min_relevance_score: env_f64_clamped("AXON_ASK_MIN_RELEVANCE_SCORE", 0.0, -1.0, 2.0),
+        ask_min_relevance_score: env_f64_clamped("AXON_ASK_MIN_RELEVANCE_SCORE", 0.45, -1.0, 2.0),
         cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
         cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
         watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),
