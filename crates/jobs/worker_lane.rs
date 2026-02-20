@@ -186,10 +186,20 @@ async fn run_polling_lane(
             sweep_stale_jobs(cfg, &pool, wc, "polling", lane).await;
             last_sweep = Instant::now();
         }
-        if let Some(id) = claim_next_pending(&pool, wc.table).await? {
-            process_fn(cfg.clone(), pool.clone(), id).await;
-        } else {
-            tokio::time::sleep(Duration::from_millis(800)).await;
+        match claim_next_pending(&pool, wc.table).await {
+            Ok(Some(id)) => {
+                process_fn(cfg.clone(), pool.clone(), id).await;
+            }
+            Ok(None) => {
+                tokio::time::sleep(Duration::from_millis(800)).await;
+            }
+            Err(err) => {
+                log_warn(&format!(
+                    "{} worker polling lane={lane} DB error; retrying in 5s: {err}",
+                    wc.job_kind
+                ));
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
         }
     }
 }

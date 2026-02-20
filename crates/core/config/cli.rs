@@ -166,6 +166,7 @@ pub(super) struct GlobalArgs {
     #[arg(global = true, long, default_value_t = 5)]
     pub(super) max_depth: usize,
 
+    /// Include links from subdomains. Disable with `--include-subdomains false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) include_subdomains: bool,
 
@@ -220,12 +221,15 @@ pub(super) struct GlobalArgs {
     #[arg(global = true, long, default_value_t = 200)]
     pub(super) min_markdown_chars: usize,
 
+    /// Drop thin markdown pages. Disable with `--drop-thin-markdown false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) drop_thin_markdown: bool,
 
+    /// Discover and backfill sitemap URLs. Disable with `--discover-sitemaps false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) discover_sitemaps: bool,
 
+    /// Enable crawl cache reuse. Disable with `--cache false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) cache: bool,
 
@@ -247,6 +251,7 @@ pub(super) struct GlobalArgs {
     #[arg(global = true, long = "url-glob", value_delimiter = ',')]
     pub(super) url_glob: Vec<String>,
 
+    /// Trigger follow-up embed flows when supported. Disable with `--embed false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) embed: bool,
 
@@ -289,12 +294,13 @@ pub(super) struct GlobalArgs {
     #[arg(global = true, long)]
     pub(super) request_timeout_ms: Option<u64>,
 
-    #[arg(global = true, long, default_value_t = 0)]
-    pub(super) fetch_retries: usize,
+    #[arg(global = true, long)]
+    pub(super) fetch_retries: Option<usize>,
 
-    #[arg(global = true, long, default_value_t = 0)]
-    pub(super) retry_backoff_ms: u64,
+    #[arg(global = true, long)]
+    pub(super) retry_backoff_ms: Option<u64>,
 
+    /// Share one queue across supported jobs. Disable with `--shared-queue false`.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
     pub(super) shared_queue: bool,
 

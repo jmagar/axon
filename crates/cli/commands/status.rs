@@ -300,8 +300,8 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         let pages_target = pages_discovered.saturating_sub(filtered_urls);
-        let thin_pct = if pages_discovered > 0 {
-            (thin_md as f64 / pages_discovered as f64) * 100.0
+        let thin_pct = if pages_target > 0 {
+            (thin_md as f64 / pages_target as f64) * 100.0
         } else {
             0.0
         };

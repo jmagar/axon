@@ -167,6 +167,8 @@ fn env_f64_clamped(key: &str, default: f64, min: f64, max: f64) -> f64 {
 
 fn into_config(cli: Cli) -> Config {
     let global = cli.global;
+    let fetch_retries_was_set = global.fetch_retries.is_some();
+    let retry_backoff_was_set = global.retry_backoff_ms.is_some();
 
     let mut ask_diagnostics = false;
     let mut github_include_source = false;
@@ -362,8 +364,8 @@ fn into_config(cli: Cli) -> Config {
         max_sitemaps: global.max_sitemaps.max(1),
         delay_ms: global.delay_ms,
         request_timeout_ms: global.request_timeout_ms,
-        fetch_retries: global.fetch_retries,
-        retry_backoff_ms: global.retry_backoff_ms,
+        fetch_retries: global.fetch_retries.unwrap_or(0),
+        retry_backoff_ms: global.retry_backoff_ms.unwrap_or(0),
         shared_queue: global.shared_queue,
         pg_url,
         redis_url,
@@ -457,10 +459,10 @@ fn into_config(cli: Cli) -> Config {
     if cfg.request_timeout_ms.is_none() {
         cfg.request_timeout_ms = Some(timeout_default);
     }
-    if cfg.fetch_retries == 0 {
+    if !fetch_retries_was_set {
         cfg.fetch_retries = retries_default;
     }
-    if cfg.retry_backoff_ms == 0 {
+    if !retry_backoff_was_set {
         cfg.retry_backoff_ms = backoff_default;
     }
 

@@ -1,6 +1,9 @@
 use super::*;
 use crate::axon_cli::crates::jobs::worker_lane::{run_job_worker, ProcessFn, WorkerConfig};
+use futures_util::stream::{self, StreamExt};
 use std::path::Path;
+
+const BATCH_FETCH_CONCURRENCY: usize = 16;
 
 async fn load_batch_job_inputs(
     pool: &PgPool,
@@ -49,29 +52,62 @@ async fn fetch_batch_results(
     out_dir: &Path,
 ) -> Result<(Vec<serde_json::Value>, Vec<InjectionCandidate>), Box<dyn Error>> {
     let client = build_client(20)?;
-    let mut results = Vec::new();
-    let mut candidates = Vec::new();
-    for (idx, url) in urls.iter().enumerate() {
-        let html = match fetch_html(&client, url).await {
-            Ok(v) => v,
-            Err(err) => {
-                results.push(serde_json::json!({"url": url, "error": err.to_string()}));
-                continue;
+    let mut pending = stream::iter(urls.iter().enumerate().map(|(idx, url)| {
+        let client = client.clone();
+        let out_dir = out_dir.to_path_buf();
+        let url = url.clone();
+        async move {
+            let html = fetch_html(&client, &url).await;
+            match html {
+                Ok(v) => {
+                    let md = to_markdown(&v);
+                    let file = out_dir.join(url_to_filename(&url, idx as u32 + 1));
+                    match tokio::fs::write(&file, &md).await {
+                        Ok(()) => {
+                            let markdown_chars = md.chars().count();
+                            (
+                                idx,
+                                serde_json::json!({
+                                    "url": url,
+                                    "file_path": file.to_string_lossy(),
+                                    "markdown_chars": markdown_chars
+                                }),
+                                Some(InjectionCandidate {
+                                    url,
+                                    markdown_chars,
+                                }),
+                            )
+                        }
+                        Err(err) => (
+                            idx,
+                            serde_json::json!({"url": url, "error": err.to_string()}),
+                            None,
+                        ),
+                    }
+                }
+                Err(err) => (
+                    idx,
+                    serde_json::json!({"url": url, "error": err.to_string()}),
+                    None,
+                ),
             }
-        };
-        let md = to_markdown(&html);
-        let file = out_dir.join(url_to_filename(url, idx as u32 + 1));
-        tokio::fs::write(&file, &md).await?;
-        let markdown_chars = md.chars().count();
-        candidates.push(InjectionCandidate {
-            url: url.to_string(),
-            markdown_chars,
-        });
-        results.push(serde_json::json!({
-            "url": url,
-            "file_path": file.to_string_lossy(),
-            "markdown_chars": markdown_chars
-        }));
+        }
+    }))
+    .buffer_unordered(BATCH_FETCH_CONCURRENCY);
+
+    let mut ordered = Vec::with_capacity(urls.len());
+    while let Some(row) = pending.next().await {
+        ordered.push(row);
+    }
+    ordered.sort_by_key(|(idx, _, _)| *idx);
+
+    let mut results = Vec::with_capacity(ordered.len());
+    let mut candidates = Vec::new();
+    for (_idx, result, candidate) in ordered {
+        results.push(result);
+        if let Some(candidate) = candidate {
+            candidates.push(candidate);
+        }
     }
     Ok((results, candidates))
 }

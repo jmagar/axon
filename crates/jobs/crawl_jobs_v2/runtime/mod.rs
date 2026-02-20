@@ -134,7 +134,7 @@ fn resolve_initial_mode(render_mode: RenderMode, cache_skip_browser: bool) -> Re
 }
 
 async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, Box<dyn Error>> {
-    if !path.exists() {
+    if !tokio::fs::try_exists(path).await? {
         return Ok(HashSet::new());
     }
     let content = tokio::fs::read_to_string(path).await?;
@@ -156,7 +156,7 @@ async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, Box<dyn Erro
 }
 
 async fn read_manifest_candidates(path: &Path) -> std::io::Result<Vec<InjectionCandidate>> {
-    if !path.exists() {
+    if !tokio::fs::try_exists(path).await? {
         return Ok(Vec::new());
     }
     let content = tokio::fs::read_to_string(path).await?;
@@ -394,9 +394,19 @@ pub async fn cancel_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> 
     .rows_affected();
 
     let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    let mut conn = redis_client.get_multiplexed_async_connection().await?;
-    let key = format!("axon:crawl:cancel:{id}");
-    let _: () = conn.set_ex(key, "1", 24 * 60 * 60).await?;
+    match redis_client.get_multiplexed_async_connection().await {
+        Ok(mut conn) => {
+            let key = format!("axon:crawl:cancel:{id}");
+            if let Err(err) = conn.set_ex::<_, _, ()>(key, "1", 24 * 60 * 60).await {
+                log_warn(&format!("crawl cancel signal failed for job {id}: {err}"));
+            }
+        }
+        Err(err) => {
+            log_warn(&format!(
+                "crawl cancel signal skipped for job {id}: redis connect failed: {err}"
+            ));
+        }
+    }
 
     Ok(rows > 0)
 }

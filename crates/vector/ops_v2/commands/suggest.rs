@@ -103,12 +103,9 @@ async fn build_suggest_prompt_context(
     let existing_url_context_limit =
         qdrant::env_usize_clamped("AXON_SUGGEST_EXISTING_URL_LIMIT", 500, 0, 5_000);
 
-    // Fetch indexed URLs (chunk_index=0 only, url payload only) and domain facets concurrently.
-    // Cap the URL scroll to existing_url_context_limit: the prompt only shows that many URLs
-    // anyway, and stopping the scroll early avoids paginating through the entire collection.
-    let url_scroll_limit = (existing_url_context_limit > 0).then_some(existing_url_context_limit);
+    // Fetch all indexed URLs for duplicate filtering, then trim only the prompt context view.
     let (indexed_urls, mut ranked_base_urls) = spider::tokio::try_join!(
-        qdrant::qdrant_indexed_urls(cfg, url_scroll_limit),
+        qdrant::qdrant_indexed_urls(cfg, None),
         qdrant::qdrant_domain_facets(cfg, base_url_context_limit),
     )?;
 

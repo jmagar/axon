@@ -224,14 +224,7 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
         }
         Ok(None) => {}
         Err(error_text) => {
-            let _ = sqlx::query(
-                "UPDATE axon_extract_jobs SET status='failed',updated_at=NOW(),finished_at=NOW(),error_text=$2 WHERE id=$1 AND status='running'",
-            )
-            .bind(id)
-            .bind(error_text.clone())
-            .execute(pool)
-            .await;
-            log_warn(&format!("worker failed extract job {id}: {error_text}"));
+            return Err(error_text.into());
         }
     }
 

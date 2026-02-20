@@ -23,6 +23,9 @@ pub async fn run_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Erro
     if maybe_handle_subcommand(cfg, start_url).await? {
         return Ok(());
     }
+    if let Some(subcmd) = cfg.positional.first() {
+        return Err(format!("unknown crawl subcommand: {subcmd}").into());
+    }
     validate_url(start_url)?;
     if cfg.wait {
         sync_crawl::run_sync_crawl(cfg, start_url).await
@@ -307,7 +310,7 @@ fn print_async_options(
     print_option("maxDepth", &cfg.max_depth.to_string());
     print_option("allowSubdomains", &cfg.include_subdomains.to_string());
     print_option("respectRobotsTxt", &cfg.respect_robots.to_string());
-    print_option("renderMode", &format!("{:?}", cfg.render_mode));
+    print_option("renderMode", &cfg.render_mode.to_string());
     print_option("discoverSitemaps", &cfg.discover_sitemaps.to_string());
     print_option("cache", &cfg.cache.to_string());
     print_option("cacheSkipBrowser", &cfg.cache_skip_browser.to_string());

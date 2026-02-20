@@ -38,6 +38,7 @@ static TRANSFORM_CONFIG: LazyLock<TransformConfig> = LazyLock::new(|| TransformC
     filter_images: true,
     filter_svg: true,
 });
+const FALLBACK_CONCURRENCY_LIMIT: usize = 4;
 
 pub fn build_transform_config() -> &'static TransformConfig {
     &TRANSFORM_CONFIG
@@ -276,7 +277,7 @@ async fn collect_page_results(
     let mut pages_with_data = 0usize;
     let mut metrics = ExtractionMetrics::default();
     let mut parser_hits: HashMap<String, usize> = HashMap::new();
-    let fallback_limiter = Arc::new(Semaphore::new(4));
+    let fallback_limiter = Arc::new(Semaphore::new(FALLBACK_CONCURRENCY_LIMIT));
     let mut fallback_tasks: JoinSet<(String, Result<FallbackResponse, String>)> = JoinSet::new();
 
     while let Ok(page) = rx.recv().await {

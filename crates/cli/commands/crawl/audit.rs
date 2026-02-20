@@ -90,6 +90,9 @@ async fn fetch_text_with_retry(
     retries: usize,
     backoff_ms: u64,
 ) -> Option<String> {
+    if validate_url(url).is_err() {
+        return None;
+    }
     for attempt in 0..=retries {
         let response = client.get(url).send().await;
         if let Ok(resp) = response {
@@ -126,6 +129,10 @@ async fn enqueue_robots_sitemaps(
     stats: &mut SitemapDiscoveryStats,
 ) {
     let robots_url = format!("{scheme}://{host}/robots.txt");
+    if validate_url(&robots_url).is_err() {
+        stats.failed_fetches += 1;
+        return;
+    }
     if let Some(robots_txt) =
         fetch_text_with_retry(client, &robots_url, cfg.fetch_retries, cfg.retry_backoff_ms).await
     {
@@ -241,6 +248,10 @@ pub(crate) async fn discover_sitemap_urls_with_robots(
             continue;
         }
         stats.discovered_sitemap_documents = seen_sitemaps.len();
+        if validate_url(&canonical_sitemap).is_err() {
+            stats.failed_fetches += 1;
+            continue;
+        }
         let Some(xml) = fetch_text_with_retry(
             &client,
             &canonical_sitemap,
@@ -315,6 +326,10 @@ pub(super) async fn append_robots_backfill(
     };
 
     for url in candidates {
+        if validate_url(&url).is_err() {
+            stats.failed += 1;
+            continue;
+        }
         let Some(html) =
             fetch_text_with_retry(&client, &url, cfg.fetch_retries, cfg.retry_backoff_ms).await
         else {
@@ -354,7 +369,7 @@ async fn read_manifest_entries(
     output_dir: &Path,
 ) -> Result<Vec<ManifestAuditEntry>, Box<dyn Error>> {
     let manifest_path = output_dir.join("manifest.jsonl");
-    if !manifest_path.exists() {
+    if !tokio::fs::try_exists(&manifest_path).await? {
         return Ok(Vec::new());
     }
     let file = tokio::fs::File::open(&manifest_path).await?;
