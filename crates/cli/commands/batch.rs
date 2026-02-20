@@ -2,7 +2,7 @@ use crate::axon_cli::crates::cli::commands::common::parse_urls;
 use crate::axon_cli::crates::cli::commands::run_doctor;
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::content::{to_markdown, url_to_filename};
-use crate::axon_cli::crates::core::http::{build_client, fetch_html};
+use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::logging::{log_done, log_warn};
 use crate::axon_cli::crates::core::ui::{
     accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
@@ -322,7 +322,7 @@ fn spawn_batch_fetch_tasks(
     cfg: &Config,
     urls: Vec<String>,
 ) -> Result<BatchFetchSet, Box<dyn Error>> {
-    let client = build_client(20)?;
+    let client = http_client()?.clone();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(cfg.batch_concurrency.max(1)));
     let mut set = tokio::task::JoinSet::new();
 

@@ -1,6 +1,11 @@
 use super::types::{QdrantPayload, QdrantPoint, RETRIEVE_MAX_POINTS_CEILING};
+use crate::axon_cli::crates::core::config::Config;
 use spider::url::Url;
 use std::env;
+
+pub fn qdrant_base(cfg: &Config) -> &str {
+    cfg.qdrant_url.trim_end_matches('/')
+}
 
 pub(crate) fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
     env::var(key)

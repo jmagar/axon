@@ -1,13 +1,10 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::http::http_client;
 use crate::axon_cli::crates::core::ui::{accent, muted, primary, status_text};
+use crate::axon_cli::crates::vector::ops_v2::qdrant::qdrant_base;
 use sqlx::{postgres::PgPoolOptions, Row};
 use std::error::Error;
 use std::time::Duration;
-
-fn qdrant_base(cfg: &Config) -> String {
-    cfg.qdrant_url.trim_end_matches('/').to_string()
-}
 
 async fn pg_pool_for_stats(cfg: &Config) -> Option<sqlx::PgPool> {
     if cfg.pg_url.is_empty() {
