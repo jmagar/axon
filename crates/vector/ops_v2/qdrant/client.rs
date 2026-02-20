@@ -61,6 +61,7 @@ pub(crate) async fn qdrant_scroll_pages(
 async fn scroll_url_set(
     cfg: &Config,
     filter: serde_json::Value,
+    limit: Option<usize>,
 ) -> Result<HashSet<String>, Box<dyn Error>> {
     let client = http_client()?;
     let endpoint = format!(
@@ -100,6 +101,9 @@ async fn scroll_url_set(
             {
                 seen.insert(url.to_string());
             }
+            if limit.is_some_and(|cap| seen.len() >= cap) {
+                return Ok(seen);
+            }
         }
         let next = val["result"].get("next_page_offset").cloned();
         if next.is_none() || next == Some(serde_json::Value::Null) {
@@ -110,11 +114,14 @@ async fn scroll_url_set(
     Ok(seen)
 }
 
-pub async fn qdrant_indexed_urls(cfg: &Config) -> Result<Vec<String>, Box<dyn Error>> {
+pub async fn qdrant_indexed_urls(
+    cfg: &Config,
+    limit: Option<usize>,
+) -> Result<Vec<String>, Box<dyn Error>> {
     let filter = serde_json::json!({
         "must": [{"key": "chunk_index", "match": {"value": 0}}]
     });
-    scroll_url_set(cfg, filter)
+    scroll_url_set(cfg, filter, limit)
         .await
         .map(|s| s.into_iter().collect())
 }
@@ -129,7 +136,7 @@ pub(crate) async fn qdrant_urls_for_domain(
             {"key": "chunk_index", "match": {"value": 0}}
         ]
     });
-    scroll_url_set(cfg, filter).await
+    scroll_url_set(cfg, filter, None).await
 }
 
 /// Delete all Qdrant points matching `url` via payload filter.
