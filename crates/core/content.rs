@@ -17,23 +17,25 @@ use spider_transformations::transformation::content::{
 };
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-pub fn build_transform_config() -> TransformConfig {
-    TransformConfig {
-        return_format: ReturnFormat::Markdown,
-        // Readability (Mozilla-style article scoring) discards documentation pages
-        // that lack <article> structure — doc sites with sidebar + nested divs score
-        // too low and get stripped to just the title. main_content=true already
-        // extracts <main>/<article>/role=main structurally without the scoring penalty.
-        readability: false,
-        clean_html: true,
-        main_content: true,
-        filter_images: true,
-        filter_svg: true,
-    }
+static TRANSFORM_CONFIG: LazyLock<TransformConfig> = LazyLock::new(|| TransformConfig {
+    return_format: ReturnFormat::Markdown,
+    // Readability (Mozilla-style article scoring) discards documentation pages
+    // that lack <article> structure — doc sites with sidebar + nested divs score
+    // too low and get stripped to just the title. main_content=true already
+    // extracts <main>/<article>/role=main structurally without the scoring penalty.
+    readability: false,
+    clean_html: true,
+    main_content: true,
+    filter_images: true,
+    filter_svg: true,
+});
+
+pub fn build_transform_config() -> &'static TransformConfig {
+    &TRANSFORM_CONFIG
 }
 
 pub fn to_markdown(html: &str) -> String {
@@ -45,7 +47,7 @@ pub fn to_markdown(html: &str) -> String {
         selector_config: None,
         ignore_tags: None,
     };
-    transform_content_input(input, &build_transform_config())
+    transform_content_input(input, &TRANSFORM_CONFIG)
         .trim()
         .to_string()
 }
@@ -96,11 +98,17 @@ pub fn find_between<'a>(haystack: &'a str, start: &str, end: &str) -> Option<&'a
 }
 
 pub fn extract_meta_description(html: &str) -> Option<String> {
-    let lower = html.to_ascii_lowercase();
+    // Limit search to <head> (≤8 KB) to avoid cloning the full document.
+    let head_end = html
+        .find("</head>")
+        .or_else(|| html.find("</HEAD>"))
+        .unwrap_or(html.len().min(8192));
+    let head = &html[..head_end];
+    let lower = head.to_ascii_lowercase();
     let marker = "name=\"description\"";
     let idx = lower.find(marker)?;
     let content_idx = lower[idx..].find("content=\"")? + idx + "content=\"".len();
-    let rest = &html[content_idx..];
+    let rest = &head[content_idx..];
     let end = rest.find('"')?;
     Some(rest[..end].to_string())
 }
@@ -129,12 +137,12 @@ pub fn extract_links(html: &str, limit: usize) -> Vec<String> {
 }
 
 pub fn extract_loc_values(xml: &str) -> Vec<String> {
+    // Sitemap spec (RFC) mandates lowercase element names — no need to lowercase-clone.
     let mut out = Vec::new();
-    let lower = xml.to_ascii_lowercase();
     let mut cursor = 0usize;
-    while let Some(start) = lower[cursor..].find("<loc>") {
+    while let Some(start) = xml[cursor..].find("<loc>") {
         let start_idx = cursor + start + "<loc>".len();
-        let Some(end_rel) = lower[start_idx..].find("</loc>") else {
+        let Some(end_rel) = xml[start_idx..].find("</loc>") else {
             break;
         };
         let end_idx = start_idx + end_rel;
@@ -168,10 +176,24 @@ pub fn is_excluded_url_path(url: &str, prefixes: &[String]) -> bool {
         return false;
     };
     let path = parsed.path();
-    prefixes
-        .iter()
-        .filter_map(|p| normalize_prefix(p))
-        .any(|p| path == p || (path.starts_with(&p) && path.as_bytes().get(p.len()) == Some(&b'/')))
+    prefixes.iter().any(|raw| {
+        // Inline normalize_prefix logic without allocating — prefixes are pre-validated
+        // at config time so the hot path is the common case (already has leading slash).
+        let p = raw.trim().trim_end_matches('/');
+        if p.is_empty() || p == "/" {
+            return false;
+        }
+        // Common case: prefix already has leading slash (no allocation needed).
+        if p.starts_with('/') {
+            return path == p
+                || (path.starts_with(p) && path.as_bytes().get(p.len()) == Some(&b'/'));
+        }
+        // Rare case: prefix lacks leading slash — compare with implicit "/".
+        path == format!("/{p}")
+            || path.starts_with('/')
+                && path[1..].starts_with(p)
+                && path.as_bytes().get(p.len() + 1) == Some(&b'/')
+    })
 }
 
 pub fn canonicalize_url(url: &str) -> Option<String> {

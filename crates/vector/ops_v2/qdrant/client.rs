@@ -4,11 +4,7 @@ use std::collections::HashSet;
 use std::error::Error;
 
 use super::types::{QdrantPoint, QdrantScrollResponse, QdrantSearchHit, QdrantSearchResponse};
-use super::utils::retrieve_max_points;
-
-fn qdrant_base(cfg: &Config) -> String {
-    cfg.qdrant_url.trim_end_matches('/').to_string()
-}
+use super::utils::{qdrant_base, retrieve_max_points};
 
 pub(crate) async fn qdrant_scroll_pages(
     cfg: &Config,

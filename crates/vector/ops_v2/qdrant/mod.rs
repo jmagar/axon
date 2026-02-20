@@ -9,7 +9,8 @@ pub use commands::{
 };
 pub use types::{QdrantPayload, QdrantPoint, QdrantSearchHit};
 pub use utils::{
-    base_url, payload_text_typed, payload_url_typed, query_snippet, render_full_doc_from_points,
+    base_url, payload_text_typed, payload_url_typed, qdrant_base, query_snippet,
+    render_full_doc_from_points,
 };
 
 pub(crate) use client::{

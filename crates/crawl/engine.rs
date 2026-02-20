@@ -127,6 +127,17 @@ fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec
         .collect()
 }
 
+/// Ensure the Chrome DevTools Protocol URL includes the `/json/version` discovery path.
+/// chromiumoxide requires `http://host:port/json/version`, not bare `http://host:port`.
+fn normalize_cdp_url(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(parsed) if parsed.path() == "/" || parsed.path().is_empty() => {
+            format!("{}/json/version", url.trim_end_matches('/'))
+        }
+        _ => url.to_string(),
+    }
+}
+
 fn configure_website(
     cfg: &Config,
     start_url: &str,
@@ -177,43 +188,43 @@ fn configure_website(
         website.with_user_agent(Some(ua.as_str()));
     }
 
-    if let Some(ref wd_url) = cfg.webdriver_url {
-        use spider::features::webdriver_common::WebDriverConfig;
+    if matches!(mode, RenderMode::Chrome) {
+        // CDP path — primary browser mode. chromiumoxide connects directly via CDP,
+        // giving access to stealth, fingerprint, intercept, and network-idle features.
+        website
+            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
+            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot)
+            .with_fingerprint(true);
+        if let Some(ref remote_url) = cfg.chrome_remote_url {
+            // chromiumoxide requires the /json/version CDP discovery endpoint.
+            website.with_chrome_connection(Some(normalize_cdp_url(remote_url)));
+        }
+        // `idle_network0` calls `wait_for_network_idle()` — waits until the network
+        // has been fully quiet for 500 ms. This is essential for CSR frameworks
+        // (React, Vue, etc.) that run XHR/fetch calls during hydration AFTER the
+        // initial HTML load. `idle_network` (EventLoadingFinished) fires too early.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(15)),
+        )));
+        website = website
+            .build()
+            .map_err(|_| "Failed to build website with chrome settings")?;
+    } else if let Some(ref wd_url) = cfg.webdriver_url {
+        // Selenium/WebDriver — secondary path when CDP remote URL is unavailable.
+        use spider::features::webdriver_common::{WebDriverBrowser, WebDriverConfig};
         let wd_cfg = WebDriverConfig {
             server_url: wd_url.clone(),
+            browser: WebDriverBrowser::Chrome,
             headless: cfg.chrome_headless,
             proxy: cfg.chrome_proxy.clone(),
             user_agent: cfg.chrome_user_agent.clone(),
             ..WebDriverConfig::default()
         };
         website.with_webdriver(wd_cfg);
-        // Spider compiled with both chrome+webdriver features uses chromiumoxide in
-        // crawl_concurrent regardless of webdriver_config. Setting chrome_connection_url
-        // here directs it to the remote Chrome CDP endpoint instead of trying to launch
-        // a local Chrome binary (which fails in Docker workers with no Chrome installed).
-        if let Some(ref remote_url) = cfg.chrome_remote_url {
-            website.with_chrome_connection(Some(remote_url.clone()));
-        }
-        // Wait for network idle so CSR frameworks (React, Vue, etc.) finish hydrating
-        // before spider captures the DOM and extracts links. Without this, only the
-        // server-rendered HTML skeleton is seen — JS-rendered nav links are invisible.
-        website.with_wait_for_idle_network(Some(spider::configuration::WaitForIdleNetwork::new(
+        // Same fully-idle wait: WebDriver also needs to wait for JS hydration.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
             Some(Duration::from_secs(15)),
         )));
-    } else if matches!(mode, RenderMode::Chrome) {
-        website
-            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
-            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot);
-        if let Some(ref remote_url) = cfg.chrome_remote_url {
-            website.with_chrome_connection(Some(remote_url.clone()));
-        }
-        // Same idle-network wait as webdriver branch — needed for CSR sites.
-        website.with_wait_for_idle_network(Some(spider::configuration::WaitForIdleNetwork::new(
-            Some(Duration::from_secs(15)),
-        )));
-        website = website
-            .build()
-            .map_err(|_| "Failed to build website with chrome settings")?;
     }
 
     Ok(website)
@@ -291,7 +302,7 @@ pub async fn crawl_and_collect_map(
                 selector_config: None,
                 ignore_tags: None,
             };
-            let markdown = transform_content_input(input, &transform_cfg);
+            let markdown = transform_content_input(input, transform_cfg);
             // byte length; sitemap/doc content is ASCII-dominant so bytes ≈ chars
             let chars = markdown.trim().len();
             if chars < 200 {
@@ -406,7 +417,7 @@ pub async fn run_crawl_once(
                 selector_config: None,
                 ignore_tags: None,
             };
-            let markdown = transform_content_input(input, &transform_cfg);
+            let markdown = transform_content_input(input, transform_cfg);
             let trimmed = markdown.trim(); // &str borrow — zero allocation
                                            // byte length; sitemap/doc content is ASCII-dominant so bytes ≈ chars
             let chars = trimmed.len();

@@ -3,7 +3,7 @@ use crate::axon_cli::crates::core::content::to_markdown;
 use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::ui::{accent, symbol_for_status};
 use crate::axon_cli::crates::vector::ops_v2::input;
-use crate::axon_cli::crates::vector::ops_v2::qdrant::qdrant_delete_by_url_filter;
+use crate::axon_cli::crates::vector::ops_v2::qdrant::{qdrant_base, qdrant_delete_by_url_filter};
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::StatusCode;
@@ -42,10 +42,6 @@ fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize
         .clamp(min, max)
 }
 
-fn qdrant_base(cfg: &Config) -> String {
-    cfg.qdrant_url.trim_end_matches('/').to_string()
-}
-
 pub(crate) async fn tei_embed(
     cfg: &Config,
     inputs: &[String],
@@ -58,11 +54,12 @@ pub(crate) async fn tei_embed(
 
     let configured = env_usize_clamped("TEI_MAX_CLIENT_BATCH_SIZE", 64, 1, 4096);
     let batch_size = configured.min(128);
+    let embed_url = format!("{}/embed", cfg.tei_url.trim_end_matches('/'));
 
     let mut stack: Vec<&[String]> = inputs.chunks(batch_size).collect();
     while let Some(chunk) = stack.pop() {
         let resp = client
-            .post(format!("{}/embed", cfg.tei_url.trim_end_matches('/')))
+            .post(&embed_url)
             .json(&serde_json::json!({"inputs": chunk}))
             .send()
             .await?;
@@ -279,7 +276,7 @@ async fn run_embed_pipeline(
         1,
         64,
     );
-    let flush_point_threshold = env_usize_clamped("AXON_QDRANT_POINT_BUFFER", 2048, 128, 16384);
+    let flush_point_threshold = env_usize_clamped("AXON_QDRANT_POINT_BUFFER", 256, 128, 16384);
 
     let mut work = prepared.into_iter();
     let mut inflight = FuturesUnordered::new();
