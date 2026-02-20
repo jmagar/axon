@@ -3,12 +3,13 @@ use crate::axon_cli::crates::core::content::to_markdown;
 use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::ui::{accent, symbol_for_status};
 use crate::axon_cli::crates::vector::ops_v2::input;
-use crate::axon_cli::crates::vector::ops_v2::qdrant::{qdrant_base, qdrant_delete_by_url_filter};
+use crate::axon_cli::crates::vector::ops_v2::qdrant::{
+    env_usize_clamped, qdrant_base, qdrant_delete_by_url_filter,
+};
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::StatusCode;
 use spider::url::Url;
-use std::env;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -31,15 +32,6 @@ struct PreparedDoc {
     url: String,
     domain: String,
     chunks: Vec<String>,
-}
-
-fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|v| *v >= min)
-        .unwrap_or(default)
-        .clamp(min, max)
 }
 
 pub(crate) async fn tei_embed(
@@ -85,7 +77,12 @@ async fn ensure_collection(cfg: &Config, dim: usize) -> Result<(), Box<dyn Error
     let create = serde_json::json!({
         "vectors": {"size": dim, "distance": "Cosine"}
     });
-    let _ = client.put(url).json(&create).send().await?;
+    client
+        .put(url)
+        .json(&create)
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
@@ -180,6 +177,75 @@ async fn embed_prepared_doc(
         }));
     }
     Ok((dim, points))
+}
+
+/// Embed arbitrary text content with explicit source metadata into Qdrant.
+///
+/// Unlike `embed_path_native` which takes file/URL inputs, this function accepts
+/// pre-fetched text and attaches `source_type` and `title` to every Qdrant point
+/// payload — enabling filtered queries like "search only GitHub content".
+///
+/// Returns the number of chunks embedded.
+pub async fn embed_text_with_metadata(
+    cfg: &Config,
+    content: &str,
+    url: &str,
+    source_type: &str,
+    title: Option<&str>,
+) -> Result<usize, Box<dyn Error>> {
+    if content.trim().is_empty() {
+        return Ok(0);
+    }
+    let chunks = input::chunk_text(content);
+    if chunks.is_empty() {
+        return Ok(0);
+    }
+    let vectors = tei_embed(cfg, &chunks).await?;
+    if vectors.is_empty() {
+        return Err(format!("TEI returned no vectors for {url}").into());
+    }
+    if vectors.len() != chunks.len() {
+        return Err(format!(
+            "TEI vector count mismatch for {url}: {} vectors for {} chunks",
+            vectors.len(),
+            chunks.len()
+        )
+        .into());
+    }
+    let dim = vectors[0].len();
+    ensure_collection(cfg, dim).await?;
+    let domain = spider::url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let mut points = Vec::with_capacity(vectors.len());
+    for (idx, (chunk, vecv)) in chunks.into_iter().zip(vectors.into_iter()).enumerate() {
+        let point_id = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_URL,
+            format!("{url}:{idx}").as_bytes(),
+        );
+        let mut payload = serde_json::json!({
+            "url": url,
+            "domain": domain,
+            "source_type": source_type,
+            "source_command": source_type,
+            "content_type": "text",
+            "chunk_index": idx,
+            "chunk_text": chunk,
+            "scraped_at": timestamp,
+        });
+        if let Some(t) = title {
+            payload["title"] = serde_json::Value::String(t.to_string());
+        }
+        points.push(serde_json::json!({
+            "id": point_id.to_string(),
+            "vector": vecv,
+            "payload": payload,
+        }));
+    }
+    qdrant_upsert(cfg, &points).await?;
+    Ok(points.len())
 }
 
 pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary, Box<dyn Error>> {
