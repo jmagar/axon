@@ -1,3 +1,4 @@
+use super::config::parse::normalize_local_service_url;
 use spider::tokio;
 use std::env;
 use std::time::Duration;
@@ -54,6 +55,7 @@ pub fn webdriver_url_from_env() -> Option<String> {
                 .ok()
                 .filter(|v| !v.trim().is_empty())
         })
+        .map(normalize_local_service_url)
 }
 
 pub fn browser_backend_selection(

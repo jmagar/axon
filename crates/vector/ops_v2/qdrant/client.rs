@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::error::Error;
 
 use super::types::{QdrantPoint, QdrantScrollResponse, QdrantSearchHit, QdrantSearchResponse};
-use super::utils::{payload_url, retrieve_max_points};
+use super::utils::retrieve_max_points;
 
 fn qdrant_base(cfg: &Config) -> String {
     cfg.qdrant_url.trim_end_matches('/').to_string()
@@ -59,24 +59,144 @@ pub(crate) async fn qdrant_scroll_pages(
     Ok(())
 }
 
-pub async fn qdrant_indexed_urls(cfg: &Config) -> Result<Vec<String>, Box<dyn Error>> {
+/// Scroll the collection keeping only the URL field (one entry per unique URL via chunk_index==0
+/// filter) and collect into a HashSet. The `filter` value is passed directly as the Qdrant
+/// filter body so callers control which subset of documents is scanned.
+async fn scroll_url_set(
+    cfg: &Config,
+    filter: serde_json::Value,
+) -> Result<HashSet<String>, Box<dyn Error>> {
+    let client = http_client()?;
+    let endpoint = format!(
+        "{}/collections/{}/points/scroll",
+        qdrant_base(cfg),
+        cfg.collection
+    );
     let mut seen = HashSet::new();
-    qdrant_scroll_pages(cfg, |points| {
+    let mut body = serde_json::json!({
+        "limit": 1000,
+        "with_payload": {"include": ["url"]},
+        "with_vector": false,
+        "filter": filter,
+    });
+    loop {
+        let val = client
+            .post(&endpoint)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?;
+        let points = val["result"]["points"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        if points.is_empty() {
+            break;
+        }
         for p in points {
-            let Some(payload) = p.get("payload") else {
-                continue;
-            };
-            let url = payload_url(payload);
-            if !url.is_empty() {
-                seen.insert(url);
+            if let Some(url) = p
+                .get("payload")
+                .and_then(|pl| pl.get("url"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                seen.insert(url.to_string());
             }
         }
-    })
-    .await?;
+        let next = val["result"].get("next_page_offset").cloned();
+        if next.is_none() || next == Some(serde_json::Value::Null) {
+            break;
+        }
+        body["offset"] = next.unwrap();
+    }
+    Ok(seen)
+}
 
-    let mut urls: Vec<String> = seen.into_iter().collect();
-    urls.sort();
-    Ok(urls)
+pub async fn qdrant_indexed_urls(cfg: &Config) -> Result<Vec<String>, Box<dyn Error>> {
+    let filter = serde_json::json!({
+        "must": [{"key": "chunk_index", "match": {"value": 0}}]
+    });
+    scroll_url_set(cfg, filter)
+        .await
+        .map(|s| s.into_iter().collect())
+}
+
+pub(crate) async fn qdrant_urls_for_domain(
+    cfg: &Config,
+    domain: &str,
+) -> Result<HashSet<String>, Box<dyn Error>> {
+    let filter = serde_json::json!({
+        "must": [
+            {"key": "domain", "match": {"value": domain}},
+            {"key": "chunk_index", "match": {"value": 0}}
+        ]
+    });
+    scroll_url_set(cfg, filter).await
+}
+
+/// Delete all Qdrant points matching `url` via payload filter.
+pub(crate) async fn qdrant_delete_by_url_filter(
+    cfg: &Config,
+    url: &str,
+) -> Result<(), Box<dyn Error>> {
+    let client = http_client()?;
+    client
+        .post(format!(
+            "{}/collections/{}/points/delete?wait=true",
+            qdrant_base(cfg),
+            cfg.collection
+        ))
+        .json(&serde_json::json!({
+            "filter": {"must": [{"key": "url", "match": {"value": url}}]}
+        }))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// Delete all Qdrant points for URLs that belong to `domain` but are NOT in `current_urls`.
+/// Returns the number of stale URLs whose points were deleted.
+pub async fn qdrant_delete_stale_domain_urls(
+    cfg: &Config,
+    domain: &str,
+    current_urls: &HashSet<String>,
+) -> Result<usize, Box<dyn Error>> {
+    let indexed = qdrant_urls_for_domain(cfg, domain).await?;
+    let stale: Vec<String> = indexed
+        .into_iter()
+        .filter(|url| !current_urls.contains(url))
+        .collect();
+    for url in &stale {
+        qdrant_delete_by_url_filter(cfg, url).await?;
+    }
+    Ok(stale.len())
+}
+
+pub(crate) async fn qdrant_delete_points(
+    cfg: &Config,
+    ids: &[String],
+) -> Result<usize, Box<dyn Error>> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let client = http_client()?;
+    let url = format!(
+        "{}/collections/{}/points/delete?wait=true",
+        qdrant_base(cfg),
+        cfg.collection
+    );
+    for batch in ids.chunks(1000) {
+        client
+            .post(&url)
+            .json(&serde_json::json!({"points": batch}))
+            .send()
+            .await?
+            .error_for_status()?;
+    }
+    Ok(ids.len())
 }
 
 pub(crate) async fn qdrant_domain_facets(

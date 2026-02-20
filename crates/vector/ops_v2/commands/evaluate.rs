@@ -15,6 +15,14 @@ use super::streaming::{
     judge_llm_non_streaming, judge_llm_streaming,
 };
 
+struct EvalTiming {
+    rag_elapsed_ms: u128,
+    baseline_elapsed_ms: u128,
+    research_elapsed_ms: u128,
+    analysis_elapsed_ms: u128,
+    total_elapsed_ms: u128,
+}
+
 async fn build_judge_reference(
     cfg: &Config,
     question: &str,
@@ -74,159 +82,35 @@ async fn build_judge_reference(
 }
 
 pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let query = cfg
-        .query
-        .clone()
-        .or_else(|| {
-            if cfg.positional.is_empty() {
-                None
-            } else {
-                Some(cfg.positional.join(" "))
-            }
-        })
-        .ok_or("evaluate requires a question")?;
+    run_evaluate_native_impl(cfg).await
+}
 
-    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
-        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for evaluate".into());
-    }
-
+async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let query = evaluate_query(cfg)?;
     let client = http_client()?;
     let eval_started = Instant::now();
-
-    // ── Build RAG context ────────────────────────────────────────────────────
     let ctx = build_ask_context(cfg, &query).await?;
+    emit_context_header(cfg, &query, &ctx)?;
 
-    if !cfg.json_output {
-        println!("{}", primary("Evaluate"));
-        println!("  {} {}", primary("Question:"), query);
-        println!(
-            "  {} {} sources · {} chars  {}",
-            primary("Context:"),
-            ctx.chunks_selected + ctx.full_docs_selected + ctx.supplemental_count,
-            ctx.context.len(),
-            muted(&format!(
-                "(retrieval={}ms · context={}ms)",
-                ctx.retrieval_elapsed_ms, ctx.context_elapsed_ms
-            ))
-        );
+    let (rag_answer, rag_elapsed_ms) = run_rag_answer(cfg, client, &query, &ctx.context).await?;
+    emit_baseline_header(cfg)?;
+    let (baseline_answer, baseline_elapsed_ms) = run_baseline_answer(cfg, client, &query).await?;
 
-        if cfg.ask_diagnostics {
-            eprintln!(
-                "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
-                muted("Context detail:"),
-                ctx.candidate_count,
-                ctx.reranked_count,
-                ctx.chunks_selected,
-                ctx.full_docs_selected,
-                ctx.supplemental_count,
-                ctx.context.len()
-            );
-            for source in &ctx.diagnostic_sources {
-                eprintln!("  • {source}");
-            }
-        }
-
-        println!();
-        println!(
-            "{}",
-            primary("── RAG Answer (with context) ──────────────────────────────────")
-        );
-        print!("  ");
-        std::io::stdout().flush()?;
-    }
-
-    // ── RAG LLM call ─────────────────────────────────────────────────────────
-    let rag_started = Instant::now();
-    let rag_answer =
-        match ask_llm_streaming(cfg, client, &query, &ctx.context, !cfg.json_output).await {
-            Ok(v) => v,
-            Err(e) => {
-                log_warn(&format!(
-                    "rag streaming failed, falling back to non-streaming: {e}"
-                ));
-                let fallback = ask_llm_non_streaming(cfg, client, &query, &ctx.context).await?;
-                if !cfg.json_output {
-                    print!("{fallback}");
-                }
-                fallback
-            }
-        };
-    let rag_elapsed_ms = rag_started.elapsed().as_millis();
-
-    if !cfg.json_output {
-        println!();
-        println!();
-        println!(
-            "{}",
-            primary("── Baseline Answer (no context) ───────────────────────────────")
-        );
-        print!("  ");
-        std::io::stdout().flush()?;
-    }
-
-    // ── Baseline LLM call (bare question, no RAG context) ────────────────────
-    let baseline_started = Instant::now();
-    let baseline_answer = match baseline_llm_streaming(cfg, client, &query, !cfg.json_output).await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            log_warn(&format!(
-                "baseline streaming failed, falling back to non-streaming: {e}"
-            ));
-            let fallback = baseline_llm_non_streaming(cfg, client, &query).await?;
-            if !cfg.json_output {
-                print!("{fallback}");
-            }
-            fallback
-        }
-    };
-    let baseline_elapsed_ms = baseline_started.elapsed().as_millis();
-
-    // ── Judge research step ───────────────────────────────────────────────────
     let research_started = Instant::now();
     let (judge_reference, ref_chunk_count) = build_judge_reference(cfg, &query)
         .await
         .unwrap_or_else(|_| (NO_REFERENCE.to_string(), 0));
     let research_elapsed_ms = research_started.elapsed().as_millis();
-
-    // diagnostic_sources entries are "full-doc score=X url=Y" or "chunk score=X url=Y"
-    // strip the internal score prefix so the judge sees clean URLs
-    let rag_sources_list = if ctx.diagnostic_sources.is_empty() {
-        "None available".to_string()
-    } else {
-        ctx.diagnostic_sources
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                let url = s.split_once(" url=").map_or(s.as_str(), |(_, u)| u);
-                format!("[S{}] {}", i + 1, url)
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
+    let rag_sources_list = format_rag_sources(&ctx.diagnostic_sources);
     let ref_quality_note = if ref_chunk_count < 3 {
         "\u{26a0}\u{fe0f}  Reference material is limited — accuracy scores may be less reliable.\n\n"
     } else {
         ""
     };
-
-    // ── Analysis (judge LLM call) ─────────────────────────────────────────────
-    if !cfg.json_output {
-        println!();
-        println!();
-        println!(
-            "{}",
-            primary("── Analysis ───────────────────────────────────────────────────")
-        );
-        print!("  ");
-        std::io::stdout().flush()?;
-    }
-
+    emit_analysis_header(cfg)?;
     let source_count = ctx.chunks_selected + ctx.full_docs_selected + ctx.supplemental_count;
     let context_chars = ctx.context.len();
-    let analysis_started = Instant::now();
-    let analysis_answer = match judge_llm_streaming(
+    let (analysis_answer, analysis_elapsed_ms) = run_analysis(
         cfg,
         client,
         &query,
@@ -234,6 +118,204 @@ pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
         &baseline_answer,
         &judge_reference,
         &rag_sources_list,
+        ref_quality_note,
+        rag_elapsed_ms,
+        baseline_elapsed_ms,
+        source_count,
+        context_chars,
+    )
+    .await;
+
+    let timing = EvalTiming {
+        rag_elapsed_ms,
+        baseline_elapsed_ms,
+        research_elapsed_ms,
+        analysis_elapsed_ms,
+        total_elapsed_ms: eval_started.elapsed().as_millis(),
+    };
+    emit_evaluate_output(
+        cfg,
+        &query,
+        &ctx,
+        &rag_answer,
+        &baseline_answer,
+        &analysis_answer,
+        ref_chunk_count,
+        context_chars,
+        &timing,
+    )?;
+    Ok(())
+}
+
+fn evaluate_query(cfg: &Config) -> Result<String, Box<dyn Error>> {
+    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
+        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for evaluate".into());
+    }
+    cfg.query
+        .clone()
+        .or_else(|| (!cfg.positional.is_empty()).then(|| cfg.positional.join(" ")))
+        .ok_or_else(|| "evaluate requires a question".into())
+}
+
+fn emit_context_header(
+    cfg: &Config,
+    query: &str,
+    ctx: &super::ask::AskContext,
+) -> Result<(), Box<dyn Error>> {
+    if cfg.json_output {
+        return Ok(());
+    }
+    println!("{}", primary("Evaluate"));
+    println!("  {} {}", primary("Question:"), query);
+    println!(
+        "  {} {} sources · {} chars  {}",
+        primary("Context:"),
+        ctx.chunks_selected + ctx.full_docs_selected + ctx.supplemental_count,
+        ctx.context.len(),
+        muted(&format!(
+            "(retrieval={}ms · context={}ms)",
+            ctx.retrieval_elapsed_ms, ctx.context_elapsed_ms
+        ))
+    );
+    if cfg.ask_diagnostics {
+        eprintln!(
+            "  {} candidates={} reranked={} chunks={} full_docs={} supplemental={} context_chars={}",
+            muted("Context detail:"),
+            ctx.candidate_count,
+            ctx.reranked_count,
+            ctx.chunks_selected,
+            ctx.full_docs_selected,
+            ctx.supplemental_count,
+            ctx.context.len()
+        );
+        for source in &ctx.diagnostic_sources {
+            eprintln!("  • {source}");
+        }
+    }
+    println!();
+    println!(
+        "{}",
+        primary("── RAG Answer (with context) ──────────────────────────────────")
+    );
+    print!("  ");
+    std::io::stdout().flush()?;
+    Ok(())
+}
+
+async fn run_rag_answer(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    context: &str,
+) -> Result<(String, u128), Box<dyn Error>> {
+    let started = Instant::now();
+    let answer = match ask_llm_streaming(cfg, client, query, context, !cfg.json_output).await {
+        Ok(v) => v,
+        Err(e) => {
+            log_warn(&format!(
+                "rag streaming failed, falling back to non-streaming: {e}"
+            ));
+            let fallback = ask_llm_non_streaming(cfg, client, query, context).await?;
+            if !cfg.json_output {
+                print!("{fallback}");
+            }
+            fallback
+        }
+    };
+    Ok((answer, started.elapsed().as_millis()))
+}
+
+fn emit_baseline_header(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if cfg.json_output {
+        return Ok(());
+    }
+    println!();
+    println!();
+    println!(
+        "{}",
+        primary("── Baseline Answer (no context) ───────────────────────────────")
+    );
+    print!("  ");
+    std::io::stdout().flush()?;
+    Ok(())
+}
+
+async fn run_baseline_answer(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+) -> Result<(String, u128), Box<dyn Error>> {
+    let started = Instant::now();
+    let answer = match baseline_llm_streaming(cfg, client, query, !cfg.json_output).await {
+        Ok(v) => v,
+        Err(e) => {
+            log_warn(&format!(
+                "baseline streaming failed, falling back to non-streaming: {e}"
+            ));
+            let fallback = baseline_llm_non_streaming(cfg, client, query).await?;
+            if !cfg.json_output {
+                print!("{fallback}");
+            }
+            fallback
+        }
+    };
+    Ok((answer, started.elapsed().as_millis()))
+}
+
+fn format_rag_sources(diagnostic_sources: &[String]) -> String {
+    if diagnostic_sources.is_empty() {
+        return "None available".to_string();
+    }
+    diagnostic_sources
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let url = s.split_once(" url=").map_or(s.as_str(), |(_, u)| u);
+            format!("[S{}] {}", i + 1, url)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn emit_analysis_header(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if cfg.json_output {
+        return Ok(());
+    }
+    println!();
+    println!();
+    println!(
+        "{}",
+        primary("── Analysis ───────────────────────────────────────────────────")
+    );
+    print!("  ");
+    std::io::stdout().flush()?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_analysis(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    rag_answer: &str,
+    baseline_answer: &str,
+    judge_reference: &str,
+    rag_sources_list: &str,
+    ref_quality_note: &str,
+    rag_elapsed_ms: u128,
+    baseline_elapsed_ms: u128,
+    source_count: usize,
+    context_chars: usize,
+) -> (String, u128) {
+    let started = Instant::now();
+    let answer = match judge_llm_streaming(
+        cfg,
+        client,
+        query,
+        rag_answer,
+        baseline_answer,
+        judge_reference,
+        rag_sources_list,
         ref_quality_note,
         rag_elapsed_ms,
         baseline_elapsed_ms,
@@ -251,11 +333,11 @@ pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
             let fallback = judge_llm_non_streaming(
                 cfg,
                 client,
-                &query,
-                &rag_answer,
-                &baseline_answer,
-                &judge_reference,
-                &rag_sources_list,
+                query,
+                rag_answer,
+                baseline_answer,
+                judge_reference,
+                rag_sources_list,
                 ref_quality_note,
                 rag_elapsed_ms,
                 baseline_elapsed_ms,
@@ -270,10 +352,21 @@ pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
             fallback
         }
     };
-    let analysis_elapsed_ms = analysis_started.elapsed().as_millis();
-    let total_elapsed_ms = eval_started.elapsed().as_millis();
+    (answer, started.elapsed().as_millis())
+}
 
-    // ── Output ────────────────────────────────────────────────────────────────
+#[allow(clippy::too_many_arguments)]
+fn emit_evaluate_output(
+    cfg: &Config,
+    query: &str,
+    ctx: &super::ask::AskContext,
+    rag_answer: &str,
+    baseline_answer: &str,
+    analysis_answer: &str,
+    ref_chunk_count: usize,
+    context_chars: usize,
+    timing: &EvalTiming,
+) -> Result<(), Box<dyn Error>> {
     if cfg.json_output {
         println!(
             "{}",
@@ -300,26 +393,26 @@ pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 "timing_ms": {
                     "retrieval": ctx.retrieval_elapsed_ms,
                     "context_build": ctx.context_elapsed_ms,
-                    "rag_llm": rag_elapsed_ms,
-                    "baseline_llm": baseline_elapsed_ms,
-                    "research_elapsed_ms": research_elapsed_ms,
-                    "analysis_llm_ms": analysis_elapsed_ms,
-                    "total": total_elapsed_ms,
+                    "rag_llm": timing.rag_elapsed_ms,
+                    "baseline_llm": timing.baseline_elapsed_ms,
+                    "research_elapsed_ms": timing.research_elapsed_ms,
+                    "analysis_llm_ms": timing.analysis_elapsed_ms,
+                    "total": timing.total_elapsed_ms,
                 }
             }))?
         );
-    } else {
-        println!();
-        println!();
-        println!(
-            "  {} rag_llm={}ms | baseline_llm={}ms | research={}ms | analysis_llm={}ms | total={}ms",
-            muted("Timing:"),
-            rag_elapsed_ms,
-            baseline_elapsed_ms,
-            research_elapsed_ms,
-            analysis_elapsed_ms,
-            total_elapsed_ms
-        );
+        return Ok(());
     }
+    println!();
+    println!();
+    println!(
+        "  {} rag_llm={}ms | baseline_llm={}ms | research={}ms | analysis_llm={}ms | total={}ms",
+        muted("Timing:"),
+        timing.rag_elapsed_ms,
+        timing.baseline_elapsed_ms,
+        timing.research_elapsed_ms,
+        timing.analysis_elapsed_ms,
+        timing.total_elapsed_ms
+    );
     Ok(())
 }

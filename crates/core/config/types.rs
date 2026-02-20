@@ -21,6 +21,7 @@ pub enum CommandKind {
     Domains,
     Stats,
     Status,
+    Dedupe,
 }
 
 impl CommandKind {
@@ -44,6 +45,7 @@ impl CommandKind {
             Self::Domains => "domains",
             Self::Stats => "stats",
             Self::Status => "status",
+            Self::Dedupe => "dedupe",
         }
     }
 }

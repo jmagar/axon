@@ -3,18 +3,8 @@ use crate::axon_cli::crates::core::http::{http_client, normalize_url};
 use crate::axon_cli::crates::core::ui::{muted, primary};
 use crate::axon_cli::crates::vector::ops_v2::{input, qdrant};
 use spider::url::Url;
-use std::collections::{HashMap, HashSet};
-use std::env;
+use std::collections::HashSet;
 use std::error::Error;
-
-fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|v| *v >= min)
-        .unwrap_or(default)
-        .clamp(min, max)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Suggestion {
@@ -117,35 +107,35 @@ async fn build_suggest_prompt_context(
     cfg: &Config,
     desired: usize,
 ) -> Result<SuggestPromptContext, Box<dyn Error>> {
-    let base_url_context_limit = env_usize_clamped("AXON_SUGGEST_BASE_URL_LIMIT", 250, 10, 5_000);
+    let base_url_context_limit =
+        qdrant::env_usize_clamped("AXON_SUGGEST_BASE_URL_LIMIT", 250, 10, 5_000);
     let existing_url_context_limit =
-        env_usize_clamped("AXON_SUGGEST_EXISTING_URL_LIMIT", 500, 0, 5_000);
+        qdrant::env_usize_clamped("AXON_SUGGEST_EXISTING_URL_LIMIT", 500, 0, 5_000);
 
-    let indexed_urls = qdrant::qdrant_indexed_urls(cfg).await?;
+    // Fetch indexed URLs (chunk_index=0 only, url payload only) and domain facets concurrently.
+    let (indexed_urls, mut ranked_base_urls) = spider::tokio::try_join!(
+        qdrant::qdrant_indexed_urls(cfg),
+        qdrant::qdrant_domain_facets(cfg, base_url_context_limit),
+    )?;
+
     if indexed_urls.is_empty() {
         return Err("No indexed URLs found in Qdrant collection; run crawl/scrape first".into());
     }
 
-    let mut indexed_lookup = HashSet::new();
+    // Build lookup set: stored URLs are already normalised, so only slash variants needed.
+    let mut indexed_lookup = HashSet::with_capacity(indexed_urls.len() * 2);
     for indexed in &indexed_urls {
-        for variant in input::url_lookup_candidates(indexed) {
-            indexed_lookup.insert(variant);
-        }
+        let without_slash = indexed.trim_end_matches('/');
+        indexed_lookup.insert(without_slash.to_string());
+        indexed_lookup.insert(format!("{without_slash}/"));
     }
 
-    let mut base_url_counts: HashMap<String, usize> = HashMap::new();
-    for indexed in &indexed_urls {
-        if let Some(base) = qdrant::base_url(indexed) {
-            *base_url_counts.entry(base).or_insert(0) += 1;
-        }
-    }
-    let mut ranked_base_urls: Vec<(String, usize)> = base_url_counts.into_iter().collect();
+    // Domain facets come back alphabetically sorted; re-sort by page count descending.
     ranked_base_urls.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     let base_context = ranked_base_urls
         .iter()
-        .take(base_url_context_limit)
-        .map(|(base, pages)| format!("{base} (pages={pages})"))
+        .map(|(domain, pages)| format!("{domain} (pages={pages})"))
         .collect::<Vec<_>>()
         .join("\n");
     let existing_url_context = indexed_urls

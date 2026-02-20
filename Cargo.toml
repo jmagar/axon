@@ -33,7 +33,7 @@ tokio-executor-trait = "2"
 tokio-reactor-trait = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 
 [profile.release]
 opt-level = 3

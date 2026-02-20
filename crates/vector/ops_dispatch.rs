@@ -40,6 +40,10 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_sources_native(cfg).await
 }
 
+pub async fn run_dedupe_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    crate::axon_cli::crates::vector::ops_v2::run_dedupe_native(cfg).await
+}
+
 pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_domains_native(cfg).await
 }

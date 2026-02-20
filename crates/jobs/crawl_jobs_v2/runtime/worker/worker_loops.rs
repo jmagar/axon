@@ -111,10 +111,14 @@ async fn run_worker_polling_loop(cfg: &Config, pool: &PgPool) -> Result<(), Box<
     if WORKER_CONCURRENCY <= 1 {
         return run_worker_polling_lane(cfg, pool, 1).await;
     }
-    tokio::try_join!(
+    // Use join! so a lane failure does not abruptly cancel the sibling lane
+    // mid-job (which would leave jobs stuck in 'running' until the watchdog reclaims them).
+    let (r1, r2) = tokio::join!(
         run_worker_polling_lane(cfg, pool, 1),
         run_worker_polling_lane(cfg, pool, 2)
-    )?;
+    );
+    r1?;
+    r2?;
     Ok(())
 }
 
@@ -128,7 +132,12 @@ async fn run_worker_polling_lane(
         lane, cfg.crawl_queue
     ));
     let mut last_sweep = Instant::now();
+    let mut last_heartbeat = Instant::now();
     loop {
+        if last_heartbeat.elapsed() >= Duration::from_secs(60) {
+            log_info(&format!("crawl worker heartbeat lane={} alive", lane));
+            last_heartbeat = Instant::now();
+        }
         if last_sweep.elapsed() >= Duration::from_secs(STALE_SWEEP_INTERVAL_SECS) {
             match reclaim_stale_running_jobs(
                 pool,
@@ -189,16 +198,22 @@ async fn run_amqp_worker_lane(
         lane, cfg.crawl_queue, WORKER_CONCURRENCY
     ));
 
+    let mut sweep_interval = tokio::time::interval(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS));
+    sweep_interval.tick().await; // consume the immediate first tick
+    let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(60));
+    heartbeat_interval.tick().await; // consume the immediate first tick
+
     loop {
-        let msg = match tokio::time::timeout(
-            Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
-            consumer.next(),
-        )
-        .await
-        {
-            Ok(Some(msg)) => msg,
-            Ok(None) => break,
-            Err(_) => {
+        let msg = tokio::select! {
+            msg = consumer.next() => match msg {
+                Some(msg) => msg,
+                None => break,
+            },
+            _ = heartbeat_interval.tick() => {
+                log_info(&format!("crawl worker heartbeat lane={} alive", lane));
+                continue;
+            },
+            _ = sweep_interval.tick() => {
                 match reclaim_stale_running_jobs(
                     pool,
                     lane,
@@ -293,9 +308,13 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if WORKER_CONCURRENCY <= 1 {
         return run_amqp_worker_lane(cfg, &pool, 1).await;
     }
-    tokio::try_join!(
+    // Use join! so a lane failure does not abruptly cancel the sibling lane
+    // mid-job (which would leave jobs stuck in 'running' until the watchdog reclaims them).
+    let (r1, r2) = tokio::join!(
         run_amqp_worker_lane(cfg, &pool, 1),
         run_amqp_worker_lane(cfg, &pool, 2)
-    )?;
+    );
+    r1?;
+    r2?;
     Ok(())
 }

@@ -42,6 +42,10 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     qdrant::run_sources_native(cfg).await
 }
 
+pub async fn run_dedupe_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    qdrant::run_dedupe_native(cfg).await
+}
+
 pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     qdrant::run_domains_native(cfg).await
 }

@@ -7,6 +7,7 @@ pub use sitemap::{append_sitemap_backfill, crawl_sitemap_urls};
 
 use crate::axon_cli::crates::core::config::{Config, RenderMode};
 use crate::axon_cli::crates::core::content::{build_transform_config, url_to_filename};
+use crate::axon_cli::crates::core::http::ssrf_blacklist_patterns;
 use crate::axon_cli::crates::core::logging::{log_info, log_warn};
 use spider::features::chrome_common::RequestInterceptConfiguration;
 use spider::tokio;
@@ -152,14 +153,19 @@ fn configure_website(
     if cfg.shared_queue {
         website.with_shared_queue(true);
     }
+    // Always apply SSRF protection. Append path exclusions if configured.
+    let mut blacklist_patterns: Vec<spider::compact_str::CompactString> = ssrf_blacklist_patterns()
+        .into_iter()
+        .map(Into::into)
+        .collect();
     if !cfg.exclude_path_prefix.is_empty() {
-        let blacklist_patterns: Vec<spider::compact_str::CompactString> =
+        blacklist_patterns.extend(
             build_exclude_blacklist_patterns(start_url, &cfg.exclude_path_prefix)
                 .into_iter()
-                .map(Into::into)
-                .collect();
-        website.with_blacklist_url(Some(blacklist_patterns));
+                .map(Into::into),
+        );
     }
+    website.with_blacklist_url(Some(blacklist_patterns));
     if let Some(timeout_ms) = cfg.request_timeout_ms {
         website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
     }
@@ -181,6 +187,19 @@ fn configure_website(
             ..WebDriverConfig::default()
         };
         website.with_webdriver(wd_cfg);
+        // Spider compiled with both chrome+webdriver features uses chromiumoxide in
+        // crawl_concurrent regardless of webdriver_config. Setting chrome_connection_url
+        // here directs it to the remote Chrome CDP endpoint instead of trying to launch
+        // a local Chrome binary (which fails in Docker workers with no Chrome installed).
+        if let Some(ref remote_url) = cfg.chrome_remote_url {
+            website.with_chrome_connection(Some(remote_url.clone()));
+        }
+        // Wait for network idle so CSR frameworks (React, Vue, etc.) finish hydrating
+        // before spider captures the DOM and extracts links. Without this, only the
+        // server-rendered HTML skeleton is seen — JS-rendered nav links are invisible.
+        website.with_wait_for_idle_network(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(15)),
+        )));
     } else if matches!(mode, RenderMode::Chrome) {
         website
             .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
@@ -188,6 +207,10 @@ fn configure_website(
         if let Some(ref remote_url) = cfg.chrome_remote_url {
             website.with_chrome_connection(Some(remote_url.clone()));
         }
+        // Same idle-network wait as webdriver branch — needed for CSR sites.
+        website.with_wait_for_idle_network(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(15)),
+        )));
         website = website
             .build()
             .map_err(|_| "Failed to build website with chrome settings")?;
@@ -205,8 +228,15 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool
     } else {
         summary.thin_pages as f64 / summary.pages_seen as f64
     };
-    let low_coverage = summary.markdown_files < (max_pages / 10).max(10);
-    thin_ratio > 0.60 || low_coverage
+    if thin_ratio > 0.60 {
+        return true;
+    }
+    // When max_pages == 0 (uncapped), there's no expected page count to compare
+    // against, so "low coverage" is meaningless — skip that check entirely.
+    if max_pages == 0 {
+        return false;
+    }
+    summary.markdown_files < (max_pages / 10).max(10)
 }
 
 pub async fn crawl_and_collect_map(

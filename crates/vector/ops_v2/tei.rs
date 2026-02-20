@@ -3,13 +3,13 @@ use crate::axon_cli::crates::core::content::to_markdown;
 use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::ui::{accent, symbol_for_status};
 use crate::axon_cli::crates::vector::ops_v2::input;
+use crate::axon_cli::crates::vector::ops_v2::qdrant::qdrant_delete_by_url_filter;
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::StatusCode;
 use spider::url::Url;
 use std::env;
 use std::error::Error;
-use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -116,33 +116,37 @@ async fn qdrant_upsert(cfg: &Config, points: &[serde_json::Value]) -> Result<(),
 
 async fn read_inputs(input: &str) -> Result<Vec<(String, String)>, Box<dyn Error>> {
     let path = PathBuf::from(input);
-    if path.is_file() {
-        return Ok(vec![(
+    match tokio::fs::metadata(&path).await {
+        Ok(meta) if meta.is_file() => Ok(vec![(
             path.to_string_lossy().to_string(),
             tokio::fs::read_to_string(&path).await?,
-        )]);
-    }
-    if path.is_dir() {
-        let mut files: Vec<PathBuf> = fs::read_dir(&path)?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| p.is_file())
-            .collect();
-        files.sort();
-        let mut out = Vec::new();
-        for p in files {
-            let content = tokio::fs::read_to_string(&p).await?;
-            out.push((p.to_string_lossy().to_string(), content));
+        )]),
+        Ok(meta) if meta.is_dir() => {
+            let mut dir = tokio::fs::read_dir(&path).await?;
+            let mut files = Vec::new();
+            while let Some(entry) = dir.next_entry().await? {
+                let p = entry.path();
+                if tokio::fs::metadata(&p).await.is_ok_and(|m| m.is_file()) {
+                    files.push(p);
+                }
+            }
+            files.sort();
+            let mut out = Vec::new();
+            for p in files {
+                let content = tokio::fs::read_to_string(&p).await?;
+                out.push((p.to_string_lossy().to_string(), content));
+            }
+            Ok(out)
         }
-        return Ok(out);
+        _ => Ok(vec![(input.to_string(), input.to_string())]),
     }
-    Ok(vec![(input.to_string(), input.to_string())])
 }
 
 async fn embed_prepared_doc(
     cfg: &Config,
     doc: PreparedDoc,
 ) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
+    qdrant_delete_by_url_filter(cfg, &doc.url).await?;
     let vectors = tei_embed(cfg, &doc.chunks).await?;
     if vectors.is_empty() {
         return Err(format!("TEI returned no vectors for {}", doc.url).into());
@@ -160,8 +164,12 @@ async fn embed_prepared_doc(
     let timestamp = Utc::now().to_rfc3339();
     let mut points = Vec::with_capacity(vectors.len());
     for (idx, (chunk, vecv)) in doc.chunks.into_iter().zip(vectors.into_iter()).enumerate() {
+        let point_id = Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("{}:{}", doc.url, idx).as_bytes(),
+        );
         points.push(serde_json::json!({
-            "id": Uuid::new_v4().to_string(),
+            "id": point_id.to_string(),
             "vector": vecv,
             "payload": {
                 "url": doc.url,
@@ -186,21 +194,41 @@ pub async fn embed_path_native_with_progress(
     input: &str,
     progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
+    embed_path_native_with_progress_impl(cfg, input, progress_tx).await
+}
+
+async fn embed_path_native_with_progress_impl(
+    cfg: &Config,
+    input: &str,
+    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+) -> Result<EmbedSummary, Box<dyn Error>> {
+    validate_embed_config(cfg)?;
+    let prepared = prepare_embed_docs(input).await?;
+    if prepared.is_empty() {
+        return emit_empty_embed(progress_tx);
+    }
+    let summary = run_embed_pipeline(cfg, prepared, progress_tx).await?;
+    emit_embed_summary(cfg, summary.chunks_embedded);
+    Ok(summary)
+}
+
+fn validate_embed_config(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if cfg.tei_url.is_empty() {
         return Err("TEI_URL not configured".into());
     }
     if cfg.qdrant_url.is_empty() {
         return Err("QDRANT_URL not configured".into());
     }
+    Ok(())
+}
 
+async fn prepare_embed_docs(input: &str) -> Result<Vec<PreparedDoc>, Box<dyn Error>> {
     let mut docs = read_inputs(input).await?;
-
     if docs.len() == 1 && !Path::new(input).exists() && input.starts_with("http") {
         let client = http_client()?.clone();
         let html = fetch_html(&client, input).await?;
         docs = vec![(input.to_string(), to_markdown(&html))];
     }
-
     let mut prepared = Vec::new();
     for (url, raw) in docs {
         if raw.trim().is_empty() {
@@ -217,20 +245,30 @@ pub async fn embed_path_native_with_progress(
             chunks,
         });
     }
-    if prepared.is_empty() {
-        if let Some(tx) = &progress_tx {
-            let _ = tx.send(EmbedProgress {
-                docs_total: 0,
-                docs_completed: 0,
-                chunks_embedded: 0,
-            });
-        }
-        return Ok(EmbedSummary {
-            docs_embedded: 0,
+    Ok(prepared)
+}
+
+fn emit_empty_embed(
+    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+) -> Result<EmbedSummary, Box<dyn Error>> {
+    if let Some(tx) = &progress_tx {
+        let _ = tx.send(EmbedProgress {
+            docs_total: 0,
+            docs_completed: 0,
             chunks_embedded: 0,
         });
     }
+    Ok(EmbedSummary {
+        docs_embedded: 0,
+        chunks_embedded: 0,
+    })
+}
 
+async fn run_embed_pipeline(
+    cfg: &Config,
+    prepared: Vec<PreparedDoc>,
+    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+) -> Result<EmbedSummary, Box<dyn Error>> {
     let docs_embedded = prepared.len();
     let doc_concurrency = env_usize_clamped(
         "AXON_EMBED_DOC_CONCURRENCY",
@@ -295,6 +333,13 @@ pub async fn embed_path_native_with_progress(
         qdrant_upsert(cfg, &pending_points).await?;
     }
 
+    Ok(EmbedSummary {
+        docs_embedded,
+        chunks_embedded,
+    })
+}
+
+fn emit_embed_summary(cfg: &Config, chunks_embedded: usize) {
     if cfg.json_output {
         println!(
             "{}",
@@ -308,8 +353,4 @@ pub async fn embed_path_native_with_progress(
             accent(&cfg.collection)
         );
     }
-    Ok(EmbedSummary {
-        docs_embedded,
-        chunks_embedded,
-    })
 }
