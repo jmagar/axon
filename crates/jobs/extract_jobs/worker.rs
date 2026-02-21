@@ -79,9 +79,9 @@ async fn mark_extract_canceled(
 }
 
 fn update_parser_hits(map: &mut serde_json::Map<String, serde_json::Value>, run: &ExtractRun) {
-    for (name, count) in run.parser_hits.clone() {
-        let current = map.get(&name).and_then(|v| v.as_u64()).unwrap_or(0);
-        map.insert(name, serde_json::json!(current + count as u64));
+    for (name, count) in &run.parser_hits {
+        let current = map.get(name.as_str()).and_then(|v| v.as_u64()).unwrap_or(0);
+        map.insert(name.clone(), serde_json::json!(current + *count as u64));
     }
 }
 
@@ -132,31 +132,34 @@ async fn execute_extract_runs(
     max_pages: u32,
 ) -> ExtractAggregation {
     let engine = Arc::new(DeterministicExtractionEngine::with_default_parsers());
-    let mut pending_runs = FuturesUnordered::new();
 
-    for url in urls {
-        let engine = Arc::clone(&engine);
-        let prompt = prompt.clone();
-        let openai_base_url = cfg.openai_base_url.clone();
-        let openai_api_key = cfg.openai_api_key.clone();
-        let openai_model = cfg.openai_model.clone();
-        pending_runs.push(async move {
-            let run = run_extract_with_engine(
-                &url,
-                &prompt,
-                max_pages,
-                &openai_base_url,
-                &openai_api_key,
-                &openai_model,
-                engine,
-            )
-            .await;
-            (url, run)
-        });
-    }
+    let results: Vec<_> = futures_util::stream::iter(urls)
+        .map(|url| {
+            let engine = Arc::clone(&engine);
+            let prompt = prompt.clone();
+            let openai_base_url = cfg.openai_base_url.clone();
+            let openai_api_key = cfg.openai_api_key.clone();
+            let openai_model = cfg.openai_model.clone();
+            async move {
+                let run = run_extract_with_engine(
+                    &url,
+                    &prompt,
+                    max_pages,
+                    &openai_base_url,
+                    &openai_api_key,
+                    &openai_model,
+                    engine,
+                )
+                .await;
+                (url, run)
+            }
+        })
+        .buffer_unordered(16)
+        .collect()
+        .await;
 
     let mut agg = ExtractAggregation::new();
-    while let Some((url, run_result)) = pending_runs.next().await {
+    for (url, run_result) in results {
         match run_result {
             Ok(run) => append_extract_success(&mut agg, run),
             Err(err) => append_extract_error(&mut agg, url, err.to_string()),

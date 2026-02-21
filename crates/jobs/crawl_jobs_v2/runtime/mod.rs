@@ -268,7 +268,7 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
 
     // Composite partial index for claim_next_pending: WHERE status='pending' ORDER BY created_at
     sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_axon_crawl_jobs_pending ON axon_crawl_jobs(status, created_at ASC) WHERE status = 'pending'"
+        "CREATE INDEX IF NOT EXISTS idx_axon_crawl_jobs_pending ON axon_crawl_jobs(created_at ASC) WHERE status = 'pending'"
     )
     .execute(pool)
     .await?;
