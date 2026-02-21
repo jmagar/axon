@@ -109,6 +109,7 @@ pub(crate) fn test_config(pg_url: &str) -> Config {
         sessions_claude: false,
         sessions_codex: false,
         sessions_gemini: false,
+        sessions_project: None,
         github_token: None,
         github_include_source: false,
         reddit_client_id: None,

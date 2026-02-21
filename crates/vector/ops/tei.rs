@@ -79,7 +79,10 @@ pub(crate) async fn tei_embed(
                 break;
             }
 
-            if (status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE) && attempt < max_attempts {
+            if (status == StatusCode::TOO_MANY_REQUESTS
+                || status == StatusCode::SERVICE_UNAVAILABLE)
+                && attempt < max_attempts
+            {
                 attempt += 1;
                 // Jittered exponential backoff: 200ms, 400ms, 800ms...
                 let delay = Duration::from_millis(200 * (2u64.pow(attempt as u32)));
@@ -91,7 +94,8 @@ pub(crate) async fn tei_embed(
             return Err(format!(
                 "TEI request failed with status {} for {} (attempt {})",
                 status, embed_url, attempt
-            ).into());
+            )
+            .into());
         }
     }
     Ok(vectors)
