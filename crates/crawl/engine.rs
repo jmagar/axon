@@ -208,7 +208,7 @@ fn configure_website(
         )));
         website = website
             .build()
-            .map_err(|_| "Failed to build website with chrome settings")?;
+            .map_err(|e| format!("failed to build website with chrome settings: {e}"))?;
     } else if let Some(ref wd_url) = cfg.webdriver_url {
         // Selenium/WebDriver — secondary path when CDP remote URL is unavailable.
         use spider::features::webdriver_common::{WebDriverBrowser, WebDriverConfig};
