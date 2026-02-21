@@ -5,11 +5,12 @@ pub fn chunk_text(text: &str) -> Vec<String> {
     const MAX: usize = 2000;
     const OVERLAP: usize = 200;
 
-    let offsets: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
-    if offsets.len() <= MAX {
+    // Fast-path: avoid the 800 KB Vec<usize> allocation for short documents.
+    if text.chars().count() <= MAX {
         return vec![text.to_string()];
     }
 
+    let offsets: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
     let char_count = offsets.len();
     let mut out = Vec::new();
     let mut i = 0usize;

@@ -36,6 +36,8 @@ cargo run --bin axon -- scrape https://example.com --wait true
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer | No |
+| `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
+| `suggest [focus]` | Suggest new docs URLs to crawl | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
@@ -162,17 +164,14 @@ axon_rust/
 │   │   └── engine.rs       # crawl_and_collect_map(), run_crawl_once(),
 │   │                       # crawl_sitemap_urls(), append_sitemap_backfill(),
 │   │                       # try_auto_switch(), should_fallback_to_chrome()
-│   ├── extract/
-│   │   ├── mod.rs
-│   │   └── remote_extract.rs  # LLM extraction via OpenAI-compatible API
+│   # (extract module removed — LLM extraction is in vector/ops_v2/commands/)
 │   ├── jobs/               # AMQP-backed async job workers
 │   │   ├── common.rs       # Shared infra: make_pool, open_amqp_channel, claim_next_pending
-│   │   ├── crawl_jobs.rs, crawl_jobs_dispatch.rs
+│   │   ├── crawl_jobs_v2/  # V2 crawl pipeline (config, manifest, processor, repo, sitemap, watchdog, worker, runtime)
 │   │   ├── batch_jobs.rs, extract_jobs.rs, embed_jobs.rs
-│   │   └── crawl_jobs_v2/  # V2 pipeline: config, manifest, processor, repo, sitemap, watchdog, worker
 │   └── vector/
-│       ├── mod.rs, ops.rs, ops_dispatch.rs
-│       │   # ops.rs: tei_embed(), qdrant_upsert(), qdrant_search(), run_query_native(), run_ask_native()
+│       ├── mod.rs, ops_dispatch.rs
+│       │   # ops_dispatch.rs: re-exports all v2 ops (embed, query, retrieve, ask, evaluate, suggest, sources, domains, stats, dedupe)
 │       └── ops_v2/         # V2 ops: commands, input, qdrant, ranking, stats, tei
 ├── docker/
 │   ├── Dockerfile          # Multi-stage build; s6-overlay for service supervision
@@ -282,7 +281,7 @@ When Chrome feature is compiled in, `crawl()` expects a Chrome instance. `crawl_
 - **Wrong:** `OPENAI_BASE_URL=http://host/v1/chat/completions` — double path
 
 ### TEI batch size / 413 handling
-`tei_embed()` in `vector/ops.rs` auto-splits batches on HTTP 413 (Payload Too Large). Set `TEI_MAX_CLIENT_BATCH_SIZE` env var to control default chunk size (default: 64, max: 128).
+`tei_embed()` in `vector/ops_v2/tei.rs` auto-splits batches on HTTP 413 (Payload Too Large). Set `TEI_MAX_CLIENT_BATCH_SIZE` env var to control default chunk size (default: 64, max: 128).
 
 ### Text chunking
 `chunk_text()` splits at 2000 chars with 200-char overlap. Each chunk = one Qdrant point. Very long pages produce many points.
@@ -356,8 +355,8 @@ TEI_URL=http://myserver:52000 \
 ### Monolith Policy
 
 Changed `.rs` files are enforced at CI and via lefthook pre-commit:
-- File size: ≤ 500 lines
-- Function size: ≤ 80 lines
+- File size: ≤ 500 lines (hard fail)
+- Function size: warn at 80 lines, hard fail at 120 lines
 - Exempt: `tests/**`, `benches/**`, `config/**`, `**/config.rs`
 - Exceptions: add to `.monolith-allowlist`
 

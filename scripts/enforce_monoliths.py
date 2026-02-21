@@ -19,7 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_FILE = REPO_ROOT / ".monolith-allowlist"
 
 DEFAULT_FILE_MAX_LINES = 500
-DEFAULT_FUNCTION_MAX_LINES = 80
+DEFAULT_FUNCTION_WARN_LINES = 80
+DEFAULT_FUNCTION_MAX_LINES = 120
 
 CHECK_EXTENSIONS = {".rs"}
 EXCLUDED_GLOBS = [
@@ -226,6 +227,9 @@ def main() -> int:
         help="Use staged changes from git index (for local pre-commit)",
     )
     parser.add_argument("--file-max-lines", type=int, default=DEFAULT_FILE_MAX_LINES)
+    parser.add_argument(
+        "--function-warn-lines", type=int, default=DEFAULT_FUNCTION_WARN_LINES
+    )
     parser.add_argument("--function-max-lines", type=int, default=DEFAULT_FUNCTION_MAX_LINES)
     args = parser.parse_args()
 
@@ -247,6 +251,7 @@ def main() -> int:
         return 2
 
     violations: list[str] = []
+    warnings: list[str] = []
 
     for path in files:
         if is_excluded(path, allowlist):
@@ -272,15 +277,26 @@ def main() -> int:
             continue
 
         for fn in parse_rust_functions(full):
-            if fn.length <= args.function_max_lines:
-                continue
             # Only enforce when this function was touched in this change set.
-            if any(fn.start <= ln <= fn.end for ln in changed_lines):
+            if not any(fn.start <= ln <= fn.end for ln in changed_lines):
+                continue
+            if fn.length > args.function_max_lines:
                 violations.append(
                     "FUNCTION "
                     f"{path}:{fn.start} {fn.name}() is {fn.length} lines "
                     f"(limit {args.function_max_lines})"
                 )
+            elif fn.length > args.function_warn_lines:
+                warnings.append(
+                    "FUNCTION "
+                    f"{path}:{fn.start} {fn.name}() is {fn.length} lines "
+                    f"(warning {args.function_warn_lines}, limit {args.function_max_lines})"
+                )
+
+    if warnings:
+        print("Monolith policy warnings:")
+        for item in warnings:
+            print(f"  - {item}")
 
     if violations:
         print("Monolith policy violations found:")

@@ -114,6 +114,27 @@ pub fn validate_url(url: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// SSRF defence-in-depth patterns for spider.rs `with_blacklist_url()`.
+///
+/// Covers RFC-1918 private ranges, loopback, link-local, and IPv6 private addresses.
+/// Use alongside `validate_url()` on the seed URL so discovered URLs are also blocked.
+pub(crate) fn ssrf_blacklist_patterns() -> Vec<String> {
+    vec![
+        r"^https?://127\.".to_string(),
+        r"^https?://10\.".to_string(),
+        r"^https?://192\.168\.".to_string(),
+        r"^https?://172\.(1[6-9]|2[0-9]|3[01])\.".to_string(),
+        r"^https?://169\.254\.".to_string(),
+        r"^https?://0\.".to_string(),
+        r"^https?://localhost([^a-zA-Z0-9]|$)".to_string(),
+        r"^https?://\[::1\]".to_string(),
+        r"^https?://\[::ffff:".to_string(),
+        r"^https?://\[fe80:".to_string(),
+        r"^https?://\[fc[0-9a-f]{2}:".to_string(),
+        r"^https?://\[fd[0-9a-f]{2}:".to_string(),
+    ]
+}
+
 pub fn build_client(timeout_secs: u64) -> Result<reqwest::Client, Box<dyn Error>> {
     Ok(reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
@@ -266,5 +287,31 @@ mod tests {
     fn test_validate_url_blocks_ipv6_link_local() {
         // fe80::1 is link-local (fe80::/10)
         assert!(validate_url("http://[fe80::1]/").is_err());
+    }
+
+    #[test]
+    fn test_ssrf_blacklist_blocks_localhost_with_query() {
+        let patterns = ssrf_blacklist_patterns();
+        let url = "http://localhost?admin=true";
+        let blocked = patterns
+            .iter()
+            .any(|p| regex::Regex::new(p).unwrap().is_match(url));
+        assert!(
+            blocked,
+            "localhost with query string should be blocked by blacklist"
+        );
+    }
+
+    #[test]
+    fn test_ssrf_blacklist_blocks_localhost_with_fragment() {
+        let patterns = ssrf_blacklist_patterns();
+        let url = "https://localhost#secret";
+        let blocked = patterns
+            .iter()
+            .any(|p| regex::Regex::new(p).unwrap().is_match(url));
+        assert!(
+            blocked,
+            "localhost with fragment should be blocked by blacklist"
+        );
     }
 }

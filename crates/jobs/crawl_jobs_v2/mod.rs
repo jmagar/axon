@@ -1,29 +1,24 @@
 use crate::axon_cli::crates::core::config::Config;
-use crate::axon_cli::crates::jobs::crawl_jobs::CrawlJob;
 use std::error::Error;
 use uuid::Uuid;
 
 pub mod manifest;
 pub mod processor;
 pub mod repo;
+pub(crate) mod runtime;
 pub mod sitemap;
 pub mod watchdog;
 pub mod worker;
+
+pub use runtime::CrawlJob;
 
 pub async fn doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
     repo::doctor(cfg).await
 }
 
 pub async fn start_crawl_job(cfg: &Config, start_url: &str) -> Result<Uuid, Box<dyn Error>> {
-    let plan = processor::build_start_plan(
-        start_url,
-        cfg.render_mode,
-        cfg.cache_skip_browser,
-        &cfg.exclude_path_prefix,
-    )?;
-    let mut next_cfg = cfg.clone();
-    next_cfg.render_mode = plan.initial_mode;
-    repo::start_crawl_job(&next_cfg, &plan.start_url).await
+    let plan = processor::build_start_plan(start_url, &cfg.exclude_path_prefix)?;
+    repo::start_crawl_job(cfg, &plan.start_url).await
 }
 
 pub async fn get_job(cfg: &Config, id: Uuid) -> Result<Option<CrawlJob>, Box<dyn Error>> {

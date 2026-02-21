@@ -1,6 +1,6 @@
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::content::extract_links;
-use crate::axon_cli::crates::core::http::{build_client, fetch_html};
+use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::logging::log_done;
 use crate::axon_cli::crates::core::ui::{muted, primary, print_option, print_phase};
 use std::error::Error;
@@ -21,8 +21,8 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     print_option("limit", &cfg.search_limit.to_string());
     println!();
 
-    let client = build_client(20)?;
-    let html = fetch_html(&client, &url).await?;
+    let client = http_client()?;
+    let html = fetch_html(client, &url).await?;
 
     let mut links = extract_links(&html, cfg.search_limit * 5);
     links.retain(|l| !l.contains("duckduckgo.com") && !l.contains("javascript:void"));

@@ -2,7 +2,7 @@ use crate::axon_cli::crates::cli::commands::common::parse_urls;
 use crate::axon_cli::crates::cli::commands::run_doctor;
 use crate::axon_cli::crates::core::config::Config;
 use crate::axon_cli::crates::core::content::{to_markdown, url_to_filename};
-use crate::axon_cli::crates::core::http::{build_client, fetch_html};
+use crate::axon_cli::crates::core::http::{fetch_html, http_client};
 use crate::axon_cli::crates::core::logging::{log_done, log_warn};
 use crate::axon_cli::crates::core::ui::{
     accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
@@ -19,226 +19,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
+type BatchFetchResult = Option<(u32, String, String)>;
+type BatchFetchSet = tokio::task::JoinSet<BatchFetchResult>;
+
 pub async fn run_batch(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if let Some(subcmd) = cfg.positional.first().map(|s| s.as_str()) {
-        match subcmd {
-            "status" => {
-                let id = cfg
-                    .positional
-                    .get(1)
-                    .ok_or("batch status requires <job-id>")?;
-                let id = Uuid::parse_str(id)?;
-                match get_batch_job(cfg, id).await? {
-                    Some(job) => {
-                        if cfg.json_output {
-                            println!("{}", serde_json::to_string_pretty(&job)?);
-                        } else {
-                            println!(
-                                "{} {}",
-                                primary("Batch Status for"),
-                                accent(&job.id.to_string())
-                            );
-                            println!(
-                                "  {} {}",
-                                symbol_for_status(&job.status),
-                                status_text(&job.status)
-                            );
-                            println!("  {} {}", muted("Created:"), job.created_at);
-                            println!("  {} {}", muted("Updated:"), job.updated_at);
-                            if let Some(err) = job.error_text.as_deref() {
-                                println!("  {} {}", muted("Error:"), err);
-                            }
-                            if let Some(obs) = job
-                                .result_json
-                                .as_ref()
-                                .and_then(|json| json.get("extraction_observability"))
-                            {
-                                if let Some(tokens) =
-                                    obs.get("total_tokens_estimated").and_then(|v| v.as_u64())
-                                {
-                                    println!("  {} {}", muted("Extract tokens est:"), tokens);
-                                }
-                                if let Some(cost) =
-                                    obs.get("estimated_cost_usd").and_then(|v| v.as_f64())
-                                {
-                                    println!("  {} ${:.5}", muted("Extract cost est:"), cost);
-                                }
-                                if let Some(quality_band) =
-                                    obs.get("quality_band").and_then(|v| v.as_str())
-                                {
-                                    println!("  {} {}", muted("Extract quality:"), quality_band);
-                                }
-                            }
-                            if let Some(queue_status) = job
-                                .result_json
-                                .as_ref()
-                                .and_then(|json| json.get("queue_injection"))
-                                .and_then(|json| json.get("queue_status"))
-                                .and_then(|value| value.as_str())
-                            {
-                                println!("  {} {}", muted("Queue injection:"), queue_status);
-                            }
-                            println!("Job ID: {}", job.id);
-                        }
-                    }
-                    None => println!(
-                        "{} {}",
-                        symbol_for_status("error"),
-                        muted(&format!("job not found: {id}"))
-                    ),
-                }
-                return Ok(());
-            }
-            "cancel" => {
-                let id = cfg
-                    .positional
-                    .get(1)
-                    .ok_or("batch cancel requires <job-id>")?;
-                let id = Uuid::parse_str(id)?;
-                let canceled = cancel_batch_job(cfg, id).await?;
-                if cfg.json_output {
-                    println!(
-                        "{}",
-                        serde_json::json!({"id": id, "canceled": canceled, "source": "rust"})
-                    );
-                } else if canceled {
-                    println!(
-                        "{} canceled batch job {}",
-                        symbol_for_status("canceled"),
-                        accent(&id.to_string())
-                    );
-                    println!("Job ID: {id}");
-                } else {
-                    println!(
-                        "{} no cancellable batch job found for {}",
-                        symbol_for_status("error"),
-                        accent(&id.to_string())
-                    );
-                    println!("Job ID: {id}");
-                }
-                return Ok(());
-            }
-            "errors" => {
-                let id = cfg
-                    .positional
-                    .get(1)
-                    .ok_or("batch errors requires <job-id>")?;
-                let id = Uuid::parse_str(id)?;
-                match get_batch_job(cfg, id).await? {
-                    Some(job) => {
-                        if cfg.json_output {
-                            println!(
-                                "{}",
-                                serde_json::json!({"id": id, "status": job.status, "error": job.error_text})
-                            );
-                        } else {
-                            println!(
-                                "{} {} {}",
-                                symbol_for_status(&job.status),
-                                accent(&id.to_string()),
-                                status_text(&job.status)
-                            );
-                            println!(
-                                "  {} {}",
-                                muted("Error:"),
-                                job.error_text.unwrap_or_else(|| "None".to_string())
-                            );
-                            println!("Job ID: {id}");
-                        }
-                    }
-                    None => println!(
-                        "{} {}",
-                        symbol_for_status("error"),
-                        muted(&format!("job not found: {id}"))
-                    ),
-                }
-                return Ok(());
-            }
-            "list" => {
-                let jobs = list_batch_jobs(cfg, 50).await?;
-                if cfg.json_output {
-                    println!("{}", serde_json::to_string_pretty(&jobs)?);
-                } else {
-                    println!("{}", primary("Batch Jobs"));
-                    if jobs.is_empty() {
-                        println!("  {}", muted("No batch jobs found."));
-                    } else {
-                        for job in jobs {
-                            println!(
-                                "  {} {} {}",
-                                symbol_for_status(&job.status),
-                                accent(&job.id.to_string()),
-                                status_text(&job.status)
-                            );
-                        }
-                    }
-                }
-                return Ok(());
-            }
-            "cleanup" => {
-                let removed = cleanup_batch_jobs(cfg).await?;
-                if cfg.json_output {
-                    println!("{}", serde_json::json!({"removed": removed}));
-                } else {
-                    println!(
-                        "{} removed {} batch jobs",
-                        symbol_for_status("completed"),
-                        removed
-                    );
-                }
-                return Ok(());
-            }
-            "clear" => {
-                if !confirm_destructive(cfg, "Clear all batch jobs and purge batch queue?")? {
-                    if cfg.json_output {
-                        println!(
-                            "{}",
-                            serde_json::json!({"removed": 0, "queue_purged": false})
-                        );
-                    } else {
-                        println!("{} aborted", symbol_for_status("canceled"));
-                    }
-                    return Ok(());
-                }
-                let removed = clear_batch_jobs(cfg).await?;
-                if cfg.json_output {
-                    println!(
-                        "{}",
-                        serde_json::json!({"removed": removed, "queue_purged": true})
-                    );
-                } else {
-                    println!(
-                        "{} cleared {} batch jobs and purged queue",
-                        symbol_for_status("completed"),
-                        removed
-                    );
-                }
-                return Ok(());
-            }
-            "worker" => {
-                run_batch_worker(cfg).await?;
-                return Ok(());
-            }
-            "recover" => {
-                let reclaimed = recover_stale_batch_jobs(cfg).await?;
-                if cfg.json_output {
-                    println!("{}", serde_json::json!({"reclaimed": reclaimed}));
-                } else {
-                    println!(
-                        "{} reclaimed {} stale batch jobs",
-                        symbol_for_status("completed"),
-                        reclaimed
-                    );
-                }
-                return Ok(());
-            }
-            "doctor" => {
-                eprintln!("{}", muted("`batch doctor` is deprecated; use `doctor`."));
-                run_doctor(cfg).await?;
-                return Ok(());
-            }
-            _ => {}
-        }
+    if maybe_handle_batch_subcommand(cfg).await? {
+        return Ok(());
     }
 
     let urls = parse_urls(cfg);
@@ -247,25 +33,277 @@ pub async fn run_batch(cfg: &Config) -> Result<(), Box<dyn Error>> {
     }
 
     if !cfg.wait {
-        let job_id = start_batch_job(cfg, &urls).await?;
+        return enqueue_batch_job(cfg, &urls).await;
+    }
+
+    run_batch_sync(cfg, urls).await
+}
+
+async fn maybe_handle_batch_subcommand(cfg: &Config) -> Result<bool, Box<dyn Error>> {
+    let Some(subcmd) = cfg.positional.first().map(|s| s.as_str()) else {
+        return Ok(false);
+    };
+
+    match subcmd {
+        "status" => handle_batch_status(cfg).await?,
+        "cancel" => handle_batch_cancel(cfg).await?,
+        "errors" => handle_batch_errors(cfg).await?,
+        "list" => handle_batch_list(cfg).await?,
+        "cleanup" => handle_batch_cleanup(cfg).await?,
+        "clear" => handle_batch_clear(cfg).await?,
+        "worker" => run_batch_worker(cfg).await?,
+        "recover" => handle_batch_recover(cfg).await?,
+        "doctor" => {
+            eprintln!("{}", muted("`batch doctor` is deprecated; use `doctor`."));
+            run_doctor(cfg).await?;
+        }
+        _ => return Ok(false),
+    }
+
+    Ok(true)
+}
+
+fn parse_batch_job_id(cfg: &Config, action: &str) -> Result<Uuid, Box<dyn Error>> {
+    let id = cfg
+        .positional
+        .get(1)
+        .ok_or(format!("batch {action} requires <job-id>"))?;
+    Ok(Uuid::parse_str(id)?)
+}
+
+async fn handle_batch_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let id = parse_batch_job_id(cfg, "status")?;
+    match get_batch_job(cfg, id).await? {
+        Some(job) => {
+            if cfg.json_output {
+                println!("{}", serde_json::to_string_pretty(&job)?);
+            } else {
+                println!(
+                    "{} {}",
+                    primary("Batch Status for"),
+                    accent(&job.id.to_string())
+                );
+                println!(
+                    "  {} {}",
+                    symbol_for_status(&job.status),
+                    status_text(&job.status)
+                );
+                println!("  {} {}", muted("Created:"), job.created_at);
+                println!("  {} {}", muted("Updated:"), job.updated_at);
+                if let Some(err) = job.error_text.as_deref() {
+                    println!("  {} {}", muted("Error:"), err);
+                }
+                if let Some(obs) = job
+                    .result_json
+                    .as_ref()
+                    .and_then(|json| json.get("extraction_observability"))
+                {
+                    if let Some(tokens) = obs.get("total_tokens_estimated").and_then(|v| v.as_u64())
+                    {
+                        println!("  {} {}", muted("Extract tokens est:"), tokens);
+                    }
+                    if let Some(cost) = obs.get("estimated_cost_usd").and_then(|v| v.as_f64()) {
+                        println!("  {} ${:.5}", muted("Extract cost est:"), cost);
+                    }
+                    if let Some(quality_band) = obs.get("quality_band").and_then(|v| v.as_str()) {
+                        println!("  {} {}", muted("Extract quality:"), quality_band);
+                    }
+                }
+                if let Some(queue_status) = job
+                    .result_json
+                    .as_ref()
+                    .and_then(|json| json.get("queue_injection"))
+                    .and_then(|json| json.get("queue_status"))
+                    .and_then(|value| value.as_str())
+                {
+                    println!("  {} {}", muted("Queue injection:"), queue_status);
+                }
+                println!("Job ID: {}", job.id);
+            }
+        }
+        None => println!(
+            "{} {}",
+            symbol_for_status("error"),
+            muted(&format!("job not found: {id}"))
+        ),
+    }
+    Ok(())
+}
+
+async fn handle_batch_cancel(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let id = parse_batch_job_id(cfg, "cancel")?;
+    let canceled = cancel_batch_job(cfg, id).await?;
+    if cfg.json_output {
+        println!(
+            "{}",
+            serde_json::json!({"id": id, "canceled": canceled, "source": "rust"})
+        );
+    } else if canceled {
+        println!(
+            "{} canceled batch job {}",
+            symbol_for_status("canceled"),
+            accent(&id.to_string())
+        );
+        println!("Job ID: {id}");
+    } else {
+        println!(
+            "{} no cancellable batch job found for {}",
+            symbol_for_status("error"),
+            accent(&id.to_string())
+        );
+        println!("Job ID: {id}");
+    }
+    Ok(())
+}
+
+async fn handle_batch_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let id = parse_batch_job_id(cfg, "errors")?;
+    match get_batch_job(cfg, id).await? {
+        Some(job) => {
+            if cfg.json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({"id": id, "status": job.status, "error": job.error_text})
+                );
+            } else {
+                println!(
+                    "{} {} {}",
+                    symbol_for_status(&job.status),
+                    accent(&id.to_string()),
+                    status_text(&job.status)
+                );
+                println!(
+                    "  {} {}",
+                    muted("Error:"),
+                    job.error_text.unwrap_or_else(|| "None".to_string())
+                );
+                println!("Job ID: {id}");
+            }
+        }
+        None => println!(
+            "{} {}",
+            symbol_for_status("error"),
+            muted(&format!("job not found: {id}"))
+        ),
+    }
+    Ok(())
+}
+
+async fn handle_batch_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let jobs = list_batch_jobs(cfg, 50).await?;
+    if cfg.json_output {
+        println!("{}", serde_json::to_string_pretty(&jobs)?);
+        return Ok(());
+    }
+
+    println!("{}", primary("Batch Jobs"));
+    if jobs.is_empty() {
+        println!("  {}", muted("No batch jobs found."));
+        return Ok(());
+    }
+
+    for job in jobs {
+        println!(
+            "  {} {} {}",
+            symbol_for_status(&job.status),
+            accent(&job.id.to_string()),
+            status_text(&job.status)
+        );
+    }
+    Ok(())
+}
+
+async fn handle_batch_cleanup(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let removed = cleanup_batch_jobs(cfg).await?;
+    if cfg.json_output {
+        println!("{}", serde_json::json!({"removed": removed}));
+    } else {
+        println!(
+            "{} removed {} batch jobs",
+            symbol_for_status("completed"),
+            removed
+        );
+    }
+    Ok(())
+}
+
+async fn handle_batch_clear(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if !confirm_destructive(cfg, "Clear all batch jobs and purge batch queue?")? {
         if cfg.json_output {
             println!(
                 "{}",
-                serde_json::json!({"job_id": job_id, "status": "pending", "source": "rust"})
+                serde_json::json!({"removed": 0, "queue_purged": false})
             );
         } else {
-            println!("  {} {}", primary("Batch Job"), accent(&job_id.to_string()));
-            println!("  {}", muted("Status: pending"));
-            println!("Job ID: {job_id}");
+            println!("{} aborted", symbol_for_status("canceled"));
         }
         return Ok(());
     }
 
+    let removed = clear_batch_jobs(cfg).await?;
+    if cfg.json_output {
+        println!(
+            "{}",
+            serde_json::json!({"removed": removed, "queue_purged": true})
+        );
+    } else {
+        println!(
+            "{} cleared {} batch jobs and purged queue",
+            symbol_for_status("completed"),
+            removed
+        );
+    }
+    Ok(())
+}
+
+async fn handle_batch_recover(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    let reclaimed = recover_stale_batch_jobs(cfg).await?;
+    if cfg.json_output {
+        println!("{}", serde_json::json!({"reclaimed": reclaimed}));
+    } else {
+        println!(
+            "{} reclaimed {} stale batch jobs",
+            symbol_for_status("completed"),
+            reclaimed
+        );
+    }
+    Ok(())
+}
+
+async fn enqueue_batch_job(cfg: &Config, urls: &[String]) -> Result<(), Box<dyn Error>> {
+    let job_id = start_batch_job(cfg, urls).await?;
+    if cfg.json_output {
+        println!(
+            "{}",
+            serde_json::json!({"job_id": job_id, "status": "pending", "source": "rust"})
+        );
+    } else {
+        println!("  {} {}", primary("Batch Job"), accent(&job_id.to_string()));
+        println!("  {}", muted("Status: pending"));
+        println!("Job ID: {job_id}");
+    }
+    Ok(())
+}
+
+async fn run_batch_sync(cfg: &Config, urls: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let batch_dir = prepare_batch_output_dir(cfg).await?;
+    let mut set = spawn_batch_fetch_tasks(cfg, urls)?;
+    emit_batch_fetch_results(cfg, &batch_dir, &mut set).await?;
+
+    if cfg.embed {
+        embed_path_native(cfg, &batch_dir.to_string_lossy()).await?;
+    }
+
+    log_done("command=batch complete");
+    Ok(())
+}
+
+async fn prepare_batch_output_dir(cfg: &Config) -> Result<std::path::PathBuf, Box<dyn Error>> {
     let batch_dir = cfg.output_dir.join("batch-markdown");
     if batch_dir.exists() {
         if std::env::var("AXON_NO_WIPE").is_ok() {
             log_warn(&format!(
-                "AXON_NO_WIPE set — keeping existing batch dir: {}",
+                "AXON_NO_WIPE set - keeping existing batch dir: {}",
                 batch_dir.display()
             ));
         } else {
@@ -277,8 +315,14 @@ pub async fn run_batch(cfg: &Config) -> Result<(), Box<dyn Error>> {
         }
     }
     tokio::fs::create_dir_all(&batch_dir).await?;
+    Ok(batch_dir)
+}
 
-    let client = build_client(20)?;
+fn spawn_batch_fetch_tasks(
+    cfg: &Config,
+    urls: Vec<String>,
+) -> Result<BatchFetchSet, Box<dyn Error>> {
+    let client = http_client()?.clone();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(cfg.batch_concurrency.max(1)));
     let mut set = tokio::task::JoinSet::new();
 
@@ -294,6 +338,14 @@ pub async fn run_batch(cfg: &Config) -> Result<(), Box<dyn Error>> {
         });
     }
 
+    Ok(set)
+}
+
+async fn emit_batch_fetch_results(
+    cfg: &Config,
+    batch_dir: &std::path::Path,
+    set: &mut BatchFetchSet,
+) -> Result<(), Box<dyn Error>> {
     let progress = ProgressBar::new(set.len() as u64);
     progress.enable_steady_tick(Duration::from_millis(120));
     progress.set_style(
@@ -328,11 +380,5 @@ pub async fn run_batch(cfg: &Config) -> Result<(), Box<dyn Error>> {
         }
     }
     progress.finish_with_message("batch fetch complete");
-
-    if cfg.embed {
-        embed_path_native(cfg, &batch_dir.to_string_lossy()).await?;
-    }
-
-    log_done("command=batch complete");
     Ok(())
 }
