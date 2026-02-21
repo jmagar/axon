@@ -386,8 +386,10 @@ fn into_config(cli: Cli) -> Config {
             .embed_queue
             .or_else(|| env::var("AXON_EMBED_QUEUE").ok())
             .unwrap_or_else(|| "axon.embed.jobs".to_string()),
-        ingest_queue: env::var("AXON_INGEST_QUEUE")
-            .unwrap_or_else(|_| "axon.ingest.jobs".to_string()),
+        ingest_queue: global
+            .ingest_queue
+            .or_else(|| env::var("AXON_INGEST_QUEUE").ok())
+            .unwrap_or_else(|| "axon.ingest.jobs".to_string()),
         github_token: env::var("GITHUB_TOKEN").ok(),
         github_include_source,
         reddit_client_id: env::var("REDDIT_CLIENT_ID").ok(),

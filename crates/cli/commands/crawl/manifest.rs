@@ -25,7 +25,7 @@ fn now_epoch_ms() -> u128 {
 }
 
 pub(super) async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, Box<dyn Error>> {
-    if !path.exists() {
+    if !tokio::fs::try_exists(path).await.unwrap_or(false) {
         return Ok(HashSet::new());
     }
     let content = tokio::fs::read_to_string(path).await?;

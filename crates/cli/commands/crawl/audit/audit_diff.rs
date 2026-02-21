@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 async fn list_audit_reports(output_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let audit_dir = output_dir.join("reports").join("crawl-audit");
-    if !audit_dir.exists() {
+    if !tokio::fs::try_exists(&audit_dir).await.unwrap_or(false) {
         return Ok(Vec::new());
     }
     let mut entries = tokio::fs::read_dir(audit_dir).await?;

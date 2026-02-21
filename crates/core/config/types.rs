@@ -89,6 +89,7 @@ pub enum ScrapeFormat {
     Markdown,
     Html,
     #[value(name = "rawHtml")]
+    #[serde(rename = "rawHtml")]
     RawHtml,
     Json,
 }
@@ -103,7 +104,7 @@ pub enum PerformanceProfile {
     Max,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub command: CommandKind,
     pub start_url: String,
@@ -183,4 +184,98 @@ pub struct Config {
     pub watchdog_stale_timeout_secs: i64,
     pub watchdog_confirm_secs: i64,
     pub json_output: bool,
+}
+
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("command", &self.command)
+            .field("start_url", &self.start_url)
+            .field("positional", &self.positional)
+            .field("urls_csv", &self.urls_csv)
+            .field("url_glob", &self.url_glob)
+            .field("query", &self.query)
+            .field("search_limit", &self.search_limit)
+            .field("max_pages", &self.max_pages)
+            .field("max_depth", &self.max_depth)
+            .field("include_subdomains", &self.include_subdomains)
+            .field("exclude_path_prefix", &self.exclude_path_prefix)
+            .field("output_dir", &self.output_dir)
+            .field("output_path", &self.output_path)
+            .field("render_mode", &self.render_mode)
+            .field("chrome_remote_url", &self.chrome_remote_url)
+            .field("chrome_proxy", &self.chrome_proxy)
+            .field("chrome_user_agent", &self.chrome_user_agent)
+            .field("chrome_headless", &self.chrome_headless)
+            .field("chrome_anti_bot", &self.chrome_anti_bot)
+            .field("chrome_intercept", &self.chrome_intercept)
+            .field("chrome_stealth", &self.chrome_stealth)
+            .field("chrome_bootstrap", &self.chrome_bootstrap)
+            .field(
+                "chrome_bootstrap_timeout_ms",
+                &self.chrome_bootstrap_timeout_ms,
+            )
+            .field("chrome_bootstrap_retries", &self.chrome_bootstrap_retries)
+            .field("webdriver_url", &self.webdriver_url)
+            .field("respect_robots", &self.respect_robots)
+            .field("min_markdown_chars", &self.min_markdown_chars)
+            .field("drop_thin_markdown", &self.drop_thin_markdown)
+            .field("discover_sitemaps", &self.discover_sitemaps)
+            .field("cache", &self.cache)
+            .field("cache_skip_browser", &self.cache_skip_browser)
+            .field("format", &self.format)
+            .field("collection", &self.collection)
+            .field("embed", &self.embed)
+            .field("batch_concurrency", &self.batch_concurrency)
+            .field("wait", &self.wait)
+            .field("yes", &self.yes)
+            .field("performance_profile", &self.performance_profile)
+            .field("crawl_concurrency_limit", &self.crawl_concurrency_limit)
+            .field("sitemap_concurrency_limit", &self.sitemap_concurrency_limit)
+            .field(
+                "backfill_concurrency_limit",
+                &self.backfill_concurrency_limit,
+            )
+            .field("max_sitemaps", &self.max_sitemaps)
+            .field("delay_ms", &self.delay_ms)
+            .field("request_timeout_ms", &self.request_timeout_ms)
+            .field("fetch_retries", &self.fetch_retries)
+            .field("retry_backoff_ms", &self.retry_backoff_ms)
+            .field("shared_queue", &self.shared_queue)
+            .field("pg_url", &"[REDACTED]")
+            .field("redis_url", &"[REDACTED]")
+            .field("amqp_url", &"[REDACTED]")
+            .field("crawl_queue", &self.crawl_queue)
+            .field("batch_queue", &self.batch_queue)
+            .field("extract_queue", &self.extract_queue)
+            .field("embed_queue", &self.embed_queue)
+            .field("ingest_queue", &self.ingest_queue)
+            .field("github_token", &"[REDACTED]")
+            .field("github_include_source", &self.github_include_source)
+            .field("reddit_client_id", &self.reddit_client_id)
+            .field("reddit_client_secret", &"[REDACTED]")
+            .field("tei_url", &self.tei_url)
+            .field("qdrant_url", &self.qdrant_url)
+            .field("openai_base_url", &self.openai_base_url)
+            .field("openai_api_key", &"[REDACTED]")
+            .field("openai_model", &self.openai_model)
+            .field("ask_diagnostics", &self.ask_diagnostics)
+            .field("ask_max_context_chars", &self.ask_max_context_chars)
+            .field("ask_candidate_limit", &self.ask_candidate_limit)
+            .field("ask_chunk_limit", &self.ask_chunk_limit)
+            .field("ask_full_docs", &self.ask_full_docs)
+            .field("ask_backfill_chunks", &self.ask_backfill_chunks)
+            .field("ask_doc_fetch_concurrency", &self.ask_doc_fetch_concurrency)
+            .field("ask_doc_chunk_limit", &self.ask_doc_chunk_limit)
+            .field("ask_min_relevance_score", &self.ask_min_relevance_score)
+            .field("cron_every_seconds", &self.cron_every_seconds)
+            .field("cron_max_runs", &self.cron_max_runs)
+            .field(
+                "watchdog_stale_timeout_secs",
+                &self.watchdog_stale_timeout_secs,
+            )
+            .field("watchdog_confirm_secs", &self.watchdog_confirm_secs)
+            .field("json_output", &self.json_output)
+            .finish()
+    }
 }

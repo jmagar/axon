@@ -24,7 +24,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - `crates/crawl` — crawling engine and sitemap backfill
 - `crates/extract` — placeholder module (extraction logic lives in `vector/ops_v2`)
 - `crates/jobs` — queue workers for crawl/batch/extract/embed (v2 crawl pipeline)
-- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats`)
+- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats/dedupe`)
 
 ```
 axon_rust/
@@ -43,7 +43,9 @@ axon_rust/
 │   │       │   └── audit/audit_diff.rs
 │   │       ├── doctor/     # Doctor command subdir
 │   │       └── scrape.rs, map.rs, batch.rs, embed.rs, extract.rs,
-│   │           search.rs, status.rs, debug.rs
+│   │           search.rs, status.rs, debug.rs, doctor/,
+│   │           github.rs, reddit.rs, youtube.rs
+│   │           # evaluate + dedupe dispatch through vector/ops_dispatch.rs
 │   ├── core/
 │   │   ├── config/         # CLI parsing (clap), Config struct, performance profiles
 │   │   │   ├── cli.rs      # clap arg definitions (GlobalArgs, subcommand args)
@@ -69,8 +71,9 @@ axon_rust/
 │   ├── jobs/               # AMQP-backed async job workers
 │   │   ├── mod.rs
 │   │   ├── common.rs       # Shared infrastructure: make_pool, open_amqp_channel,
-│   │   │   + common/       # claim_next_pending, mark_job_failed, enqueue_job
-│   │   │       └── tests.rs
+│   │   │                   # claim_next_pending, mark_job_failed, enqueue_job
+│   │   ├── common/
+│   │   │   └── tests.rs
 │   │   ├── batch_jobs/     # Batch worker
 │   │   │   ├── worker.rs, maintenance.rs, tests.rs
 │   │   ├── embed_jobs/     # Embed worker

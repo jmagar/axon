@@ -258,13 +258,13 @@ struct FallbackConfig {
     has_fallback: bool,
 }
 
-type PageCollectResult = (
-    Vec<serde_json::Value>,
-    usize,
-    usize,
-    ExtractionMetrics,
-    HashMap<String, usize>,
-);
+struct PageCollectResult {
+    results: Vec<serde_json::Value>,
+    pages_visited: usize,
+    pages_with_data: usize,
+    metrics: ExtractionMetrics,
+    parser_hits: HashMap<String, usize>,
+}
 
 async fn collect_page_results(
     mut rx: spider::tokio::sync::broadcast::Receiver<spider::page::Page>,
@@ -280,7 +280,17 @@ async fn collect_page_results(
     let fallback_limiter = Arc::new(Semaphore::new(FALLBACK_CONCURRENCY_LIMIT));
     let mut fallback_tasks: JoinSet<(String, Result<FallbackResponse, String>)> = JoinSet::new();
 
-    while let Ok(page) = rx.recv().await {
+    loop {
+        let page = match rx.recv().await {
+            Ok(page) => page,
+            Err(spider::tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                log_warn(&format!(
+                    "broadcast receiver lagged, skipped {n} pages — consider increasing buffer"
+                ));
+                continue;
+            }
+            Err(spider::tokio::sync::broadcast::error::RecvError::Closed) => break,
+        };
         pages_visited += 1;
         let page_url = page.get_url().to_string();
         let html = page.get_html();
@@ -308,16 +318,15 @@ async fn collect_page_results(
         let prompt_c = cfg.prompt_text.clone();
         let client_c = client.clone();
         let limiter = Arc::clone(&fallback_limiter);
-        let markdown = to_markdown(&html);
-        let permit = match limiter.acquire_owned().await {
-            Ok(permit) => permit,
-            Err(_) => {
-                log_warn("fallback limiter closed; skipping fallback request");
-                continue;
-            }
-        };
+        let html_owned = html.to_string();
         fallback_tasks.spawn(async move {
-            let _permit = permit;
+            let _permit = match limiter.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    return (page_url, Err("fallback limiter closed".to_string()));
+                }
+            };
+            let markdown = to_markdown(&html_owned);
             let res = extract_items_fallback(
                 &client_c, &api_url_c, &api_key_c, &model_c, &prompt_c, &page_url, &markdown,
             )
@@ -332,13 +341,13 @@ async fn collect_page_results(
     while let Some(joined) = fallback_tasks.join_next().await {
         drain_fallback_result(joined, &mut pages_with_data, &mut all_results, &mut metrics);
     }
-    (
-        all_results,
+    PageCollectResult {
+        results: all_results,
         pages_visited,
         pages_with_data,
         metrics,
         parser_hits,
-    )
+    }
 }
 
 fn drain_fallback_result(
@@ -414,7 +423,13 @@ pub async fn run_extract_with_engine(
     website.crawl_raw().await;
     website.unsubscribe();
 
-    let (results, pages_visited, pages_with_data, metrics, parser_hits) = collect.await?;
+    let PageCollectResult {
+        results,
+        pages_visited,
+        pages_with_data,
+        metrics,
+        parser_hits,
+    } = collect.await?;
     Ok(ExtractRun {
         start_url: start_url.to_string(),
         pages_visited,
