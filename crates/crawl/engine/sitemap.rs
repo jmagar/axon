@@ -68,7 +68,9 @@ fn sitemap_loc_in_scope(
     let u = Url::parse(loc).ok()?;
     let h = u.host_str()?;
     let in_scope = if cfg.include_subdomains {
-        h == start_host || h.ends_with(&format!(".{start_host}"))
+        h == start_host
+            || h.strip_suffix(start_host)
+                .is_some_and(|rest| rest.ends_with('.'))
     } else {
         h == start_host
     };
@@ -111,7 +113,10 @@ async fn process_sitemap_batch(
             continue;
         };
         parsed += 1;
-        let is_index = xml.to_ascii_lowercase().contains("<sitemapindex");
+        let is_index = xml
+            .as_bytes()
+            .windows(b"<sitemapindex".len())
+            .any(|w| w.eq_ignore_ascii_case(b"<sitemapindex"));
         for loc in extract_loc_values(&xml) {
             if let Some(canonical_loc) = sitemap_loc_in_scope(
                 cfg,
@@ -250,7 +255,12 @@ async fn handle_backfill_result(
                 written += 1;
             }
         }
-        Ok((_url, Err(_err))) => failed += 1,
+        Ok((url, Err(err))) => {
+            log_info(&format!(
+                "command=sitemap_backfill fetch_failed url={url} err={err}"
+            ));
+            failed += 1;
+        }
         Err(_) => failed += 1,
     }
     Ok((fetched_ok, written, failed))
@@ -280,6 +290,7 @@ pub async fn append_sitemap_backfill(
         .collect();
     let sitemap_candidates = candidates_vec.len();
     let markdown_dir = output_dir.join("markdown");
+    tokio::fs::create_dir_all(&markdown_dir).await?;
     let manifest_path = output_dir.join("manifest.jsonl");
     let manifest_file = tokio::fs::OpenOptions::new()
         .append(true)
