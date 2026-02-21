@@ -271,10 +271,12 @@ async fn run_amqp_worker_lane(
                 // the ack comes too late. The DB is the source of truth for job state;
                 // the watchdog reclaims any job that crashes without completing.
                 if let Err(err) = delivery.ack(BasicAckOptions::default()).await {
+                    // Ack failure does not prevent processing: the job is already
+                    // claimed in the DB (status='running'). Skipping would leave
+                    // it stuck until the watchdog reclaims it.
                     log_warn(&format!(
-                        "failed to ack crawl delivery (lane={lane}): {err}"
+                        "failed to ack crawl delivery (lane={lane}), processing anyway: {err}"
                     ));
-                    continue;
                 }
                 if let Err(err) = process_job(cfg, pool, job_id).await {
                     let error_text = err.to_string();

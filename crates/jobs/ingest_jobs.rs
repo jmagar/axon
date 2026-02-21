@@ -43,6 +43,11 @@ pub struct IngestJob {
     pub result_json: Option<serde_json::Value>,
 }
 
+/// Idempotent DDL: uses `CREATE TABLE/INDEX IF NOT EXISTS`. Called on every
+/// public entry point so the schema exists before any query runs. The DDL
+/// statements are no-ops when the table already exists, so the overhead is a
+/// single round-trip per call — acceptable for correctness without a global
+/// `OnceLock` guard.
 async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     sqlx::query(
         r#"
@@ -66,7 +71,7 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_axon_ingest_jobs_pending \
-         ON axon_ingest_jobs(status, created_at ASC) WHERE status = 'pending'",
+         ON axon_ingest_jobs(created_at ASC) WHERE status = 'pending'",
     )
     .execute(pool)
     .await?;
@@ -167,12 +172,13 @@ pub async fn cancel_ingest_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn E
 pub async fn cleanup_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
-    Ok(
-        sqlx::query("DELETE FROM axon_ingest_jobs WHERE status IN ('failed','canceled')")
-            .execute(&pool)
-            .await?
-            .rows_affected(),
+    Ok(sqlx::query(
+        "DELETE FROM axon_ingest_jobs WHERE status IN ('failed','canceled') \
+         OR (status = 'completed' AND finished_at < NOW() - INTERVAL '30 days')",
     )
+    .execute(&pool)
+    .await?
+    .rows_affected())
 }
 
 pub async fn clear_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
@@ -232,14 +238,19 @@ async fn process_ingest_job(cfg: Config, pool: PgPool, id: Uuid) {
 
     match result {
         Ok(chunks) => {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 "UPDATE axon_ingest_jobs SET status='completed',updated_at=NOW(),\
                  finished_at=NOW(),result_json=$2 WHERE id=$1 AND status='running'",
             )
             .bind(id)
             .bind(serde_json::json!({"chunks_embedded": chunks}))
             .execute(&pool)
-            .await;
+            .await
+            {
+                log_warn(&format!(
+                    "command=ingest_worker mark_completed_failed job_id={id} err={e}"
+                ));
+            }
         }
         Err(e) => {
             mark_job_failed(&pool, TABLE, id, &e.to_string()).await;
@@ -256,7 +267,10 @@ pub async fn run_ingest_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
         queue_name: cfg.ingest_queue.clone(),
         job_kind: "ingest",
         consumer_tag_prefix: "ingest-worker",
-        lane_count: 2,
+        lane_count: std::env::var("AXON_INGEST_LANES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2),
     };
 
     let process_fn: ProcessFn =

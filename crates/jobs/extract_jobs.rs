@@ -9,7 +9,6 @@ use crate::axon_cli::crates::jobs::common::{
     JobTable,
 };
 use chrono::{DateTime, Utc};
-use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -62,7 +61,7 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
 
     // Composite partial index for claim_next_pending: WHERE status='pending' ORDER BY created_at
     sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_axon_extract_jobs_pending ON axon_extract_jobs(status, created_at ASC) WHERE status = 'pending'"
+        "CREATE INDEX IF NOT EXISTS idx_axon_extract_jobs_pending ON axon_extract_jobs(created_at ASC) WHERE status = 'pending'"
     )
     .execute(pool)
     .await?;
