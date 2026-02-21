@@ -3,7 +3,7 @@ use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::http::validate_url;
 use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{muted, primary, print_option, print_phase, Spinner};
-use crate::crates::crawl::engine::{crawl_and_collect_map, should_fallback_to_chrome};
+use crate::crates::crawl::engine::crawl_and_collect_map;
 use std::error::Error;
 
 pub async fn run_map(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
@@ -35,9 +35,11 @@ pub async fn run_map(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>
         ));
     }
 
-    if matches!(cfg.render_mode, RenderMode::AutoSwitch)
-        && should_fallback_to_chrome(&final_summary, cfg.max_pages)
-    {
+    // For map (link discovery), Chrome is only needed if HTTP found zero pages.
+    // should_fallback_to_chrome() checks markdown_files which is never set by
+    // crawl_and_collect_map, so it would always return true — always triggering
+    // an expensive Chrome re-crawl even when HTTP discovered hundreds of URLs.
+    if matches!(cfg.render_mode, RenderMode::AutoSwitch) && final_summary.pages_seen == 0 {
         let chrome_spinner = if cfg.json_output {
             None
         } else {
