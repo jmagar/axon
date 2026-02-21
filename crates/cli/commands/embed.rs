@@ -61,7 +61,7 @@ fn parse_embed_job_id(cfg: &Config, action: &str) -> Result<Uuid, Box<dyn Error>
     let id = cfg
         .positional
         .get(1)
-        .ok_or(format!("embed {action} requires <job-id>"))?;
+        .ok_or_else(|| format!("embed {action} requires <job-id>"))?;
     Ok(Uuid::parse_str(id)?)
 }
 

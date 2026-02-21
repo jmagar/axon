@@ -439,4 +439,5 @@ fn print_embeds(embed_jobs: &[EmbedJob]) {
             metrics.join(" ")
         );
     }
+    println!();
 }

@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod embed;
 pub mod extract;
 pub mod github;
+pub mod ingest_common;
 pub mod map;
 pub mod probe;
 pub mod reddit;
