@@ -11,7 +11,7 @@ This repository enforces a ratcheting policy to prevent new monolithic files and
 ## Limits
 
 - File size limit: `500` lines
-- Rust function size limit: `80` lines
+- Rust function size limit: warn at `80` lines, hard fail at `120` lines
 
 ## Checked File Types
 

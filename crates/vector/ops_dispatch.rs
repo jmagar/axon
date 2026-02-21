@@ -1,7 +1,9 @@
 use crate::axon_cli::crates::core::config::Config;
 use std::error::Error;
 
-pub use crate::axon_cli::crates::vector::ops_v2::{EmbedProgress, EmbedSummary};
+pub use crate::axon_cli::crates::vector::ops_v2::{
+    embed_text_with_metadata, EmbedProgress, EmbedSummary,
+};
 
 pub fn chunk_text(text: &str) -> Vec<String> {
     crate::axon_cli::crates::vector::ops_v2::chunk_text(text)
@@ -40,6 +42,10 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_sources_native(cfg).await
 }
 
+pub async fn run_dedupe_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    crate::axon_cli::crates::vector::ops_v2::run_dedupe_native(cfg).await
+}
+
 pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_domains_native(cfg).await
 }
@@ -50,6 +56,10 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     crate::axon_cli::crates::vector::ops_v2::run_ask_native(cfg).await
+}
+
+pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    crate::axon_cli::crates::vector::ops_v2::run_evaluate_native(cfg).await
 }
 
 pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {

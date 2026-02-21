@@ -123,6 +123,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    environment:
+      RUST_LOG: "info"
     depends_on:
       axon-postgres:
         condition: service_healthy
