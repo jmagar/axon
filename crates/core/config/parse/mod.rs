@@ -1,6 +1,9 @@
+mod excludes;
+mod performance;
+
 use super::cli::{Cli, CliCommand, JobSubcommand};
 use super::help::maybe_print_top_level_help_and_exit;
-use super::types::{CommandKind, Config, PerformanceProfile};
+use super::types::{CommandKind, Config};
 use clap::Parser;
 use spider::url::Url;
 use std::env;
@@ -35,65 +38,6 @@ pub(crate) fn normalize_local_service_url(url: String) -> String {
     url
 }
 
-fn default_exclude_prefixes() -> Vec<String> {
-    vec![
-        "/fr", "/de", "/es", "/ja", "/zh", "/zh-cn", "/zh-tw", "/ko", "/pt", "/pt-br", "/it",
-        "/nl", "/pl", "/ru", "/tr", "/ar", "/id", "/vi", "/th", "/cs", "/da", "/fi", "/no", "/sv",
-        "/he", "/uk", "/ro", "/hu", "/el",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
-}
-
-struct NormalizedExcludePrefixes {
-    prefixes: Vec<String>,
-    disable_defaults: bool,
-}
-
-fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExcludePrefixes {
-    let disable_by_empty = input.iter().any(|v| matches!(v.trim(), "" | "/"));
-    let disable_by_none = input.iter().any(|v| v.trim().eq_ignore_ascii_case("none"));
-    if disable_by_none {
-        let ignored: Vec<&str> = input
-            .iter()
-            .map(|value| value.trim())
-            .filter(|value| !value.eq_ignore_ascii_case("none"))
-            .filter(|value| !value.is_empty() && *value != "/")
-            .collect();
-        if !ignored.is_empty() {
-            eprintln!(
-                "warning: --exclude-path-prefix 'none' disables exclusions; ignoring additional prefixes: {}",
-                ignored.join(", ")
-            );
-        }
-        return NormalizedExcludePrefixes {
-            prefixes: Vec::new(),
-            disable_defaults: true,
-        };
-    }
-
-    let mut out = Vec::new();
-    for raw in input {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() || trimmed == "/" {
-            continue;
-        }
-        let normalized = if trimmed.starts_with('/') {
-            trimmed.to_string()
-        } else {
-            format!("/{trimmed}")
-        };
-        out.push(normalized);
-    }
-    out.sort();
-    out.dedup();
-    NormalizedExcludePrefixes {
-        prefixes: out,
-        disable_defaults: disable_by_empty,
-    }
-}
-
 fn positional_from_job(job: JobSubcommand) -> Vec<String> {
     match job {
         JobSubcommand::Status { job_id } => vec!["status".to_string(), job_id],
@@ -105,63 +49,6 @@ fn positional_from_job(job: JobSubcommand) -> Vec<String> {
         JobSubcommand::Worker => vec!["worker".to_string()],
         JobSubcommand::Recover => vec!["recover".to_string()],
     }
-}
-
-fn performance_defaults(profile: PerformanceProfile) -> (usize, usize, usize, u64, usize, u64) {
-    let logical_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(8);
-
-    match profile {
-        PerformanceProfile::HighStable => (
-            (logical_cpus.saturating_mul(8)).clamp(64, 192),
-            (logical_cpus.saturating_mul(12)).clamp(64, 256),
-            (logical_cpus.saturating_mul(6)).clamp(32, 128),
-            20_000,
-            2,
-            250,
-        ),
-        PerformanceProfile::Extreme => (
-            (logical_cpus.saturating_mul(16)).clamp(128, 384),
-            (logical_cpus.saturating_mul(20)).clamp(128, 512),
-            (logical_cpus.saturating_mul(10)).clamp(64, 256),
-            15_000,
-            1,
-            100,
-        ),
-        PerformanceProfile::Balanced => (
-            (logical_cpus.saturating_mul(4)).clamp(32, 96),
-            (logical_cpus.saturating_mul(6)).clamp(32, 128),
-            (logical_cpus.saturating_mul(3)).clamp(16, 64),
-            30_000,
-            2,
-            300,
-        ),
-        PerformanceProfile::Max => (
-            (logical_cpus.saturating_mul(24)).clamp(256, 1024),
-            (logical_cpus.saturating_mul(32)).clamp(256, 1536),
-            (logical_cpus.saturating_mul(20)).clamp(128, 1024),
-            12_000,
-            1,
-            50,
-        ),
-    }
-}
-
-fn env_usize_clamped(key: &str, default: usize, min: usize, max: usize) -> usize {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(default)
-        .clamp(min, max)
-}
-
-fn env_f64_clamped(key: &str, default: f64, min: f64, max: f64) -> f64 {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(default)
-        .clamp(min, max)
 }
 
 fn into_config(cli: Cli) -> Config {
@@ -321,7 +208,7 @@ fn into_config(cli: Cli) -> Config {
         backfill_concurrency_limit = Some(limit);
     }
 
-    let normalized_excludes = normalize_exclude_prefixes(global.exclude_path_prefix);
+    let normalized_excludes = excludes::normalize_exclude_prefixes(global.exclude_path_prefix);
 
     let mut cfg = Config {
         command,
@@ -433,19 +320,34 @@ fn into_config(cli: Cli) -> Config {
             .or_else(|| env::var("OPENAI_MODEL").ok())
             .unwrap_or_default(),
         ask_diagnostics,
-        ask_max_context_chars: env_usize_clamped(
+        ask_max_context_chars: performance::env_usize_clamped(
             "AXON_ASK_MAX_CONTEXT_CHARS",
             120_000,
             20_000,
             400_000,
         ),
-        ask_candidate_limit: env_usize_clamped("AXON_ASK_CANDIDATE_LIMIT", 64, 8, 200),
-        ask_chunk_limit: env_usize_clamped("AXON_ASK_CHUNK_LIMIT", 10, 3, 40),
-        ask_full_docs: env_usize_clamped("AXON_ASK_FULL_DOCS", 4, 1, 20),
-        ask_backfill_chunks: env_usize_clamped("AXON_ASK_BACKFILL_CHUNKS", 3, 0, 20),
-        ask_doc_fetch_concurrency: env_usize_clamped("AXON_ASK_DOC_FETCH_CONCURRENCY", 4, 1, 16),
-        ask_doc_chunk_limit: env_usize_clamped("AXON_ASK_DOC_CHUNK_LIMIT", 192, 8, 2000),
-        ask_min_relevance_score: env_f64_clamped("AXON_ASK_MIN_RELEVANCE_SCORE", 0.45, -1.0, 2.0),
+        ask_candidate_limit: performance::env_usize_clamped("AXON_ASK_CANDIDATE_LIMIT", 64, 8, 200),
+        ask_chunk_limit: performance::env_usize_clamped("AXON_ASK_CHUNK_LIMIT", 10, 3, 40),
+        ask_full_docs: performance::env_usize_clamped("AXON_ASK_FULL_DOCS", 4, 1, 20),
+        ask_backfill_chunks: performance::env_usize_clamped("AXON_ASK_BACKFILL_CHUNKS", 3, 0, 20),
+        ask_doc_fetch_concurrency: performance::env_usize_clamped(
+            "AXON_ASK_DOC_FETCH_CONCURRENCY",
+            4,
+            1,
+            16,
+        ),
+        ask_doc_chunk_limit: performance::env_usize_clamped(
+            "AXON_ASK_DOC_CHUNK_LIMIT",
+            192,
+            8,
+            2000,
+        ),
+        ask_min_relevance_score: performance::env_f64_clamped(
+            "AXON_ASK_MIN_RELEVANCE_SCORE",
+            0.45,
+            -1.0,
+            2.0,
+        ),
         cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
         cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
         watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),
@@ -454,7 +356,7 @@ fn into_config(cli: Cli) -> Config {
     };
 
     if cfg.exclude_path_prefix.is_empty() && !normalized_excludes.disable_defaults {
-        cfg.exclude_path_prefix = default_exclude_prefixes();
+        cfg.exclude_path_prefix = excludes::default_exclude_prefixes();
     }
 
     let (
@@ -464,7 +366,7 @@ fn into_config(cli: Cli) -> Config {
         timeout_default,
         retries_default,
         backoff_default,
-    ) = performance_defaults(cfg.performance_profile);
+    ) = performance::performance_defaults(cfg.performance_profile);
 
     if cfg.crawl_concurrency_limit.is_none() {
         cfg.crawl_concurrency_limit = Some(crawl_default);
@@ -492,23 +394,4 @@ pub fn parse_args() -> Config {
     maybe_print_top_level_help_and_exit();
     let cli = Cli::parse();
     into_config(cli)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::normalize_exclude_prefixes;
-
-    #[test]
-    fn normalize_exclude_prefixes_none_disables_defaults() {
-        let normalized = normalize_exclude_prefixes(vec!["none".to_string()]);
-        assert!(normalized.disable_defaults);
-        assert!(normalized.prefixes.is_empty());
-    }
-
-    #[test]
-    fn normalize_exclude_prefixes_none_with_values_still_disables() {
-        let normalized = normalize_exclude_prefixes(vec!["none".to_string(), "/fr".to_string()]);
-        assert!(normalized.disable_defaults);
-        assert!(normalized.prefixes.is_empty());
-    }
 }
