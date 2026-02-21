@@ -9,6 +9,8 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::time::SystemTime;
 
+const DEFAULT_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
+
 pub(super) async fn manifest_cache_is_stale(
     manifest_path: &std::path::Path,
     ttl_secs: u64,
@@ -27,7 +29,7 @@ pub(super) async fn maybe_return_cached_result(
     manifest_path: &std::path::Path,
     previous_urls: &HashSet<String>,
 ) -> Result<bool, Box<dyn Error>> {
-    let cache_stale = manifest_cache_is_stale(manifest_path, 24 * 60 * 60).await;
+    let cache_stale = manifest_cache_is_stale(manifest_path, DEFAULT_CACHE_TTL_SECS).await;
     if !cfg.cache || previous_urls.is_empty() || cache_stale {
         return Ok(false);
     }

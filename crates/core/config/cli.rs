@@ -157,7 +157,7 @@ pub(super) enum JobSubcommand {
 
 #[derive(Debug, Args)]
 pub(super) struct GlobalArgs {
-    #[arg(global = true, long, default_value = "https://example.com")]
+    #[arg(global = true, long, default_value = "")]
     pub(super) start_url: String,
 
     #[arg(global = true, long, default_value_t = 0)]
@@ -324,6 +324,9 @@ pub(super) struct GlobalArgs {
 
     #[arg(global = true, long)]
     pub(super) embed_queue: Option<String>,
+
+    #[arg(global = true, long)]
+    pub(super) ingest_queue: Option<String>,
 
     #[arg(global = true, long)]
     pub(super) tei_url: Option<String>,

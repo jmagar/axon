@@ -204,8 +204,8 @@ async fn run_polling_lane(
     }
 }
 
-/// Generic top-level worker: startup sweep, probe AMQP, then run 2 lanes
-/// (AMQP or polling fallback).
+/// Generic top-level worker: startup sweep, probe AMQP, then run `lane_count` lanes
+/// (AMQP or polling fallback) using `futures_util::future::join_all` for dynamic concurrency.
 ///
 /// Callers must call `make_pool` and `ensure_schema` before invoking this.
 pub(crate) async fn run_job_worker(
@@ -234,32 +234,28 @@ pub(crate) async fn run_job_worker(
 
     if amqp_available {
         loop {
-            let (r1, r2) = tokio::join!(
-                run_amqp_lane(cfg, pool.clone(), wc, 1, &process_fn),
-                run_amqp_lane(cfg, pool.clone(), wc, 2, &process_fn)
-            );
-            match (r1, r2) {
-                (Ok(()), Ok(())) => return Ok(()),
-                (left, right) => {
-                    if let Err(err) = left {
-                        log_warn(&format!(
-                            "{} worker lane=1 terminated unexpectedly: {err}",
-                            wc.job_kind
-                        ));
-                    }
-                    if let Err(err) = right {
-                        log_warn(&format!(
-                            "{} worker lane=2 terminated unexpectedly: {err}",
-                            wc.job_kind
-                        ));
-                    }
+            let futs: Vec<_> = (1..=wc.lane_count)
+                .map(|lane| run_amqp_lane(cfg, pool.clone(), wc, lane, &process_fn))
+                .collect();
+            let results = futures_util::future::join_all(futs).await;
+            let mut all_ok = true;
+            for result in results {
+                if let Err(err) = result {
                     log_warn(&format!(
-                        "{} worker restarting AMQP lanes in 2s",
+                        "{} worker lane terminated unexpectedly: {err}",
                         wc.job_kind
                     ));
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    all_ok = false;
                 }
             }
+            if all_ok {
+                return Ok(());
+            }
+            log_warn(&format!(
+                "{} worker restarting AMQP lanes in 2s",
+                wc.job_kind
+            ));
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
 
@@ -267,11 +263,12 @@ pub(crate) async fn run_job_worker(
         "amqp unavailable; running {} worker in postgres polling mode",
         wc.job_kind
     ));
-    let (r1, r2) = tokio::join!(
-        run_polling_lane(cfg, pool.clone(), wc, 1, &process_fn),
-        run_polling_lane(cfg, pool, wc, 2, &process_fn)
-    );
-    r1?;
-    r2?;
+    let futs: Vec<_> = (1..=wc.lane_count)
+        .map(|lane| run_polling_lane(cfg, pool.clone(), wc, lane, &process_fn))
+        .collect();
+    let results = futures_util::future::join_all(futs).await;
+    for result in results {
+        result?;
+    }
     Ok(())
 }

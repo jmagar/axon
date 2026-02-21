@@ -369,6 +369,10 @@ pub(super) async fn append_robots_backfill(
     Ok(stats)
 }
 
+/// Reads every manifest entry and computes a content fingerprint for each
+/// referenced file. This performs one file read per entry, so large manifests
+/// will incur significant I/O. A future improvement could make fingerprinting
+/// opt-in (e.g. `--verify-checksums`) or cache fingerprints across runs.
 async fn read_manifest_entries(
     output_dir: &Path,
 ) -> Result<Vec<ManifestAuditEntry>, Box<dyn Error>> {
