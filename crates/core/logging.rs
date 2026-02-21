@@ -34,7 +34,9 @@ impl SizeRotatingFile {
     }
 
     fn indexed_path(&self, idx: usize) -> std::path::PathBuf {
-        std::path::PathBuf::from(format!("{}.{}", self.path.display(), idx))
+        let mut s = self.path.as_os_str().to_owned();
+        s.push(format!(".{idx}"));
+        std::path::PathBuf::from(s)
     }
 
     fn rotate_if_needed(&mut self, incoming_len: usize) -> io::Result<()> {
@@ -66,12 +68,12 @@ impl SizeRotatingFile {
             let src = self.indexed_path(idx);
             let dst = self.indexed_path(idx + 1);
             if src.exists() {
-                let _ = std::fs::rename(src, dst);
+                std::fs::rename(&src, &dst)?;
             }
         }
 
         if self.path.exists() {
-            let _ = std::fs::rename(&self.path, self.indexed_path(1));
+            std::fs::rename(&self.path, self.indexed_path(1))?;
         }
 
         self.file = std::fs::OpenOptions::new()
