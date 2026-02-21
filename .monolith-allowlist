@@ -41,3 +41,6 @@ crates/vector/ops_v2/tei.rs
 
 # engine.rs grew to 515 lines; run_crawl_once() 157 lines — tracked for sitemap/chrome split (2026-02-19)
 crates/crawl/engine.rs
+
+# audit.rs 502 lines — discover_sitemap_urls_with_robots() is the bulk (2026-02-20)
+crates/cli/commands/crawl/audit.rs

@@ -156,12 +156,11 @@ fn in_host_scope(url_host: &str, host: &str, include_subdomains: bool, host_suff
     }
 }
 
-fn in_path_scope(path: &str, root_path: &str, scoped_to_root: bool) -> bool {
+fn in_path_scope(path: &str, root_path: &str, scoped_to_root: bool, scoped_prefix: &str) -> bool {
     if scoped_to_root {
         return true;
     }
-    let scoped_prefix = format!("{root_path}/");
-    path == root_path || path.starts_with(&scoped_prefix)
+    path == root_path || path.starts_with(scoped_prefix)
 }
 
 struct SitemapScope<'a> {
@@ -170,6 +169,7 @@ struct SitemapScope<'a> {
     include_subdomains: bool,
     root_path: &'a str,
     scoped_to_root: bool,
+    scoped_prefix: String,
 }
 
 fn canonical_sitemap_loc(
@@ -195,7 +195,12 @@ fn canonical_sitemap_loc(
         stats.filtered_out_of_scope_host += 1;
         return None;
     }
-    if !in_path_scope(url.path(), scope.root_path, scope.scoped_to_root) {
+    if !in_path_scope(
+        url.path(),
+        scope.root_path,
+        scope.scoped_to_root,
+        &scope.scoped_prefix,
+    ) {
         stats.filtered_out_of_scope_path += 1;
         return None;
     }
@@ -223,23 +228,29 @@ pub(crate) async fn discover_sitemap_urls_with_robots(
     let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
     let client = reqwest::Client::builder().timeout(timeout).build()?;
 
+    let mut queue = default_sitemap_queue(&scheme, &host);
     let mut stats = SitemapDiscoveryStats {
-        seeded_default_sitemaps: 3,
+        seeded_default_sitemaps: queue.len(),
         ..Default::default()
     };
-    let mut queue = default_sitemap_queue(&scheme, &host);
     enqueue_robots_sitemaps(cfg, &client, &scheme, &host, &mut queue, &mut stats).await;
 
     let scope = SitemapScope {
         host: &host,
         host_suffix,
         include_subdomains: cfg.include_subdomains,
+        scoped_prefix: format!("{root_path}/"),
         root_path: &root_path,
         scoped_to_root,
     };
     let mut seen_sitemaps = HashSet::new();
     let mut urls = HashSet::new();
     let max_sitemaps = cfg.max_sitemaps.max(1);
+    let max_urls: usize = if cfg.max_pages > 0 {
+        cfg.max_pages as usize
+    } else {
+        100_000
+    };
     while let Some(next_sitemap) = queue.pop_front() {
         if seen_sitemaps.len() >= max_sitemaps {
             break;
@@ -270,6 +281,9 @@ pub(crate) async fn discover_sitemap_urls_with_robots(
         stats.parsed_sitemap_documents += 1;
         let is_index = xml.to_ascii_lowercase().contains("<sitemapindex");
         for loc in extract_loc_values(&xml) {
+            if !is_index && urls.len() >= max_urls {
+                break;
+            }
             if let Some(canonical_loc) = canonical_sitemap_loc(cfg, &loc, &scope, &mut stats) {
                 if is_index {
                     queue.push_back(canonical_loc);
@@ -313,6 +327,7 @@ pub(super) async fn append_robots_backfill(
     }
 
     let markdown_dir = output_dir.join("markdown");
+    tokio::fs::create_dir_all(&markdown_dir).await?;
     let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
     let client = reqwest::Client::builder().timeout(timeout).build()?;
     let mut manifest = BufWriter::new(
@@ -461,7 +476,7 @@ pub(super) async fn run_crawl_audit(cfg: &Config, start_url: &str) -> Result<(),
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "audit_report_path": path,
+                "audit_report_path": path.to_string_lossy(),
                 "snapshot": snapshot,
             }))?
         );
