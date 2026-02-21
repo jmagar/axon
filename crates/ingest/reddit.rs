@@ -15,6 +15,22 @@ pub fn classify_target(target: &str) -> RedditTarget {
     if target.contains("/comments/") {
         return RedditTarget::Thread(target.to_string());
     }
+
+    // Handle full subreddit URLs like https://www.reddit.com/r/rust/
+    if let Some(rest) = target
+        .strip_prefix("https://www.reddit.com/r/")
+        .or_else(|| target.strip_prefix("http://www.reddit.com/r/"))
+        .or_else(|| target.strip_prefix("https://reddit.com/r/"))
+        .or_else(|| target.strip_prefix("http://reddit.com/r/"))
+        .or_else(|| target.strip_prefix("https://old.reddit.com/r/"))
+        .or_else(|| target.strip_prefix("http://old.reddit.com/r/"))
+    {
+        let name = rest.trim_end_matches('/');
+        if !name.is_empty() {
+            return RedditTarget::Subreddit(name.to_string());
+        }
+    }
+
     let clean = target
         .strip_prefix("/r/")
         .or_else(|| target.strip_prefix("r/"))
@@ -93,6 +109,38 @@ mod tests {
         assert_eq!(
             classify_target("web_dev"),
             RedditTarget::Subreddit("web_dev".to_string())
+        );
+    }
+
+    #[test]
+    fn classify_full_subreddit_url() {
+        assert_eq!(
+            classify_target("https://www.reddit.com/r/rust/"),
+            RedditTarget::Subreddit("rust".to_string())
+        );
+    }
+
+    #[test]
+    fn classify_full_subreddit_url_no_trailing_slash() {
+        assert_eq!(
+            classify_target("https://www.reddit.com/r/rust"),
+            RedditTarget::Subreddit("rust".to_string())
+        );
+    }
+
+    #[test]
+    fn classify_full_subreddit_url_no_www() {
+        assert_eq!(
+            classify_target("https://reddit.com/r/programming/"),
+            RedditTarget::Subreddit("programming".to_string())
+        );
+    }
+
+    #[test]
+    fn classify_old_reddit_subreddit_url() {
+        assert_eq!(
+            classify_target("https://old.reddit.com/r/rust/"),
+            RedditTarget::Subreddit("rust".to_string())
         );
     }
 }

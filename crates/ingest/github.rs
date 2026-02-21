@@ -21,8 +21,12 @@ pub fn is_indexable_source_path(path: &str) -> bool {
         return false;
     }
 
-    // Accept known source extensions
-    let accepted = [".rs", ".py", ".go", ".ts", ".js", ".tsx", ".jsx", ".toml"];
+    // Accept known source extensions (MVP scope — covers most common languages;
+    // expand as needed for additional language support)
+    let accepted = [
+        ".rs", ".py", ".go", ".ts", ".js", ".tsx", ".jsx", ".toml", ".c", ".cpp", ".h", ".hpp",
+        ".java", ".kt", ".rb", ".php", ".sh", ".yaml", ".yml", ".json", ".md", ".swift", ".cs",
+    ];
     accepted.iter().any(|ext| path.ends_with(ext))
 }
 
@@ -44,6 +48,9 @@ pub fn parse_github_repo(input: &str) -> Option<(String, String)> {
     let mut parts = normalized.splitn(2, '/');
     let owner = parts.next().filter(|s| !s.is_empty())?;
     let repo = parts.next().filter(|s| !s.is_empty() && !s.contains('/'))?;
+
+    // Strip .git suffix commonly found in clone URLs
+    let repo = repo.strip_suffix(".git").unwrap_or(repo);
 
     Some((owner.to_string(), repo.to_string()))
 }
@@ -158,5 +165,48 @@ mod tests {
     #[test]
     fn parse_repo_rejects_single_component() {
         assert_eq!(parse_github_repo("rust-lang"), None);
+    }
+
+    #[test]
+    fn parse_repo_strips_git_suffix() {
+        let result = parse_github_repo("https://github.com/rust-lang/rust.git");
+        assert_eq!(result, Some(("rust-lang".to_string(), "rust".to_string())));
+    }
+
+    #[test]
+    fn parse_repo_strips_git_suffix_bare() {
+        let result = parse_github_repo("rust-lang/rust.git");
+        assert_eq!(result, Some(("rust-lang".to_string(), "rust".to_string())));
+    }
+
+    // --- expanded extensions ---
+
+    #[test]
+    fn source_path_accepts_c_cpp_files() {
+        assert!(is_indexable_source_path("src/main.c"));
+        assert!(is_indexable_source_path("src/main.cpp"));
+        assert!(is_indexable_source_path("include/header.h"));
+        assert!(is_indexable_source_path("include/header.hpp"));
+    }
+
+    #[test]
+    fn source_path_accepts_java_kotlin_files() {
+        assert!(is_indexable_source_path("src/App.java"));
+        assert!(is_indexable_source_path("src/App.kt"));
+    }
+
+    #[test]
+    fn source_path_accepts_ruby_php_shell() {
+        assert!(is_indexable_source_path("lib/helper.rb"));
+        assert!(is_indexable_source_path("src/index.php"));
+        assert!(is_indexable_source_path("scripts/deploy.sh"));
+    }
+
+    #[test]
+    fn source_path_accepts_yaml_json_md() {
+        assert!(is_indexable_source_path("config/settings.yaml"));
+        assert!(is_indexable_source_path("config/settings.yml"));
+        assert!(is_indexable_source_path("package.json"));
+        assert!(is_indexable_source_path("README.md"));
     }
 }

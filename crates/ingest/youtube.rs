@@ -23,6 +23,10 @@ pub fn parse_vtt_to_text(vtt: &str) -> String {
         if line.contains("-->") {
             continue;
         }
+        // Strip numeric-only cue identifiers (VTT sequence numbers like "1", "2", etc.)
+        if line.trim().chars().all(|c| c.is_ascii_digit()) && !line.trim().is_empty() {
+            continue;
+        }
 
         // Strip HTML tags from content lines
         let mut clean = String::new();
@@ -59,11 +63,24 @@ pub fn extract_video_id(input: &str) -> Option<String> {
     if let Ok(url) = Url::parse(input) {
         let host = url.host_str().unwrap_or("");
 
-        // https://www.youtube.com/watch?v=<ID>
-        if host == "www.youtube.com" || host == "youtube.com" {
+        // https://www.youtube.com/watch?v=<ID> (also m.youtube.com)
+        if host == "www.youtube.com" || host == "youtube.com" || host == "m.youtube.com" {
             for (key, value) in url.query_pairs() {
                 if key == "v" {
                     return Some(value.into_owned());
+                }
+            }
+            // Handle /embed/<ID>, /shorts/<ID>, /v/<ID> path patterns
+            if let Some(id) = url.path_segments().and_then(|mut segs| {
+                let first = segs.next()?;
+                if matches!(first, "embed" | "shorts" | "v") {
+                    segs.next().map(|s| s.to_string())
+                } else {
+                    None
+                }
+            }) {
+                if !id.is_empty() {
+                    return Some(id);
                 }
             }
             return None;
@@ -163,5 +180,44 @@ mod tests {
     #[test]
     fn extract_video_id_returns_none_for_garbage() {
         assert_eq!(extract_video_id("not-a-valid-thing"), None);
+    }
+
+    #[test]
+    fn extract_video_id_from_embed_url() {
+        let id = extract_video_id("https://www.youtube.com/embed/dQw4w9WgXcQ");
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn extract_video_id_from_shorts_url() {
+        let id = extract_video_id("https://www.youtube.com/shorts/dQw4w9WgXcQ");
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn extract_video_id_from_v_path_url() {
+        let id = extract_video_id("https://www.youtube.com/v/dQw4w9WgXcQ");
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn extract_video_id_from_mobile_url() {
+        let id = extract_video_id("https://m.youtube.com/watch?v=dQw4w9WgXcQ");
+        assert_eq!(id, Some("dQw4w9WgXcQ".to_string()));
+    }
+
+    #[test]
+    fn parse_vtt_strips_numeric_cue_ids() {
+        let vtt = "WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello world\n\n2\n00:00:02.000 --> 00:00:04.000\nSecond line\n";
+        let text = parse_vtt_to_text(vtt);
+        assert_eq!(text, "Hello world\nSecond line");
+    }
+
+    #[test]
+    fn parse_vtt_keeps_lines_with_digits_and_text() {
+        // A legitimate line containing digits mixed with text should NOT be stripped
+        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n3 blind mice\n";
+        let text = parse_vtt_to_text(vtt);
+        assert_eq!(text, "3 blind mice");
     }
 }
