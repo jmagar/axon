@@ -8,7 +8,7 @@ pub mod ranking;
 pub mod stats;
 pub mod tei;
 
-pub use tei::{EmbedProgress, EmbedSummary};
+pub use tei::{embed_text_with_metadata, EmbedProgress, EmbedSummary};
 
 pub fn chunk_text(text: &str) -> Vec<String> {
     input::chunk_text(text)
@@ -42,6 +42,10 @@ pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     qdrant::run_sources_native(cfg).await
 }
 
+pub async fn run_dedupe_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    qdrant::run_dedupe_native(cfg).await
+}
+
 pub async fn run_domains_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     qdrant::run_domains_native(cfg).await
 }
@@ -52,6 +56,10 @@ pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     commands::run_ask_native(cfg).await
+}
+
+pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    commands::run_evaluate_native(cfg).await
 }
 
 pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {

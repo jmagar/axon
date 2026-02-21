@@ -1,19 +1,23 @@
+mod sitemap;
+
+#[cfg(test)]
+mod tests;
+
+pub use sitemap::{append_sitemap_backfill, crawl_sitemap_urls};
+
 use crate::axon_cli::crates::core::config::{Config, RenderMode};
-use crate::axon_cli::crates::core::content::{
-    build_transform_config, extract_loc_values, to_markdown, url_to_filename,
-};
-use crate::axon_cli::crates::core::http::validate_url;
+use crate::axon_cli::crates::core::content::{build_transform_config, url_to_filename};
+use crate::axon_cli::crates::core::http::ssrf_blacklist_patterns;
 use crate::axon_cli::crates::core::logging::{log_info, log_warn};
 use spider::features::chrome_common::RequestInterceptConfiguration;
 use spider::tokio;
 use spider::url::Url;
 use spider::website::Website;
 use spider_transformations::transformation::content::{transform_content_input, TransformInput};
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -36,13 +40,10 @@ pub struct SitemapBackfillStats {
     pub filtered: usize,
 }
 
-fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
+pub(crate) fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
-
-    // Fragments never change page content for crawling/storage purposes.
     parsed.set_fragment(None);
 
-    // Normalize default ports so equivalent URLs share one dedupe key.
     match (parsed.scheme(), parsed.port()) {
         ("http", Some(80)) | ("https", Some(443)) => {
             let _ = parsed.set_port(None);
@@ -50,7 +51,6 @@ fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
         _ => {}
     }
 
-    // Normalize trailing slash variants except root.
     let path = parsed.path().to_string();
     if path.len() > 1 {
         let normalized_path = path.trim_end_matches('/').to_string();
@@ -60,7 +60,7 @@ fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
     Some(parsed.to_string())
 }
 
-fn is_excluded_url_path(url: &str, excludes: &[String]) -> bool {
+pub(crate) fn is_excluded_url_path(url: &str, excludes: &[String]) -> bool {
     if excludes.is_empty() {
         return false;
     }
@@ -127,6 +127,19 @@ fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec
         .collect()
 }
 
+/// Ensure the Chrome DevTools Protocol URL includes the `/json/version` discovery path.
+/// chromiumoxide requires `http://host:port/json/version`, not bare `http://host:port`.
+fn normalize_cdp_url(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(mut parsed) if parsed.path() == "/" || parsed.path().is_empty() => {
+            parsed.set_path("/json/version");
+            parsed.set_query(None);
+            parsed.to_string()
+        }
+        _ => url.to_string(),
+    }
+}
+
 fn configure_website(
     cfg: &Config,
     start_url: &str,
@@ -135,7 +148,6 @@ fn configure_website(
     let mut website = Website::new(start_url);
     website.with_depth(cfg.max_depth);
     website.with_subdomains(cfg.include_subdomains);
-    // Include root-domain siblings when crawling from a subdomain (e.g. code.claude.com -> claude.com).
     website.with_tld(cfg.include_subdomains);
 
     if cfg.max_pages > 0 {
@@ -154,19 +166,23 @@ fn configure_website(
     if cfg.shared_queue {
         website.with_shared_queue(true);
     }
+    // Always apply SSRF protection. Append path exclusions if configured.
+    let mut blacklist_patterns: Vec<spider::compact_str::CompactString> = ssrf_blacklist_patterns()
+        .into_iter()
+        .map(Into::into)
+        .collect();
     if !cfg.exclude_path_prefix.is_empty() {
-        let blacklist_patterns: Vec<spider::compact_str::CompactString> =
+        blacklist_patterns.extend(
             build_exclude_blacklist_patterns(start_url, &cfg.exclude_path_prefix)
                 .into_iter()
-                .map(Into::into)
-                .collect();
-        website.with_blacklist_url(Some(blacklist_patterns));
+                .map(Into::into),
+        );
     }
+    website.with_blacklist_url(Some(blacklist_patterns));
     if let Some(timeout_ms) = cfg.request_timeout_ms {
         website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
     }
 
-    // Proxy and user-agent apply to both HTTP and Chrome/WebDriver modes.
     if let Some(ref proxy) = cfg.chrome_proxy {
         website.with_proxies(Some(vec![proxy.clone()]));
     }
@@ -174,68 +190,46 @@ fn configure_website(
         website.with_user_agent(Some(ua.as_str()));
     }
 
-    // WebDriver and CDP Chrome are mutually exclusive; webdriver_url takes priority.
-    if let Some(ref wd_url) = cfg.webdriver_url {
-        use spider::features::webdriver_common::WebDriverConfig;
+    if matches!(mode, RenderMode::Chrome) {
+        // CDP path — primary browser mode. chromiumoxide connects directly via CDP,
+        // giving access to stealth, fingerprint, intercept, and network-idle features.
+        website
+            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
+            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot)
+            .with_fingerprint(true);
+        if let Some(ref remote_url) = cfg.chrome_remote_url {
+            // chromiumoxide requires the /json/version CDP discovery endpoint.
+            website.with_chrome_connection(Some(normalize_cdp_url(remote_url)));
+        }
+        // `idle_network0` calls `wait_for_network_idle()` — waits until the network
+        // has been fully quiet for 500 ms. This is essential for CSR frameworks
+        // (React, Vue, etc.) that run XHR/fetch calls during hydration AFTER the
+        // initial HTML load. `idle_network` (EventLoadingFinished) fires too early.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(15)),
+        )));
+        website = website
+            .build()
+            .map_err(|e| format!("failed to build website with chrome settings: {e}"))?;
+    } else if let Some(ref wd_url) = cfg.webdriver_url {
+        // Selenium/WebDriver — secondary path when CDP remote URL is unavailable.
+        use spider::features::webdriver_common::{WebDriverBrowser, WebDriverConfig};
         let wd_cfg = WebDriverConfig {
             server_url: wd_url.clone(),
+            browser: WebDriverBrowser::Chrome,
             headless: cfg.chrome_headless,
             proxy: cfg.chrome_proxy.clone(),
             user_agent: cfg.chrome_user_agent.clone(),
             ..WebDriverConfig::default()
         };
         website.with_webdriver(wd_cfg);
-    } else if matches!(mode, RenderMode::Chrome) {
-        // CDP Chrome: wire all Chrome-specific fields instead of hardcoded values.
-        website
-            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
-            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot);
-        if let Some(ref remote_url) = cfg.chrome_remote_url {
-            website.with_chrome_connection(Some(remote_url.clone()));
-        }
-        website = website
-            .build()
-            .map_err(|_| "Failed to build website with chrome settings")?;
+        // Same fully-idle wait: WebDriver also needs to wait for JS hydration.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(15)),
+        )));
     }
 
     Ok(website)
-}
-
-fn should_retry_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
-}
-
-async fn fetch_text_with_retry(
-    client: &reqwest::Client,
-    url: &str,
-    retries: usize,
-    backoff_ms: u64,
-) -> Option<String> {
-    if validate_url(url).is_err() {
-        return None;
-    }
-    let mut attempt = 0usize;
-    loop {
-        match client.get(url).send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                if status.is_success() {
-                    return resp.text().await.ok();
-                }
-                if attempt >= retries || !should_retry_status(status) {
-                    return None;
-                }
-            }
-            Err(_) if attempt >= retries => return None,
-            Err(_) => {}
-        }
-
-        attempt = attempt.saturating_add(1);
-        tokio::time::sleep(Duration::from_millis(
-            backoff_ms.saturating_mul(attempt as u64).max(1),
-        ))
-        .await;
-    }
 }
 
 pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool {
@@ -247,8 +241,15 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool
     } else {
         summary.thin_pages as f64 / summary.pages_seen as f64
     };
-    let low_coverage = summary.markdown_files < (max_pages / 10).max(10);
-    thin_ratio > 0.60 || low_coverage
+    if thin_ratio > 0.60 {
+        return true;
+    }
+    // When max_pages == 0 (uncapped), there's no expected page count to compare
+    // against, so "low coverage" is meaningless — skip that check entirely.
+    if max_pages == 0 {
+        return false;
+    }
+    summary.markdown_files < (max_pages / 10).max(10)
 }
 
 pub async fn crawl_and_collect_map(
@@ -257,181 +258,35 @@ pub async fn crawl_and_collect_map(
     mode: RenderMode,
 ) -> Result<(CrawlSummary, Vec<String>), Box<dyn Error>> {
     let mut website = configure_website(cfg, start_url, mode)?;
-    let mut rx = website.subscribe(4096).ok_or("subscribe failed")?;
     let start = Instant::now();
-
-    let transform_cfg = build_transform_config();
-    let exclude_path_prefix = cfg.exclude_path_prefix.clone();
-    let join = tokio::spawn(async move {
-        let mut summary = CrawlSummary::default();
-        let mut urls = Vec::new();
-        let mut seen = HashSet::new();
-
-        loop {
-            let page = match rx.recv().await {
-                Ok(page) => page,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-            };
-
-            let page_url = page.get_url().to_string();
-            if is_excluded_url_path(&page_url, &exclude_path_prefix) {
-                continue;
-            }
-            let Some(canonical_url) = canonicalize_url_for_dedupe(&page_url) else {
-                continue;
-            };
-            if !seen.insert(canonical_url.clone()) {
-                continue;
-            }
-            summary.pages_seen += 1;
-            urls.push(canonical_url);
-
-            let input = TransformInput {
-                url: None,
-                content: page.get_html_bytes_u8(),
-                screenshot_bytes: None,
-                encoding: None,
-                selector_config: None,
-                ignore_tags: None,
-            };
-            let markdown = transform_content_input(input, &transform_cfg);
-            let chars = markdown.trim().chars().count();
-            if chars < 200 {
-                summary.thin_pages += 1;
-            }
-            if chars > 0 {
-                summary.markdown_files += 1;
-            }
-        }
-
-        Ok::<(CrawlSummary, Vec<String>), String>((summary, urls))
-    });
 
     match mode {
         RenderMode::Http => website.crawl_raw().await,
         RenderMode::Chrome | RenderMode::AutoSwitch => website.crawl().await,
     }
-    website.unsubscribe();
 
-    let (mut summary, urls) = join
-        .await
-        .map_err(|e| format!("join failure: {e}"))?
-        .map_err(|e| format!("collector failure: {e}"))?;
-    summary.elapsed_ms = start.elapsed().as_millis();
-    Ok((summary, urls))
-}
+    let mut summary = CrawlSummary::default();
+    let mut urls = Vec::new();
+    let mut seen = HashSet::new();
+    let exclude_path_prefix = cfg.exclude_path_prefix.clone();
 
-pub async fn crawl_sitemap_urls(
-    cfg: &Config,
-    start_url: &str,
-) -> Result<Vec<String>, Box<dyn Error>> {
-    let parsed = Url::parse(start_url)?;
-    let scheme = parsed.scheme().to_string();
-    let host = parsed.host_str().ok_or("missing host")?.to_string();
-
-    let mut queue = VecDeque::new();
-    queue.push_back(format!("{scheme}://{host}/sitemap.xml"));
-    queue.push_back(format!("{scheme}://{host}/sitemap_index.xml"));
-    queue.push_back(format!("{scheme}://{host}/sitemap-index.xml"));
-
-    let mut seen_sitemaps = HashSet::new();
-    let mut out = HashSet::new();
-    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
-    let client = reqwest::Client::builder().timeout(timeout).build()?;
-    let start_host = host.clone();
-    let start_path = parsed.path().trim_end_matches('/').to_string();
-    let scoped_to_root = start_path.is_empty();
-    let worker_limit = cfg.sitemap_concurrency_limit.unwrap_or(64).clamp(1, 1024);
-    let max_sitemaps = cfg.max_sitemaps.max(1);
-    let mut parsed_sitemaps = 0usize;
-
-    while !queue.is_empty() && parsed_sitemaps < max_sitemaps {
-        let mut batch = Vec::new();
-        while batch.len() < worker_limit && parsed_sitemaps + batch.len() < max_sitemaps {
-            let Some(url) = queue.pop_front() else {
-                break;
-            };
-            if seen_sitemaps.insert(url.clone()) {
-                batch.push(url);
-            }
+    for link in website.get_links() {
+        let page_url = link.as_ref().to_string();
+        if is_excluded_url_path(&page_url, &exclude_path_prefix) {
+            continue;
         }
-        if batch.is_empty() {
-            break;
+        let Some(canonical_url) = canonicalize_url_for_dedupe(&page_url) else {
+            continue;
+        };
+        if !seen.insert(canonical_url.clone()) {
+            continue;
         }
-
-        let mut joins = tokio::task::JoinSet::new();
-        for sitemap_url in batch {
-            let http = client.clone();
-            let retries = cfg.fetch_retries;
-            let backoff = cfg.retry_backoff_ms;
-            joins.spawn(async move {
-                fetch_text_with_retry(&http, &sitemap_url, retries, backoff)
-                    .await
-                    .map(|xml| (sitemap_url, xml))
-            });
-        }
-
-        while let Some(joined) = joins.join_next().await {
-            let Ok(Some((sitemap_url, xml))) = joined else {
-                continue;
-            };
-            parsed_sitemaps += 1;
-            let is_index = xml.to_ascii_lowercase().contains("<sitemapindex");
-            for loc in extract_loc_values(&xml) {
-                let Ok(u) = Url::parse(&loc) else {
-                    continue;
-                };
-                let Some(h) = u.host_str() else {
-                    continue;
-                };
-                let in_scope = if cfg.include_subdomains {
-                    h == start_host || h.ends_with(&format!(".{start_host}"))
-                } else {
-                    h == start_host
-                };
-                if !in_scope {
-                    continue;
-                }
-                if is_excluded_url_path(&loc, &cfg.exclude_path_prefix) {
-                    continue;
-                }
-                if !scoped_to_root {
-                    let p = u.path();
-                    let exact = p == start_path;
-                    let nested = p.starts_with(&(start_path.clone() + "/"));
-                    if !exact && !nested {
-                        continue;
-                    }
-                }
-
-                let Some(canonical_loc) = canonicalize_url_for_dedupe(&loc) else {
-                    continue;
-                };
-
-                if is_index {
-                    if !seen_sitemaps.contains(&canonical_loc) {
-                        queue.push_back(canonical_loc);
-                    }
-                } else {
-                    out.insert(canonical_loc);
-                }
-            }
-            if parsed_sitemaps.is_multiple_of(64) {
-                log_info(&format!(
-                    "command=sitemap parsed={} discovered_urls={} queue={}",
-                    parsed_sitemaps,
-                    out.len(),
-                    queue.len()
-                ));
-            }
-            let _ = sitemap_url;
-        }
+        summary.pages_seen += 1;
+        urls.push(canonical_url);
     }
 
-    let mut urls: Vec<String> = out.into_iter().collect();
-    urls.sort();
-    Ok(urls)
+    summary.elapsed_ms = start.elapsed().as_millis();
+    Ok((summary, urls))
 }
 
 pub async fn run_crawl_once(
@@ -452,8 +307,6 @@ pub async fn run_crawl_once(
                 "Clearing output directory before crawl: {}",
                 output_dir.display()
             ));
-            // Output dir may be a bind mount root in containers; removing the
-            // mountpoint itself can fail with EBUSY. Clear contents instead.
             let mut entries = tokio::fs::read_dir(output_dir).await?;
             while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
@@ -469,7 +322,13 @@ pub async fn run_crawl_once(
     tokio::fs::create_dir_all(output_dir.join("markdown")).await?;
 
     let mut website = configure_website(cfg, start_url, mode)?;
-    let mut rx = website.subscribe(4096).ok_or("subscribe failed")?;
+    // Buffer at least max_pages worth of messages to prevent silent page drops
+    // under high-throughput crawls (extreme/max profiles). Clamp to 16 384 so
+    // a large --max-pages value can't allocate an unbounded broadcast ring buffer.
+    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
+    let mut rx = website
+        .subscribe(subscribe_buf)
+        .ok_or("failed to subscribe to spider broadcast channel")?;
     let markdown_dir = output_dir.join("markdown");
     let manifest_path = output_dir.join("manifest.jsonl");
 
@@ -491,7 +350,10 @@ pub async fn run_crawl_once(
         loop {
             let page = match rx.recv().await {
                 Ok(page) => page,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log_warn(&format!("crawl broadcast lagged: {skipped} pages dropped — increase subscribe buffer or reduce concurrency"));
+                    continue;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
             let raw_url = page.get_url().to_string();
@@ -515,8 +377,8 @@ pub async fn run_crawl_once(
                 selector_config: None,
                 ignore_tags: None,
             };
-            let markdown = transform_content_input(input, &transform_cfg);
-            let trimmed = markdown.trim().to_string();
+            let markdown = transform_content_input(input, transform_cfg);
+            let trimmed = markdown.trim(); // &str borrow — zero allocation
             let chars = trimmed.chars().count();
 
             if chars < min_chars {
@@ -542,7 +404,7 @@ pub async fn run_crawl_once(
             summary.markdown_files += 1;
             let filename = url_to_filename(&url, summary.markdown_files);
             let path = markdown_dir.join(filename);
-            tokio::fs::write(&path, trimmed)
+            tokio::fs::write(&path, trimmed.as_bytes())
                 .await
                 .map_err(|e| format!("write failed: {e}"))?;
             let rec = serde_json::json!({"url": url, "file_path": path.to_string_lossy(), "markdown_chars": chars});
@@ -583,308 +445,4 @@ pub async fn run_crawl_once(
     summary.elapsed_ms = crawl_start.elapsed().as_millis();
 
     Ok((summary, urls))
-}
-
-pub async fn try_auto_switch(
-    cfg: &Config,
-    start_url: &str,
-    summary: &CrawlSummary,
-    urls: &[String],
-) -> Result<(CrawlSummary, Vec<String>), Box<dyn Error>> {
-    if !matches!(cfg.render_mode, RenderMode::AutoSwitch)
-        || !should_fallback_to_chrome(summary, cfg.max_pages)
-    {
-        return Ok((
-            CrawlSummary {
-                pages_seen: summary.pages_seen,
-                markdown_files: summary.markdown_files,
-                thin_pages: summary.thin_pages,
-                elapsed_ms: summary.elapsed_ms,
-            },
-            urls.to_vec(),
-        ));
-    }
-
-    log_warn("HTTP output looked thin/low-coverage; attempting chrome fallback");
-    match crawl_and_collect_map(cfg, start_url, RenderMode::Chrome).await {
-        Ok((chrome_summary, chrome_urls)) if !chrome_urls.is_empty() => {
-            Ok((chrome_summary, chrome_urls))
-        }
-        _ => Ok((
-            CrawlSummary {
-                pages_seen: summary.pages_seen,
-                markdown_files: summary.markdown_files,
-                thin_pages: summary.thin_pages,
-                elapsed_ms: summary.elapsed_ms,
-            },
-            urls.to_vec(),
-        )),
-    }
-}
-
-pub async fn append_sitemap_backfill(
-    cfg: &Config,
-    start_url: &str,
-    output_dir: &Path,
-    seen_urls: &HashSet<String>,
-    summary: &mut CrawlSummary,
-) -> Result<SitemapBackfillStats, Box<dyn Error>> {
-    let sitemap_urls = crawl_sitemap_urls(cfg, start_url).await?;
-    let sitemap_discovered = sitemap_urls.len();
-    log_info(&format!(
-        "command=crawl sitemap_backfill_discovered={} concurrency={}",
-        sitemap_discovered,
-        cfg.backfill_concurrency_limit
-            .unwrap_or(cfg.batch_concurrency)
-            .max(1)
-    ));
-    let markdown_dir = output_dir.join("markdown");
-    let manifest_path = output_dir.join("manifest.jsonl");
-    let manifest_file = tokio::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&manifest_path)
-        .await?;
-    let mut manifest = tokio::io::BufWriter::new(manifest_file);
-
-    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
-    let client = reqwest::Client::builder().timeout(timeout).build()?;
-    let mut idx = summary.markdown_files;
-    let mut processed: usize = 0;
-    let mut fetched_ok: usize = 0;
-    let mut written: usize = 0;
-    let mut failed_fetches: usize = 0;
-
-    let mut pending = tokio::task::JoinSet::new();
-    let candidates_vec: Vec<String> = sitemap_urls
-        .into_iter()
-        .filter(|url| {
-            !seen_urls.contains(url) && !is_excluded_url_path(url, &cfg.exclude_path_prefix)
-        })
-        .collect();
-    let sitemap_candidates = candidates_vec.len();
-    let mut candidates = candidates_vec.into_iter();
-    let concurrency = cfg
-        .backfill_concurrency_limit
-        .unwrap_or(cfg.batch_concurrency)
-        .max(1);
-
-    let push_task = |set: &mut tokio::task::JoinSet<(String, Result<String, String>)>,
-                     url: String,
-                     http: reqwest::Client,
-                     retries: usize,
-                     backoff_ms: u64| {
-        set.spawn(async move {
-            let result = fetch_text_with_retry(&http, &url, retries, backoff_ms)
-                .await
-                .ok_or_else(|| format!("fetch failed for {url}"));
-            (url, result)
-        });
-    };
-
-    for _ in 0..concurrency {
-        if let Some(url) = candidates.next() {
-            push_task(
-                &mut pending,
-                url,
-                client.clone(),
-                cfg.fetch_retries,
-                cfg.retry_backoff_ms,
-            );
-        }
-    }
-
-    while let Some(joined) = pending.join_next().await {
-        processed += 1;
-        match joined {
-            Ok((url, Ok(html))) => {
-                fetched_ok += 1;
-                let md = to_markdown(&html);
-                let chars = md.chars().count();
-                if chars < cfg.min_markdown_chars {
-                    summary.thin_pages += 1;
-                }
-
-                if chars >= cfg.min_markdown_chars || !cfg.drop_thin_markdown {
-                    idx += 1;
-                    let file = markdown_dir.join(url_to_filename(&url, idx));
-                    tokio::fs::write(&file, md).await?;
-                    let rec = serde_json::json!({
-                        "url": url,
-                        "file_path": file.to_string_lossy(),
-                        "markdown_chars": chars,
-                        "source": "sitemap_backfill"
-                    });
-                    let mut line = rec.to_string();
-                    line.push('\n');
-                    manifest.write_all(line.as_bytes()).await?;
-                    summary.markdown_files += 1;
-                    written += 1;
-                }
-            }
-            Ok((url, Err(err))) => {
-                let _ = url;
-                let _ = err;
-                failed_fetches += 1;
-            }
-            Err(err) => {
-                let _ = err;
-                failed_fetches += 1;
-            }
-        }
-
-        if processed.is_multiple_of(50) {
-            log_info(&format!(
-                "command=crawl sitemap_backfill_progress processed={} fetched_ok={} written={} failed={}",
-                processed, fetched_ok, written, failed_fetches
-            ));
-        }
-
-        if let Some(url) = candidates.next() {
-            push_task(
-                &mut pending,
-                url,
-                client.clone(),
-                cfg.fetch_retries,
-                cfg.retry_backoff_ms,
-            );
-        }
-    }
-
-    manifest.flush().await?;
-    log_info(&format!(
-        "command=crawl sitemap_backfill_complete processed={} fetched_ok={} written={} failed={}",
-        processed, fetched_ok, written, failed_fetches
-    ));
-    Ok(SitemapBackfillStats {
-        sitemap_discovered,
-        sitemap_candidates,
-        processed,
-        fetched_ok,
-        written,
-        failed: failed_fetches,
-        filtered: processed.saturating_sub(written),
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn summary(pages_seen: u32, thin: u32, markdown_files: u32) -> CrawlSummary {
-        CrawlSummary {
-            pages_seen,
-            thin_pages: thin,
-            markdown_files,
-            elapsed_ms: 0,
-        }
-    }
-
-    #[test]
-    fn test_fallback_when_no_markdown_files() {
-        // markdown_files == 0 → always fallback (early return)
-        assert!(should_fallback_to_chrome(&summary(100, 0, 0), 200));
-    }
-
-    #[test]
-    fn test_fallback_thin_ratio_above_threshold() {
-        // 61/100 thin → ratio 0.61 > 0.60 → should fallback
-        assert!(should_fallback_to_chrome(&summary(100, 61, 50), 200));
-    }
-
-    #[test]
-    fn test_no_fallback_at_threshold() {
-        // exactly 60/100 thin → ratio 0.60 NOT > 0.60 → no fallback
-        // markdown_files=50 >= max(200/10, 10) = 20 → coverage OK
-        assert!(!should_fallback_to_chrome(&summary(100, 60, 50), 200));
-    }
-
-    #[test]
-    fn test_fallback_low_coverage() {
-        // thin_ratio = 10/100 = 0.10 (OK)
-        // but markdown_files = 5 < max(200/10, 10) = 20 → low coverage → fallback
-        assert!(should_fallback_to_chrome(&summary(100, 10, 5), 200));
-    }
-
-    #[test]
-    fn test_no_divide_by_zero() {
-        // pages_seen = 0 → thin_ratio defaults to 1.0 → should fallback
-        // But markdown_files = 0 triggers the early return first
-        assert!(should_fallback_to_chrome(&summary(0, 0, 0), 200));
-    }
-
-    #[test]
-    fn test_no_fallback_healthy_crawl() {
-        // 10/200 thin → ratio 0.05 (OK)
-        // markdown_files = 150 >= max(200/10, 10) = 20 (OK)
-        assert!(!should_fallback_to_chrome(&summary(200, 10, 150), 200));
-    }
-
-    #[test]
-    fn test_fallback_low_max_pages() {
-        // With max_pages=50: threshold = max(50/10, 10) = 10
-        // markdown_files = 8 < 10 → low coverage → fallback
-        assert!(should_fallback_to_chrome(&summary(50, 5, 8), 50));
-    }
-
-    #[test]
-    fn test_no_fallback_small_crawl_sufficient_coverage() {
-        // max_pages=50: threshold = max(50/10, 10) = 10
-        // markdown_files = 15 >= 10 → coverage OK
-        // thin_ratio = 5/50 = 0.10 → OK
-        assert!(!should_fallback_to_chrome(&summary(50, 5, 15), 50));
-    }
-
-    #[test]
-    fn test_exclude_path_prefix_matches_segment_boundary() {
-        let excludes = vec!["/de".to_string()];
-        assert!(is_excluded_url_path("https://example.com/de", &excludes));
-        assert!(is_excluded_url_path(
-            "https://example.com/de/docs",
-            &excludes
-        ));
-        assert!(!is_excluded_url_path(
-            "https://example.com/developer",
-            &excludes
-        ));
-        assert!(!is_excluded_url_path(
-            "https://example.com/design",
-            &excludes
-        ));
-    }
-
-    #[test]
-    fn test_exclude_path_prefix_handles_non_normalized_input() {
-        let excludes = vec!["de/".to_string()];
-        assert!(is_excluded_url_path("https://example.com/de", &excludes));
-        assert!(is_excluded_url_path(
-            "https://example.com/de/guide",
-            &excludes
-        ));
-        assert!(!is_excluded_url_path(
-            "https://example.com/developer",
-            &excludes
-        ));
-    }
-
-    #[test]
-    fn test_canonicalize_url_for_dedupe_trailing_slash_and_fragment() {
-        let a = canonicalize_url_for_dedupe("https://example.com/docs/");
-        let b = canonicalize_url_for_dedupe("https://example.com/docs#intro");
-        assert_eq!(a, b);
-        assert_eq!(a.as_deref(), Some("https://example.com/docs"));
-    }
-
-    #[test]
-    fn test_canonicalize_url_for_dedupe_root_and_default_port() {
-        let a = canonicalize_url_for_dedupe("https://example.com:443/");
-        let b = canonicalize_url_for_dedupe("https://example.com/");
-        assert_eq!(a, b);
-        assert_eq!(a.as_deref(), Some("https://example.com/"));
-    }
-
-    #[test]
-    fn test_regex_escape_escapes_hyphen() {
-        assert_eq!(regex_escape("foo-bar"), "foo\\-bar");
-    }
 }
