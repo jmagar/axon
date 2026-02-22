@@ -5,13 +5,14 @@ use crate::crates::jobs::common::{
     open_amqp_connection_and_channel, reclaim_stale_running_jobs as generic_reclaim,
     WatchdogSweepStats,
 };
+use crate::crates::jobs::worker_lane::validate_worker_env_vars;
 use futures_util::StreamExt;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions};
 use lapin::types::FieldTable;
-use spider::tokio;
 use sqlx::PgPool;
 use std::error::Error;
 use std::time::{Duration, Instant};
+use tokio;
 use uuid::Uuid;
 
 use super::super::{
@@ -265,6 +266,10 @@ async fn run_amqp_worker_lane(
 }
 
 pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    // Validate required environment variables before attempting any connections.
+    // Exits with a clear error message if any are missing.
+    validate_worker_env_vars();
+
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     match reclaim_stale_running_jobs(

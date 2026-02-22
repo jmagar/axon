@@ -69,9 +69,10 @@ async fn mark_extract_canceled(
     if cancel_before.is_none() {
         return Ok(false);
     }
-    sqlx::query(
-        "UPDATE axon_extract_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1",
-    )
+    sqlx::query(&format!(
+        "UPDATE axon_extract_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1",
+        canceled = JobStatus::Canceled.as_str(),
+    ))
     .bind(id)
     .execute(pool)
     .await?;
@@ -221,15 +222,20 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
             // in 'running' until the watchdog reclaims it.
             let mut last_err = None;
             for attempt in 1u32..=3 {
-                match sqlx::query(
-                    "UPDATE axon_extract_jobs SET status='completed',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='running'",
-                )
+                match sqlx::query(&format!(
+                    "UPDATE axon_extract_jobs SET status='{completed}',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='{running}'",
+                    completed = JobStatus::Completed.as_str(),
+                    running = JobStatus::Running.as_str(),
+                ))
                 .bind(id)
                 .bind(&result_json)
                 .execute(pool)
                 .await
                 {
-                    Ok(_) => { last_err = None; break; }
+                    Ok(_) => {
+                        last_err = None;
+                        break;
+                    }
                     Err(e) => {
                         log_warn(&format!(
                             "worker extract job {id} completion UPDATE attempt {attempt} failed: {e}"
@@ -267,6 +273,10 @@ async fn process_claimed_extract_job(cfg: Config, pool: PgPool, id: Uuid) {
 }
 
 pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    // Validate required environment variables before attempting any connections.
+    // Exits with a clear error message if any are missing.
+    crate::crates::jobs::worker_lane::validate_worker_env_vars();
+
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {
         ensure_schema(&pool).await?;

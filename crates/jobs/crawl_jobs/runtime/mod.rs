@@ -3,12 +3,12 @@ use crate::crates::jobs::batch_jobs::InjectionCandidate;
 use crate::crates::jobs::common::JobTable;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use spider::tokio;
 use sqlx::{FromRow, PgPool};
 use std::collections::HashSet;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use tokio;
 use uuid::Uuid;
 
 static SCHEMA_INIT: OnceLock<()> = OnceLock::new();

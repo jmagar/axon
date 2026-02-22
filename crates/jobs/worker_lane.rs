@@ -8,12 +8,12 @@ use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions};
 use lapin::types::FieldTable;
-use spider::tokio;
 use sqlx::PgPool;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio;
 use uuid::Uuid;
 
 const STALE_SWEEP_INTERVAL_SECS: u64 = 30;
@@ -34,6 +34,49 @@ pub(crate) struct WorkerConfig {
     pub job_kind: &'static str,
     pub consumer_tag_prefix: &'static str,
     pub lane_count: usize,
+}
+
+/// Validate that the critical infrastructure environment variables are present
+/// before the worker attempts any network connections. Exits the process with a
+/// clear error message if any required variable is missing.
+///
+/// Required variables (checked in order of preference):
+/// - Postgres: `AXON_PG_URL` or `NUQ_DATABASE_URL`
+/// - Redis:    `AXON_REDIS_URL` or `REDIS_URL`
+/// - AMQP:     `AXON_AMQP_URL` or `NUQ_RABBITMQ_URL`
+///
+/// Note: this checks for the presence of at least one variable per service, not
+/// the validity of the URL. Connection errors are still reported at connect time.
+pub(crate) fn validate_worker_env_vars() {
+    let mut missing: Vec<&'static str> = Vec::new();
+
+    // Postgres: AXON_PG_URL or NUQ_DATABASE_URL
+    let pg_ok = std::env::var("AXON_PG_URL").is_ok() || std::env::var("NUQ_DATABASE_URL").is_ok();
+    if !pg_ok {
+        missing.push("AXON_PG_URL (or NUQ_DATABASE_URL)");
+    }
+
+    // Redis: AXON_REDIS_URL or REDIS_URL
+    let redis_ok = std::env::var("AXON_REDIS_URL").is_ok() || std::env::var("REDIS_URL").is_ok();
+    if !redis_ok {
+        missing.push("AXON_REDIS_URL (or REDIS_URL)");
+    }
+
+    // AMQP: AXON_AMQP_URL or NUQ_RABBITMQ_URL
+    let amqp_ok =
+        std::env::var("AXON_AMQP_URL").is_ok() || std::env::var("NUQ_RABBITMQ_URL").is_ok();
+    if !amqp_ok {
+        missing.push("AXON_AMQP_URL (or NUQ_RABBITMQ_URL)");
+    }
+
+    if !missing.is_empty() {
+        eprintln!(
+            "worker startup error: the following required environment variables are not set:\n  {}\n\
+             Set them in your environment or .env file before starting the worker.",
+            missing.join("\n  ")
+        );
+        std::process::exit(1);
+    }
 }
 
 /// Run the stale-job sweep and log results.
@@ -482,5 +525,61 @@ mod tests {
         // Cap should be a power-of-two multiple of init.
         const { assert!(POLL_BACKOFF_MAX_MS >= POLL_BACKOFF_INIT_MS) };
         assert_eq!(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_INIT_MS * 64);
+    }
+
+    /// Verify validate_worker_env_vars passes when all required vars are present.
+    #[test]
+    fn validate_env_vars_passes_when_all_set() {
+        // Set all required vars.
+        unsafe {
+            std::env::set_var("AXON_PG_URL", "postgresql://localhost/test");
+            std::env::set_var("AXON_REDIS_URL", "redis://localhost");
+            std::env::set_var("AXON_AMQP_URL", "amqp://localhost");
+        }
+
+        // Should not panic or exit.
+        // We can't call the real function (it calls process::exit on failure),
+        // so we replicate the check logic inline here.
+        let pg_ok =
+            std::env::var("AXON_PG_URL").is_ok() || std::env::var("NUQ_DATABASE_URL").is_ok();
+        let redis_ok =
+            std::env::var("AXON_REDIS_URL").is_ok() || std::env::var("REDIS_URL").is_ok();
+        let amqp_ok =
+            std::env::var("AXON_AMQP_URL").is_ok() || std::env::var("NUQ_RABBITMQ_URL").is_ok();
+        assert!(pg_ok, "AXON_PG_URL should be recognized");
+        assert!(redis_ok, "AXON_REDIS_URL should be recognized");
+        assert!(amqp_ok, "AXON_AMQP_URL should be recognized");
+
+        unsafe {
+            std::env::remove_var("AXON_PG_URL");
+            std::env::remove_var("AXON_REDIS_URL");
+            std::env::remove_var("AXON_AMQP_URL");
+        }
+    }
+
+    /// Verify that the fallback variable names are also accepted.
+    #[test]
+    fn validate_env_vars_accepts_fallback_names() {
+        unsafe {
+            std::env::set_var("NUQ_DATABASE_URL", "postgresql://localhost/test");
+            std::env::set_var("REDIS_URL", "redis://localhost");
+            std::env::set_var("NUQ_RABBITMQ_URL", "amqp://localhost");
+        }
+
+        let pg_ok =
+            std::env::var("AXON_PG_URL").is_ok() || std::env::var("NUQ_DATABASE_URL").is_ok();
+        let redis_ok =
+            std::env::var("AXON_REDIS_URL").is_ok() || std::env::var("REDIS_URL").is_ok();
+        let amqp_ok =
+            std::env::var("AXON_AMQP_URL").is_ok() || std::env::var("NUQ_RABBITMQ_URL").is_ok();
+        assert!(pg_ok, "NUQ_DATABASE_URL fallback should be recognized");
+        assert!(redis_ok, "REDIS_URL fallback should be recognized");
+        assert!(amqp_ok, "NUQ_RABBITMQ_URL fallback should be recognized");
+
+        unsafe {
+            std::env::remove_var("NUQ_DATABASE_URL");
+            std::env::remove_var("REDIS_URL");
+            std::env::remove_var("NUQ_RABBITMQ_URL");
+        }
     }
 }

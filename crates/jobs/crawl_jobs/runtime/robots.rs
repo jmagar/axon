@@ -5,12 +5,12 @@ use crate::crates::core::content::{
 };
 use crate::crates::core::http::{http_client, validate_url};
 use crate::crates::crawl::engine::CrawlSummary;
-use spider::tokio;
 use spider::url::Url;
 use std::collections::{HashSet, VecDeque};
 use std::error::Error;
 use std::path::Path;
 use std::time::Duration;
+use tokio;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
 use super::read_manifest_urls;

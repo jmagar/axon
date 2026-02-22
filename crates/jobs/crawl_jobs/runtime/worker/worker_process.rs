@@ -3,6 +3,7 @@ use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::crawl::engine::{run_crawl_once, should_fallback_to_chrome, CrawlSummary};
 use crate::crates::jobs::batch_jobs::apply_queue_injection;
 use crate::crates::jobs::embed_jobs::start_embed_job;
+use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::qdrant::qdrant_delete_stale_domain_urls;
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -43,9 +44,11 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
         .map_err(|e| e.to_string());
     match result {
         Ok(result_json) => {
-            sqlx::query(
-                "UPDATE axon_crawl_jobs SET status='completed', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='running'",
-            )
+            sqlx::query(&format!(
+                "UPDATE axon_crawl_jobs SET status='{completed}', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='{running}'",
+                completed = JobStatus::Completed.as_str(),
+                running = JobStatus::Running.as_str(),
+            ))
             .bind(id)
             .bind(result_json)
             .execute(pool)
@@ -53,9 +56,11 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
             log_done(&format!("worker completed crawl job {id}"));
         }
         Err(err) => {
-            sqlx::query(
-                "UPDATE axon_crawl_jobs SET status='failed', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='running'",
-            )
+            sqlx::query(&format!(
+                "UPDATE axon_crawl_jobs SET status='{failed}', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='{running}'",
+                failed = JobStatus::Failed.as_str(),
+                running = JobStatus::Running.as_str(),
+            ))
             .bind(id)
             .bind(err.to_string())
             .execute(pool)
@@ -98,9 +103,11 @@ async fn maybe_complete_cache_hit(
         "audit_diff": diff_report,
         "audit_report_path": report_path.to_string_lossy(),
     });
-    sqlx::query(
-        "UPDATE axon_crawl_jobs SET status='completed', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='running'",
-    )
+    sqlx::query(&format!(
+        "UPDATE axon_crawl_jobs SET status='{completed}', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='{running}'",
+        completed = JobStatus::Completed.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
     .bind(id)
     .bind(result_json)
     .execute(pool)
@@ -120,6 +127,10 @@ fn spawn_progress_task(
     tokio::sync::mpsc::UnboundedSender<CrawlSummary>,
     tokio::task::JoinHandle<()>,
 ) {
+    // NOTE: The UnboundedSender is required here because `run_crawl_once` in crates/crawl/engine.rs
+    // takes `Option<UnboundedSender<CrawlSummary>>`. Switching to a bounded channel would require
+    // changing the engine's public API (outside this module's ownership).
+    // TODO: Once engine.rs is updated to accept Sender<CrawlSummary>, switch to channel(256).
     let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<CrawlSummary>();
     let progress_pool = pool.clone();
     let progress_job_id = id;
@@ -174,9 +185,10 @@ fn spawn_progress_task(
                 "crawl_stream_pages": progress.pages_seen,
                 "mid_queue_injection": mid_queue_injection,
             });
-            let _ = sqlx::query(
-                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='running'",
-            )
+            let _ = sqlx::query(&format!(
+                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
+                running = JobStatus::Running.as_str(),
+            ))
             .bind(progress_job_id)
             .bind(progress_json)
             .execute(&progress_pool)
