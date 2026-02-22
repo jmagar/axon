@@ -31,13 +31,18 @@ cargo run --bin axon -- scrape https://example.com --wait true
 | `map <url>` | Discover all URLs without scraping | No |
 | `batch <urls...>` | Bulk scrape multiple URLs | Yes (default) |
 | `extract <urls...>` | LLM-powered structured data extraction | Yes (default) |
-| `search <query>` | Web search (requires search provider) | No |
+| `search <query>` | Web search via Tavily, auto-queues crawl jobs for results | No |
+| `research <query>` | Web research via Tavily AI search with LLM synthesis | No |
 | `embed [input]` | Embed file/dir/URL into Qdrant | Yes (default) |
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
+| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
+| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
+| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
@@ -250,7 +255,16 @@ AXON_CRAWL_QUEUE=axon.crawl.jobs
 AXON_BATCH_QUEUE=axon.batch.jobs
 AXON_EXTRACT_QUEUE=axon.extract.jobs
 AXON_EMBED_QUEUE=axon.embed.jobs
+AXON_INGEST_QUEUE=axon.ingest.jobs
 AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
+
+# Search and research (required for search/research commands)
+TAVILY_API_KEY=your-tavily-api-key
+
+# Ingest credentials (required for github/reddit/youtube commands)
+GITHUB_TOKEN=                       # optional — raises GitHub rate limits
+REDDIT_CLIENT_ID=                   # required for reddit command
+REDDIT_CLIENT_SECRET=               # required for reddit command
 ```
 
 ### Dev vs Container URL Resolution
@@ -379,8 +393,11 @@ Tables are auto-created via `ensure_schema()` in each `*_jobs.rs`. Full column d
 | `axon_batch_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
 | `axon_extract_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
 | `axon_embed_jobs` | `id`, `status`, `input_text`, `config_json`, `result_json` |
+| `axon_ingest_jobs` | `id`, `source_type`, `target`, `status`, `config_json`, `result_json` — partial index on pending |
 
 All tables share: `created_at`, `updated_at`, `started_at`, `finished_at` (TIMESTAMPTZ), `error_text` (TEXT).
+
+`axon_ingest_jobs` differs from the others: it uses `source_type` (`github`/`reddit`/`youtube`) + `target` instead of `url` or `urls_json` to identify the ingest target.
 
 ## Code Style
 
