@@ -5,6 +5,7 @@ use crate::crates::core::health::{
     browser_backend_selection, browser_diagnostics_pattern, webdriver_url_from_env,
     BrowserBackendSelection,
 };
+use crate::crates::core::http::build_client;
 use crate::crates::core::ui::{muted, primary, status_text, symbol_for_status};
 use crate::crates::jobs::batch_jobs::batch_doctor;
 use crate::crates::jobs::crawl_jobs::doctor as crawl_doctor;
@@ -13,17 +14,14 @@ use crate::crates::jobs::extract_jobs::extract_doctor;
 use serde_json::Value;
 use std::env;
 use std::error::Error;
-use std::time::Duration;
 
 async fn probe_tei_info(url: &str) -> (Option<Value>, Option<String>) {
     if url.trim().is_empty() {
         return (None, Some("not configured".to_string()));
     }
 
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(4))
-        .build()
-    {
+    // Short 4s timeout for health probes — intentionally not the global 30s client.
+    let client = match build_client(4) {
         Ok(c) => c,
         Err(err) => return (None, Some(err.to_string())),
     };
