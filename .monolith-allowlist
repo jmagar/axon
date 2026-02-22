@@ -10,17 +10,3 @@ scripts/qdrant-quality.py
 
 # build_ask_context exceeds 80-line limit by design — context pipeline is atomic (2026-02-19)
 crates/vector/ops/commands/ask.rs
-
-# Jobs module split — process_job() is 342 lines — primary refactor target (2026-02-19)
-crates/jobs/crawl_jobs/runtime/worker/worker_process.rs
-# run_amqp_worker_lane() is 138 lines — tracked for refactoring (2026-02-19)
-crates/jobs/crawl_jobs/runtime/worker/worker_loops.rs
-
-# engine.rs — run_crawl_once() is 157 lines — tracked for sitemap/chrome split (2026-02-19)
-crates/crawl/engine.rs
-
-# stats.rs 575 lines — grouped by query pattern, refactor tracked (2026-02-19)
-crates/vector/ops/stats.rs
-
-# audit.rs 502 lines — discover_sitemap_urls_with_robots() is the bulk (2026-02-20)
-crates/cli/commands/crawl/audit.rs

@@ -1,13 +1,9 @@
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::logging::{log_done, log_info, log_warn};
-use crate::crates::crawl::engine::{
-    append_sitemap_backfill, run_crawl_once, should_fallback_to_chrome, CrawlSummary,
-    SitemapBackfillStats,
-};
+use crate::crates::crawl::engine::{run_crawl_once, should_fallback_to_chrome, CrawlSummary};
 use crate::crates::jobs::batch_jobs::apply_queue_injection;
 use crate::crates::jobs::embed_jobs::start_embed_job;
 use crate::crates::vector::ops::qdrant::qdrant_delete_stale_domain_urls;
-use redis::AsyncCommands;
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::error::Error;
@@ -17,10 +13,11 @@ use uuid::Uuid;
 
 use super::super::robots::{append_robots_backfill, RobotsBackfillStats, RobotsDiscoveryStats};
 use super::super::{
-    latest_completed_result_for_url, read_manifest_candidates, read_manifest_urls,
-    resolve_initial_mode, write_audit_diff, CrawlJobConfig, MID_CRAWL_INJECTION_MIN_CANDIDATES,
-    MID_CRAWL_INJECTION_TRIGGER_PAGES,
+    read_manifest_candidates, read_manifest_urls, resolve_initial_mode, write_audit_diff,
+    MID_CRAWL_INJECTION_MIN_CANDIDATES, MID_CRAWL_INJECTION_TRIGGER_PAGES,
 };
+use super::job_context::{load_job_execution_context, JobExecutionContext};
+use super::result_builder::{build_completed_result, CompletedResultContext};
 
 pub(super) async fn process_job(
     cfg: &Config,
@@ -69,146 +66,6 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     Ok(())
 }
 
-struct JobExecutionContext {
-    url: String,
-    job_cfg: Config,
-    extraction_prompt: Option<String>,
-    previous_urls: HashSet<String>,
-    cache_source: Option<String>,
-}
-
-async fn fetch_job_row(
-    pool: &PgPool,
-    id: Uuid,
-) -> Result<Option<(String, serde_json::Value)>, Box<dyn Error>> {
-    let row = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT url, config_json FROM axon_crawl_jobs WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row)
-}
-
-async fn maybe_cancel_job_before_start(
-    cfg: &Config,
-    pool: &PgPool,
-    id: Uuid,
-) -> Result<bool, Box<dyn Error>> {
-    let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    let mut redis_conn = redis_client.get_multiplexed_async_connection().await?;
-    let cancel_key = format!("axon:crawl:cancel:{id}");
-    let cancel_before: Option<String> = redis_conn
-        .get(&cancel_key)
-        .await
-        .map_err(|e| format!("failed to check crawl cancellation key {cancel_key}: {e}"))?;
-    if cancel_before.is_none() {
-        return Ok(false);
-    }
-
-    sqlx::query("UPDATE axon_crawl_jobs SET status='canceled', updated_at=NOW(), finished_at=NOW() WHERE id=$1")
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(true)
-}
-
-fn build_job_config(cfg: &Config, parsed: &CrawlJobConfig, id: Uuid) -> Config {
-    let mut job_cfg = cfg.clone();
-    job_cfg.max_pages = parsed.max_pages;
-    job_cfg.max_depth = parsed.max_depth;
-    job_cfg.include_subdomains = parsed.include_subdomains;
-    job_cfg.exclude_path_prefix = parsed.exclude_path_prefix.clone();
-    job_cfg.respect_robots = parsed.respect_robots;
-    job_cfg.min_markdown_chars = parsed.min_markdown_chars;
-    job_cfg.drop_thin_markdown = parsed.drop_thin_markdown;
-    job_cfg.discover_sitemaps = parsed.discover_sitemaps;
-    job_cfg.embed = parsed.embed;
-    job_cfg.render_mode = parsed.render_mode;
-    job_cfg.collection = parsed.collection.clone();
-    job_cfg.crawl_concurrency_limit = parsed.crawl_concurrency_limit;
-    job_cfg.sitemap_concurrency_limit = parsed.sitemap_concurrency_limit;
-    job_cfg.backfill_concurrency_limit = parsed.backfill_concurrency_limit;
-    job_cfg.max_sitemaps = parsed.max_sitemaps.max(1);
-    job_cfg.delay_ms = parsed.delay_ms;
-    job_cfg.request_timeout_ms = parsed.request_timeout_ms;
-    job_cfg.fetch_retries = parsed.fetch_retries;
-    job_cfg.retry_backoff_ms = parsed.retry_backoff_ms;
-    job_cfg.shared_queue = parsed.shared_queue;
-    job_cfg.query = parsed.extraction_prompt.clone();
-    job_cfg.cache = parsed.cache;
-    job_cfg.cache_skip_browser = parsed.cache_skip_browser;
-    job_cfg.output_dir = PathBuf::from(parsed.output_dir.clone())
-        .join("jobs")
-        .join(id.to_string());
-    job_cfg
-}
-
-async fn load_previous_urls_for_cache(
-    pool: &PgPool,
-    id: Uuid,
-    url: &str,
-    job_cfg: &Config,
-) -> Result<(HashSet<String>, Option<String>), Box<dyn Error>> {
-    let mut previous_urls = HashSet::new();
-    let mut cache_source: Option<String> = None;
-
-    if !job_cfg.cache {
-        return Ok((previous_urls, cache_source));
-    }
-
-    if let Some((previous_job_id, previous_result_json)) =
-        latest_completed_result_for_url(pool, url, id).await?
-    {
-        let previous_output_dir = previous_result_json
-            .get("output_dir")
-            .and_then(|value| value.as_str())
-            .map(PathBuf::from);
-        if let Some(previous_output_dir) = previous_output_dir {
-            let previous_manifest = previous_output_dir.join("manifest.jsonl");
-            previous_urls = read_manifest_urls(&previous_manifest).await?;
-            if !previous_urls.is_empty() {
-                cache_source = Some(format!(
-                    "job:{} manifest:{}",
-                    previous_job_id,
-                    previous_manifest.to_string_lossy()
-                ));
-            }
-        }
-    }
-
-    Ok((previous_urls, cache_source))
-}
-
-async fn load_job_execution_context(
-    cfg: &Config,
-    pool: &PgPool,
-    id: Uuid,
-) -> Result<Option<JobExecutionContext>, Box<dyn Error>> {
-    let row = fetch_job_row(pool, id).await?;
-    let Some((url, cfg_json)) = row else {
-        return Ok(None);
-    };
-
-    if maybe_cancel_job_before_start(cfg, pool, id).await? {
-        return Ok(None);
-    }
-
-    let parsed: CrawlJobConfig = serde_json::from_value(cfg_json)?;
-    let extraction_prompt = parsed.extraction_prompt.clone();
-    let job_cfg = build_job_config(cfg, &parsed, id);
-    let (previous_urls, cache_source) =
-        load_previous_urls_for_cache(pool, id, &url, &job_cfg).await?;
-
-    Ok(Some(JobExecutionContext {
-        url,
-        job_cfg,
-        extraction_prompt,
-        previous_urls,
-        cache_source,
-    }))
-}
-
 async fn maybe_complete_cache_hit(
     pool: &PgPool,
     id: Uuid,
@@ -236,13 +93,6 @@ async fn maybe_complete_cache_hit(
         "pages_crawled": 0,
         "pages_discovered": ctx.previous_urls.len(),
         "crawl_stream_pages": 0,
-        "sitemap_discovered": 0,
-        "sitemap_candidates": 0,
-        "sitemap_processed": 0,
-        "sitemap_fetched_ok": 0,
-        "sitemap_written": 0,
-        "sitemap_failed": 0,
-        "sitemap_filtered": 0,
         "elapsed_ms": 0,
         "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
         "audit_diff": diff_report,
@@ -350,6 +200,7 @@ async fn run_primary_with_optional_chrome_fallback(
         initial_mode,
         &ctx.job_cfg.output_dir,
         Some(progress_tx),
+        false, // HTTP probe: sitemap runs in the final pass only
     )
     .await?;
 
@@ -369,6 +220,7 @@ async fn run_primary_with_optional_chrome_fallback(
         RenderMode::Chrome,
         &ctx.job_cfg.output_dir,
         None,
+        ctx.job_cfg.discover_sitemaps, // Chrome final pass: run sitemap if enabled
     )
     .await
     {
@@ -392,42 +244,23 @@ async fn maybe_append_backfills(
     ctx: &JobExecutionContext,
     seen_urls: &HashSet<String>,
     final_summary: &mut CrawlSummary,
-) -> Result<
-    (
-        SitemapBackfillStats,
-        RobotsBackfillStats,
-        RobotsDiscoveryStats,
-    ),
-    Box<dyn Error>,
-> {
-    let mut backfill_stats = SitemapBackfillStats::default();
-    let mut robots_backfill_stats = RobotsBackfillStats::default();
-    let mut robots_discovery_stats = RobotsDiscoveryStats::default();
-
-    if ctx.job_cfg.discover_sitemaps {
-        backfill_stats = append_sitemap_backfill(
-            &ctx.job_cfg,
-            &ctx.url,
-            &ctx.job_cfg.output_dir,
-            seen_urls,
-            final_summary,
-        )
-        .await?;
-        (robots_backfill_stats, robots_discovery_stats) = append_robots_backfill(
-            &ctx.job_cfg,
-            &ctx.url,
-            &ctx.job_cfg.output_dir,
-            seen_urls,
-            final_summary,
-        )
-        .await?;
+) -> Result<(RobotsBackfillStats, RobotsDiscoveryStats), Box<dyn Error>> {
+    if !ctx.job_cfg.discover_sitemaps {
+        return Ok((
+            RobotsBackfillStats::default(),
+            RobotsDiscoveryStats::default(),
+        ));
     }
-
-    Ok((
-        backfill_stats,
-        robots_backfill_stats,
-        robots_discovery_stats,
-    ))
+    // Robots.txt sitemap discovery supplements spider-native crawl_sitemap().
+    // Spider doesn't parse robots.txt for Sitemap: directives, so we do it here.
+    append_robots_backfill(
+        &ctx.job_cfg,
+        &ctx.url,
+        &ctx.job_cfg.output_dir,
+        seen_urls,
+        final_summary,
+    )
+    .await
 }
 
 async fn maybe_reconcile_stale_urls(
@@ -480,94 +313,6 @@ async fn maybe_enqueue_embed_job(
     Ok(())
 }
 
-struct CompletedResultContext {
-    summary: CrawlSummary,
-    final_summary: CrawlSummary,
-    backfill_stats: SitemapBackfillStats,
-    robots_backfill_stats: RobotsBackfillStats,
-    robots_discovery_stats: RobotsDiscoveryStats,
-    mid_injection_state: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
-    final_prompt: Option<String>,
-}
-
-async fn build_completed_result(
-    ctx: &JobExecutionContext,
-    manifest_path: &Path,
-    result_ctx: CompletedResultContext,
-) -> Result<serde_json::Value, Box<dyn Error>> {
-    let crawl_discovered = result_ctx.summary.pages_seen as u64;
-    let sitemap_discovered = result_ctx.backfill_stats.sitemap_candidates as u64;
-    let robots_extra = result_ctx.robots_backfill_stats.candidates as u64;
-    let pages_discovered = crawl_discovered
-        .saturating_add(sitemap_discovered)
-        .saturating_add(robots_extra);
-    let filtered_urls =
-        pages_discovered.saturating_sub(result_ctx.final_summary.markdown_files as u64);
-    let pages_crawled = result_ctx.summary.pages_seen as u64;
-    let current_urls = read_manifest_urls(manifest_path).await?;
-    let candidates = read_manifest_candidates(manifest_path).await?;
-    let mid_queue_injection = result_ctx.mid_injection_state.lock().await.clone();
-    let mid_enqueued = mid_queue_injection
-        .as_ref()
-        .and_then(|value| value.get("queue_status"))
-        .and_then(|value| value.as_str())
-        == Some("enqueued");
-    let queue_injection = apply_queue_injection(
-        &ctx.job_cfg,
-        &candidates,
-        result_ctx.final_prompt.as_deref(),
-        if mid_enqueued {
-            "post-crawl-review"
-        } else {
-            "post-crawl"
-        },
-        !mid_enqueued,
-    )
-    .await?;
-    let (report_path, diff_report) = write_audit_diff(
-        &ctx.job_cfg.output_dir,
-        &ctx.url,
-        &ctx.previous_urls,
-        &current_urls,
-        false,
-        ctx.cache_source.clone(),
-    )
-    .await?;
-
-    Ok(serde_json::json!({
-        "phase": "completed",
-        "cache_hit": false,
-        "cache_skip_browser": ctx.job_cfg.cache_skip_browser,
-        "md_created": result_ctx.final_summary.markdown_files,
-        "thin_md": result_ctx.final_summary.thin_pages,
-        "filtered_urls": filtered_urls,
-        "pages_crawled": pages_crawled,
-        "pages_discovered": pages_discovered,
-        "crawl_stream_pages": result_ctx.summary.pages_seen,
-        "sitemap_discovered": result_ctx.backfill_stats.sitemap_discovered,
-        "sitemap_candidates": result_ctx.backfill_stats.sitemap_candidates,
-        "sitemap_processed": result_ctx.backfill_stats.processed,
-        "sitemap_fetched_ok": result_ctx.backfill_stats.fetched_ok,
-        "sitemap_written": result_ctx.backfill_stats.written,
-        "sitemap_failed": result_ctx.backfill_stats.failed,
-        "sitemap_filtered": result_ctx.backfill_stats.filtered,
-        "robots_sitemap_docs_parsed": result_ctx.robots_discovery_stats.parsed_sitemap_documents,
-        "robots_declared_sitemaps": result_ctx.robots_discovery_stats.robots_declared_sitemaps,
-        "robots_discovered_urls": result_ctx.robots_backfill_stats.discovered_urls,
-        "robots_candidates": result_ctx.robots_backfill_stats.candidates,
-        "robots_written": result_ctx.robots_backfill_stats.written,
-        "robots_failed": result_ctx.robots_backfill_stats.failed,
-        "robots_filtered_existing": result_ctx.robots_backfill_stats.filtered_existing,
-        "elapsed_ms": result_ctx.final_summary.elapsed_ms,
-        "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
-        "audit_diff": diff_report,
-        "audit_report_path": report_path.to_string_lossy(),
-        "mid_queue_injection": mid_queue_injection,
-        "queue_injection": queue_injection,
-        "extraction_observability": queue_injection["observability"].clone(),
-    }))
-}
-
 async fn run_active_crawl_job(
     pool: &PgPool,
     id: Uuid,
@@ -590,7 +335,7 @@ async fn run_active_crawl_job(
             run_primary_with_optional_chrome_fallback(ctx, id, progress_tx).await?;
 
         let mut final_summary = summary.clone();
-        let (backfill_stats, robots_backfill_stats, robots_discovery_stats) =
+        let (robots_backfill_stats, robots_discovery_stats) =
             maybe_append_backfills(ctx, &seen_urls, &mut final_summary).await?;
 
         let stale_deleted = maybe_reconcile_stale_urls(ctx, &manifest_path)
@@ -608,7 +353,6 @@ async fn run_active_crawl_job(
             CompletedResultContext {
                 summary,
                 final_summary,
-                backfill_stats,
                 robots_backfill_stats,
                 robots_discovery_stats,
                 mid_injection_state: Arc::clone(&mid_injection_state),

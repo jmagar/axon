@@ -1,6 +1,8 @@
 use crate::crates::core::config::Config;
 use std::error::Error;
 
+mod job_context;
+mod result_builder;
 mod worker_loops;
 mod worker_process;
 

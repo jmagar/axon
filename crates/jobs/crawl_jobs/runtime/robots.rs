@@ -103,7 +103,7 @@ async fn discover_sitemap_urls_with_robots(
 
     let mut seen_sitemaps = HashSet::new();
     let mut out = HashSet::new();
-    let max_sitemaps = cfg.max_sitemaps.max(1);
+    let max_sitemaps = 512usize;
     while let Some(candidate) = queue.pop_front() {
         if seen_sitemaps.len() >= max_sitemaps {
             break;

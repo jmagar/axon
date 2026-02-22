@@ -20,6 +20,7 @@ pub(super) enum CliCommand {
     Batch(BatchArgs),
     Extract(ExtractArgs),
     Search(TextArg),
+    Research(TextArg),
     Embed(EmbedArgs),
     Debug(TextArg),
     Doctor,
@@ -292,13 +293,10 @@ pub(super) struct GlobalArgs {
     pub(super) crawl_concurrency_limit: Option<usize>,
 
     #[arg(global = true, long)]
-    pub(super) sitemap_concurrency_limit: Option<usize>,
-
-    #[arg(global = true, long)]
     pub(super) backfill_concurrency_limit: Option<usize>,
 
-    #[arg(global = true, long, default_value_t = 512)]
-    pub(super) max_sitemaps: usize,
+    #[arg(global = true, long, action = ArgAction::SetTrue)]
+    pub(super) sitemap_only: bool,
 
     #[arg(global = true, long, default_value_t = 0)]
     pub(super) delay_ms: u64,

@@ -27,6 +27,7 @@ pub enum CommandKind {
     Reddit,
     Youtube,
     Sessions,
+    Research,
 }
 
 impl CommandKind {
@@ -55,7 +56,18 @@ impl CommandKind {
             Self::Reddit => "reddit",
             Self::Youtube => "youtube",
             Self::Sessions => "sessions",
+            Self::Research => "research",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command_kind_research_as_str() {
+        assert_eq!(CommandKind::Research.as_str(), "research");
     }
 }
 
@@ -147,9 +159,8 @@ pub struct Config {
     pub yes: bool,
     pub performance_profile: PerformanceProfile,
     pub crawl_concurrency_limit: Option<usize>,
-    pub sitemap_concurrency_limit: Option<usize>,
     pub backfill_concurrency_limit: Option<usize>,
-    pub max_sitemaps: usize,
+    pub sitemap_only: bool,
     pub delay_ms: u64,
     pub request_timeout_ms: Option<u64>,
     pub fetch_retries: usize,
@@ -176,6 +187,7 @@ pub struct Config {
     pub openai_base_url: String,
     pub openai_api_key: String,
     pub openai_model: String,
+    pub tavily_api_key: String,
     pub ask_diagnostics: bool,
     pub ask_max_context_chars: usize,
     pub ask_candidate_limit: usize,
@@ -237,12 +249,11 @@ impl fmt::Debug for Config {
             .field("yes", &self.yes)
             .field("performance_profile", &self.performance_profile)
             .field("crawl_concurrency_limit", &self.crawl_concurrency_limit)
-            .field("sitemap_concurrency_limit", &self.sitemap_concurrency_limit)
             .field(
                 "backfill_concurrency_limit",
                 &self.backfill_concurrency_limit,
             )
-            .field("max_sitemaps", &self.max_sitemaps)
+            .field("sitemap_only", &self.sitemap_only)
             .field("delay_ms", &self.delay_ms)
             .field("request_timeout_ms", &self.request_timeout_ms)
             .field("fetch_retries", &self.fetch_retries)
@@ -265,6 +276,7 @@ impl fmt::Debug for Config {
             .field("openai_base_url", &self.openai_base_url)
             .field("openai_api_key", &"[REDACTED]")
             .field("openai_model", &self.openai_model)
+            .field("tavily_api_key", &"[REDACTED]")
             .field("ask_diagnostics", &self.ask_diagnostics)
             .field("ask_max_context_chars", &self.ask_max_context_chars)
             .field("ask_candidate_limit", &self.ask_candidate_limit)

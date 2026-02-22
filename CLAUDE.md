@@ -190,7 +190,7 @@ axon_rust/
 | `axon-redis` | redis:8.2-alpine | `53379` | Queue state / caching |
 | `axon-rabbitmq` | rabbitmq:4.0-management | `45535` | AMQP job queue |
 | `axon-qdrant` | qdrant/qdrant:v1.13.1 | `53333`, `53334` (gRPC) | Vector store |
-| `axon-webdriver` | selenium/standalone-chrome:4.34.0 | `4444` (WebDriver), `7900` (VNC) | Browser fallback |
+| `axon-chrome` | built from Dockerfile.chrome | `6000` (management), `9222` (CDP proxy) | headless_browser + chrome-headless-shell |
 | `axon-workers` | built from Dockerfile | — | 4 workers (crawl/batch/extract/embed) |
 
 All services live on the `axon` bridge network. Data persisted to `/home/jmagar/appdata/axon-*`.
@@ -242,8 +242,8 @@ OPENAI_BASE_URL=http://YOUR_LLM_HOST/v1
 OPENAI_API_KEY=your-key-or-empty
 OPENAI_MODEL=your-model-name
 
-# WebDriver for browser fallback (axon-webdriver runs at localhost:4444)
-AXON_WEBDRIVER_URL=http://127.0.0.1:4444
+# CDP endpoint for headless_browser (axon-chrome management API)
+AXON_CHROME_REMOTE_URL=http://axon-chrome:6000
 
 # Optional queue name overrides
 AXON_CRAWL_QUEUE=axon.crawl.jobs
