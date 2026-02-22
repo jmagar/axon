@@ -18,7 +18,7 @@ pub(crate) fn normalize_local_service_url(url: String) -> String {
         ("axon-redis", "127.0.0.1", 53379),
         ("axon-rabbitmq", "127.0.0.1", 45535),
         ("axon-qdrant", "127.0.0.1", 53333),
-        ("axon-webdriver", "127.0.0.1", 4444),
+        ("axon-chrome", "127.0.0.1", 6000),
     ];
 
     let Ok(mut parsed) = Url::parse(&url) else {
@@ -96,6 +96,7 @@ fn into_config(cli: Cli) -> Config {
             },
         ),
         CliCommand::Search(args) => (CommandKind::Search, args.value),
+        CliCommand::Research(args) => (CommandKind::Research, args.value),
         CliCommand::Embed(args) => (
             CommandKind::Embed,
             if let Some(job) = args.job {
@@ -199,12 +200,10 @@ fn into_config(cli: Cli) -> Config {
     );
 
     let mut crawl_concurrency_limit = global.crawl_concurrency_limit;
-    let mut sitemap_concurrency_limit = global.sitemap_concurrency_limit;
     let mut backfill_concurrency_limit = global.backfill_concurrency_limit;
 
     if let Some(limit) = global.concurrency_limit {
         crawl_concurrency_limit = Some(limit);
-        sitemap_concurrency_limit = Some(limit);
         backfill_concurrency_limit = Some(limit);
     }
 
@@ -259,9 +258,8 @@ fn into_config(cli: Cli) -> Config {
         yes: global.yes,
         performance_profile: global.performance_profile,
         crawl_concurrency_limit,
-        sitemap_concurrency_limit,
         backfill_concurrency_limit,
-        max_sitemaps: global.max_sitemaps.max(1),
+        sitemap_only: global.sitemap_only,
         delay_ms: global.delay_ms,
         request_timeout_ms: global.request_timeout_ms,
         fetch_retries: global.fetch_retries.unwrap_or(0),
@@ -319,6 +317,7 @@ fn into_config(cli: Cli) -> Config {
             .openai_model
             .or_else(|| env::var("OPENAI_MODEL").ok())
             .unwrap_or_default(),
+        tavily_api_key: env::var("TAVILY_API_KEY").ok().unwrap_or_default(),
         ask_diagnostics,
         ask_max_context_chars: performance::env_usize_clamped(
             "AXON_ASK_MAX_CONTEXT_CHARS",
@@ -359,20 +358,11 @@ fn into_config(cli: Cli) -> Config {
         cfg.exclude_path_prefix = excludes::default_exclude_prefixes();
     }
 
-    let (
-        crawl_default,
-        sitemap_default,
-        backfill_default,
-        timeout_default,
-        retries_default,
-        backoff_default,
-    ) = performance::performance_defaults(cfg.performance_profile);
+    let (crawl_default, backfill_default, timeout_default, retries_default, backoff_default) =
+        performance::performance_defaults(cfg.performance_profile);
 
     if cfg.crawl_concurrency_limit.is_none() {
         cfg.crawl_concurrency_limit = Some(crawl_default);
-    }
-    if cfg.sitemap_concurrency_limit.is_none() {
-        cfg.sitemap_concurrency_limit = Some(sitemap_default);
     }
     if cfg.backfill_concurrency_limit.is_none() {
         cfg.backfill_concurrency_limit = Some(backfill_default);
@@ -394,4 +384,28 @@ pub fn parse_args() -> Config {
     maybe_print_top_level_help_and_exit();
     let cli = Cli::parse();
     into_config(cli)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    // Use a unique env var name per test to avoid parallel-test races.
+    #[test]
+    fn test_tavily_api_key_read_from_env() {
+        const VAR: &str = "AXON_TEST_TAVILY_KEY_PRESENT";
+        // SAFETY: unique var name; no other test reads/writes AXON_TEST_TAVILY_KEY_PRESENT.
+        unsafe { env::set_var(VAR, "test-key-123") };
+        let key = env::var(VAR).ok().unwrap_or_default();
+        assert_eq!(key, "test-key-123");
+        unsafe { env::remove_var(VAR) };
+    }
+
+    #[test]
+    fn test_tavily_api_key_defaults_to_empty_when_unset() {
+        const VAR: &str = "AXON_TEST_TAVILY_KEY_ABSENT";
+        // This var is never set anywhere, so it should always be absent.
+        let key = env::var(VAR).ok().unwrap_or_default();
+        assert_eq!(key, "");
+    }
 }

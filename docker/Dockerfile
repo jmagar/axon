@@ -1,8 +1,18 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.93-bookworm AS builder
 
 WORKDIR /src
 
-COPY . .
+# Build context is the axon_rust directory.
+# spider_agent is injected via the "spider-agent" BuildKit additional_context
+# (declared in docker-compose.yaml) so the Cargo.toml path dep
+# ../spider/spider_agent resolves correctly without a huge workspace context.
+COPY . ./axon_rust/
+COPY --from=spider-agent . ./spider/spider_agent/
+COPY --from=spider-agent-types . ./spider/spider_agent_types/
+COPY --from=spider-agent-html . ./spider/spider_agent_html/
+
+WORKDIR /src/axon_rust
 
 RUN cargo build --release --bin axon
 
@@ -43,7 +53,7 @@ RUN set -eux; \
 
 WORKDIR /app
 
-COPY --from=builder /src/target/release/axon /usr/local/bin/axon
+COPY --from=builder /src/axon_rust/target/release/axon /usr/local/bin/axon
 
 COPY docker/s6/cont-init.d/ /etc/cont-init.d/
 COPY docker/s6/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
@@ -59,6 +69,7 @@ RUN chmod +x /etc/cont-init.d/* \
         /var/log/axon/batch-worker \
         /var/log/axon/embed-worker \
         /var/log/axon/extract-worker \
+        /var/log/axon/ingest-worker \
     && chown -R axon:axon /var/log/axon /app
 
 # NOTE: s6-overlay v3 requires root for /init (PID 1) to manage process

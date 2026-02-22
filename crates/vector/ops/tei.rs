@@ -104,10 +104,27 @@ pub(crate) async fn tei_embed(
 async fn ensure_collection(cfg: &Config, dim: usize) -> Result<(), Box<dyn Error>> {
     let client = http_client()?;
     let url = format!("{}/collections/{}", qdrant_base(cfg), cfg.collection);
+
+    // GET first: if the collection (or alias) already exists with matching dimensions, skip the PUT.
+    // This avoids a 400 from Qdrant when cfg.collection matches an alias name rather than a real collection.
+    let get_resp = client.get(&url).send().await?;
+    if get_resp.status().is_success() {
+        let body: serde_json::Value = get_resp.json().await?;
+        let existing_dim = body
+            .pointer("/result/config/params/vectors/size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        if existing_dim == dim {
+            return Ok(());
+        }
+    }
+
+    // Collection absent or dimension mismatch — create/update it.
     let create = serde_json::json!({
         "vectors": {"size": dim, "distance": "Cosine"}
     });
-    let resp = client.put(url).json(&create).send().await?;
+    let resp = client.put(&url).json(&create).send().await?;
+    // 409 Conflict = racing caller already created it; treat as success.
     if resp.status() != StatusCode::CONFLICT {
         resp.error_for_status()?;
     }

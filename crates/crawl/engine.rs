@@ -1,24 +1,20 @@
-mod sitemap;
-
+mod collector;
 #[cfg(test)]
 mod tests;
 
-pub use sitemap::{append_sitemap_backfill, crawl_sitemap_urls};
-
 use crate::crates::core::config::{Config, RenderMode};
-use crate::crates::core::content::{build_transform_config, url_to_filename};
+use crate::crates::core::content::build_transform_config;
 use crate::crates::core::http::ssrf_blacklist_patterns;
 use crate::crates::core::logging::{log_info, log_warn};
+use collector::collect_crawl_pages;
 use spider::features::chrome_common::RequestInterceptConfiguration;
 use spider::tokio;
 use spider::url::Url;
 use spider::website::Website;
-use spider_transformations::transformation::content::{transform_content_input, TransformInput};
 use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Default, Clone)]
@@ -27,17 +23,6 @@ pub struct CrawlSummary {
     pub markdown_files: u32,
     pub thin_pages: u32,
     pub elapsed_ms: u128,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SitemapBackfillStats {
-    pub sitemap_discovered: usize,
-    pub sitemap_candidates: usize,
-    pub processed: usize,
-    pub fetched_ok: usize,
-    pub written: usize,
-    pub failed: usize,
-    pub filtered: usize,
 }
 
 pub(crate) fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
@@ -229,6 +214,10 @@ fn configure_website(
         )));
     }
 
+    // We always control the sitemap phase explicitly via run_crawl_once(run_sitemap: bool).
+    // Prevent spider from auto-running sitemap during crawl()/crawl_raw().
+    website.with_ignore_sitemap(true);
+
     Ok(website)
 }
 
@@ -295,6 +284,7 @@ pub async fn run_crawl_once(
     mode: RenderMode,
     output_dir: &Path,
     progress_tx: Option<UnboundedSender<CrawlSummary>>,
+    run_sitemap: bool,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
     if output_dir.exists() {
         if std::env::var("AXON_NO_WIPE").is_ok() {
@@ -326,7 +316,7 @@ pub async fn run_crawl_once(
     // under high-throughput crawls (extreme/max profiles). Clamp to 16 384 so
     // a large --max-pages value can't allocate an unbounded broadcast ring buffer.
     let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
-    let mut rx = website
+    let rx = website
         .subscribe(subscribe_buf)
         .ok_or("failed to subscribe to spider broadcast channel")?;
     let markdown_dir = output_dir.join("markdown");
@@ -338,104 +328,73 @@ pub async fn run_crawl_once(
     let crawl_start = Instant::now();
     let transform_cfg = build_transform_config();
 
-    let join = tokio::spawn(async move {
-        let manifest_file = tokio::fs::File::create(&manifest_path)
-            .await
-            .map_err(|e| format!("manifest create failed: {e}"))?;
-        let mut manifest = tokio::io::BufWriter::new(manifest_file);
-        let mut summary = CrawlSummary::default();
-        let mut urls = HashSet::new();
-        let mut seen_canonical = HashSet::new();
+    let join = tokio::spawn(collect_crawl_pages(
+        rx,
+        markdown_dir,
+        manifest_path,
+        min_chars,
+        drop_thin,
+        exclude_path_prefix,
+        transform_cfg,
+        progress_tx,
+    ));
 
-        loop {
-            let page = match rx.recv().await {
-                Ok(page) => page,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                    log_warn(&format!("crawl broadcast lagged: {skipped} pages dropped — increase subscribe buffer or reduce concurrency"));
-                    continue;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-            };
-            let raw_url = page.get_url().to_string();
-            if is_excluded_url_path(&raw_url, &exclude_path_prefix) {
-                continue;
-            }
-            let Some(url) = canonicalize_url_for_dedupe(&raw_url) else {
-                continue;
-            };
-            if !seen_canonical.insert(url.clone()) {
-                continue;
-            }
-            summary.pages_seen += 1;
-            urls.insert(url.clone());
-
-            let input = TransformInput {
-                url: None,
-                content: page.get_html_bytes_u8(),
-                screenshot_bytes: None,
-                encoding: None,
-                selector_config: None,
-                ignore_tags: None,
-            };
-            let markdown = transform_content_input(input, transform_cfg);
-            let trimmed = markdown.trim(); // &str borrow — zero allocation
-            let chars = trimmed.chars().count();
-
-            if chars < min_chars {
-                summary.thin_pages += 1;
-                if drop_thin {
-                    if summary.pages_seen.is_multiple_of(25) {
-                        if let Some(tx) = progress_tx.as_ref() {
-                            let _ = tx.send(summary.clone());
-                        }
-                    }
-                    continue;
-                }
-            }
-            if trimmed.is_empty() {
-                if summary.pages_seen.is_multiple_of(25) {
-                    if let Some(tx) = progress_tx.as_ref() {
-                        let _ = tx.send(summary.clone());
-                    }
-                }
-                continue;
-            }
-
-            summary.markdown_files += 1;
-            let filename = url_to_filename(&url, summary.markdown_files);
-            let path = markdown_dir.join(filename);
-            tokio::fs::write(&path, trimmed.as_bytes())
-                .await
-                .map_err(|e| format!("write failed: {e}"))?;
-            let rec = serde_json::json!({"url": url, "file_path": path.to_string_lossy(), "markdown_chars": chars});
-            let mut line = rec.to_string();
-            line.push('\n');
-            manifest
-                .write_all(line.as_bytes())
-                .await
-                .map_err(|e| format!("manifest failed: {e}"))?;
-
-            if summary.pages_seen.is_multiple_of(25) {
-                if let Some(tx) = progress_tx.as_ref() {
-                    let _ = tx.send(summary.clone());
-                }
-            }
-        }
-
-        manifest
-            .flush()
-            .await
-            .map_err(|e| format!("manifest flush failed: {e}"))?;
-        if let Some(tx) = progress_tx.as_ref() {
-            let _ = tx.send(summary.clone());
-        }
-        Ok::<(CrawlSummary, HashSet<String>), String>((summary, urls))
-    });
+    // Spider-native sitemap phase: pages flow through the live subscription above.
+    // persist_links() carries accumulated sitemap links into the subsequent main crawl.
+    if run_sitemap && cfg.discover_sitemaps {
+        website.crawl_sitemap().await;
+        website.persist_links();
+    }
 
     match mode {
         RenderMode::Http => website.crawl_raw().await,
         RenderMode::Chrome | RenderMode::AutoSwitch => website.crawl().await,
     }
+    website.unsubscribe();
+
+    let (mut summary, urls) = join
+        .await
+        .map_err(|e| format!("collector join failure: {e}"))?
+        .map_err(|e| format!("collector failure: {e}"))?;
+    summary.elapsed_ms = crawl_start.elapsed().as_millis();
+
+    Ok((summary, urls))
+}
+
+/// Crawl only the sitemap — no follow-on main crawl.
+/// Pages flow through the same subscription pipeline as `run_crawl_once`.
+pub async fn run_sitemap_only(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    tokio::fs::create_dir_all(output_dir.join("markdown")).await?;
+
+    let mut website = configure_website(cfg, start_url, cfg.render_mode)?;
+    // Override the default set by configure_website: sitemap IS the crawl here.
+    website.with_ignore_sitemap(false);
+
+    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
+    let rx = website
+        .subscribe(subscribe_buf)
+        .ok_or("failed to subscribe to spider broadcast channel")?;
+    let manifest_path = output_dir.join("manifest.jsonl");
+    let markdown_dir = output_dir.join("markdown");
+    let transform_cfg = build_transform_config();
+    let crawl_start = Instant::now();
+
+    let join = tokio::spawn(collect_crawl_pages(
+        rx,
+        markdown_dir,
+        manifest_path,
+        cfg.min_markdown_chars,
+        cfg.drop_thin_markdown,
+        cfg.exclude_path_prefix.clone(),
+        transform_cfg,
+        None,
+    ));
+
+    website.crawl_sitemap().await;
     website.unsubscribe();
 
     let (mut summary, urls) = join
