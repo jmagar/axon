@@ -81,14 +81,26 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Start an extract job, creating a new pool for this call (CLI / one-shot use).
 pub async fn start_extract_job(
     cfg: &Config,
     urls: &[String],
     prompt: Option<String>,
 ) -> Result<Uuid, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
+    start_extract_job_with_pool(&pool, cfg, urls, prompt).await
+}
+
+/// Start an extract job using a pre-existing pool. Used by workers that already
+/// hold a long-lived pool to avoid per-call TCP connection churn.
+pub(crate) async fn start_extract_job_with_pool(
+    pool: &PgPool,
+    cfg: &Config,
+    urls: &[String],
+    prompt: Option<String>,
+) -> Result<Uuid, Box<dyn Error>> {
     if SCHEMA_INIT.get().is_none() {
-        ensure_schema(&pool).await?;
+        ensure_schema(pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
 
@@ -112,7 +124,7 @@ pub async fn start_extract_job(
     ))
     .bind(urls_json.clone())
     .bind(cfg_json.clone())
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await?
     {
         log_info(&format!(
@@ -131,7 +143,7 @@ pub async fn start_extract_job(
     .bind(id)
     .bind(urls_json)
     .bind(cfg_json)
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     if let Err(err) = enqueue_job(cfg, &cfg.extract_queue, id).await {

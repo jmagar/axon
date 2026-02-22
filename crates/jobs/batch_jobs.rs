@@ -7,7 +7,7 @@ use crate::crates::jobs::common::{
     enqueue_job, make_pool, mark_job_failed, open_amqp_channel, purge_queue_safe,
     reclaim_stale_running_jobs, JobTable,
 };
-use crate::crates::jobs::extract_jobs::start_extract_job;
+use crate::crates::jobs::extract_jobs::{start_extract_job, start_extract_job_with_pool};
 use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::embed_path_native;
 use chrono::{DateTime, Utc};
@@ -307,6 +307,61 @@ pub async fn apply_queue_injection(
     } else {
         let job_id = start_extract_job(cfg, &selected_urls, prompt).await?;
         write!(&mut queue_status, "enqueued").ok();
+        extract_job_id = Some(job_id);
+        log_info(&format!(
+            "command=queue_injection phase={} selected={} extract_job_id={}",
+            phase,
+            selected_urls.len(),
+            job_id
+        ));
+    }
+
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("queue_status".to_string(), serde_json::json!(queue_status));
+        object.insert(
+            "enqueue_enabled".to_string(),
+            serde_json::json!(enqueue_enabled),
+        );
+        object.insert(
+            "extract_job_id".to_string(),
+            serde_json::json!(extract_job_id),
+        );
+    }
+
+    Ok(payload)
+}
+
+/// Pool-aware variant of `apply_queue_injection` for use inside workers that
+/// already hold a long-lived `PgPool`. Avoids creating a new connection pool
+/// for the extract-job enqueue step.
+pub(crate) async fn apply_queue_injection_with_pool(
+    pool: &PgPool,
+    cfg: &Config,
+    candidates: &[InjectionCandidate],
+    extraction_prompt: Option<&str>,
+    phase: &str,
+    enqueue_enabled: bool,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let evaluation = evaluate_queue_injection(candidates, phase);
+    let mut payload = serde_json::to_value(&evaluation)?;
+    let selected_urls = evaluation.selected_urls.clone();
+    let prompt = extraction_prompt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    let mut queue_status = String::new();
+    let mut extract_job_id: Option<Uuid> = None;
+
+    if selected_urls.is_empty() {
+        queue_status.push_str("skipped_no_candidates");
+    } else if prompt.is_none() {
+        queue_status.push_str("skipped_missing_prompt");
+    } else if !enqueue_enabled {
+        queue_status.push_str("deferred");
+    } else {
+        let job_id = start_extract_job_with_pool(pool, cfg, &selected_urls, prompt).await?;
+        queue_status.push_str("enqueued");
         extract_job_id = Some(job_id);
         log_info(&format!(
             "command=queue_injection phase={} selected={} extract_job_id={}",

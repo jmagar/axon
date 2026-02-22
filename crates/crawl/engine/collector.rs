@@ -4,7 +4,7 @@ use crate::crates::core::logging::log_warn;
 use spider_transformations::transformation::content::{transform_content_input, TransformInput};
 use std::collections::HashSet;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 /// Drives the spider broadcast subscription to collect, filter, render, and
 /// persist crawled pages. Runs in a spawned task while `website.crawl*()`
@@ -19,7 +19,7 @@ pub(super) async fn collect_crawl_pages(
     drop_thin: bool,
     exclude_path_prefix: Vec<String>,
     transform_cfg: &'static spider_transformations::transformation::content::TransformConfig,
-    progress_tx: Option<UnboundedSender<CrawlSummary>>,
+    progress_tx: Option<Sender<CrawlSummary>>,
 ) -> Result<(CrawlSummary, HashSet<String>), String> {
     let manifest_file = tokio::fs::File::create(&manifest_path)
         .await
@@ -69,7 +69,7 @@ pub(super) async fn collect_crawl_pages(
             if drop_thin {
                 if summary.pages_seen.is_multiple_of(25) {
                     if let Some(tx) = progress_tx.as_ref() {
-                        let _ = tx.send(summary.clone());
+                        tx.send(summary.clone()).await.ok();
                     }
                 }
                 continue;
@@ -78,7 +78,7 @@ pub(super) async fn collect_crawl_pages(
         if trimmed.is_empty() {
             if summary.pages_seen.is_multiple_of(25) {
                 if let Some(tx) = progress_tx.as_ref() {
-                    let _ = tx.send(summary.clone());
+                    tx.send(summary.clone()).await.ok();
                 }
             }
             continue;
@@ -100,7 +100,7 @@ pub(super) async fn collect_crawl_pages(
 
         if summary.pages_seen.is_multiple_of(25) {
             if let Some(tx) = progress_tx.as_ref() {
-                let _ = tx.send(summary.clone());
+                tx.send(summary.clone()).await.ok();
             }
         }
     }
@@ -110,7 +110,7 @@ pub(super) async fn collect_crawl_pages(
         .await
         .map_err(|e| format!("manifest flush failed: {e}"))?;
     if let Some(tx) = progress_tx.as_ref() {
-        let _ = tx.send(summary.clone());
+        tx.send(summary.clone()).await.ok();
     }
     Ok((summary, urls))
 }

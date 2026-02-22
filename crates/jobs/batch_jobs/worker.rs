@@ -149,7 +149,8 @@ async fn process_batch_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
     if mark_batch_canceled(cfg, pool, id).await? {
         return Ok(());
     }
-    let queue_injection = apply_queue_injection(
+    let queue_injection = apply_queue_injection_with_pool(
+        pool,
         cfg,
         &candidates,
         job_cfg.extraction_prompt.as_deref(),

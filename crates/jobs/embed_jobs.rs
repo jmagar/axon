@@ -79,10 +79,21 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Start an embed job, creating a new pool for this call (CLI / one-shot use).
 pub async fn start_embed_job(cfg: &Config, input: &str) -> Result<Uuid, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
+    start_embed_job_with_pool(&pool, cfg, input).await
+}
+
+/// Start an embed job using a pre-existing pool. Used by workers that already
+/// hold a long-lived pool to avoid per-call TCP connection churn.
+pub(crate) async fn start_embed_job_with_pool(
+    pool: &PgPool,
+    cfg: &Config,
+    input: &str,
+) -> Result<Uuid, Box<dyn Error>> {
     if SCHEMA_INIT.get().is_none() {
-        ensure_schema(&pool).await?;
+        ensure_schema(pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
 
@@ -104,7 +115,7 @@ pub async fn start_embed_job(cfg: &Config, input: &str) -> Result<Uuid, Box<dyn 
     ))
     .bind(input)
     .bind(cfg_json.clone())
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await?
     {
         log_info(&format!(
@@ -121,7 +132,7 @@ pub async fn start_embed_job(cfg: &Config, input: &str) -> Result<Uuid, Box<dyn 
     .bind(id)
     .bind(input)
     .bind(cfg_json)
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     if let Err(err) = enqueue_job(cfg, &cfg.embed_queue, id).await {
@@ -277,10 +288,7 @@ async fn run_embed_core(
     input_text: String,
     collection: String,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
-    // NOTE: UnboundedSender is required because embed_path_native_with_progress
-    // in crates/vector/ops/tei.rs takes Option<UnboundedSender<EmbedProgress>>.
-    // TODO: Switch to bounded channel(64) once vector/ops API accepts bounded Sender.
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<EmbedProgress>();
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<EmbedProgress>(256);
     let progress_pool = pool.clone();
     let progress_task = tokio::spawn(async move {
         while let Some(progress) = progress_rx.recv().await {

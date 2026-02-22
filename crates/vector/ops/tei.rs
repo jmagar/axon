@@ -323,7 +323,7 @@ pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary
 pub async fn embed_path_native_with_progress(
     cfg: &Config,
     input: &str,
-    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     embed_path_native_with_progress_impl(cfg, input, progress_tx).await
 }
@@ -331,7 +331,7 @@ pub async fn embed_path_native_with_progress(
 async fn embed_path_native_with_progress_impl(
     cfg: &Config,
     input: &str,
-    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     validate_embed_config(cfg)?;
     let prepared = prepare_embed_docs(input).await?;
@@ -380,10 +380,11 @@ async fn prepare_embed_docs(input: &str) -> Result<Vec<PreparedDoc>, Box<dyn Err
 }
 
 fn emit_empty_embed(
-    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     if let Some(tx) = &progress_tx {
-        let _ = tx.send(EmbedProgress {
+        // Bounded send on a sync context — drop silently if receiver is gone.
+        let _ = tx.try_send(EmbedProgress {
             docs_total: 0,
             docs_completed: 0,
             chunks_embedded: 0,
@@ -398,7 +399,7 @@ fn emit_empty_embed(
 async fn run_embed_pipeline(
     cfg: &Config,
     prepared: Vec<PreparedDoc>,
-    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbedProgress>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     let docs_embedded = prepared.len();
     let doc_concurrency = env_usize_clamped(
@@ -446,11 +447,13 @@ async fn run_embed_pipeline(
         chunks_embedded += points.len();
         docs_completed += 1;
         if let Some(tx) = &progress_tx {
-            let _ = tx.send(EmbedProgress {
+            tx.send(EmbedProgress {
                 docs_total: docs_embedded,
                 docs_completed,
                 chunks_embedded,
-            });
+            })
+            .await
+            .ok();
         }
         pending_points.append(&mut points);
         if pending_points.len() >= flush_point_threshold {

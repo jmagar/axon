@@ -1,8 +1,8 @@
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::crawl::engine::{run_crawl_once, should_fallback_to_chrome, CrawlSummary};
-use crate::crates::jobs::batch_jobs::apply_queue_injection;
-use crate::crates::jobs::embed_jobs::start_embed_job;
+use crate::crates::jobs::batch_jobs::apply_queue_injection_with_pool;
+use crate::crates::jobs::embed_jobs::start_embed_job_with_pool;
 use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::qdrant::qdrant_delete_stale_domain_urls;
 use sqlx::PgPool;
@@ -124,14 +124,10 @@ fn spawn_progress_task(
     manifest_path: PathBuf,
     injection_state: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
 ) -> (
-    tokio::sync::mpsc::UnboundedSender<CrawlSummary>,
+    tokio::sync::mpsc::Sender<CrawlSummary>,
     tokio::task::JoinHandle<()>,
 ) {
-    // NOTE: The UnboundedSender is required here because `run_crawl_once` in crates/crawl/engine.rs
-    // takes `Option<UnboundedSender<CrawlSummary>>`. Switching to a bounded channel would require
-    // changing the engine's public API (outside this module's ownership).
-    // TODO: Once engine.rs is updated to accept Sender<CrawlSummary>, switch to channel(256).
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<CrawlSummary>();
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<CrawlSummary>(256);
     let progress_pool = pool.clone();
     let progress_job_id = id;
     let progress_cfg = job_cfg.clone();
@@ -147,7 +143,8 @@ fn spawn_progress_task(
             if !injection_attempted && progress.pages_seen >= MID_CRAWL_INJECTION_TRIGGER_PAGES {
                 match read_manifest_candidates(&progress_manifest_path).await {
                     Ok(candidates) if candidates.len() >= MID_CRAWL_INJECTION_MIN_CANDIDATES => {
-                        let injection = match apply_queue_injection(
+                        let injection = match apply_queue_injection_with_pool(
+                            &progress_pool,
                             &progress_cfg,
                             &candidates,
                             progress_prompt.as_deref(),
@@ -202,7 +199,7 @@ fn spawn_progress_task(
 async fn run_primary_with_optional_chrome_fallback(
     ctx: &JobExecutionContext,
     id: Uuid,
-    progress_tx: tokio::sync::mpsc::UnboundedSender<CrawlSummary>,
+    progress_tx: tokio::sync::mpsc::Sender<CrawlSummary>,
 ) -> Result<(CrawlSummary, std::collections::HashSet<String>), Box<dyn Error>> {
     let initial_mode =
         resolve_initial_mode(ctx.job_cfg.render_mode, ctx.job_cfg.cache_skip_browser);
@@ -217,7 +214,7 @@ async fn run_primary_with_optional_chrome_fallback(
     .await?;
 
     if !matches!(ctx.job_cfg.render_mode, RenderMode::AutoSwitch)
-        || !should_fallback_to_chrome(&http_summary, ctx.job_cfg.max_pages)
+        || !should_fallback_to_chrome(&http_summary, ctx.job_cfg.max_pages, &ctx.job_cfg)
     {
         return Ok((http_summary, http_seen_urls));
     }
@@ -310,6 +307,7 @@ async fn maybe_reconcile_stale_urls(
 }
 
 async fn maybe_enqueue_embed_job(
+    pool: &PgPool,
     ctx: &JobExecutionContext,
     crawl_job_id: Uuid,
 ) -> Result<(), Box<dyn Error>> {
@@ -317,7 +315,8 @@ async fn maybe_enqueue_embed_job(
         return Ok(());
     }
     let markdown_dir = ctx.job_cfg.output_dir.join("markdown");
-    let embed_job_id = start_embed_job(&ctx.job_cfg, &markdown_dir.to_string_lossy()).await?;
+    let embed_job_id =
+        start_embed_job_with_pool(pool, &ctx.job_cfg, &markdown_dir.to_string_lossy()).await?;
     log_info(&format!(
         "command=crawl enqueue_embed crawl_job_id={} embed_job_id={}",
         crawl_job_id, embed_job_id
@@ -357,7 +356,7 @@ async fn run_active_crawl_job(
                 0
             });
 
-        maybe_enqueue_embed_job(ctx, id).await?;
+        maybe_enqueue_embed_job(pool, ctx, id).await?;
 
         let mut result_json = build_completed_result(
             ctx,
