@@ -11,21 +11,10 @@ scripts/qdrant-quality.py
 # build_ask_context exceeds 80-line limit by design — context pipeline is atomic (2026-02-19)
 crates/vector/ops/commands/ask.rs
 
-# http.rs: exceeds 500-line limit because test module grew with normalize_url + SSRF tests (2026-02-22)
-# Production code is ~200 lines; tests account for the remainder. Consider splitting tests into
-# a separate tests.rs submodule if the file grows further.
-crates/core/http.rs
-
-# ranking.rs: exceeds 500-line limit after Agent 3 added rerank_ask_candidates + select_diverse
-# + ranking tests (2026-02-22). Candidate for future split into rerank.rs + select.rs.
-crates/vector/ops/ranking.rs
-
-# worker_lane.rs: was 486 lines; grew to 587 after adding validate_worker_env_vars (P3-13) +
-# env-var validation tests (2026-02-22). Production code is ~265 lines; tests account for
-# the remainder. Consider splitting tests into worker_lane_tests.rs if the file grows further.
-crates/jobs/worker_lane.rs
-
-# batch_jobs.rs: was exactly 500 lines at HEAD; adding JobStatus format!() named parameters
-# (P2-2, 2026-02-22) pushed it 3 lines over. Candidate for moving bulk public API delegates
-# into a batch_jobs/api.rs submodule.
+# batch_jobs.rs: 557 non-test lines — production code genuinely over limit (2026-02-22).
+# Candidate for moving bulk public API delegates into a batch_jobs/api.rs submodule.
 crates/jobs/batch_jobs.rs
+
+# ranking.rs: 508 lines — 8 over limit after select_diverse_candidates bug fix (2026-02-22).
+# Candidate for splitting strip_markdown_inline / get_meaningful_snippet into ranking/text.rs.
+crates/vector/ops/ranking.rs

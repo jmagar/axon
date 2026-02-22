@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Debug, Default, Clone)]
 pub struct CrawlSummary {
@@ -280,7 +280,7 @@ async fn configure_website(
     Ok(website)
 }
 
-pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool {
+pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32, cfg: &Config) -> bool {
     if summary.markdown_files == 0 {
         return true;
     }
@@ -289,7 +289,7 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool
     } else {
         summary.thin_pages as f64 / summary.pages_seen as f64
     };
-    if thin_ratio > 0.60 {
+    if thin_ratio > cfg.auto_switch_thin_ratio {
         return true;
     }
     // When max_pages == 0 (uncapped), there's no expected page count to compare
@@ -297,7 +297,7 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32) -> bool
     if max_pages == 0 {
         return false;
     }
-    summary.markdown_files < (max_pages / 10).max(10)
+    summary.markdown_files < (max_pages / 10).max(cfg.auto_switch_min_pages as u32)
 }
 
 pub async fn crawl_and_collect_map(
@@ -342,7 +342,7 @@ pub async fn run_crawl_once(
     start_url: &str,
     mode: RenderMode,
     output_dir: &Path,
-    progress_tx: Option<UnboundedSender<CrawlSummary>>,
+    progress_tx: Option<Sender<CrawlSummary>>,
     run_sitemap: bool,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
     if output_dir.exists() {

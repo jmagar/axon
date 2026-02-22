@@ -143,8 +143,10 @@ pub fn select_diverse_candidates_from_indices(
     }
 
     let mut selected: Vec<usize> = Vec::new();
+    let mut selected_set: HashSet<usize> = HashSet::new();
     let mut per_url_count: HashMap<String, usize> = HashMap::new();
 
+    // Pass 1: pick one candidate per unique URL.
     for &candidate_idx in candidate_indices {
         if selected.len() >= target_count {
             break;
@@ -154,12 +156,18 @@ pub fn select_diverse_candidates_from_indices(
             continue;
         }
         selected.push(candidate_idx);
+        selected_set.insert(candidate_idx);
         per_url_count.insert(candidate.url.clone(), 1);
     }
 
+    // Pass 2: fill remaining slots up to max_per_url per URL.
     for &candidate_idx in candidate_indices {
         if selected.len() >= target_count {
             break;
+        }
+        // Skip indices already chosen in pass 1.
+        if selected_set.contains(&candidate_idx) {
+            continue;
         }
         let candidate = &candidates[candidate_idx];
         let used = *per_url_count.get(&candidate.url).unwrap_or(&0);
@@ -167,6 +175,7 @@ pub fn select_diverse_candidates_from_indices(
             continue;
         }
         selected.push(candidate_idx);
+        selected_set.insert(candidate_idx);
         per_url_count.insert(candidate.url.clone(), used + 1);
     }
 
