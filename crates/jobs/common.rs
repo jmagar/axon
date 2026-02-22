@@ -133,6 +133,8 @@ pub(crate) fn test_config(pg_url: &str) -> Config {
         watchdog_stale_timeout_secs: 300,
         watchdog_confirm_secs: 60,
         json_output: false,
+        crawl_from_result: false,
+        normalize: false,
     }
 }
 
@@ -272,6 +274,66 @@ pub async fn enqueue_job(cfg: &Config, queue_name: &str, job_id: Uuid) -> Result
     let _ = ch.close(0, "").await;
     let _ = conn.close(200, "").await;
 
+    Ok(())
+}
+
+/// Publish multiple job IDs to an AMQP queue over a single connection.
+///
+/// More efficient than calling [`enqueue_job`] in a loop — one TCP handshake,
+/// N publishes, one CLOSE. Uses publisher confirms so the broker acks every
+/// message before we close — follows the official lapin `publisher_confirms` example.
+pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]) -> Result<()> {
+    use lapin::options::{BasicPublishOptions, ConfirmSelectOptions};
+    use lapin::BasicProperties;
+
+    if job_ids.is_empty() {
+        return Ok(());
+    }
+
+    let (conn, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
+
+    // Enable publisher confirms so wait_for_confirms actually tracks acks.
+    ch.confirm_select(ConfirmSelectOptions::default())
+        .await
+        .context("confirm_select failed")?;
+
+    for id in job_ids {
+        ch.basic_publish(
+            "",
+            queue_name,
+            BasicPublishOptions::default(),
+            id.to_string().as_bytes(),
+            BasicProperties::default(),
+        )
+        .await?;
+        // Don't await the confirm here — collect them all at once below.
+    }
+
+    // Wait for all broker acks in one pass instead of awaiting each publish individually.
+    ch.wait_for_confirms()
+        .await
+        .context("wait_for_confirms failed")?;
+    let _ = ch.close(0, "").await;
+    let _ = conn.close(200, "").await;
+
+    Ok(())
+}
+
+/// Purge all messages from the named AMQP queue, then explicitly close the
+/// channel and connection.
+///
+/// This is the correct way to purge a queue — unlike [`open_amqp_channel`], it
+/// keeps the `Connection` alive for the full duration of the operation.
+#[allow(dead_code)] // Callers migrating in follow-up (batch/extract/embed/crawl clear commands).
+pub(crate) async fn purge_queue_safe(cfg: &Config, queue_name: &str) -> Result<()> {
+    use lapin::options::QueuePurgeOptions;
+
+    let (conn, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
+    ch.queue_purge(queue_name, QueuePurgeOptions::default())
+        .await
+        .context("queue_purge failed")?;
+    let _ = ch.close(0, "").await;
+    let _ = conn.close(200, "").await;
     Ok(())
 }
 
