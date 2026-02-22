@@ -1,7 +1,9 @@
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{accent, muted, Spinner};
-use crate::crates::crawl::engine::{run_crawl_once, run_sitemap_only, should_fallback_to_chrome};
+use crate::crates::crawl::engine::{
+    run_crawl_once, run_sitemap_only, should_fallback_to_chrome, CrawlSummary,
+};
 use crate::crates::jobs::embed_jobs::start_embed_job;
 use std::collections::HashSet;
 use std::error::Error;
@@ -66,6 +68,42 @@ async fn run_sitemap_only_crawl(cfg: &Config, start_url: &str) -> Result<(), Box
     Ok(())
 }
 
+async fn maybe_chrome_fallback(
+    cfg: &Config,
+    start_url: &str,
+    http_summary: CrawlSummary,
+    http_seen_urls: HashSet<String>,
+) -> (CrawlSummary, HashSet<String>) {
+    if !matches!(cfg.render_mode, RenderMode::AutoSwitch)
+        || !should_fallback_to_chrome(&http_summary, cfg.max_pages)
+    {
+        return (http_summary, http_seen_urls);
+    }
+    let spinner = Spinner::new("HTTP yielded thin results; retrying with Chrome");
+    match run_crawl_once(
+        cfg,
+        start_url,
+        RenderMode::Chrome,
+        &cfg.output_dir,
+        None,
+        cfg.discover_sitemaps,
+    )
+    .await
+    {
+        Ok((chrome_summary, chrome_urls)) => {
+            spinner.finish(&format!(
+                "Chrome fallback complete (pages={}, markdown={})",
+                chrome_summary.pages_seen, chrome_summary.markdown_files
+            ));
+            (chrome_summary, chrome_urls)
+        }
+        Err(err) => {
+            spinner.finish(&format!("Chrome fallback failed ({err}), using HTTP result"));
+            (http_summary, http_seen_urls)
+        }
+    }
+}
+
 pub(super) async fn run_sync_crawl(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
     if cfg.sitemap_only {
         return run_sitemap_only_crawl(cfg, start_url).await;
@@ -87,45 +125,41 @@ pub(super) async fn run_sync_crawl(cfg: &Config, start_url: &str) -> Result<(), 
         println!("{} {}", muted("[Chrome Bootstrap]"), warning);
     }
 
+    // Thread the pre-resolved WebSocket URL through cfg so configure_website
+    // skips the redundant /json/version fetch on Chrome mode calls.
+    let ws_cfg_holder: Config;
+    let effective_cfg: &Config = if let Some(ref ws_url) = chrome_bootstrap.resolved_ws_url {
+        ws_cfg_holder = Config {
+            chrome_remote_url: Some(ws_url.clone()),
+            ..cfg.clone()
+        };
+        &ws_cfg_holder
+    } else {
+        cfg
+    };
+
     let spinner = Spinner::new("running crawl");
-    let (http_summary, http_seen_urls) =
-        run_crawl_once(cfg, start_url, initial_mode, &cfg.output_dir, None, false).await?;
+    let (http_summary, http_seen_urls) = run_crawl_once(
+        effective_cfg,
+        start_url,
+        initial_mode,
+        &cfg.output_dir,
+        None,
+        false,
+    )
+    .await?;
     spinner.finish(&format!(
         "crawl phase complete (pages={}, markdown={})",
         http_summary.pages_seen, http_summary.markdown_files
     ));
 
-    let (summary, seen_urls) = if matches!(cfg.render_mode, RenderMode::AutoSwitch)
-        && should_fallback_to_chrome(&http_summary, cfg.max_pages)
-    {
-        let chrome_spinner = Spinner::new("HTTP yielded thin results; retrying with Chrome");
-        match run_crawl_once(
-            cfg,
-            start_url,
-            RenderMode::Chrome,
-            &cfg.output_dir,
-            None,
-            cfg.discover_sitemaps,
-        )
-        .await
-        {
-            Ok((chrome_summary, chrome_urls)) => {
-                chrome_spinner.finish(&format!(
-                    "Chrome fallback complete (pages={}, markdown={})",
-                    chrome_summary.pages_seen, chrome_summary.markdown_files
-                ));
-                (chrome_summary, chrome_urls)
-            }
-            Err(err) => {
-                chrome_spinner.finish(&format!(
-                    "Chrome fallback failed ({err}), using HTTP result"
-                ));
-                (http_summary, http_seen_urls)
-            }
-        }
-    } else {
-        (http_summary, http_seen_urls)
-    };
+    let (summary, seen_urls) = maybe_chrome_fallback(
+        effective_cfg,
+        start_url,
+        http_summary,
+        http_seen_urls,
+    )
+    .await;
 
     let mut final_summary = summary;
 
