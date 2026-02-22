@@ -184,8 +184,19 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_BATCH_QUEUE` | `axon.batch.jobs` | Batch job queue name |
 | `AXON_EXTRACT_QUEUE` | `axon.extract.jobs` | Extract job queue name |
 | `AXON_EMBED_QUEUE` | `axon.embed.jobs` | Embed job queue name |
+| `AXON_INGEST_QUEUE` | `axon.ingest.jobs` | Ingest job queue name (github/reddit/youtube) |
+| `AXON_INGEST_LANES` | `2` | Number of parallel ingest worker lanes |
 | `AXON_COLLECTION` | `cortex` | Qdrant collection name |
-| `AXON_QUEUE_INJECTION_RULES_JSON` | — | JSON rules for queue routing overrides |
+| `AXON_QUEUE_INJECTION_RULES_JSON` | — | JSON array of `QueueInjectionRule` objects controlling which batch-scraped pages are forwarded to the extract queue. Each rule has `name`, `min_markdown_chars`, `min_quality_score`, `max_urls`, and `url_contains_any` fields. Defaults to three built-in rules (`docs-first`, `tutorial-longform`, `high-signal-catchall`). |
+
+### Optional Ingest Credentials
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | Personal access token for private repos and higher GitHub API rate limits (optional — public repos work without it) |
+| `REDDIT_CLIENT_ID` | OAuth2 client ID from `https://www.reddit.com/prefs/apps` (required for `reddit` command) |
+| `REDDIT_CLIENT_SECRET` | OAuth2 client secret (required for `reddit` command) |
+| `TAVILY_API_KEY` | Tavily AI Search API key (required for `search` and `research` commands) |
 
 ### Optional Browser / WebDriver
 
@@ -221,6 +232,21 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_LOG_MAX_BYTES` | `10485760` | Max bytes per log file before rotation (10MB) |
 | `AXON_LOG_MAX_FILES` | `3` | Total log files to keep (`axon.log`, `.1`, `.2`) |
 
+### ask RAG Tuning
+
+The `ask` command retrieves chunks from Qdrant, reranks them, and builds a context window before calling the LLM. The following env vars tune that pipeline:
+
+| Variable | Default | Clamp | Description |
+|----------|---------|-------|-------------|
+| `AXON_ASK_MIN_RELEVANCE_SCORE` | `0.45` | `-1.0`–`2.0` | Minimum Qdrant similarity score for a chunk to enter the context. Raise to tighten relevance; lower if you get "no candidates" errors on sparse collections. |
+| `AXON_ASK_CANDIDATE_LIMIT` | `64` | `8`–`200` | Chunks retrieved from Qdrant before reranking. Higher values improve recall at the cost of reranking time. |
+| `AXON_ASK_CHUNK_LIMIT` | `10` | `3`–`40` | Maximum chunks included in the LLM prompt after reranking. |
+| `AXON_ASK_FULL_DOCS` | `4` | `1`–`20` | Number of top-scoring documents for which a full-doc backfill is attempted (fetches more chunks from the same doc). |
+| `AXON_ASK_BACKFILL_CHUNKS` | `3` | `0`–`20` | Extra chunks added per full-doc backfill pass. Set to `0` to disable backfill. |
+| `AXON_ASK_DOC_FETCH_CONCURRENCY` | `4` | `1`–`16` | Concurrent Qdrant fetches during full-doc backfill. |
+| `AXON_ASK_DOC_CHUNK_LIMIT` | `192` | `8`–`2000` | Maximum chunks fetched per document during backfill. |
+| `AXON_ASK_MAX_CONTEXT_CHARS` | `120000` | `20000`–`400000` | Total characters of context passed to the LLM. Raise for large-context models; lower to reduce token cost. |
+
 ### Legacy Aliases
 
 `NUQ_DATABASE_URL`, `NUQ_RABBITMQ_URL`, `REDIS_URL` are accepted as fallbacks for `AXON_PG_URL`, `AXON_AMQP_URL`, `AXON_REDIS_URL` respectively. `WEBDRIVER_URL` is accepted as a fallback for `AXON_WEBDRIVER_URL`.
@@ -254,13 +280,18 @@ Worker behavior notes:
 | `map <url>` | Discover all URLs without scraping | No |
 | `batch <urls...>` | Bulk scrape multiple URLs | Yes (default) |
 | `extract <urls...>` | LLM-powered structured data extraction | Yes (default) |
-| `search <query>` | Web search (requires search provider) | No |
+| `search <query>` | Web search via Tavily, auto-queues crawl jobs for results | No |
+| `research <query>` | Web research via Tavily AI search with LLM synthesis | No |
 | `embed [input]` | Embed file/dir/URL into Qdrant | Yes (default) |
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + LLM judge (accuracy · relevance · completeness · verdict) | No |
 | `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
+| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
+| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
+| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
@@ -281,6 +312,22 @@ axon crawl clear
 axon crawl recover    # reclaim stale/interrupted jobs
 axon crawl worker     # run a worker inline
 ```
+
+### Job Subcommands (for github / reddit / youtube)
+
+The ingest commands share the same subcommand routing:
+
+```bash
+axon github status <job_id>
+axon github cancel <job_id>
+axon github list
+axon github cleanup
+axon github clear
+axon github recover    # reclaim stale/interrupted jobs
+axon github worker     # run an ingest worker inline
+```
+
+The same subcommands work with `axon reddit ...` and `axon youtube ...`.
 
 ### Global Flags Reference
 
@@ -524,6 +571,26 @@ Tables are auto-created on first worker/command start via `CREATE TABLE IF NOT E
 | `result_json` | JSONB | NULL | — | Embedding results (chunk count, point IDs) |
 | `config_json` | JSONB | NOT NULL | — | Serialized job configuration |
 
+### axon_ingest_jobs
+
+Differs from the other four tables: uses `source_type` + `target` instead of `url` or `urls_json` to identify the ingest target, and has no `urls_json` or `input_text` column.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NOT NULL | — | Primary key |
+| `status` | TEXT | NOT NULL | — | `pending` / `running` / `completed` / `failed` / `canceled` |
+| `source_type` | TEXT | NOT NULL | — | Discriminator: `github`, `reddit`, or `youtube` |
+| `target` | TEXT | NOT NULL | — | Ingest target: repo name (`owner/repo`), subreddit, or YouTube URL |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Job creation timestamp |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last status change |
+| `started_at` | TIMESTAMPTZ | NULL | — | When worker began processing |
+| `finished_at` | TIMESTAMPTZ | NULL | — | When job completed/failed/canceled |
+| `error_text` | TEXT | NULL | — | Error message on failure |
+| `result_json` | JSONB | NULL | — | Ingest results (`{"chunks_embedded": N}`) |
+| `config_json` | JSONB | NOT NULL | — | Serialized `IngestJobConfig` (source variant + collection) |
+
+**Index:** `idx_axon_ingest_jobs_pending` — partial index on `created_at ASC WHERE status = 'pending'` for efficient FIFO queue polling.
+
 ## Gotchas
 
 ### `--wait false` (default) = fire-and-forget
@@ -562,6 +629,22 @@ After a crawl, `append_sitemap_backfill()` discovers URLs via sitemap.xml that t
 The `Dockerfile` is at `docker/Dockerfile`. Run `docker compose build` from this directory (not a parent workspace). The binary built inside the container is `axon`.
 
 ## Development
+
+### Git Hooks (required)
+
+Install lefthook pre-commit hooks before making any commits. The hooks enforce the monolith policy (file size, function size, deny-list) that CI also checks:
+
+```bash
+# install lefthook once (choose one method)
+brew install lefthook
+# or
+cargo install --locked lefthook
+
+# install git hooks for this repo (required)
+./scripts/install-git-hooks.sh
+```
+
+Without this, you will not get local feedback before commits fail CI.
 
 ### Build
 
