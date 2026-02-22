@@ -320,3 +320,163 @@ pub(crate) async fn run_job_worker(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use tokio::sync::Mutex;
+
+    /// Verify semaphore permits: N permits from a semaphore of size N all succeed
+    /// immediately, but the (N+1)-th blocks until one is released.
+    #[tokio::test]
+    async fn semaphore_permits_up_to_capacity_then_blocks() {
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+
+        // Two permits acquired immediately.
+        let p1 = sem.clone().acquire_owned().await.unwrap();
+        let p2 = sem.clone().acquire_owned().await.unwrap();
+        assert_eq!(sem.available_permits(), 0);
+
+        // Third acquire should not resolve within a short timeout.
+        let sem2 = sem.clone();
+        let blocked = tokio::time::timeout(Duration::from_millis(50), sem2.acquire_owned()).await;
+        assert!(
+            blocked.is_err(),
+            "third permit should block when capacity=2"
+        );
+
+        // Release one → third now succeeds.
+        drop(p1);
+        let p3 = tokio::time::timeout(Duration::from_millis(50), sem.clone().acquire_owned())
+            .await
+            .expect("third permit should succeed after release")
+            .unwrap();
+        assert_eq!(sem.available_permits(), 0);
+
+        drop(p2);
+        drop(p3);
+        assert_eq!(sem.available_permits(), 2);
+    }
+
+    /// Verify that FuturesUnordered + semaphore allows two "jobs" to execute
+    /// concurrently: both start before either finishes.
+    #[tokio::test]
+    async fn futures_unordered_runs_jobs_concurrently() {
+        // Each job records (start_instant, end_instant) into shared vec.
+        let log: Arc<Mutex<Vec<(Instant, Instant)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+
+        let mut inflight = FuturesUnordered::new();
+
+        for _ in 0..2 {
+            let permit = sem.clone().acquire_owned().await.unwrap();
+            let log = log.clone();
+            inflight.push(async move {
+                let start = Instant::now();
+                // Simulate work — 50ms is enough to prove overlap.
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let end = Instant::now();
+                log.lock().await.push((start, end));
+                drop(permit);
+            });
+        }
+
+        // Drive all futures to completion.
+        while inflight.next().await.is_some() {}
+
+        let entries = log.lock().await;
+        assert_eq!(entries.len(), 2);
+
+        // Concurrent execution means job[1] started before job[0] ended.
+        // Since both sleep 50ms and we push them both before polling,
+        // the earlier-starting job should still be running when the second starts.
+        let (start0, end0) = entries[0];
+        let (start1, _end1) = entries[1];
+        // Whichever started second should have started before the other finished.
+        let (earlier_end, later_start) = if start0 <= start1 {
+            (end0, start1)
+        } else {
+            (_end1, start0)
+        };
+        assert!(
+            later_start < earlier_end,
+            "jobs should overlap: later_start={later_start:?} should be < earlier_end={earlier_end:?}"
+        );
+    }
+
+    /// Verify that when the semaphore is full, new jobs block until a permit is
+    /// released (backpressure behavior matching worker_lane dispatch).
+    #[tokio::test]
+    async fn semaphore_backpressure_blocks_third_dispatch() {
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+        let counter = Arc::new(AtomicU64::new(0));
+        let mut inflight = FuturesUnordered::new();
+
+        // Dispatch 2 long-running jobs.
+        for _ in 0..2 {
+            let permit = sem.clone().acquire_owned().await.unwrap();
+            let counter = counter.clone();
+            inflight.push(async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                drop(permit);
+            });
+        }
+
+        // Try to acquire a third permit — should block.
+        let sem_for_third = sem.clone();
+        let third_handle = tokio::spawn(async move {
+            let _permit = sem_for_third.acquire_owned().await.unwrap();
+        });
+
+        // Give tasks a moment to start, then verify 3rd is still pending.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !third_handle.is_finished(),
+            "third dispatch should be blocked"
+        );
+
+        // Drain inflight → releases permits → third unblocks.
+        while inflight.next().await.is_some() {}
+        tokio::time::timeout(Duration::from_millis(50), third_handle)
+            .await
+            .expect("third should complete after permits released")
+            .unwrap();
+    }
+
+    /// Verify the exponential backoff sequence: 100 → 200 → 400 → 800 → 1600
+    /// → 3200 → 6400 → 6400 (capped), then reset to 100 on job found.
+    #[test]
+    fn polling_backoff_sequence_doubles_caps_and_resets() {
+        let mut backoff_ms = POLL_BACKOFF_INIT_MS;
+        let expected = [100, 200, 400, 800, 1600, 3200, 6400, 6400, 6400];
+
+        for (i, &expected_ms) in expected.iter().enumerate() {
+            assert_eq!(
+                backoff_ms, expected_ms,
+                "iteration {i}: expected {expected_ms}ms, got {backoff_ms}ms"
+            );
+            // Simulate idle: double and cap (same logic as run_polling_lane).
+            backoff_ms = (backoff_ms * 2).min(POLL_BACKOFF_MAX_MS);
+        }
+
+        // Simulate job found: reset.
+        backoff_ms = POLL_BACKOFF_INIT_MS;
+        assert_eq!(backoff_ms, 100, "should reset to 100ms on job found");
+
+        // Verify it resumes doubling after reset.
+        backoff_ms = (backoff_ms * 2).min(POLL_BACKOFF_MAX_MS);
+        assert_eq!(backoff_ms, 200, "should double to 200ms after reset");
+    }
+
+    /// Verify backoff boundary constants are correct.
+    #[test]
+    fn polling_backoff_constants_are_valid() {
+        assert_eq!(POLL_BACKOFF_INIT_MS, 100);
+        assert_eq!(POLL_BACKOFF_MAX_MS, 6400);
+        // Cap should be a power-of-two multiple of init.
+        assert!(POLL_BACKOFF_MAX_MS >= POLL_BACKOFF_INIT_MS);
+        assert_eq!(POLL_BACKOFF_MAX_MS, POLL_BACKOFF_INIT_MS * 64);
+    }
+}
