@@ -1,8 +1,36 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_done;
+use crate::crates::core::http::validate_url;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_phase};
+use crate::crates::jobs::crawl_jobs::start_crawl_jobs_batch;
+use spider::url::Url as SpiderUrl;
 use spider_agent::{Agent, SearchOptions};
+use std::collections::HashSet;
 use std::error::Error;
+
+/// Extract the crawl seed URL from a search result URL.
+///
+/// By default (`from_result = false`), strips to the scheme+host+port origin so all
+/// results from the same domain produce a single crawl job. When `from_result = true`,
+/// returns the exact result URL so the crawl starts from that specific page.
+///
+/// Returns `None` if `url` cannot be parsed or has a non-http/https scheme.
+pub fn extract_crawl_seed(url: &str, from_result: bool) -> Option<String> {
+    let parsed = SpiderUrl::parse(url).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return None,
+    }
+    if from_result {
+        return Some(url.to_string());
+    }
+    let host = parsed.host_str()?;
+    let origin = match parsed.port() {
+        Some(port) => format!("{}://{}:{}", parsed.scheme(), host, port),
+        None => format!("{}://{}", parsed.scheme(), host),
+    };
+    Some(origin)
+}
 
 pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if cfg.tavily_api_key.is_empty() {
@@ -40,6 +68,45 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!();
     }
 
+    // Deduplicate seeds — one crawl job per unique origin (or exact URL with --crawl-from-result).
+    let seeds: HashSet<String> = results
+        .results
+        .iter()
+        .filter_map(|r| extract_crawl_seed(&r.url, cfg.crawl_from_result))
+        .collect();
+
+    if !seeds.is_empty() {
+        // Validate seeds before handing to the batch path so blocked/private
+        // URLs are dropped with a warning rather than surfacing a DB error.
+        let valid_seeds: Vec<&str> = seeds
+            .iter()
+            .filter(|s| {
+                if let Err(e) = validate_url(s) {
+                    log_warn(&format!("Skipping blocked seed {s}: {e}"));
+                    false
+                } else {
+                    true
+                }
+            })
+            .map(|s| s.as_str())
+            .collect();
+
+        if !valid_seeds.is_empty() {
+            // Single Postgres pool + single AMQP connection for all seeds.
+            match start_crawl_jobs_batch(cfg, &valid_seeds).await {
+                Ok(pairs) => {
+                    let ids: Vec<String> = pairs.iter().map(|(_, id)| id.to_string()).collect();
+                    log_info(&format!(
+                        "Queued {} crawl job(s): {}",
+                        ids.len(),
+                        ids.join(", ")
+                    ));
+                }
+                Err(e) => log_warn(&format!("Failed to batch-queue crawl jobs: {e}")),
+            }
+        }
+    }
+
     log_done("command=search complete");
     Ok(())
 }
@@ -47,103 +114,94 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crates::core::config::parse::normalize_local_service_url;
+    use crate::crates::core::config::CommandKind;
+    use crate::crates::jobs::common::test_config;
 
-    fn make_cfg_with_key(key: &str, query: &str) -> Config {
-        use crate::crates::core::config::{
-            CommandKind, PerformanceProfile, RenderMode, ScrapeFormat,
-        };
-        use std::path::PathBuf;
+    // --- extract_crawl_seed unit tests (pure logic, no I/O) ---
 
-        Config {
-            command: CommandKind::Search,
-            start_url: String::new(),
-            positional: vec![query.to_string()],
-            urls_csv: None,
-            url_glob: vec![],
-            query: None,
-            search_limit: 5,
-            max_pages: 0,
-            max_depth: 5,
-            include_subdomains: true,
-            exclude_path_prefix: vec![],
-            output_dir: PathBuf::from(".cache"),
-            output_path: None,
-            render_mode: RenderMode::Http,
-            chrome_remote_url: None,
-            chrome_proxy: None,
-            chrome_user_agent: None,
-            chrome_headless: true,
-            chrome_anti_bot: true,
-            chrome_intercept: true,
-            chrome_stealth: true,
-            chrome_bootstrap: true,
-            chrome_bootstrap_timeout_ms: 3000,
-            chrome_bootstrap_retries: 2,
-            webdriver_url: None,
-            respect_robots: false,
-            min_markdown_chars: 200,
-            drop_thin_markdown: true,
-            discover_sitemaps: true,
-            cache: true,
-            cache_skip_browser: false,
-            format: ScrapeFormat::Markdown,
-            collection: "cortex".into(),
-            embed: false,
-            batch_concurrency: 16,
-            wait: false,
-            yes: true,
-            performance_profile: PerformanceProfile::HighStable,
-            crawl_concurrency_limit: Some(64),
-            backfill_concurrency_limit: Some(32),
-            sitemap_only: false,
-            delay_ms: 0,
-            request_timeout_ms: Some(20_000),
-            fetch_retries: 2,
-            retry_backoff_ms: 250,
-            shared_queue: true,
-            pg_url: normalize_local_service_url("postgresql://axon:x@127.0.0.1:53432/axon".into()),
-            redis_url: "redis://127.0.0.1:53379".into(),
-            amqp_url: "amqp://axon:x@127.0.0.1:45535/%2f".into(),
-            crawl_queue: "axon.crawl.jobs".into(),
-            batch_queue: "axon.batch.jobs".into(),
-            extract_queue: "axon.extract.jobs".into(),
-            embed_queue: "axon.embed.jobs".into(),
-            ingest_queue: "axon.ingest.jobs".into(),
-            sessions_claude: false,
-            sessions_codex: false,
-            sessions_gemini: false,
-            sessions_project: None,
-            github_token: None,
-            github_include_source: false,
-            reddit_client_id: None,
-            reddit_client_secret: None,
-            tei_url: String::new(),
-            qdrant_url: "http://127.0.0.1:53333".into(),
-            openai_base_url: String::new(),
-            openai_api_key: String::new(),
-            openai_model: String::new(),
-            tavily_api_key: key.to_string(),
-            ask_diagnostics: false,
-            ask_max_context_chars: 120_000,
-            ask_candidate_limit: 64,
-            ask_chunk_limit: 10,
-            ask_full_docs: 4,
-            ask_backfill_chunks: 3,
-            ask_doc_fetch_concurrency: 4,
-            ask_doc_chunk_limit: 192,
-            ask_min_relevance_score: 0.45,
-            cron_every_seconds: None,
-            cron_max_runs: None,
-            watchdog_stale_timeout_secs: 300,
-            watchdog_confirm_secs: 60,
-            json_output: false,
-        }
+    #[test]
+    fn test_extract_crawl_seed_strips_to_origin() {
+        let seed = extract_crawl_seed(
+            "https://docs.rust-lang.org/book/ch01-00-getting-started.html",
+            false,
+        );
+        assert_eq!(seed, Some("https://docs.rust-lang.org".to_string()));
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_preserves_non_default_port() {
+        let seed = extract_crawl_seed("https://myhost.example.com:8443/api/v1/docs", false);
+        assert_eq!(seed, Some("https://myhost.example.com:8443".to_string()));
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_strips_deep_path() {
+        let seed = extract_crawl_seed("https://crates.io/crates/tokio/0.2.22/deps", false);
+        assert_eq!(seed, Some("https://crates.io".to_string()));
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_from_result_returns_exact_url() {
+        let url = "https://blog.rust-lang.org/2024/05/02/Rust-1.78.0.html";
+        let seed = extract_crawl_seed(url, true);
+        assert_eq!(seed, Some(url.to_string()));
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_unparseable_returns_none() {
+        let seed = extract_crawl_seed("not a url %%%", false);
+        assert_eq!(seed, None);
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_rejects_non_http_scheme() {
+        assert_eq!(
+            extract_crawl_seed("ftp://example.com/file.tar.gz", false),
+            None
+        );
+        assert_eq!(extract_crawl_seed("file:///etc/passwd", true), None);
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_deduplicates_same_domain() {
+        let urls = [
+            "https://docs.example.com/en/stable/guide/intro.html",
+            "https://docs.example.com/en/stable/api/index.html",
+            "https://docs.example.com/changelog",
+        ];
+        let seeds: std::collections::HashSet<String> = urls
+            .iter()
+            .filter_map(|u| extract_crawl_seed(u, false))
+            .collect();
+        assert_eq!(seeds.len(), 1);
+        assert!(seeds.contains("https://docs.example.com"));
+    }
+
+    #[test]
+    fn test_extract_crawl_seed_private_ip_stripped_to_origin() {
+        // extract_crawl_seed itself does no SSRF filtering — it only strips to origin.
+        // The validate_url guard in run_search blocks the seed before enqueue.
+        let seed = extract_crawl_seed("http://10.0.0.1/internal/api", false);
+        assert_eq!(seed, Some("http://10.0.0.1".to_string()));
+        // Confirm validate_url rejects it (documents the guard contract).
+        use crate::crates::core::http::validate_url;
+        assert!(
+            validate_url("http://10.0.0.1").is_err(),
+            "validate_url must reject RFC-1918 seeds"
+        );
+    }
+
+    fn make_search_cfg(key: &str, query: &str) -> Config {
+        let mut cfg = test_config("");
+        cfg.command = CommandKind::Search;
+        cfg.positional = vec![query.to_string()];
+        cfg.tavily_api_key = key.to_string();
+        cfg
     }
 
     #[tokio::test]
     async fn test_run_search_rejects_empty_tavily_key() {
-        let cfg = make_cfg_with_key("", "rust async");
+        let cfg = make_search_cfg("", "rust async");
         let err = run_search(&cfg).await.unwrap_err();
         assert!(
             err.to_string().contains("TAVILY_API_KEY"),

@@ -174,7 +174,7 @@ async fn handle_cancel_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!("Job ID: {id}");
     } else {
         println!(
-            "{} no cancellable crawl job found for {}",
+            "{} no cancellable crawl job found for ID: {}",
             symbol_for_status("error"),
             accent(&id.to_string())
         );
@@ -290,11 +290,7 @@ async fn handle_recover_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn print_async_options(
-    cfg: &Config,
-    start_url: &str,
-    chrome_bootstrap: &runtime::ChromeBootstrapOutcome,
-) {
+fn print_async_options(cfg: &Config, start_url: &str) {
     print_phase("◐", "Crawling", start_url);
     println!("  {}", primary("Options:"));
     print_option("maxDepth", &cfg.max_depth.to_string());
@@ -324,28 +320,13 @@ fn print_async_options(
     );
     print_option("embed", &cfg.embed.to_string());
     print_option("wait", &cfg.wait.to_string());
-    if runtime::chrome_runtime_requested(cfg) {
-        print_option(
-            "chromeBootstrapReady",
-            &chrome_bootstrap.remote_ready.to_string(),
-        );
-        print_option(
-            "chromeRuntimeMode",
-            match chrome_bootstrap.mode {
-                runtime::ChromeRuntimeMode::Chrome => "chrome",
-                runtime::ChromeRuntimeMode::WebDriverFallback => "webdriver-fallback",
-            },
-        );
-    }
 }
 
 async fn run_async_enqueue(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
-    let chrome_bootstrap = runtime::bootstrap_chrome_runtime(cfg).await;
-    print_async_options(cfg, start_url, &chrome_bootstrap);
+    // Chrome bootstrap probe belongs to sync crawl — the worker owns Chrome in async mode.
+    // Skipping it here eliminates ~10s of failed probe retries on startup.
+    print_async_options(cfg, start_url);
     println!();
-    for warning in &chrome_bootstrap.warnings {
-        println!("{} {}", muted("[Chrome Bootstrap]"), warning);
-    }
 
     let job_id = start_crawl_job(cfg, start_url).await?;
     println!(
