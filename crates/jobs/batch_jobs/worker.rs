@@ -38,9 +38,10 @@ async fn mark_batch_canceled(
     if cancel_before.is_none() {
         return Ok(false);
     }
-    sqlx::query(
-        "UPDATE axon_batch_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1",
-    )
+    sqlx::query(&format!(
+        "UPDATE axon_batch_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1",
+        canceled = JobStatus::Canceled.as_str(),
+    ))
     .bind(id)
     .execute(pool)
     .await?;
@@ -158,9 +159,11 @@ async fn process_batch_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
     .await?;
     maybe_embed_batch_output(cfg, &job_cfg, &out_dir, id).await;
 
-    sqlx::query(
-        "UPDATE axon_batch_jobs SET status='completed',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='running'",
-    )
+    sqlx::query(&format!(
+        "UPDATE axon_batch_jobs SET status='{completed}',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='{running}'",
+        completed = JobStatus::Completed.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
     .bind(id)
     .bind(serde_json::json!({
         "results": results,
@@ -186,6 +189,10 @@ async fn process_claimed_batch_job(cfg: Config, pool: PgPool, id: Uuid) {
 }
 
 pub async fn run_batch_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    // Validate required environment variables before attempting any connections.
+    // Exits with a clear error message if any are missing.
+    crate::crates::jobs::worker_lane::validate_worker_env_vars();
+
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {
         ensure_schema(&pool).await?;

@@ -5,13 +5,14 @@ use crate::crates::jobs::common::{
     enqueue_job, make_pool, mark_job_failed, open_amqp_connection_and_channel, purge_queue_safe,
     reclaim_stale_running_jobs, JobTable,
 };
+use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::{embed_path_native_with_progress, EmbedProgress};
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use spider::tokio;
 use sqlx::{FromRow, PgPool};
 use std::error::Error;
+use tokio;
 use uuid::Uuid;
 
 static SCHEMA_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
@@ -88,17 +89,19 @@ pub async fn start_embed_job(cfg: &Config, input: &str) -> Result<Uuid, Box<dyn 
     let cfg_json = serde_json::to_value(EmbedJobConfig {
         collection: cfg.collection.clone(),
     })?;
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(&format!(
         r#"
         SELECT id
         FROM axon_embed_jobs
-        WHERE status IN ('pending','running')
+        WHERE status IN ('{pending}','{running}')
           AND input_text = $1
           AND config_json = $2
         ORDER BY created_at DESC
         LIMIT 1
         "#,
-    )
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
     .bind(input)
     .bind(cfg_json.clone())
     .fetch_optional(&pool)
@@ -111,9 +114,10 @@ pub async fn start_embed_job(cfg: &Config, input: &str) -> Result<Uuid, Box<dyn 
         return Ok(existing_id);
     }
     let id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO axon_embed_jobs (id, status, input_text, config_json) VALUES ($1, 'pending', $2, $3)"#,
-    )
+    sqlx::query(&format!(
+        r#"INSERT INTO axon_embed_jobs (id, status, input_text, config_json) VALUES ($1, '{pending}', $2, $3)"#,
+        pending = JobStatus::Pending.as_str(),
+    ))
     .bind(id)
     .bind(input)
     .bind(cfg_json)
@@ -163,11 +167,16 @@ pub async fn cancel_embed_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Er
         ensure_schema(&pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
-    let rows = sqlx::query("UPDATE axon_embed_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('pending','running')")
-        .bind(id)
-        .execute(&pool)
-        .await?
-        .rows_affected();
+    let rows = sqlx::query(&format!(
+        "UPDATE axon_embed_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('{pending}','{running}')",
+        canceled = JobStatus::Canceled.as_str(),
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
+    .bind(id)
+    .execute(&pool)
+    .await?
+    .rows_affected();
 
     let redis_client = redis::Client::open(cfg.redis_url.clone())?;
     let mut conn = redis_client.get_multiplexed_async_connection().await?;
@@ -184,13 +193,15 @@ pub async fn cleanup_embed_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     }
     let mut total = 0u64;
     loop {
-        let deleted = sqlx::query(
+        let deleted = sqlx::query(&format!(
             "DELETE FROM axon_embed_jobs WHERE id IN (
                 SELECT id FROM axon_embed_jobs
-                WHERE status IN ('failed','canceled')
+                WHERE status IN ('{failed}','{canceled}')
                 LIMIT 1000
             )",
-        )
+            failed = JobStatus::Failed.as_str(),
+            canceled = JobStatus::Canceled.as_str(),
+        ))
         .execute(&pool)
         .await?
         .rows_affected();
@@ -216,6 +227,97 @@ pub async fn clear_embed_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     Ok(rows)
 }
 
+/// Check if the embed job has been canceled via Redis. Returns `true` if a cancel
+/// key is present and the job has been marked canceled in the DB, `false` otherwise.
+/// On Redis failure, logs a warning and returns `false` (non-cancellation path).
+async fn check_embed_canceled(
+    cfg: &Config,
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<bool, Box<dyn Error>> {
+    let cancel_key = format!("axon:embed:cancel:{id}");
+    let cancel_value: Option<String> = match redis::Client::open(cfg.redis_url.clone()) {
+        Err(e) => {
+            log_warn(&format!("embed cancel redis client failed for {id}: {e}"));
+            None
+        }
+        Ok(redis_client) => match redis_client.get_multiplexed_async_connection().await {
+            Err(e) => {
+                log_warn(&format!("embed cancel redis connect failed for {id}: {e}"));
+                None
+            }
+            Ok(mut conn) => match conn.get::<_, Option<String>>(&cancel_key).await {
+                Ok(v) => v,
+                Err(e) => {
+                    log_warn(&format!("embed cancel check failed for {id}: {e}"));
+                    None
+                }
+            },
+        },
+    };
+    if cancel_value.is_none() {
+        return Ok(false);
+    }
+    sqlx::query(&format!(
+        "UPDATE axon_embed_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1",
+        canceled = JobStatus::Canceled.as_str(),
+    ))
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(true)
+}
+
+/// Run the embed operation and return the result JSON. Spawns a progress task
+/// to stream intermediate updates to the DB while the embed runs.
+async fn run_embed_core(
+    cfg: &Config,
+    pool: &PgPool,
+    id: Uuid,
+    input_text: String,
+    collection: String,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    // NOTE: UnboundedSender is required because embed_path_native_with_progress
+    // in crates/vector/ops/tei.rs takes Option<UnboundedSender<EmbedProgress>>.
+    // TODO: Switch to bounded channel(64) once vector/ops API accepts bounded Sender.
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<EmbedProgress>();
+    let progress_pool = pool.clone();
+    let progress_task = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            let progress_json = serde_json::json!({
+                "phase": "embedding",
+                "docs_total": progress.docs_total,
+                "docs_completed": progress.docs_completed,
+                "chunks_embedded": progress.chunks_embedded,
+            });
+            let _ = sqlx::query(&format!(
+                "UPDATE axon_embed_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
+                running = JobStatus::Running.as_str(),
+            ))
+            .bind(id)
+            .bind(progress_json)
+            .execute(&progress_pool)
+            .await;
+        }
+    });
+    let mut embed_cfg = cfg.clone();
+    embed_cfg.collection = collection.clone();
+    let summary =
+        embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await?;
+    if let Err(err) = progress_task.await {
+        log_warn(&format!(
+            "embed progress_task panicked for job {id}: {err:?}"
+        ));
+    }
+    Ok(serde_json::json!({
+        "input": input_text,
+        "collection": collection,
+        "docs_embedded": summary.docs_embedded,
+        "chunks_embedded": summary.chunks_embedded,
+        "source": "rust"
+    }))
+}
+
 async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dyn Error>> {
     let run_result = async {
         let row = sqlx::query_as::<_, (String, serde_json::Value)>(
@@ -228,81 +330,15 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
             return Ok::<Option<serde_json::Value>, Box<dyn Error>>(None);
         };
         let input_preview: String = input_text.chars().take(80).collect();
-        log_info(&format!("embed worker started job {id} input={input_preview}"));
-
-        let cancel_key = format!("axon:embed:cancel:{id}");
-        let cancel_before: Option<String> = match redis::Client::open(cfg.redis_url.clone()) {
-            Err(e) => {
-                log_warn(&format!("embed cancel redis client failed for {id}: {e}"));
-                None
-            }
-            Ok(redis_client) => {
-                match redis_client.get_multiplexed_async_connection().await {
-                    Err(e) => {
-                        log_warn(&format!(
-                            "embed cancel redis connect failed for {id}: {e}"
-                        ));
-                        None
-                    }
-                    Ok(mut conn) => match conn.get::<_, Option<String>>(&cancel_key).await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            log_warn(&format!("embed cancel check failed for {id}: {e}"));
-                            None
-                        }
-                    },
-                }
-            }
-        };
-        if cancel_before.is_some() {
-            sqlx::query("UPDATE axon_embed_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1")
-                .bind(id)
-                .execute(pool)
-                .await?;
+        log_info(&format!(
+            "embed worker started job {id} input={input_preview}"
+        ));
+        if check_embed_canceled(cfg, pool, id).await? {
             return Ok(None);
         }
-
         let job_cfg: EmbedJobConfig = serde_json::from_value(cfg_json)?;
-        let mut embed_cfg = cfg.clone();
-        embed_cfg.collection = job_cfg.collection.clone();
-        // TODO: Switch to bounded channel(64) once vector/ops API accepts Sender.
-        let (progress_tx, mut progress_rx) =
-            tokio::sync::mpsc::unbounded_channel::<EmbedProgress>();
-        let progress_pool = pool.clone();
-        let progress_job_id = id;
-        let progress_task = tokio::spawn(async move {
-            while let Some(progress) = progress_rx.recv().await {
-                let progress_json = serde_json::json!({
-                    "phase": "embedding",
-                    "docs_total": progress.docs_total,
-                    "docs_completed": progress.docs_completed,
-                    "chunks_embedded": progress.chunks_embedded,
-                });
-                let _ = sqlx::query(
-                    "UPDATE axon_embed_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='running'",
-                )
-                .bind(progress_job_id)
-                .bind(progress_json)
-                .execute(&progress_pool)
-                .await;
-            }
-        });
-
-        let summary =
-            embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await?;
-        if let Err(err) = progress_task.await {
-            log_warn(&format!(
-                "embed progress_task panicked for job {id}: {err:?}"
-            ));
-        }
-
-        Ok(Some(serde_json::json!({
-            "input": input_text,
-            "collection": job_cfg.collection,
-            "docs_embedded": summary.docs_embedded,
-            "chunks_embedded": summary.chunks_embedded,
-            "source": "rust"
-        })))
+        let result = run_embed_core(cfg, pool, id, input_text, job_cfg.collection).await?;
+        Ok(Some(result))
     }
     .await;
     // Convert Box<dyn Error> to String before the match so no !Send type
@@ -311,9 +347,11 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
 
     match run_result {
         Ok(Some(result_json)) => {
-            sqlx::query(
-                "UPDATE axon_embed_jobs SET status='completed',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='running'",
-            )
+            sqlx::query(&format!(
+                "UPDATE axon_embed_jobs SET status='{completed}',updated_at=NOW(),finished_at=NOW(),result_json=$2,error_text=NULL WHERE id=$1 AND status='{running}'",
+                completed = JobStatus::Completed.as_str(),
+                running = JobStatus::Running.as_str(),
+            ))
             .bind(id)
             .bind(result_json)
             .execute(pool)
@@ -322,9 +360,11 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
         }
         Ok(None) => {}
         Err(error_text) => {
-            let _ = sqlx::query(
-                "UPDATE axon_embed_jobs SET status='failed',updated_at=NOW(),finished_at=NOW(),error_text=$2 WHERE id=$1 AND status='running'",
-            )
+            let _ = sqlx::query(&format!(
+                "UPDATE axon_embed_jobs SET status='{failed}',updated_at=NOW(),finished_at=NOW(),error_text=$2 WHERE id=$1 AND status='{running}'",
+                failed = JobStatus::Failed.as_str(),
+                running = JobStatus::Running.as_str(),
+            ))
             .bind(id)
             .bind(error_text.clone())
             .execute(pool)
@@ -348,7 +388,13 @@ async fn process_claimed_embed_job(cfg: Config, pool: PgPool, id: Uuid) {
 }
 
 pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    use crate::crates::jobs::worker_lane::{run_job_worker, ProcessFn, WorkerConfig};
+    use crate::crates::jobs::worker_lane::{
+        run_job_worker, validate_worker_env_vars, ProcessFn, WorkerConfig,
+    };
+
+    // Validate required environment variables before attempting any connections.
+    // Exits with a clear error message if any are missing.
+    validate_worker_env_vars();
 
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {

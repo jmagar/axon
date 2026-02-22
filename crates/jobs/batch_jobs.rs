@@ -8,11 +8,11 @@ use crate::crates::jobs::common::{
     reclaim_stale_running_jobs, JobTable,
 };
 use crate::crates::jobs::extract_jobs::start_extract_job;
+use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::embed_path_native;
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use spider::tokio;
 use sqlx::{FromRow, PgPool};
 use std::error::Error;
 use std::fmt::Write;
@@ -399,17 +399,19 @@ pub async fn start_batch_job(cfg: &Config, urls: &[String]) -> Result<Uuid, Box<
         output_dir: cfg.output_dir.to_string_lossy().to_string(),
         extraction_prompt: cfg.query.clone(),
     })?;
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(&format!(
         r#"
         SELECT id
         FROM axon_batch_jobs
-        WHERE status IN ('pending','running')
+        WHERE status IN ('{pending}','{running}')
           AND urls_json = $1
           AND config_json = $2
         ORDER BY created_at DESC
         LIMIT 1
         "#,
-    )
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
     .bind(urls_json.clone())
     .bind(cfg_json.clone())
     .fetch_optional(&pool)
@@ -424,9 +426,10 @@ pub async fn start_batch_job(cfg: &Config, urls: &[String]) -> Result<Uuid, Box<
     }
     let id = Uuid::new_v4();
 
-    sqlx::query(
-        r#"INSERT INTO axon_batch_jobs (id, status, urls_json, config_json) VALUES ($1, 'pending', $2, $3)"#,
-    )
+    sqlx::query(&format!(
+        r#"INSERT INTO axon_batch_jobs (id, status, urls_json, config_json) VALUES ($1, '{pending}', $2, $3)"#,
+        pending = JobStatus::Pending.as_str(),
+    ))
     .bind(id)
     .bind(urls_json)
     .bind(cfg_json)

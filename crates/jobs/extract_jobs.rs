@@ -6,6 +6,7 @@ use crate::crates::jobs::common::{
     enqueue_job, make_pool, mark_job_failed, open_amqp_channel, purge_queue_safe,
     reclaim_stale_running_jobs, JobTable,
 };
+use crate::crates::jobs::status::JobStatus;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use redis::AsyncCommands;
@@ -96,17 +97,19 @@ pub async fn start_extract_job(
         prompt,
         max_pages: cfg.max_pages,
     })?;
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(&format!(
         r#"
         SELECT id
         FROM axon_extract_jobs
-        WHERE status IN ('pending','running')
+        WHERE status IN ('{pending}','{running}')
           AND urls_json = $1
           AND config_json = $2
         ORDER BY created_at DESC
         LIMIT 1
         "#,
-    )
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
     .bind(urls_json.clone())
     .bind(cfg_json.clone())
     .fetch_optional(&pool)
@@ -121,9 +124,10 @@ pub async fn start_extract_job(
     }
     let id = Uuid::new_v4();
 
-    sqlx::query(
-        r#"INSERT INTO axon_extract_jobs (id, status, urls_json, config_json) VALUES ($1, 'pending', $2, $3)"#,
-    )
+    sqlx::query(&format!(
+        r#"INSERT INTO axon_extract_jobs (id, status, urls_json, config_json) VALUES ($1, '{pending}', $2, $3)"#,
+        pending = JobStatus::Pending.as_str(),
+    ))
     .bind(id)
     .bind(urls_json)
     .bind(cfg_json)
@@ -176,11 +180,16 @@ pub async fn cancel_extract_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn 
         ensure_schema(&pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
-    let rows = sqlx::query("UPDATE axon_extract_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('pending','running')")
-        .bind(id)
-        .execute(&pool)
-        .await?
-        .rows_affected();
+    let rows = sqlx::query(&format!(
+        "UPDATE axon_extract_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('{pending}','{running}')",
+        canceled = JobStatus::Canceled.as_str(),
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
+    .bind(id)
+    .execute(&pool)
+    .await?
+    .rows_affected();
 
     let redis_client = redis::Client::open(cfg.redis_url.clone())?;
     let mut conn = redis_client.get_multiplexed_async_connection().await?;
@@ -197,13 +206,15 @@ pub async fn cleanup_extract_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     }
     let mut total = 0u64;
     loop {
-        let deleted = sqlx::query(
+        let deleted = sqlx::query(&format!(
             "DELETE FROM axon_extract_jobs WHERE id IN (
                 SELECT id FROM axon_extract_jobs
-                WHERE status IN ('failed','canceled')
+                WHERE status IN ('{failed}','{canceled}')
                 LIMIT 1000
             )",
-        )
+            failed = JobStatus::Failed.as_str(),
+            canceled = JobStatus::Canceled.as_str(),
+        ))
         .execute(&pool)
         .await?
         .rows_affected();

@@ -6,11 +6,16 @@ pub(super) async fn cancel_batch_job(cfg: &Config, id: Uuid) -> Result<bool, Box
         ensure_schema(&pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
-    let rows = sqlx::query("UPDATE axon_batch_jobs SET status='canceled',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('pending','running')")
-        .bind(id)
-        .execute(&pool)
-        .await?
-        .rows_affected();
+    let rows = sqlx::query(&format!(
+        "UPDATE axon_batch_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('{pending}','{running}')",
+        canceled = JobStatus::Canceled.as_str(),
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    ))
+    .bind(id)
+    .execute(&pool)
+    .await?
+    .rows_affected();
 
     let redis_client = redis::Client::open(cfg.redis_url.clone())?;
     let mut conn = redis_client.get_multiplexed_async_connection().await?;
@@ -27,13 +32,15 @@ pub(super) async fn cleanup_batch_jobs(cfg: &Config) -> Result<u64, Box<dyn Erro
     }
     let mut total = 0u64;
     loop {
-        let deleted = sqlx::query(
+        let deleted = sqlx::query(&format!(
             "DELETE FROM axon_batch_jobs WHERE id IN (
                 SELECT id FROM axon_batch_jobs
-                WHERE status IN ('failed','canceled')
+                WHERE status IN ('{failed}','{canceled}')
                 LIMIT 1000
             )",
-        )
+            failed = JobStatus::Failed.as_str(),
+            canceled = JobStatus::Canceled.as_str(),
+        ))
         .execute(&pool)
         .await?
         .rows_affected();
