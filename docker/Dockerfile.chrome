@@ -29,7 +29,7 @@ RUN apt-get update \
         make \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install headless_browser \
+RUN cargo install headless_browser --version 0.1.24 --locked \
     && strip /usr/local/cargo/bin/headless_browser
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────

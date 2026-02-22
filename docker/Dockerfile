@@ -1,12 +1,24 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.93-bookworm AS builder
+#
+# Three-stage build using cargo-chef for dependency layer caching.
+#
+# Stage 1 (planner): generates a recipe.json from Cargo.toml + lock files only.
+# Stage 2 (builder): compiles deps from recipe first (cached layer), then source.
+# Stage 3 (runtime): debian-slim + s6-overlay; only the axon binary is copied in.
+#
+# Build context is the axon_rust directory.
+# spider_agent and its transitive path deps are injected via the "spider-agent"
+# BuildKit additional_context (declared in docker-compose.yaml) so the path dep
+# ../spider/spider_agent resolves correctly without widening the build context
+# to the whole workspace.
+
+# ── Stage 1: planner ──────────────────────────────────────────────────────────
+FROM rust:1.93-bookworm AS planner
 
 WORKDIR /src
 
-# Build context is the axon_rust directory.
-# spider_agent is injected via the "spider-agent" BuildKit additional_context
-# (declared in docker-compose.yaml) so the Cargo.toml path dep
-# ../spider/spider_agent resolves correctly without a huge workspace context.
+RUN cargo install cargo-chef --locked
+
 COPY . ./axon_rust/
 COPY --from=spider-agent . ./spider/spider_agent/
 COPY --from=spider-agent-types . ./spider/spider_agent_types/
@@ -14,8 +26,36 @@ COPY --from=spider-agent-html . ./spider/spider_agent_html/
 
 WORKDIR /src/axon_rust
 
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ── Stage 2: builder ──────────────────────────────────────────────────────────
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /src
+
+RUN cargo install cargo-chef --locked
+
+# Cook dependencies first — this layer is cached as long as recipe.json is
+# unchanged (i.e., Cargo.toml / Cargo.lock have not changed).
+COPY --from=planner /src/axon_rust/recipe.json recipe.json
+COPY --from=spider-agent . ./spider/spider_agent/
+COPY --from=spider-agent-types . ./spider/spider_agent_types/
+COPY --from=spider-agent-html . ./spider/spider_agent_html/
+
+WORKDIR /src/axon_rust
+
+RUN cargo chef cook --release --recipe-path /src/recipe.json
+
+# Now copy the actual source. Only this layer re-runs on source changes.
+WORKDIR /src
+
+COPY . ./axon_rust/
+
+WORKDIR /src/axon_rust
+
 RUN cargo build --release --bin axon
 
+# ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM debian:12.9-slim
 
 ARG S6_OVERLAY_VERSION=3.2.1.0
@@ -63,6 +103,7 @@ RUN groupadd -r axon && useradd -r -g axon -u 1001 axon
 
 RUN chmod +x /etc/cont-init.d/* \
     && find /etc/s6-overlay/s6-rc.d -type f -name run -exec chmod +x {} + \
+    && find /etc/s6-overlay/s6-rc.d -type f -name finish -exec chmod +x {} + \
     && chmod +x /usr/local/bin/healthcheck-workers.sh \
     && mkdir -p \
         /var/log/axon/crawl-worker \
@@ -70,6 +111,7 @@ RUN chmod +x /etc/cont-init.d/* \
         /var/log/axon/embed-worker \
         /var/log/axon/extract-worker \
         /var/log/axon/ingest-worker \
+        /app/logs \
     && chown -R axon:axon /var/log/axon /app
 
 # NOTE: s6-overlay v3 requires root for /init (PID 1) to manage process
