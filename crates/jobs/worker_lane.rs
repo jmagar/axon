@@ -4,8 +4,9 @@ use crate::crates::jobs::common::{
     claim_next_pending, claim_pending_by_id, open_amqp_connection_and_channel,
     reclaim_stale_running_jobs, JobTable,
 };
-use futures_util::StreamExt;
-use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions};
+use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt, StreamExt};
+use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions};
 use lapin::types::FieldTable;
 use spider::tokio;
 use sqlx::PgPool;
@@ -16,6 +17,10 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const STALE_SWEEP_INTERVAL_SECS: u64 = 30;
+
+/// Polling backoff constants (milliseconds).
+const POLL_BACKOFF_INIT_MS: u64 = 100;
+const POLL_BACKOFF_MAX_MS: u64 = 6400;
 
 /// A boxed async function that processes a single claimed job.
 /// It must handle its own error logging/marking internally (returns `()`).
@@ -71,15 +76,22 @@ async fn sweep_stale_jobs(
 }
 
 /// Generic AMQP consumer lane. Listens for job IDs on the queue, claims them,
-/// and dispatches to `process_fn`. Runs stale sweeps on idle timeout.
+/// and dispatches to `process_fn` concurrently using `FuturesUnordered` with a
+/// semaphore for backpressure. Runs stale sweeps on idle timeout.
 async fn run_amqp_lane(
     cfg: &Config,
     pool: PgPool,
     wc: &WorkerConfig,
     lane: usize,
     process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_conn, ch) = open_amqp_connection_and_channel(cfg, &wc.queue_name).await?;
+
+    // Tell the broker to only push one unacked message at a time per consumer,
+    // preventing a single lane from buffering more work than it can process.
+    ch.basic_qos(1, BasicQosOptions::default()).await?;
+
     let tag = format!("{}-{lane}", wc.consumer_tag_prefix);
     let mut consumer = ch
         .basic_consume(
@@ -95,7 +107,12 @@ async fn run_amqp_lane(
         wc.job_kind, wc.queue_name, wc.lane_count
     ));
 
+    let mut inflight = FuturesUnordered::new();
+
     loop {
+        // Drain completed futures without blocking.
+        while let Some(()) = inflight.next().now_or_never().flatten() {}
+
         let timed = tokio::time::timeout(
             Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
             consumer.next(),
@@ -133,7 +150,13 @@ async fn run_amqp_lane(
         match claim_pending_by_id(&pool, wc.table, job_id).await {
             Ok(true) => {
                 delivery.ack(BasicAckOptions::default()).await?;
-                process_fn(cfg.clone(), pool.clone(), job_id).await;
+                // Acquire a semaphore permit for backpressure before dispatching.
+                let permit = semaphore.clone().acquire_owned().await?;
+                let fut = process_fn(cfg.clone(), pool.clone(), job_id);
+                inflight.push(async move {
+                    fut.await;
+                    drop(permit);
+                });
             }
             Ok(false) => {
                 // Another lane claimed this ID first; ack and skip.
@@ -160,6 +183,9 @@ async fn run_amqp_lane(
         }
     }
 
+    // Drain any remaining in-flight jobs before exiting.
+    while inflight.next().await.is_some() {}
+
     Err(format!(
         "{} worker lane={lane} AMQP consumer stream ended unexpectedly",
         wc.job_kind
@@ -167,31 +193,47 @@ async fn run_amqp_lane(
     .into())
 }
 
-/// Generic polling lane. Claims pending jobs via SQL polling with an 800ms idle
-/// sleep. Runs stale sweeps on the configured interval.
+/// Generic polling lane. Claims pending jobs via SQL polling with exponential
+/// backoff (100ms -> 6400ms on idle, reset on job found). Dispatches to
+/// `process_fn` concurrently using `FuturesUnordered` with semaphore backpressure.
+/// Runs stale sweeps on the configured interval.
 async fn run_polling_lane(
     cfg: &Config,
     pool: PgPool,
     wc: &WorkerConfig,
     lane: usize,
     process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     log_info(&format!(
         "{} worker polling lane={lane} active queue={}",
         wc.job_kind, wc.queue_name
     ));
     let mut last_sweep = Instant::now();
+    let mut backoff_ms = POLL_BACKOFF_INIT_MS;
+    let mut inflight = FuturesUnordered::new();
+
     loop {
+        // Drain completed futures without blocking.
+        while let Some(()) = inflight.next().now_or_never().flatten() {}
+
         if last_sweep.elapsed() >= Duration::from_secs(STALE_SWEEP_INTERVAL_SECS) {
             sweep_stale_jobs(cfg, &pool, wc, "polling", lane).await;
             last_sweep = Instant::now();
         }
         match claim_next_pending(&pool, wc.table).await {
             Ok(Some(id)) => {
-                process_fn(cfg.clone(), pool.clone(), id).await;
+                backoff_ms = POLL_BACKOFF_INIT_MS;
+                let permit = semaphore.clone().acquire_owned().await?;
+                let fut = process_fn(cfg.clone(), pool.clone(), id);
+                inflight.push(async move {
+                    fut.await;
+                    drop(permit);
+                });
             }
             Ok(None) => {
-                tokio::time::sleep(Duration::from_millis(800)).await;
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(POLL_BACKOFF_MAX_MS);
             }
             Err(err) => {
                 log_warn(&format!(
@@ -207,6 +249,8 @@ async fn run_polling_lane(
 /// Generic top-level worker: startup sweep, probe AMQP, then run `lane_count` lanes
 /// (AMQP or polling fallback) using `futures_util::future::join_all` for dynamic concurrency.
 ///
+/// A shared `Semaphore` limits total in-flight spawned tasks to `lane_count`.
+///
 /// Callers must call `make_pool` and `ensure_schema` before invoking this.
 pub(crate) async fn run_job_worker(
     cfg: &Config,
@@ -215,6 +259,8 @@ pub(crate) async fn run_job_worker(
     process_fn: ProcessFn,
 ) -> Result<(), Box<dyn std::error::Error>> {
     sweep_stale_jobs(cfg, &pool, wc, "startup", 0).await;
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(wc.lane_count));
 
     // Probe AMQP connectivity with a short-lived connection+channel pair.
     let amqp_available = match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
@@ -235,7 +281,9 @@ pub(crate) async fn run_job_worker(
     if amqp_available {
         loop {
             let futs: Vec<_> = (1..=wc.lane_count)
-                .map(|lane| run_amqp_lane(cfg, pool.clone(), wc, lane, &process_fn))
+                .map(|lane| {
+                    run_amqp_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone())
+                })
                 .collect();
             let results = futures_util::future::join_all(futs).await;
             let mut all_ok = true;
@@ -264,7 +312,7 @@ pub(crate) async fn run_job_worker(
         wc.job_kind
     ));
     let futs: Vec<_> = (1..=wc.lane_count)
-        .map(|lane| run_polling_lane(cfg, pool.clone(), wc, lane, &process_fn))
+        .map(|lane| run_polling_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone()))
         .collect();
     let results = futures_util::future::join_all(futs).await;
     for result in results {
