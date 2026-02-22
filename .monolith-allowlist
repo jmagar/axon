@@ -15,3 +15,7 @@ crates/vector/ops/commands/ask.rs
 # Production code is ~200 lines; tests account for the remainder. Consider splitting tests into
 # a separate tests.rs submodule if the file grows further.
 crates/core/http.rs
+
+# ranking.rs: exceeds 500-line limit after Agent 3 added rerank_ask_candidates + select_diverse
+# + ranking tests (2026-02-22). Candidate for future split into rerank.rs + select.rs.
+crates/vector/ops/ranking.rs
