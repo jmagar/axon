@@ -1,10 +1,54 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
+use reqwest::StatusCode;
 use std::collections::HashSet;
 use std::error::Error;
+use std::time::Duration;
 
 use super::types::{QdrantPoint, QdrantSearchHit, QdrantSearchResponse};
 use super::utils::{qdrant_base, retrieve_max_points};
+
+async fn qdrant_delete_with_retry(
+    client: &reqwest::Client,
+    endpoint: &str,
+    body: serde_json::Value,
+    context: &str,
+) -> Result<(), Box<dyn Error>> {
+    const MAX_ATTEMPTS: usize = 4;
+    let mut last_error: Option<String> = None;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match client.post(endpoint).json(&body).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    return Ok(());
+                }
+                let status = resp.status();
+                let retryable = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
+                if retryable && attempt < MAX_ATTEMPTS {
+                    last_error = Some(format!(
+                        "{context}: qdrant status={status} attempt={attempt}"
+                    ));
+                    tokio::time::sleep(Duration::from_millis(250 * (1 << (attempt - 1)))).await;
+                    continue;
+                }
+                return Err(format!(
+                    "{context}: qdrant request failed with status {status} on attempt {attempt}"
+                )
+                .into());
+            }
+            Err(err) => {
+                last_error = Some(format!("{context}: send error attempt={attempt}: {err}"));
+                if attempt < MAX_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(250 * (1 << (attempt - 1)))).await;
+                    continue;
+                }
+            }
+        }
+    }
+    Err(last_error
+        .unwrap_or_else(|| format!("{context}: unknown qdrant delete failure"))
+        .into())
+}
 
 /// Shared scroll pagination loop. POSTs to the given `endpoint` with `initial_body`,
 /// reads `result.points` as raw JSON, and invokes `on_page` for each non-empty page.
@@ -140,18 +184,20 @@ pub(crate) async fn qdrant_delete_by_url_filter(
     url: &str,
 ) -> Result<(), Box<dyn Error>> {
     let client = http_client()?;
-    client
-        .post(format!(
-            "{}/collections/{}/points/delete?wait=true",
-            qdrant_base(cfg),
-            cfg.collection
-        ))
-        .json(&serde_json::json!({
+    let endpoint = format!(
+        "{}/collections/{}/points/delete?wait=true",
+        qdrant_base(cfg),
+        cfg.collection
+    );
+    qdrant_delete_with_retry(
+        client,
+        &endpoint,
+        serde_json::json!({
             "filter": {"must": [{"key": "url", "match": {"value": url}}]}
-        }))
-        .send()
-        .await?
-        .error_for_status()?;
+        }),
+        "qdrant_delete_by_url_filter",
+    )
+    .await?;
     Ok(())
 }
 
@@ -179,18 +225,19 @@ pub async fn qdrant_delete_stale_domain_urls(
     let client = http_client()?;
     // Qdrant filter limit is generous but chunk at 500 to be safe with large stale sets.
     for batch in url_conditions.chunks(500) {
-        client
-            .post(format!(
+        qdrant_delete_with_retry(
+            client,
+            &format!(
                 "{}/collections/{}/points/delete?wait=true",
                 qdrant_base(cfg),
                 cfg.collection
-            ))
-            .json(&serde_json::json!({
+            ),
+            serde_json::json!({
                 "filter": {"should": batch}
-            }))
-            .send()
-            .await?
-            .error_for_status()?;
+            }),
+            "qdrant_delete_stale_domain_urls",
+        )
+        .await?;
     }
     Ok(stale.len())
 }
@@ -209,12 +256,13 @@ pub(crate) async fn qdrant_delete_points(
         cfg.collection
     );
     for batch in ids.chunks(1000) {
-        client
-            .post(&url)
-            .json(&serde_json::json!({"points": batch}))
-            .send()
-            .await?
-            .error_for_status()?;
+        qdrant_delete_with_retry(
+            client,
+            &url,
+            serde_json::json!({"points": batch}),
+            "qdrant_delete_points",
+        )
+        .await?;
     }
     Ok(ids.len())
 }

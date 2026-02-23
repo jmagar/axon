@@ -13,12 +13,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::error::Error;
 use tokio;
+use tokio::time::Duration;
 use uuid::Uuid;
 
 static SCHEMA_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 const TABLE: JobTable = JobTable::Embed;
 const WORKER_CONCURRENCY: usize = 2;
+const EMBED_HEARTBEAT_INTERVAL_SECS: u64 = 15;
+const EMBED_CANCEL_REDIS_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EmbedJobConfig {
@@ -252,19 +255,47 @@ async fn check_embed_canceled(
             log_warn(&format!("embed cancel redis client failed for {id}: {e}"));
             None
         }
-        Ok(redis_client) => match redis_client.get_multiplexed_async_connection().await {
-            Err(e) => {
-                log_warn(&format!("embed cancel redis connect failed for {id}: {e}"));
-                None
-            }
-            Ok(mut conn) => match conn.get::<_, Option<String>>(&cancel_key).await {
-                Ok(v) => v,
-                Err(e) => {
-                    log_warn(&format!("embed cancel check failed for {id}: {e}"));
+        Ok(redis_client) => {
+            match tokio::time::timeout(
+                Duration::from_secs(EMBED_CANCEL_REDIS_TIMEOUT_SECS),
+                redis_client.get_multiplexed_async_connection(),
+            )
+            .await
+            {
+                Err(_) => {
+                    log_warn(&format!(
+                        "embed cancel redis connect timeout for {id} after {}s",
+                        EMBED_CANCEL_REDIS_TIMEOUT_SECS
+                    ));
                     None
                 }
-            },
-        },
+                Ok(Err(e)) => {
+                    log_warn(&format!("embed cancel redis connect failed for {id}: {e}"));
+                    None
+                }
+                Ok(Ok(mut conn)) => {
+                    match tokio::time::timeout(
+                        Duration::from_secs(EMBED_CANCEL_REDIS_TIMEOUT_SECS),
+                        conn.get::<_, Option<String>>(&cancel_key),
+                    )
+                    .await
+                    {
+                        Err(_) => {
+                            log_warn(&format!(
+                                "embed cancel check timeout for {id} after {}s",
+                                EMBED_CANCEL_REDIS_TIMEOUT_SECS
+                            ));
+                            None
+                        }
+                        Ok(Err(e)) => {
+                            log_warn(&format!("embed cancel check failed for {id}: {e}"));
+                            None
+                        }
+                        Ok(Ok(v)) => v,
+                    }
+                }
+            }
+        }
     };
     if cancel_value.is_none() {
         return Ok(false);
@@ -310,13 +341,14 @@ async fn run_embed_core(
     });
     let mut embed_cfg = cfg.clone();
     embed_cfg.collection = collection.clone();
-    let summary =
-        embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await?;
+    let summary_result =
+        embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await;
     if let Err(err) = progress_task.await {
         log_warn(&format!(
             "embed progress_task panicked for job {id}: {err:?}"
         ));
     }
+    let summary = summary_result?;
     Ok(serde_json::json!({
         "input": input_text,
         "collection": collection,
@@ -341,11 +373,46 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
         log_info(&format!(
             "embed worker started job {id} input={input_preview}"
         ));
+        let heartbeat_pool = pool.clone();
+        let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
+        let heartbeat_task = tokio::spawn(async move {
+            let mut ticker =
+                tokio::time::interval(Duration::from_secs(EMBED_HEARTBEAT_INTERVAL_SECS));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let _ = sqlx::query(&format!(
+                            "UPDATE axon_embed_jobs SET updated_at=NOW() WHERE id=$1 AND status='{running}'",
+                            running = JobStatus::Running.as_str(),
+                        ))
+                        .bind(id)
+                        .execute(&heartbeat_pool)
+                        .await;
+                    }
+                    changed = heartbeat_stop_rx.changed() => {
+                        if changed.is_err() || *heartbeat_stop_rx.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
         if check_embed_canceled(cfg, pool, id).await? {
+            let _ = heartbeat_stop_tx.send(true);
+            let _ = heartbeat_task.await;
             return Ok(None);
         }
         let job_cfg: EmbedJobConfig = serde_json::from_value(cfg_json)?;
-        let result = run_embed_core(cfg, pool, id, input_text, job_cfg.collection).await?;
+        let result = run_embed_core(cfg, pool, id, input_text, job_cfg.collection).await;
+        let _ = heartbeat_stop_tx.send(true);
+        if let Err(err) = heartbeat_task.await {
+            log_warn(&format!(
+                "embed heartbeat_task panicked for job {id}: {err:?}"
+            ));
+        }
+        let result = result?;
         Ok(Some(result))
     }
     .await;

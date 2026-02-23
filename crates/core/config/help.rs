@@ -193,6 +193,11 @@ fn print_top_level_help() {
     println!("  {:<28} {}", cmd("status"), dim("Show queued job status"));
     println!(
         "  {:<28} {}",
+        cmd("ingest <subcommand>"),
+        dim("Manage shared ingest worker/jobs")
+    );
+    println!(
+        "  {:<28} {}",
         cmd("debug [context]"),
         dim("LLM-assisted stack troubleshooting")
     );

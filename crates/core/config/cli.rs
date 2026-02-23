@@ -35,6 +35,7 @@ pub(super) enum CliCommand {
     Status,
     Dedupe,
     Github(GithubArgs),
+    Ingest(IngestArgs),
     Reddit(RedditArgs),
     Youtube(YoutubeArgs),
     Sessions(SessionsArgs),
@@ -115,6 +116,13 @@ pub(super) struct GithubArgs {
     /// Also index source code files (in addition to markdown, issues, and PRs)
     #[arg(long, action = ArgAction::Set, default_value_t = false)]
     pub(super) include_source: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(super) struct IngestArgs {
+    #[command(subcommand)]
+    pub(super) job: Option<JobSubcommand>,
 }
 
 #[derive(Debug, Args)]

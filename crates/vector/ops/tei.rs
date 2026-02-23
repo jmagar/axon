@@ -1,6 +1,7 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::content::to_markdown;
 use crate::crates::core::http::{fetch_html, http_client};
+use crate::crates::core::logging::log_warn;
 use crate::crates::core::ui::{accent, symbol_for_status};
 use crate::crates::vector::ops::input;
 use crate::crates::vector::ops::qdrant::{
@@ -212,7 +213,14 @@ async fn embed_prepared_doc(
     doc: PreparedDoc,
 ) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
     // Re-embedding can yield fewer chunks; delete stale points before upsert.
-    qdrant_delete_by_url_filter(cfg, &doc.url).await?;
+    // Treat delete as best-effort so transient Qdrant transport failures do not
+    // fail the entire embed job.
+    if let Err(err) = qdrant_delete_by_url_filter(cfg, &doc.url).await {
+        log_warn(&format!(
+            "embed pre-delete skipped for {} due to transient qdrant error: {}",
+            doc.url, err
+        ));
+    }
     let vectors = tei_embed(cfg, &doc.chunks).await?;
     if vectors.is_empty() {
         return Err(format!("TEI returned no vectors for {}", doc.url).into());

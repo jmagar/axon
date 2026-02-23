@@ -125,14 +125,14 @@ axon_rust/
 - `axon-chrome` -> `localhost:6000` (management API), `localhost:9222` (CDP proxy)
 - `axon-workers` (s6-supervised worker container; depends on all infra being healthy)
 
-Services run on the `axon` bridge network with persistent volumes under `/home/jmagar/appdata/axon-*`.
+Services run on the `axon` bridge network. Persistent volumes are rooted at `AXON_DATA_DIR` (defaults to `./data` if unset).
 
 ## Quick Start
 
 ```bash
 # 1) from repo root
 cp .env.example .env
-# edit .env — set POSTGRES_PASSWORD, REDIS_PASSWORD, RABBITMQ_PASS, TEI_URL, OPENAI_*
+# edit .env — set AXON_DATA_DIR, POSTGRES_PASSWORD, REDIS_PASSWORD, RABBITMQ_PASS, TEI_URL, OPENAI_*
 
 # 2) start stack
 docker compose up -d
@@ -167,6 +167,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Docker Compose Postgres credentials |
 | `REDIS_PASSWORD` | Docker Compose Redis password |
 | `RABBITMQ_USER` / `RABBITMQ_PASS` | Docker Compose RabbitMQ credentials |
+| `AXON_DATA_DIR` | Host path root for persistent compose data volumes (e.g. `/home/you/appdata/axon`) |
 | `AXON_PG_URL` | PostgreSQL DSN for CLI/workers |
 | `AXON_REDIS_URL` | Redis DSN for health checks and cancel flags |
 | `AXON_AMQP_URL` | AMQP DSN for queue-backed jobs |
@@ -203,7 +204,6 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AXON_WEBDRIVER_URL` | — | Primary WebDriver endpoint (e.g. `http://127.0.0.1:4444`) |
-| `WEBDRIVER_URL` | — | Legacy fallback for `AXON_WEBDRIVER_URL` |
 | `AXON_CHROME_REMOTE_URL` | — | Remote Chrome DevTools endpoint |
 | `CHROME_URL` | — | spider-rs native CDP env var (alternative to `AXON_CHROME_REMOTE_URL`) |
 | `AXON_CHROME_PROXY` | — | Proxy URL for Chrome requests |
@@ -228,7 +228,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `AXON_NO_COLOR` | — | Disable ANSI color output when set |
 | `AXON_DOMAINS_DETAILED` | — | Enable detailed `domains` command output |
 | `AXON_EXTRACT_EST_COST_PER_1K_TOKENS` | — | Override extract cost estimate (USD/1K tokens) |
-| `AXON_LOG_FILE` | `logs/axon.log` | Structured JSON log file path (always on) |
+| `AXON_LOG_FILE` | `logs/axon.log` | Structured log file path (always on) |
 | `AXON_LOG_MAX_BYTES` | `10485760` | Max bytes per log file before rotation (10MB) |
 | `AXON_LOG_MAX_FILES` | `3` | Total log files to keep (`axon.log`, `.1`, `.2`) |
 
@@ -246,10 +246,6 @@ The `ask` command retrieves chunks from Qdrant, reranks them, and builds a conte
 | `AXON_ASK_DOC_FETCH_CONCURRENCY` | `4` | `1`–`16` | Concurrent Qdrant fetches during full-doc backfill. |
 | `AXON_ASK_DOC_CHUNK_LIMIT` | `192` | `8`–`2000` | Maximum chunks fetched per document during backfill. |
 | `AXON_ASK_MAX_CONTEXT_CHARS` | `120000` | `20000`–`400000` | Total characters of context passed to the LLM. Raise for large-context models; lower to reduce token cost. |
-
-### Legacy Aliases
-
-`NUQ_DATABASE_URL`, `NUQ_RABBITMQ_URL`, `REDIS_URL` are accepted as fallbacks for `AXON_PG_URL`, `AXON_AMQP_URL`, `AXON_REDIS_URL` respectively. `WEBDRIVER_URL` is accepted as a fallback for `AXON_WEBDRIVER_URL`.
 
 Notes:
 - Container runtime uses service DNS names (`axon-postgres`, `axon-redis`, etc.).
@@ -289,6 +285,7 @@ Worker behavior notes:
 | `evaluate <question>` | RAG vs baseline + LLM judge (accuracy · relevance · completeness · verdict) | No |
 | `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
 | `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
+| `ingest <subcommand>` | Shared ingest worker/job control (`worker`, `status`, `list`, etc.) | No |
 | `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
 | `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
 | `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
@@ -318,6 +315,15 @@ axon crawl worker     # run a worker inline
 The ingest commands share the same subcommand routing:
 
 ```bash
+axon ingest status <job_id>
+axon ingest cancel <job_id>
+axon ingest list
+axon ingest cleanup
+axon ingest clear
+axon ingest recover
+axon ingest worker
+
+# source-specific aliases (equivalent worker path):
 axon github status <job_id>
 axon github cancel <job_id>
 axon github list
@@ -432,9 +438,9 @@ All flags are global (usable with any subcommand).
 
 | Flag | Env Var | Fallback |
 |------|---------|----------|
-| `--pg-url <url>` | `AXON_PG_URL` / `NUQ_DATABASE_URL` | `postgresql://axon:postgres@127.0.0.1:53432/axon` |
-| `--redis-url <url>` | `AXON_REDIS_URL` / `REDIS_URL` | `redis://127.0.0.1:53379` |
-| `--amqp-url <url>` | `AXON_AMQP_URL` / `NUQ_RABBITMQ_URL` | `amqp://axon:axonrabbit@127.0.0.1:45535/%2f` |
+| `--pg-url <url>` | `AXON_PG_URL` | `postgresql://axon:postgres@127.0.0.1:53432/axon` |
+| `--redis-url <url>` | `AXON_REDIS_URL` | `redis://127.0.0.1:53379` |
+| `--amqp-url <url>` | `AXON_AMQP_URL` | `amqp://axon:axonrabbit@127.0.0.1:45535/%2f` |
 | `--qdrant-url <url>` | `QDRANT_URL` | `http://127.0.0.1:53333` |
 | `--tei-url <url>` | `TEI_URL` | *(empty)* |
 | `--openai-base-url <url>` | `OPENAI_BASE_URL` | *(empty)* |

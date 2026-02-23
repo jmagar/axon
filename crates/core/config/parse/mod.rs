@@ -158,6 +158,14 @@ fn into_config(cli: Cli) -> Result<Config, String> {
                 },
             )
         }
+        CliCommand::Ingest(args) => (
+            CommandKind::Ingest,
+            if let Some(job) = args.job {
+                positional_from_job(job)
+            } else {
+                Vec::new()
+            },
+        ),
         CliCommand::Reddit(args) => {
             reddit_sort = args.sort;
             reddit_time = args.time;

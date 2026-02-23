@@ -114,7 +114,6 @@ mod tests {
 
     fn reset_env() {
         std::env::remove_var("AXON_WEBDRIVER_URL");
-        std::env::remove_var("WEBDRIVER_URL");
         std::env::remove_var("AXON_CHROME_DIAGNOSTICS");
         std::env::remove_var("AXON_CHROME_DIAGNOSTICS_SCREENSHOT");
         std::env::remove_var("AXON_CHROME_DIAGNOSTICS_EVENTS");

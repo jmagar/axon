@@ -126,9 +126,9 @@ All flags are `--global` (usable with any subcommand).
 
 | Flag | Type | Env Var | Fallback |
 |------|------|---------|----------|
-| `--pg-url <url>` | string | `AXON_PG_URL` / `NUQ_DATABASE_URL` | `postgresql://axon:postgres@127.0.0.1:53432/axon` |
-| `--redis-url <url>` | string | `AXON_REDIS_URL` / `REDIS_URL` | `redis://127.0.0.1:53379` |
-| `--amqp-url <url>` | string | `AXON_AMQP_URL` / `NUQ_RABBITMQ_URL` | `amqp://axon:axonrabbit@127.0.0.1:45535/%2f` |
+| `--pg-url <url>` | string | `AXON_PG_URL` | `postgresql://axon:postgres@127.0.0.1:53432/axon` |
+| `--redis-url <url>` | string | `AXON_REDIS_URL` | `redis://127.0.0.1:53379` |
+| `--amqp-url <url>` | string | `AXON_AMQP_URL` | `amqp://axon:axonrabbit@127.0.0.1:45535/%2f` |
 | `--qdrant-url <url>` | string | `QDRANT_URL` | `http://127.0.0.1:53333` |
 | `--tei-url <url>` | string | `TEI_URL` | *(empty)* |
 | `--openai-base-url <url>` | string | `OPENAI_BASE_URL` | *(empty)* |
@@ -227,6 +227,9 @@ TEI_URL=http://YOUR_TEI_HOST:52000
 Copy `.env.example` → `.env` and fill in values:
 
 ```bash
+# Compose persistent data root on host
+AXON_DATA_DIR=/home/yourname/appdata/axon
+
 # Postgres
 AXON_PG_URL=postgresql://axon:postgres@axon-postgres:5432/axon
 
