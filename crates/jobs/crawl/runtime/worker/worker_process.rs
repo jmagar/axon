@@ -4,8 +4,8 @@ use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::crawl::engine::{
     run_crawl_once, should_fallback_to_chrome, update_latest_reflink, CrawlSummary,
 };
-use crate::crates::jobs::batch_jobs::apply_queue_injection_with_pool;
-use crate::crates::jobs::embed_jobs::start_embed_job_with_pool;
+use crate::crates::jobs::batch::apply_queue_injection_with_pool;
+use crate::crates::jobs::embed::start_embed_job_with_pool;
 use crate::crates::jobs::status::JobStatus;
 use crate::crates::vector::ops::qdrant::qdrant_delete_stale_domain_urls;
 use sqlx::PgPool;

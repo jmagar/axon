@@ -5,7 +5,7 @@ use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{
     accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
 };
-use crate::crates::jobs::extract_jobs::{
+use crate::crates::jobs::extract::{
     cancel_extract_job, cleanup_extract_jobs, clear_extract_jobs, get_extract_job,
     list_extract_jobs, recover_stale_extract_jobs, run_extract_worker, start_extract_job,
 };

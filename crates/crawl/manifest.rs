@@ -1,4 +1,4 @@
-use crate::crates::jobs::batch_jobs::InjectionCandidate;
+use crate::crates::jobs::batch::InjectionCandidate;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

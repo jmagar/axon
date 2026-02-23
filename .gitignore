@@ -51,3 +51,7 @@ specs/
 container/*.local.yml
 container/*.local.yaml
 .claude/
+
+# Runtime cache directories
+http-cacache/
+storage/

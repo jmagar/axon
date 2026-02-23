@@ -3,7 +3,7 @@ use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{
     accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
 };
-use crate::crates::jobs::embed_jobs::{
+use crate::crates::jobs::embed::{
     cancel_embed_job, cleanup_embed_jobs, clear_embed_jobs, get_embed_job, list_embed_jobs,
     recover_stale_embed_jobs, run_embed_worker, start_embed_job,
 };

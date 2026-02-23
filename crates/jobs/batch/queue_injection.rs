@@ -1,6 +1,6 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
-use crate::crates::jobs::extract_jobs::{start_extract_job, start_extract_job_with_pool};
+use crate::crates::jobs::extract::{start_extract_job, start_extract_job_with_pool};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::error::Error;
