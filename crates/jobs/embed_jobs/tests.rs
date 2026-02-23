@@ -32,6 +32,61 @@ async fn embed_start_job_dedupes_active_pending_job() -> Result<(), Box<dyn Erro
 }
 
 #[tokio::test]
+async fn embed_start_job_dedupes_fresh_running_job() -> Result<(), Box<dyn Error>> {
+    let Some(pg_url) = pg_url() else {
+        return Ok(());
+    };
+    let mut cfg = test_config(&pg_url);
+    cfg.watchdog_stale_timeout_secs = 300;
+    let input = format!("embed-running-dedupe-fresh-{}", Uuid::new_v4());
+
+    let first_id = start_embed_job(&cfg, &input).await?;
+    let pool = make_pool(&cfg).await?;
+    sqlx::query("UPDATE axon_embed_jobs SET status='running', updated_at=NOW() WHERE id=$1")
+        .bind(first_id)
+        .execute(&pool)
+        .await?;
+
+    let second_id = start_embed_job(&cfg, &input).await?;
+    assert_eq!(first_id, second_id);
+
+    let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE id = $1")
+        .bind(first_id)
+        .execute(&pool)
+        .await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn embed_start_job_creates_new_when_running_job_is_stale() -> Result<(), Box<dyn Error>> {
+    let Some(pg_url) = pg_url() else {
+        return Ok(());
+    };
+    let mut cfg = test_config(&pg_url);
+    cfg.watchdog_stale_timeout_secs = 30;
+    let input = format!("embed-running-dedupe-stale-{}", Uuid::new_v4());
+
+    let first_id = start_embed_job(&cfg, &input).await?;
+    let pool = make_pool(&cfg).await?;
+    sqlx::query(
+        "UPDATE axon_embed_jobs SET status='running', updated_at=NOW() - INTERVAL '2 minutes' WHERE id=$1",
+    )
+    .bind(first_id)
+    .execute(&pool)
+    .await?;
+
+    let second_id = start_embed_job(&cfg, &input).await?;
+    assert_ne!(first_id, second_id);
+
+    let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE id = $1 OR id = $2")
+        .bind(first_id)
+        .bind(second_id)
+        .execute(&pool)
+        .await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn embed_recover_reclaims_confirmed_stale_running_job() -> Result<(), Box<dyn Error>> {
     let Some(pg_url) = pg_url() else {
         return Ok(());

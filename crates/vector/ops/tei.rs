@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::content::to_markdown;
+use crate::crates::core::content::{is_excluded_url_path, to_markdown};
 use crate::crates::core::http::{fetch_html, http_client};
 use crate::crates::core::logging::log_warn;
 use crate::crates::core::ui::{accent, symbol_for_status};
@@ -54,6 +54,17 @@ struct PreparedDoc {
     url: String,
     domain: String,
     chunks: Vec<String>,
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => default,
+        },
+        Err(_) => default,
+    }
 }
 
 pub(crate) async fn tei_embed(
@@ -213,11 +224,15 @@ async fn embed_prepared_doc(
     doc: PreparedDoc,
 ) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
     // Re-embedding can yield fewer chunks; delete stale points before upsert.
-    // Treat delete as best-effort so transient Qdrant transport failures do not
-    // fail the entire embed job.
+    // By default this is strict to preserve index consistency.
+    // Set AXON_EMBED_STRICT_PREDELETE=false to continue-on-error.
+    let strict_predelete = env_bool("AXON_EMBED_STRICT_PREDELETE", true);
     if let Err(err) = qdrant_delete_by_url_filter(cfg, &doc.url).await {
+        if strict_predelete {
+            return Err(format!("embed pre-delete failed for {}: {}", doc.url, err).into());
+        }
         log_warn(&format!(
-            "embed pre-delete skipped for {} due to transient qdrant error: {}",
+            "embed pre-delete skipped for {} due to qdrant error (strict=false): {}",
             doc.url, err
         ));
     }
@@ -341,8 +356,13 @@ async fn embed_path_native_with_progress_impl(
     input: &str,
     progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
-    validate_embed_config(cfg)?;
-    let prepared = prepare_embed_docs(input).await?;
+    if cfg.tei_url.is_empty() {
+        return Err("TEI_URL not configured".into());
+    }
+    if cfg.qdrant_url.is_empty() {
+        return Err("QDRANT_URL not configured".into());
+    }
+    let prepared = prepare_embed_docs(input, &cfg.exclude_path_prefix).await?;
     if prepared.is_empty() {
         return emit_empty_embed(progress_tx);
     }
@@ -351,17 +371,10 @@ async fn embed_path_native_with_progress_impl(
     Ok(summary)
 }
 
-fn validate_embed_config(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.tei_url.is_empty() {
-        return Err("TEI_URL not configured".into());
-    }
-    if cfg.qdrant_url.is_empty() {
-        return Err("QDRANT_URL not configured".into());
-    }
-    Ok(())
-}
-
-async fn prepare_embed_docs(input: &str) -> Result<Vec<PreparedDoc>, Box<dyn Error>> {
+async fn prepare_embed_docs(
+    input: &str,
+    exclude_prefixes: &[String],
+) -> Result<Vec<PreparedDoc>, Box<dyn Error>> {
     let mut docs = read_inputs(input).await?;
     if docs.len() == 1 && !Path::new(input).exists() && input.starts_with("http") {
         let client = http_client()?.clone();
@@ -371,6 +384,14 @@ async fn prepare_embed_docs(input: &str) -> Result<Vec<PreparedDoc>, Box<dyn Err
     let mut prepared = Vec::new();
     for (url, raw) in docs {
         if raw.trim().is_empty() {
+            continue;
+        }
+        // When embedding a directory of crawl output, skip any locale/excluded
+        // URLs that slipped through — second line of defense behind the collector.
+        // Single-URL embeds (axon embed https://...) are intentional user requests
+        // and always pass through regardless of the exclude list.
+        let input_is_dir = Path::new(input).is_dir();
+        if input_is_dir && url.starts_with("http") && is_excluded_url_path(&url, exclude_prefixes) {
             continue;
         }
         let chunks = input::chunk_text(&raw);
@@ -410,6 +431,7 @@ async fn run_embed_pipeline(
     progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     let docs_embedded = prepared.len();
+    let doc_timeout_secs = env_usize_clamped("AXON_EMBED_DOC_TIMEOUT_SECS", 300, 10, 7200) as u64;
     let doc_concurrency = env_usize_clamped(
         "AXON_EMBED_DOC_CONCURRENCY",
         std::thread::available_parallelism()
@@ -423,9 +445,18 @@ async fn run_embed_pipeline(
 
     let mut work = prepared.into_iter();
     let mut inflight = FuturesUnordered::new();
+    if let Some(tx) = &progress_tx {
+        let _ = tx
+            .send(EmbedProgress {
+                docs_total: docs_embedded,
+                docs_completed: 0,
+                chunks_embedded: 0,
+            })
+            .await;
+    }
     for _ in 0..doc_concurrency {
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc(cfg, doc));
+            inflight.push(embed_prepared_doc_with_timeout(cfg, doc, doc_timeout_secs));
         }
     }
 
@@ -470,7 +501,7 @@ async fn run_embed_pipeline(
         }
 
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc(cfg, doc));
+            inflight.push(embed_prepared_doc_with_timeout(cfg, doc, doc_timeout_secs));
         }
     }
     if !pending_points.is_empty() {
@@ -481,6 +512,25 @@ async fn run_embed_pipeline(
         docs_embedded,
         chunks_embedded,
     })
+}
+
+async fn embed_prepared_doc_with_timeout(
+    cfg: &Config,
+    doc: PreparedDoc,
+    timeout_secs: u64,
+) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
+    let url = doc.url.clone();
+    match tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        embed_prepared_doc(cfg, doc),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            Err(format!("embed timed out after {timeout_secs}s while processing {url}").into())
+        }
+    }
 }
 
 fn emit_embed_summary(cfg: &Config, chunks_embedded: usize) {

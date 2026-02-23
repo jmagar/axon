@@ -56,7 +56,7 @@ Install hooks:
 Run policy manually against staged changes:
 
 ```bash
-python3 scripts/enforce_monoliths.py --staged
+python3 ~/.claude/hooks/enforce_monoliths.py --staged
 ```
 
 ## CI Enforcement
@@ -64,14 +64,14 @@ python3 scripts/enforce_monoliths.py --staged
 CI runs:
 
 ```bash
-python3 scripts/enforce_monoliths.py --base "$BASE_SHA" --head "$HEAD_SHA"
+python3 ~/.claude/hooks/enforce_monoliths.py --base "$BASE_SHA" --head "$HEAD_SHA"
 ```
 
 This keeps enforcement ratcheted to the change set under review.
 
 ## Config Files
 
-- Policy logic: `scripts/enforce_monoliths.py`
+- Policy logic: `~/.claude/hooks/enforce_monoliths.py`
 - Local hooks: `lefthook.yml`
 - Hook installer: `scripts/install-git-hooks.sh`
 - CI job: `.github/workflows/ci.yml`

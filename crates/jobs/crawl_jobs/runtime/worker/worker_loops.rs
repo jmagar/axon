@@ -267,8 +267,9 @@ async fn run_amqp_worker_lane(
 
 pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     // Validate required environment variables before attempting any connections.
-    // Exits with a clear error message if any are missing.
-    validate_worker_env_vars();
+    if let Err(msg) = validate_worker_env_vars() {
+        return Err(std::io::Error::other(msg).into());
+    }
 
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;

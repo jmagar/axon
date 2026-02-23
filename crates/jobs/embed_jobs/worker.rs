@@ -1,0 +1,258 @@
+use super::*;
+use crate::crates::core::logging::log_done;
+use crate::crates::jobs::worker_lane::{
+    run_job_worker, validate_worker_env_vars, ProcessFn, WorkerConfig,
+};
+use crate::crates::vector::ops::{embed_path_native_with_progress, EmbedProgress};
+use tokio::time::Duration;
+
+/// Check if the embed job has been canceled via Redis. Returns `true` if a cancel
+/// key is present and the job has been marked canceled in the DB, `false` otherwise.
+/// On Redis failure, logs a warning and returns `false` (non-cancellation path).
+async fn check_embed_canceled(
+    cfg: &Config,
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<bool, Box<dyn Error>> {
+    let cancel_key = format!("axon:embed:cancel:{id}");
+    let cancel_value: Option<String> = match redis::Client::open(cfg.redis_url.clone()) {
+        Err(e) => {
+            log_warn(&format!("embed cancel redis client failed for {id}: {e}"));
+            None
+        }
+        Ok(redis_client) => {
+            match tokio::time::timeout(
+                Duration::from_secs(EMBED_CANCEL_REDIS_TIMEOUT_SECS),
+                redis_client.get_multiplexed_async_connection(),
+            )
+            .await
+            {
+                Err(_) => {
+                    log_warn(&format!(
+                        "embed cancel redis connect timeout for {id} after {}s",
+                        EMBED_CANCEL_REDIS_TIMEOUT_SECS
+                    ));
+                    None
+                }
+                Ok(Err(e)) => {
+                    log_warn(&format!("embed cancel redis connect failed for {id}: {e}"));
+                    None
+                }
+                Ok(Ok(mut conn)) => {
+                    match tokio::time::timeout(
+                        Duration::from_secs(EMBED_CANCEL_REDIS_TIMEOUT_SECS),
+                        conn.get::<_, Option<String>>(&cancel_key),
+                    )
+                    .await
+                    {
+                        Err(_) => {
+                            log_warn(&format!(
+                                "embed cancel check timeout for {id} after {}s",
+                                EMBED_CANCEL_REDIS_TIMEOUT_SECS
+                            ));
+                            None
+                        }
+                        Ok(Err(e)) => {
+                            log_warn(&format!("embed cancel check failed for {id}: {e}"));
+                            None
+                        }
+                        Ok(Ok(v)) => v,
+                    }
+                }
+            }
+        }
+    };
+    if cancel_value.is_none() {
+        return Ok(false);
+    }
+    sqlx::query(
+        "UPDATE axon_embed_jobs SET status=$2,updated_at=NOW(),finished_at=NOW() WHERE id=$1",
+    )
+    .bind(id)
+    .bind(JobStatus::Canceled.as_str())
+    .execute(pool)
+    .await?;
+    Ok(true)
+}
+
+/// Run the embed operation and return the result JSON. Spawns a progress task
+/// to stream intermediate updates to the DB while the embed runs.
+async fn run_embed_core(
+    cfg: &Config,
+    pool: &PgPool,
+    id: Uuid,
+    input_text: String,
+    collection: String,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<EmbedProgress>(256);
+    let progress_pool = pool.clone();
+    let progress_task = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            let progress_json = serde_json::json!({
+                "phase": "embedding",
+                "docs_total": progress.docs_total,
+                "docs_completed": progress.docs_completed,
+                "chunks_embedded": progress.chunks_embedded,
+            });
+            let _ = sqlx::query(
+                "UPDATE axon_embed_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status=$3",
+            )
+            .bind(id)
+            .bind(progress_json)
+            .bind(JobStatus::Running.as_str())
+            .execute(&progress_pool)
+            .await;
+        }
+    });
+    let mut embed_cfg = cfg.clone();
+    embed_cfg.collection = collection.clone();
+    let summary_result =
+        embed_path_native_with_progress(&embed_cfg, &input_text, Some(progress_tx)).await;
+    if let Err(err) = progress_task.await {
+        log_warn(&format!(
+            "embed progress_task panicked for job {id}: {err:?}"
+        ));
+    }
+    let summary = summary_result?;
+    Ok(serde_json::json!({
+        "input": input_text,
+        "collection": collection,
+        "docs_embedded": summary.docs_embedded,
+        "chunks_embedded": summary.chunks_embedded,
+        "source": "rust"
+    }))
+}
+
+async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dyn Error>> {
+    let run_result = async {
+        let row = sqlx::query_as::<_, (String, serde_json::Value)>(
+            "SELECT input_text, config_json FROM axon_embed_jobs WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+        let Some((input_text, cfg_json)) = row else {
+            return Ok::<Option<serde_json::Value>, Box<dyn Error>>(None);
+        };
+        let input_preview: String = input_text.chars().take(80).collect();
+        log_info(&format!(
+            "embed worker started job {id} input={input_preview}"
+        ));
+        let heartbeat_pool = pool.clone();
+        let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
+        let heartbeat_task = tokio::spawn(async move {
+            let mut ticker =
+                tokio::time::interval(Duration::from_secs(EMBED_HEARTBEAT_INTERVAL_SECS));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        let _ = sqlx::query(
+                            "UPDATE axon_embed_jobs SET updated_at=NOW() WHERE id=$1 AND status=$2",
+                        )
+                        .bind(id)
+                        .bind(JobStatus::Running.as_str())
+                        .execute(&heartbeat_pool)
+                        .await;
+                    }
+                    changed = heartbeat_stop_rx.changed() => {
+                        if changed.is_err() || *heartbeat_stop_rx.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        if check_embed_canceled(cfg, pool, id).await? {
+            let _ = heartbeat_stop_tx.send(true);
+            let _ = heartbeat_task.await;
+            return Ok(None);
+        }
+        let job_cfg: EmbedJobConfig = serde_json::from_value(cfg_json)?;
+        let result = run_embed_core(cfg, pool, id, input_text, job_cfg.collection).await;
+        let _ = heartbeat_stop_tx.send(true);
+        if let Err(err) = heartbeat_task.await {
+            log_warn(&format!(
+                "embed heartbeat_task panicked for job {id}: {err:?}"
+            ));
+        }
+        let result = result?;
+        Ok(Some(result))
+    }
+    .await;
+    // Convert Box<dyn Error> to String before the match so no !Send type
+    // is held across any await inside the match arms (tokio::spawn Send bound).
+    let run_result = run_result.map_err(|e| e.to_string());
+
+    match run_result {
+        Ok(Some(result_json)) => {
+            sqlx::query(
+                "UPDATE axon_embed_jobs \
+                 SET status=$2,updated_at=NOW(),finished_at=NOW(),result_json=$3,error_text=NULL \
+                 WHERE id=$1 AND status=$4",
+            )
+            .bind(id)
+            .bind(JobStatus::Completed.as_str())
+            .bind(result_json)
+            .bind(JobStatus::Running.as_str())
+            .execute(pool)
+            .await?;
+            log_done(&format!("worker completed embed job {id}"));
+        }
+        Ok(None) => {}
+        Err(error_text) => {
+            let _ = sqlx::query(
+                "UPDATE axon_embed_jobs \
+                 SET status=$2,updated_at=NOW(),finished_at=NOW(),error_text=$3 \
+                 WHERE id=$1 AND status=$4",
+            )
+            .bind(id)
+            .bind(JobStatus::Failed.as_str())
+            .bind(error_text.clone())
+            .bind(JobStatus::Running.as_str())
+            .execute(pool)
+            .await;
+            log_warn(&format!("worker failed embed job {id}: {error_text}"));
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_claimed_embed_job(cfg: Config, pool: PgPool, id: Uuid) {
+    let fail_msg = match process_embed_job(&cfg, &pool, id).await {
+        Ok(()) => None,
+        Err(err) => Some(err.to_string()),
+    };
+    if let Some(error_text) = fail_msg {
+        mark_job_failed(&pool, TABLE, id, &error_text).await;
+        log_warn(&format!("worker failed embed job {id}: {error_text}"));
+    }
+}
+
+pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    // Validate required environment variables before attempting any connections.
+    if let Err(msg) = validate_worker_env_vars() {
+        return Err(std::io::Error::other(msg).into());
+    }
+
+    let pool = make_pool(cfg).await?;
+    if SCHEMA_INIT.get().is_none() {
+        ensure_schema(&pool).await?;
+        let _ = SCHEMA_INIT.set(());
+    }
+
+    let wc = WorkerConfig {
+        table: TABLE,
+        queue_name: cfg.embed_queue.clone(),
+        job_kind: "embed",
+        consumer_tag_prefix: "axon-rust-embed-worker",
+        lane_count: WORKER_CONCURRENCY,
+    };
+
+    let process_fn: ProcessFn =
+        std::sync::Arc::new(|cfg, pool, id| Box::pin(process_claimed_embed_job(cfg, pool, id)));
+
+    run_job_worker(cfg, pool, &wc, process_fn).await
+}

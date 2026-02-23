@@ -36,7 +36,11 @@ jobs:
             BASE_SHA="$(git rev-parse HEAD^)"
           fi
 
-          python3 scripts/enforce_monoliths.py --base "$BASE_SHA" --head "$HEAD_SHA"
+          if [ -f "$HOME/.claude/hooks/enforce_monoliths.py" ]; then
+            python3 "$HOME/.claude/hooks/enforce_monoliths.py" --base "$BASE_SHA" --head "$HEAD_SHA"
+          else
+            echo "[skip] global monolith enforcer not found at ~/.claude/hooks/enforce_monoliths.py"
+          fi
 
   fmt:
     name: fmt

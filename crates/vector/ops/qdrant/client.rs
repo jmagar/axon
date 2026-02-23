@@ -1,5 +1,6 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
+use crate::crates::core::logging::log_warn;
 use reqwest::StatusCode;
 use std::collections::HashSet;
 use std::error::Error;
@@ -25,6 +26,9 @@ async fn qdrant_delete_with_retry(
                 let status = resp.status();
                 let retryable = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
                 if retryable && attempt < MAX_ATTEMPTS {
+                    log_warn(&format!(
+                        "{context}: retrying qdrant delete after status={status} attempt={attempt}/{MAX_ATTEMPTS}"
+                    ));
                     last_error = Some(format!(
                         "{context}: qdrant status={status} attempt={attempt}"
                     ));
@@ -37,6 +41,11 @@ async fn qdrant_delete_with_retry(
                 .into());
             }
             Err(err) => {
+                if attempt < MAX_ATTEMPTS {
+                    log_warn(&format!(
+                        "{context}: retrying qdrant delete after transport error attempt={attempt}/{MAX_ATTEMPTS}: {err}"
+                    ));
+                }
                 last_error = Some(format!("{context}: send error attempt={attempt}: {err}"));
                 if attempt < MAX_ATTEMPTS {
                     tokio::time::sleep(Duration::from_millis(250 * (1 << (attempt - 1)))).await;

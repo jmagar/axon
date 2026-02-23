@@ -44,6 +44,18 @@ fn build_scrape_website(cfg: &Config, url: &str) -> Result<Website, Box<dyn Erro
     if let Some(proxy) = cfg.chrome_proxy.as_deref() {
         website.with_proxies(Some(vec![proxy.to_string()]));
     }
+    // Apply the same safe defaults as configure_website().
+    website.with_no_control_thread(true);
+    if cfg.accept_invalid_certs {
+        website.with_danger_accept_invalid_certs(true);
+    }
+    if matches!(cfg.render_mode, RenderMode::Chrome) {
+        website.with_dismiss_dialogs(true);
+        website.configuration.disable_log = true;
+        if cfg.bypass_csp {
+            website.with_csp_bypass(true);
+        }
+    }
 
     Ok(website)
 }
