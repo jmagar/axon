@@ -57,7 +57,14 @@ fn build_job_config(cfg: &Config, parsed: &CrawlJobConfig, id: Uuid) -> Config {
     job_cfg.max_pages = parsed.max_pages;
     job_cfg.max_depth = parsed.max_depth;
     job_cfg.include_subdomains = parsed.include_subdomains;
-    job_cfg.exclude_path_prefix = parsed.exclude_path_prefix.clone();
+    // An empty stored list means "use defaults" — not "exclude nothing".
+    // Jobs serialized before locale-prefix defaults were added would otherwise
+    // silently bypass all locale filtering.
+    job_cfg.exclude_path_prefix = if parsed.exclude_path_prefix.is_empty() {
+        crate::crates::core::config::parse::excludes::default_exclude_prefixes()
+    } else {
+        parsed.exclude_path_prefix.clone()
+    };
     job_cfg.respect_robots = parsed.respect_robots;
     job_cfg.min_markdown_chars = parsed.min_markdown_chars;
     job_cfg.drop_thin_markdown = parsed.drop_thin_markdown;

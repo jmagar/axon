@@ -8,7 +8,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`
+- Commands: `scrape`, `crawl`, `map`, `search`, `batch`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`
 - Async queue-backed jobs for `crawl`/`batch`/`extract`/`embed`
 - TEI embeddings + Qdrant vector storage
 - OpenAI-compatible extraction and answer generation
@@ -167,7 +167,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Docker Compose Postgres credentials |
 | `REDIS_PASSWORD` | Docker Compose Redis password |
 | `RABBITMQ_USER` / `RABBITMQ_PASS` | Docker Compose RabbitMQ credentials |
-| `AXON_DATA_DIR` | Host path root for persistent compose data volumes (e.g. `/home/you/appdata/axon`) |
+| `AXON_DATA_DIR` | Host path root for persistent compose data volumes (e.g. `/home/you/appdata`) |
 | `AXON_PG_URL` | PostgreSQL DSN for CLI/workers |
 | `AXON_REDIS_URL` | Redis DSN for health checks and cancel flags |
 | `AXON_AMQP_URL` | AMQP DSN for queue-backed jobs |
@@ -217,6 +217,8 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `AXON_EMBED_DOC_TIMEOUT_SECS` | `300` | Per-document embed timeout in seconds before failing the embed job |
+| `AXON_EMBED_STRICT_PREDELETE` | `true` | Require successful per-document Qdrant pre-delete before upsert (`false` = warn and continue) |
 | `AXON_JOB_STALE_TIMEOUT_SECS` | `300` | Seconds before a running job is considered stale |
 | `AXON_JOB_STALE_CONFIRM_SECS` | `60` | Seconds to confirm stale status before reclaiming |
 | `AXON_NO_WIPE` | — | Prevent destructive cache wipes when set |
@@ -317,6 +319,7 @@ The ingest commands share the same subcommand routing:
 ```bash
 axon ingest status <job_id>
 axon ingest cancel <job_id>
+axon ingest errors <job_id>
 axon ingest list
 axon ingest cleanup
 axon ingest clear
@@ -326,6 +329,7 @@ axon ingest worker
 # source-specific aliases (equivalent worker path):
 axon github status <job_id>
 axon github cancel <job_id>
+axon github errors <job_id>
 axon github list
 axon github cleanup
 axon github clear
@@ -438,9 +442,9 @@ All flags are global (usable with any subcommand).
 
 | Flag | Env Var | Fallback |
 |------|---------|----------|
-| `--pg-url <url>` | `AXON_PG_URL` | `postgresql://axon:postgres@127.0.0.1:53432/axon` |
-| `--redis-url <url>` | `AXON_REDIS_URL` | `redis://127.0.0.1:53379` |
-| `--amqp-url <url>` | `AXON_AMQP_URL` | `amqp://axon:axonrabbit@127.0.0.1:45535/%2f` |
+| `--pg-url <url>` | `AXON_PG_URL` | local Postgres endpoint (rewritten to localhost outside Docker) |
+| `--redis-url <url>` | `AXON_REDIS_URL` | local Redis endpoint (rewritten to localhost outside Docker) |
+| `--amqp-url <url>` | `AXON_AMQP_URL` | local RabbitMQ endpoint (rewritten to localhost outside Docker) |
 | `--qdrant-url <url>` | `QDRANT_URL` | `http://127.0.0.1:53333` |
 | `--tei-url <url>` | `TEI_URL` | *(empty)* |
 | `--openai-base-url <url>` | `OPENAI_BASE_URL` | *(empty)* |

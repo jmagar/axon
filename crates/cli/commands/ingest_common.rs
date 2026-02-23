@@ -9,7 +9,7 @@ use crate::crates::jobs::ingest_jobs::{
 use std::error::Error;
 use uuid::Uuid;
 
-/// Routes ingest subcommands (status, cancel, list, cleanup, clear, worker, recover).
+/// Routes ingest subcommands (status, cancel, errors, list, cleanup, clear, worker, recover).
 ///
 /// Returns `Ok(true)` if a subcommand was handled, `Ok(false)` if the first
 /// positional arg is not a recognized subcommand (i.e. it's an ingest target).
@@ -29,6 +29,7 @@ pub async fn maybe_handle_ingest_subcommand(
     match subcmd {
         "status" => handle_ingest_status(cfg, cmd_name).await?,
         "cancel" => handle_ingest_cancel(cfg, cmd_name).await?,
+        "errors" => handle_ingest_errors(cfg, cmd_name).await?,
         "list" => handle_ingest_list(cfg).await?,
         "cleanup" => handle_ingest_cleanup(cfg).await?,
         "clear" => handle_ingest_clear(cfg).await?,
@@ -119,6 +120,48 @@ async fn handle_ingest_cancel(cfg: &Config, cmd_name: &str) -> Result<(), Box<dy
             symbol_for_status("error"),
             accent(&id.to_string())
         );
+    }
+    Ok(())
+}
+
+async fn handle_ingest_errors(cfg: &Config, cmd_name: &str) -> Result<(), Box<dyn Error>> {
+    let id = parse_ingest_job_id(cfg, cmd_name, "errors")?;
+    match get_ingest_job(cfg, id).await? {
+        Some(job) => {
+            if cfg.json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({"id": id, "status": job.status, "error": job.error_text})
+                );
+            } else {
+                println!(
+                    "{} {} {}",
+                    symbol_for_status(&job.status),
+                    accent(&id.to_string()),
+                    status_text(&job.status)
+                );
+                println!(
+                    "  {} {}",
+                    muted("Error:"),
+                    job.error_text.unwrap_or_else(|| "None".to_string())
+                );
+                println!("Job ID: {id}");
+            }
+        }
+        None => {
+            if cfg.json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({"error": "not_found", "id": id.to_string()})
+                );
+            } else {
+                println!(
+                    "{} {}",
+                    symbol_for_status("error"),
+                    muted(&format!("job not found: {id}"))
+                );
+            }
+        }
     }
     Ok(())
 }

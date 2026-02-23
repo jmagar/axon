@@ -119,7 +119,6 @@ pub(super) struct GithubArgs {
 }
 
 #[derive(Debug, Args)]
-#[command(args_conflicts_with_subcommands = true)]
 pub(super) struct IngestArgs {
     #[command(subcommand)]
     pub(super) job: Option<JobSubcommand>,
@@ -451,4 +450,12 @@ pub(super) struct GlobalArgs {
     /// Time range filter for search (day|week|month|year). Default: none.
     #[arg(global = true, long)]
     pub(super) search_time_range: Option<String>,
+
+    /// Bypass Content Security Policy in Chrome. Helps pages that block inline JS via CSP. Default: false.
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
+    pub(super) bypass_csp: bool,
+
+    /// Accept invalid or self-signed TLS certificates. Useful for internal/staging sites. Default: false.
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
+    pub(super) accept_invalid_certs: bool,
 }

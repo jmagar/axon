@@ -1,114 +1,53 @@
-use crate::crates::cli::commands::probe::probe_http;
+mod metrics;
+
 use crate::crates::core::config::Config;
-use crate::crates::core::content::redact_url;
-use crate::crates::core::health::{
-    browser_backend_selection, browser_diagnostics_pattern, webdriver_url_from_env,
-    BrowserBackendSelection,
-};
-use crate::crates::core::ui::{accent, muted, primary, status_text, symbol_for_status};
+use crate::crates::core::ui::{accent, metric, muted, primary, status_label, symbol_for_status};
 use crate::crates::jobs::batch_jobs::{list_batch_jobs, BatchJob};
 use crate::crates::jobs::crawl_jobs::{list_jobs, CrawlJob};
 use crate::crates::jobs::embed_jobs::{list_embed_jobs, EmbedJob};
 use crate::crates::jobs::extract_jobs::{list_extract_jobs, ExtractJob};
-use console::style;
-use serde_json::Value;
-use std::env;
+use crate::crates::jobs::ingest_jobs::{list_ingest_jobs, IngestJob};
+use chrono::{DateTime, Utc};
+use metrics::{
+    batch_metrics_suffix, display_embed_input, embed_metrics_suffix, extract_metrics_suffix,
+    format_error, ingest_metrics_suffix, job_age, section_symbol, summarize_urls,
+};
 use std::error::Error;
-
-fn styled_metric(token: String, color: &str) -> String {
-    if env::var("AXON_NO_COLOR").is_ok() {
-        return token;
-    }
-    match color {
-        "green" => style(token).green().to_string(),
-        "yellow" => style(token).yellow().to_string(),
-        "cyan" => style(token).cyan().to_string(),
-        "blue" => style(token).blue().to_string(),
-        _ => token,
-    }
-}
-
-fn summarize_urls(urls_json: &Value) -> (String, usize) {
-    let urls = urls_json
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(ToOwned::to_owned))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let count = urls.len();
-    if count == 0 {
-        return ("(no targets)".to_string(), 0);
-    }
-    let first = urls[0].clone();
-    let label = if count > 1 {
-        format!("{first} (+{} more)", count - 1)
-    } else {
-        first
-    };
-    (label, count)
-}
 
 pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
     run_status_impl(cfg).await
 }
 
-struct RuntimeStatus {
-    webdriver_url: Option<String>,
-    diagnostics: crate::crates::core::health::BrowserDiagnosticsPattern,
-    webdriver_probe: (bool, Option<String>),
-    backend_selection_label: &'static str,
-}
-
-type StatusJobs = (Vec<CrawlJob>, Vec<BatchJob>, Vec<ExtractJob>, Vec<EmbedJob>);
+type StatusJobs = (
+    Vec<CrawlJob>,
+    Vec<BatchJob>,
+    Vec<ExtractJob>,
+    Vec<EmbedJob>,
+    Vec<IngestJob>,
+);
 
 async fn run_status_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let runtime = collect_runtime_status().await;
-    let (crawl_jobs, batch_jobs, extract_jobs, embed_jobs) = load_status_jobs(cfg).await?;
+    let (crawl_jobs, batch_jobs, extract_jobs, embed_jobs, ingest_jobs) =
+        load_status_jobs(cfg).await?;
 
     if cfg.json_output {
         emit_status_json(
-            &runtime,
             &crawl_jobs,
             &batch_jobs,
             &extract_jobs,
             &embed_jobs,
+            &ingest_jobs,
         )?;
     } else {
         emit_status_human(
-            &runtime,
             &crawl_jobs,
             &batch_jobs,
             &extract_jobs,
             &embed_jobs,
+            &ingest_jobs,
         );
     }
     Ok(())
-}
-
-async fn collect_runtime_status() -> RuntimeStatus {
-    let webdriver_url = webdriver_url_from_env();
-    let diagnostics = browser_diagnostics_pattern();
-    let webdriver_probe = match webdriver_url.as_deref() {
-        Some(url) => probe_http(url, &["/status", "/wd/hub/status"]).await,
-        None => (false, Some("not configured".to_string())),
-    };
-    let backend_selection = browser_backend_selection(
-        true,
-        webdriver_url.is_some(),
-        webdriver_url.is_some() && webdriver_probe.0,
-    );
-    let backend_selection_label = match backend_selection {
-        BrowserBackendSelection::Chrome => "chrome",
-        BrowserBackendSelection::WebDriverFallback => "webdriver",
-    };
-    RuntimeStatus {
-        webdriver_url,
-        diagnostics,
-        webdriver_probe,
-        backend_selection_label,
-    }
 }
 
 async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
@@ -133,16 +72,21 @@ async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
                 .await
                 .map_err(|e| format!("embed status lookup failed: {e}"))
         },
+        async {
+            list_ingest_jobs(cfg, 20)
+                .await
+                .map_err(|e| format!("ingest status lookup failed: {e}"))
+        },
     )?;
     Ok(jobs)
 }
 
 fn emit_status_json(
-    runtime: &RuntimeStatus,
     crawl_jobs: &[CrawlJob],
     batch_jobs: &[BatchJob],
     extract_jobs: &[ExtractJob],
     embed_jobs: &[EmbedJob],
+    ingest_jobs: &[IngestJob],
 ) -> Result<(), Box<dyn Error>> {
     println!(
         "{}",
@@ -151,86 +95,62 @@ fn emit_status_json(
             "local_batch_jobs": batch_jobs,
             "local_extract_jobs": extract_jobs,
             "local_embed_jobs": embed_jobs,
-            "browser_runtime": {
-                "selection": runtime.backend_selection_label,
-                "webdriver": {
-                    "configured": runtime.webdriver_url.is_some(),
-                    "ok": runtime.webdriver_probe.0,
-                    "url": runtime.webdriver_url.as_deref().map(redact_url),
-                    "detail": runtime.webdriver_probe.1,
-                },
-                "diagnostics": {
-                    "enabled": runtime.diagnostics.enabled,
-                    "screenshot": runtime.diagnostics.screenshot,
-                    "events": runtime.diagnostics.events,
-                    "output_dir": runtime.diagnostics.output_dir,
-                }
-            }
+            "local_ingest_jobs": ingest_jobs,
         }))?
     );
     Ok(())
 }
 
 fn emit_status_human(
-    runtime: &RuntimeStatus,
     crawl_jobs: &[CrawlJob],
     batch_jobs: &[BatchJob],
     extract_jobs: &[ExtractJob],
     embed_jobs: &[EmbedJob],
+    ingest_jobs: &[IngestJob],
 ) {
-    print_runtime(runtime);
-    print_totals(crawl_jobs, batch_jobs, extract_jobs, embed_jobs);
+    print_totals(
+        crawl_jobs,
+        batch_jobs,
+        extract_jobs,
+        embed_jobs,
+        ingest_jobs,
+    );
     print_crawls(crawl_jobs);
+    print_embeds(embed_jobs, crawl_jobs);
+    print_ingests(ingest_jobs);
     print_batches(batch_jobs);
     print_extracts(extract_jobs);
-    print_embeds(embed_jobs);
 }
 
-fn print_runtime(runtime: &RuntimeStatus) {
-    println!("{}", primary("Runtime"));
-    println!(
-        "  {} selection {}",
-        symbol_for_status("completed"),
-        muted(runtime.backend_selection_label)
-    );
-    println!(
-        "  {} webdriver {} {}",
-        symbol_for_status(if runtime.webdriver_probe.0 {
-            "completed"
-        } else {
-            "failed"
-        }),
-        status_text(if runtime.webdriver_probe.0 {
-            "completed"
-        } else {
-            "failed"
-        }),
-        muted(&if let Some(url) = runtime.webdriver_url.as_deref() {
-            format!(
-                "{} ({})",
-                redact_url(url),
-                runtime
-                    .webdriver_probe
-                    .1
-                    .clone()
-                    .unwrap_or_else(|| "unreachable".to_string())
-            )
-        } else {
-            "not configured (optional fallback)".to_string()
-        })
-    );
-    println!(
-        "  diagnostics: {} (screenshot={} events={} dir={})",
-        muted(if runtime.diagnostics.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        }),
-        runtime.diagnostics.screenshot,
-        runtime.diagnostics.events,
-        runtime.diagnostics.output_dir
-    );
-    println!();
+fn status_breakdown(statuses: &[&str]) -> String {
+    let done = statuses.iter().filter(|s| **s == "completed").count();
+    let active = statuses
+        .iter()
+        .filter(|s| matches!(**s, "pending" | "running" | "processing" | "scraping"))
+        .count();
+    let failed = statuses
+        .iter()
+        .filter(|s| matches!(**s, "failed" | "error"))
+        .count();
+    let canceled = statuses.iter().filter(|s| **s == "canceled").count();
+    let mut parts = Vec::new();
+    if done > 0 {
+        parts.push(format!("{} {}", symbol_for_status("completed"), done));
+    }
+    if active > 0 {
+        parts.push(format!("{} {}", symbol_for_status("pending"), active));
+    }
+    if failed > 0 {
+        parts.push(format!("{} {}", symbol_for_status("failed"), failed));
+    }
+    if canceled > 0 {
+        parts.push(format!("{} {}", symbol_for_status("canceled"), canceled));
+    }
+    if parts.is_empty() {
+        "0".to_string()
+    } else {
+        parts.join(" ")
+    }
 }
 
 fn print_totals(
@@ -238,24 +158,39 @@ fn print_totals(
     batch_jobs: &[BatchJob],
     extract_jobs: &[ExtractJob],
     embed_jobs: &[EmbedJob],
+    ingest_jobs: &[IngestJob],
 ) {
-    println!("{}", primary("Job Status (all)"));
+    let crawl_statuses: Vec<&str> = crawl_jobs.iter().map(|j| j.status.as_str()).collect();
+    let batch_statuses: Vec<&str> = batch_jobs.iter().map(|j| j.status.as_str()).collect();
+    let extract_statuses: Vec<&str> = extract_jobs.iter().map(|j| j.status.as_str()).collect();
+    let embed_statuses: Vec<&str> = embed_jobs.iter().map(|j| j.status.as_str()).collect();
+    let ingest_statuses: Vec<&str> = ingest_jobs.iter().map(|j| j.status.as_str()).collect();
+
+    println!("{}", primary("Job Status"));
     println!(
-        "  {} {} | {} {} | {} {} | {} {}",
-        muted("Crawl:"),
-        crawl_jobs.len(),
-        muted("Batch:"),
-        batch_jobs.len(),
-        muted("Extract:"),
-        extract_jobs.len(),
-        muted("Embed:"),
-        embed_jobs.len()
+        "  {}  {}    {}  {}    {}  {}    {}  {}    {}  {}",
+        muted("Crawl"),
+        status_breakdown(&crawl_statuses),
+        muted("Embed"),
+        status_breakdown(&embed_statuses),
+        muted("Ingest"),
+        status_breakdown(&ingest_statuses),
+        muted("Batch"),
+        status_breakdown(&batch_statuses),
+        muted("Extract"),
+        status_breakdown(&extract_statuses),
     );
     println!();
 }
 
 fn print_crawls(crawl_jobs: &[CrawlJob]) {
-    println!("{}", primary("◐ Crawls"));
+    let statuses: Vec<&str> = crawl_jobs.iter().map(|j| j.status.as_str()).collect();
+    let header_sym = if crawl_jobs.is_empty() {
+        symbol_for_status("completed")
+    } else {
+        section_symbol(&statuses)
+    };
+    println!("{}", primary(&format!("{header_sym} Crawls")));
     if crawl_jobs.is_empty() {
         println!("  {}", muted("None."));
         println!();
@@ -267,14 +202,27 @@ fn print_crawls(crawl_jobs: &[CrawlJob]) {
             .as_ref()
             .map(|metrics| crawl_metrics_suffix(&job.status, metrics))
             .unwrap_or_default();
+        let age = muted(&format!(
+            " | ({})",
+            job_age(&job.status, job.finished_at.as_ref(), &job.updated_at)
+        ));
+        let label = status_label(&job.status);
+        let prefix = if label.is_empty() {
+            format!("  {} ", symbol_for_status(&job.status))
+        } else {
+            format!("  {} {} ", symbol_for_status(&job.status), label)
+        };
         println!(
-            "  {} {} {} {}{}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status),
-            muted(&job.url),
-            metrics_suffix
+            "{}{}{}{}  {}",
+            prefix,
+            accent(&job.url),
+            metrics_suffix,
+            age,
+            muted(&job.id.to_string()),
         );
+        if let Some(err) = format_error(job.error_text.as_deref()) {
+            println!("       {}", muted(&format!("↳ {err}")));
+        }
     }
     println!();
 }
@@ -300,8 +248,15 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
         } else {
             0.0
         };
+        let sep = muted(" | ");
+        let thin_str = format!("{:.1}%", thin_pct);
         return format!(
-            " | {md_created}/{pages_target} 📄 | filtered {filtered_urls} ⏭️ | thin {thin_pct:.1}%"
+            "{sep}{}{}{}{sep}{}{sep}{}",
+            primary(&md_created.to_string()),
+            muted("/"),
+            metric(pages_target, "pages"),
+            metric(filtered_urls, "filtered"),
+            metric(&thin_str as &str, "thin"),
         );
     }
     if matches!(status, "pending" | "running" | "processing" | "scraping") {
@@ -314,14 +269,57 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         if md_created > 0 || filtered_urls > 0 {
-            return format!(" | kept {md_created} 📄 | filtered {filtered_urls} ⏭️");
+            let sep = muted(" | ");
+            return format!(
+                "{sep}{}{sep}{}",
+                metric(md_created, "crawled"),
+                metric(filtered_urls, "filtered"),
+            );
         }
     }
     String::new()
 }
 
+fn print_job_row(
+    status: &str,
+    id: &uuid::Uuid,
+    target: &str,
+    metrics_suffix: &str,
+    finished_at: Option<&DateTime<Utc>>,
+    updated_at: &DateTime<Utc>,
+    error_text: Option<&str>,
+) {
+    let age = muted(&format!(
+        " | ({})",
+        job_age(status, finished_at, updated_at)
+    ));
+    let label = status_label(status);
+    let prefix = if label.is_empty() {
+        format!("  {} ", symbol_for_status(status))
+    } else {
+        format!("  {} {} ", symbol_for_status(status), label)
+    };
+    println!(
+        "{}{}{}{}  {}",
+        prefix,
+        accent(target),
+        metrics_suffix,
+        age,
+        muted(&id.to_string()),
+    );
+    if let Some(err) = format_error(error_text) {
+        println!("       {}", muted(&format!("↳ {err}")));
+    }
+}
+
 fn print_batches(batch_jobs: &[BatchJob]) {
-    println!("{}", primary("◐ Batches"));
+    let statuses: Vec<&str> = batch_jobs.iter().map(|j| j.status.as_str()).collect();
+    let header_sym = if batch_jobs.is_empty() {
+        symbol_for_status("completed")
+    } else {
+        section_symbol(&statuses)
+    };
+    println!("{}", primary(&format!("{header_sym} Batches")));
     if batch_jobs.is_empty() {
         println!("  {}", muted("None."));
         println!();
@@ -329,30 +327,28 @@ fn print_batches(batch_jobs: &[BatchJob]) {
     }
     for job in batch_jobs.iter().take(5) {
         let (target, url_count) = summarize_urls(&job.urls_json);
-        let mut metrics = vec![styled_metric(format!("u{url_count}"), "blue")];
-        if let Some(results_len) = job
-            .result_json
-            .as_ref()
-            .and_then(|r| r.get("results"))
-            .and_then(|v| v.as_array())
-            .map(|v| v.len())
-        {
-            metrics.push(styled_metric(format!("r{results_len}"), "green"));
-        }
-        println!(
-            "  {} {} {} {} {}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status),
-            muted(&target),
-            metrics.join(" ")
+        let metrics_suffix = batch_metrics_suffix(job.result_json.as_ref(), url_count);
+        print_job_row(
+            &job.status,
+            &job.id,
+            &target,
+            &metrics_suffix,
+            job.finished_at.as_ref(),
+            &job.updated_at,
+            job.error_text.as_deref(),
         );
     }
     println!();
 }
 
 fn print_extracts(extract_jobs: &[ExtractJob]) {
-    println!("{}", primary("◐ Extracts"));
+    let statuses: Vec<&str> = extract_jobs.iter().map(|j| j.status.as_str()).collect();
+    let header_sym = if extract_jobs.is_empty() {
+        symbol_for_status("completed")
+    } else {
+        section_symbol(&statuses)
+    };
+    println!("{}", primary(&format!("{header_sym} Extracts")));
     if extract_jobs.is_empty() {
         println!("  {}", muted("None."));
         println!();
@@ -360,78 +356,76 @@ fn print_extracts(extract_jobs: &[ExtractJob]) {
     }
     for job in extract_jobs.iter().take(5) {
         let (target, url_count) = summarize_urls(&job.urls_json);
-        let mut metrics = vec![styled_metric(format!("u{url_count}"), "blue")];
-        if let Some(total_items) = job
-            .result_json
-            .as_ref()
-            .and_then(|r| r.get("total_items"))
-            .and_then(|v| v.as_u64())
-        {
-            metrics.push(styled_metric(format!("i{total_items}"), "green"));
-        }
-        if let Some(pages) = job
-            .result_json
-            .as_ref()
-            .and_then(|r| r.get("pages_visited"))
-            .and_then(|v| v.as_u64())
-        {
-            metrics.push(styled_metric(format!("p{pages}"), "cyan"));
-        }
-        println!(
-            "  {} {} {} {} {}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status),
-            muted(&target),
-            metrics.join(" ")
+        let metrics_suffix = extract_metrics_suffix(job.result_json.as_ref(), url_count);
+        print_job_row(
+            &job.status,
+            &job.id,
+            &target,
+            &metrics_suffix,
+            job.finished_at.as_ref(),
+            &job.updated_at,
+            job.error_text.as_deref(),
         );
     }
     println!();
 }
 
-fn print_embeds(embed_jobs: &[EmbedJob]) {
-    println!("{}", primary("◐ Embeds"));
+fn print_ingests(ingest_jobs: &[IngestJob]) {
+    let statuses: Vec<&str> = ingest_jobs.iter().map(|j| j.status.as_str()).collect();
+    let header_sym = if ingest_jobs.is_empty() {
+        symbol_for_status("completed")
+    } else {
+        section_symbol(&statuses)
+    };
+    println!("{}", primary(&format!("{header_sym} Ingests")));
+    if ingest_jobs.is_empty() {
+        println!("  {}", muted("None."));
+        println!();
+        return;
+    }
+    for job in ingest_jobs.iter().take(5) {
+        let target = format!("{}: {}", job.source_type, job.target);
+        let metrics_suffix = ingest_metrics_suffix(&job.status, job.result_json.as_ref());
+        print_job_row(
+            &job.status,
+            &job.id,
+            &target,
+            &metrics_suffix,
+            job.finished_at.as_ref(),
+            &job.updated_at,
+            job.error_text.as_deref(),
+        );
+    }
+    println!();
+}
+
+fn print_embeds(embed_jobs: &[EmbedJob], crawl_jobs: &[CrawlJob]) {
+    let crawl_url_map: std::collections::HashMap<uuid::Uuid, &str> =
+        crawl_jobs.iter().map(|j| (j.id, j.url.as_str())).collect();
+
+    let statuses: Vec<&str> = embed_jobs.iter().map(|j| j.status.as_str()).collect();
+    let header_sym = if embed_jobs.is_empty() {
+        symbol_for_status("completed")
+    } else {
+        section_symbol(&statuses)
+    };
+    println!("{}", primary(&format!("{header_sym} Embeds")));
     if embed_jobs.is_empty() {
         println!("  {}", muted("None."));
+        println!();
         return;
     }
     for job in embed_jobs.iter().take(5) {
-        let mut metrics = Vec::new();
-        if let Some(docs) = job
-            .result_json
-            .as_ref()
-            .and_then(|r| r.get("docs_embedded"))
-            .and_then(|v| v.as_u64())
-        {
-            metrics.push(styled_metric(format!("d{docs}"), "blue"));
-        }
-        if let Some(chunks) = job
-            .result_json
-            .as_ref()
-            .and_then(|r| r.get("chunks_embedded"))
-            .and_then(|v| v.as_u64())
-        {
-            metrics.push(styled_metric(format!("c{chunks}"), "green"));
-        }
-        if let (Some(done), Some(total)) = (
-            job.result_json
-                .as_ref()
-                .and_then(|r| r.get("docs_completed"))
-                .and_then(|v| v.as_u64()),
-            job.result_json
-                .as_ref()
-                .and_then(|r| r.get("docs_total"))
-                .and_then(|v| v.as_u64()),
-        ) {
-            metrics.push(styled_metric(format!("{done}/{total}"), "cyan"));
-        }
-        println!(
-            "  {} {} {} {} {}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status),
-            muted(&job.input_text),
-            metrics.join(" ")
+        let metrics_suffix = embed_metrics_suffix(&job.status, job.result_json.as_ref());
+        let target = display_embed_input(&job.input_text, &crawl_url_map);
+        print_job_row(
+            &job.status,
+            &job.id,
+            &target,
+            &metrics_suffix,
+            job.finished_at.as_ref(),
+            &job.updated_at,
+            job.error_text.as_deref(),
         );
     }
     println!();

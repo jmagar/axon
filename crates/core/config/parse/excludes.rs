@@ -3,7 +3,7 @@ pub(super) struct NormalizedExcludePrefixes {
     pub(super) disable_defaults: bool,
 }
 
-pub(super) fn default_exclude_prefixes() -> Vec<String> {
+pub fn default_exclude_prefixes() -> Vec<String> {
     vec![
         "/fr", "/de", "/es", "/ja", "/zh", "/zh-cn", "/zh-tw", "/ko", "/pt", "/pt-br", "/it",
         "/nl", "/pl", "/ru", "/tr", "/ar", "/id", "/vi", "/th", "/cs", "/da", "/fi", "/no", "/sv",

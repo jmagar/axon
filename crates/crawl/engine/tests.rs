@@ -105,6 +105,34 @@ fn test_exclude_path_prefix_matches_segment_boundary() {
 }
 
 #[test]
+fn test_exclude_path_prefix_blocks_locale_region_variants() {
+    // /ja should block /ja-jp, /ja-kr, etc. (hyphen-separated region codes)
+    let excludes = vec!["/ja".to_string(), "/ko".to_string()];
+    assert!(is_excluded_url_path("https://example.com/ja", &excludes));
+    assert!(is_excluded_url_path(
+        "https://example.com/ja/docs",
+        &excludes
+    ));
+    assert!(is_excluded_url_path(
+        "https://example.com/ja-jp/blog",
+        &excludes
+    ));
+    assert!(is_excluded_url_path(
+        "https://example.com/ko-kr/blog",
+        &excludes
+    ));
+    // Should NOT block unrelated paths that start with the same letters
+    assert!(!is_excluded_url_path(
+        "https://example.com/javascript",
+        &excludes
+    ));
+    assert!(!is_excluded_url_path(
+        "https://example.com/korean-food",
+        &excludes
+    ));
+}
+
+#[test]
 fn test_exclude_path_prefix_handles_non_normalized_input() {
     let excludes = vec!["de/".to_string()];
     assert!(is_excluded_url_path("https://example.com/de", &excludes));

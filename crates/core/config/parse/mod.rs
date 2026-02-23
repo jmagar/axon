@@ -1,4 +1,4 @@
-mod excludes;
+pub mod excludes;
 mod performance;
 
 use super::cli::{Cli, CliCommand, JobSubcommand};
@@ -412,6 +412,8 @@ fn into_config(cli: Cli) -> Result<Config, String> {
         chrome_screenshot: global.chrome_screenshot,
         research_depth: global.research_depth,
         search_time_range: global.search_time_range,
+        bypass_csp: global.bypass_csp,
+        accept_invalid_certs: global.accept_invalid_certs,
     };
 
     if cfg.exclude_path_prefix.is_empty() && !normalized_excludes.disable_defaults {

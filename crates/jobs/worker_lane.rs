@@ -5,7 +5,7 @@ use crate::crates::jobs::common::{
     reclaim_stale_running_jobs, JobTable,
 };
 use futures_util::stream::FuturesUnordered;
-use futures_util::{FutureExt, StreamExt};
+use futures_util::StreamExt;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions};
 use lapin::types::FieldTable;
 use sqlx::PgPool;
@@ -37,8 +37,7 @@ pub(crate) struct WorkerConfig {
 }
 
 /// Validate that the critical infrastructure environment variables are present
-/// before the worker attempts any network connections. Exits the process with a
-/// clear error message if any required variable is missing.
+/// before the worker attempts any network connections.
 ///
 /// Required variables:
 /// - Postgres: `AXON_PG_URL`
@@ -47,7 +46,7 @@ pub(crate) struct WorkerConfig {
 ///
 /// Note: this checks for the presence of at least one variable per service, not
 /// the validity of the URL. Connection errors are still reported at connect time.
-pub(crate) fn validate_worker_env_vars() {
+pub(crate) fn validate_worker_env_vars() -> Result<(), String> {
     let mut missing: Vec<&'static str> = Vec::new();
 
     // Postgres: AXON_PG_URL
@@ -69,13 +68,13 @@ pub(crate) fn validate_worker_env_vars() {
     }
 
     if !missing.is_empty() {
-        eprintln!(
+        return Err(format!(
             "worker startup error: the following required environment variables are not set:\n  {}\n\
              Set them in your environment or .env file before starting the worker.",
             missing.join("\n  ")
-        );
-        std::process::exit(1);
+        ));
     }
+    Ok(())
 }
 
 /// Run the stale-job sweep and log results.
@@ -152,14 +151,34 @@ async fn run_amqp_lane(
     let mut inflight = FuturesUnordered::new();
 
     loop {
-        // Drain completed futures without blocking.
-        while let Some(()) = inflight.next().now_or_never().flatten() {}
+        // If all permits are consumed, block until at least one in-flight job
+        // completes. This guarantees forward progress and prevents claiming new
+        // jobs that cannot run yet.
+        if semaphore.available_permits() == 0 && !inflight.is_empty() {
+            let _ = inflight.next().await;
+            continue;
+        }
 
-        let timed = tokio::time::timeout(
-            Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
-            consumer.next(),
-        )
-        .await;
+        let timed = if inflight.is_empty() {
+            tokio::time::timeout(
+                Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
+                consumer.next(),
+            )
+            .await
+        } else {
+            tokio::select! {
+                maybe_done = inflight.next() => {
+                    if maybe_done.is_some() {
+                        continue;
+                    }
+                    // No in-flight jobs left; fall back to consumer poll.
+                    tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()).await
+                }
+                delivery = tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()) => {
+                    delivery
+                }
+            }
+        };
         let delivery = match timed {
             Ok(Some(Ok(d))) => d,
             Ok(Some(Err(e))) => {
@@ -189,11 +208,11 @@ async fn run_amqp_lane(
             continue;
         };
 
+        // Reserve capacity first so we never claim a job without a runnable slot.
+        let permit = semaphore.clone().acquire_owned().await?;
         match claim_pending_by_id(&pool, wc.table, job_id).await {
             Ok(true) => {
                 delivery.ack(BasicAckOptions::default()).await?;
-                // Acquire a semaphore permit for backpressure before dispatching.
-                let permit = semaphore.clone().acquire_owned().await?;
                 let fut = process_fn(cfg.clone(), pool.clone(), job_id);
                 inflight.push(async move {
                     fut.await;
@@ -201,10 +220,12 @@ async fn run_amqp_lane(
                 });
             }
             Ok(false) => {
+                drop(permit);
                 // Another lane claimed this ID first; ack and skip.
                 delivery.ack(BasicAckOptions::default()).await?;
             }
             Err(e) => {
+                drop(permit);
                 log_warn(&format!(
                     "{} worker lane={lane} DB error claiming job {job_id}; nacking for retry: {e}",
                     wc.job_kind
@@ -261,17 +282,22 @@ async fn run_polling_lane(
     let mut inflight = FuturesUnordered::new();
 
     loop {
-        // Drain completed futures without blocking.
-        while let Some(()) = inflight.next().now_or_never().flatten() {}
+        // If all permits are consumed, block until one in-flight job completes.
+        // Without this gate, permit acquisition can starve in-flight polling.
+        if semaphore.available_permits() == 0 && !inflight.is_empty() {
+            let _ = inflight.next().await;
+            continue;
+        }
 
         if last_sweep.elapsed() >= Duration::from_secs(STALE_SWEEP_INTERVAL_SECS) {
             sweep_stale_jobs(cfg, &pool, wc, "polling", lane).await;
             last_sweep = Instant::now();
         }
+        // Reserve capacity first so we never claim a job without a runnable slot.
+        let permit = semaphore.clone().acquire_owned().await?;
         match claim_next_pending(&pool, wc.table).await {
             Ok(Some(id)) => {
                 backoff_ms = POLL_BACKOFF_INIT_MS;
-                let permit = semaphore.clone().acquire_owned().await?;
                 let fut = process_fn(cfg.clone(), pool.clone(), id);
                 inflight.push(async move {
                     fut.await;
@@ -279,15 +305,35 @@ async fn run_polling_lane(
                 });
             }
             Ok(None) => {
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                drop(permit);
+                let sleep = tokio::time::sleep(Duration::from_millis(backoff_ms));
+                tokio::pin!(sleep);
+                tokio::select! {
+                    _ = &mut sleep => {}
+                    done = inflight.next(), if !inflight.is_empty() => {
+                        if done.is_some() {
+                            continue;
+                        }
+                    }
+                }
                 backoff_ms = (backoff_ms * 2).min(POLL_BACKOFF_MAX_MS);
             }
             Err(err) => {
+                drop(permit);
                 log_warn(&format!(
                     "{} worker polling lane={lane} DB error; retrying in 5s: {err}",
                     wc.job_kind
                 ));
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                let sleep = tokio::time::sleep(Duration::from_secs(5));
+                tokio::pin!(sleep);
+                tokio::select! {
+                    _ = &mut sleep => {}
+                    done = inflight.next(), if !inflight.is_empty() => {
+                        if done.is_some() {
+                            continue;
+                        }
+                    }
+                }
             }
         }
     }
@@ -536,15 +582,11 @@ mod tests {
             std::env::set_var("AXON_AMQP_URL", "amqp://localhost");
         }
 
-        // Should not panic or exit.
-        // We can't call the real function (it calls process::exit on failure),
-        // so we replicate the check logic inline here.
-        let pg_ok = std::env::var("AXON_PG_URL").is_ok();
-        let redis_ok = std::env::var("AXON_REDIS_URL").is_ok();
-        let amqp_ok = std::env::var("AXON_AMQP_URL").is_ok();
-        assert!(pg_ok, "AXON_PG_URL should be recognized");
-        assert!(redis_ok, "AXON_REDIS_URL should be recognized");
-        assert!(amqp_ok, "AXON_AMQP_URL should be recognized");
+        let result = validate_worker_env_vars();
+        assert!(
+            result.is_ok(),
+            "expected env validation success: {result:?}"
+        );
 
         unsafe {
             std::env::remove_var("AXON_PG_URL");
@@ -562,12 +604,12 @@ mod tests {
             std::env::remove_var("AXON_AMQP_URL");
         }
 
-        let pg_ok = std::env::var("AXON_PG_URL").is_ok();
-        let redis_ok = std::env::var("AXON_REDIS_URL").is_ok();
-        let amqp_ok = std::env::var("AXON_AMQP_URL").is_ok();
-        assert!(!pg_ok, "AXON_PG_URL should be required");
-        assert!(!redis_ok, "AXON_REDIS_URL should be required");
-        assert!(!amqp_ok, "AXON_AMQP_URL should be required");
+        let result = validate_worker_env_vars();
+        assert!(result.is_err(), "expected env validation failure");
+        let msg = result.err().unwrap_or_default();
+        assert!(msg.contains("AXON_PG_URL"));
+        assert!(msg.contains("AXON_REDIS_URL"));
+        assert!(msg.contains("AXON_AMQP_URL"));
 
         unsafe {
             std::env::remove_var("AXON_PG_URL");

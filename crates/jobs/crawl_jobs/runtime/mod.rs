@@ -24,6 +24,7 @@ struct CrawlJobConfig {
     max_pages: u32,
     max_depth: usize,
     include_subdomains: bool,
+    #[serde(default = "crate::crates::core::config::parse::excludes::default_exclude_prefixes")]
     exclude_path_prefix: Vec<String>,
     respect_robots: bool,
     min_markdown_chars: usize,

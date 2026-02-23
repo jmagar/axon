@@ -228,7 +228,7 @@ Copy `.env.example` → `.env` and fill in values:
 
 ```bash
 # Compose persistent data root on host
-AXON_DATA_DIR=/home/yourname/appdata/axon
+AXON_DATA_DIR=/home/yourname/appdata
 
 # Postgres
 AXON_PG_URL=postgresql://axon:postgres@axon-postgres:5432/axon
