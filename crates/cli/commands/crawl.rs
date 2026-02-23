@@ -11,7 +11,7 @@ use crate::crates::core::ui::{
     accent, confirm_destructive, muted, primary, print_kv, print_option, print_phase, status_text,
     symbol_for_status,
 };
-use crate::crates::jobs::crawl_jobs::{
+use crate::crates::jobs::crawl::{
     cancel_job, cleanup_jobs, clear_jobs, get_job, list_jobs, recover_stale_crawl_jobs, run_worker,
     start_crawl_jobs_batch,
 };

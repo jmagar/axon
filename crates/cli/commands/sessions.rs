@@ -1,6 +1,6 @@
 use crate::crates::cli::commands::ingest_common;
 use crate::crates::core::config::Config;
-use crate::crates::jobs::ingest_jobs::IngestSource;
+use crate::crates::jobs::ingest::IngestSource;
 use std::error::Error;
 
 pub async fn run_sessions(cfg: &Config) -> Result<(), Box<dyn Error>> {

@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::crawl_jobs::runtime;
+use crate::crates::jobs::crawl::runtime;
 use std::error::Error;
 
 pub async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {

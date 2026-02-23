@@ -8,12 +8,12 @@ use crate::crates::core::health::{
     BrowserBackendSelection,
 };
 use crate::crates::core::http::build_client;
-use crate::crates::jobs::batch_jobs::batch_doctor;
+use crate::crates::jobs::batch::batch_doctor;
 use crate::crates::jobs::common::count_stale_and_pending_jobs;
-use crate::crates::jobs::crawl_jobs::doctor as crawl_doctor;
-use crate::crates::jobs::embed_jobs::embed_doctor;
-use crate::crates::jobs::extract_jobs::extract_doctor;
-use crate::crates::jobs::ingest_jobs::ingest_doctor;
+use crate::crates::jobs::crawl::doctor as crawl_doctor;
+use crate::crates::jobs::embed::embed_doctor;
+use crate::crates::jobs::extract::extract_doctor;
+use crate::crates::jobs::ingest::ingest_doctor;
 use render::render_doctor_report_human;
 use serde_json::Value;
 use std::env;

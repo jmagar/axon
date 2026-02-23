@@ -9,7 +9,7 @@ use crate::crates::crawl::engine::{
 use crate::crates::crawl::manifest::{
     manifest_cache_is_stale, read_manifest_data, read_manifest_urls, write_audit_diff,
 };
-use crate::crates::jobs::embed_jobs::start_embed_job;
+use crate::crates::jobs::embed::start_embed_job;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 
