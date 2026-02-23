@@ -136,7 +136,6 @@ pub fn init_tracing() {
 
     let json_log_file = std::env::var("AXON_LOG_FILE")
         .ok()
-        .or_else(|| std::env::var("AXON_LOG_JSON_FILE").ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "logs/axon.log".to_string());

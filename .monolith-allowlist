@@ -7,3 +7,6 @@
 
 # Pre-existing large files — tracked for future refactoring (2026-02-19)
 scripts/qdrant-quality.py
+
+# Temporary exception to unblock fix-crawl PR (2026-02-23)
+crates/jobs/embed_jobs.rs

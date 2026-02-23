@@ -6,6 +6,7 @@
 target
 docs
 storage
+data
 **/.DS_Store
 **/*.log
 **/*.tmp
