@@ -429,5 +429,46 @@ pub async fn reclaim_stale_running_jobs(
     Ok(stats)
 }
 
+/// Count jobs stuck in `running` state beyond `stale_minutes` and jobs in `pending` state,
+/// across all five job tables. Returns `(stale, pending)` counts, or `None` if Postgres
+/// is unreachable.
+pub async fn count_stale_and_pending_jobs(cfg: &Config, stale_minutes: i64) -> Option<(i64, i64)> {
+    let pool = match make_pool(cfg).await {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+
+    let query = r#"
+        WITH all_jobs AS (
+            SELECT status, started_at FROM axon_crawl_jobs
+            UNION ALL
+            SELECT status, started_at FROM axon_batch_jobs
+            UNION ALL
+            SELECT status, started_at FROM axon_extract_jobs
+            UNION ALL
+            SELECT status, started_at FROM axon_embed_jobs
+            UNION ALL
+            SELECT status, started_at FROM axon_ingest_jobs
+        )
+        SELECT
+            COUNT(*) FILTER (
+                WHERE status = 'running'
+                  AND started_at < NOW() - make_interval(mins => $1::int)
+            ) AS stale,
+            COUNT(*) FILTER (WHERE status = 'pending') AS pending
+        FROM all_jobs
+    "#;
+
+    let stale_mins = stale_minutes.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    match sqlx::query_as::<_, (i64, i64)>(query)
+        .bind(stale_mins)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok((stale, pending)) => Some((stale, pending)),
+        Err(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests;

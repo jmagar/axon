@@ -74,6 +74,24 @@ pub fn status_text(status: &str) -> String {
     }
 }
 
+/// Like `status_text` but returns an empty string for terminal states —
+/// ✓ and ✗ already communicate the outcome without words.
+pub fn status_label(status: &str) -> String {
+    match status {
+        "completed" | "failed" | "error" => String::new(),
+        _ => status_text(status),
+    }
+}
+
+/// Pink number + muted label: "42 docs"
+pub fn metric(value: impl std::fmt::Display, label: &str) -> String {
+    format!(
+        "{} {}",
+        Style::new().color256(211).apply_to(value),
+        muted(label)
+    )
+}
+
 pub fn print_phase(symbol: &str, action: &str, subject: &str) {
     println!("  {} {} {}", primary(symbol), action, muted(subject));
 }

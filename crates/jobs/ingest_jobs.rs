@@ -276,6 +276,31 @@ async fn process_ingest_job(cfg: Config, pool: PgPool, id: Uuid) {
     }
 }
 
+pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+    use crate::crates::core::health::redis_healthy;
+    use crate::crates::jobs::common::open_amqp_channel;
+
+    let (pg_ok, amqp_result, redis_ok) = tokio::join!(
+        async { make_pool(cfg).await.is_ok() },
+        open_amqp_channel(cfg, &cfg.ingest_queue),
+        redis_healthy(&cfg.redis_url),
+    );
+    let amqp_ok = match amqp_result {
+        Ok(ch) => {
+            let _ = ch.close(0, "probe").await;
+            true
+        }
+        Err(_) => false,
+    };
+    Ok(serde_json::json!({
+        "postgres_ok": pg_ok,
+        "amqp_ok": amqp_ok,
+        "redis_ok": redis_ok,
+        "queue": cfg.ingest_queue,
+        "all_ok": pg_ok && amqp_ok && redis_ok
+    }))
+}
+
 pub async fn run_ingest_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {

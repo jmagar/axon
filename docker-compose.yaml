@@ -1,7 +1,7 @@
 name: axon
 
 # AXON_DATA_DIR controls where persistent data is stored on the host.
-# Example: AXON_DATA_DIR=/home/jmagar/appdata
+# Example: AXON_DATA_DIR=/home/yourname/appdata
 # Service mounts use a unified tree under AXON_DATA_DIR/axon/.
 # See .env.example for the full list of environment variables.
 

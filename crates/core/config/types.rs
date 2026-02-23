@@ -494,6 +494,15 @@ pub struct Config {
     /// Time range filter for the `search` command (values: day, week, month, year).
     /// Passed to `SearchOptions::with_time_range`. Default: None. Flag: `--search-time-range`.
     pub search_time_range: Option<String>,
+
+    // P5 — opt-in crawl safety/compat flags
+    /// Bypass Content Security Policy in Chrome — helps on pages that block inline JS via CSP.
+    /// Spider: `with_csp_bypass(true)`. Chrome only. Default: false. Flag: `--bypass-csp`.
+    pub bypass_csp: bool,
+
+    /// Accept invalid/self-signed TLS certificates. Useful for internal or staging sites.
+    /// Spider: `with_danger_accept_invalid_certs(true)`. Default: false. Flag: `--accept-invalid-certs`.
+    pub accept_invalid_certs: bool,
 }
 
 impl Default for Config {
@@ -602,6 +611,8 @@ impl Default for Config {
             chrome_screenshot: false,
             research_depth: None,
             search_time_range: None,
+            bypass_csp: false,
+            accept_invalid_certs: false,
         }
     }
 }
@@ -730,6 +741,8 @@ impl fmt::Debug for Config {
             .field("chrome_screenshot", &self.chrome_screenshot)
             .field("research_depth", &self.research_depth)
             .field("search_time_range", &self.search_time_range)
+            .field("bypass_csp", &self.bypass_csp)
+            .field("accept_invalid_certs", &self.accept_invalid_certs)
             .finish()
     }
 }

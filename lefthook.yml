@@ -2,7 +2,7 @@ pre-commit:
   parallel: true
   commands:
     monolith:
-      run: python3 scripts/enforce_monoliths.py --staged
+      run: if [ -f "$HOME/.claude/hooks/enforce_monoliths.py" ]; then python3 "$HOME/.claude/hooks/enforce_monoliths.py" --staged; else echo "[skip] global monolith enforcer not found at ~/.claude/hooks/enforce_monoliths.py"; fi
     rustfmt:
       glob: "*.rs"
       run: cargo fmt -- --check

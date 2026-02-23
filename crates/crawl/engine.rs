@@ -8,7 +8,10 @@ use crate::crates::core::content::build_transform_config;
 use crate::crates::core::http::{cdp_discovery_url, ssrf_blacklist_patterns};
 use crate::crates::core::logging::{log_info, log_warn};
 use collector::collect_crawl_pages;
-use spider::features::chrome_common::RequestInterceptConfiguration;
+use spider::configuration::RedirectPolicy;
+use spider::features::chrome_common::{
+    RequestInterceptConfiguration, ScreenShotConfig, ScreenshotParams, WaitForSelector,
+};
 use spider::url::Url;
 use spider::website::Website;
 use std::collections::HashSet;
@@ -71,7 +74,7 @@ fn is_path_prefix_excluded(path: &str, prefix: &str) -> bool {
     path == boundary
         || path
             .strip_prefix(boundary)
-            .is_some_and(|rest| rest.starts_with('/'))
+            .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('-'))
 }
 
 fn regex_escape(value: &str) -> String {
@@ -104,7 +107,7 @@ fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec
                 format!("/{prefix}")
             };
             format!(
-                "^https?://{}{}(?:/|$|\\?|#)",
+                "^https?://{}{}(?:/|-|$|\\?|#)",
                 host_pattern,
                 regex_escape(&normalized)
             )
@@ -161,6 +164,85 @@ async fn resolve_cdp_ws_url(remote_url: &str) -> Option<String> {
     }
 
     Some(parsed.to_string())
+}
+
+async fn apply_browser_settings(
+    cfg: &Config,
+    mut website: Website,
+    mode: RenderMode,
+) -> Result<Website, Box<dyn Error>> {
+    if matches!(mode, RenderMode::Chrome) {
+        // CDP path — primary browser mode. chromiumoxide connects directly via CDP,
+        // giving access to stealth, fingerprint, intercept, and network-idle features.
+        website
+            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
+            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot)
+            .with_fingerprint(true);
+        // Dismiss browser dialogs (alert/confirm/prompt) automatically — without this
+        // they block page capture indefinitely in headless Chrome.
+        website.with_dismiss_dialogs(true);
+        // Disable Chrome's log domain — reduces protocol noise with no functional downside.
+        website.configuration.disable_log = true;
+        if cfg.bypass_csp {
+            website.with_csp_bypass(true);
+        }
+        if let Some(ref remote_url) = cfg.chrome_remote_url {
+            // If remote_url is already a ws:// URL (threaded from the bootstrap
+            // probe), resolve_cdp_ws_url returns it directly with no second fetch.
+            // Otherwise it discovers via /json/version and normalises any Docker
+            // hostname to 127.0.0.1.  Inside Docker, resolve_cdp_ws_url returns None
+            // and we fall back to the discovery URL (spider.rs fetches it itself).
+            let chrome_url = match resolve_cdp_ws_url(remote_url).await {
+                Some(ws_url) => {
+                    log_info(&format!("[Chrome] CDP WebSocket resolved: {ws_url}"));
+                    ws_url
+                }
+                None => cdp_discovery_url(remote_url).unwrap_or_else(|| remote_url.to_string()),
+            };
+            website.with_chrome_connection(Some(chrome_url));
+        }
+        // `idle_network0` calls `wait_for_network_idle()` — waits until the network
+        // has been fully quiet for 500 ms. This is essential for CSR frameworks
+        // (React, Vue, etc.) that run XHR/fetch calls during hydration AFTER the
+        // initial HTML load. `idle_network` (EventLoadingFinished) fires too early.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(cfg.chrome_network_idle_timeout_secs)),
+        )));
+        if let Some(ref selector) = cfg.chrome_wait_for_selector {
+            website.with_wait_for_selector(Some(WaitForSelector::new(
+                Some(Duration::from_secs(cfg.chrome_network_idle_timeout_secs)),
+                selector.clone(),
+            )));
+        }
+        if cfg.chrome_screenshot {
+            website.with_screenshot(Some(ScreenShotConfig::new(
+                ScreenshotParams::default(),
+                false,
+                true,
+                Some(std::path::PathBuf::from(&cfg.output_dir)),
+            )));
+        }
+        website = website
+            .build()
+            .map_err(|e| format!("failed to build website with chrome settings: {e}"))?;
+    } else if let Some(ref wd_url) = cfg.webdriver_url {
+        // Selenium/WebDriver — secondary path when CDP remote URL is unavailable.
+        use spider::features::webdriver_common::{WebDriverBrowser, WebDriverConfig};
+        let wd_cfg = WebDriverConfig {
+            server_url: wd_url.clone(),
+            browser: WebDriverBrowser::Chrome,
+            headless: cfg.chrome_headless,
+            proxy: cfg.chrome_proxy.clone(),
+            user_agent: cfg.chrome_user_agent.clone(),
+            ..WebDriverConfig::default()
+        };
+        website.with_webdriver(wd_cfg);
+        // Same fully-idle wait: WebDriver also needs to wait for JS hydration.
+        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
+            Some(Duration::from_secs(cfg.chrome_network_idle_timeout_secs)),
+        )));
+    }
+    Ok(website)
 }
 
 async fn configure_website(
@@ -223,54 +305,32 @@ async fn configure_website(
         website.with_user_agent(Some(ua.as_str()));
     }
 
-    if matches!(mode, RenderMode::Chrome) {
-        // CDP path — primary browser mode. chromiumoxide connects directly via CDP,
-        // giving access to stealth, fingerprint, intercept, and network-idle features.
-        website
-            .with_chrome_intercept(RequestInterceptConfiguration::new(cfg.chrome_intercept))
-            .with_stealth(cfg.chrome_stealth || cfg.chrome_anti_bot)
-            .with_fingerprint(true);
-        if let Some(ref remote_url) = cfg.chrome_remote_url {
-            // If remote_url is already a ws:// URL (threaded from the bootstrap
-            // probe), resolve_cdp_ws_url returns it directly with no second fetch.
-            // Otherwise it discovers via /json/version and normalises any Docker
-            // hostname to 127.0.0.1.  Inside Docker, resolve_cdp_ws_url returns None
-            // and we fall back to the discovery URL (spider.rs fetches it itself).
-            let chrome_url = match resolve_cdp_ws_url(remote_url).await {
-                Some(ws_url) => {
-                    log_info(&format!("[Chrome] CDP WebSocket resolved: {ws_url}"));
-                    ws_url
-                }
-                None => cdp_discovery_url(remote_url).unwrap_or_else(|| remote_url.to_string()),
-            };
-            website.with_chrome_connection(Some(chrome_url));
-        }
-        // `idle_network0` calls `wait_for_network_idle()` — waits until the network
-        // has been fully quiet for 500 ms. This is essential for CSR frameworks
-        // (React, Vue, etc.) that run XHR/fetch calls during hydration AFTER the
-        // initial HTML load. `idle_network` (EventLoadingFinished) fires too early.
-        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
-            Some(Duration::from_secs(15)),
-        )));
-        website = website
-            .build()
-            .map_err(|e| format!("failed to build website with chrome settings: {e}"))?;
-    } else if let Some(ref wd_url) = cfg.webdriver_url {
-        // Selenium/WebDriver — secondary path when CDP remote URL is unavailable.
-        use spider::features::webdriver_common::{WebDriverBrowser, WebDriverConfig};
-        let wd_cfg = WebDriverConfig {
-            server_url: wd_url.clone(),
-            browser: WebDriverBrowser::Chrome,
-            headless: cfg.chrome_headless,
-            proxy: cfg.chrome_proxy.clone(),
-            user_agent: cfg.chrome_user_agent.clone(),
-            ..WebDriverConfig::default()
-        };
-        website.with_webdriver(wd_cfg);
-        // Same fully-idle wait: WebDriver also needs to wait for JS hydration.
-        website.with_wait_for_idle_network0(Some(spider::configuration::WaitForIdleNetwork::new(
-            Some(Duration::from_secs(15)),
-        )));
+    // No control thread — we never pause/resume crawls externally; skip the overhead.
+    website.with_no_control_thread(true);
+
+    if cfg.accept_invalid_certs {
+        website.with_danger_accept_invalid_certs(true);
+    }
+
+    website = apply_browser_settings(cfg, website, mode).await?;
+
+    // P3 — spider builder fields previously parsed but never applied.
+    if !cfg.url_whitelist.is_empty() {
+        website.with_whitelist_url(Some(
+            cfg.url_whitelist
+                .iter()
+                .map(|s| spider::compact_str::CompactString::from(s.as_str()))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    if cfg.block_assets {
+        website.with_block_assets(true);
+    }
+    if let Some(max_bytes) = cfg.max_page_bytes {
+        website.with_max_page_bytes(Some(max_bytes as f64));
+    }
+    if cfg.redirect_policy_strict {
+        website.with_redirect_policy(RedirectPolicy::Strict);
     }
 
     // We always control the sitemap phase explicitly via run_crawl_once(run_sitemap: bool).

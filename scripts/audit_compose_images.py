@@ -161,10 +161,16 @@ def find_newer(image: ImageRef, available: list[str]) -> list[str]:
 
 def extract_images(compose_path: Path) -> list[ImageRef]:
     """Parse docker-compose.yaml and return all pinned image refs."""
-    data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    data = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        return []
     services = data.get("services", {})
+    if not isinstance(services, dict):
+        return []
     images = []
     for svc_name, svc in services.items():
+        if not isinstance(svc, dict):
+            continue
         raw = svc.get("image")
         if raw:
             images.append(parse_image(svc_name, raw))
@@ -185,6 +191,7 @@ def main() -> int:
 
     outdated: list[tuple[ImageRef, list[str]]] = []
     skipped: list[ImageRef] = []
+    tag_fetch_failures: list[ImageRef] = []
 
     for img in images:
         if img.registry != "docker.io":
@@ -195,6 +202,7 @@ def main() -> int:
         available = hub_tags(img)
         if not available:
             print(f"  {img.service}: {img.raw} — could not fetch tags (offline?)")
+            tag_fetch_failures.append(img)
             continue
 
         newer = find_newer(img, available)
@@ -211,6 +219,12 @@ def main() -> int:
             print(f"  {img.service}: {img.raw!r} → consider {newer[0]!r}")
         print("\nUpdate the image tags in docker-compose.yaml and rebuild.")
         return 1
+
+    if tag_fetch_failures:
+        print(f"Tag checks failed for {len(tag_fetch_failures)} image(s); audit is incomplete.")
+        for img in tag_fetch_failures:
+            print(f"  {img.service}: {img.raw!r}")
+        return 2
 
     print("All images are current.")
     return 0

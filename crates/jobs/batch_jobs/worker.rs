@@ -191,8 +191,9 @@ async fn process_claimed_batch_job(cfg: Config, pool: PgPool, id: Uuid) {
 
 pub async fn run_batch_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     // Validate required environment variables before attempting any connections.
-    // Exits with a clear error message if any are missing.
-    crate::crates::jobs::worker_lane::validate_worker_env_vars();
+    if let Err(msg) = crate::crates::jobs::worker_lane::validate_worker_env_vars() {
+        return Err(std::io::Error::other(msg).into());
+    }
 
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {
