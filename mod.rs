@@ -1,9 +1,9 @@
 pub mod crates;
 
 use self::crates::cli::commands::{
-    run_batch, run_crawl, run_debug, run_doctor, run_embed, run_extract, run_github, run_map,
-    run_reddit, run_research, run_scrape, run_search, run_sessions, run_status, run_youtube,
-    start_url_from_cfg,
+    run_batch, run_crawl, run_debug, run_doctor, run_embed, run_extract, run_github, run_ingest,
+    run_map, run_reddit, run_research, run_scrape, run_search, run_sessions, run_status,
+    run_youtube, start_url_from_cfg,
 };
 use self::crates::core::config::{parse_args, CommandKind, Config};
 use self::crates::core::logging::{init_tracing, log_done, log_info, log_warn};
@@ -82,6 +82,7 @@ async fn run_once(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
         CommandKind::Status => run_status(cfg).await?,
         CommandKind::Dedupe => run_dedupe_native(cfg).await?,
         CommandKind::Github => run_github(cfg).await?,
+        CommandKind::Ingest => run_ingest(cfg).await?,
         CommandKind::Reddit => run_reddit(cfg).await?,
         CommandKind::Youtube => run_youtube(cfg).await?,
         CommandKind::Sessions => run_sessions(cfg).await?,

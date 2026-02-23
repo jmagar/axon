@@ -1,9 +1,8 @@
 name: axon
 
 # AXON_DATA_DIR controls where persistent data is stored on the host.
-# Default: ./data (relative to this file, committed-safe for local dev).
-# Override in .env: AXON_DATA_DIR=/home/yourname/appdata/axon
-# Example: AXON_DATA_DIR=/home/jmagar/appdata/axon
+# Example: AXON_DATA_DIR=/home/jmagar/appdata
+# Service mounts use a unified tree under AXON_DATA_DIR/axon/.
 # See .env.example for the full list of environment variables.
 
 x-common-service: &common-service
@@ -33,7 +32,7 @@ services:
     ports:
       - "127.0.0.1:53432:5432"  # homelab-only: not exposed to network
     volumes:
-      - ${AXON_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+      - ${AXON_DATA_DIR:-./data}/axon/postgres:/var/lib/postgresql/data
     healthcheck:
       test:
         [
@@ -53,7 +52,7 @@ services:
     ports:
       - "127.0.0.1:53379:6379"  # homelab-only: not exposed to network
     volumes:
-      - ${AXON_DATA_DIR:-./data}/redis:/data
+      - ${AXON_DATA_DIR:-./data}/axon/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "6379", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
@@ -71,7 +70,7 @@ services:
     ports:
       - "127.0.0.1:45535:5672"  # homelab-only: not exposed to network
     volumes:
-      - ${AXON_DATA_DIR:-./data}/rabbitmq:/var/lib/rabbitmq
+      - ${AXON_DATA_DIR:-./data}/axon/rabbitmq:/var/lib/rabbitmq
       - ./docker/rabbitmq/20-axon.conf:/etc/rabbitmq/conf.d/20-axon.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -88,7 +87,7 @@ services:
       - "127.0.0.1:53333:6333"  # homelab-only: not exposed to network
       - "127.0.0.1:53334:6334"  # gRPC — homelab-only
     volumes:
-      - ${AXON_DATA_DIR:-./data}/qdrant:/qdrant/storage
+      - ${AXON_DATA_DIR:-./data}/axon/qdrant:/qdrant/storage
     healthcheck:
       test:
         [
@@ -182,8 +181,8 @@ services:
       retries: 3
       start_period: 30s
     volumes:
-      - ${AXON_DATA_DIR:-./data}/worker-output:/app/.cache/axon-rust/output
-      - ${AXON_DATA_DIR:-./data}/logs:/app/logs
+      - ${AXON_DATA_DIR:-./data}/axon/worker:/app/.cache/axon-rust/output
+      - ${AXON_DATA_DIR:-./data}/axon/logs:/app/logs
 
 networks:
   axon:
