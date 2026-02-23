@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::crawl_jobs::runtime;
+use crate::crates::jobs::crawl::runtime;
 use std::error::Error;
 
 /// Reclaim stale running crawl jobs using the two-pass confirmation protocol.

@@ -2,11 +2,11 @@ mod metrics;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::ui::{accent, metric, muted, primary, status_label, symbol_for_status};
-use crate::crates::jobs::batch_jobs::{list_batch_jobs, BatchJob};
-use crate::crates::jobs::crawl_jobs::{list_jobs, CrawlJob};
-use crate::crates::jobs::embed_jobs::{list_embed_jobs, EmbedJob};
-use crate::crates::jobs::extract_jobs::{list_extract_jobs, ExtractJob};
-use crate::crates::jobs::ingest_jobs::{list_ingest_jobs, IngestJob};
+use crate::crates::jobs::batch::{list_batch_jobs, BatchJob};
+use crate::crates::jobs::crawl::{list_jobs, CrawlJob};
+use crate::crates::jobs::embed::{list_embed_jobs, EmbedJob};
+use crate::crates::jobs::extract::{list_extract_jobs, ExtractJob};
+use crate::crates::jobs::ingest::{list_ingest_jobs, IngestJob};
 use chrono::{DateTime, Utc};
 use metrics::{
     batch_metrics_suffix, display_embed_input, embed_metrics_suffix, extract_metrics_suffix,

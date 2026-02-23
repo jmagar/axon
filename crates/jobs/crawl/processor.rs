@@ -1,4 +1,4 @@
-use crate::crates::jobs::crawl_jobs::sitemap;
+use crate::crates::jobs::crawl::sitemap;
 use std::error::Error;
 
 #[derive(Debug, Clone)]

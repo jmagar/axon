@@ -1,5 +1,5 @@
 use crate::crates::crawl::engine::CrawlSummary;
-use crate::crates::jobs::batch_jobs::apply_queue_injection;
+use crate::crates::jobs::batch::apply_queue_injection;
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;

@@ -2,7 +2,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_phase};
-use crate::crates::jobs::crawl_jobs::start_crawl_jobs_batch;
+use crate::crates::jobs::crawl::start_crawl_jobs_batch;
 use spider::url::Url as SpiderUrl;
 use spider_agent::{Agent, SearchOptions, TimeRange};
 use std::collections::HashSet;
