@@ -8,13 +8,14 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `map`, `search`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`
+- Commands: `scrape`, `crawl`, `map`, `search`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `serve`
 - Async queue-backed jobs for `crawl`/`extract`/`embed`
 - **Surgical Incremental Crawling**: SHA-256 content hashing, Reflink/Hardlink storage reuse, and smart embedding skips for unchanged pages.
 - TEI embeddings + Qdrant vector storage
 - OpenAI-compatible extraction and answer generation
 - Chrome CDP rendering for dynamic sites
 - Automation-friendly JSON mode via `--json`
+- Built-in web UI via `axon serve` — neural canvas, command execution, Docker stats over WebSocket
 
 ## Architecture
 
@@ -26,6 +27,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - `crates/extract` — placeholder module (extraction logic lives in `vector/ops`)
 - `crates/jobs` — queue workers for crawl/extract/embed
 - `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats/dedupe`)
+- `crates/web` — axum web UI server (static assets, WebSocket handler, Docker stats poller, subprocess execution)
 
 ```
 axon_rust/
@@ -87,6 +89,12 @@ axon_rust/
 │   │           └── worker/
 │   │               ├── worker_loops.rs
 │   │               └── worker_process/
+│   ├── web.rs              # Axum server — routes, WS handler, shared state
+│   ├── web/
+│   │   ├── execute.rs      # Subprocess spawn + stdout/stderr streaming over WS
+│   │   ├── docker_stats.rs # Bollard Docker stats poller + broadcast
+│   │   └── static/         # HTML/CSS/JS (compiled into binary via include_str!)
+│   │       ├── index.html, style.css, neural.js, app.js
 │   └── vector/
 │       ├── mod.rs
 │       └── ops/            # Vector ops (modular)
@@ -303,6 +311,7 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `dedupe` | Remove duplicate vectors from Qdrant collection | No |
+| `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed)
 

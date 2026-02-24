@@ -29,6 +29,7 @@ pub enum CommandKind {
     Sessions,
     Research,
     Screenshot,
+    Serve,
 }
 
 impl CommandKind {
@@ -59,6 +60,7 @@ impl CommandKind {
             Self::Sessions => "sessions",
             Self::Research => "research",
             Self::Screenshot => "screenshot",
+            Self::Serve => "serve",
         }
     }
 }
@@ -426,9 +428,6 @@ pub struct Config {
     /// Emit machine-readable JSON output on stdout instead of human-readable text. Flag: `--json`.
     pub json_output: bool,
 
-    /// Re-crawl URLs found in a previous crawl result rather than starting fresh. Flag: `--crawl-from-result`.
-    pub crawl_from_result: bool,
-
     /// Deduplicate trailing-slash URL variants (e.g. `/about` and `/about/` treated as one).
     /// Spider: `with_normalize(bool)`. Default false. Flag: `--normalize`.
     pub normalize: bool,
@@ -507,6 +506,9 @@ pub struct Config {
 
     /// Viewport height in pixels for screenshot capture. Default: 1080. Flag: `--viewport`.
     pub viewport_height: u32,
+
+    /// Port for the `serve` web UI server. Flag: `--port`. Default: 3939.
+    pub serve_port: u16,
 }
 
 impl Default for Config {
@@ -598,7 +600,6 @@ impl Default for Config {
             watchdog_stale_timeout_secs: 300,
             watchdog_confirm_secs: 60,
             json_output: false,
-            crawl_from_result: false,
             normalize: false,
             chrome_network_idle_timeout_secs: 15,
             auto_switch_thin_ratio: 0.60,
@@ -618,6 +619,7 @@ impl Default for Config {
             screenshot_full_page: true,
             viewport_width: 1920,
             viewport_height: 1080,
+            serve_port: 3939,
         }
     }
 }
@@ -720,7 +722,6 @@ impl fmt::Debug for Config {
             )
             .field("watchdog_confirm_secs", &self.watchdog_confirm_secs)
             .field("json_output", &self.json_output)
-            .field("crawl_from_result", &self.crawl_from_result)
             .field("normalize", &self.normalize)
             .field(
                 "chrome_network_idle_timeout_secs",
@@ -749,6 +750,7 @@ impl fmt::Debug for Config {
             .field("screenshot_full_page", &self.screenshot_full_page)
             .field("viewport_width", &self.viewport_width)
             .field("viewport_height", &self.viewport_height)
+            .field("serve_port", &self.serve_port)
             .finish()
     }
 }

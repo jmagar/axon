@@ -48,6 +48,7 @@ cargo run --bin axon -- scrape https://example.com --wait true
 | `status` | Show async job queue status | No |
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
+| `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed)
 
@@ -149,7 +150,7 @@ All flags are `--global` (usable with any subcommand).
 axon_rust/
 ├── mod.rs                  # Library root — run() dispatch (parse_args() is in crates/core/config.rs)
 ├── crates/
-│   ├── mod.rs              # pub mod cli, core, crawl, ingest, jobs, vector
+│   ├── mod.rs              # pub mod cli, core, crawl, ingest, jobs, vector, web
 │   ├── cli/
 │   │   ├── mod.rs
 │   │   └── commands/       # One file per command (scrape, crawl, map, extract, …)
@@ -181,6 +182,11 @@ axon_rust/
 │   │   ├── ingest.rs       # Ingest job schema + worker (github/reddit/youtube)
 │   │   ├── status.rs       # JobStatus enum (pending/running/completed/failed/canceled)
 │   │   └── worker_lane.rs  # Multi-lane worker coordination for ingest
+│   ├── web.rs              # Axum server: routes, WS handler, static asset serving
+│   ├── web/
+│   │   ├── execute.rs      # Subprocess execution + stdout/stderr streaming over WS
+│   │   ├── docker_stats.rs # Bollard Docker stats poller + broadcast
+│   │   └── static/         # Frontend assets (index.html, style.css, neural.js, app.js)
 │   └── vector/
 │       ├── mod.rs, ops/    # Vector ops: commands, input, qdrant, ranking, stats, tei
 ├── docker/
@@ -345,6 +351,12 @@ cargo build --release --bin axon
 ```toml
 spider_agent = { version = "2.45", default-features = false, features = ["search_tavily", "openai"] }
 ```
+
+### `serve` hot reload (debug builds)
+In debug builds (`#[cfg(debug_assertions)]`), static assets are read from disk at `crates/web/static/` on every request — edit and refresh, no rebuild. Release builds use `include_str!()` compiled into the binary.
+
+### Subprocess stdout vs stderr
+CLI commands output JSON data to stdout and progress/logs to stderr (Spinner via indicatif, tracing via `log_info`/`log_done`). The web UI streams both: stdout as `"type": "output"`, stderr as `"type": "log"`. ANSI codes stripped via `console::strip_ansi_codes()`.
 
 ### Adding fields to `Config` struct
 When adding a new non-`Option` field to `Config` in `crates/core/config.rs`, you **must** also update the inline `Config { .. }` struct literals used in test helpers:
