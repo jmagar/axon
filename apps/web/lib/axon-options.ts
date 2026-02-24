@@ -216,7 +216,6 @@ export const MODE_PICKER_COMMANDS = [
   'reddit',
   'youtube',
   'sessions',
-  'ingest',
   // ops
   'embed',
   'sources',

@@ -47,6 +47,9 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
 
   const isCrawlMode = currentMode === 'crawl'
   const hasCrawlFiles = crawlFiles.length > 0
+  // Crawl and scrape use file-based rendering (markdown viewer + file explorer),
+  // not the renderIntent dispatch. Crawl progress arrives via dedicated
+  // crawl_progress messages, not stdout_json.
   const isMarkdownMode = commandMode === null || commandMode === 'scrape' || commandMode === 'crawl'
 
   const spec = useMemo(
@@ -210,9 +213,9 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentRuns.map((run, i) => (
+                  {recentRuns.map((run) => (
                     <tr
-                      key={i}
+                      key={run.id}
                       className="border-b border-[rgba(175,215,255,0.05)] hover:bg-[rgba(175,215,255,0.03)]"
                     >
                       <td className="py-2 text-center">
