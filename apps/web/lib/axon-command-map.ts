@@ -319,6 +319,23 @@ export const AXON_COMMAND_OPTIONS: ReadonlyArray<AxonOptionSpec> = [
   { key: 'port', flag: '--port', value: 'number', scope: 'command', notes: 'serve' },
 ] as const
 
+export function getCommandSpec(id: string): AxonCommandSpec | undefined {
+  return AXON_COMMAND_SPECS.find((s) => s.id === id)
+}
+
+export function isAsyncMode(id: string): boolean {
+  return getCommandSpec(id)?.asyncByDefault ?? false
+}
+
+export function isNoInputMode(id: string): boolean {
+  const spec = getCommandSpec(id)
+  return spec?.input === 'none'
+}
+
+export function getCommandsByCategory(category: AxonCommandCategory): AxonCommandSpec[] {
+  return AXON_COMMAND_SPECS.filter((s) => s.category === category)
+}
+
 // Global options, executor constants, and mode picker are in axon-options.ts
 export {
   AXON_GLOBAL_OPTIONS,
