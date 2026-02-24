@@ -60,7 +60,7 @@ interface WsMessagesContextValue {
   commandMode: string | null
   /** Screenshot files from screenshot command */
   screenshotFiles: ScreenshotFile[]
-  startExecution: (mode: string) => void
+  startExecution: (mode: string, input?: string) => void
 }
 
 const WsMessagesContext = createContext<WsMessagesContextValue | null>(null)
@@ -88,6 +88,7 @@ export function useWsMessagesProvider() {
   const [crawlFiles, setCrawlFiles] = useState<CrawlFile[]>([])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const currentModeRef = useRef('')
+  const currentInputRef = useRef('')
   const [currentMode, setCurrentMode] = useState('')
   const [crawlProgress, setCrawlProgress] = useState<CrawlProgress | null>(null)
   const [stdoutLines, setStdoutLines] = useState<string[]>([])
@@ -158,7 +159,7 @@ export function useWsMessagesProvider() {
               id: `run-${++runIdCounter.current}`,
               status: msg.exit_code === 0 ? 'done' : 'failed',
               mode: currentModeRef.current,
-              target: '',
+              target: currentInputRef.current,
               duration: `${(msg.elapsed_ms / 1000).toFixed(1)}s`,
               lines: 0,
               time: new Date().toLocaleTimeString(),
@@ -175,7 +176,7 @@ export function useWsMessagesProvider() {
               id: `run-${++runIdCounter.current}`,
               status: 'failed',
               mode: currentModeRef.current,
-              target: '',
+              target: currentInputRef.current,
               duration: msg.elapsed_ms ? `${(msg.elapsed_ms / 1000).toFixed(1)}s` : '0s',
               lines: 0,
               time: new Date().toLocaleTimeString(),
@@ -197,8 +198,9 @@ export function useWsMessagesProvider() {
     [send],
   )
 
-  const startExecution = useCallback((mode: string) => {
+  const startExecution = useCallback((mode: string, input?: string) => {
     currentModeRef.current = mode
+    currentInputRef.current = input ?? ''
     setCurrentMode(mode)
     setMarkdownContent('')
     setLogLines([])
