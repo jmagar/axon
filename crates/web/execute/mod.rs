@@ -122,10 +122,27 @@ fn build_args(mode: &str, input: &str, flags: &serde_json::Value) -> Vec<String>
     let is_async = ASYNC_MODES.contains(&mode);
     let mut args: Vec<String> = vec![mode.to_string()];
 
-    // Input goes as a positional argument (URL, query text, etc.)
+    // Input goes as positional arguments.  For job sub-commands like
+    // "cancel <id>" or "status <id>" the frontend sends a single string
+    // that must be split into separate positional args.  For everything
+    // else (URLs, query text) the whole string is one arg.
     let trimmed = input.trim();
     if !trimmed.is_empty() {
-        args.push(trimmed.to_string());
+        let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
+        let is_job_subcmd = matches!(
+            parts[0],
+            "cancel" | "status" | "errors" | "list" | "cleanup" | "clear" | "worker" | "recover"
+        );
+        if is_job_subcmd {
+            for part in parts {
+                let p = part.trim();
+                if !p.is_empty() {
+                    args.push(p.to_string());
+                }
+            }
+        } else {
+            args.push(trimmed.to_string());
+        }
     }
 
     // Inject --json for all modes except search/research (which don't support it).
@@ -417,7 +434,8 @@ async fn handle_sync_command(
 }
 
 /// Cancel a running async job by spawning `axon <mode> cancel <id>`.
-pub(super) async fn handle_cancel(job_id: &str, tx: mpsc::Sender<String>) {
+/// Falls back to `crawl` if no mode is specified (legacy callers).
+pub(super) async fn handle_cancel(mode: &str, job_id: &str, tx: mpsc::Sender<String>) {
     let exe = match resolve_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -431,9 +449,10 @@ pub(super) async fn handle_cancel(job_id: &str, tx: mpsc::Sender<String>) {
         }
     };
 
-    // Try crawl cancel first (most common case from web UI)
+    // Use the command's own mode so cancel works for crawl, extract, embed, etc.
+    let cancel_mode = if mode.is_empty() { "crawl" } else { mode };
     let output = Command::new(&exe)
-        .args(["crawl", "cancel", job_id])
+        .args([cancel_mode, "cancel", job_id])
         .output()
         .await;
 

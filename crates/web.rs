@@ -11,8 +11,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::error::Error;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex, broadcast};
 
 // Release: static assets compiled into the binary
 #[cfg(not(debug_assertions))]
@@ -26,9 +27,9 @@ const APP_JS: &str = include_str!("web/static/app.js");
 
 /// In debug builds, resolve the static assets directory relative to the source.
 #[cfg(debug_assertions)]
-fn static_dir() -> std::path::PathBuf {
+fn static_dir() -> PathBuf {
     // Cargo sets CARGO_MANIFEST_DIR at compile time
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates")
         .join("web")
         .join("static")
@@ -165,6 +166,8 @@ struct WsClientMsg {
     flags: serde_json::Value,
     #[serde(default)]
     id: String,
+    #[serde(default)]
+    path: String,
 }
 
 async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
@@ -173,14 +176,38 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     // Channel for the execute task to send messages back through the WS
     let (exec_tx, mut exec_rx) = tokio::sync::mpsc::channel::<String>(256);
 
+    // Per-connection state: last crawl output dir for read_file resolution
+    let crawl_base_dir: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+
+    // Per-connection state: current async job ID for cancel support
+    let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
     // Subscribe to Docker stats broadcast
     let mut stats_rx = state.stats_tx.subscribe();
 
-    // Forward task: sends exec output + stats to the WS client
+    // Track crawl_files messages to capture the output_dir for read_file
+    let base_dir_tracker = crawl_base_dir.clone();
+    let (tracking_tx, mut tracking_rx) = tokio::sync::mpsc::channel::<String>(256);
+
+    // Forward task: sends exec output + stats to the WS client,
+    // and tracks crawl_files messages to capture base_dir
     let forward = tokio::spawn(async move {
         loop {
             tokio::select! {
                 Some(msg) = exec_rx.recv() => {
+                    // Sniff crawl_files messages to extract output_dir
+                    if msg.contains("\"crawl_files\"") {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
+                            if let Some(dir) = parsed.get("output_dir").and_then(|v| v.as_str()) {
+                                *base_dir_tracker.lock().await = Some(PathBuf::from(dir));
+                            }
+                        }
+                    }
+                    if ws_tx.send(Message::Text(msg.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Some(msg) = tracking_rx.recv() => {
                     if ws_tx.send(Message::Text(msg.into())).await.is_err() {
                         break;
                     }
@@ -208,22 +235,54 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
             match client_msg.msg_type.as_str() {
                 "execute" => {
                     let tx = exec_tx.clone();
+                    let job_id = crawl_job_id.clone();
                     tokio::spawn(async move {
                         execute::handle_command(
                             &client_msg.mode,
                             &client_msg.input,
                             &client_msg.flags,
                             tx,
+                            job_id,
                         )
                         .await;
                     });
                 }
                 "cancel" => {
-                    if !client_msg.id.is_empty() {
-                        let tx = exec_tx.clone();
-                        let id = client_msg.id.clone();
+                    let tx = exec_tx.clone();
+                    let job_id_arc = crawl_job_id.clone();
+                    let cancel_mode = client_msg.mode.clone();
+                    tokio::spawn(async move {
+                        // Use stored async job ID if available, fall back to client-provided ID
+                        let stored = job_id_arc.lock().await.clone();
+                        let id = stored.or_else(|| {
+                            if client_msg.id.is_empty() {
+                                None
+                            } else {
+                                Some(client_msg.id.clone())
+                            }
+                        });
+                        if let Some(id) = id {
+                            execute::handle_cancel(&cancel_mode, &id, tx).await;
+                        }
+                    });
+                }
+                "read_file" => {
+                    if !client_msg.path.is_empty() {
+                        let tx = tracking_tx.clone();
+                        let path = client_msg.path.clone();
+                        let base = crawl_base_dir.clone();
                         tokio::spawn(async move {
-                            execute::handle_cancel(&id, tx).await;
+                            let guard = base.lock().await;
+                            if let Some(base_dir) = guard.as_ref() {
+                                execute::handle_read_file(&path, base_dir, tx).await;
+                            } else {
+                                let _ = tx
+                                    .send(
+                                        r#"{"type":"error","message":"no crawl output available"}"#
+                                            .to_string(),
+                                    )
+                                    .await;
+                            }
                         });
                     }
                 }

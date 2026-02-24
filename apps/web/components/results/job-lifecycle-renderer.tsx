@@ -15,7 +15,6 @@ interface JobState {
   status: JobPhase
   errorText?: string
   resultSummary?: Record<string, unknown>
-  updatedAt: number
 }
 
 interface JobLifecycleRendererProps {
@@ -33,6 +32,34 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
+const PHASE_META: Record<JobPhase, { color: string; label: string; dotClass: string }> = {
+  enqueued: {
+    color: '#ffaf87',
+    label: 'Enqueued',
+    dotClass: 'bg-[#ffaf87] shadow-[0_0_6px_rgba(255,175,135,0.5)]',
+  },
+  running: {
+    color: '#87afff',
+    label: 'Running',
+    dotClass: 'animate-pulse bg-[#87afff] shadow-[0_0_8px_rgba(135,175,255,0.6)]',
+  },
+  completed: {
+    color: '#87d787',
+    label: 'Completed',
+    dotClass: 'bg-[#87d787] shadow-[0_0_6px_rgba(135,215,135,0.5)]',
+  },
+  failed: {
+    color: '#ff5f87',
+    label: 'Failed',
+    dotClass: 'bg-[#ff5f87] shadow-[0_0_6px_rgba(255,95,135,0.5)]',
+  },
+  canceled: {
+    color: '#8787af',
+    label: 'Canceled',
+    dotClass: 'bg-[#8787af] shadow-[0_0_6px_rgba(135,135,175,0.4)]',
+  },
+}
+
 function normalizePhase(raw: string): JobPhase {
   const lower = raw.toLowerCase()
   if (lower === 'completed' || lower === 'done') return 'completed'
@@ -40,51 +67,6 @@ function normalizePhase(raw: string): JobPhase {
   if (lower === 'canceled' || lower === 'cancelled') return 'canceled'
   if (lower === 'running' || lower === 'processing') return 'running'
   return 'enqueued'
-}
-
-function phaseColor(phase: JobPhase): string {
-  switch (phase) {
-    case 'enqueued':
-      return '#ffaf87'
-    case 'running':
-      return '#87afff'
-    case 'completed':
-      return '#87d787'
-    case 'failed':
-      return '#ff5f87'
-    case 'canceled':
-      return '#8787af'
-  }
-}
-
-function phaseLabel(phase: JobPhase): string {
-  switch (phase) {
-    case 'enqueued':
-      return 'Enqueued'
-    case 'running':
-      return 'Running'
-    case 'completed':
-      return 'Completed'
-    case 'failed':
-      return 'Failed'
-    case 'canceled':
-      return 'Canceled'
-  }
-}
-
-function phaseDotClass(phase: JobPhase): string {
-  switch (phase) {
-    case 'enqueued':
-      return 'bg-[#ffaf87] shadow-[0_0_6px_rgba(255,175,135,0.5)]'
-    case 'running':
-      return 'animate-pulse bg-[#87afff] shadow-[0_0_8px_rgba(135,175,255,0.6)]'
-    case 'completed':
-      return 'bg-[#87d787] shadow-[0_0_6px_rgba(135,215,135,0.5)]'
-    case 'failed':
-      return 'bg-[#ff5f87] shadow-[0_0_6px_rgba(255,95,135,0.5)]'
-    case 'canceled':
-      return 'bg-[#8787af] shadow-[0_0_6px_rgba(135,135,175,0.4)]'
-  }
 }
 
 /** Extract job state from a stdout JSON object. */
@@ -111,7 +93,6 @@ function extractJobState(obj: unknown): JobState | null {
     status: normalizePhase(rawStatus),
     errorText,
     resultSummary: Object.keys(summary).length > 0 ? summary : undefined,
-    updatedAt: Date.now(),
   }
 }
 
@@ -166,15 +147,15 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
       {/* Header: status dot + job ID */}
       <div className="mb-3 flex items-center gap-3">
         <span
-          className={`inline-block size-2 shrink-0 rounded-full ${phaseDotClass(job.status)}`}
+          className={`inline-block size-2 shrink-0 rounded-full ${PHASE_META[job.status].dotClass}`}
         />
         <div className="min-w-0 flex-1">
           <span className="font-mono text-[12px] text-[#afd7ff]">{job.jobId}</span>
           <span
             className="ml-2 text-[11px] font-semibold uppercase tracking-wider"
-            style={{ color: phaseColor(job.status) }}
+            style={{ color: PHASE_META[job.status].color }}
           >
-            {phaseLabel(job.status)}
+            {PHASE_META[job.status].label}
           </span>
         </div>
       </div>
@@ -302,7 +283,9 @@ export function JobLifecycleRenderer({
     })
   }, [subscribe])
 
-  // Merge initial stdoutJson with polled updates, latest per job_id wins
+  // Merge initial stdoutJson with polled updates, latest per job_id wins.
+  // polledUpdates are appended after stdoutJson so iterating in order
+  // ensures the most recent state overwrites earlier entries naturally.
   const jobs = useMemo(() => {
     const allItems = [...stdoutJson, ...polledUpdates]
     const jobMap = new Map<string, JobState>()
@@ -310,11 +293,7 @@ export function JobLifecycleRenderer({
     for (const item of allItems) {
       const state = extractJobState(item)
       if (!state) continue
-      const existing = jobMap.get(state.jobId)
-      // Keep the latest update for each job
-      if (!existing || state.updatedAt >= existing.updatedAt) {
-        jobMap.set(state.jobId, state)
-      }
+      jobMap.set(state.jobId, state)
     }
 
     return Array.from(jobMap.values())

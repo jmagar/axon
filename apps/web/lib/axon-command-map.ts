@@ -196,23 +196,13 @@ export const AXON_COMMAND_SPECS: ReadonlyArray<AxonCommandSpec> = [
     renderIntent: 'job-lifecycle',
   },
   {
-    id: 'ingest',
-    category: 'ingest',
-    input: 'none',
-    asyncByDefault: false,
-    supportsJobs: true,
-    commandOptions: [],
-    renderIntent: 'job-lifecycle',
-  },
-
-  {
     id: 'embed',
     category: 'ops',
     input: 'input',
     asyncByDefault: true,
     supportsJobs: true,
     commandOptions: [],
-    renderIntent: 'status-summary',
+    renderIntent: 'job-lifecycle',
   },
   {
     id: 'sources',

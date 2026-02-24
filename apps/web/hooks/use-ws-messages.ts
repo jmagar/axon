@@ -10,6 +10,7 @@ export interface LogLine {
 }
 
 export interface RecentRun {
+  id: string
   status: 'done' | 'failed'
   mode: string
   target: string
@@ -81,6 +82,7 @@ export function useWsMessagesProvider() {
   const [logLines, setLogLines] = useState<LogLine[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([])
+  const runIdCounter = useRef(0)
   const [isProcessing, setIsProcessing] = useState(false)
   const [hasResults, setHasResults] = useState(false)
   const [crawlFiles, setCrawlFiles] = useState<CrawlFile[]>([])
@@ -153,6 +155,7 @@ export function useWsMessagesProvider() {
           setIsProcessing(false)
           setRecentRuns((prev) => {
             const run: RecentRun = {
+              id: `run-${++runIdCounter.current}`,
               status: msg.exit_code === 0 ? 'done' : 'failed',
               mode: currentModeRef.current,
               target: '',
@@ -169,6 +172,7 @@ export function useWsMessagesProvider() {
           setErrorMessage(msg.message)
           setRecentRuns((prev) => {
             const run: RecentRun = {
+              id: `run-${++runIdCounter.current}`,
               status: 'failed',
               mode: currentModeRef.current,
               target: '',
