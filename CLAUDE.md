@@ -335,10 +335,13 @@ The `Dockerfile` builds from `docker/Dockerfile`. The build command inside the c
 ```bash
 cargo build --release --bin axon
 ```
+
 `docker-compose.yaml` sets `context: .` — run `docker compose build` from this directory, not from a parent workspace.
 
 ### `spider_agent` path dep (CI / fresh environments)
+
 `Cargo.toml` uses `spider_agent = { path = "../spider/spider_agent", ... }` for local dev with a sibling `spider/` checkout. In CI or any environment without that sibling repo, switch to the registry version:
+
 ```toml
 spider_agent = { version = "2.45", default-features = false, features = ["search_tavily", "openai"] }
 ```

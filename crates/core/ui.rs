@@ -50,6 +50,11 @@ pub fn muted(text: &str) -> String {
     Style::new().dim().apply_to(text).to_string()
 }
 
+/// Soft blue for secondary info (UUIDs, ages, separators) — visible but not dominant.
+pub fn subtle(text: &str) -> String {
+    Style::new().color256(103).apply_to(text).to_string()
+}
+
 pub fn symbol_for_status(status: &str) -> String {
     match status {
         "completed" => Style::new().green().apply_to("✓").to_string(),
@@ -83,12 +88,12 @@ pub fn status_label(status: &str) -> String {
     }
 }
 
-/// Pink number + muted label: "42 docs"
+/// Pink number + subtle label: "42 docs"
 pub fn metric(value: impl std::fmt::Display, label: &str) -> String {
     format!(
         "{} {}",
         Style::new().color256(211).apply_to(value),
-        muted(label)
+        subtle(label)
     )
 }
 

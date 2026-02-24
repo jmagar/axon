@@ -1,3 +1,4 @@
+use crate::crates::cli::commands::common::truncate_chars;
 use crate::crates::core::config::Config;
 use crate::crates::core::health::redis_healthy;
 use crate::crates::core::logging::{log_info, log_warn};
@@ -28,7 +29,7 @@ struct EmbedJobConfig {
     collection: String,
 }
 
-#[derive(Debug, FromRow, Serialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct EmbedJob {
     pub id: Uuid,
     pub status: String,
@@ -39,6 +40,7 @@ pub struct EmbedJob {
     pub error_text: Option<String>,
     pub input_text: String,
     pub result_json: Option<serde_json::Value>,
+    pub config_json: serde_json::Value,
 }
 
 async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
@@ -127,8 +129,10 @@ pub(crate) async fn start_embed_job_with_pool(
     .await?
     {
         log_info(&format!(
-            "embed dedupe hit: reusing active job {} for input={}",
-            existing_id, input
+            "embed dedupe hit: reusing active job {} for input ({}B): {}",
+            existing_id,
+            input.len(),
+            truncate_chars(input, 80)
         ));
         return Ok(existing_id);
     }
@@ -159,7 +163,7 @@ pub async fn get_embed_job(cfg: &Config, id: Uuid) -> Result<Option<EmbedJob>, B
         let _ = SCHEMA_INIT.set(());
     }
     Ok(sqlx::query_as::<_, EmbedJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json FROM axon_embed_jobs WHERE id=$1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json,config_json FROM axon_embed_jobs WHERE id=$1"#,
     )
     .bind(id)
     .fetch_optional(&pool)
@@ -173,7 +177,7 @@ pub async fn list_embed_jobs(cfg: &Config, limit: i64) -> Result<Vec<EmbedJob>, 
         let _ = SCHEMA_INIT.set(());
     }
     Ok(sqlx::query_as::<_, EmbedJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json FROM axon_embed_jobs ORDER BY created_at DESC LIMIT $1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json,config_json FROM axon_embed_jobs ORDER BY created_at DESC LIMIT $1"#,
     )
     .bind(limit)
     .fetch_all(&pool)
@@ -200,10 +204,30 @@ pub async fn cancel_embed_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Er
     .rows_affected();
 
     if rows > 0 {
-        let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-        let mut conn = redis_client.get_multiplexed_async_connection().await?;
-        let key = format!("axon:embed:cancel:{id}");
-        let _: () = conn.set_ex(key, "1", 86400).await?;
+        // Redis cancel signal is best-effort: DB update already succeeded,
+        // so we log a warning but do NOT propagate Redis errors.
+        match redis::Client::open(cfg.redis_url.clone()) {
+            Ok(redis_client) => match redis_client.get_multiplexed_async_connection().await {
+                Ok(mut conn) => {
+                    let key = format!("axon:embed:cancel:{id}");
+                    if let Err(e) = conn.set_ex::<_, _, ()>(key, "1", 86400).await {
+                        log_warn(&format!(
+                            "embed cancel: Redis SET failed for job {id} (DB already updated): {e}"
+                        ));
+                    }
+                }
+                Err(e) => {
+                    log_warn(&format!(
+                        "embed cancel: Redis connect failed for job {id} (DB already updated): {e}"
+                    ));
+                }
+            },
+            Err(e) => {
+                log_warn(&format!(
+                    "embed cancel: Redis client open failed for job {id} (DB already updated): {e}"
+                ));
+            }
+        }
     }
     Ok(rows > 0)
 }

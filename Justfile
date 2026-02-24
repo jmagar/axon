@@ -29,6 +29,7 @@ build:
 
 install:
     cargo build --release
+    mkdir -p ~/.local/bin
     ln -sf "$(pwd)/target/release/axon" ~/.local/bin/axon
 
 verify:

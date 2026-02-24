@@ -13,7 +13,7 @@ async fn walk_dir_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> 
         if path.file_name().and_then(|n| n.to_str()) == Some(".git") {
             continue;
         }
-        if path.is_dir() {
+        if entry.file_type().await?.is_dir() {
             files.extend(Box::pin(walk_dir_recursive(&path)).await?);
         } else {
             files.push(path);

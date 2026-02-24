@@ -1,4 +1,4 @@
-use super::{IngestResult, SessionStateTracker, resolve_collection};
+use super::{IngestResult, SessionStateTracker, handle_spawn_result, resolve_collection};
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
 use crate::crates::vector::ops::embed_text_with_metadata;
@@ -69,37 +69,14 @@ pub(super) async fn ingest_codex_sessions(
 
             if futures.len() >= 32 {
                 if let Some(res) = futures.next().await {
-                    match res {
-                        Ok((p, m, s, r)) => match r {
-                            Ok(count) => {
-                                total += count;
-                                state.mark_indexed(&p, m, s).await;
-                            }
-                            Err(e) => log_warn(&format!("Codex file {}: {e}", p.display())),
-                        },
-                        Err(join_err) => {
-                            log_warn(&format!("Codex ingest task panicked: {join_err}"));
-                        }
-                    }
+                    total += handle_spawn_result(res, state, "Codex").await;
                 }
             }
         }
     }
 
     while let Some(res) = futures.next().await {
-        match res {
-            Ok((p, m, s, r)) => match r {
-                Ok(count) => {
-                    total += count;
-                    state.mark_indexed(&p, m, s).await;
-                }
-                Err(e) => log_warn(&format!("Codex file {}: {e}", p.display())),
-            },
-            Err(join_err) => {
-                log_warn(&format!("Codex ingest task panicked: {join_err}"));
-                continue;
-            }
-        }
+        total += handle_spawn_result(res, state, "Codex").await;
     }
 
     pb.finish_with_message(format!("indexed {} chunks", total));

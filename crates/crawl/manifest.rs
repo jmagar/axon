@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use spider::url::Url;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -32,13 +33,15 @@ fn default_true() -> bool {
 use std::time::SystemTime;
 
 pub async fn manifest_cache_is_stale(manifest_path: &Path, ttl_secs: u64) -> bool {
-    match tokio::fs::metadata(manifest_path).await {
-        Ok(metadata) => metadata
-            .modified()
-            .ok()
-            .and_then(|mtime| SystemTime::now().duration_since(mtime).ok())
-            .is_some_and(|age| age.as_secs() > ttl_secs),
-        Err(_) => true, // Missing or unreadable file = stale
+    let Ok(metadata) = tokio::fs::metadata(manifest_path).await else {
+        return true; // Missing or unreadable file = stale
+    };
+    let Ok(mtime) = metadata.modified() else {
+        return true; // Platform doesn't support mtime = treat as stale
+    };
+    match SystemTime::now().duration_since(mtime) {
+        Ok(age) => age.as_secs() > ttl_secs,
+        Err(_) => true, // Clock skew (mtime in future) = treat as stale
     }
 }
 
@@ -66,7 +69,14 @@ pub async fn write_audit_diff(
 
     let audit_dir = output_dir.join("audit");
     tokio::fs::create_dir_all(&audit_dir).await?;
-    let report_path = audit_dir.join("diff-report.json");
+    let slug = Url::parse(start_url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>();
+    let report_path = audit_dir.join(format!("{slug}-diff-report.json"));
     let payload = serde_json::to_string_pretty(&report).map_err(std::io::Error::other)?;
     tokio::fs::write(&report_path, payload).await?;
     Ok((report_path, report))
@@ -76,13 +86,15 @@ pub async fn read_manifest_urls(path: &Path) -> Result<HashSet<String>, std::io:
     if !path.exists() {
         return Ok(HashSet::new());
     }
-    let content = tokio::fs::read_to_string(path).await?;
+    let file = tokio::fs::File::open(path).await?;
+    let reader = tokio::io::BufReader::new(file);
+    let mut lines = tokio::io::AsyncBufReadExt::lines(reader);
     let mut out = HashSet::new();
-    for line in content
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
+    while let Some(raw) = lines.next_line().await? {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
         let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -102,13 +114,15 @@ pub async fn read_manifest_data(
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let content = tokio::fs::read_to_string(path).await?;
+    let file = tokio::fs::File::open(path).await?;
+    let reader = tokio::io::BufReader::new(file);
+    let mut lines = tokio::io::AsyncBufReadExt::lines(reader);
     let mut out = HashMap::new();
-    for line in content
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
+    while let Some(raw) = lines.next_line().await? {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
         let Ok(entry) = serde_json::from_str::<ManifestEntry>(line) else {
             continue;
         };

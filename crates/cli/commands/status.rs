@@ -1,15 +1,17 @@
 mod metrics;
 
 use crate::crates::core::config::Config;
-use crate::crates::core::ui::{accent, metric, muted, primary, status_label, symbol_for_status};
+use crate::crates::core::ui::{
+    accent, metric, muted, primary, status_label, subtle, symbol_for_status,
+};
 use crate::crates::jobs::crawl::{CrawlJob, list_jobs};
 use crate::crates::jobs::embed::{EmbedJob, list_embed_jobs};
 use crate::crates::jobs::extract::{ExtractJob, list_extract_jobs};
 use crate::crates::jobs::ingest::{IngestJob, list_ingest_jobs};
 use chrono::{DateTime, Utc};
 use metrics::{
-    display_embed_input, embed_metrics_suffix, extract_metrics_suffix, format_error,
-    ingest_metrics_suffix, job_age, section_symbol, summarize_urls,
+    collection_from_config, display_embed_input, embed_metrics_suffix, extract_metrics_suffix,
+    format_error, ingest_metrics_suffix, job_age, section_symbol, summarize_urls,
 };
 use std::error::Error;
 
@@ -173,10 +175,8 @@ fn print_crawls(crawl_jobs: &[CrawlJob]) {
             .as_ref()
             .map(|metrics| crawl_metrics_suffix(&job.status, metrics))
             .unwrap_or_default();
-        let age = muted(&format!(
-            " | ({})",
-            job_age(&job.status, job.finished_at.as_ref(), &job.updated_at)
-        ));
+        let age_text = job_age(&job.status, job.finished_at.as_ref(), &job.updated_at);
+        let age = format!("{}{}{}", subtle(" | ("), accent(&age_text), subtle(")"));
         let label = status_label(&job.status);
         let prefix = if label.is_empty() {
             format!("  {} ", symbol_for_status(&job.status))
@@ -184,12 +184,13 @@ fn print_crawls(crawl_jobs: &[CrawlJob]) {
             format!("  {} {} ", symbol_for_status(&job.status), label)
         };
         println!(
-            "{}{}{}{}  {}",
+            "{}{}{}{} {} {}",
             prefix,
             accent(&job.url),
             metrics_suffix,
             age,
-            muted(&job.id.to_string()),
+            subtle("|"),
+            subtle(&job.id.to_string()),
         );
         if let Some(err) = format_error(job.error_text.as_deref()) {
             println!("       {}", muted(&format!("↳ {err}")));
@@ -219,12 +220,12 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
         } else {
             0.0
         };
-        let sep = muted(" | ");
+        let sep = subtle(" | ");
         let thin_str = format!("{:.1}%", thin_pct);
         return format!(
             "{sep}{}{}{}{sep}{}{sep}{}",
             primary(&md_created.to_string()),
-            muted("/"),
+            subtle("/"),
             metric(pages_target, "pages"),
             metric(filtered_urls, "filtered"),
             metric(&thin_str as &str, "thin"),
@@ -240,7 +241,7 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         if md_created > 0 || filtered_urls > 0 {
-            let sep = muted(" | ");
+            let sep = subtle(" | ");
             return format!(
                 "{sep}{}{sep}{}",
                 metric(md_created, "crawled"),
@@ -251,34 +252,41 @@ fn crawl_metrics_suffix(status: &str, metrics: &serde_json::Value) -> String {
     String::new()
 }
 
-fn print_job_row(
-    status: &str,
-    id: &uuid::Uuid,
-    target: &str,
-    metrics_suffix: &str,
-    finished_at: Option<&DateTime<Utc>>,
-    updated_at: &DateTime<Utc>,
-    error_text: Option<&str>,
-) {
-    let age = muted(&format!(
-        " | ({})",
-        job_age(status, finished_at, updated_at)
-    ));
-    let label = status_label(status);
+struct JobRow<'a> {
+    status: &'a str,
+    id: &'a uuid::Uuid,
+    target: &'a str,
+    metrics_suffix: &'a str,
+    collection: Option<&'a str>,
+    finished_at: Option<&'a DateTime<Utc>>,
+    updated_at: &'a DateTime<Utc>,
+    error_text: Option<&'a str>,
+}
+
+fn print_job_row(row: &JobRow<'_>) {
+    let collection_suffix = row
+        .collection
+        .map(|c| format!("{}{}", subtle(" | "), primary(c)))
+        .unwrap_or_default();
+    let age_text = job_age(row.status, row.finished_at, row.updated_at);
+    let age = format!("{}{}{}", subtle(" | ("), accent(&age_text), subtle(")"));
+    let label = status_label(row.status);
     let prefix = if label.is_empty() {
-        format!("  {} ", symbol_for_status(status))
+        format!("  {} ", symbol_for_status(row.status))
     } else {
-        format!("  {} {} ", symbol_for_status(status), label)
+        format!("  {} {} ", symbol_for_status(row.status), label)
     };
     println!(
-        "{}{}{}{}  {}",
+        "{}{}{}{}{} {} {}",
         prefix,
-        accent(target),
-        metrics_suffix,
+        accent(row.target),
+        row.metrics_suffix,
+        collection_suffix,
         age,
-        muted(&id.to_string()),
+        subtle("|"),
+        subtle(&row.id.to_string()),
     );
-    if let Some(err) = format_error(error_text) {
+    if let Some(err) = format_error(row.error_text) {
         println!("       {}", muted(&format!("↳ {err}")));
     }
 }
@@ -299,15 +307,16 @@ fn print_extracts(extract_jobs: &[ExtractJob]) {
     for job in extract_jobs.iter().take(5) {
         let (target, url_count) = summarize_urls(&job.urls_json);
         let metrics_suffix = extract_metrics_suffix(job.result_json.as_ref(), url_count);
-        print_job_row(
-            &job.status,
-            &job.id,
-            &target,
-            &metrics_suffix,
-            job.finished_at.as_ref(),
-            &job.updated_at,
-            job.error_text.as_deref(),
-        );
+        print_job_row(&JobRow {
+            status: &job.status,
+            id: &job.id,
+            target: &target,
+            metrics_suffix: &metrics_suffix,
+            collection: None,
+            finished_at: job.finished_at.as_ref(),
+            updated_at: &job.updated_at,
+            error_text: job.error_text.as_deref(),
+        });
     }
     println!();
 }
@@ -328,15 +337,17 @@ fn print_ingests(ingest_jobs: &[IngestJob]) {
     for job in ingest_jobs.iter().take(5) {
         let target = format!("{}: {}", job.source_type, job.target);
         let metrics_suffix = ingest_metrics_suffix(&job.status, job.result_json.as_ref());
-        print_job_row(
-            &job.status,
-            &job.id,
-            &target,
-            &metrics_suffix,
-            job.finished_at.as_ref(),
-            &job.updated_at,
-            job.error_text.as_deref(),
-        );
+        let collection = collection_from_config(&job.config_json);
+        print_job_row(&JobRow {
+            status: &job.status,
+            id: &job.id,
+            target: &target,
+            metrics_suffix: &metrics_suffix,
+            collection,
+            finished_at: job.finished_at.as_ref(),
+            updated_at: &job.updated_at,
+            error_text: job.error_text.as_deref(),
+        });
     }
     println!();
 }
@@ -360,15 +371,17 @@ fn print_embeds(embed_jobs: &[EmbedJob], crawl_jobs: &[CrawlJob]) {
     for job in embed_jobs.iter().take(5) {
         let metrics_suffix = embed_metrics_suffix(&job.status, job.result_json.as_ref());
         let target = display_embed_input(&job.input_text, &crawl_url_map);
-        print_job_row(
-            &job.status,
-            &job.id,
-            &target,
-            &metrics_suffix,
-            job.finished_at.as_ref(),
-            &job.updated_at,
-            job.error_text.as_deref(),
-        );
+        let collection = collection_from_config(&job.config_json);
+        print_job_row(&JobRow {
+            status: &job.status,
+            id: &job.id,
+            target: &target,
+            metrics_suffix: &metrics_suffix,
+            collection,
+            finished_at: job.finished_at.as_ref(),
+            updated_at: &job.updated_at,
+            error_text: job.error_text.as_deref(),
+        });
     }
     println!();
 }

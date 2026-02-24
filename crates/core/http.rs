@@ -5,11 +5,58 @@
 //! metadata endpoints are rejected. Note that this is a best-effort check — DNS
 //! rebinding can still bypass it at request time (TOCTOU).
 
-use anyhow::anyhow;
 use spider::url::Url;
+use std::fmt;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 use std::time::Duration;
+
+/// Typed HTTP validation errors for SSRF protection and URL validation.
+#[derive(Debug)]
+pub enum HttpError {
+    /// URL could not be parsed.
+    InvalidUrl(String),
+    /// URL uses a non-http/https scheme (e.g. ftp://, file://).
+    BlockedScheme(String),
+    /// Hostname is blocked (localhost, .internal, .local).
+    BlockedHost(String),
+    /// IP address falls in a blocked range (loopback, link-local, RFC-1918).
+    BlockedIpRange(IpAddr),
+    /// Network-level error from reqwest.
+    Network(reqwest::Error),
+    /// DNS resolution would target a blocked host.
+    Dns(String),
+}
+
+impl fmt::Display for HttpError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidUrl(url) => write!(f, "invalid URL: {url}"),
+            Self::BlockedScheme(scheme) => {
+                write!(f, "blocked URL scheme '{scheme}': only http/https allowed")
+            }
+            Self::BlockedHost(host) => write!(f, "blocked host '{host}'"),
+            Self::BlockedIpRange(ip) => write!(f, "blocked IP '{ip}': private/reserved range"),
+            Self::Network(err) => write!(f, "network error: {err}"),
+            Self::Dns(msg) => write!(f, "DNS error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for HttpError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Network(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for HttpError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Network(err)
+    }
+}
 
 pub(crate) static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> =
     LazyLock::new(|| build_client(30).map_err(|e| e.to_string()));
@@ -17,7 +64,7 @@ pub(crate) static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> =
 pub fn http_client() -> anyhow::Result<&'static reqwest::Client> {
     HTTP_CLIENT
         .as_ref()
-        .map_err(|err| anyhow::anyhow!("failed to initialize HTTP client: {err}"))
+        .map_err(|err| anyhow::Error::msg(format!("failed to initialize HTTP client: {err}")))
 }
 
 pub fn normalize_url(url: &str) -> String {
@@ -67,28 +114,26 @@ pub fn normalize_url(url: &str) -> String {
 ///
 /// As defence-in-depth, `ssrf_blacklist_patterns()` is also applied to
 /// discovered URLs during crawl via spider's `with_blacklist_url()`.
-pub fn validate_url(url: &str) -> Result<(), anyhow::Error> {
+pub fn validate_url(url: &str) -> Result<(), HttpError> {
     let normalized = normalize_url(url);
-    let parsed = Url::parse(&normalized).map_err(|_| anyhow!("invalid URL: {url}"))?;
+    let parsed = Url::parse(&normalized).map_err(|_| HttpError::InvalidUrl(url.to_string()))?;
 
     match parsed.scheme() {
         "http" | "https" => {}
-        s => return Err(anyhow!("blocked URL scheme '{s}': only http/https allowed")),
+        s => return Err(HttpError::BlockedScheme(s.to_string())),
     }
 
     let host = parsed
         .host_str()
-        .ok_or_else(|| anyhow!("URL has no host"))?;
+        .ok_or_else(|| HttpError::InvalidUrl(url.to_string()))?;
 
     // Block localhost and .internal/.local TLDs
     let lower = host.to_ascii_lowercase();
     if lower == "localhost" || lower.ends_with(".localhost") {
-        return Err(anyhow!("blocked host '{host}': localhost not allowed"));
+        return Err(HttpError::BlockedHost(host.to_string()));
     }
     if lower.ends_with(".internal") || lower.ends_with(".local") {
-        return Err(anyhow!(
-            "blocked host '{host}': .internal/.local domains not allowed"
-        ));
+        return Err(HttpError::BlockedHost(host.to_string()));
     }
 
     // Use parsed.host() for typed extraction — host_str().parse::<IpAddr>()
@@ -106,9 +151,9 @@ pub fn validate_url(url: &str) -> Result<(), anyhow::Error> {
 /// SSRF IP validation — checks loopback, link-local, RFC-1918 private, and
 /// IPv4-mapped IPv6 addresses. Extracted as a named function (not a closure)
 /// so the IPv4-mapped branch can recurse into the IPv4 checks.
-fn check_ip(ip: IpAddr) -> Result<(), anyhow::Error> {
+fn check_ip(ip: IpAddr) -> Result<(), HttpError> {
     if ip.is_loopback() {
-        return Err(anyhow!("blocked IP '{ip}': loopback address not allowed"));
+        return Err(HttpError::BlockedIpRange(ip));
     }
     match ip {
         IpAddr::V4(v4) => {
@@ -118,15 +163,8 @@ fn check_ip(ip: IpAddr) -> Result<(), anyhow::Error> {
             let is_private = octets[0] == 10
                 || (a == 172 && (16..=31).contains(&b))
                 || octets[0..2] == [192, 168];
-            if is_link_local {
-                return Err(anyhow!(
-                    "blocked IP '{v4}': link-local address (169.254.x.x) not allowed"
-                ));
-            }
-            if is_private {
-                return Err(anyhow!(
-                    "blocked IP '{v4}': private/RFC-1918 address not allowed"
-                ));
+            if is_link_local || is_private {
+                return Err(HttpError::BlockedIpRange(IpAddr::V4(v4)));
             }
         }
         IpAddr::V6(v6) => {
@@ -142,9 +180,7 @@ fn check_ip(ip: IpAddr) -> Result<(), anyhow::Error> {
             let is_unique_local = segs[0] & 0xfe00 == 0xfc00;
             let is_link_local_v6 = segs[0] & 0xffc0 == 0xfe80;
             if is_unique_local || is_link_local_v6 {
-                return Err(anyhow!(
-                    "blocked IPv6 '{v6}': private/link-local address not allowed"
-                ));
+                return Err(HttpError::BlockedIpRange(IpAddr::V6(v6)));
             }
         }
     }
@@ -172,7 +208,7 @@ pub(crate) fn ssrf_blacklist_patterns() -> &'static [&'static str] {
     ]
 }
 
-pub fn build_client(timeout_secs: u64) -> Result<reqwest::Client, anyhow::Error> {
+pub fn build_client(timeout_secs: u64) -> Result<reqwest::Client, HttpError> {
     Ok(reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .build()?)

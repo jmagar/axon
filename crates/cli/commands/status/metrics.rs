@@ -1,4 +1,4 @@
-use crate::crates::core::ui::{metric, muted, primary, symbol_for_status};
+use crate::crates::core::ui::{metric, muted, primary, subtle, symbol_for_status};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
@@ -62,7 +62,7 @@ pub(super) fn section_symbol(statuses: &[&str]) -> String {
 }
 
 pub(super) fn extract_metrics_suffix(result_json: Option<&Value>, url_count: usize) -> String {
-    let sep = muted(" | ");
+    let sep = subtle(" | ");
     let mut parts = vec![metric(url_count, "urls")];
     if let Some(total_items) = result_json
         .and_then(|r| r.get("total_items"))
@@ -80,7 +80,7 @@ pub(super) fn extract_metrics_suffix(result_json: Option<&Value>, url_count: usi
 }
 
 pub(super) fn embed_metrics_suffix(status: &str, result_json: Option<&Value>) -> String {
-    let sep = muted(" | ");
+    let sep = subtle(" | ");
     if matches!(status, "pending" | "running" | "processing") {
         if let (Some(done), Some(total)) = (
             result_json
@@ -93,7 +93,7 @@ pub(super) fn embed_metrics_suffix(status: &str, result_json: Option<&Value>) ->
             return format!(
                 "{sep}{}{}{} {}",
                 primary(&done.to_string()),
-                muted("/"),
+                subtle("/"),
                 primary(&total.to_string()),
                 muted("docs")
             );
@@ -129,7 +129,12 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
     if chunks == 0 {
         return String::new();
     }
-    format!("{}{}", muted(" | "), metric(chunks, "chunks"))
+    format!("{}{}", subtle(" | "), metric(chunks, "chunks"))
+}
+
+/// Extract the `"collection"` string from a job's `config_json`, if present.
+pub(super) fn collection_from_config(config_json: &Value) -> Option<&str> {
+    config_json.get("collection").and_then(|v| v.as_str())
 }
 
 pub(super) fn summarize_urls(urls_json: &Value) -> (String, usize) {
@@ -157,17 +162,19 @@ pub(super) fn summarize_urls(urls_json: &Value) -> (String, usize) {
 /// Extract crawl job UUID from an embed input path.
 /// Supports both legacy `.cache/axon-rust/output/jobs/<UUID>/markdown` and
 /// current `.cache/axon-rust/output/domains/<domain>/<UUID>/markdown` layouts.
+///
+/// Uses `std::path::Path::components()` for portable path segment iteration
+/// instead of splitting on `/`.
 pub(super) fn crawl_uuid_from_embed_input(input: &str) -> Option<uuid::Uuid> {
-    // Try legacy /jobs/<UUID> format first.
-    if let Some(after_jobs) = input.split("/jobs/").nth(1) {
-        if let Ok(uid) = after_jobs.split('/').next()?.parse::<uuid::Uuid>() {
-            return Some(uid);
-        }
-    }
-    // Try new /domains/<domain>/<UUID> format: walk path segments looking for a valid UUID.
-    for segment in input.split('/') {
-        if let Ok(uid) = segment.parse::<uuid::Uuid>() {
-            return Some(uid);
+    use std::path::{Component, Path};
+
+    for component in Path::new(input).components() {
+        if let Component::Normal(segment) = component {
+            if let Some(s) = segment.to_str() {
+                if let Ok(uid) = s.parse::<uuid::Uuid>() {
+                    return Some(uid);
+                }
+            }
         }
     }
     None
@@ -199,4 +206,33 @@ pub(super) fn display_embed_input<'a>(
         );
     }
     std::borrow::Cow::Borrowed(path.to_str().unwrap_or(input))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_from_config_extracts_collection() {
+        let json = serde_json::json!({"collection": "cortex"});
+        assert_eq!(collection_from_config(&json), Some("cortex"));
+    }
+
+    #[test]
+    fn collection_from_config_returns_none_for_missing() {
+        let json = serde_json::json!({});
+        assert_eq!(collection_from_config(&json), None);
+    }
+
+    #[test]
+    fn collection_from_config_returns_none_for_non_string() {
+        let json = serde_json::json!({"collection": 42});
+        assert_eq!(collection_from_config(&json), None);
+    }
+
+    #[test]
+    fn collection_from_config_handles_null() {
+        let json = serde_json::json!(null);
+        assert_eq!(collection_from_config(&json), None);
+    }
 }
