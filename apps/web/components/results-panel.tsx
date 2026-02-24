@@ -6,6 +6,7 @@ import { ContentViewer } from '@/components/content-viewer'
 import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
 import { CrawlProgress } from '@/components/crawl-progress'
 import { CardsRenderer } from '@/components/results/cards-renderer'
+import { JobLifecycleRenderer } from '@/components/results/job-lifecycle-renderer'
 import { RawRenderer } from '@/components/results/raw-renderer'
 import { ReportRenderer } from '@/components/results/report-renderer'
 import { StatusRenderer } from '@/components/results/status-renderer'
@@ -129,7 +130,14 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
             </>
           ) : (
             <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
-              {errorMessage ? (
+              {spec?.renderIntent === 'job-lifecycle' ? (
+                <JobLifecycleRenderer
+                  stdoutJson={stdoutJson}
+                  commandMode={commandMode}
+                  isProcessing={isProcessing}
+                  errorMessage={errorMessage}
+                />
+              ) : errorMessage ? (
                 <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
                   <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
                   {errorMessage}
