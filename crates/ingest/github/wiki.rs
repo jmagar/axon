@@ -10,6 +10,9 @@ async fn walk_dir_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> 
     let mut entries = tokio::fs::read_dir(dir).await?;
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
+        if path.file_name().and_then(|n| n.to_str()) == Some(".git") {
+            continue;
+        }
         if path.is_dir() {
             files.extend(Box::pin(walk_dir_recursive(&path)).await?);
         } else {

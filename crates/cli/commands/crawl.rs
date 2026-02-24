@@ -488,8 +488,10 @@ async fn run_async_enqueue_multi(cfg: &Config, urls: &[String]) -> Result<(), Bo
         }
     }
     println!();
-    for (_, job_id) in &jobs {
-        println!("Job ID: {job_id}");
+    if !cfg.json_output {
+        for (_, job_id) in &jobs {
+            println!("Job ID: {job_id}");
+        }
     }
     Ok(())
 }
