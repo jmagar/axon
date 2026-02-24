@@ -121,7 +121,7 @@ stop:
 # Start infra, axum server, and Next.js dev server (all foreground)
 dev:
     just stop
-    docker compose up -d --build
+    docker compose up -d
     cargo run --bin axon -- serve --port 3939 &
     cd apps/web && pnpm dev &
     wait
