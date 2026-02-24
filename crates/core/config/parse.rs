@@ -95,6 +95,7 @@ fn into_config(cli: Cli) -> Result<Config, String> {
     let mut sessions_codex = false;
     let mut sessions_gemini = false;
     let mut sessions_project = None;
+    let mut serve_port = 3939u16;
     let (command, positional) = match cli.command {
         CliCommand::Scrape(args) => (CommandKind::Scrape, args.positional_urls),
         CliCommand::Crawl(args) => (
@@ -206,6 +207,10 @@ fn into_config(cli: Cli) -> Result<Config, String> {
             )
         }
         CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
+        CliCommand::Serve(args) => {
+            serve_port = args.port;
+            (CommandKind::Serve, Vec::new())
+        }
     };
 
     let pg_url = normalize_local_service_url(
@@ -387,7 +392,6 @@ fn into_config(cli: Cli) -> Result<Config, String> {
         watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),
         watchdog_confirm_secs: global.watchdog_confirm_secs.max(10),
         json_output: global.json,
-        crawl_from_result: global.crawl_from_result,
         normalize: global.normalize,
         chrome_network_idle_timeout_secs: global.chrome_network_idle_timeout,
         auto_switch_thin_ratio: global.auto_switch_thin_ratio,
@@ -417,6 +421,7 @@ fn into_config(cli: Cli) -> Result<Config, String> {
             let (_, h) = parse_viewport(&global.viewport);
             h
         },
+        serve_port,
     };
 
     if cfg.exclude_path_prefix.is_empty() && !normalized_excludes.disable_defaults {

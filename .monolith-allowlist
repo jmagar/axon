@@ -21,3 +21,11 @@ scripts/enforce_monoliths.py
 crates/cli/commands/screenshot.rs
 # 1081 lines — imperative canvas animation ported from neural.js, splitting hurts animation coherence (2026-02-24)
 apps/web/components/neural-canvas.tsx
+# poll_once() 133 lines — single Docker stats polling flow, splitting mid-stream hurts readability (2026-02-24)
+crates/web/docker_stats.rs
+# handle_command() 143 lines — WS subprocess lifecycle (spawn/stream/cancel), splitting mid-flow hurts coherence (2026-02-24)
+crates/web/execute.rs
+# 736 lines — vanilla JS dashboard app, no bundler (2026-02-24)
+crates/web/static/app.js
+# 743 lines — vanilla JS neural canvas animation, no bundler (2026-02-24)
+crates/web/static/neural.js

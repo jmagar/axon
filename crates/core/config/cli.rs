@@ -39,6 +39,14 @@ pub(super) enum CliCommand {
     Youtube(YoutubeArgs),
     Sessions(SessionsArgs),
     Screenshot(ScrapeArgs),
+    Serve(ServeArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct ServeArgs {
+    /// Port to bind the web UI server on
+    #[arg(long, default_value_t = 3939)]
+    pub(super) port: u16,
 }
 
 #[derive(Debug, Args)]
@@ -306,9 +314,6 @@ pub(super) struct GlobalArgs {
 
     #[arg(global = true, long, action = ArgAction::SetTrue)]
     pub(super) json: bool,
-
-    #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
-    pub(super) crawl_from_result: bool,
 
     #[arg(global = true, long, value_enum, default_value_t = PerformanceProfile::HighStable)]
     pub(super) performance_profile: PerformanceProfile,
