@@ -10,6 +10,7 @@ import type {
   StatusResult,
   SuggestResult,
 } from '@/lib/result-types'
+import { fmtNum } from './shared'
 
 type SortDir = 'asc' | 'desc'
 
@@ -124,14 +125,6 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Number formatter
-// ---------------------------------------------------------------------------
-
-function fmtNum(n: number): string {
-  return n.toLocaleString()
 }
 
 // ---------------------------------------------------------------------------

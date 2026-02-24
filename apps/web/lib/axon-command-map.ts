@@ -102,7 +102,7 @@ export const AXON_COMMAND_SPECS: ReadonlyArray<AxonCommandSpec> = [
     asyncByDefault: false,
     supportsJobs: false,
     commandOptions: [],
-    renderIntent: 'cards',
+    renderIntent: 'raw-fallback',
   },
   {
     id: 'research',
@@ -248,7 +248,7 @@ export const AXON_COMMAND_SPECS: ReadonlyArray<AxonCommandSpec> = [
     asyncByDefault: false,
     supportsJobs: false,
     commandOptions: [],
-    renderIntent: 'status-summary',
+    renderIntent: 'table',
   },
   {
     id: 'dedupe',
@@ -257,7 +257,7 @@ export const AXON_COMMAND_SPECS: ReadonlyArray<AxonCommandSpec> = [
     asyncByDefault: false,
     supportsJobs: false,
     commandOptions: [],
-    renderIntent: 'table',
+    renderIntent: 'status-summary',
   },
 
   {

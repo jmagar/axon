@@ -34,7 +34,7 @@ function hasKeys(v: unknown, keys: string[]): v is Record<string, unknown> {
 }
 
 function first(arr: unknown[]): unknown {
-  return arr.length === 1 ? arr[0] : arr.length > 1 ? arr[0] : undefined
+  return arr[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,6 @@ function normalizeDedupe(items: unknown[]): NormalizedResult {
 
 const NORMALIZERS: Record<string, (items: unknown[]) => NormalizedResult> = {
   query: normalizeQuery,
-  search: normalizeQuery, // search returns same shape as query
   ask: normalizeAsk,
   evaluate: normalizeEvaluate,
   doctor: normalizeDoctor,
