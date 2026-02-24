@@ -75,6 +75,7 @@ const ALLOWED_FLAGS: &[(&str, &str)] = &[
     ("request_timeout_ms", "--request-timeout-ms"),
     ("performance_profile", "--performance-profile"),
     ("batch_concurrency", "--batch-concurrency"),
+    ("depth", "--depth"),
 ];
 
 /// Modes that enqueue async jobs — never force `--wait true`.
