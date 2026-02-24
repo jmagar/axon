@@ -2,19 +2,42 @@
 export type WsClientMsg =
   | { type: 'execute'; mode: string; input: string; flags: Record<string, string | boolean> }
   | { type: 'cancel'; id: string }
+  | { type: 'read_file'; path: string }
 
 // Server → Client
 export type WsServerMsg =
   | { type: 'output'; line: string }
   | { type: 'log'; line: string }
+  | { type: 'file_content'; path: string; content: string }
+  | { type: 'crawl_files'; files: CrawlFile[]; output_dir: string }
+  | {
+      type: 'crawl_progress'
+      job_id: string
+      status: string
+      pages_crawled: number
+      pages_discovered: number
+      md_created: number
+      thin_md: number
+      phase: string
+    }
   | { type: 'done'; exit_code: number; elapsed_ms: number }
   | { type: 'error'; message: string; elapsed_ms?: number; stderr?: string }
+  | { type: 'command_start'; mode: string }
+  | { type: 'stdout_json'; data: unknown }
+  | { type: 'stdout_line'; line: string }
+  | { type: 'screenshot_files'; files: Array<{ path: string; name: string }> }
   | {
       type: 'stats'
       aggregate: AggregateStats
       containers: Record<string, ContainerStats>
       container_count: number
     }
+
+export interface CrawlFile {
+  url: string
+  relative_path: string
+  markdown_chars: number
+}
 
 export interface AggregateStats {
   cpu_percent: number

@@ -1,428 +1,239 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ContentViewer } from '@/components/content-viewer'
+import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
+import { CrawlProgress } from '@/components/crawl-progress'
+import { RawRenderer } from '@/components/results/raw-renderer'
+import { useWsMessages } from '@/hooks/use-ws-messages'
 
-interface OutputLine {
-  type: 'output' | 'log' | 'error'
-  content: string
-  parsed?: Record<string, unknown>
-}
-
-interface RecentRun {
-  status: 'done' | 'failed'
-  mode: string
-  target: string
-  duration: string
-  lines: number
-  time: string
-}
+type TabId = 'content' | 'stats' | 'recent'
 
 interface ResultsPanelProps {
-  lines: OutputLine[]
-  recentRuns: RecentRun[]
-  isProcessing: boolean
-  statsSlot?: React.ReactNode
+  statsSlot?: ReactNode
 }
 
-export type { OutputLine, RecentRun, ResultsPanelProps }
+export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
+  const {
+    markdownContent,
+    logLines,
+    errorMessage,
+    recentRuns,
+    isProcessing,
+    hasResults,
+    currentMode,
+    crawlFiles,
+    selectedFile,
+    selectFile,
+    crawlProgress,
+    stdoutLines,
+    stdoutJson,
+    commandMode,
+  } = useWsMessages()
+  const [activeTab, setActiveTab] = useState<TabId>('content')
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'content', label: 'Content' },
+    { id: 'stats', label: 'Stats' },
+    { id: 'recent', label: 'Recent' },
+  ]
 
-export function ResultsPanel({ lines, recentRuns, isProcessing, statsSlot }: ResultsPanelProps) {
+  const isCrawlMode = currentMode === 'crawl'
+  const hasCrawlFiles = crawlFiles.length > 0
+  const isMarkdownMode = commandMode === null || commandMode === 'scrape' || commandMode === 'crawl'
+
   return (
-    <Tabs defaultValue="content" className="w-full">
-      <TabsList className="bg-card/50 border-border/50">
-        <TabsTrigger value="content">Content</TabsTrigger>
-        <TabsTrigger value="stats">Stats</TabsTrigger>
-        <TabsTrigger value="recent">
-          Recent
-          {recentRuns.length > 0 && (
-            <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
-              {recentRuns.length}
-            </Badge>
-          )}
-        </TabsTrigger>
-      </TabsList>
+    <div
+      className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        hasResults ? 'mt-4 max-h-[90vh] opacity-100' : 'mt-0 max-h-0 opacity-0'
+      }`}
+    >
+      {/* Tab bar */}
+      <div className="mb-2.5 flex justify-end overflow-x-auto">
+        <div
+          className="flex w-fit gap-0.5 rounded-lg border border-[rgba(175,215,255,0.1)] p-[3px]"
+          style={{ background: 'rgba(10, 18, 35, 0.5)' }}
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-md px-3.5 py-1 text-[11px] font-medium tracking-wide transition-all duration-200 ${
+                activeTab === tab.id
+                  ? 'bg-[rgba(175,215,255,0.1)] font-semibold text-[#afd7ff]'
+                  : 'text-[#8787af] hover:bg-[rgba(175,215,255,0.06)] hover:text-[#afd7ff]'
+              }`}
+            >
+              {tab.label}
+              {tab.id === 'content' && hasCrawlFiles && (
+                <span className="ml-1.5 text-[9px] text-[#8787af]">{crawlFiles.length}</span>
+              )}
+              {tab.id === 'stats' && logLines.length > 0 && (
+                <span className="ml-1.5 text-[9px] text-[#8787af]">{logLines.length}</span>
+              )}
+              {tab.id === 'recent' && recentRuns.length > 0 && (
+                <span className="ml-1.5 text-[9px] text-[#8787af]">{recentRuns.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <TabsContent value="content" className="mt-3">
-        <ScrollArea className="h-[60vh] rounded-lg border border-border/50 bg-card/30 p-4">
-          {lines.length === 0 && !isProcessing ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              Run a command to see results
-            </div>
+      {/* Content pane */}
+      {activeTab === 'content' && (
+        <div
+          className="flex max-h-[72vh] overflow-hidden rounded-[10px] border border-[rgba(175,215,255,0.1)]"
+          style={{ background: 'rgba(3, 7, 18, 0.25)' }}
+        >
+          {isMarkdownMode ? (
+            <>
+              {/* Crawl file explorer sidebar (drawer on mobile, inline on desktop) */}
+              {hasCrawlFiles && (
+                <CrawlFileExplorer
+                  files={crawlFiles}
+                  selectedFile={selectedFile}
+                  onSelectFile={selectFile}
+                />
+              )}
+
+              {/* Main content area */}
+              <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+                {/* Crawl progress bar */}
+                {isCrawlMode && isProcessing && (
+                  <CrawlProgress progress={crawlProgress} isProcessing={isProcessing} />
+                )}
+
+                <ContentViewer
+                  markdown={markdownContent}
+                  isProcessing={isProcessing}
+                  errorMessage={errorMessage}
+                />
+              </div>
+            </>
           ) : (
-            <div className="space-y-2 font-mono text-sm">
-              {lines.map((line, i) => (
-                <OutputLineRenderer key={i} line={line} />
-              ))}
-              {isProcessing && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="text-xs">Receiving...</span>
+            <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+              {errorMessage ? (
+                <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
+                  <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
+                  {errorMessage}
                 </div>
+              ) : (
+                <RawRenderer
+                  stdoutJson={stdoutJson}
+                  stdoutLines={stdoutLines}
+                  isProcessing={isProcessing}
+                />
               )}
             </div>
           )}
-        </ScrollArea>
-      </TabsContent>
+        </div>
+      )}
 
-      <TabsContent value="stats" className="mt-3">
-        <ScrollArea className="h-[60vh] rounded-lg border border-border/50 bg-card/30 p-4">
-          {statsSlot || (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No stats available
-            </div>
-          )}
-        </ScrollArea>
-      </TabsContent>
+      {/* Stats pane — CLI log output + Docker stats */}
+      {activeTab === 'stats' && (
+        <div
+          className="max-h-[72vh] space-y-4 overflow-y-auto rounded-[10px] border border-[rgba(175,215,255,0.1)] p-4"
+          style={{ background: 'rgba(3, 7, 18, 0.25)' }}
+        >
+          {logLines.length > 0 && <LogViewer lines={logLines} />}
+          <div className="font-mono text-xs">
+            {statsSlot || (
+              <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">
+                No stats available
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-      <TabsContent value="recent" className="mt-3">
-        <ScrollArea className="h-[60vh] rounded-lg border border-border/50 bg-card/30 p-4">
+      {/* Recent pane */}
+      {activeTab === 'recent' && (
+        <div className="font-mono text-xs">
           {recentRuns.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+            <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">
               No recent runs
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border/50">
-                  <th className="pb-2 text-left w-8" />
-                  <th className="pb-2 text-left">Mode</th>
-                  <th className="pb-2 text-left">Target</th>
-                  <th className="pb-2 text-right">Duration</th>
-                  <th className="pb-2 text-right">Lines</th>
-                  <th className="pb-2 text-right">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentRuns.map((run, i) => (
-                  <tr key={i} className="border-b border-border/30">
-                    <td className="py-1.5">
-                      <span
-                        className={`inline-block size-2 rounded-full ${
-                          run.status === 'done' ? 'bg-emerald-400' : 'bg-red-400'
-                        }`}
-                      />
-                    </td>
-                    <td className="py-1.5 font-medium">{run.mode}</td>
-                    <td className="py-1.5 text-muted-foreground truncate max-w-[200px]">
-                      {run.target}
-                    </td>
-                    <td className="py-1.5 text-right text-muted-foreground font-mono">
-                      {run.duration}
-                    </td>
-                    <td className="py-1.5 text-right text-muted-foreground">{run.lines}</td>
-                    <td className="py-1.5 text-right text-muted-foreground">{run.time}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wider text-[#8787af]">
+                    <th className="w-5 border-b border-[rgba(175,215,255,0.15)] pb-2 text-center" />
+                    <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-left">
+                      Mode
+                    </th>
+                    <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-left">
+                      Target
+                    </th>
+                    <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-right">
+                      Duration
+                    </th>
+                    <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-right">
+                      Lines
+                    </th>
+                    <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-right">
+                      Time
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentRuns.map((run, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-[rgba(175,215,255,0.05)] hover:bg-[rgba(175,215,255,0.03)]"
+                    >
+                      <td className="py-2 text-center">
+                        <span
+                          className={`inline-block size-[7px] rounded-full ${
+                            run.status === 'done'
+                              ? 'bg-[#4ade80] shadow-[0_0_6px_rgba(74,222,128,0.4)]'
+                              : 'bg-[#ff87af] shadow-[0_0_6px_rgba(255,135,175,0.4)]'
+                          }`}
+                        />
+                      </td>
+                      <td className="py-2 font-medium text-[#afd7ff]">{run.mode}</td>
+                      <td className="max-w-[260px] truncate py-2 text-[#8787af]">{run.target}</td>
+                      <td className="py-2 text-right tabular-nums text-[#afd7ff]">
+                        {run.duration}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-[#94a3b8]">{run.lines}</td>
+                      <td className="py-2 text-right text-[11px] text-[#475569]">{run.time}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
+        </div>
+      )}
+    </div>
   )
 }
 
-function OutputLineRenderer({ line }: { line: OutputLine }) {
-  if (line.type === 'log') {
-    return <div className="text-xs text-muted-foreground/70 italic">{line.content}</div>
-  }
+function LogViewer({ lines }: { lines: { content: string; timestamp: number }[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  if (line.type === 'error') {
-    return (
-      <div className="text-destructive border border-destructive/20 rounded-md p-3">
-        <strong>Error:</strong> {line.content}
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [lines])
+
+  return (
+    <div
+      ref={scrollRef}
+      className="max-h-[200px] overflow-y-auto rounded-lg border border-[rgba(175,215,255,0.08)] p-3"
+      style={{ background: 'rgba(10, 18, 35, 0.4)' }}
+    >
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#5f87af]">
+        Command Log
       </div>
-    )
-  }
-
-  // Try to render parsed JSON content
-  if (line.parsed) {
-    const obj = line.parsed
-
-    // markdown content (scrape output)
-    if (typeof obj.markdown === 'string') {
-      return (
-        <div className="prose prose-invert prose-sm max-w-none">
-          {obj.title ? <h2 className="text-foreground">{String(obj.title)}</h2> : null}
-          {obj.url ? (
-            <a
-              href={String(obj.url)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary text-xs"
-            >
-              {String(obj.url)}
-            </a>
-          ) : null}
-          <div dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(String(obj.markdown)) }} />
+      {lines.map((line, i) => (
+        <div key={i} className="font-mono text-[11px] leading-relaxed text-[#8787af]">
+          {line.content}
         </div>
-      )
-    }
-
-    // answer content (ask output)
-    if (typeof obj.answer === 'string') {
-      return (
-        <div className="prose prose-invert prose-sm max-w-none">
-          {obj.query ? (
-            <div className="text-muted-foreground mb-2">
-              <strong>Q:</strong> {String(obj.query)}
-            </div>
-          ) : null}
-          <div dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(String(obj.answer)) }} />
-        </div>
-      )
-    }
-
-    // ranked result (query/retrieve output)
-    if (obj.rank !== undefined && typeof obj.snippet === 'string') {
-      return (
-        <div className="rounded-lg border border-border/50 bg-card/50 p-3 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-primary">#{String(obj.rank)}</span>
-            {obj.score != null ? (
-              <span className="text-xs text-muted-foreground">{Number(obj.score).toFixed(4)}</span>
-            ) : null}
-            {obj.url ? (
-              <a
-                href={String(obj.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary truncate"
-              >
-                {String(obj.url)}
-              </a>
-            ) : null}
-          </div>
-          <div
-            className="text-sm"
-            dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(String(obj.snippet)) }}
-          />
-        </div>
-      )
-    }
-
-    // Generic JSON — render as key-value
-    return (
-      <div className="rounded-lg border border-border/50 bg-card/50 p-3">
-        <JsonRenderer data={obj} />
-      </div>
-    )
-  }
-
-  // Plain text
-  return <div className="text-foreground/90">{line.content}</div>
-}
-
-function JsonRenderer({ data, depth = 0 }: { data: unknown; depth?: number }) {
-  if (data === null || data === undefined)
-    return <span className="text-muted-foreground">&mdash;</span>
-  if (typeof data === 'string') {
-    if (data.startsWith('http://') || data.startsWith('https://')) {
-      return (
-        <a href={data} target="_blank" rel="noopener noreferrer" className="text-primary">
-          {data}
-        </a>
-      )
-    }
-    return <span>{data}</span>
-  }
-  if (typeof data === 'number') return <span className="text-primary">{data}</span>
-  if (typeof data === 'boolean') return <span className="text-primary">{data ? 'yes' : 'no'}</span>
-
-  if (Array.isArray(data)) {
-    if (data.length === 0) return <span className="text-muted-foreground">none</span>
-    return (
-      <div className="space-y-1">
-        {data.map((item, i) => (
-          <div key={i}>
-            <JsonRenderer data={item} depth={depth + 1} />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (typeof data === 'object') {
-    const entries = Object.entries(data as Record<string, unknown>)
-    if (entries.length === 0) return <span className="text-muted-foreground">&mdash;</span>
-    return (
-      <div className="space-y-0.5">
-        {entries.map(([key, val]) => (
-          <div key={key} className="flex gap-2">
-            <span className="text-muted-foreground min-w-[80px] shrink-0">
-              {key.replace(/_/g, ' ')}
-            </span>
-            <span className="text-foreground">
-              <JsonRenderer data={val} depth={depth + 1} />
-            </span>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return <span>{String(data)}</span>
-}
-
-/** Minimal markdown-to-HTML for inline rendering in output lines. */
-function simpleMarkdownToHtml(md: string): string {
-  let html = ''
-  const lines = md.split('\n')
-  let i = 0
-  let inList = false
-  let listType = ''
-
-  function esc(s: string) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  }
-
-  function inline(s: string) {
-    let result = s
-    result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    result = result.replace(/\*(.+?)\*/g, '<em>$1</em>')
-    result = result.replace(
-      /`([^`]+)`/g,
-      '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>',
-    )
-    result = result.replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" target="_blank" class="text-primary underline">$1</a>',
-    )
-    return result
-  }
-
-  function closeList() {
-    if (inList) {
-      html += listType === 'ul' ? '</ul>\n' : '</ol>\n'
-      inList = false
-    }
-  }
-
-  while (i < lines.length) {
-    const line = lines[i]
-
-    // Code blocks
-    if (line.trimStart().startsWith('```')) {
-      closeList()
-      i++
-      let code = ''
-      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
-        code += `${esc(lines[i])}\n`
-        i++
-      }
-      i++
-      html += `<pre class="bg-muted/50 rounded-md p-3 overflow-x-auto"><code>${code}</code></pre>\n`
-      continue
-    }
-
-    if (line.trim() === '') {
-      closeList()
-      i++
-      continue
-    }
-
-    // Headers
-    const hMatch = line.match(/^(#{1,6})\s+(.+)/)
-    if (hMatch) {
-      closeList()
-      const level = hMatch[1].length
-      html += `<h${level} class="font-semibold mt-3 mb-1">${inline(hMatch[2])}</h${level}>\n`
-      i++
-      continue
-    }
-
-    // HR
-    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())) {
-      closeList()
-      html += '<hr class="border-border/50 my-3">\n'
-      i++
-      continue
-    }
-
-    // Table
-    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*[-:]+/.test(lines[i + 1])) {
-      closeList()
-      const headers = line
-        .split('|')
-        .map((c) => c.trim())
-        .filter(Boolean)
-      i += 2
-      html += '<table class="w-full text-sm border-collapse"><tr>'
-      for (const h of headers)
-        html += `<th class="border-b border-border/50 pb-1 text-left">${inline(h)}</th>`
-      html += '</tr>\n'
-      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
-        const cells = lines[i]
-          .split('|')
-          .map((c) => c.trim())
-          .filter(Boolean)
-        html += '<tr>'
-        for (const c of cells) html += `<td class="py-1 pr-3">${inline(c)}</td>`
-        html += '</tr>\n'
-        i++
-      }
-      html += '</table>\n'
-      continue
-    }
-
-    // Blockquote
-    if (line.trimStart().startsWith('>')) {
-      closeList()
-      let bq = ''
-      while (i < lines.length && lines[i].trimStart().startsWith('>')) {
-        bq += `${lines[i].replace(/^\s*>\s?/, '')} `
-        i++
-      }
-      html += `<blockquote class="border-l-2 border-primary/50 pl-3 text-muted-foreground italic">${inline(bq.trim())}</blockquote>\n`
-      continue
-    }
-
-    // Unordered list
-    if (/^\s*[-*+]\s/.test(line)) {
-      if (!inList || listType !== 'ul') {
-        closeList()
-        html += '<ul class="list-disc pl-5 space-y-0.5">\n'
-        inList = true
-        listType = 'ul'
-      }
-      html += `<li>${inline(line.replace(/^\s*[-*+]\s/, ''))}</li>\n`
-      i++
-      continue
-    }
-
-    // Ordered list
-    if (/^\s*\d+\.\s/.test(line)) {
-      if (!inList || listType !== 'ol') {
-        closeList()
-        html += '<ol class="list-decimal pl-5 space-y-0.5">\n'
-        inList = true
-        listType = 'ol'
-      }
-      html += `<li>${inline(line.replace(/^\s*\d+\.\s/, ''))}</li>\n`
-      i++
-      continue
-    }
-
-    // Paragraph — collect consecutive non-special lines
-    closeList()
-    let para = ''
-    while (
-      i < lines.length &&
-      lines[i].trim() !== '' &&
-      !/^#{1,6}\s/.test(lines[i]) &&
-      !/^\s*[-*+]\s/.test(lines[i]) &&
-      !/^\s*\d+\.\s/.test(lines[i]) &&
-      !lines[i].trimStart().startsWith('```') &&
-      !lines[i].trimStart().startsWith('>')
-    ) {
-      para += `${lines[i]} `
-      i++
-    }
-    if (para.trim()) html += `<p class="mb-2">${inline(para.trim())}</p>\n`
-  }
-  closeList()
-  return html
+      ))}
+    </div>
+  )
 }
