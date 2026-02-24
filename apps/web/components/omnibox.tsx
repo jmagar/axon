@@ -1,53 +1,85 @@
 'use client'
 
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
-import { MODES, type ModeId, NO_INPUT_MODES } from '@/lib/ws-protocol'
+import { useWsMessages } from '@/hooks/use-ws-messages'
+import type { ModeCategory, ModeDefinition, WsServerMsg } from '@/lib/ws-protocol'
+import {
+  MODE_CATEGORY_LABELS,
+  MODE_CATEGORY_ORDER,
+  MODES,
+  type ModeId,
+  NO_INPUT_MODES,
+} from '@/lib/ws-protocol'
 
-interface OmniboxProps {
-  onExecute?: (mode: string, input: string) => void
-  onDone?: () => void
-}
-
-export interface OmniboxHandle {
-  handleDone: (elapsed_ms: number, exit_code: number) => void
-  handleError: (message: string, elapsed_ms?: number) => void
-}
-
-export const Omnibox = forwardRef<OmniboxHandle, OmniboxProps>(function Omnibox(
-  { onExecute, onDone },
-  ref,
-) {
-  const { send, status } = useAxonWs()
+export function Omnibox() {
+  const { send, subscribe } = useAxonWs()
+  const { startExecution } = useWsMessages()
   const [mode, setMode] = useState<ModeId>('scrape')
   const [input, setInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [statusText, setStatusText] = useState('')
+  const [statusType, setStatusType] = useState<'processing' | 'done' | 'error'>('processing')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const omniboxRef = useRef<HTMLDivElement>(null)
   const startTimeRef = useRef(0)
-  // Track a simple execution ID for cancel messages
   const execIdRef = useRef(0)
 
   const currentMode = MODES.find((m) => m.id === mode) ?? MODES[0]
 
+  // Group modes by category for the dropdown
+  const groupedModes = useMemo(() => {
+    const groups = new Map<ModeCategory, ModeDefinition[]>()
+    for (const cat of MODE_CATEGORY_ORDER) {
+      groups.set(cat, [])
+    }
+    for (const m of MODES) {
+      const list = groups.get(m.category)
+      if (list) list.push(m)
+    }
+    return groups
+  }, [])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (omniboxRef.current && !omniboxRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  // Subscribe to WS for done/error to update local status
+  useEffect(() => {
+    return subscribe((msg: WsServerMsg) => {
+      if (msg.type === 'done') {
+        setIsProcessing(false)
+        const secs = (msg.elapsed_ms / 1000).toFixed(1)
+        setStatusText(`${secs}s \u00b7 exit ${msg.exit_code}`)
+        setStatusType(msg.exit_code === 0 ? 'done' : 'error')
+      }
+      if (msg.type === 'error') {
+        setIsProcessing(false)
+        const secs = msg.elapsed_ms ? `${(msg.elapsed_ms / 1000).toFixed(1)}s \u00b7 ` : ''
+        setStatusText(`${secs}error: ${msg.message}`)
+        setStatusType('error')
+      }
+    })
+  }, [subscribe])
+
   const executeCommand = useCallback(
     (execMode: ModeId, execInput: string) => {
-      if (status !== 'connected') return
       if (isProcessing) return
-      if (!execInput.trim() && !(NO_INPUT_MODES as ReadonlySet<string>).has(execMode)) return
+      if (!execInput.trim() && !NO_INPUT_MODES.has(execMode)) return
 
       execIdRef.current += 1
       setIsProcessing(true)
       startTimeRef.current = Date.now()
       setStatusText('processing...')
+      setStatusType('processing')
 
       send({
         type: 'execute',
@@ -56,9 +88,9 @@ export const Omnibox = forwardRef<OmniboxHandle, OmniboxProps>(function Omnibox(
         flags: {},
       })
 
-      onExecute?.(execMode, execInput.trim())
+      startExecution(execMode)
     },
-    [status, isProcessing, send, onExecute],
+    [isProcessing, send, startExecution],
   )
 
   const execute = useCallback(() => {
@@ -71,15 +103,15 @@ export const Omnibox = forwardRef<OmniboxHandle, OmniboxProps>(function Omnibox(
     setIsProcessing(false)
     const elapsed = Date.now() - startTimeRef.current
     const secs = (elapsed / 1000).toFixed(1)
-    setStatusText(`${secs}s · cancelled`)
+    setStatusText(`${secs}s \u00b7 cancelled`)
+    setStatusType('error')
   }, [isProcessing, send])
 
   const selectMode = useCallback(
     (id: ModeId) => {
       setMode(id)
-      if ((NO_INPUT_MODES as ReadonlySet<string>).has(id)) {
-        // Auto-execute modes that need no input.
-        // Defer so React state settles before we check isProcessing.
+      setDropdownOpen(false)
+      if (NO_INPUT_MODES.has(id)) {
         setTimeout(() => {
           executeCommand(id, '')
         }, 0)
@@ -90,132 +122,162 @@ export const Omnibox = forwardRef<OmniboxHandle, OmniboxProps>(function Omnibox(
     [executeCommand],
   )
 
-  const handleDone = useCallback(
-    (elapsed_ms: number, exit_code: number) => {
-      setIsProcessing(false)
-      const secs = (elapsed_ms / 1000).toFixed(1)
-      setStatusText(`${secs}s · exit ${exit_code}`)
-      onDone?.()
-    },
-    [onDone],
-  )
-
-  const handleError = useCallback(
-    (message: string, elapsed_ms?: number) => {
-      setIsProcessing(false)
-      const secs = elapsed_ms ? `${(elapsed_ms / 1000).toFixed(1)}s · ` : ''
-      setStatusText(`${secs}error: ${message}`)
-      onDone?.()
-    },
-    [onDone],
-  )
-
-  useImperativeHandle(ref, () => ({ handleDone, handleError }), [handleDone, handleError])
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault()
         execute()
       }
+      if (e.key === 'Escape') {
+        setDropdownOpen(false)
+      }
     },
     [execute],
   )
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-w-[120px] justify-start gap-2 border-border/50 bg-card/50"
-            >
-              <svg
-                className="size-4 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d={currentMode.icon} />
-              </svg>
-              <span className="truncate">{currentMode.label}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-[400px] overflow-y-auto">
-            {MODES.map((m) => (
-              <DropdownMenuItem key={m.id} onSelect={() => selectMode(m.id)} className="gap-2">
-                <svg
-                  className="size-4 shrink-0 text-muted-foreground"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d={m.icon} />
-                </svg>
-                <span>{m.label}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <div
+      ref={omniboxRef}
+      className={`relative flex items-center rounded-xl transition-all duration-300 ${
+        isProcessing
+          ? 'border-[rgba(255,135,175,0.4)] shadow-[0_0_20px_rgba(255,135,175,0.15)]'
+          : 'border-[rgba(175,215,255,0.18)]'
+      } focus-within:border-[rgba(175,215,255,0.4)] focus-within:shadow-[0_0_0_3px_rgba(175,215,255,0.08)]`}
+      style={{
+        background: 'rgba(10, 18, 35, 0.65)',
+        borderWidth: '1.5px',
+        borderStyle: 'solid',
+        borderColor: isProcessing ? 'rgba(255, 135, 175, 0.4)' : 'rgba(175, 215, 255, 0.18)',
+      }}
+    >
+      {/* Text input */}
+      <input
+        ref={inputRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={
+          NO_INPUT_MODES.has(mode) ? `Run ${currentMode.label}...` : 'Enter URL or query...'
+        }
+        className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-mono text-sm text-foreground outline-none placeholder:text-[#475569]"
+        disabled={isProcessing}
+      />
 
-        <Input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            (NO_INPUT_MODES as ReadonlySet<string>).has(mode)
-              ? `Run ${currentMode.label}...`
-              : 'Enter URL or query...'
-          }
-          className="flex-1 border-border/50 bg-card/50"
-          disabled={isProcessing}
+      {/* Inline status */}
+      <div
+        className={`flex shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap transition-all duration-300 ${
+          statusText ? 'max-w-[320px] px-2.5 opacity-100' : 'max-w-0 px-0 opacity-0'
+        }`}
+      >
+        <span
+          className={`size-1.5 shrink-0 rounded-full ${
+            statusType === 'processing'
+              ? 'animate-pulse bg-[#ff87af] shadow-[0_0_8px_rgba(255,135,175,0.7)]'
+              : statusType === 'done'
+                ? 'bg-[#afd7ff] shadow-[0_0_6px_rgba(175,215,255,0.5)]'
+                : 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.5)]'
+          }`}
         />
+        <span className="font-mono text-[10px] tracking-wide text-[#8787af]">{statusText}</span>
+      </div>
 
-        <Button
-          onClick={isProcessing ? cancel : execute}
-          disabled={
-            !isProcessing &&
-            (status !== 'connected' ||
-              (!input.trim() && !(NO_INPUT_MODES as ReadonlySet<string>).has(mode)))
-          }
-          size="sm"
-          className={
-            isProcessing
-              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90'
-          }
-        >
-          {isProcessing ? (
+      {/* Divider */}
+      <div className="h-[22px] w-px shrink-0 bg-[rgba(175,215,255,0.12)]" />
+
+      {/* Action label — click to execute */}
+      <button
+        type="button"
+        onClick={isProcessing ? cancel : execute}
+        disabled={!isProcessing && !input.trim() && !NO_INPUT_MODES.has(mode)}
+        className="flex shrink-0 items-center gap-1.5 bg-transparent px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#afd7ff] transition-colors duration-150 hover:text-white disabled:opacity-40 disabled:hover:text-[#afd7ff]"
+        title={isProcessing ? 'Cancel' : 'Execute'}
+      >
+        {isProcessing ? (
+          <>
+            <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[#ff87af]" />
+            <span>Cancel</span>
+          </>
+        ) : (
+          <>
             <svg
-              className="size-4 animate-spin"
+              className="size-3.5 shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <path d="M12 2v4m0 12v4m-7.071-15.071l2.828 2.828m8.486 8.486l2.828 2.828M2 12h4m12 0h4M4.929 19.071l2.828-2.828m8.486-8.486l2.828-2.828" />
+              <path d={currentMode.icon} />
             </svg>
-          ) : (
-            'Run'
-          )}
-        </Button>
-      </div>
+            <span>{currentMode.label}</span>
+          </>
+        )}
+      </button>
 
-      {statusText && (
-        <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-          {isProcessing && <span className="size-1.5 animate-pulse rounded-full bg-primary" />}
-          <span>{statusText}</span>
-        </div>
-      )}
+      {/* Arrow toggle — click to open mode dropdown */}
+      <button
+        type="button"
+        onClick={() => setDropdownOpen((prev) => !prev)}
+        className="flex shrink-0 items-center justify-center rounded-r-[10px] bg-transparent px-3 py-2.5 text-[#8787af] transition-colors duration-150 hover:text-[#afd7ff]"
+        title="Select mode"
+      >
+        <svg
+          className={`size-3.5 transition-transform duration-200 ${dropdownOpen ? 'rotate-90' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+
+      {/* Dropdown — grouped by category */}
+      <div
+        className={`absolute left-0 right-0 top-[calc(100%+6px)] z-50 space-y-1 rounded-xl border border-[rgba(175,215,255,0.15)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(175,215,255,0.08)] backdrop-blur-xl transition-all duration-200 ${
+          dropdownOpen ? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-1 opacity-0'
+        }`}
+        style={{ background: 'rgba(15, 23, 42, 0.95)' }}
+      >
+        {MODE_CATEGORY_ORDER.map((cat) => {
+          const items = groupedModes.get(cat)
+          if (!items || items.length === 0) return null
+          return (
+            <div key={cat}>
+              <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-[#5f87af]">
+                {MODE_CATEGORY_LABELS[cat]}
+              </div>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-0.5">
+                {items.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => selectMode(m.id)}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium transition-all duration-150 ${
+                      m.id === mode
+                        ? 'bg-[rgba(255,135,175,0.12)] text-[#ff87af]'
+                        : 'text-[#8787af] hover:bg-[rgba(175,215,255,0.1)] hover:text-[#afd7ff]'
+                    }`}
+                  >
+                    <svg
+                      className="size-3.5 shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d={m.icon} />
+                    </svg>
+                    <span>{m.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
-})
+}

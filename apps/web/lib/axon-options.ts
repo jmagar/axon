@@ -197,20 +197,34 @@ export const WEB_EXECUTOR_FLAG_PASSTHROUGH = [
 ] as const
 
 export const MODE_PICKER_COMMANDS = [
+  // content
   'scrape',
   'crawl',
   'map',
   'extract',
-  'embed',
-  'query',
-  'ask',
-  'research',
+  'screenshot',
+  // rag
   'search',
+  'research',
+  'query',
+  'retrieve',
+  'ask',
   'evaluate',
-  'doctor',
+  'suggest',
+  // ingest
+  'github',
+  'reddit',
+  'youtube',
+  'sessions',
+  'ingest',
+  // ops
+  'embed',
   'sources',
   'domains',
   'stats',
   'status',
-  'suggest',
+  'dedupe',
+  // service
+  'doctor',
+  'debug',
 ] as const
