@@ -131,8 +131,16 @@ function OptionControl({
 
 export function CommandOptionsPanel({ mode, values, onChange }: CommandOptionsPanelProps) {
   const [expanded, setExpanded] = useState(false)
-  const spec = getCommandSpec(mode)
 
+  // useCallback must be called unconditionally (Rules of Hooks)
+  const handleUpdate = useCallback(
+    (key: string, val: string | boolean | number) => {
+      onChange({ ...values, [key]: val })
+    },
+    [values, onChange],
+  )
+
+  const spec = getCommandSpec(mode)
   const optionKeys = spec?.commandOptions ?? []
   if (optionKeys.length === 0) return null
 
@@ -141,13 +149,6 @@ export function CommandOptionsPanel({ mode, values, onChange }: CommandOptionsPa
     .filter((o): o is { key: string; spec: AxonOptionSpec } => o.spec !== undefined)
 
   if (resolvedOptions.length === 0) return null
-
-  const handleUpdate = useCallback(
-    (key: string, val: string | boolean | number) => {
-      onChange({ ...values, [key]: val })
-    },
-    [values, onChange],
-  )
 
   return (
     <div

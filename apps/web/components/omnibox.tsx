@@ -101,7 +101,7 @@ export function Omnibox() {
 
       startExecution(execMode, execInput.trim())
     },
-    [isProcessing, send, startExecution],
+    [isProcessing, send, startExecution, optionValues],
   )
 
   const execute = useCallback(() => {
