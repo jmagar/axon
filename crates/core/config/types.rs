@@ -28,6 +28,7 @@ pub enum CommandKind {
     Youtube,
     Sessions,
     Research,
+    Screenshot,
 }
 
 impl CommandKind {
@@ -57,6 +58,7 @@ impl CommandKind {
             Self::Youtube => "youtube",
             Self::Sessions => "sessions",
             Self::Research => "research",
+            Self::Screenshot => "screenshot",
         }
     }
 }
@@ -495,6 +497,16 @@ pub struct Config {
     /// Accept invalid/self-signed TLS certificates. Useful for internal or staging sites.
     /// Spider: `with_danger_accept_invalid_certs(true)`. Default: false. Flag: `--accept-invalid-certs`.
     pub accept_invalid_certs: bool,
+
+    /// Capture the full scrollable page (true) or just the viewport (false).
+    /// Default: true. Flag: `--screenshot-full-page`.
+    pub screenshot_full_page: bool,
+
+    /// Viewport width in pixels for screenshot capture. Default: 1920. Flag: `--viewport`.
+    pub viewport_width: u32,
+
+    /// Viewport height in pixels for screenshot capture. Default: 1080. Flag: `--viewport`.
+    pub viewport_height: u32,
 }
 
 impl Default for Config {
@@ -603,6 +615,9 @@ impl Default for Config {
             search_time_range: None,
             bypass_csp: false,
             accept_invalid_certs: false,
+            screenshot_full_page: true,
+            viewport_width: 1920,
+            viewport_height: 1080,
         }
     }
 }
@@ -731,6 +746,9 @@ impl fmt::Debug for Config {
             .field("search_time_range", &self.search_time_range)
             .field("bypass_csp", &self.bypass_csp)
             .field("accept_invalid_certs", &self.accept_invalid_certs)
+            .field("screenshot_full_page", &self.screenshot_full_page)
+            .field("viewport_width", &self.viewport_width)
+            .field("viewport_height", &self.viewport_height)
             .finish()
     }
 }
@@ -742,6 +760,19 @@ mod tests {
     #[test]
     fn test_command_kind_research_as_str() {
         assert_eq!(CommandKind::Research.as_str(), "research");
+    }
+
+    #[test]
+    fn test_command_kind_screenshot_as_str() {
+        assert_eq!(CommandKind::Screenshot.as_str(), "screenshot");
+    }
+
+    #[test]
+    fn config_default_screenshot_settings() {
+        let cfg = Config::default();
+        assert!(cfg.screenshot_full_page);
+        assert_eq!(cfg.viewport_width, 1920);
+        assert_eq!(cfg.viewport_height, 1080);
     }
 
     #[test]

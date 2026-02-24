@@ -17,3 +17,5 @@ crates/cli/commands/crawl/sync_crawl.rs
 crates/vector/ops/tei.rs
 # 562 lines — vendored monolith enforcement script, not Rust (2026-02-23)
 scripts/enforce_monoliths.py
+# cdp_screenshot() 199 lines — CDP protocol sequence, splitting mid-flow hurts readability (2026-02-24)
+crates/cli/commands/screenshot.rs

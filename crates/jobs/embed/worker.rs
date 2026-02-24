@@ -72,10 +72,12 @@ async fn check_embed_canceled(
         return Ok(false);
     }
     sqlx::query(
-        "UPDATE axon_embed_jobs SET status=$2,updated_at=NOW(),finished_at=NOW() WHERE id=$1",
+        "UPDATE axon_embed_jobs SET status=$2,updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ($3,$4)",
     )
     .bind(id)
     .bind(JobStatus::Canceled.as_str())
+    .bind(JobStatus::Pending.as_str())
+    .bind(JobStatus::Running.as_str())
     .execute(pool)
     .await?;
     Ok(true)

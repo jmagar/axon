@@ -1,5 +1,6 @@
 use super::{
-    IngestResult, SessionStateTracker, expand_home, matches_project_filter, resolve_collection,
+    IngestResult, SessionStateTracker, expand_home, handle_spawn_result, matches_project_filter,
+    resolve_collection,
 };
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
@@ -87,37 +88,14 @@ pub(super) async fn ingest_claude_sessions(
 
             if futures.len() >= 32 {
                 if let Some(res) = futures.next().await {
-                    match res {
-                        Ok((p, m, s, r)) => match r {
-                            Ok(count) => {
-                                total += count;
-                                state.mark_indexed(&p, m, s).await;
-                            }
-                            Err(e) => log_warn(&format!("Claude file {}: {e}", p.display())),
-                        },
-                        Err(join_err) => {
-                            log_warn(&format!("Claude ingest task panicked: {join_err}"));
-                        }
-                    }
+                    total += handle_spawn_result(res, state, "Claude").await;
                 }
             }
         }
     }
 
     while let Some(res) = futures.next().await {
-        match res {
-            Ok((p, m, s, r)) => match r {
-                Ok(count) => {
-                    total += count;
-                    state.mark_indexed(&p, m, s).await;
-                }
-                Err(e) => log_warn(&format!("Claude file {}: {e}", p.display())),
-            },
-            Err(join_err) => {
-                log_warn(&format!("Claude ingest task panicked: {join_err}"));
-                continue;
-            }
-        }
+        total += handle_spawn_result(res, state, "Claude").await;
     }
 
     pb.finish_with_message(format!("indexed {} chunks", total));

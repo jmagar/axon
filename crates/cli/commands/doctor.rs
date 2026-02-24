@@ -96,7 +96,12 @@ fn resolve_openai_model(cfg: &Config) -> String {
     env::var("OPENAI_MODEL").unwrap_or_default()
 }
 
-/// Live probe: GET /models with a 3s timeout. Returns (ok, detail).
+/// Live probe: GET `{base}/models` with a 3s timeout. Returns (ok, detail).
+///
+/// **Important:** `openai_base_url` must include the `/v1` path component
+/// (e.g. `http://host:8080/v1`). If it's missing, the probe will hit
+/// `http://host:8080/models` instead of `http://host:8080/v1/models`
+/// and likely return a 404.
 async fn probe_openai(cfg: &Config, openai_model: &str) -> (bool, String) {
     let base = cfg.openai_base_url.trim().trim_end_matches('/');
     if base.is_empty() {

@@ -44,7 +44,7 @@ pub struct IngestJobConfig {
     pub collection: String,
 }
 
-#[derive(Debug, FromRow, Serialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct IngestJob {
     pub id: Uuid,
     pub status: String,
@@ -56,6 +56,7 @@ pub struct IngestJob {
     pub finished_at: Option<DateTime<Utc>>,
     pub error_text: Option<String>,
     pub result_json: Option<serde_json::Value>,
+    pub config_json: serde_json::Value,
 }
 
 async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
@@ -192,7 +193,7 @@ pub async fn get_ingest_job(cfg: &Config, id: Uuid) -> Result<Option<IngestJob>,
     }
     Ok(sqlx::query_as::<_, IngestJob>(
         "SELECT id,status,source_type,target,created_at,updated_at,started_at,finished_at,\
-         error_text,result_json FROM axon_ingest_jobs WHERE id=$1",
+         error_text,result_json,config_json FROM axon_ingest_jobs WHERE id=$1",
     )
     .bind(id)
     .fetch_optional(&pool)
@@ -207,7 +208,7 @@ pub async fn list_ingest_jobs(cfg: &Config, limit: i64) -> Result<Vec<IngestJob>
     }
     Ok(sqlx::query_as::<_, IngestJob>(
         "SELECT id,status,source_type,target,created_at,updated_at,started_at,finished_at,\
-         error_text,result_json FROM axon_ingest_jobs ORDER BY created_at DESC LIMIT $1",
+         error_text,result_json,config_json FROM axon_ingest_jobs ORDER BY created_at DESC LIMIT $1",
     )
     .bind(limit)
     .fetch_all(&pool)

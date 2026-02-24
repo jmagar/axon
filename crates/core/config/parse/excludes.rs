@@ -1,6 +1,6 @@
-pub(super) struct NormalizedExcludePrefixes {
-    pub(super) prefixes: Vec<String>,
-    pub(super) disable_defaults: bool,
+pub(crate) struct NormalizedExcludePrefixes {
+    pub(crate) prefixes: Vec<String>,
+    pub(crate) disable_defaults: bool,
 }
 
 pub fn default_exclude_prefixes() -> Vec<String> {
@@ -76,7 +76,7 @@ pub fn default_exclude_prefixes() -> Vec<String> {
     .collect()
 }
 
-pub(super) fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExcludePrefixes {
+pub(crate) fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExcludePrefixes {
     let disable_by_empty = input.iter().any(|v| matches!(v.trim(), "" | "/"));
     let disable_by_none = input.iter().any(|v| v.trim().eq_ignore_ascii_case("none"));
     if disable_by_none {

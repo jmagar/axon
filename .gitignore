@@ -53,5 +53,6 @@ container/*.local.yaml
 .claude/
 
 # Runtime cache directories
-http-cacache/
+/data/
+/http-cacache/
 /storage/

@@ -9,6 +9,7 @@ use crate::crates::core::http::{cdp_discovery_url, ssrf_blacklist_patterns};
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use collector::{CollectorConfig, collect_crawl_pages};
+use spider::CaseInsensitiveString;
 use spider::configuration::RedirectPolicy;
 use spider::features::chrome_common::{
     RequestInterceptConfiguration, ScreenShotConfig, ScreenshotParams, WaitForSelector,
@@ -117,6 +118,71 @@ fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec
         .collect()
 }
 
+/// Returns `true` if the URL is garbage extracted from minified JS/CSS bundles
+/// rather than a real hyperlink.
+///
+/// Spider's link extractor pulls anything that resembles a relative path from
+/// page content — including `<script>` tags and inline JS. This produces URLs
+/// like `https://example.com/belonging%20toclaimed%20that%3Cmeta%20name=` or
+/// `https://example.com/$%7BshareBaseUrl%7D/s/$%7BshareId%7D`.
+///
+/// Heuristics (applied to the URL path, not query string):
+/// - URL length > 2048 (standard browser limit)
+/// - Encoded HTML tags: `%3C` (`<`) or `%3E` (`>`)
+/// - Template literals: `%7B` (`{`) or `%7D` (`}`)
+/// - 3+ encoded spaces (`%20`) — prose, not a URL
+/// - JS concatenation artifacts: `'%20` or `%20'`
+pub(crate) fn is_junk_discovered_url(url: &str) -> bool {
+    if url.len() > 2048 {
+        return true;
+    }
+
+    let path = url_path_portion(url);
+
+    // Encoded HTML tags: < or > never appear in real URL paths.
+    if path.contains("%3C") || path.contains("%3c") || path.contains("%3E") || path.contains("%3e")
+    {
+        return true;
+    }
+
+    // Template literal variables: { or } from JS `${variable}` expressions.
+    if path.contains("%7B") || path.contains("%7b") || path.contains("%7D") || path.contains("%7d")
+    {
+        return true;
+    }
+
+    // 3+ encoded spaces in path = extracted prose, not a URL.
+    // Real URLs use hyphens/underscores for word separation.
+    if path.matches("%20").count() >= 3 {
+        return true;
+    }
+
+    // JS string concatenation: `' + var + '` shows up as `'%20+%20var%20+%20'`.
+    if path.contains("'%20") || path.contains("%20'") {
+        return true;
+    }
+
+    false
+}
+
+/// Extract the path portion of a URL (between host and query/fragment).
+/// For relative URLs (no scheme), treats the whole string up to `?` or `#` as path.
+fn url_path_portion(url: &str) -> &str {
+    let after_host = match url.find("://") {
+        Some(i) => {
+            let rest = &url[i + 3..];
+            let path_start = rest.find('/').unwrap_or(rest.len());
+            &rest[path_start..]
+        }
+        None => url,
+    };
+    let end = after_host
+        .find('?')
+        .or_else(|| after_host.find('#'))
+        .unwrap_or(after_host.len());
+    &after_host[..end]
+}
+
 /// Pre-resolve the Chrome DevTools WebSocket URL from the CDP discovery endpoint.
 ///
 /// If `remote_url` is already a `ws://` / `wss://` URL (pre-resolved by the
@@ -129,7 +195,7 @@ fn build_exclude_blacklist_patterns(start_url: &str, excludes: &[String]) -> Vec
 ///
 /// Returns `None` inside Docker (container hostnames resolve on the bridge
 /// network) or when the fetch/parse fails.
-async fn resolve_cdp_ws_url(remote_url: &str) -> Option<String> {
+pub(crate) async fn resolve_cdp_ws_url(remote_url: &str) -> Option<String> {
     // ws:// shortcut: bootstrap already resolved the URL — use it directly.
     if remote_url.starts_with("ws://") || remote_url.starts_with("wss://") {
         return Some(remote_url.to_string());
@@ -274,6 +340,17 @@ async fn configure_website(
         );
     }
     website.with_blacklist_url(Some(blacklist_patterns));
+
+    // Drop junk URLs that spider's link extractor pulls from minified JS/CSS.
+    // Fires on every discovered link BEFORE it's enqueued for fetching.
+    website.set_on_link_find(|url, html| {
+        if is_junk_discovered_url(url.as_ref()) {
+            (CaseInsensitiveString::default(), None)
+        } else {
+            (url, html)
+        }
+    });
+
     if let Some(timeout_ms) = cfg.request_timeout_ms {
         website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
     }
@@ -391,6 +468,14 @@ pub async fn update_latest_reflink(
     source_dir: &Path,
     latest_dir: &Path,
 ) -> Result<(), Box<dyn Error>> {
+    // Guard against accidental self-delete or deleting the parent of source.
+    if source_dir == latest_dir {
+        return Err("source_dir and latest_dir must not be the same path".into());
+    }
+    if source_dir.starts_with(latest_dir) {
+        return Err("source_dir must not be inside latest_dir".into());
+    }
+
     // 1. Prepare clean slate
     if latest_dir.exists() {
         tokio::fs::remove_dir_all(latest_dir).await?;
