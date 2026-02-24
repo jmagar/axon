@@ -10,6 +10,7 @@ import type {
   EvaluateResult,
   NormalizedResult,
 } from '@/lib/result-types'
+import { fmtMs, fmtNum } from './shared'
 
 interface ReportRendererProps {
   result: NormalizedResult
@@ -84,15 +85,6 @@ function TimingRow({ label, ms }: { label: string; ms: number }) {
       <span className="tabular-nums text-[#afd7ff]">{fmtMs(ms)}</span>
     </div>
   )
-}
-
-function fmtMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
-function fmtNum(n: number): string {
-  return n.toLocaleString()
 }
 
 // ---------------------------------------------------------------------------
