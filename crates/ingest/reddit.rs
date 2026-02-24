@@ -10,14 +10,14 @@ use std::time::Duration;
 const REDDIT_USER_AGENT: &str = "axon-ingest/1.0 by /u/axon_bot";
 
 /// Validate a subreddit name to prevent path traversal and injection attacks.
-/// Reddit subreddit names are 2-21 characters, alphanumeric and underscores only.
+/// Reddit subreddit names are 3-21 characters, alphanumeric and underscores only.
 fn validate_subreddit(name: &str) -> Result<(), Box<dyn Error>> {
     let len = name.len();
     let valid =
-        (2..=21).contains(&len) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        (3..=21).contains(&len) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !valid {
         return Err(format!(
-            "invalid subreddit name '{name}': must be 2-21 chars, alphanumeric and underscore only"
+            "invalid subreddit name '{name}': must be 3-21 chars, alphanumeric and underscore only"
         )
         .into());
     }
@@ -509,7 +509,7 @@ mod tests {
         assert!(validate_subreddit("rust").is_ok());
         assert!(validate_subreddit("rust_gamedev").is_ok());
         assert!(validate_subreddit("AskReddit").is_ok());
-        assert!(validate_subreddit("ab").is_ok());
+        assert!(validate_subreddit("abc").is_ok());
     }
 
     #[test]
@@ -520,6 +520,7 @@ mod tests {
 
     #[test]
     fn validate_subreddit_rejects_too_short() {
+        assert!(validate_subreddit("ab").is_err());
         assert!(validate_subreddit("a").is_err());
         assert!(validate_subreddit("").is_err());
     }
@@ -538,8 +539,8 @@ mod tests {
 
     #[test]
     fn min_length_boundary() {
-        assert!(validate_subreddit("a").is_err());
-        assert!(validate_subreddit("ab").is_ok());
+        assert!(validate_subreddit("ab").is_err());
+        assert!(validate_subreddit("abc").is_ok());
     }
 
     #[test]

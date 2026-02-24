@@ -27,7 +27,7 @@ REDDIT_CLIENT_SECRET=your_client_secret
 
 ## How It Works
 
-1. Validates subreddit name: 2–21 chars, alphanumeric + underscore only (prevents path traversal)
+1. Validates subreddit name: 3–21 chars, alphanumeric + underscore only (prevents path traversal)
 2. Authenticates via Reddit OAuth2 client credentials, obtaining a bearer token
 3. Fetches posts from `https://oauth.reddit.com/r/<subreddit>/<sort>?limit=100`; paginates until `--max-posts` reached
 4. For each post, fetches the comment tree at `https://oauth.reddit.com<permalink>.json?limit=100&depth=<n>`
@@ -48,7 +48,7 @@ Reddit OAuth2 script apps are allowed 100 requests/minute. The ingest worker res
 | **Comment depth limits** | Reddit's API can truncate very deep threads before `--depth` is reached |
 | **Private / quarantined subreddits** | Client credentials flow cannot access these; fails with 403 |
 | **Score freshness** | Scores captured at index time; not updated on re-index |
-| **Subreddit name validation** | 2–21 chars, alphanumeric + underscore only. Don't include `r/` prefix |
+| **Subreddit name validation** | 3–21 chars, alphanumeric + underscore only. Don't include `r/` prefix |
 
 ## Troubleshooting
 

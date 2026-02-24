@@ -128,9 +128,26 @@ pub async fn embed_files(
                 let text = match resp {
                     Ok(r) if r.status().is_success() => match r.text().await {
                         Ok(t) => t,
-                        Err(_) => return Ok(0),
+                        Err(e) => {
+                            log_warn(&format!(
+                                "command=ingest_github body_read_failed path={path} err={e}"
+                            ));
+                            return Ok(0);
+                        }
                     },
-                    _ => return Ok(0),
+                    Ok(r) => {
+                        log_warn(&format!(
+                            "command=ingest_github fetch_failed path={path} status={}",
+                            r.status()
+                        ));
+                        return Ok(0);
+                    }
+                    Err(e) => {
+                        log_warn(&format!(
+                            "command=ingest_github fetch_error path={path} err={e}"
+                        ));
+                        return Ok(0);
+                    }
                 };
 
                 if text.trim().is_empty() {

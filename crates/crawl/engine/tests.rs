@@ -305,6 +305,88 @@ fn test_spider_max_page_bytes_wiring() {
     assert_eq!(website.configuration.max_page_bytes, Some(1_048_576.0));
 }
 
+// --- Junk URL detection tests ---
+
+#[test]
+fn test_junk_url_encoded_html_tags() {
+    assert!(is_junk_discovered_url(
+        "https://opencode.ai/introductionbelonging%20toclaimed%20thatconsequences%3Cmeta%20name="
+    ));
+    assert!(is_junk_discovered_url(
+        "https://example.com/foo%3Cscript%3Ebar"
+    ));
+    assert!(is_junk_discovered_url("https://example.com/path%3ebar"));
+}
+
+#[test]
+fn test_junk_url_template_literals() {
+    assert!(is_junk_discovered_url(
+        "https://opencode.ai/download/stable/$%7BshareBaseUrl%7D/s/$%7BshareId%7D"
+    ));
+    assert!(is_junk_discovered_url("https://example.com/%7Bfoo%7D"));
+}
+
+#[test]
+fn test_junk_url_excessive_encoded_spaces() {
+    // 3+ %20 = junk
+    assert!(is_junk_discovered_url(
+        "https://opencode.ai/an%20alternativeas%20a%20result%20ofpt"
+    ));
+    // 2 %20 = OK (e.g., /wiki/New%20York%20City)
+    assert!(!is_junk_discovered_url(
+        "https://en.wikipedia.org/wiki/New%20York%20City"
+    ));
+}
+
+#[test]
+fn test_junk_url_js_concat_artifacts() {
+    assert!(is_junk_discovered_url(
+        "https://opencode.ai/download/stable/'%20+%20e5%20+%20'"
+    ));
+    assert!(is_junk_discovered_url("https://example.com/foo'%20bar"));
+    assert!(is_junk_discovered_url("https://example.com/foo%20'bar"));
+}
+
+#[test]
+fn test_junk_url_too_long() {
+    let long = format!("https://example.com/{}", "a".repeat(2048));
+    assert!(is_junk_discovered_url(&long));
+}
+
+#[test]
+fn test_junk_url_legit_urls_pass() {
+    assert!(!is_junk_discovered_url(
+        "https://example.com/docs/getting-started"
+    ));
+    assert!(!is_junk_discovered_url(
+        "https://example.com/api/v1/users?q=hello%20world"
+    ));
+    assert!(!is_junk_discovered_url(
+        "https://example.com/blog/my%20post"
+    ));
+    assert!(!is_junk_discovered_url("https://example.com/"));
+    assert!(!is_junk_discovered_url("https://example.com"));
+}
+
+#[test]
+fn test_junk_url_query_string_not_checked() {
+    // %3C in query string should NOT trigger (only path is checked)
+    assert!(!is_junk_discovered_url(
+        "https://example.com/search?q=%3Cdiv%3E"
+    ));
+    // %7B in query string should NOT trigger
+    assert!(!is_junk_discovered_url(
+        "https://example.com/api?filter=%7Bname%7D"
+    ));
+}
+
+#[test]
+fn test_junk_url_relative_urls() {
+    assert!(is_junk_discovered_url("/foo%3Cbar%3Ebaz"));
+    assert!(is_junk_discovered_url("/$%7Bvar%7D/path"));
+    assert!(!is_junk_discovered_url("/docs/getting-started"));
+}
+
 // --- CDP hostname detection tests (Issue 1: explicit allowlist vs fragile heuristic) ---
 
 #[test]

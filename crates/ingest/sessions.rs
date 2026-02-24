@@ -154,6 +154,35 @@ pub(crate) fn resolve_collection(cfg: &Config, derived_name: &str) -> String {
     format!("{}-sessions", derived_name)
 }
 
+/// Handle the result of a spawned ingest task, differentiating JoinError
+/// panic vs cancellation. Returns the chunk count on success, 0 on failure.
+pub(crate) async fn handle_spawn_result(
+    res: Result<(PathBuf, SystemTime, u64, IngestResult<usize>), tokio::task::JoinError>,
+    state: &SessionStateTracker,
+    label: &str,
+) -> usize {
+    match res {
+        Ok((p, m, s, r)) => match r {
+            Ok(count) => {
+                state.mark_indexed(&p, m, s).await;
+                count
+            }
+            Err(e) => {
+                log_warn(&format!("{label} file {}: {e}", p.display()));
+                0
+            }
+        },
+        Err(join_err) => {
+            if join_err.is_panic() {
+                log_warn(&format!("{label} ingest task panicked: {join_err}"));
+            } else {
+                log_warn(&format!("{label} ingest task cancelled: {join_err}"));
+            }
+            0
+        }
+    }
+}
+
 pub(crate) fn matches_project_filter(cfg: &Config, name: &str) -> bool {
     if let Some(filter) = &cfg.sessions_project {
         name.to_lowercase().contains(&filter.to_lowercase())

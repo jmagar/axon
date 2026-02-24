@@ -196,34 +196,31 @@ fn spawn_progress_task(
     (progress_tx, progress_task)
 }
 
-/// Polls Redis every 3 seconds until the cancel key is found, then returns.
-/// Creates the Redis connection once and reuses it across all polls.
-/// Used as the cancellation arm of a tokio::select! in run_active_crawl_job.
+/// Maximum number of reconnect attempts before giving up on cancel polling.
+const CANCEL_POLL_MAX_RECONNECTS: u32 = 5;
+
+/// Polls Redis until the cancel key is found, then returns.
+/// Does an immediate first poll (no sleep before the first check), then polls
+/// every 3 seconds. On connection failure, retries with bounded exponential
+/// backoff (up to `CANCEL_POLL_MAX_RECONNECTS` attempts). After exhausting
+/// retries, parks forever — tokio::select! will still complete via the crawl future.
 ///
-/// Fail-safe: if the connection cannot be established or breaks, logs a warning
-/// and returns without canceling (never false-cancels).
+/// Fail-safe: never false-cancels; if Redis is unreachable the crawl continues.
 async fn poll_cancel_key(cfg: &Config, id: Uuid) {
-    let Ok(client) = redis::Client::open(cfg.redis_url.clone()) else {
-        log_warn(&format!(
-            "crawl cancel poll: failed to open Redis client for job {id}; cancellation disabled"
-        ));
-        // Park forever — tokio::select! will still complete via the crawl future.
-        std::future::pending::<()>().await;
-        return;
-    };
-    let conn = tokio::time::timeout(
-        Duration::from_secs(3),
-        client.get_multiplexed_async_connection(),
-    )
-    .await;
-    let Ok(Ok(mut conn)) = conn else {
-        log_warn(&format!(
-            "crawl cancel poll: Redis connect failed for job {id}; cancellation disabled"
-        ));
-        std::future::pending::<()>().await;
-        return;
-    };
     let key = format!("axon:crawl:cancel:{id}");
+    let mut conn = match connect_cancel_redis(cfg, id).await {
+        Some(c) => c,
+        None => {
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+
+    // Immediate first poll — don't wait 3s before checking.
+    if poll_cancel_once(&mut conn, &key).await {
+        return;
+    }
+
     loop {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let result =
@@ -233,20 +230,85 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
             Ok(Ok(None)) => {}
             Ok(Err(e)) => {
                 log_warn(&format!(
-                    "crawl cancel poll: Redis GET failed for job {id}: {e}; cancellation disabled"
+                    "crawl cancel poll: Redis GET failed for job {id}: {e}; attempting reconnect"
                 ));
-                std::future::pending::<()>().await;
-                return;
+                match reconnect_cancel_redis(cfg, id).await {
+                    Some(new_conn) => conn = new_conn,
+                    None => {
+                        std::future::pending::<()>().await;
+                        return;
+                    }
+                }
             }
             Err(_) => {
                 log_warn(&format!(
-                    "crawl cancel poll: Redis GET timed out for job {id}; cancellation disabled"
+                    "crawl cancel poll: Redis GET timed out for job {id}; attempting reconnect"
                 ));
-                std::future::pending::<()>().await;
-                return;
+                match reconnect_cancel_redis(cfg, id).await {
+                    Some(new_conn) => conn = new_conn,
+                    None => {
+                        std::future::pending::<()>().await;
+                        return;
+                    }
+                }
             }
         }
     }
+}
+
+/// Single non-blocking cancel key check. Returns `true` if cancel key is set.
+async fn poll_cancel_once(conn: &mut redis::aio::MultiplexedConnection, key: &str) -> bool {
+    matches!(
+        tokio::time::timeout(Duration::from_secs(3), conn.get::<_, Option<String>>(key)).await,
+        Ok(Ok(Some(_)))
+    )
+}
+
+/// Open a Redis connection for cancel polling.
+async fn connect_cancel_redis(cfg: &Config, id: Uuid) -> Option<redis::aio::MultiplexedConnection> {
+    let Ok(client) = redis::Client::open(cfg.redis_url.clone()) else {
+        log_warn(&format!(
+            "crawl cancel poll: failed to open Redis client for job {id}; cancellation disabled"
+        ));
+        return None;
+    };
+    match tokio::time::timeout(
+        Duration::from_secs(3),
+        client.get_multiplexed_async_connection(),
+    )
+    .await
+    {
+        Ok(Ok(conn)) => Some(conn),
+        _ => {
+            log_warn(&format!(
+                "crawl cancel poll: Redis connect failed for job {id}; cancellation disabled"
+            ));
+            None
+        }
+    }
+}
+
+/// Reconnect to Redis with bounded exponential backoff.
+/// Returns `None` after exhausting `CANCEL_POLL_MAX_RECONNECTS` attempts.
+async fn reconnect_cancel_redis(
+    cfg: &Config,
+    id: Uuid,
+) -> Option<redis::aio::MultiplexedConnection> {
+    for attempt in 0..CANCEL_POLL_MAX_RECONNECTS {
+        let backoff = Duration::from_secs(1 << attempt.min(4)); // 1s, 2s, 4s, 8s, 16s
+        tokio::time::sleep(backoff).await;
+        if let Some(conn) = connect_cancel_redis(cfg, id).await {
+            log_info(&format!(
+                "crawl cancel poll: Redis reconnected for job {id} after {} attempt(s)",
+                attempt + 1
+            ));
+            return Some(conn);
+        }
+    }
+    log_warn(&format!(
+        "crawl cancel poll: Redis reconnect failed after {CANCEL_POLL_MAX_RECONNECTS} attempts for job {id}; cancellation disabled"
+    ));
+    None
 }
 
 async fn run_primary_with_optional_chrome_fallback(

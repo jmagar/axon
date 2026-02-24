@@ -138,6 +138,7 @@ pub fn start_url_from_cfg(cfg: &Config) -> String {
             | CommandKind::Crawl
             | CommandKind::Extract
             | CommandKind::Embed
+            | CommandKind::Screenshot
     ) {
         let selected = cfg
             .positional
@@ -153,6 +154,21 @@ pub fn start_url_from_cfg(cfg: &Config) -> String {
 #[cfg(test)]
 mod tests {
     use super::expand_url_glob_seed;
+    use super::truncate_chars;
+
+    #[test]
+    fn truncate_chars_multibyte() {
+        // ASCII — no truncation needed
+        assert_eq!(truncate_chars("hello", 5), "hello");
+        // ASCII — truncation
+        assert_eq!(truncate_chars("hello", 3), "hel");
+        // Multi-byte char boundary
+        assert_eq!(truncate_chars("héllo", 3), "hél");
+        // Zero limit
+        assert_eq!(truncate_chars("hello", 0), "");
+        // Limit exceeds length
+        assert_eq!(truncate_chars("hi", 10), "hi");
+    }
 
     #[test]
     fn expands_url_glob_range() {

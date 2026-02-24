@@ -97,6 +97,12 @@ pub async fn run_scrape(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if urls.is_empty() {
         return Err("scrape requires at least one URL (positional or --urls)".into());
     }
+    if cfg.output_path.is_some() && urls.len() > 1 {
+        return Err(
+            "--output cannot be used with multiple URLs (each would overwrite the same file)"
+                .into(),
+        );
+    }
     for url in &urls {
         scrape_one(cfg, url).await?;
     }

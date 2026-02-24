@@ -104,7 +104,11 @@ async fn run_worker_polling_lane(
         if let Some(job_id) = claim_next_pending(pool, TABLE).await? {
             if let Err(err) = process_job(cfg, pool, job_id).await {
                 let error_text = err.to_string();
-                let _ = mark_job_failed(pool, TABLE, job_id, &error_text).await;
+                if let Err(mark_err) = mark_job_failed(pool, TABLE, job_id, &error_text).await {
+                    log_warn(&format!(
+                        "mark_job_failed error for crawl job {job_id}: {mark_err}"
+                    ));
+                }
                 log_warn(&format!("worker failed crawl job {job_id}: {error_text}"));
             }
         } else {
@@ -151,7 +155,11 @@ async fn handle_crawl_delivery(
             }
             if let Err(err) = process_job(cfg, pool, job_id).await {
                 let error_text = err.to_string();
-                let _ = mark_job_failed(pool, TABLE, job_id, &error_text).await;
+                if let Err(mark_err) = mark_job_failed(pool, TABLE, job_id, &error_text).await {
+                    log_warn(&format!(
+                        "mark_job_failed error for crawl job {job_id}: {mark_err}"
+                    ));
+                }
                 log_warn(&format!("worker failed crawl job {job_id}: {error_text}"));
             }
         }

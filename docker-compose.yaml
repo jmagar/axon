@@ -113,6 +113,7 @@ services:
     shm_size: "2gb"
     ports:
       - "127.0.0.1:9222:9222"  # CDP proxy — local dev access
+      - "127.0.0.1:9223:9223"  # raw Chrome DevTools — direct CDP access
       - "127.0.0.1:6000:6000"  # management API — local dev access
     environment:
       # Rewrite the hostname in /json/version WebSocket URLs so that other

@@ -87,17 +87,21 @@ fn render_services_section(report: &serde_json::Value) {
     render_status_line(
         "postgres",
         postgres_ok,
-        &report_text(report, &["services", "postgres", "url"], "n/a"),
+        &redact_url(&report_text(
+            report,
+            &["services", "postgres", "url"],
+            "n/a",
+        )),
     );
     render_status_line(
         "redis",
         redis_ok,
-        &report_text(report, &["services", "redis", "url"], "n/a"),
+        &redact_url(&report_text(report, &["services", "redis", "url"], "n/a")),
     );
     render_status_line(
         "amqp",
         amqp_ok,
-        &report_text(report, &["services", "amqp", "url"], "n/a"),
+        &redact_url(&report_text(report, &["services", "amqp", "url"], "n/a")),
     );
     render_status_line(
         "tei",

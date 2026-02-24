@@ -38,6 +38,7 @@ pub(super) enum CliCommand {
     Reddit(RedditArgs),
     Youtube(YoutubeArgs),
     Sessions(SessionsArgs),
+    Screenshot(ScrapeArgs),
 }
 
 #[derive(Debug, Args)]
@@ -453,4 +454,12 @@ pub(super) struct GlobalArgs {
     /// Accept invalid or self-signed TLS certificates. Useful for internal/staging sites. Default: false.
     #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
     pub(super) accept_invalid_certs: bool,
+
+    /// Capture full scrollable page (true) or viewport only (false). Default: true.
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    pub(super) screenshot_full_page: bool,
+
+    /// Viewport dimensions as WIDTHxHEIGHT (e.g. 1920x1080). Default: 1920x1080.
+    #[arg(global = true, long, default_value = "1920x1080")]
+    pub(super) viewport: String,
 }

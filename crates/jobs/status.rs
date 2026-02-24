@@ -80,16 +80,14 @@ mod tests {
 
     #[test]
     fn all_variants_have_unique_string_representations() {
-        let strings: std::collections::HashSet<_> = [
+        let variants = [
             JobStatus::Pending,
             JobStatus::Running,
             JobStatus::Completed,
             JobStatus::Failed,
             JobStatus::Canceled,
-        ]
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
-        assert_eq!(strings.len(), 5);
+        ];
+        let strings: std::collections::HashSet<_> = variants.iter().map(|s| s.as_str()).collect();
+        assert_eq!(strings.len(), variants.len());
     }
 }

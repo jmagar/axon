@@ -1,4 +1,4 @@
-pub mod excludes;
+pub(crate) mod excludes;
 mod performance;
 
 use super::cli::{Cli, CliCommand, JobSubcommand};
@@ -62,6 +62,19 @@ fn positional_from_job(job: JobSubcommand) -> Vec<String> {
         JobSubcommand::Clear => vec!["clear".to_string()],
         JobSubcommand::Worker => vec!["worker".to_string()],
         JobSubcommand::Recover => vec!["recover".to_string()],
+    }
+}
+
+/// Parse a viewport string like "1920x1080" into (width, height).
+/// Falls back to (1920, 1080) on any parse failure.
+fn parse_viewport(s: &str) -> (u32, u32) {
+    const DEFAULT: (u32, u32) = (1920, 1080);
+    let Some((w, h)) = s.split_once('x') else {
+        return DEFAULT;
+    };
+    match (w.trim().parse::<u32>(), h.trim().parse::<u32>()) {
+        (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
+        _ => DEFAULT,
     }
 }
 
@@ -192,6 +205,7 @@ fn into_config(cli: Cli) -> Result<Config, String> {
                 },
             )
         }
+        CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
     };
 
     let pg_url = normalize_local_service_url(
@@ -394,6 +408,15 @@ fn into_config(cli: Cli) -> Result<Config, String> {
         search_time_range: global.search_time_range,
         bypass_csp: global.bypass_csp,
         accept_invalid_certs: global.accept_invalid_certs,
+        screenshot_full_page: global.screenshot_full_page,
+        viewport_width: {
+            let (w, _) = parse_viewport(&global.viewport);
+            w
+        },
+        viewport_height: {
+            let (_, h) = parse_viewport(&global.viewport);
+            h
+        },
     };
 
     if cfg.exclude_path_prefix.is_empty() && !normalized_excludes.disable_defaults {
@@ -509,6 +532,33 @@ mod tests {
             normalized.prefixes.is_empty(),
             "empty string should not produce any prefix entries"
         );
+    }
+
+    // --- parse_viewport tests ---
+
+    #[test]
+    fn test_parse_viewport_standard() {
+        assert_eq!(super::parse_viewport("1920x1080"), (1920, 1080));
+    }
+
+    #[test]
+    fn test_parse_viewport_small() {
+        assert_eq!(super::parse_viewport("800x600"), (800, 600));
+    }
+
+    #[test]
+    fn test_parse_viewport_bad_input_falls_back() {
+        assert_eq!(super::parse_viewport("bad"), (1920, 1080));
+    }
+
+    #[test]
+    fn test_parse_viewport_missing_height_falls_back() {
+        assert_eq!(super::parse_viewport("1920x"), (1920, 1080));
+    }
+
+    #[test]
+    fn test_parse_viewport_zero_dimension_falls_back() {
+        assert_eq!(super::parse_viewport("0x1080"), (1920, 1080));
     }
 
     #[test]
