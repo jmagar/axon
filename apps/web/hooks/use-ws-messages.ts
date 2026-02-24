@@ -60,6 +60,8 @@ interface WsMessagesContextValue {
   commandMode: string | null
   /** Screenshot files from screenshot command */
   screenshotFiles: ScreenshotFile[]
+  /** Job ID for the current/last crawl (used for download routes) */
+  currentJobId: string | null
   startExecution: (mode: string, input?: string) => void
 }
 
@@ -95,6 +97,7 @@ export function useWsMessagesProvider() {
   const [stdoutJson, setStdoutJson] = useState<unknown[]>([])
   const [commandMode, setCommandMode] = useState<string | null>(null)
   const [screenshotFiles, setScreenshotFiles] = useState<ScreenshotFile[]>([])
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
@@ -109,6 +112,9 @@ export function useWsMessagesProvider() {
         case 'crawl_files':
           setCrawlFiles(msg.files)
           setHasResults(true)
+          if (msg.job_id) {
+            setCurrentJobId(msg.job_id)
+          }
           // First file is auto-loaded by the backend
           if (msg.files.length > 0) {
             setSelectedFile(msg.files[0].relative_path)
@@ -122,6 +128,9 @@ export function useWsMessagesProvider() {
             thin_md: msg.thin_md,
             phase: msg.phase,
           })
+          if (msg.job_id) {
+            setCurrentJobId(msg.job_id)
+          }
           break
         case 'command_start':
           setCommandMode(msg.mode)
@@ -214,6 +223,7 @@ export function useWsMessagesProvider() {
     setStdoutJson([])
     setCommandMode(null)
     setScreenshotFiles([])
+    setCurrentJobId(null)
   }, [])
 
   return {
@@ -232,6 +242,7 @@ export function useWsMessagesProvider() {
     stdoutJson,
     commandMode,
     screenshotFiles,
+    currentJobId,
     startExecution,
   }
 }

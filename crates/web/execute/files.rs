@@ -116,7 +116,12 @@ pub(super) async fn send_screenshot_files(tx: &mpsc::Sender<String>) {
 }
 
 /// Send the crawl manifest file list to the frontend from a job output directory.
-pub(super) async fn send_crawl_manifest(job_dir: &Path, tx: &mpsc::Sender<String>) {
+/// When `job_id` is provided, it is included in the `crawl_files` message for download routes.
+pub(super) async fn send_crawl_manifest(
+    job_dir: &Path,
+    tx: &mpsc::Sender<String>,
+    job_id: Option<&str>,
+) {
     let manifest = job_dir.join("manifest.jsonl");
 
     // If the job-specific dir doesn't have a manifest yet, try `latest/`
@@ -177,16 +182,15 @@ pub(super) async fn send_crawl_manifest(job_dir: &Path, tx: &mpsc::Sender<String
                 }
             }
 
-            let _ = tx
-                .send(
-                    json!({
-                        "type": "crawl_files",
-                        "files": files,
-                        "output_dir": base_dir.to_string_lossy(),
-                    })
-                    .to_string(),
-                )
-                .await;
+            let mut msg = json!({
+                "type": "crawl_files",
+                "files": files,
+                "output_dir": base_dir.to_string_lossy(),
+            });
+            if let Some(id) = job_id {
+                msg["job_id"] = serde_json::Value::String(id.to_string());
+            }
+            let _ = tx.send(msg.to_string()).await;
 
             // Auto-load the first file
             if let Some(first) = files.first() {

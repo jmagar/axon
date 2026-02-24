@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ContentViewer } from '@/components/content-viewer'
+import { CrawlDownloadToolbar } from '@/components/crawl-download-toolbar'
 import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
 import { CrawlProgress } from '@/components/crawl-progress'
 import { CardsRenderer } from '@/components/results/cards-renderer'
@@ -37,6 +38,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     stdoutLines,
     stdoutJson,
     commandMode,
+    currentJobId,
   } = useWsMessages()
   const [activeTab, setActiveTab] = useState<TabId>('content')
   const tabs: { id: TabId; label: string }[] = [
@@ -102,67 +104,76 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
 
       {/* Content pane */}
       {activeTab === 'content' && (
-        <div
-          className="flex max-h-[72vh] overflow-hidden rounded-[10px] border border-[rgba(175,215,255,0.1)]"
-          style={{ background: 'rgba(3, 7, 18, 0.25)' }}
-        >
-          {isMarkdownMode ? (
-            <>
-              {/* Crawl file explorer sidebar (drawer on mobile, inline on desktop) */}
-              {hasCrawlFiles && (
-                <CrawlFileExplorer
-                  files={crawlFiles}
-                  selectedFile={selectedFile}
-                  onSelectFile={selectFile}
-                />
-              )}
-
-              {/* Main content area */}
-              <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
-                {/* Crawl progress bar */}
-                {isCrawlMode && isProcessing && (
-                  <CrawlProgress progress={crawlProgress} isProcessing={isProcessing} />
-                )}
-
-                <ContentViewer
-                  markdown={markdownContent}
-                  isProcessing={isProcessing}
-                  errorMessage={errorMessage}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
-              {spec?.renderIntent === 'job-lifecycle' ? (
-                <JobLifecycleRenderer
-                  stdoutJson={stdoutJson}
-                  commandMode={commandMode}
-                  isProcessing={isProcessing}
-                  errorMessage={errorMessage}
-                />
-              ) : errorMessage ? (
-                <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
-                  <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
-                  {errorMessage}
-                </div>
-              ) : normalized && spec?.renderIntent === 'table' ? (
-                <TableRenderer result={normalized} />
-              ) : normalized && spec?.renderIntent === 'cards' ? (
-                <CardsRenderer result={normalized} />
-              ) : normalized && spec?.renderIntent === 'report' ? (
-                <ReportRenderer result={normalized} commandMode={commandMode} />
-              ) : normalized && spec?.renderIntent === 'status-summary' ? (
-                <StatusRenderer result={normalized} />
-              ) : (
-                <RawRenderer
-                  stdoutJson={stdoutJson}
-                  stdoutLines={stdoutLines}
-                  isProcessing={isProcessing}
-                />
-              )}
+        <>
+          {/* Download toolbar — visible after crawl completes */}
+          {hasCrawlFiles && currentJobId && !isProcessing && (
+            <div className="mb-2 flex justify-end">
+              <CrawlDownloadToolbar jobId={currentJobId} fileCount={crawlFiles.length} />
             </div>
           )}
-        </div>
+          <div
+            className="flex max-h-[72vh] overflow-hidden rounded-[10px] border border-[rgba(175,215,255,0.1)]"
+            style={{ background: 'rgba(3, 7, 18, 0.25)' }}
+          >
+            {isMarkdownMode ? (
+              <>
+                {/* Crawl file explorer sidebar (drawer on mobile, inline on desktop) */}
+                {hasCrawlFiles && (
+                  <CrawlFileExplorer
+                    files={crawlFiles}
+                    selectedFile={selectedFile}
+                    onSelectFile={selectFile}
+                    jobId={currentJobId}
+                  />
+                )}
+
+                {/* Main content area */}
+                <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+                  {/* Crawl progress bar */}
+                  {isCrawlMode && isProcessing && (
+                    <CrawlProgress progress={crawlProgress} isProcessing={isProcessing} />
+                  )}
+
+                  <ContentViewer
+                    markdown={markdownContent}
+                    isProcessing={isProcessing}
+                    errorMessage={errorMessage}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+                {spec?.renderIntent === 'job-lifecycle' ? (
+                  <JobLifecycleRenderer
+                    stdoutJson={stdoutJson}
+                    commandMode={commandMode}
+                    isProcessing={isProcessing}
+                    errorMessage={errorMessage}
+                  />
+                ) : errorMessage ? (
+                  <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
+                    <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
+                    {errorMessage}
+                  </div>
+                ) : normalized && spec?.renderIntent === 'table' ? (
+                  <TableRenderer result={normalized} />
+                ) : normalized && spec?.renderIntent === 'cards' ? (
+                  <CardsRenderer result={normalized} />
+                ) : normalized && spec?.renderIntent === 'report' ? (
+                  <ReportRenderer result={normalized} commandMode={commandMode} />
+                ) : normalized && spec?.renderIntent === 'status-summary' ? (
+                  <StatusRenderer result={normalized} />
+                ) : (
+                  <RawRenderer
+                    stdoutJson={stdoutJson}
+                    stdoutLines={stdoutLines}
+                    isProcessing={isProcessing}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Stats pane — CLI log output + Docker stats */}

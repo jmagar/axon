@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fileDownloadUrl } from '@/lib/download-urls'
 import type { CrawlFile } from '@/lib/ws-protocol'
 
 interface CrawlFileExplorerProps {
   files: CrawlFile[]
   selectedFile: string | null
   onSelectFile: (relativePath: string) => void
+  jobId?: string | null
 }
 
 /** Extract domain from a URL string. */
@@ -59,7 +61,12 @@ function breadcrumb(url: string): string {
   return ''
 }
 
-export function CrawlFileExplorer({ files, selectedFile, onSelectFile }: CrawlFileExplorerProps) {
+export function CrawlFileExplorer({
+  files,
+  selectedFile,
+  onSelectFile,
+  jobId,
+}: CrawlFileExplorerProps) {
   const [open, setOpen] = useState(true)
   const [filter, setFilter] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
@@ -249,11 +256,35 @@ export function CrawlFileExplorer({ files, selectedFile, onSelectFile }: CrawlFi
                   </div>
                   {crumb && <div className="truncate text-[9px] text-[#5f6787]">{crumb}</div>}
                 </div>
-                <span className="mt-0.5 flex-shrink-0 text-[9px] tabular-nums text-[#5f6787]">
-                  {file.markdown_chars > 1000
-                    ? `${(file.markdown_chars / 1000).toFixed(1)}k`
-                    : file.markdown_chars}
-                </span>
+                <div className="mt-0.5 flex flex-shrink-0 items-center gap-1">
+                  <span className="text-[9px] tabular-nums text-[#5f6787]">
+                    {file.markdown_chars > 1000
+                      ? `${(file.markdown_chars / 1000).toFixed(1)}k`
+                      : file.markdown_chars}
+                  </span>
+                  {jobId && (
+                    <a
+                      href={fileDownloadUrl(jobId, file.relative_path)}
+                      download
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded p-0.5 text-[#5f6787] transition-colors hover:text-[#afd7ff]"
+                      title="Download file"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="size-2.5"
+                      >
+                        <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           )
