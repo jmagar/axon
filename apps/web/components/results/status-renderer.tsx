@@ -1,6 +1,7 @@
 'use client'
 
 import type { DedupeResult, NormalizedResult, StatsResult } from '@/lib/result-types'
+import { fmtNum } from './shared'
 
 interface StatusRendererProps {
   result: NormalizedResult
@@ -20,10 +21,6 @@ export function StatusRenderer({ result }: StatusRendererProps) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function fmtNum(n: number): string {
-  return n.toLocaleString()
-}
 
 function KvRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
