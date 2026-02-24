@@ -20,6 +20,7 @@ axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 bollard = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
 clap = { version = "4", features = ["derive", "env"] }
 console = "0.16"
 dialoguer = "0.12"
@@ -46,6 +47,7 @@ tokio-reactor-trait = "4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 hex = "0.4"
 reflink-copy = "0.1"

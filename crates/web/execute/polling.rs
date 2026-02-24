@@ -145,7 +145,7 @@ pub(super) async fn poll_async_job(
                         input_url,
                         job_id,
                     );
-                    send_crawl_manifest(&job_dir, tx).await;
+                    send_crawl_manifest(&job_dir, tx, Some(job_id)).await;
                 }
                 let elapsed = start.elapsed().as_millis() as u64;
                 let _ = tx

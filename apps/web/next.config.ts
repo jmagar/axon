@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
         source: '/ws',
         destination: `http://localhost:${axonPort}/ws`,
       },
+      {
+        source: '/download/:path*',
+        destination: `http://localhost:${axonPort}/download/:path*`,
+      },
     ]
   },
 }

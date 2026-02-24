@@ -9,7 +9,7 @@ export type WsServerMsg =
   | { type: 'output'; line: string }
   | { type: 'log'; line: string }
   | { type: 'file_content'; path: string; content: string }
-  | { type: 'crawl_files'; files: CrawlFile[]; output_dir: string }
+  | { type: 'crawl_files'; files: CrawlFile[]; output_dir: string; job_id?: string }
   | {
       type: 'crawl_progress'
       job_id: string

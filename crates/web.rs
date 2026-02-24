@@ -1,5 +1,7 @@
 mod docker_stats;
+mod download;
 mod execute;
+mod pack;
 
 use crate::crates::core::logging::log_info;
 use axum::Router;
@@ -7,6 +9,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
+use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::error::Error;
@@ -47,18 +50,31 @@ fn read_static(name: &str) -> String {
 pub(crate) struct AppState {
     /// Docker stats broadcast — poller sends, every WS client subscribes.
     stats_tx: broadcast::Sender<String>,
+    /// Registry of completed job IDs → output directories for download routes.
+    job_dirs: Arc<DashMap<String, PathBuf>>,
 }
 
 /// Start the axum server on the given port, running until interrupted.
 pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
     let (stats_tx, _) = broadcast::channel::<String>(64);
+    let job_dirs: Arc<DashMap<String, PathBuf>> = Arc::new(DashMap::new());
 
     let state = Arc::new(AppState {
         stats_tx: stats_tx.clone(),
+        job_dirs: job_dirs.clone(),
     });
 
     // Spawn Docker stats poller in background
     tokio::spawn(docker_stats::run_stats_loop(stats_tx));
+
+    // Download routes use a separate state (just the DashMap) to avoid
+    // coupling the download handlers to the full AppState.
+    let download_routes = Router::new()
+        .route("/download/{job_id}/pack.md", get(download::serve_pack_md))
+        .route("/download/{job_id}/pack.xml", get(download::serve_pack_xml))
+        .route("/download/{job_id}/archive.zip", get(download::serve_zip))
+        .route("/download/{job_id}/file/{*path}", get(download::serve_file))
+        .with_state(job_dirs);
 
     let app = Router::new()
         .route("/", get(serve_index))
@@ -66,7 +82,8 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
         .route("/neural.js", get(serve_neural_js))
         .route("/app.js", get(serve_app_js))
         .route("/ws", get(ws_upgrade))
-        .with_state(state);
+        .with_state(state)
+        .merge(download_routes);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
@@ -182,24 +199,35 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     // Per-connection state: current async job ID for cancel support
     let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
+    // Shared job_dirs registry for registering completed jobs
+    let job_dirs = state.job_dirs.clone();
+
     // Subscribe to Docker stats broadcast
     let mut stats_rx = state.stats_tx.subscribe();
 
     // Track crawl_files messages to capture the output_dir for read_file
     let base_dir_tracker = crawl_base_dir.clone();
+    let job_dirs_tracker = job_dirs.clone();
     let (tracking_tx, mut tracking_rx) = tokio::sync::mpsc::channel::<String>(256);
 
     // Forward task: sends exec output + stats to the WS client,
-    // and tracks crawl_files messages to capture base_dir
+    // and tracks crawl_files messages to capture base_dir + register job_dirs
     let forward = tokio::spawn(async move {
         loop {
             tokio::select! {
                 Some(msg) = exec_rx.recv() => {
-                    // Sniff crawl_files messages to extract output_dir
+                    // Sniff crawl_files messages to extract output_dir and job_id
                     if msg.contains("\"crawl_files\"") {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
                             if let Some(dir) = parsed.get("output_dir").and_then(|v| v.as_str()) {
                                 *base_dir_tracker.lock().await = Some(PathBuf::from(dir));
+                            }
+                            // Register in job_dirs for download routes
+                            if let (Some(job_id), Some(dir)) = (
+                                parsed.get("job_id").and_then(|v| v.as_str()),
+                                parsed.get("output_dir").and_then(|v| v.as_str()),
+                            ) {
+                                job_dirs_tracker.insert(job_id.to_string(), PathBuf::from(dir));
                             }
                         }
                     }
