@@ -48,28 +48,35 @@ export async function retrieveFromCollections(
 
     const perCollection = await Promise.all(
       selectedCollections.map(async (collection) => {
-        const response = await fetch(`${qdrantUrl}/collections/${collection}/points/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vector: queryVector,
-            limit,
-            with_payload: true,
-          }),
-        })
+        try {
+          const response = await fetch(
+            `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/search`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                vector: queryVector,
+                limit,
+                with_payload: true,
+              }),
+            },
+          )
 
-        if (!response.ok) return [] as PulseCitation[]
-        const data = (await response.json()) as QdrantSearchResponse
-        return (data.result ?? []).map((point) => {
-          const payload = point.payload ?? {}
-          return {
-            url: payload.url ?? '',
-            title: payload.title ?? 'Untitled',
-            snippet: truncate(payload.text ?? '', 280),
-            collection,
-            score: point.score ?? 0,
-          } satisfies PulseCitation
-        })
+          if (!response.ok) return [] as PulseCitation[]
+          const data = (await response.json()) as QdrantSearchResponse
+          return (data.result ?? []).map((point) => {
+            const payload = point.payload ?? {}
+            return {
+              url: payload.url ?? '',
+              title: payload.title ?? 'Untitled',
+              snippet: truncate(payload.text ?? '', 280),
+              collection,
+              score: point.score ?? 0,
+            } satisfies PulseCitation
+          })
+        } catch {
+          return [] as PulseCitation[]
+        }
       }),
     )
 

@@ -28,18 +28,23 @@ export function ensureRepoRootEnvLoaded() {
   rootEnvLoaded = true
 
   // apps/web -> repo root
-  const repoRoot = path.resolve(process.cwd(), '..', '..')
+  const cwd = process.cwd()
+  const repoRoot = cwd.endsWith(path.join('apps', 'web')) ? path.resolve(cwd, '..', '..') : cwd
   const envPath = path.join(repoRoot, '.env')
 
   if (!fs.existsSync(envPath)) return
 
-  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
-  for (const line of lines) {
-    const parsed = parseDotenvLine(line)
-    if (!parsed) continue
-    const [key, value] = parsed
-    if (process.env[key] === undefined) {
-      process.env[key] = value
+  try {
+    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
+    for (const line of lines) {
+      const parsed = parseDotenvLine(line)
+      if (!parsed) continue
+      const [key, value] = parsed
+      if (process.env[key] === undefined) {
+        process.env[key] = value
+      }
     }
+  } catch {
+    // Keep request path resilient if repo root .env exists but is unreadable.
   }
 }

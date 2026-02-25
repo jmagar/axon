@@ -1,7 +1,15 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const PULSE_DIR = path.resolve(process.cwd(), '.cache/pulse')
+function getWorkspaceRoot(): string {
+  const cwd = process.cwd()
+  if (cwd.endsWith(path.join('apps', 'web'))) {
+    return path.resolve(cwd, '..', '..')
+  }
+  return cwd
+}
+
+const PULSE_DIR = path.resolve(getWorkspaceRoot(), '.cache/pulse')
 
 interface SavePayload {
   title: string
@@ -50,13 +58,15 @@ function parseFrontmatter(raw: string): StoredDoc | null {
   if (end < 0) return null
   const metaRaw = raw.slice(4, end)
   const markdown = raw.slice(end + 5)
-  const meta = Object.fromEntries(
-    metaRaw
-      .split('\n')
-      .map((line) => line.split(':').map((part) => part.trim()))
-      .filter((parts) => parts.length >= 2)
-      .map(([key, ...rest]) => [key, rest.join(':').trim()]),
-  )
+  const metaEntries: Array<[string, string]> = []
+  for (const line of metaRaw.split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    const key = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (key) metaEntries.push([key, value])
+  }
+  const meta = Object.fromEntries(metaEntries)
 
   const parseMaybeJson = (value: string | undefined): unknown => {
     if (!value) return undefined
