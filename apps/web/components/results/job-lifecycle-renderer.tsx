@@ -109,33 +109,13 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
   const handleCancel = useCallback(() => {
     if (!commandMode || cancelSent) return
     send({
-      type: 'execute',
+      type: 'cancel',
+      id: job.jobId,
       mode: commandMode,
-      input: `cancel ${job.jobId}`,
-      flags: {},
+      job_id: job.jobId,
     })
     setCancelSent(true)
-  }, [send, commandMode, job.jobId, cancelSent])
-
-  const handleCheckStatus = useCallback(() => {
-    if (!commandMode) return
-    send({
-      type: 'execute',
-      mode: commandMode,
-      input: `status ${job.jobId}`,
-      flags: {},
-    })
-  }, [send, commandMode, job.jobId])
-
-  const handleViewErrors = useCallback(() => {
-    if (!commandMode) return
-    send({
-      type: 'execute',
-      mode: commandMode,
-      input: `errors ${job.jobId}`,
-      flags: {},
-    })
-  }, [send, commandMode, job.jobId])
+  }, [cancelSent, commandMode, job.jobId, send])
 
   const isTerminal =
     job.status === 'completed' || job.status === 'failed' || job.status === 'canceled'
@@ -201,12 +181,6 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
             disabled={cancelSent}
           />
         )}
-        {!isTerminal && (
-          <ActionButton label="Check Status" onClick={handleCheckStatus} variant="default" />
-        )}
-        {job.status === 'failed' && (
-          <ActionButton label="View Errors" onClick={handleViewErrors} variant="muted" />
-        )}
       </div>
     </div>
   )
@@ -270,11 +244,11 @@ export function JobLifecycleRenderer({
   const { subscribe } = useAxonWs()
   const [polledUpdates, setPolledUpdates] = useState<Record<string, unknown>[]>([])
 
-  // Listen for stdout_json that come from backend polling (status updates)
+  // Listen for command.output.json payloads that include job snapshots.
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
-      if (msg.type === 'stdout_json' && isRecord(msg.data)) {
-        const data = msg.data as Record<string, unknown>
+      if (msg.type === 'command.output.json' && isRecord(msg.data.data)) {
+        const data = msg.data.data as Record<string, unknown>
         if (data.job_id || data.id) {
           setPolledUpdates((prev) => {
             const next = [...prev, data]

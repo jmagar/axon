@@ -14,6 +14,10 @@ path = "lib.rs"
 name = "axon"
 path = "main.rs"
 
+[[bin]]
+name = "axon-mcp"
+path = "mcp_main.rs"
+
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
@@ -52,6 +56,7 @@ sha2 = "0.10"
 hex = "0.4"
 reflink-copy = "0.1"
 dotenvy = "0.15"
+rmcp = { version = "0.16.0", features = ["server", "macros", "transport-io", "schemars"] }
 
 [profile.release]
 opt-level = 3

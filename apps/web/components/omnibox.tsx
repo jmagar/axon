@@ -28,7 +28,7 @@ import { CommandOptionsPanel, type CommandOptionValues } from './command-options
 
 export function Omnibox() {
   const { send, subscribe } = useAxonWs()
-  const { startExecution, activateWorkspace, submitWorkspacePrompt } = useWsMessages()
+  const { startExecution, activateWorkspace, submitWorkspacePrompt, currentJobId } = useWsMessages()
   const [mode, setMode] = useState<ModeId>('scrape')
   const [input, setInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -97,23 +97,34 @@ export function Omnibox() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  // Subscribe to WS for done/error to update local status
+  // Subscribe to WS for command completion updates.
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
-      if (msg.type === 'done') {
+      if (msg.type === 'command.done') {
         setIsProcessing(false)
-        const secs = (msg.elapsed_ms / 1000).toFixed(1)
-        setStatusText(`${secs}s \u00b7 exit ${msg.exit_code}`)
-        setStatusType(msg.exit_code === 0 ? 'done' : 'error')
+        const secs = ((msg.data.payload.elapsed_ms ?? 0) / 1000).toFixed(1)
+        setStatusText(`${secs}s \u00b7 exit ${msg.data.payload.exit_code}`)
+        setStatusType(msg.data.payload.exit_code === 0 ? 'done' : 'error')
       }
-      if (msg.type === 'error') {
+      if (msg.type === 'command.error') {
         setIsProcessing(false)
-        const secs = msg.elapsed_ms ? `${(msg.elapsed_ms / 1000).toFixed(1)}s \u00b7 ` : ''
-        setStatusText(`${secs}error: ${msg.message}`)
+        const secs = msg.data.payload.elapsed_ms
+          ? `${(msg.data.payload.elapsed_ms / 1000).toFixed(1)}s \u00b7 `
+          : ''
+        setStatusText(`${secs}error: ${msg.data.payload.message}`)
         setStatusType('error')
       }
+      if (msg.type === 'job.cancel.response') {
+        setIsProcessing(false)
+        const modeLabel = msg.data.payload.mode ?? mode
+        const jobLabel = msg.data.payload.job_id ? ` \\u00b7 ${msg.data.payload.job_id}` : ''
+        const resultMessage =
+          msg.data.payload.message ?? (msg.data.payload.ok ? 'cancel accepted' : 'cancel failed')
+        setStatusText(`${modeLabel}${jobLabel} \\u00b7 ${resultMessage}`)
+        setStatusType(msg.data.payload.ok ? 'done' : 'error')
+      }
     })
-  }, [subscribe])
+  }, [mode, subscribe])
 
   // Global "/" shortcut to focus the omnibox.
   useEffect(() => {
@@ -288,13 +299,20 @@ export function Omnibox() {
 
   const cancel = useCallback(() => {
     if (!isProcessing) return
-    send({ type: 'cancel', id: String(execIdRef.current) })
+    const fallbackId = String(execIdRef.current)
+    const cancelId = currentJobId ?? fallbackId
+    send({
+      type: 'cancel',
+      id: cancelId,
+      mode,
+      job_id: currentJobId ?? undefined,
+    })
     setIsProcessing(false)
     const elapsed = Date.now() - startTimeRef.current
     const secs = (elapsed / 1000).toFixed(1)
     setStatusText(`${secs}s \u00b7 cancelled`)
     setStatusType('error')
-  }, [isProcessing, send])
+  }, [currentJobId, isProcessing, mode, send])
 
   const selectMode = useCallback(
     (id: ModeId) => {

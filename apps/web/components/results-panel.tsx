@@ -24,6 +24,27 @@ interface ResultsPanelProps {
   statsSlot?: ReactNode
 }
 
+export function selectNormalizedItems(stdoutJson: unknown[], _stdoutLines: string[]): unknown[] {
+  return stdoutJson.filter((item) => !isLifecycleEntry(item))
+}
+
+function isLifecycleEntry(item: unknown): boolean {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+  const value = item as Record<string, unknown>
+  if (typeof value.job_id !== 'string') return false
+  const lifecycleKeys = new Set([
+    'job_id',
+    'status',
+    'mode',
+    'phase',
+    'percent',
+    'processed',
+    'total',
+    'error_text',
+  ])
+  return Object.keys(value).every((key) => lifecycleKeys.has(key))
+}
+
 export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
   const {
     markdownContent,
@@ -39,6 +60,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     crawlProgress,
     stdoutLines,
     stdoutJson,
+    lifecycleEntries,
     commandMode,
     screenshotFiles,
     currentJobId,
@@ -72,38 +94,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     [effectiveCommandMode],
   )
 
-  const fallbackJsonItems = useMemo(() => {
-    if (stdoutJson.length > 0 || stdoutLines.length === 0) return null
-
-    const joined = stdoutLines.join('\n')
-    const candidates = [joined.trim()]
-
-    // Also try parsing from the first opening bracket to the last closing bracket.
-    // This recovers when stdout has harmless prefix/suffix text around JSON.
-    const firstObj = joined.indexOf('{')
-    const lastObj = joined.lastIndexOf('}')
-    if (firstObj >= 0 && lastObj > firstObj) {
-      candidates.push(joined.slice(firstObj, lastObj + 1).trim())
-    }
-    const firstArr = joined.indexOf('[')
-    const lastArr = joined.lastIndexOf(']')
-    if (firstArr >= 0 && lastArr > firstArr) {
-      candidates.push(joined.slice(firstArr, lastArr + 1).trim())
-    }
-
-    for (const candidate of candidates) {
-      if (!candidate || (!candidate.startsWith('{') && !candidate.startsWith('['))) continue
-      try {
-        const parsed = JSON.parse(candidate)
-        return [parsed]
-      } catch {
-        // Try next candidate
-      }
-    }
-    return null
-  }, [stdoutJson, stdoutLines])
-
-  const normalizedItems = stdoutJson.length > 0 ? stdoutJson : (fallbackJsonItems ?? [])
+  const normalizedItems = selectNormalizedItems(stdoutJson, stdoutLines)
 
   const normalized = useMemo(
     () =>
@@ -117,7 +108,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     if (spec?.renderIntent === 'job-lifecycle') {
       return (
         <JobLifecycleRenderer
-          stdoutJson={stdoutJson}
+          stdoutJson={lifecycleEntries.length > 0 ? lifecycleEntries : stdoutJson}
           commandMode={effectiveCommandMode}
           isProcessing={isProcessing}
           errorMessage={errorMessage}

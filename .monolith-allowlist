@@ -31,3 +31,7 @@ crates/web/static/app.js
 crates/web/static/neural.js
 # 630 lines — omnibox command/file suggestions + keyboard interaction state machine (2026-02-25)
 apps/web/components/omnibox.tsx
+# 1598 lines — unified MCP action router + artifact policy + resource handler; refactor planned (2026-02-25)
+crates/mcp/server.rs
+# 584 lines — websocket command execution module with protocol/state handling; refactor planned (2026-02-25)
+crates/web/execute/mod.rs

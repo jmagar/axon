@@ -1,12 +1,11 @@
 // Client → Server
 export type WsClientMsg =
   | { type: 'execute'; mode: string; input: string; flags: Record<string, string | boolean> }
-  | { type: 'cancel'; id: string }
+  | { type: 'cancel'; id: string; mode?: string; job_id?: string }
   | { type: 'read_file'; path: string }
 
 // Server → Client
 export type WsServerMsg =
-  | { type: 'output'; line: string }
   | { type: 'log'; line: string }
   | { type: 'file_content'; path: string; content: string }
   | { type: 'crawl_files'; files: CrawlFile[]; output_dir: string; job_id?: string }
@@ -20,21 +19,10 @@ export type WsServerMsg =
       thin_md: number
       phase: string
     }
-  | { type: 'done'; exit_code: number; elapsed_ms: number }
-  | { type: 'error'; message: string; elapsed_ms?: number; stderr?: string }
-  | { type: 'command_start'; mode: string }
-  | { type: 'stdout_json'; data: unknown }
-  | { type: 'stdout_line'; line: string }
-  | {
-      type: 'screenshot_files'
-      files: Array<{
-        path: string
-        name: string
-        serve_url?: string
-        size_bytes?: number
-        url?: string
-      }>
-    }
+  | WsV2CommandOutputJsonMsg
+  | WsV2CommandOutputLineMsg
+  | WsV2CommandDoneMsg
+  | WsV2CommandErrorMsg
   | {
       type: 'stats'
       aggregate: AggregateStats
@@ -45,6 +33,8 @@ export type WsServerMsg =
   | WsV2JobStatusMsg
   | WsV2JobProgressMsg
   | WsV2ArtifactListMsg
+  | WsV2ArtifactContentMsg
+  | WsV2JobCancelResponseMsg
 
 export interface WsV2CommandContext {
   exec_id: string
@@ -96,11 +86,141 @@ export interface WsV2JobProgressMsg {
   }
 }
 
+export interface WsV2CommandOutputJsonMsg {
+  type: 'command.output.json'
+  data: {
+    ctx: WsV2CommandContext
+    data: unknown
+  }
+}
+
+export interface WsV2CommandOutputLineMsg {
+  type: 'command.output.line'
+  data: {
+    ctx: WsV2CommandContext
+    line: string
+  }
+}
+
+export interface WsV2CommandDoneMsg {
+  type: 'command.done'
+  data: {
+    ctx: WsV2CommandContext
+    payload: {
+      exit_code: number
+      elapsed_ms?: number
+    }
+  }
+}
+
+export interface WsV2CommandErrorMsg {
+  type: 'command.error'
+  data: {
+    ctx: WsV2CommandContext
+    payload: {
+      message: string
+      elapsed_ms?: number
+    }
+  }
+}
+
 export interface WsV2ArtifactListMsg {
   type: 'artifact.list'
   data: {
     ctx: WsV2CommandContext
     artifacts: WsV2ArtifactEntry[]
+  }
+}
+
+export interface WsV2ArtifactContentMsg {
+  type: 'artifact.content'
+  data: {
+    ctx: WsV2CommandContext
+    path: string
+    content: string
+  }
+}
+
+export interface WsV2JobCancelResponseMsg {
+  type: 'job.cancel.response'
+  data: {
+    ctx: WsV2CommandContext
+    payload: {
+      ok: boolean
+      mode?: string
+      job_id?: string
+      message?: string
+    }
+  }
+}
+
+export interface WsLifecycleEntry {
+  job_id: string
+  status?: string
+  mode?: string
+  phase?: string
+  percent?: number
+  processed?: number
+  total?: number
+  error_text?: string
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) return undefined
+  return value
+}
+
+function asPositiveInteger(value: unknown): number | undefined {
+  const num = asFiniteNumber(value)
+  if (num === undefined) return undefined
+  const int = Math.floor(num)
+  return int >= 0 ? int : undefined
+}
+
+export function lifecycleFromJobStatus(
+  msg: WsV2JobStatusMsg,
+  fallbackJobId: string | null,
+): WsLifecycleEntry | null {
+  const metrics = msg.data.payload.metrics
+  const metricsRecord =
+    metrics && typeof metrics === 'object' && !Array.isArray(metrics)
+      ? (metrics as Record<string, unknown>)
+      : null
+  const metricsJobId =
+    typeof metricsRecord?.job_id === 'string'
+      ? metricsRecord.job_id
+      : typeof metricsRecord?.id === 'string'
+        ? metricsRecord.id
+        : null
+  const job_id = metricsJobId ?? fallbackJobId
+  if (!job_id) return null
+
+  const status = msg.data.payload.status
+  const mode = msg.data.ctx.mode
+  const error_text = msg.data.payload.error
+  return {
+    job_id,
+    mode,
+    status,
+    error_text: error_text && error_text.length > 0 ? error_text : undefined,
+  }
+}
+
+export function lifecycleFromJobProgress(
+  msg: WsV2JobProgressMsg,
+  fallbackJobId: string | null,
+): WsLifecycleEntry | null {
+  const job_id = fallbackJobId
+  if (!job_id) return null
+
+  return {
+    job_id,
+    mode: msg.data.ctx.mode,
+    status: 'running',
+    phase: msg.data.payload.phase,
+    percent: asFiniteNumber(msg.data.payload.percent),
+    processed: asPositiveInteger(msg.data.payload.processed),
+    total: asPositiveInteger(msg.data.payload.total),
   }
 }
 
