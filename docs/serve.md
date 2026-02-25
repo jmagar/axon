@@ -1,4 +1,12 @@
-# `axon serve` — Web UI
+# `axon serve` — Static Web UI (Deprecated)
+
+## Status
+
+`axon serve` is deprecated as the primary UI path.
+
+Use the Next.js app in `apps/web` for active development and current omnibox behavior (`/` focus shortcut, `@mode` switching, `@file` context mentions).
+
+This document is retained as legacy reference for the static Rust/axum UI implementation in `crates/web/static`.
 
 Starts a native web UI server that provides a browser-based interface for all Axon commands, with real-time Docker container stats driving a neural network canvas animation.
 

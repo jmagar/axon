@@ -42,14 +42,16 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
             className="h-full rounded-full transition-all duration-700"
             style={{
               width: `${pct}%`,
-              background: 'linear-gradient(90deg, #ff87af, #afd7ff)',
+              background:
+                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue))',
             }}
           />
         ) : isProcessing ? (
           <div
             className="absolute inset-0 animate-shimmer rounded-full"
             style={{
-              background: 'linear-gradient(90deg, #ff87af, #afd7ff, #ff87af)',
+              background:
+                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue), var(--axon-accent-pink))',
               backgroundSize: '200% 100%',
             }}
           />
@@ -58,16 +60,17 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
             className="h-full rounded-full transition-all duration-500"
             style={{
               width: '100%',
-              background: 'linear-gradient(90deg, #ff87af, #afd7ff)',
+              background:
+                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue))',
             }}
           />
         )}
       </div>
 
       {/* Counts label */}
-      <div className="flex items-center gap-2 text-[11px] text-[#8787af]">
+      <div className="flex items-center gap-2 text-[11px] text-[var(--axon-text-muted)]">
         {isProcessing && (
-          <span className="inline-block size-1.5 animate-pulse rounded-full bg-[#ff87af]" />
+          <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
         )}
         <span>
           {pages > 0 ? (

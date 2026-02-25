@@ -84,6 +84,26 @@
   --sidebar-ring: oklch(0.6 0.12 200);
   --brand: oklch(0.7 0.15 200);
   --highlight: oklch(0.8 0.18 160);
+  --axon-bg: #030712;
+  --axon-bg-elevated: #091225;
+  --axon-surface-1: rgba(10, 18, 35, 0.5);
+  --axon-surface-2: rgba(10, 18, 35, 0.35);
+  --axon-surface-3: rgba(15, 23, 42, 0.12);
+  --axon-border: rgba(175, 215, 255, 0.12);
+  --axon-border-strong: rgba(175, 215, 255, 0.22);
+  --axon-accent-blue: #afd7ff;
+  --axon-accent-blue-strong: #87afff;
+  --axon-accent-pink: #ff87af;
+  --axon-accent-pink-strong: #ff9ec0;
+  --axon-text-primary: #e8f4f8;
+  --axon-text-secondary: #dce6f0;
+  --axon-text-muted: #93aaca;
+  --axon-text-subtle: #6f89ad;
+  --axon-text-dim: #5f87af;
+  --axon-success: #82d9a0;
+  --axon-success-bg: rgba(130, 217, 160, 0.14);
+  --axon-warning: #ffc086;
+  --axon-warning-bg: rgba(255, 192, 134, 0.14);
 }
 
 .dark {
@@ -120,6 +140,26 @@
   --sidebar-ring: oklch(0.6 0.12 200);
   --brand: oklch(0.7 0.15 200);
   --highlight: oklch(0.8 0.18 160);
+  --axon-bg: #030712;
+  --axon-bg-elevated: #091225;
+  --axon-surface-1: rgba(10, 18, 35, 0.5);
+  --axon-surface-2: rgba(10, 18, 35, 0.35);
+  --axon-surface-3: rgba(15, 23, 42, 0.12);
+  --axon-border: rgba(175, 215, 255, 0.12);
+  --axon-border-strong: rgba(175, 215, 255, 0.22);
+  --axon-accent-blue: #afd7ff;
+  --axon-accent-blue-strong: #87afff;
+  --axon-accent-pink: #ff87af;
+  --axon-accent-pink-strong: #ff9ec0;
+  --axon-text-primary: #e8f4f8;
+  --axon-text-secondary: #dce6f0;
+  --axon-text-muted: #93aaca;
+  --axon-text-subtle: #6f89ad;
+  --axon-text-dim: #5f87af;
+  --axon-success: #82d9a0;
+  --axon-success-bg: rgba(130, 217, 160, 0.14);
+  --axon-warning: #ffc086;
+  --axon-warning-bg: rgba(255, 192, 134, 0.14);
 }
 
 @layer base {
@@ -128,6 +168,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    background:
+      radial-gradient(circle at 14% 12%, rgba(255, 135, 175, 0.12), transparent 34%),
+      radial-gradient(circle at 82% 18%, rgba(175, 215, 255, 0.1), transparent 38%),
+      linear-gradient(180deg, #02040b 0%, var(--axon-bg) 58%, #040a14 100%);
+    color: var(--axon-text-primary);
   }
 
 }

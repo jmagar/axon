@@ -28,12 +28,12 @@ export function PulseToolbar({
       <input
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
-        className="bg-transparent text-sm font-medium text-[#e8f4f8] outline-none placeholder:text-[#475569]"
+        className="bg-transparent text-sm font-medium text-[var(--axon-text-primary)] outline-none placeholder:text-[var(--axon-text-subtle)]"
         placeholder="Document title..."
       />
 
       <div className="flex items-center gap-3">
-        <span className="text-[10px] text-[#5f87af]">
+        <span className="text-[10px] text-[var(--axon-text-dim)]">
           {saveStatus === 'saving' && 'Saving...'}
           {saveStatus === 'saved' && 'Saved'}
           {saveStatus === 'error' && 'Save failed'}
@@ -47,8 +47,8 @@ export function PulseToolbar({
               onClick={() => onPermissionChange(opt.value)}
               className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
                 permissionLevel === opt.value
-                  ? 'bg-[rgba(255,135,175,0.15)] text-[#ff87af]'
-                  : 'text-[#5f87af] hover:text-[#8787af]'
+                  ? 'bg-[rgba(255,135,175,0.15)] text-[var(--axon-accent-pink)]'
+                  : 'text-[var(--axon-text-dim)] hover:text-[var(--axon-text-muted)]'
               }`}
               title={opt.label}
             >

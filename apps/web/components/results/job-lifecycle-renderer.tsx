@@ -35,29 +35,30 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 const PHASE_META: Record<JobPhase, { color: string; label: string; dotClass: string }> = {
   enqueued: {
-    color: '#ffaf87',
+    color: 'var(--axon-warning)',
     label: 'Enqueued',
-    dotClass: 'bg-[#ffaf87] shadow-[0_0_6px_rgba(255,175,135,0.5)]',
+    dotClass: 'bg-[var(--axon-warning)] shadow-[0_0_6px_rgba(255,175,135,0.5)]',
   },
   running: {
-    color: '#87afff',
+    color: 'var(--axon-accent-blue-strong)',
     label: 'Running',
-    dotClass: 'animate-pulse bg-[#87afff] shadow-[0_0_8px_rgba(135,175,255,0.6)]',
+    dotClass:
+      'animate-pulse bg-[var(--axon-accent-blue-strong)] shadow-[0_0_8px_rgba(135,175,255,0.6)]',
   },
   completed: {
-    color: '#87d787',
+    color: 'var(--axon-success)',
     label: 'Completed',
-    dotClass: 'bg-[#87d787] shadow-[0_0_6px_rgba(135,215,135,0.5)]',
+    dotClass: 'bg-[var(--axon-success)] shadow-[0_0_6px_rgba(135,215,135,0.5)]',
   },
   failed: {
-    color: '#ff5f87',
+    color: 'var(--axon-accent-pink)',
     label: 'Failed',
-    dotClass: 'bg-[#ff5f87] shadow-[0_0_6px_rgba(255,95,135,0.5)]',
+    dotClass: 'bg-[var(--axon-accent-pink)] shadow-[0_0_6px_rgba(255,95,135,0.5)]',
   },
   canceled: {
-    color: '#8787af',
+    color: 'var(--axon-text-muted)',
     label: 'Canceled',
-    dotClass: 'bg-[#8787af] shadow-[0_0_6px_rgba(135,135,175,0.4)]',
+    dotClass: 'bg-[var(--axon-text-muted)] shadow-[0_0_6px_rgba(135,135,175,0.4)]',
   },
 }
 
@@ -151,7 +152,7 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
           className={`inline-block size-2 shrink-0 rounded-full ${PHASE_META[job.status].dotClass}`}
         />
         <div className="min-w-0 flex-1">
-          <span className="font-mono text-[12px] text-[#afd7ff]">{job.jobId}</span>
+          <span className="font-mono text-[12px] text-[var(--axon-accent-blue)]">{job.jobId}</span>
           <span
             className="ml-2 text-[11px] font-semibold uppercase tracking-wider"
             style={{ color: PHASE_META[job.status].color }}
@@ -164,10 +165,10 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
       {/* Error display */}
       {job.status === 'failed' && job.errorText && (
         <div className="mb-3 rounded-md border border-[rgba(255,95,135,0.2)] bg-[rgba(255,95,135,0.06)] px-3 py-2">
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#ff5f87]">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--axon-accent-pink)]">
             Error
           </div>
-          <div className="font-mono text-[12px] leading-relaxed text-[#dce6f0]">
+          <div className="font-mono text-[12px] leading-relaxed text-[var(--axon-text-secondary)]">
             {job.errorText}
           </div>
         </div>
@@ -176,13 +177,13 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
       {/* Result summary for completed jobs */}
       {job.status === 'completed' && job.resultSummary && (
         <div className="mb-3 space-y-0.5">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[#5f87af]">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--axon-text-dim)]">
             Result
           </div>
           {Object.entries(job.resultSummary).map(([key, val]) => (
             <div key={key} className="flex justify-between py-0.5 text-[12px]">
-              <span className="text-[#8787af]">{key}</span>
-              <span className="max-w-[60%] truncate tabular-nums text-[#afd7ff]">
+              <span className="text-[var(--axon-text-muted)]">{key}</span>
+              <span className="max-w-[60%] truncate tabular-nums text-[var(--axon-accent-blue)]">
                 {summarizeStructuredValue(val)}
               </span>
             </div>
@@ -224,10 +225,10 @@ function ActionButton({
 }) {
   const variantClasses =
     variant === 'danger'
-      ? 'border-[rgba(255,95,135,0.3)] text-[#ff5f87] hover:bg-[rgba(255,95,135,0.1)]'
+      ? 'border-[rgba(255,95,135,0.3)] text-[var(--axon-accent-pink)] hover:bg-[rgba(255,95,135,0.1)]'
       : variant === 'muted'
-        ? 'border-[rgba(135,135,175,0.3)] text-[#8787af] hover:bg-[rgba(135,135,175,0.1)]'
-        : 'border-[rgba(135,175,255,0.3)] text-[#87afff] hover:bg-[rgba(135,175,255,0.1)]'
+        ? 'border-[rgba(135,135,175,0.3)] text-[var(--axon-text-muted)] hover:bg-[rgba(135,135,175,0.1)]'
+        : 'border-[rgba(135,175,255,0.3)] text-[var(--axon-accent-blue-strong)] hover:bg-[rgba(135,175,255,0.1)]'
 
   return (
     <button
@@ -245,12 +246,12 @@ function EmptyState({ isProcessing }: { isProcessing: boolean }) {
   return (
     <div className="flex h-32 items-center justify-center">
       {isProcessing ? (
-        <div className="flex items-center gap-2 text-[13px] text-[#8787af]">
-          <span className="inline-block size-2 animate-pulse rounded-full bg-[#ffaf87] shadow-[0_0_8px_rgba(255,175,135,0.6)]" />
+        <div className="flex items-center gap-2 text-[13px] text-[var(--axon-text-muted)]">
+          <span className="inline-block size-2 animate-pulse rounded-full bg-[var(--axon-warning)] shadow-[0_0_8px_rgba(255,175,135,0.6)]" />
           <span>Enqueuing job...</span>
         </div>
       ) : (
-        <span className="text-[13px] text-[#8787af]">No job data available</span>
+        <span className="text-[13px] text-[var(--axon-text-muted)]">No job data available</span>
       )}
     </div>
   )
@@ -304,10 +305,12 @@ export function JobLifecycleRenderer({
   if (errorMessage && jobs.length === 0) {
     return (
       <div className="rounded-md border border-[rgba(255,95,135,0.2)] bg-[rgba(255,95,135,0.06)] px-4 py-3">
-        <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#ff5f87]">
+        <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[var(--axon-accent-pink)]">
           Error
         </div>
-        <div className="font-mono text-[13px] leading-relaxed text-[#dce6f0]">{errorMessage}</div>
+        <div className="font-mono text-[13px] leading-relaxed text-[var(--axon-text-secondary)]">
+          {errorMessage}
+        </div>
       </div>
     )
   }
@@ -320,14 +323,14 @@ export function JobLifecycleRenderer({
     <div className="space-y-3">
       {/* Summary header when multiple jobs */}
       {jobs.length > 1 && (
-        <div className="flex items-center gap-3 text-[11px] text-[#8787af]">
+        <div className="flex items-center gap-3 text-[11px] text-[var(--axon-text-muted)]">
           <span>{jobs.length} jobs</span>
           <span>&middot;</span>
           <span>{jobs.filter((j) => j.status === 'completed').length} completed</span>
           {jobs.some((j) => j.status === 'running') && (
             <>
               <span>&middot;</span>
-              <span className="text-[#87afff]">
+              <span className="text-[var(--axon-accent-blue-strong)]">
                 {jobs.filter((j) => j.status === 'running').length} running
               </span>
             </>
@@ -335,7 +338,7 @@ export function JobLifecycleRenderer({
           {jobs.some((j) => j.status === 'failed') && (
             <>
               <span>&middot;</span>
-              <span className="text-[#ff5f87]">
+              <span className="text-[var(--axon-accent-pink)]">
                 {jobs.filter((j) => j.status === 'failed').length} failed
               </span>
             </>

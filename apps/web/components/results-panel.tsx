@@ -132,19 +132,25 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
               onClick={() => setActiveTab(tab.id)}
               className={`rounded-md px-3.5 py-1 text-[11px] font-medium tracking-wide transition-all duration-200 ${
                 activeTab === tab.id
-                  ? 'bg-[rgba(175,215,255,0.1)] font-semibold text-[#afd7ff]'
-                  : 'text-[#8787af] hover:bg-[rgba(175,215,255,0.06)] hover:text-[#afd7ff]'
+                  ? 'bg-[rgba(175,215,255,0.1)] font-semibold text-[var(--axon-accent-blue)]'
+                  : 'text-[var(--axon-text-muted)] hover:bg-[rgba(175,215,255,0.06)] hover:text-[var(--axon-accent-blue)]'
               }`}
             >
               {tab.label}
               {tab.id === 'content' && hasCrawlFiles && (
-                <span className="ml-1.5 text-[9px] text-[#8787af]">{crawlFiles.length}</span>
+                <span className="ml-1.5 text-[10px] text-[var(--axon-text-muted)]">
+                  {crawlFiles.length}
+                </span>
               )}
               {tab.id === 'stats' && logLines.length > 0 && (
-                <span className="ml-1.5 text-[9px] text-[#8787af]">{logLines.length}</span>
+                <span className="ml-1.5 text-[10px] text-[var(--axon-text-muted)]">
+                  {logLines.length}
+                </span>
               )}
               {tab.id === 'recent' && recentRuns.length > 0 && (
-                <span className="ml-1.5 text-[9px] text-[#8787af]">{recentRuns.length}</span>
+                <span className="ml-1.5 text-[10px] text-[var(--axon-text-muted)]">
+                  {recentRuns.length}
+                </span>
               )}
             </button>
           ))}
@@ -168,10 +174,12 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
               style={{ background: 'rgba(3, 7, 18, 0.25)' }}
             >
               {isScreenshotMode ? (
-                <div className="flex-1 overflow-y-auto p-2 text-sm leading-[1.65] text-[#dce6f0] sm:p-3 md:p-4">
+                <div className="flex-1 overflow-y-auto p-2 text-sm leading-[1.65] text-[var(--axon-text-secondary)] sm:p-3 md:p-4">
                   {errorMessage ? (
                     <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
-                      <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
+                      <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">
+                        Error
+                      </span>
                       {errorMessage}
                     </div>
                   ) : (
@@ -191,7 +199,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                   )}
 
                   {/* Main content area */}
-                  <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+                  <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[var(--axon-text-secondary)] sm:p-4 md:p-6">
                     {/* Crawl progress bar */}
                     {isCrawlMode && isProcessing && (
                       <CrawlProgress progress={crawlProgress} isProcessing={isProcessing} />
@@ -205,7 +213,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                   </div>
                 </>
               ) : (
-                <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[#dce6f0] sm:p-4 md:p-6">
+                <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[var(--axon-text-secondary)] sm:p-4 md:p-6">
                   {spec?.renderIntent === 'job-lifecycle' ? (
                     <JobLifecycleRenderer
                       stdoutJson={stdoutJson}
@@ -215,7 +223,9 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                     />
                   ) : errorMessage ? (
                     <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
-                      <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
+                      <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">
+                        Error
+                      </span>
                       {errorMessage}
                     </div>
                   ) : normalized && spec?.renderIntent === 'table' ? (
@@ -248,7 +258,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
           {logLines.length > 0 && <LogViewer lines={logLines} />}
           <div className="font-mono text-xs">
             {statsSlot || (
-              <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">
+              <div className="flex h-32 items-center justify-center text-sm text-[var(--axon-text-muted)]">
                 No stats available
               </div>
             )}
@@ -260,14 +270,14 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
       {activeTab === 'recent' && (
         <div className="font-mono text-xs">
           {recentRuns.length === 0 ? (
-            <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">
+            <div className="flex h-32 items-center justify-center text-sm text-[var(--axon-text-muted)]">
               No recent runs
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wider text-[#8787af]">
+                  <tr className="text-[10px] uppercase tracking-wider text-[var(--axon-text-muted)]">
                     <th className="w-5 border-b border-[rgba(175,215,255,0.15)] pb-2 text-center" />
                     <th className="border-b border-[rgba(175,215,255,0.15)] pb-2 text-left">
                       Mode
@@ -296,18 +306,26 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                         <span
                           className={`inline-block size-[7px] rounded-full ${
                             run.status === 'done'
-                              ? 'bg-[#4ade80] shadow-[0_0_6px_rgba(74,222,128,0.4)]'
-                              : 'bg-[#ff87af] shadow-[0_0_6px_rgba(255,135,175,0.4)]'
+                              ? 'bg-[var(--axon-success)] shadow-[0_0_6px_rgba(74,222,128,0.4)]'
+                              : 'bg-[var(--axon-accent-pink)] shadow-[0_0_6px_rgba(255,135,175,0.4)]'
                           }`}
                         />
                       </td>
-                      <td className="py-2 font-medium text-[#afd7ff]">{run.mode}</td>
-                      <td className="max-w-[260px] truncate py-2 text-[#8787af]">{run.target}</td>
-                      <td className="py-2 text-right tabular-nums text-[#afd7ff]">
+                      <td className="py-2 font-medium text-[var(--axon-accent-blue)]">
+                        {run.mode}
+                      </td>
+                      <td className="max-w-[260px] truncate py-2 text-[var(--axon-text-muted)]">
+                        {run.target}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-[var(--axon-accent-blue)]">
                         {run.duration}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-[#94a3b8]">{run.lines}</td>
-                      <td className="py-2 text-right text-[11px] text-[#475569]">{run.time}</td>
+                      <td className="py-2 text-right tabular-nums text-[var(--axon-text-muted)]">
+                        {run.lines}
+                      </td>
+                      <td className="py-2 text-right text-[12px] text-[var(--axon-text-subtle)]">
+                        {run.time}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -336,11 +354,14 @@ function LogViewer({ lines }: { lines: { content: string; timestamp: number }[] 
       className="max-h-[200px] overflow-y-auto rounded-lg border border-[rgba(175,215,255,0.08)] p-3"
       style={{ background: 'rgba(10, 18, 35, 0.4)' }}
     >
-      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#5f87af]">
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--axon-text-dim)]">
         Command Log
       </div>
       {lines.map((line, i) => (
-        <div key={i} className="font-mono text-[11px] leading-relaxed text-[#8787af]">
+        <div
+          key={i}
+          className="font-mono text-[12px] leading-relaxed text-[var(--axon-text-muted)]"
+        >
           {line.content}
         </div>
       ))}

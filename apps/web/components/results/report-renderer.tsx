@@ -45,7 +45,7 @@ export function ReportRenderer({ result, commandMode }: ReportRendererProps) {
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#5f87af]">
+    <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--axon-text-dim)]">
       {children}
     </h3>
   )
@@ -53,10 +53,10 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function AskPill({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-[rgba(175,215,255,0.2)] bg-[rgba(14,25,48,0.62)] px-2 py-0.5 font-mono text-[8px] text-[#b8d6ff]">
-      {icon && <span className="text-[#89c0ff]">{icon}</span>}
-      <span className="uppercase tracking-wide text-[#7ba0c7]">{label}</span>
-      <span className="text-[#dce6f0]">{value}</span>
+    <span className="inline-flex items-center gap-1 rounded-md border border-[rgba(175,215,255,0.2)] bg-[rgba(14,25,48,0.62)] px-2 py-0.5 font-mono text-[10px] text-[var(--axon-accent-blue)]">
+      {icon && <span className="text-[var(--axon-accent-blue-strong)]">{icon}</span>}
+      <span className="uppercase tracking-wide text-[var(--axon-text-dim)]">{label}</span>
+      <span className="text-[var(--axon-text-secondary)]">{value}</span>
     </span>
   )
 }
@@ -79,9 +79,9 @@ function Collapsible({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[10px] font-medium text-[#8787af] transition-colors hover:text-[#afd7ff]"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-[var(--axon-text-muted)] transition-colors hover:text-[var(--axon-accent-blue)]"
       >
-        <span className="text-[10px]">{open ? '\u25BC' : '\u25B6'}</span>
+        <span className="text-[11px]">{open ? '\u25BC' : '\u25B6'}</span>
         {title}
       </button>
       {open && <div className="border-t border-[rgba(175,215,255,0.06)] px-3 py-2">{children}</div>}
@@ -91,9 +91,9 @@ function Collapsible({
 
 function TimingRow({ label, ms }: { label: string; ms: number }) {
   return (
-    <div className="flex justify-between text-[10px]">
-      <span className="text-[#8787af]">{label}</span>
-      <span className="tabular-nums text-[#afd7ff]">{fmtMs(ms)}</span>
+    <div className="flex justify-between text-[11px]">
+      <span className="text-[var(--axon-text-muted)]">{label}</span>
+      <span className="tabular-nums text-[var(--axon-accent-blue)]">{fmtMs(ms)}</span>
     </div>
   )
 }
@@ -104,7 +104,7 @@ function TimingRow({ label, ms }: { label: string; ms: number }) {
 
 function DiagnosticsPanel({ diag }: { diag: AskDiagnostics }) {
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-[10px]">
+    <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px]">
       <KV label="Candidate pool" value={fmtNum(diag.candidate_pool)} />
       <KV label="Reranked pool" value={fmtNum(diag.reranked_pool)} />
       <KV label="Chunks selected" value={fmtNum(diag.chunks_selected)} />
@@ -120,8 +120,8 @@ function DiagnosticsPanel({ diag }: { diag: AskDiagnostics }) {
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
-      <span className="text-[#8787af]">{label}</span>
-      <span className="text-[#afd7ff]">{value}</span>
+      <span className="text-[var(--axon-text-muted)]">{label}</span>
+      <span className="text-[var(--axon-accent-blue)]">{value}</span>
     </div>
   )
 }
@@ -144,21 +144,31 @@ function AskReport({ data }: { data: AskResult }) {
         }}
       >
         <div className="flex flex-wrap items-center gap-1">
-          <span className="inline-flex size-4 items-center justify-center rounded-[6px] border border-[rgba(255,135,175,0.3)] bg-[rgba(255,135,175,0.12)] text-[#ff9ec0]">
+          <span className="inline-flex size-4 items-center justify-center rounded-[6px] border border-[rgba(255,135,175,0.3)] bg-[rgba(255,135,175,0.12)] text-[var(--axon-accent-pink-strong)]">
             <Sparkles size={10} />
           </span>
-          <span className="text-[9px] uppercase tracking-wider text-[#7ea7d8]">Ask</span>
-          <p className="min-w-[180px] flex-1 break-words text-[9px] leading-[1.3] text-[#dce6f0]">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--axon-text-dim)]">
+            Ask
+          </span>
+          <p className="min-w-[180px] flex-1 break-words text-[12px] leading-[1.45] text-[var(--axon-text-secondary)]">
             {data.query}
           </p>
-          <AskPill label="total" value={fmtMs(data.timing_ms.total)} icon={<Clock3 size={9} />} />
-          <AskPill label="ret" value={fmtMs(data.timing_ms.retrieval)} icon={<Search size={9} />} />
+          <AskPill label="total" value={fmtMs(data.timing_ms.total)} icon={<Clock3 size={10} />} />
+          <AskPill
+            label="ret"
+            value={fmtMs(data.timing_ms.retrieval)}
+            icon={<Search size={10} />}
+          />
           <AskPill
             label="ctx"
             value={fmtMs(data.timing_ms.context_build)}
-            icon={<Database size={9} />}
+            icon={<Database size={10} />}
           />
-          <AskPill label="llm" value={fmtMs(data.timing_ms.llm)} icon={<BrainCircuit size={9} />} />
+          <AskPill
+            label="llm"
+            value={fmtMs(data.timing_ms.llm)}
+            icon={<BrainCircuit size={10} />}
+          />
           {diag && <AskPill label="chunks" value={fmtNum(diag.chunks_selected)} />}
           {diag && <AskPill label="docs" value={fmtNum(diag.full_docs_selected)} />}
           {diag && <AskPill label="chars" value={fmtNum(diag.context_chars)} />}
@@ -173,12 +183,12 @@ function AskReport({ data }: { data: AskResult }) {
             'linear-gradient(145deg, rgba(11,20,40,0.72), rgba(8,15,31,0.52) 60%, rgba(20,14,36,0.42))',
         }}
       >
-        <div className="mb-1 flex items-center gap-1 text-[9px] uppercase tracking-wider text-[#7ea7d8]">
-          <MessageSquareQuote size={10} className="text-[#95cbff]" />
+        <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-[var(--axon-text-dim)]">
+          <MessageSquareQuote size={11} className="text-[var(--axon-accent-blue)]" />
           <span>Answer</span>
         </div>
         <div className="animate-in fade-in-0 duration-500">
-          <MarkdownBlock markdown={data.answer} className="text-[9px] leading-[1.36]" />
+          <MarkdownBlock markdown={data.answer} className="text-[12px] leading-[1.6]" />
         </div>
       </div>
     </div>
@@ -195,8 +205,8 @@ function EvaluateReport({ data }: { data: EvaluateResult }) {
       {/* Query */}
       <div>
         <SectionHeader>Query</SectionHeader>
-        <p className="text-[13px] font-medium text-[#dce6f0]">{data.query}</p>
-        <span className="mt-1 text-[11px] text-[#8787af]">
+        <p className="text-[13px] font-medium text-[var(--axon-text-secondary)]">{data.query}</p>
+        <span className="mt-1 text-[11px] text-[var(--axon-text-muted)]">
           {data.ref_chunk_count} reference chunks
         </span>
       </div>
@@ -272,16 +282,17 @@ function DebugReport({ data }: { data: DebugResult }) {
 
       <div>
         <SectionHeader>LLM Debug Analysis</SectionHeader>
-        <div className="mb-2 flex gap-4 text-[11px] text-[#8787af]">
+        <div className="mb-2 flex gap-4 text-[11px] text-[var(--axon-text-muted)]">
           <span>
-            Model: <span className="text-[#afd7ff]">{data.llm_debug.model}</span>
+            Model: <span className="text-[var(--axon-accent-blue)]">{data.llm_debug.model}</span>
           </span>
           <span>
-            Base URL: <span className="text-[#87afff]">{data.llm_debug.base_url}</span>
+            Base URL:{' '}
+            <span className="text-[var(--axon-accent-blue-strong)]">{data.llm_debug.base_url}</span>
           </span>
         </div>
         <div
-          className="whitespace-pre-wrap rounded-lg border border-[rgba(175,215,255,0.08)] p-3 text-[12px] leading-relaxed text-[#dce6f0]"
+          className="whitespace-pre-wrap rounded-lg border border-[rgba(175,215,255,0.08)] p-3 text-[12px] leading-relaxed text-[var(--axon-text-secondary)]"
           style={{ background: 'rgba(10, 18, 35, 0.4)' }}
         >
           {data.llm_debug.analysis}
@@ -321,6 +332,8 @@ function RawTextReport({ data }: { data: unknown[] }) {
     .join('\n\n')
 
   return (
-    <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-[#dce6f0]">{text}</div>
+    <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--axon-text-secondary)]">
+      {text}
+    </div>
   )
 }

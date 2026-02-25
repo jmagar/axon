@@ -103,7 +103,8 @@ export default function DashboardPage() {
             <button
               type="button"
               aria-label="Canvas settings"
-              className="inline-flex size-9 items-center justify-center rounded-full border border-[rgba(175,215,255,0.28)] bg-[rgba(8,16,34,0.55)] text-[rgba(220,238,255,0.92)] backdrop-blur-md transition-colors hover:bg-[rgba(12,26,52,0.74)]"
+              className="inline-flex size-9 items-center justify-center rounded-full border bg-[color:var(--axon-surface-1)] text-[color:var(--axon-text-secondary)] backdrop-blur-md transition-colors hover:bg-[rgba(12,26,52,0.74)]"
+              style={{ borderColor: 'var(--axon-border-strong)' }}
             >
               <Settings2 className="size-4" />
             </button>
@@ -149,9 +150,12 @@ export default function DashboardPage() {
           className={`rounded-2xl border p-3 transition-all duration-500 sm:p-5 ${
             isProcessing
               ? 'border-[rgba(255,135,175,0.3)] shadow-[0_0_80px_rgba(255,135,175,0.1),0_0_30px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
-              : 'border-[rgba(175,215,255,0.12)] shadow-[0_0_60px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
+              : 'shadow-[0_0_60px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
           }`}
-          style={{ background: 'rgba(15, 23, 42, 0.08)' }}
+          style={{
+            borderColor: isProcessing ? 'rgba(255,135,175,0.3)' : 'var(--axon-border)',
+            background: 'var(--axon-surface-3)',
+          }}
         >
           <Omnibox />
           <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />

@@ -1388,6 +1388,10 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
 
       // Clear frame (matches original neural.js)
       ctx.clearRect(0, 0, w, h)
+      // Paint an opaque base so body gradients never bleed through transparent
+      // regions and create visible horizontal seams.
+      ctx.fillStyle = rgba(state.visual.palette.backgroundOuter, 1)
+      ctx.fillRect(0, 0, w, h)
 
       // Update particles first so both background and foreground layers stay in sync.
       state.particles.forEach((p) => {
@@ -1400,6 +1404,8 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
         const bgCtx = state.backgroundLayer.getContext('2d')
         if (bgCtx) {
           bgCtx.clearRect(0, 0, w, h)
+          bgCtx.fillStyle = rgba(state.visual.palette.backgroundOuter, 1)
+          bgCtx.fillRect(0, 0, w, h)
           bgCtx.drawImage(state.densityLayer, 0, 0, w, h)
 
           const cx = w / 2

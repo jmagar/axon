@@ -18,7 +18,7 @@ export function ContentViewer({ markdown, isProcessing, errorMessage }: ContentV
   if (errorMessage) {
     return (
       <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
-        <span className="mb-2 block text-sm font-bold text-[#ff87af]">Error</span>
+        <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">Error</span>
         {errorMessage}
       </div>
     )
@@ -26,7 +26,7 @@ export function ContentViewer({ markdown, isProcessing, errorMessage }: ContentV
 
   if (!markdown && !isProcessing) {
     return (
-      <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">
+      <div className="flex h-32 items-center justify-center text-sm text-[var(--axon-text-muted)]">
         Run a command to see results
       </div>
     )
@@ -34,8 +34,8 @@ export function ContentViewer({ markdown, isProcessing, errorMessage }: ContentV
 
   if (!markdown && isProcessing) {
     return (
-      <div className="flex items-center gap-2 text-[#8787af]">
-        <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[#ff87af]" />
+      <div className="flex items-center gap-2 text-[var(--axon-text-muted)]">
+        <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[var(--axon-accent-pink)]" />
         <span className="text-xs">Processing...</span>
       </div>
     )

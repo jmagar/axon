@@ -18,14 +18,16 @@ export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRender
   if (!hasJson && !hasLines) {
     if (isProcessing) {
       return (
-        <div className="flex items-center gap-2 text-[#8787af]">
-          <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[#ff87af]" />
+        <div className="flex items-center gap-2 text-[var(--axon-text-muted)]">
+          <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[var(--axon-accent-pink)]" />
           <span className="text-xs">Processing...</span>
         </div>
       )
     }
     return (
-      <div className="flex h-32 items-center justify-center text-sm text-[#8787af]">No output</div>
+      <div className="flex h-32 items-center justify-center text-sm text-[var(--axon-text-muted)]">
+        No output
+      </div>
     )
   }
 
@@ -47,7 +49,7 @@ export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRender
       ) : parsedFromLines ? (
         <StructuredDataView data={parsedFromLines} />
       ) : (
-        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-[#dce6f0]">
+        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-[var(--axon-text-secondary)]">
           {stdoutLines.join('\n')}
         </pre>
       )}
