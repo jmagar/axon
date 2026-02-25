@@ -1,5 +1,8 @@
 # Sessions Ingest
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 > CLI reference (flags, subcommands, examples): [`docs/commands/sessions.md`](../commands/sessions.md)
 
 Ingests exported AI conversation files (Claude, Codex, Gemini) into Qdrant. Uses a Postgres-backed state tracker to avoid re-processing unchanged files on subsequent runs.

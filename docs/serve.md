@@ -1,5 +1,8 @@
 # `axon serve` — Static Web UI (Deprecated)
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 ## Status
 
 `axon serve` is deprecated as the primary UI path.

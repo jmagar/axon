@@ -1,5 +1,8 @@
 pub(crate) mod files;
 mod polling;
+#[cfg(test)]
+#[path = "tests/ws_event_v2_tests.rs"]
+mod ws_event_v2_tests;
 
 pub(crate) use files::handle_read_file;
 
