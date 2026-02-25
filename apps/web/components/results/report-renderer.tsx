@@ -323,17 +323,22 @@ function RawTextReport({ data }: { data: unknown[] }) {
     )
   }
 
-  const text = data
-    .map((item) => {
-      if (typeof item === 'string') return item
-      if (typeof item === 'object' && item !== null) return formatStructuredText(item)
-      return String(item)
-    })
-    .join('\n\n')
-
   return (
-    <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--axon-text-secondary)]">
-      {text}
+    <div className="space-y-3">
+      {data.map((item, idx) => {
+        if (typeof item === 'object' && item !== null) {
+          return <StructuredDataView key={`object-${idx}`} data={item} />
+        }
+        const text = typeof item === 'string' ? item : formatStructuredText(item)
+        return (
+          <div
+            key={`text-${idx}`}
+            className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--axon-text-secondary)]"
+          >
+            {text}
+          </div>
+        )
+      })}
     </div>
   )
 }

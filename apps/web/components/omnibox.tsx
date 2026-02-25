@@ -190,7 +190,10 @@ export function Omnibox() {
         .slice(0, 3)
 
       if (matchingFiles.length === 0) {
-        return { enrichedInput: rawInput.trim(), contextFileLabels: [] as string[] }
+        return {
+          enrichedInput: rawInput.trim(),
+          contextFileLabels: [] as string[],
+        }
       }
 
       const contextBlocks = await Promise.all(
@@ -198,7 +201,9 @@ export function Omnibox() {
           try {
             const res = await fetch(`/api/omnibox/files?id=${encodeURIComponent(file.id)}`)
             if (!res.ok) return null
-            const data = (await res.json()) as { file?: { content?: string; label?: string } }
+            const data = (await res.json()) as {
+              file?: { content?: string; label?: string }
+            }
             const content = data.file?.content?.trim()
             if (!content) return null
             const label = data.file?.label ?? file.label
@@ -211,7 +216,10 @@ export function Omnibox() {
 
       const usableBlocks = contextBlocks.filter((block): block is string => Boolean(block))
       if (usableBlocks.length === 0) {
-        return { enrichedInput: rawInput.trim(), contextFileLabels: [] as string[] }
+        return {
+          enrichedInput: rawInput.trim(),
+          contextFileLabels: [] as string[],
+        }
       }
 
       const contextSection = `\n\nLocal file context:\n${usableBlocks.join('\n\n---\n\n')}`
@@ -328,24 +336,31 @@ export function Omnibox() {
       setFileSuggestions([])
       setMentionSuggestions([])
       setMentionSelectionIndex(0)
-      setFileContextMentions((prev) => ({ ...prev, [candidate.label.toLowerCase()]: candidate }))
-      setRecentFileSelections((prev) => ({ ...prev, [candidate.id]: Date.now() }))
+      setFileContextMentions((prev) => ({
+        ...prev,
+        [candidate.label.toLowerCase()]: candidate,
+      }))
+      setRecentFileSelections((prev) => ({
+        ...prev,
+        [candidate.id]: Date.now(),
+      }))
       return true
     },
     [activeMentionToken, input],
   )
 
   const applyActiveSuggestion = useCallback(() => {
-    const selected = activeSuggestions[mentionSelectionIndex]
-    if (!selected) return false
     if (mentionKind === 'mode') {
-      return applyModeMentionCandidate(selected as ModeDefinition)
+      const selected = mentionSuggestions[mentionSelectionIndex]
+      return selected ? applyModeMentionCandidate(selected) : false
     }
-    return applyFileMentionCandidate(selected as LocalDocFile)
+    const selected = fileSuggestions[mentionSelectionIndex]
+    return selected ? applyFileMentionCandidate(selected) : false
   }, [
-    activeSuggestions,
     mentionSelectionIndex,
     mentionKind,
+    mentionSuggestions,
+    fileSuggestions,
     applyModeMentionCandidate,
     applyFileMentionCandidate,
   ])
@@ -614,38 +629,41 @@ export function Omnibox() {
             <span className="text-[var(--axon-text-dim)]">{omniboxPhase.replace('-', ' ')}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {activeSuggestions.map((candidate, idx) => {
-              const key =
-                mentionKind === 'mode'
-                  ? (candidate as ModeDefinition).id
-                  : (candidate as LocalDocFile).id
-              const label =
-                mentionKind === 'mode'
-                  ? `@${(candidate as ModeDefinition).id}`
-                  : `@${(candidate as LocalDocFile).label}`
-
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    setMentionSelectionIndex(idx)
-                    if (mentionKind === 'mode') {
-                      void applyModeMentionCandidate(candidate as ModeDefinition)
-                      return
-                    }
-                    void applyFileMentionCandidate(candidate as LocalDocFile)
-                  }}
-                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
-                    idx === mentionSelectionIndex
-                      ? 'border-[rgba(255,135,175,0.5)] bg-[rgba(255,135,175,0.18)] text-[var(--axon-accent-pink-strong)]'
-                      : 'border-[rgba(175,215,255,0.25)] bg-[rgba(175,215,255,0.08)] text-[var(--axon-accent-blue)] hover:bg-[rgba(175,215,255,0.14)]'
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
+            {mentionKind === 'mode'
+              ? mentionSuggestions.map((candidate, idx) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onClick={() => {
+                      setMentionSelectionIndex(idx)
+                      void applyModeMentionCandidate(candidate)
+                    }}
+                    className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                      idx === mentionSelectionIndex
+                        ? 'border-[rgba(255,135,175,0.5)] bg-[rgba(255,135,175,0.18)] text-[var(--axon-accent-pink-strong)]'
+                        : 'border-[rgba(175,215,255,0.25)] bg-[rgba(175,215,255,0.08)] text-[var(--axon-accent-blue)] hover:bg-[rgba(175,215,255,0.14)]'
+                    }`}
+                  >
+                    @{candidate.id}
+                  </button>
+                ))
+              : fileSuggestions.map((candidate, idx) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onClick={() => {
+                      setMentionSelectionIndex(idx)
+                      void applyFileMentionCandidate(candidate)
+                    }}
+                    className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                      idx === mentionSelectionIndex
+                        ? 'border-[rgba(255,135,175,0.5)] bg-[rgba(255,135,175,0.18)] text-[var(--axon-accent-pink-strong)]'
+                        : 'border-[rgba(175,215,255,0.25)] bg-[rgba(175,215,255,0.08)] text-[var(--axon-accent-blue)] hover:bg-[rgba(175,215,255,0.14)]'
+                    }`}
+                  >
+                    @{candidate.label}
+                  </button>
+                ))}
           </div>
           <div className="mt-1 text-[10px] text-[var(--axon-text-dim)]">
             Tab/Enter apply · ↑/↓ change

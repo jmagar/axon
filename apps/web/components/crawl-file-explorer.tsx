@@ -272,6 +272,7 @@ export function CrawlFileExplorer({
                     <a
                       href={fileDownloadUrl(jobId, file.relative_path)}
                       download
+                      aria-label={`Download ${name}`}
                       onClick={(e) => e.stopPropagation()}
                       className="rounded p-0.5 text-[var(--axon-text-subtle)] transition-colors hover:text-[var(--axon-accent-blue)]"
                       title="Download file"
