@@ -17,6 +17,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - Automation-friendly JSON mode via `--json`
 - Legacy static web UI via `axon serve` (deprecated) — see `docs/serve.md`
 - Next.js web app (`apps/web`) with keyboard-first omnibox (`/` focus, `@mode` switching, `@file` context mentions)
+- MCP server binary `axon-mcp` exposing a single `axon` tool (`action`/`subaction`) for crawler/RAG integration
 
 ## Architecture
 
@@ -32,6 +33,24 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
   - `apps/web`: active Next.js UI (omnibox, pulse workspace, API routes)
 
 For infra topology (Docker services, ports, persistence), see the Infrastructure and Environment sections below.
+
+## MCP Server
+
+Axon includes an MCP server binary:
+
+```bash
+cargo build --release --bin axon-mcp
+./target/release/axon-mcp
+```
+
+Documentation:
+- Design/runtime guide: `docs/MCP.md`
+- Wire contract/schema source of truth: `docs/MCP-TOOL-SCHEMA.md`
+
+MCP defaults are context-safe:
+- Artifact-first responses (`response_mode=path`) written to `.cache/axon-mcp/`
+- Inline responses are optional (`response_mode=inline|both`) and capped
+- Resource: `axon://schema/mcp-tool`
 
 ## Quick Start
 

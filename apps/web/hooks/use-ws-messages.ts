@@ -1,8 +1,23 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
-import type { CrawlFile, WsServerMsg } from '@/lib/ws-protocol'
+import {
+  type CrawlFile,
+  lifecycleFromJobProgress,
+  lifecycleFromJobStatus,
+  type WsLifecycleEntry,
+  type WsServerMsg,
+} from '@/lib/ws-protocol'
 
 export interface LogLine {
   content: string
@@ -35,6 +50,13 @@ export interface ScreenshotFile {
   url?: string
 }
 
+export interface CancelResponseState {
+  ok: boolean
+  message: string
+  mode?: string
+  job_id?: string
+}
+
 interface WsMessagesContextValue {
   /** Markdown content from the output file (set by file_content message) */
   markdownContent: string
@@ -55,16 +77,20 @@ interface WsMessagesContextValue {
   selectFile: (relativePath: string) => void
   /** Live crawl progress from job polling */
   crawlProgress: CrawlProgress | null
-  /** Accumulated raw text lines from stdout */
+  /** Accumulated raw text lines from v2 command output */
   stdoutLines: string[]
-  /** Accumulated parsed JSON objects from stdout */
+  /** Accumulated parsed JSON objects from v2 command output */
   stdoutJson: unknown[]
-  /** Command mode reported by command_start message */
+  /** Command mode reported by command.start message */
   commandMode: string | null
   /** Screenshot files from screenshot command */
   screenshotFiles: ScreenshotFile[]
   /** Job ID for the current/last crawl (used for download routes) */
   currentJobId: string | null
+  /** Unified v2/legacy lifecycle entries for job-based renderers. */
+  lifecycleEntries: WsLifecycleEntry[]
+  /** Latest cancel response status from v2 job.cancel.response. */
+  cancelResponse: CancelResponseState | null
   /** Active workspace mode (currently pulse) when omnibox enters workspace flow. */
   workspaceMode: string | null
   /** Last submitted workspace prompt payload from omnibox. */
@@ -91,6 +117,110 @@ export { WsMessagesContext }
  * Status payloads can be very large JSON documents, so keep a larger window. */
 const MAX_STDOUT_ITEMS = 50000
 
+export interface WsMessagesRuntimeState {
+  currentJobId: string | null
+  commandMode: string | null
+  markdownContent: string
+  crawlProgress: CrawlProgress | null
+  screenshotFiles: ScreenshotFile[]
+  lifecycleEntries: WsLifecycleEntry[]
+  stdoutJson: unknown[]
+  cancelResponse: CancelResponseState | null
+}
+
+export function makeInitialRuntimeState(): WsMessagesRuntimeState {
+  return {
+    currentJobId: null,
+    commandMode: null,
+    markdownContent: '',
+    crawlProgress: null,
+    screenshotFiles: [],
+    lifecycleEntries: [],
+    stdoutJson: [],
+    cancelResponse: null,
+  }
+}
+
+export function reduceRuntimeState(
+  state: WsMessagesRuntimeState,
+  msg: WsServerMsg,
+): WsMessagesRuntimeState {
+  const next = { ...state }
+  switch (msg.type) {
+    case 'command.output.json': {
+      const maybeJobData =
+        msg.data.data && typeof msg.data.data === 'object' && !Array.isArray(msg.data.data)
+          ? (msg.data.data as Record<string, unknown>)
+          : null
+      const maybeJobId =
+        maybeJobData && typeof maybeJobData.job_id === 'string' ? maybeJobData.job_id : null
+      if (maybeJobId) next.currentJobId = maybeJobId
+      next.stdoutJson = [...state.stdoutJson, msg.data.data]
+      return next
+    }
+    case 'command.start':
+      next.commandMode = msg.data.ctx.mode
+      next.stdoutJson = []
+      return next
+    case 'command.output.line':
+      return next
+    case 'job.status': {
+      const lifecycle = lifecycleFromJobStatus(msg, state.currentJobId)
+      if (!lifecycle) return next
+      next.currentJobId = lifecycle.job_id
+      next.lifecycleEntries = [...state.lifecycleEntries, lifecycle]
+      next.stdoutJson = [...state.stdoutJson, lifecycle]
+      return next
+    }
+    case 'job.progress': {
+      const lifecycle = lifecycleFromJobProgress(msg, state.currentJobId)
+      if (!lifecycle) return next
+      next.lifecycleEntries = [...state.lifecycleEntries, lifecycle]
+      next.stdoutJson = [...state.stdoutJson, lifecycle]
+      return next
+    }
+    case 'artifact.list':
+      next.screenshotFiles = msg.data.artifacts
+        .filter((artifact) => typeof artifact.path === 'string' && artifact.path.length > 0)
+        .map((artifact) => {
+          const path = artifact.path as string
+          const pathParts = path.split('/')
+          const name = pathParts[pathParts.length - 1] || path
+          return {
+            path,
+            name,
+            serve_url: artifact.download_url,
+            size_bytes: artifact.size_bytes,
+          }
+        })
+      return next
+    case 'artifact.content':
+      next.markdownContent = msg.data.content
+      return next
+    case 'job.cancel.response':
+      next.cancelResponse = {
+        ok: msg.data.payload.ok,
+        message:
+          msg.data.payload.message ??
+          (msg.data.payload.ok ? 'Cancel request accepted' : 'Cancel request failed'),
+        mode: msg.data.payload.mode,
+        job_id: msg.data.payload.job_id,
+      }
+      return next
+    case 'crawl_progress':
+      next.crawlProgress = {
+        pages_crawled: msg.pages_crawled,
+        pages_discovered: msg.pages_discovered,
+        md_created: msg.md_created,
+        thin_md: msg.thin_md,
+        phase: msg.phase,
+      }
+      return next
+    default:
+      return next
+  }
+}
+
 export function useWsMessagesProvider() {
   const { subscribe, send } = useAxonWs()
   const [markdownContent, setMarkdownContent] = useState('')
@@ -111,9 +241,17 @@ export function useWsMessagesProvider() {
   const [commandMode, setCommandMode] = useState<string | null>(null)
   const [screenshotFiles, setScreenshotFiles] = useState<ScreenshotFile[]>([])
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const currentJobIdRef = useRef<string | null>(null)
+  const [lifecycleEntries, setLifecycleEntries] = useState<WsLifecycleEntry[]>([])
+  const [cancelResponse, setCancelResponse] = useState<CancelResponseState | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<string | null>(null)
   const [workspacePrompt, setWorkspacePrompt] = useState<string | null>(null)
   const [workspacePromptVersion, setWorkspacePromptVersion] = useState(0)
+
+  const setCurrentJobIdTracked = useCallback((jobId: string | null) => {
+    currentJobIdRef.current = jobId
+    setCurrentJobId(jobId)
+  }, [])
 
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
@@ -128,7 +266,7 @@ export function useWsMessagesProvider() {
         case 'crawl_files':
           setCrawlFiles(msg.files)
           setHasResults(true)
-          setCurrentJobId(msg.job_id ?? null)
+          setCurrentJobIdTracked(msg.job_id ?? null)
           // First file is auto-loaded by the backend
           if (msg.files.length > 0) {
             setSelectedFile(msg.files[0].relative_path)
@@ -143,58 +281,115 @@ export function useWsMessagesProvider() {
             phase: msg.phase,
           })
           if (msg.job_id) {
-            setCurrentJobId(msg.job_id)
+            setCurrentJobIdTracked(msg.job_id)
           }
           break
-        case 'command_start':
-          setCommandMode(msg.mode)
+        case 'command.start':
+          setCommandMode(msg.data.ctx.mode)
           setStdoutLines([])
           setStdoutJson([])
           break
-        case 'stdout_json': {
+        case 'command.output.json': {
+          const maybeJobData =
+            msg.data.data && typeof msg.data.data === 'object' && !Array.isArray(msg.data.data)
+              ? (msg.data.data as Record<string, unknown>)
+              : null
+          const maybeJobId =
+            maybeJobData && typeof maybeJobData.job_id === 'string' ? maybeJobData.job_id : null
+          if (maybeJobId) {
+            setCurrentJobIdTracked(maybeJobId)
+          }
           setStdoutJson((prev) => {
-            const next = [...prev, msg.data]
+            const next = [...prev, msg.data.data]
             return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
           })
           setHasResults(true)
           break
         }
-        case 'stdout_line': {
+        case 'command.output.line': {
           setStdoutLines((prev) => {
-            const next = [...prev, msg.line]
+            const next = [...prev, msg.data.line]
             return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
           })
           setHasResults(true)
           break
         }
-        case 'screenshot_files':
-          setScreenshotFiles(msg.files)
-          setHasResults(true)
-          break
-        case 'output': {
-          // Legacy server message shape: treat as stdout text so content renderers
-          // still work even if the backend emits `output` instead of `stdout_line`.
-          const line = msg.line
-          if (!line.trim()) break
-          setStdoutLines((prev) => {
-            const next = [...prev, line]
-            return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
-          })
+        case 'job.status': {
+          const lifecycle = lifecycleFromJobStatus(msg, currentJobIdRef.current)
+          if (lifecycle) {
+            setCurrentJobIdTracked(lifecycle.job_id)
+            setLifecycleEntries((prev) => {
+              const next = [...prev, lifecycle]
+              return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
+            })
+            setStdoutJson((prev) => {
+              const next = [...prev, lifecycle]
+              return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
+            })
+          }
           setHasResults(true)
           break
         }
+        case 'job.progress': {
+          const lifecycle = lifecycleFromJobProgress(msg, currentJobIdRef.current)
+          if (lifecycle) {
+            setLifecycleEntries((prev) => {
+              const next = [...prev, lifecycle]
+              return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
+            })
+            setStdoutJson((prev) => {
+              const next = [...prev, lifecycle]
+              return next.length > MAX_STDOUT_ITEMS ? next.slice(-MAX_STDOUT_ITEMS) : next
+            })
+          }
+          setHasResults(true)
+          break
+        }
+        case 'artifact.list':
+          setScreenshotFiles(
+            msg.data.artifacts
+              .filter((artifact) => typeof artifact.path === 'string' && artifact.path.length > 0)
+              .map((artifact) => {
+                const path = artifact.path as string
+                const pathParts = path.split('/')
+                const name = pathParts[pathParts.length - 1] || path
+                return {
+                  path,
+                  name,
+                  serve_url: artifact.download_url,
+                  size_bytes: artifact.size_bytes,
+                }
+              }),
+          )
+          setHasResults(true)
+          break
+        case 'artifact.content':
+          setMarkdownContent(msg.data.content)
+          setHasResults(true)
+          break
+        case 'job.cancel.response':
+          setCancelResponse({
+            ok: msg.data.payload.ok,
+            message:
+              msg.data.payload.message ??
+              (msg.data.payload.ok ? 'Cancel request accepted' : 'Cancel request failed'),
+            mode: msg.data.payload.mode,
+            job_id: msg.data.payload.job_id,
+          })
+          setStatusResultLine(setLogLines, msg.data.payload.ok, msg.data.payload.message)
+          break
         case 'stats':
           // Handled by DockerStats component
           break
-        case 'done': {
+        case 'command.done': {
           setIsProcessing(false)
           setRecentRuns((prev) => {
             const run: RecentRun = {
               id: `run-${++runIdCounter.current}`,
-              status: msg.exit_code === 0 ? 'done' : 'failed',
+              status: msg.data.payload.exit_code === 0 ? 'done' : 'failed',
               mode: currentModeRef.current,
               target: currentInputRef.current,
-              duration: `${(msg.elapsed_ms / 1000).toFixed(1)}s`,
+              duration: `${((msg.data.payload.elapsed_ms ?? 0) / 1000).toFixed(1)}s`,
               lines: 0,
               time: new Date().toLocaleTimeString(),
             }
@@ -202,16 +397,18 @@ export function useWsMessagesProvider() {
           })
           break
         }
-        case 'error': {
+        case 'command.error': {
           setIsProcessing(false)
-          setErrorMessage(msg.message)
+          setErrorMessage(msg.data.payload.message)
           setRecentRuns((prev) => {
             const run: RecentRun = {
               id: `run-${++runIdCounter.current}`,
               status: 'failed',
               mode: currentModeRef.current,
               target: currentInputRef.current,
-              duration: msg.elapsed_ms ? `${(msg.elapsed_ms / 1000).toFixed(1)}s` : '0s',
+              duration: msg.data.payload.elapsed_ms
+                ? `${(msg.data.payload.elapsed_ms / 1000).toFixed(1)}s`
+                : '0s',
               lines: 0,
               time: new Date().toLocaleTimeString(),
             }
@@ -221,7 +418,7 @@ export function useWsMessagesProvider() {
         }
       }
     })
-  }, [subscribe])
+  }, [setCurrentJobIdTracked, subscribe])
 
   const selectFile = useCallback(
     (relativePath: string) => {
@@ -232,49 +429,59 @@ export function useWsMessagesProvider() {
     [send],
   )
 
-  const startExecution = useCallback((mode: string, input?: string) => {
-    currentModeRef.current = mode
-    currentInputRef.current = input ?? ''
-    setCurrentMode(mode)
-    setMarkdownContent('')
-    setLogLines([])
-    setErrorMessage('')
-    setIsProcessing(true)
-    setHasResults(true)
-    setCrawlFiles([])
-    setSelectedFile(null)
-    setCrawlProgress(null)
-    setStdoutLines([])
-    setStdoutJson([])
-    setCommandMode(null)
-    setScreenshotFiles([])
-    setCurrentJobId(null)
-    setWorkspaceMode(null)
-    setWorkspacePrompt(null)
-    setWorkspacePromptVersion(0)
-  }, [])
+  const startExecution = useCallback(
+    (mode: string, input?: string) => {
+      currentModeRef.current = mode
+      currentInputRef.current = input ?? ''
+      setCurrentMode(mode)
+      setMarkdownContent('')
+      setLogLines([])
+      setErrorMessage('')
+      setIsProcessing(true)
+      setHasResults(true)
+      setCrawlFiles([])
+      setSelectedFile(null)
+      setCrawlProgress(null)
+      setStdoutLines([])
+      setStdoutJson([])
+      setCommandMode(null)
+      setScreenshotFiles([])
+      setCurrentJobIdTracked(null)
+      setLifecycleEntries([])
+      setCancelResponse(null)
+      setWorkspaceMode(null)
+      setWorkspacePrompt(null)
+      setWorkspacePromptVersion(0)
+    },
+    [setCurrentJobIdTracked],
+  )
 
-  const activateWorkspace = useCallback((mode: string) => {
-    currentModeRef.current = mode
-    currentInputRef.current = ''
-    setCurrentMode(mode)
-    setMarkdownContent('')
-    setLogLines([])
-    setErrorMessage('')
-    setHasResults(true)
-    setIsProcessing(false)
-    setCrawlFiles([])
-    setSelectedFile(null)
-    setCrawlProgress(null)
-    setStdoutLines([])
-    setStdoutJson([])
-    setCommandMode(null)
-    setScreenshotFiles([])
-    setCurrentJobId(null)
-    setWorkspaceMode(mode)
-    setWorkspacePrompt(null)
-    setWorkspacePromptVersion(0)
-  }, [])
+  const activateWorkspace = useCallback(
+    (mode: string) => {
+      currentModeRef.current = mode
+      currentInputRef.current = ''
+      setCurrentMode(mode)
+      setMarkdownContent('')
+      setLogLines([])
+      setErrorMessage('')
+      setHasResults(true)
+      setIsProcessing(false)
+      setCrawlFiles([])
+      setSelectedFile(null)
+      setCrawlProgress(null)
+      setStdoutLines([])
+      setStdoutJson([])
+      setCommandMode(null)
+      setScreenshotFiles([])
+      setCurrentJobIdTracked(null)
+      setLifecycleEntries([])
+      setCancelResponse(null)
+      setWorkspaceMode(mode)
+      setWorkspacePrompt(null)
+      setWorkspacePromptVersion(0)
+    },
+    [setCurrentJobIdTracked],
+  )
 
   const submitWorkspacePrompt = useCallback((prompt: string) => {
     setHasResults(true)
@@ -308,6 +515,8 @@ export function useWsMessagesProvider() {
     commandMode,
     screenshotFiles,
     currentJobId,
+    lifecycleEntries,
+    cancelResponse,
     workspaceMode,
     workspacePrompt,
     workspacePromptVersion,
@@ -316,4 +525,13 @@ export function useWsMessagesProvider() {
     deactivateWorkspace,
     startExecution,
   }
+}
+
+function setStatusResultLine(
+  setLogLines: Dispatch<SetStateAction<LogLine[]>>,
+  ok: boolean,
+  message?: string,
+) {
+  const line = message ?? (ok ? 'Cancel request accepted' : 'Cancel request failed')
+  setLogLines((prev) => [...prev, { content: `[cancel] ${line}`, timestamp: Date.now() }])
 }
