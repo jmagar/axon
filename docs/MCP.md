@@ -1,4 +1,5 @@
 # Axon MCP Server Guide
+Last Modified: 2026-02-25
 
 ## Purpose
 `axon-mcp` exposes Axon through one MCP tool named `axon`.

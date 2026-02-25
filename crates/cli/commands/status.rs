@@ -19,6 +19,16 @@ pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
     run_status_impl(cfg).await
 }
 
+pub async fn status_snapshot(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+    let jobs = load_status_jobs(cfg).await?;
+    Ok(serde_json::json!({
+        "local_crawl_jobs": jobs.crawl,
+        "local_extract_jobs": jobs.extract,
+        "local_embed_jobs": jobs.embed,
+        "local_ingest_jobs": jobs.ingest,
+    }))
+}
+
 struct StatusJobs {
     crawl: Vec<CrawlJob>,
     extract: Vec<ExtractJob>,
@@ -74,15 +84,13 @@ fn emit_status_json(
     embed_jobs: &[EmbedJob],
     ingest_jobs: &[IngestJob],
 ) -> Result<(), Box<dyn Error>> {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::json!({
-            "local_crawl_jobs": crawl_jobs,
-            "local_extract_jobs": extract_jobs,
-            "local_embed_jobs": embed_jobs,
-            "local_ingest_jobs": ingest_jobs,
-        }))?
-    );
+    let payload = serde_json::json!({
+        "local_crawl_jobs": crawl_jobs,
+        "local_extract_jobs": extract_jobs,
+        "local_embed_jobs": embed_jobs,
+        "local_ingest_jobs": ingest_jobs,
+    });
+    println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
 }
 

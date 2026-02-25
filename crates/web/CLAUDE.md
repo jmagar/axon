@@ -1,4 +1,5 @@
 # crates/web — WebSocket Bridge (Legacy UI Host)
+Last Modified: 2026-02-25
 
 ## Current Role
 

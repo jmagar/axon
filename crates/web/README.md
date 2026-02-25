@@ -1,4 +1,5 @@
 # crates/web
+Last Modified: 2026-02-25
 
 Axum-based web runtime for `axon serve` (legacy static UI + websocket execution bridge).
 

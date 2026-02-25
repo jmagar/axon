@@ -1,4 +1,5 @@
 # crates/vector — Embeddings & Vector Search
+Last Modified: 2026-02-25
 
 TEI embedding + Qdrant vector store ops.
 

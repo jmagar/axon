@@ -1,4 +1,5 @@
 # crates/ingest — Source Ingestion Handlers
+Last Modified: 2026-02-25
 
 Ingests external sources (GitHub, Reddit, YouTube, AI sessions) into Qdrant.
 

@@ -1,4 +1,5 @@
 # Axon MCP Tool Schema (Source of Truth)
+Last Modified: 2026-02-25
 
 ## Contract
 - MCP server binary: `axon-mcp`

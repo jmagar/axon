@@ -1,4 +1,5 @@
 # Changelog
+Last Modified: 2026-02-25
 
 ## [Unreleased] — perf/command-performance-fixes
 

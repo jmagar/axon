@@ -1,4 +1,5 @@
 # crates/mcp — Axon MCP Server Guide
+Last Modified: 2026-02-25
 
 ## Purpose
 `crates/mcp` implements the Axon Model Context Protocol server (`axon-mcp`) that exposes crawler/RAG capabilities through a single MCP tool.
