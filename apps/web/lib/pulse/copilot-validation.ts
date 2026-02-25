@@ -6,7 +6,21 @@ export const CopilotRequestSchema = z.object({
   model: z.string().optional(),
 })
 
-export function validateCopilotRequest(body: unknown) {
+export interface CopilotValidationResult {
+  valid: boolean
+  error?: string
+}
+
+export function validateCopilotRequest(body: unknown): CopilotValidationResult {
   const result = CopilotRequestSchema.safeParse(body)
-  return { valid: result.success, error: result.error?.message }
+  if (result.success) {
+    return { valid: true }
+  }
+  const firstIssue = result.error.issues[0]
+  return {
+    valid: false,
+    error: firstIssue
+      ? `${firstIssue.path.join('.') || 'request'}: ${firstIssue.message}`
+      : 'Invalid request',
+  }
 }
