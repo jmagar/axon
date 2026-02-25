@@ -31,14 +31,15 @@ export type PulsePermissionLevel = z.infer<typeof PulsePermissionLevel>
 export const PulseChatRequestSchema = z.object({
   prompt: z.string().min(1).max(8000),
   documentMarkdown: z.string().max(100_000).default(''),
-  selectedCollections: z.array(z.string()).default(['pulse']),
+  selectedCollections: z.array(z.string().min(1).max(100)).max(10).default(['pulse']),
   conversationHistory: z
     .array(
       z.object({
         role: z.enum(['user', 'assistant']),
-        content: z.string(),
+        content: z.string().max(8_000),
       }),
     )
+    .max(50)
     .default([]),
   permissionLevel: PulsePermissionLevel.default('training-wheels'),
 })

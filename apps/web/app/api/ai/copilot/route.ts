@@ -21,41 +21,47 @@ export async function POST(request: Request) {
     )
   }
 
-  const body = await request.json()
-  const parsed = CopilotRequestSchema.safeParse(body)
+  try {
+    const body = await request.json()
+    const parsed = CopilotRequestSchema.safeParse(body)
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 })
-  }
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.message }, { status: 400 })
+    }
 
-  const { prompt, system } = parsed.data
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: parsed.data.model ?? model,
-      messages: [
-        ...(system ? [{ role: 'system' as const, content: system }] : []),
-        { role: 'user' as const, content: prompt },
-      ],
-      max_tokens: 200,
-      temperature: 0.7,
-    }),
-  })
+    const { prompt, system } = parsed.data
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 20_000)
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: parsed.data.model ?? model,
+        messages: [
+          ...(system ? [{ role: 'system' as const, content: system }] : []),
+          { role: 'user' as const, content: prompt },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout))
 
-  if (!response.ok) {
-    const errText = await response.text()
+    if (!response.ok) {
+      return NextResponse.json({ error: `LLM API error: ${response.status}` }, { status: 502 })
+    }
+
+    const data = await response.json()
+    const completion = data.choices?.[0]?.message?.content ?? ''
+
+    return NextResponse.json({ completion })
+  } catch (err) {
     return NextResponse.json(
-      { error: `LLM API error: ${response.status} ${errText}` },
-      { status: 502 },
+      { error: `Copilot request failed: ${err instanceof Error ? err.message : 'unknown error'}` },
+      { status: 500 },
     )
   }
-
-  const data = await response.json()
-  const completion = data.choices?.[0]?.message?.content ?? ''
-
-  return NextResponse.json({ completion })
 }

@@ -17,7 +17,11 @@ const ALLOWED_DOC_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.rst'])
 
 function getWorkspaceRoot(): string {
   // apps/web -> workspace root
-  return path.resolve(process.cwd(), '..', '..')
+  const cwd = process.cwd()
+  if (cwd.endsWith(path.join('apps', 'web'))) {
+    return path.resolve(cwd, '..', '..')
+  }
+  return cwd
 }
 
 function getRootBySource(workspaceRoot: string, source: LocalDocSource): string {
@@ -83,7 +87,10 @@ async function resolveFileById(workspaceRoot: string, id: string) {
 
   const sourceRoot = getRootBySource(workspaceRoot, source)
   const absolutePath = path.resolve(sourceRoot, relativePath)
-  if (!absolutePath.startsWith(sourceRoot)) return null
+  const normalizedSourceRoot = sourceRoot.endsWith(path.sep)
+    ? sourceRoot
+    : `${sourceRoot}${path.sep}`
+  if (!absolutePath.startsWith(normalizedSourceRoot) && absolutePath !== sourceRoot) return null
 
   try {
     const content = await fs.readFile(absolutePath, 'utf8')
