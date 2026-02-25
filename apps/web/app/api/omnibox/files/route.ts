@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { listPulseDocs } from '@/lib/pulse/storage'
+import { getWorkspaceRoot } from '@/lib/pulse/workspace-root'
 
 type LocalDocSource = 'docs' | 'pulse'
 
@@ -14,15 +15,6 @@ interface LocalDocFile {
 }
 
 const ALLOWED_DOC_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.rst'])
-
-function getWorkspaceRoot(): string {
-  // apps/web -> workspace root
-  const cwd = process.cwd()
-  if (cwd.endsWith(path.join('apps', 'web'))) {
-    return path.resolve(cwd, '..', '..')
-  }
-  return cwd
-}
 
 function getRootBySource(workspaceRoot: string, source: LocalDocSource): string {
   if (source === 'docs') return path.join(workspaceRoot, 'docs')

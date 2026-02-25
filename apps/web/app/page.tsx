@@ -25,9 +25,17 @@ import {
 } from '@/lib/pulse/neural-canvas-presets'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 
-const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), { ssr: false })
+const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), {
+  ssr: false,
+})
 const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 const CANVAS_PROFILE_OPTIONS: NeuralCanvasProfile[] = ['current', 'subtle', 'cinematic', 'electric']
+const CANVAS_PROFILE_LABELS: Record<NeuralCanvasProfile, string> = {
+  current: 'Current',
+  subtle: 'Subtle',
+  cinematic: 'Cinematic',
+  electric: 'Electric',
+}
 
 export default function DashboardPage() {
   const { subscribe } = useAxonWs()
@@ -113,10 +121,11 @@ export default function DashboardPage() {
             <DropdownMenuLabel>Canvas Preset</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup value={canvasProfile} onValueChange={handleCanvasProfileChange}>
-              <DropdownMenuRadioItem value="current">Current</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="subtle">Subtle</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="cinematic">Cinematic</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="electric">Electric</DropdownMenuRadioItem>
+              {CANVAS_PROFILE_OPTIONS.map((profile) => (
+                <DropdownMenuRadioItem key={profile} value={profile}>
+                  {CANVAS_PROFILE_LABELS[profile]}
+                </DropdownMenuRadioItem>
+              ))}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -149,7 +158,7 @@ export default function DashboardPage() {
         <div
           className={`rounded-2xl border p-3 transition-all duration-500 sm:p-5 ${
             isProcessing
-              ? 'border-[rgba(255,135,175,0.3)] shadow-[0_0_80px_rgba(255,135,175,0.1),0_0_30px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
+              ? 'shadow-[0_0_80px_rgba(255,135,175,0.1),0_0_30px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
               : 'shadow-[0_0_60px_rgba(175,215,255,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
           }`}
           style={{

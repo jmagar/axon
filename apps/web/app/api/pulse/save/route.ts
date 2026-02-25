@@ -29,11 +29,19 @@ export async function POST(request: Request) {
     const body = await request.json()
     const parsed = SaveRequestSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.message }, { status: 400 })
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? 'Invalid request payload' },
+        { status: 400 },
+      )
     }
 
     const { title, markdown, tags, collections, embed } = parsed.data
-    const { path, filename } = await savePulseDoc({ title, markdown, tags, collections })
+    const { path, filename } = await savePulseDoc({
+      title,
+      markdown,
+      tags,
+      collections,
+    })
 
     if (embed) {
       const teiUrl = process.env.TEI_URL
@@ -90,7 +98,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ path, filename, saved: true })
   } catch (err) {
     return NextResponse.json(
-      { error: `Save failed: ${err instanceof Error ? err.message : 'unknown error'}` },
+      {
+        error: `Save failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      },
       { status: 500 },
     )
   }

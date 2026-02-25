@@ -1,10 +1,11 @@
 'use client'
 
 import type { DoctorResult, DoctorServiceStatus } from '@/lib/result-types'
+import { fmtMs as formatDurationMs } from './shared'
 
-function fmtMs(ms: number | undefined): string {
+function fmtProbeMs(ms: number | undefined): string {
   if (ms === undefined) return '--'
-  return `${ms} ms`
+  return formatDurationMs(ms)
 }
 
 function cleanServiceMeta(text: string | undefined): string | undefined {
@@ -90,7 +91,7 @@ function ServiceRows({ entries }: { entries: Array<[string, DoctorServiceStatus]
                   <StatusPill ok={svc.ok} />
                 </div>
                 <div className="pt-1 font-mono text-[10px] text-[var(--axon-text-secondary)]">
-                  {fmtMs(svc.latency_ms)}
+                  {fmtProbeMs(svc.latency_ms)}
                 </div>
                 <div>
                   <div className="text-[12px] font-semibold text-[var(--axon-text-secondary)]">
@@ -138,6 +139,13 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
   const healthyPipelines = pipelineEntries.filter(([, ok]) => ok).length
   const unhealthyPipelines = pipelineEntries.length - healthyPipelines
   const observedAt = data.observed_at_utc ? new Date(data.observed_at_utc).toLocaleString() : null
+  const timingRows = [
+    ['crawl report', data.timing_ms?.crawl_report],
+    ['extract report', data.timing_ms?.extract_report],
+    ['embed report', data.timing_ms?.embed_report],
+    ['ingest report', data.timing_ms?.ingest_report],
+    ['stale/pending query', data.timing_ms?.stale_pending],
+  ] as const
 
   return (
     <div className="space-y-4">
@@ -238,36 +246,12 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
             <div className="rounded-lg border border-[rgba(175,215,255,0.15)] p-3 bg-[rgba(9,16,34,0.55)]">
               <SectionHeader>Probe Timing</SectionHeader>
               <div className="space-y-1.5 font-mono text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-[var(--axon-text-dim)]">crawl report</span>
-                  <span className="text-[var(--axon-accent-blue)]">
-                    {fmtMs(data.timing_ms.crawl_report)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--axon-text-dim)]">extract report</span>
-                  <span className="text-[var(--axon-accent-blue)]">
-                    {fmtMs(data.timing_ms.extract_report)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--axon-text-dim)]">embed report</span>
-                  <span className="text-[var(--axon-accent-blue)]">
-                    {fmtMs(data.timing_ms.embed_report)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--axon-text-dim)]">ingest report</span>
-                  <span className="text-[var(--axon-accent-blue)]">
-                    {fmtMs(data.timing_ms.ingest_report)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--axon-text-dim)]">stale/pending query</span>
-                  <span className="text-[var(--axon-accent-blue)]">
-                    {fmtMs(data.timing_ms.stale_pending)}
-                  </span>
-                </div>
+                {timingRows.map(([label, value]) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-[var(--axon-text-dim)]">{label}</span>
+                    <span className="text-[var(--axon-accent-blue)]">{fmtProbeMs(value)}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

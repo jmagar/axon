@@ -28,11 +28,20 @@ export async function POST(request: Request) {
     )
   }
 
+  let body: unknown
   try {
-    const body = await request.json()
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
+  }
+
+  try {
     const parsed = PulseChatRequestSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.message }, { status: 400 })
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? 'Invalid request payload' },
+        { status: 400 },
+      )
     }
 
     const req = parsed.data
@@ -51,7 +60,10 @@ export async function POST(request: Request) {
         temperature: 0.2,
         messages: [
           { role: 'system' as const, content: systemPrompt },
-          ...req.conversationHistory.map((m) => ({ role: m.role, content: m.content })),
+          ...req.conversationHistory.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
           {
             role: 'user' as const,
             content: [
@@ -71,7 +83,10 @@ export async function POST(request: Request) {
     if (!completionRes.ok) {
       const errText = await completionRes.text().catch(() => '')
       return NextResponse.json(
-        { error: `LLM API error: ${completionRes.status}`, detail: truncateForLog(errText) },
+        {
+          error: `LLM API error: ${completionRes.status}`,
+          detail: truncateForLog(errText),
+        },
         { status: 502 },
       )
     }
@@ -112,17 +127,18 @@ export async function POST(request: Request) {
 
     if (operations.length > 0) {
       const validation = validateDocOperations(operations, req.documentMarkdown)
-      if (!validation.valid && req.permissionLevel === 'plan') {
+      if (!validation.valid && req.permissionLevel !== 'full-access') {
         operations = []
       }
     }
 
-    return NextResponse.json({ text, citations, operations } satisfies PulseChatResponse)
-  } catch (err) {
-    return NextResponse.json(
-      { error: `Chat failed: ${err instanceof Error ? err.message : 'unknown error'}` },
-      { status: 500 },
-    )
+    return NextResponse.json({
+      text,
+      citations,
+      operations,
+    } satisfies PulseChatResponse)
+  } catch {
+    return NextResponse.json({ error: 'Chat request failed' }, { status: 500 })
   }
 }
 

@@ -65,8 +65,11 @@ interface WsMessagesContextValue {
   screenshotFiles: ScreenshotFile[]
   /** Job ID for the current/last crawl (used for download routes) */
   currentJobId: string | null
+  /** Active workspace mode (currently pulse) when omnibox enters workspace flow. */
   workspaceMode: string | null
+  /** Last submitted workspace prompt payload from omnibox. */
   workspacePrompt: string | null
+  /** Monotonic counter to trigger workspace prompt effects even for identical prompts. */
   workspacePromptVersion: number
   activateWorkspace: (mode: string) => void
   submitWorkspacePrompt: (prompt: string) => void
@@ -125,9 +128,7 @@ export function useWsMessagesProvider() {
         case 'crawl_files':
           setCrawlFiles(msg.files)
           setHasResults(true)
-          if (msg.job_id) {
-            setCurrentJobId(msg.job_id)
-          }
+          setCurrentJobId(msg.job_id ?? null)
           // First file is auto-loaded by the backend
           if (msg.files.length > 0) {
             setSelectedFile(msg.files[0].relative_path)
@@ -173,7 +174,7 @@ export function useWsMessagesProvider() {
         case 'output': {
           // Legacy server message shape: treat as stdout text so content renderers
           // still work even if the backend emits `output` instead of `stdout_line`.
-          const line = (msg.line ?? '').toString()
+          const line = msg.line
           if (!line.trim()) break
           setStdoutLines((prev) => {
             const next = [...prev, line]
@@ -257,8 +258,19 @@ export function useWsMessagesProvider() {
     currentModeRef.current = mode
     currentInputRef.current = ''
     setCurrentMode(mode)
+    setMarkdownContent('')
+    setLogLines([])
+    setErrorMessage('')
     setHasResults(true)
     setIsProcessing(false)
+    setCrawlFiles([])
+    setSelectedFile(null)
+    setCrawlProgress(null)
+    setStdoutLines([])
+    setStdoutJson([])
+    setCommandMode(null)
+    setScreenshotFiles([])
+    setCurrentJobId(null)
     setWorkspaceMode(mode)
     setWorkspacePrompt(null)
     setWorkspacePromptVersion(0)
@@ -271,6 +283,9 @@ export function useWsMessagesProvider() {
   }, [])
 
   const deactivateWorkspace = useCallback(() => {
+    currentModeRef.current = ''
+    currentInputRef.current = ''
+    setCurrentMode('')
     setWorkspaceMode(null)
     setWorkspacePrompt(null)
     setWorkspacePromptVersion(0)

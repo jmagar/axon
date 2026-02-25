@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { getWorkspaceRoot } from './workspace-root'
 
 let rootEnvLoaded = false
 
@@ -25,14 +26,14 @@ function parseDotenvLine(line: string): [string, string] | null {
 
 export function ensureRepoRootEnvLoaded() {
   if (rootEnvLoaded) return
-  rootEnvLoaded = true
 
-  // apps/web -> repo root
-  const cwd = process.cwd()
-  const repoRoot = cwd.endsWith(path.join('apps', 'web')) ? path.resolve(cwd, '..', '..') : cwd
+  const repoRoot = getWorkspaceRoot()
   const envPath = path.join(repoRoot, '.env')
 
-  if (!fs.existsSync(envPath)) return
+  if (!fs.existsSync(envPath)) {
+    rootEnvLoaded = true
+    return
+  }
 
   try {
     const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
@@ -44,7 +45,9 @@ export function ensureRepoRootEnvLoaded() {
         process.env[key] = value
       }
     }
+    rootEnvLoaded = true
   } catch {
     // Keep request path resilient if repo root .env exists but is unreadable.
+    // Retry on the next request in case this was a transient filesystem error.
   }
 }

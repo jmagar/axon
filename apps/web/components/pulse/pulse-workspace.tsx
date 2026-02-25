@@ -31,23 +31,26 @@ export function PulseWorkspace() {
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const applyOperations = useCallback((ops: DocOperation[]) => {
-    for (const op of ops) {
-      switch (op.type) {
-        case 'replace_document':
-          setDocumentMarkdown(op.markdown)
-          break
-        case 'append_markdown':
-          setDocumentMarkdown((prev) => `${prev}\n\n${op.markdown}`)
-          break
-        case 'insert_section':
-          setDocumentMarkdown((prev) =>
-            op.position === 'top'
-              ? `## ${op.heading}\n\n${op.markdown}\n\n${prev}`
-              : `${prev}\n\n## ${op.heading}\n\n${op.markdown}`,
-          )
-          break
+    setDocumentMarkdown((prev) => {
+      let next = prev
+      for (const op of ops) {
+        switch (op.type) {
+          case 'replace_document':
+            next = op.markdown
+            break
+          case 'append_markdown':
+            next = `${next}\n\n${op.markdown}`
+            break
+          case 'insert_section':
+            next =
+              op.position === 'top'
+                ? `## ${op.heading}\n\n${op.markdown}\n\n${next}`
+                : `${next}\n\n## ${op.heading}\n\n${op.markdown}`
+            break
+        }
       }
-    }
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -57,19 +60,24 @@ export function PulseWorkspace() {
     setChatHistory((prev) => [...prev, { role: 'user', content: prompt }])
     setIsChatLoading(true)
 
-    fetch('/api/pulse/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        documentMarkdown,
-        selectedCollections: ['pulse', 'cortex'],
-        conversationHistory: chatHistory.map((m) => ({ role: m.role, content: m.content })),
-        permissionLevel,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data: PulseChatResponse) => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pulse/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            documentMarkdown,
+            selectedCollections: ['pulse', 'cortex'],
+            conversationHistory: chatHistory.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+            permissionLevel,
+          }),
+        })
+
+        const data = (await response.json()) as PulseChatResponse
         setChatHistory((prev) => [
           ...prev,
           {
@@ -81,25 +89,26 @@ export function PulseWorkspace() {
         ])
 
         if (data.operations.length > 0) {
-          const perm = checkPermission(permissionLevel, data.operations, {
+          const permission = checkPermission(permissionLevel, data.operations, {
             isCurrentDoc: true,
             currentDocMarkdown: documentMarkdown,
           })
 
-          if (perm.allowed && !perm.requiresConfirmation) {
+          if (permission.allowed && !permission.requiresConfirmation) {
             applyOperations(data.operations)
-          } else if (perm.allowed && perm.requiresConfirmation) {
+          } else if (permission.allowed && permission.requiresConfirmation) {
             const validation = validateDocOperations(data.operations, documentMarkdown)
             setPendingOps(data.operations)
             setPendingValidation(validation)
           }
         }
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         setChatHistory((prev) => [...prev, { role: 'assistant', content: `Error: ${message}` }])
-      })
-      .finally(() => setIsChatLoading(false))
+      } finally {
+        setIsChatLoading(false)
+      }
+    })()
   }, [
     workspacePromptVersion,
     workspacePrompt,
@@ -114,17 +123,24 @@ export function PulseWorkspace() {
 
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => {
-      setSaveStatus('saving')
-      fetch('/api/pulse/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: documentTitle, markdown: documentMarkdown, embed: true }),
-      })
-        .then((res) => {
-          setSaveStatus(res.ok ? 'saved' : 'error')
+      void (async () => {
+        try {
+          setSaveStatus('saving')
+          const response = await fetch('/api/pulse/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: documentTitle,
+              markdown: documentMarkdown,
+              embed: true,
+            }),
+          })
+          setSaveStatus(response.ok ? 'saved' : 'error')
           setTimeout(() => setSaveStatus('idle'), 2000)
-        })
-        .catch(() => setSaveStatus('error'))
+        } catch {
+          setSaveStatus('error')
+        }
+      })()
     }, 1500)
 
     return () => {

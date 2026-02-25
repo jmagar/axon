@@ -23,7 +23,7 @@ export function MarkdownBlock({ markdown, className }: MarkdownBlockProps) {
   })
 
   return (
-    <Plate editor={editor} readOnly>
+    <Plate key={markdown} editor={editor} readOnly>
       <EditorContainer variant="default" className="h-auto border-none bg-transparent">
         <Editor
           variant="none"

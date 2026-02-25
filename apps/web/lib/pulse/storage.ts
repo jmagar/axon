@@ -1,13 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-
-function getWorkspaceRoot(): string {
-  const cwd = process.cwd()
-  if (cwd.endsWith(path.join('apps', 'web'))) {
-    return path.resolve(cwd, '..', '..')
-  }
-  return cwd
-}
+import { getWorkspaceRoot } from './workspace-root'
 
 const PULSE_DIR = path.resolve(getWorkspaceRoot(), '.cache/pulse')
 
@@ -122,19 +115,23 @@ export async function loadPulseDoc(filename: string): Promise<StoredDoc | null> 
 export async function listPulseDocs(): Promise<
   Array<{ filename: string; title: string; updatedAt: string }>
 > {
-  await mkdir(PULSE_DIR, { recursive: true })
-  const entries = await readdir(PULSE_DIR)
-  const docs = await Promise.all(
-    entries
-      .filter((name) => name.endsWith('.md'))
-      .map(async (filename) => {
-        const doc = await loadPulseDoc(filename)
-        if (!doc) return null
-        return { filename, title: doc.title, updatedAt: doc.updatedAt }
-      }),
-  )
+  try {
+    await mkdir(PULSE_DIR, { recursive: true })
+    const entries = await readdir(PULSE_DIR)
+    const docs = await Promise.all(
+      entries
+        .filter((name) => name.endsWith('.md'))
+        .map(async (filename) => {
+          const doc = await loadPulseDoc(filename)
+          if (!doc) return null
+          return { filename, title: doc.title, updatedAt: doc.updatedAt }
+        }),
+    )
 
-  return docs
-    .filter((doc): doc is { filename: string; title: string; updatedAt: string } => doc !== null)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return docs
+      .filter((doc): doc is { filename: string; title: string; updatedAt: string } => doc !== null)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  } catch {
+    return []
+  }
 }
