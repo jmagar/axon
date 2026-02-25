@@ -1,3 +1,4 @@
+pub(crate) mod events;
 pub(crate) mod files;
 mod polling;
 #[cfg(test)]
@@ -14,9 +15,18 @@ use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
+use uuid::Uuid;
 
 use files::send_scrape_file;
 use polling::poll_async_job;
+
+#[derive(Debug, Clone)]
+struct CommandContext {
+    exec_id: String,
+    mode: String,
+    input: String,
+    job_id: Option<String>,
+}
 
 /// Known command modes — only these are allowed to prevent injection.
 const ALLOWED_MODES: &[&str] = &[
@@ -219,6 +229,13 @@ pub(super) async fn handle_command(
     tx: mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
 ) {
+    let mut context = CommandContext {
+        exec_id: format!("exec-{}", Uuid::new_v4()),
+        mode: mode.to_string(),
+        input: input.to_string(),
+        job_id: None,
+    };
+
     if !ALLOWED_MODES.contains(&mode) {
         let _ = tx
             .send(json!({"type": "error", "message": format!("unknown mode: {mode}")}).to_string())
@@ -239,13 +256,16 @@ pub(super) async fn handle_command(
         }
     };
 
-    let args = build_args(mode, input, flags);
+    let args = build_args(&context.mode, &context.input, flags);
     let start = Instant::now();
 
     // Notify the frontend what command is about to run so it can activate
     // the appropriate renderer before any output arrives.
     let _ = tx
-        .send(json!({"type": "command_start", "mode": mode}).to_string())
+        .send(
+            json!({"type": "command_start", "mode": context.mode, "exec_id": context.exec_id})
+                .to_string(),
+        )
         .await;
 
     let child = Command::new(&exe)
@@ -258,16 +278,16 @@ pub(super) async fn handle_command(
         Ok(c) => c,
         Err(e) => {
             let _ = tx
-                .send(json!({"type": "error", "message": format!("spawn failed: {e} (exe: {})", exe.display())}).to_string())
+                .send(json!({"type": "error", "message": format!("spawn failed: {e} (exe: {})", exe.display()), "exec_id": context.exec_id}).to_string())
                 .await;
             return;
         }
     };
 
-    if ASYNC_MODES.contains(&mode) {
-        handle_async_command(child, mode, input.trim(), &tx, crawl_job_id, start).await;
+    if ASYNC_MODES.contains(&context.mode.as_str()) {
+        handle_async_command(child, &mut context, &tx, crawl_job_id, start).await;
     } else {
-        handle_sync_command(child, mode, &tx, start).await;
+        handle_sync_command(child, &context, &tx, start).await;
     }
 }
 
@@ -275,8 +295,7 @@ pub(super) async fn handle_command(
 /// as log lines, then poll for job completion.
 async fn handle_async_command(
     mut child: tokio::process::Child,
-    mode: &str,
-    input: &str,
+    context: &mut CommandContext,
     tx: &mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
     start: Instant,
@@ -333,29 +352,32 @@ async fn handle_async_command(
 
     let job_id = stdout_capture.await.ok().flatten();
 
-    if let Some(ref id) = job_id {
+    if let Some(id) = job_id {
+        context.job_id = Some(id.clone());
+
         // Store job ID for cancel support
         *crawl_job_id.lock().await = Some(id.clone());
 
         let _ = tx
             .send(
-                json!({"type": "log", "line": format!("[web] {mode} job enqueued: {id}")})
+                json!({"type": "log", "line": format!("[web] {} job enqueued: {id}", context.mode)})
                     .to_string(),
             )
             .await;
 
         // Poll the job for progress/completion
-        let mode_str = mode.to_string();
-        let input_str = input.to_string();
-        poll_async_job(id, &mode_str, &input_str, tx, start).await;
+        let mode_str = context.mode.clone();
+        let input_str = context.input.trim().to_string();
+        poll_async_job(&id, &mode_str, &input_str, tx, start).await;
 
         // Clear job ID after completion
+        context.job_id = None;
         *crawl_job_id.lock().await = None;
     } else {
         let elapsed = start.elapsed().as_millis() as u64;
         let _ = tx
             .send(
-                json!({"type": "error", "message": format!("failed to capture {mode} job ID from subprocess"), "elapsed_ms": elapsed})
+                json!({"type": "error", "message": format!("failed to capture {} job ID from subprocess", context.mode), "elapsed_ms": elapsed})
                     .to_string(),
             )
             .await;
@@ -366,7 +388,7 @@ async fn handle_async_command(
 /// stream stderr as log lines, wait for exit, and send done/error.
 async fn handle_sync_command(
     mut child: tokio::process::Child,
-    mode: &str,
+    context: &CommandContext,
     tx: &mpsc::Sender<String>,
     start: Instant,
 ) {
@@ -374,7 +396,7 @@ async fn handle_sync_command(
     let stderr = child.stderr.take();
     let stdout_tx = tx.clone();
     let stderr_tx = tx.clone();
-    let is_screenshot = mode == "screenshot";
+    let is_screenshot = context.mode == "screenshot";
 
     let stdout_task = tokio::spawn(async move {
         let Some(stdout) = stdout else {
@@ -453,7 +475,7 @@ async fn handle_sync_command(
 
     let status = child.wait().await;
     let elapsed = start.elapsed().as_millis() as u64;
-    let mode_owned = mode.to_string();
+    let mode_owned = context.mode.clone();
 
     match status {
         Ok(exit) => {
