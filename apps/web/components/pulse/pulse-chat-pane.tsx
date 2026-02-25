@@ -17,7 +17,14 @@ export function PulseChatPane({ messages, isLoading }: PulseChatPaneProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {messages.length === 0 ? (
+        {messages.length === 0 && isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="flex items-center gap-2 text-xs text-[var(--axon-text-dim)]">
+              <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
+              Thinking...
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-center text-xs text-[var(--axon-text-dim)]">
               Type a prompt in the omnibox to start.
@@ -41,7 +48,7 @@ export function PulseChatPane({ messages, isLoading }: PulseChatPaneProps) {
             ))}
           </div>
         )}
-        {isLoading && (
+        {isLoading && messages.length > 0 && (
           <div className="mt-3 flex items-center gap-2 text-xs text-[var(--axon-text-dim)]">
             <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
             Thinking...

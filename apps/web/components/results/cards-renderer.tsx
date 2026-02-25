@@ -24,7 +24,7 @@ function scoreColor(score: number): string {
 function scoreBg(score: number): string {
   if (score >= 0.7) return 'var(--axon-success-bg)'
   if (score >= 0.4) return 'var(--axon-warning-bg)'
-  return 'rgba(255, 135, 175, 0.1)'
+  return 'var(--axon-danger-bg)'
 }
 
 // ---------------------------------------------------------------------------

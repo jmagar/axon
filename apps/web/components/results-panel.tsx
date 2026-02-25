@@ -113,6 +113,38 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     [effectiveCommandMode, normalizedItems],
   )
 
+  const renderIntentContent = () => {
+    if (spec?.renderIntent === 'job-lifecycle') {
+      return (
+        <JobLifecycleRenderer
+          stdoutJson={stdoutJson}
+          commandMode={effectiveCommandMode}
+          isProcessing={isProcessing}
+          errorMessage={errorMessage}
+        />
+      )
+    }
+    if (errorMessage) {
+      return (
+        <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
+          <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">Error</span>
+          {errorMessage}
+        </div>
+      )
+    }
+    if (normalized && spec?.renderIntent === 'table') return <TableRenderer result={normalized} />
+    if (normalized && spec?.renderIntent === 'cards') return <CardsRenderer result={normalized} />
+    if (normalized && spec?.renderIntent === 'report') {
+      return <ReportRenderer result={normalized} commandMode={effectiveCommandMode} />
+    }
+    if (normalized && spec?.renderIntent === 'status-summary') {
+      return <StatusRenderer result={normalized} />
+    }
+    return (
+      <RawRenderer stdoutJson={stdoutJson} stdoutLines={stdoutLines} isProcessing={isProcessing} />
+    )
+  }
+
   return (
     <div
       className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
@@ -214,35 +246,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
                 </>
               ) : (
                 <div className="flex-1 overflow-y-auto p-3 text-sm leading-[1.75] text-[var(--axon-text-secondary)] sm:p-4 md:p-6">
-                  {spec?.renderIntent === 'job-lifecycle' ? (
-                    <JobLifecycleRenderer
-                      stdoutJson={stdoutJson}
-                      commandMode={effectiveCommandMode}
-                      isProcessing={isProcessing}
-                      errorMessage={errorMessage}
-                    />
-                  ) : errorMessage ? (
-                    <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
-                      <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">
-                        Error
-                      </span>
-                      {errorMessage}
-                    </div>
-                  ) : normalized && spec?.renderIntent === 'table' ? (
-                    <TableRenderer result={normalized} />
-                  ) : normalized && spec?.renderIntent === 'cards' ? (
-                    <CardsRenderer result={normalized} />
-                  ) : normalized && spec?.renderIntent === 'report' ? (
-                    <ReportRenderer result={normalized} commandMode={effectiveCommandMode} />
-                  ) : normalized && spec?.renderIntent === 'status-summary' ? (
-                    <StatusRenderer result={normalized} />
-                  ) : (
-                    <RawRenderer
-                      stdoutJson={stdoutJson}
-                      stdoutLines={stdoutLines}
-                      isProcessing={isProcessing}
-                    />
-                  )}
+                  {renderIntentContent()}
                 </div>
               )}
             </div>

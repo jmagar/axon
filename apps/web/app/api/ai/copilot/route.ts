@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { z } from 'zod'
 import { CopilotRequestSchema } from '@/lib/pulse/copilot-validation'
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
 
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
     const parsed = CopilotRequestSchema.safeParse(body)
 
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.message }, { status: 400 })
+      return NextResponse.json({ error: firstZodIssue(parsed.error) }, { status: 400 })
     }
 
     const { prompt, system } = parsed.data
@@ -60,8 +61,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ completion })
   } catch (err) {
     return NextResponse.json(
-      { error: `Copilot request failed: ${err instanceof Error ? err.message : 'unknown error'}` },
+      {
+        error: `Copilot request failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      },
       { status: 500 },
     )
   }
+}
+
+function firstZodIssue(error: z.ZodError): string {
+  return error.issues[0]?.message ?? 'Invalid request payload'
 }

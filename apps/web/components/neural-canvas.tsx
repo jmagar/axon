@@ -18,7 +18,7 @@ export interface NeuralCanvasHandle {
   stimulate: (containers: Record<string, ContainerStats>) => void
 }
 
-interface NeuralCanvasProps {
+export interface NeuralCanvasProps {
   profile?: NeuralCanvasProfile
 }
 

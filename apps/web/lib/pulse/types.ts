@@ -2,18 +2,18 @@ import { z } from 'zod'
 
 const ReplaceDocumentSchema = z.object({
   type: z.literal('replace_document'),
-  markdown: z.string().min(1),
+  markdown: z.string().min(1).max(100_000),
 })
 
 const AppendMarkdownSchema = z.object({
   type: z.literal('append_markdown'),
-  markdown: z.string().min(1),
+  markdown: z.string().min(1).max(100_000),
 })
 
 const InsertSectionSchema = z.object({
   type: z.literal('insert_section'),
   heading: z.string().min(1),
-  markdown: z.string(),
+  markdown: z.string().max(100_000),
   position: z.enum(['top', 'bottom']),
 })
 

@@ -33,11 +33,14 @@ export async function retrieveFromCollections(
   if (!qdrantUrl || !teiUrl) return []
 
   try {
+    const embedController = new AbortController()
+    const embedTimeout = setTimeout(() => embedController.abort(), 20_000)
     const embedRes = await fetch(`${teiUrl}/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ inputs: [query] }),
-    })
+      signal: embedController.signal,
+    }).finally(() => clearTimeout(embedTimeout))
     if (!embedRes.ok) return []
 
     const embedJson = (await embedRes.json()) as unknown

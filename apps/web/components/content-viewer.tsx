@@ -17,7 +17,7 @@ interface ContentViewerProps {
 export function ContentViewer({ markdown, isProcessing, errorMessage }: ContentViewerProps) {
   if (errorMessage) {
     return (
-      <div className="font-mono text-[13px] leading-relaxed text-[#ef4444]">
+      <div className="font-mono text-[13px] leading-relaxed text-[var(--destructive)]">
         <span className="mb-2 block text-sm font-bold text-[var(--axon-accent-pink)]">Error</span>
         {errorMessage}
       </div>
