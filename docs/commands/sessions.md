@@ -1,5 +1,8 @@
 # axon sessions
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 Ingest AI session exports into Qdrant. Reads local session history files from Claude, Codex, and Gemini in their standard export formats, chunks the conversation content, and embeds it into the configured Qdrant collection.
 
 **Incremental:** Files are tracked by path, mtime, and size. Re-running `sessions` only processes new or changed files — already-indexed sessions are skipped.

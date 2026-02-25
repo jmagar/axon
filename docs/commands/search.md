@@ -1,5 +1,8 @@
 # axon search
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 Web search via Tavily AI. Displays ranked search results with snippets and automatically enqueues crawl jobs for the result URLs, building the local knowledge base in the background.
 
 ## Synopsis
