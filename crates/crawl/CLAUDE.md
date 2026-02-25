@@ -1,4 +1,5 @@
 # crates/crawl — Spider.rs Crawl Engine
+Last Modified: 2026-02-25
 
 Wraps spider.rs for site crawling with HTTP and Chrome rendering paths.
 

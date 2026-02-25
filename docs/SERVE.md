@@ -1,4 +1,5 @@
 # `axon serve` — Static Web UI (Deprecated)
+Last Modified: 2026-02-25
 
 Version: 1.0.0
 Last Updated: 16:51:32 | 02/25/2026 EST

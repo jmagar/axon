@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum AxonRequest {
+    Status(StatusRequest),
     Crawl(CrawlRequest),
     Extract(ExtractRequest),
     Embed(EmbedRequest),
@@ -222,6 +223,10 @@ pub struct HelpRequest {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct StatusRequest {}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ArtifactsRequest {
     pub subaction: ArtifactsSubaction,
     pub path: Option<String>,
@@ -408,7 +413,7 @@ fn normalize_action_aliases(raw: &mut Map<String, Value>, action: &str) -> Resul
         }
         "ops" => ensure_default_subaction(raw, "doctor"),
         "artifacts" => ensure_default_subaction(raw, "head"),
-        "help" | "scrape" | "research" | "ask" | "screenshot" => {}
+        "status" | "help" | "scrape" | "research" | "ask" | "screenshot" => {}
         unsupported => {
             return Err(format!("unsupported action: {unsupported}"));
         }
