@@ -41,6 +41,68 @@ export type WsServerMsg =
       containers: Record<string, ContainerStats>
       container_count: number
     }
+  | WsV2CommandStartMsg
+  | WsV2JobStatusMsg
+  | WsV2JobProgressMsg
+  | WsV2ArtifactListMsg
+
+export interface WsV2CommandContext {
+  exec_id: string
+  mode: string
+  input: string
+}
+
+export interface WsV2JobStatusPayload {
+  status: string
+  error?: string
+  metrics?: Record<string, unknown>
+}
+
+export interface WsV2JobProgressPayload {
+  phase: string
+  percent?: number
+  processed?: number
+  total?: number
+}
+
+export interface WsV2ArtifactEntry {
+  kind?: string
+  path?: string
+  download_url?: string
+  mime?: string
+  size_bytes?: number
+}
+
+export interface WsV2CommandStartMsg {
+  type: 'command.start'
+  data: {
+    ctx: WsV2CommandContext
+  }
+}
+
+export interface WsV2JobStatusMsg {
+  type: 'job.status'
+  data: {
+    ctx: WsV2CommandContext
+    payload: WsV2JobStatusPayload
+  }
+}
+
+export interface WsV2JobProgressMsg {
+  type: 'job.progress'
+  data: {
+    ctx: WsV2CommandContext
+    payload: WsV2JobProgressPayload
+  }
+}
+
+export interface WsV2ArtifactListMsg {
+  type: 'artifact.list'
+  data: {
+    ctx: WsV2CommandContext
+    artifacts: WsV2ArtifactEntry[]
+  }
+}
 
 export interface CrawlFile {
   url: string
