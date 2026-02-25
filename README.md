@@ -1,4 +1,5 @@
 # ⚡ **Axon**
+Last Modified: 2026-02-25
 
 Self-hosted web crawling and RAG pipeline powered by Spider.rs. Single binary (`axon`) backed by a local Docker stack.
 
@@ -33,6 +34,20 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
   - `apps/web`: active Next.js UI (omnibox, pulse workspace, API routes)
 
 For infra topology (Docker services, ports, persistence), see the Infrastructure and Environment sections below.
+
+## Module READMEs
+
+- [crates index](crates/README.md)
+- [crates/cli](crates/cli/README.md)
+- [crates/core](crates/core/README.md)
+- [crates/crawl](crates/crawl/README.md)
+- [crates/ingest](crates/ingest/README.md)
+- [crates/jobs](crates/jobs/README.md)
+- [crates/mcp](crates/mcp/README.md)
+- [crates/vector](crates/vector/README.md)
+- [crates/web](crates/web/README.md)
+- [docker](docker/README.md)
+- [docs index](docs/README.md)
 
 ## MCP Server
 

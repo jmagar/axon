@@ -1,4 +1,5 @@
 # axon_cli — Axon CLI (Rust + Spider.rs)
+Last Modified: 2026-02-25
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 

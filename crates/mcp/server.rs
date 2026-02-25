@@ -5,7 +5,7 @@ use super::schema::{
     ExtractRequest, ExtractSubaction, HelpRequest, IngestRequest, IngestSourceType,
     IngestSubaction, McpRenderMode, OpsRequest, OpsSubaction, RagRequest, RagSubaction,
     ResearchRequest, ResponseMode, ScrapeRequest, ScreenshotRequest, SearchTimeRange,
-    SessionsIngestOptions, parse_axon_request,
+    SessionsIngestOptions, StatusRequest, parse_axon_request,
 };
 use crate::crates::cli::commands::crawl::discover_sitemap_urls_with_robots;
 use crate::crates::cli::commands::screenshot::{
@@ -54,6 +54,7 @@ use spider_agent::{Agent, SearchOptions, TimeRange};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::process::Command;
 use uuid::Uuid;
 
 const MCP_TOOL_SCHEMA_URI: &str = "axon://schema/mcp-tool";
@@ -351,7 +352,7 @@ fn map_search_time_range(range: &SearchTimeRange) -> TimeRange {
 impl AxonMcpServer {
     #[tool(
         name = "axon",
-        description = "Unified Axon MCP tool. Use action/subaction routing. Actions: help, crawl, extract, embed, ingest, rag, discover, ops, artifacts, scrape, research, ask, screenshot."
+        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, rag, discover, ops, artifacts, scrape, research, ask, screenshot."
     )]
     async fn axon(
         &self,
@@ -360,6 +361,7 @@ impl AxonMcpServer {
         let request: AxonRequest =
             parse_axon_request(raw).map_err(|e| invalid_params(format!("invalid request: {e}")))?;
         let response = match request {
+            AxonRequest::Status(req) => self.handle_status(req).await?,
             AxonRequest::Crawl(req) => self.handle_crawl(req).await?,
             AxonRequest::Extract(req) => self.handle_extract(req).await?,
             AxonRequest::Embed(req) => self.handle_embed(req).await?,
@@ -379,6 +381,44 @@ impl AxonMcpServer {
 }
 
 impl AxonMcpServer {
+    async fn handle_status(&self, _req: StatusRequest) -> Result<AxonToolResponse, ErrorData> {
+        let json = crate::crates::cli::commands::status::status_snapshot(self.cfg.as_ref())
+            .await
+            .map_err(|e| internal_error(e.to_string()))?;
+
+        let axon_bin = std::env::current_exe()
+            .map_err(|e| internal_error(e.to_string()))?
+            .with_file_name("axon");
+        let output = Command::new(&axon_bin)
+            .arg("status")
+            .output()
+            .await
+            .map_err(|e| internal_error(format!("failed to execute {:?}: {e}", axon_bin)))?;
+        if !output.status.success() {
+            return Err(internal_error(format!(
+                "status command failed with code {:?}",
+                output.status.code()
+            )));
+        }
+        let mut text = String::from_utf8(output.stdout)
+            .map_err(|e| internal_error(format!("invalid utf8 from status output: {e}")))?;
+        if text.ends_with('\n') {
+            text.pop();
+            if text.ends_with('\r') {
+                text.pop();
+            }
+        }
+
+        Ok(AxonToolResponse::ok(
+            "status",
+            "run",
+            serde_json::json!({
+                "text": text,
+                "json": json,
+            }),
+        ))
+    }
+
     async fn handle_crawl(&self, req: CrawlRequest) -> Result<AxonToolResponse, ErrorData> {
         let cfg = apply_crawl_overrides(self.cfg.as_ref(), &req);
         let response_mode = parse_response_mode(req.response_mode);
@@ -1392,6 +1432,7 @@ impl AxonMcpServer {
             serde_json::json!({
                 "tool": "axon",
                 "actions": {
+                    "status": [],
                     "help": [],
                     "scrape": ["run"],
                     "research": ["run"],

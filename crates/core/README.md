@@ -1,4 +1,5 @@
 # crates/core
+Last Modified: 2026-02-25
 
 Shared runtime primitives used across CLI, jobs, crawl, vector, and web modules.
 

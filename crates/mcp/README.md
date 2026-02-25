@@ -1,4 +1,5 @@
 # crates/mcp
+Last Modified: 2026-02-25
 
 Axon MCP server crate for the `axon-mcp` binary.
 

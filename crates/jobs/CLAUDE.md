@@ -1,4 +1,5 @@
 # crates/jobs — AMQP Job Workers
+Last Modified: 2026-02-25
 
 Async job workers backed by RabbitMQ (lapin) + PostgreSQL (sqlx).
 

@@ -1,4 +1,5 @@
 # crates/vector
+Last Modified: 2026-02-25
 
 Embedding, vector storage, retrieval, and RAG operations.
 

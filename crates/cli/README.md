@@ -1,4 +1,5 @@
 # crates/cli
+Last Modified: 2026-02-25
 
 CLI command routing and command handlers for the `axon` binary.
 
