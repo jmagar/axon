@@ -31,13 +31,13 @@ export interface VisualPresetConfig {
 }
 
 const BASE_PALETTE: NeuralCanvasPalette = {
-  core: { r: 210, g: 235, b: 255 },
-  bright: { r: 50, g: 160, b: 255 },
-  mid: { r: 15, g: 90, b: 210 },
-  dim: { r: 8, g: 45, b: 140 },
-  faint: { r: 4, g: 20, b: 70 },
-  backgroundInner: { r: 10, g: 48, b: 146 },
-  backgroundOuter: { r: 2, g: 10, b: 30 },
+  core: { r: 236, g: 243, b: 255 },
+  bright: { r: 142, g: 206, b: 255 },
+  mid: { r: 102, g: 145, b: 232 },
+  dim: { r: 123, g: 92, b: 176 },
+  faint: { r: 46, g: 30, b: 84 },
+  backgroundInner: { r: 30, g: 58, b: 164 },
+  backgroundOuter: { r: 5, g: 8, b: 24 },
 }
 
 export const NEURAL_CANVAS_PRESETS: Record<NeuralCanvasProfile, VisualPresetConfig> = {

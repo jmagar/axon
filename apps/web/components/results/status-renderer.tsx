@@ -25,15 +25,15 @@ export function StatusRenderer({ result }: StatusRendererProps) {
 function KvRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div className="flex justify-between py-1 text-[12px]">
-      <span className="text-[#8787af]">{label}</span>
-      <span className={`tabular-nums ${accent ?? 'text-[#afd7ff]'}`}>{value}</span>
+      <span className="text-[var(--axon-text-muted)]">{label}</span>
+      <span className={`tabular-nums ${accent ?? 'text-[var(--axon-accent-blue)]'}`}>{value}</span>
     </div>
   )
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wider text-[#5f87af] first:mt-0">
+    <h3 className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--axon-text-dim)] first:mt-0">
       {children}
     </h3>
   )
@@ -78,7 +78,9 @@ function StatsPanel({ data }: { data: StatsResult }) {
         <KvRow
           label="Status"
           value={data.status}
-          accent={data.status === 'green' ? 'text-[#87d787]' : 'text-[#ffaf87]'}
+          accent={
+            data.status === 'green' ? 'text-[var(--axon-success)]' : 'text-[var(--axon-warning)]'
+          }
         />
         <KvRow label="Distance" value={data.distance} />
         <KvRow label="Dimension" value={String(data.dimension)} />
@@ -102,7 +104,7 @@ function StatsPanel({ data }: { data: StatsResult }) {
             {data.payload_fields.map((f) => (
               <span
                 key={f}
-                className="rounded-md border border-[rgba(175,215,255,0.1)] px-1.5 py-0.5 font-mono text-[10px] text-[#8787af]"
+                className="rounded-md border border-[rgba(175,215,255,0.1)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--axon-text-muted)]"
               >
                 {f}
               </span>
@@ -155,7 +157,9 @@ function DedupePanel({ data }: { data: DedupeResult }) {
         <KvRow
           label="Points deleted"
           value={fmtNum(data.deleted)}
-          accent={data.deleted > 0 ? 'text-[#ff87af]' : 'text-[#87d787]'}
+          accent={
+            data.deleted > 0 ? 'text-[var(--axon-accent-pink)]' : 'text-[var(--axon-success)]'
+          }
         />
       </div>
     </div>

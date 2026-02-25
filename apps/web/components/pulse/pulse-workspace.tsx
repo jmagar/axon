@@ -19,7 +19,7 @@ export interface ChatMessage {
 }
 
 export function PulseWorkspace() {
-  const { workspacePrompt } = useWsMessages()
+  const { workspacePrompt, workspacePromptVersion } = useWsMessages()
   const [permissionLevel, setPermissionLevel] = useState<PulsePermissionLevel>('training-wheels')
   const [documentMarkdown, setDocumentMarkdown] = useState('')
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
@@ -29,7 +29,6 @@ export function PulseWorkspace() {
   const [pendingOps, setPendingOps] = useState<DocOperation[] | null>(null)
   const [pendingValidation, setPendingValidation] = useState<ValidationResult | null>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastPromptRef = useRef<string | null>(null)
 
   const applyOperations = useCallback((ops: DocOperation[]) => {
     for (const op of ops) {
@@ -52,8 +51,7 @@ export function PulseWorkspace() {
   }, [])
 
   useEffect(() => {
-    if (!workspacePrompt || workspacePrompt === lastPromptRef.current) return
-    lastPromptRef.current = workspacePrompt
+    if (workspacePromptVersion === 0 || !workspacePrompt) return
 
     const prompt = workspacePrompt
     setChatHistory((prev) => [...prev, { role: 'user', content: prompt }])
@@ -102,7 +100,14 @@ export function PulseWorkspace() {
         setChatHistory((prev) => [...prev, { role: 'assistant', content: `Error: ${message}` }])
       })
       .finally(() => setIsChatLoading(false))
-  }, [workspacePrompt, documentMarkdown, chatHistory, permissionLevel, applyOperations])
+  }, [
+    workspacePromptVersion,
+    workspacePrompt,
+    documentMarkdown,
+    chatHistory,
+    permissionLevel,
+    applyOperations,
+  ])
 
   useEffect(() => {
     if (!documentMarkdown || !documentTitle) return

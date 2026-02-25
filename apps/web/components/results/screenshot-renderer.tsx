@@ -17,15 +17,15 @@ function formatBytes(bytes: number): string {
 export function ScreenshotRenderer({ files, isProcessing }: ScreenshotRendererProps) {
   if (files.length === 0 && isProcessing) {
     return (
-      <div className="flex items-center gap-2 text-[#8787af]">
-        <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[#ff87af]" />
+      <div className="flex items-center gap-2 text-[var(--axon-text-muted)]">
+        <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-[rgba(255,135,175,0.2)] border-t-[var(--axon-accent-pink)]" />
         <span className="text-xs">Capturing screenshot...</span>
       </div>
     )
   }
 
   if (files.length === 0) {
-    return <div className="text-sm text-[#8787af]">No screenshots captured</div>
+    return <div className="text-sm text-[var(--axon-text-muted)]">No screenshots captured</div>
   }
 
   return (
@@ -38,7 +38,7 @@ export function ScreenshotRenderer({ files, isProcessing }: ScreenshotRendererPr
               href={file.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="block truncate text-[13px] font-medium text-[#87afff] transition-colors hover:text-[#afd7ff] hover:underline"
+              className="block truncate text-[13px] font-medium text-[var(--axon-accent-blue-strong)] transition-colors hover:text-[var(--axon-accent-blue)] hover:underline"
             >
               {file.url}
             </a>
@@ -60,7 +60,7 @@ export function ScreenshotRenderer({ files, isProcessing }: ScreenshotRendererPr
           </div>
 
           {/* Metadata bar */}
-          <div className="flex items-center gap-4 text-[11px] text-[#5f6b7a]">
+          <div className="flex items-center gap-4 text-[11px] text-[var(--axon-text-subtle)]">
             <span className="font-mono">{file.name}</span>
             {file.size_bytes != null && (
               <span className="font-mono">{formatBytes(file.size_bytes)}</span>
@@ -68,7 +68,7 @@ export function ScreenshotRenderer({ files, isProcessing }: ScreenshotRendererPr
             <a
               href={file.serve_url ?? `/output/screenshots/${file.name}`}
               download={file.name}
-              className="ml-auto text-[#87afff] transition-colors hover:text-[#afd7ff]"
+              className="ml-auto text-[var(--axon-accent-blue-strong)] transition-colors hover:text-[var(--axon-accent-blue)]"
             >
               Download
             </a>

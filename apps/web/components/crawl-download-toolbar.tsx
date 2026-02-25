@@ -22,7 +22,7 @@ function DownloadButton({
   if (disabled) {
     return (
       <span
-        className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-[rgba(175,215,255,0.06)] px-2.5 py-1 text-[10px] font-medium text-[#5f6787] opacity-50"
+        className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border border-[rgba(175,215,255,0.06)] px-2.5 py-1 text-[10px] font-medium text-[var(--axon-text-subtle)] opacity-50"
         style={{ background: 'rgba(10, 18, 35, 0.4)' }}
       >
         <svg
@@ -46,7 +46,7 @@ function DownloadButton({
     <a
       href={href}
       download
-      className="inline-flex items-center gap-1.5 rounded-md border border-[rgba(175,215,255,0.1)] px-2.5 py-1 text-[10px] font-medium text-[#afd7ff] transition-all hover:border-[rgba(255,135,175,0.3)] hover:text-[#ff87af]"
+      className="inline-flex items-center gap-1.5 rounded-md border border-[rgba(175,215,255,0.1)] px-2.5 py-1 text-[10px] font-medium text-[var(--axon-accent-blue)] transition-all hover:border-[rgba(255,135,175,0.3)] hover:text-[var(--axon-accent-pink)]"
       style={{ background: 'rgba(10, 18, 35, 0.4)' }}
     >
       <svg
@@ -72,7 +72,7 @@ const ARCHIVE_ICON = 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v1
 export function CrawlDownloadToolbar({ jobId, fileCount, disabled }: CrawlDownloadToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[10px] text-[#5f6787]">{fileCount} pages</span>
+      <span className="text-[10px] text-[var(--axon-text-subtle)]">{fileCount} pages</span>
       <div className="h-3 w-px bg-[rgba(175,215,255,0.1)]" />
       <DownloadButton
         href={packMdUrl(jobId)}

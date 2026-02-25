@@ -67,6 +67,7 @@ interface WsMessagesContextValue {
   currentJobId: string | null
   workspaceMode: string | null
   workspacePrompt: string | null
+  workspacePromptVersion: number
   activateWorkspace: (mode: string) => void
   submitWorkspacePrompt: (prompt: string) => void
   deactivateWorkspace: () => void
@@ -109,6 +110,7 @@ export function useWsMessagesProvider() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<string | null>(null)
   const [workspacePrompt, setWorkspacePrompt] = useState<string | null>(null)
+  const [workspacePromptVersion, setWorkspacePromptVersion] = useState(0)
 
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
@@ -248,20 +250,30 @@ export function useWsMessagesProvider() {
     setCurrentJobId(null)
     setWorkspaceMode(null)
     setWorkspacePrompt(null)
+    setWorkspacePromptVersion(0)
   }, [])
 
   const activateWorkspace = useCallback((mode: string) => {
+    currentModeRef.current = mode
+    currentInputRef.current = ''
+    setCurrentMode(mode)
+    setHasResults(true)
+    setIsProcessing(false)
     setWorkspaceMode(mode)
     setWorkspacePrompt(null)
+    setWorkspacePromptVersion(0)
   }, [])
 
   const submitWorkspacePrompt = useCallback((prompt: string) => {
+    setHasResults(true)
     setWorkspacePrompt(prompt)
+    setWorkspacePromptVersion((prev) => prev + 1)
   }, [])
 
   const deactivateWorkspace = useCallback(() => {
     setWorkspaceMode(null)
     setWorkspacePrompt(null)
+    setWorkspacePromptVersion(0)
   }, [])
 
   return {
@@ -283,6 +295,7 @@ export function useWsMessagesProvider() {
     currentJobId,
     workspaceMode,
     workspacePrompt,
+    workspacePromptVersion,
     activateWorkspace,
     submitWorkspacePrompt,
     deactivateWorkspace,

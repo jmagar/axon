@@ -15,124 +15,23 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - OpenAI-compatible extraction and answer generation
 - Chrome CDP rendering for dynamic sites
 - Automation-friendly JSON mode via `--json`
-- Built-in web UI via `axon serve` — neural canvas, command execution, Docker stats over WebSocket
+- Legacy static web UI via `axon serve` (deprecated) — see `docs/serve.md`
+- Next.js web app (`apps/web`) with keyboard-first omnibox (`/` focus, `@mode` switching, `@file` context mentions)
 
 ## Architecture
 
-### Crate Layout (`crates/*`)
+- Canonical architecture and end-to-end data flow: `docs/ARCHITECTURE.md`
+- Runtime entrypoint: `main.rs` -> `lib.rs` (`run`/`run_once`)
+- Core subsystems:
+  - `crates/cli`: command handlers and routing
+  - `crates/core`: config parsing, HTTP/content pipeline, logging
+  - `crates/crawl`: crawl engine and sitemap backfill
+  - `crates/jobs`: queue-backed workers and job lifecycle
+  - `crates/vector`: TEI embedding + Qdrant RAG operations
+  - `crates/web.rs` + `crates/web/*`: axum `/ws` runtime + legacy static UI
+  - `apps/web`: active Next.js UI (omnibox, pulse workspace, API routes)
 
-- `crates/cli` — command routing and UX
-- `crates/core` — config, HTTP, health checks, logging, content transforms
-- `crates/crawl` — crawling engine and sitemap backfill
-- `crates/extract` — placeholder module (extraction logic lives in `vector/ops`)
-- `crates/jobs` — queue workers for crawl/extract/embed
-- `crates/vector` — embeddings + Qdrant operations (`query/retrieve/ask/evaluate/suggest/sources/domains/stats/dedupe`)
-- `crates/web` — axum web UI server (static assets, WebSocket handler, Docker stats poller, subprocess execution)
-
-```
-axon_rust/
-├── mod.rs                  # Library root — run() dispatch
-├── main.rs                 # Binary entry point (single binary: axon)
-├── crates/
-│   ├── mod.rs
-│   ├── cli/
-│   │   ├── mod.rs
-│   │   └── commands/       # One file (or subdir) per command
-│   │       ├── common.rs   # URL parsing utilities (parse_urls, expand_url_glob_seed, etc.)
-│   │       ├── probe.rs    # HTTP probe helpers used by doctor
-│   │       ├── crawl.rs    # Crawl command entry point
-│   │       ├── crawl/      # Crawl subcommand modules
-│   │       │   ├── audit.rs
-│   │       │   └── audit/audit_diff.rs
-│   │       ├── doctor/     # Doctor command subdir
-│   │       └── scrape.rs, map.rs, embed.rs, extract.rs,
-│   │           search.rs, status.rs, debug.rs, doctor/,
-│   │           github.rs, reddit.rs, youtube.rs
-│   ├── core/
-│   │   ├── config/         # CLI parsing (clap), Config struct, performance profiles
-│   │   │   ├── cli.rs      # clap arg definitions (GlobalArgs, subcommand args)
-│   │   │   ├── types.rs    # Config struct and enum types
-│   │   │   ├── parse.rs    # Post-parse normalization and profile application
-│   │   │   └── help.rs     # Long-form help strings
-│   │   ├── content/        # HTML→markdown, URL→filename, transform pipeline
-│   │   │   ├── deterministic.rs  # DeterministicExtractionEngine, parsers
-│   │   │   └── tests.rs
-│   │   ├── health.rs       # redis_healthy() connectivity check
-│   │   ├── http.rs         # build_client(), fetch_html(), validate_url() (SSRF guard)
-│   │   ├── logging.rs      # log_info(), log_warn(), log_done() structured output
-│   │   └── ui.rs           # ANSI color helpers (primary, accent, muted, status_text)
-│   ├── crawl/
-│   │   ├── mod.rs
-│   │   ├── engine.rs       # crawl_and_collect_map(), run_crawl_once(),
-│   │   │                   # try_auto_switch(), should_fallback_to_chrome()
-│   │   ├── manifest.rs     # Unified manifest: content hashing, relative pathing, change detection
-│   │   └── engine/
-│   │       ├── sitemap.rs  # crawl_sitemap_urls(), append_sitemap_backfill()
-│   │       └── tests.rs
-│   ├── extract/
-│   │   └── mod.rs          # (placeholder; LLM extraction is in vector/ops)
-│   ├── jobs/               # AMQP-backed async job workers
-│   │   ├── mod.rs
-│   │   ├── common.rs       # Shared infrastructure: make_pool, open_amqp_channel,
-│   │   │                   # claim_next_pending, mark_job_failed, enqueue_job
-│   │   ├── common/
-│   │   │   └── tests.rs
-│   │   ├── embed_jobs/     # Embed worker
-│   │   │   └── tests.rs
-│   │   ├── extract_jobs/   # Extract worker
-│   │   │   ├── worker.rs, tests.rs
-│   │   └── crawl_jobs/     # Crawl pipeline (modular)
-│   │       ├── mod.rs, processor.rs, repo.rs,
-│   │       │   sitemap.rs, watchdog.rs, worker.rs
-│   │       └── runtime/
-│   │           ├── mod.rs, robots.rs, tests.rs, worker.rs
-│   │           └── worker/
-│   │               ├── worker_loops.rs
-│   │               └── worker_process/
-│   ├── web.rs              # Axum server — routes, WS handler, shared state
-│   ├── web/
-│   │   ├── execute.rs      # Subprocess spawn + stdout/stderr streaming over WS
-│   │   ├── docker_stats.rs # Bollard Docker stats poller + broadcast
-│   │   └── static/         # HTML/CSS/JS (compiled into binary via include_str!)
-│   │       ├── index.html, style.css, neural.js, app.js
-│   └── vector/
-│       ├── mod.rs
-│       └── ops/            # Vector ops (modular)
-│           ├── input.rs, ranking.rs, tei.rs
-│           ├── commands/    # Per-command handlers
-│           │   ├── ask/, evaluate.rs, query.rs, streaming.rs, suggest.rs
-│           ├── qdrant/      # Qdrant client and operations
-│           │   ├── client.rs, commands.rs, types.rs, utils.rs
-│           └── stats/
-├── docker/
-│   ├── Dockerfile          # Multi-stage build; s6-overlay for service supervision
-│   ├── rabbitmq/
-│   │   └── 20-axon.conf    # RabbitMQ tuning config
-│   ├── scripts/
-│   │   └── healthcheck-workers.sh
-│   └── s6/
-│       ├── cont-init.d/
-│       │   └── 10-load-axon-env  # Loads .env on container startup
-│       └── s6-rc.d/        # s6-rc service definitions
-│           ├── crawl-worker/  (run, type)
-│           ├── extract-worker/  (run, type)
-│           ├── embed-worker/  (run, type)
-│           └── user/contents.d/
-├── docker-compose.yaml
-├── .env                    # Secrets (gitignored)
-└── .env.example            # Template — copy to .env and fill in
-```
-
-### Docker Services (`docker-compose.yaml`)
-
-- `axon-postgres` -> `localhost:53432`
-- `axon-redis` -> `localhost:53379`
-- `axon-rabbitmq` -> `localhost:45535`
-- `axon-qdrant` -> `localhost:53333` (HTTP), `53334` (gRPC)
-- `axon-chrome` -> `localhost:6000` (management API), `localhost:9222` (CDP proxy)
-- `axon-workers` (s6-supervised worker container; depends on all infra being healthy)
-
-Services run on the `axon` bridge network. Persistent volumes are rooted at `AXON_DATA_DIR` (defaults to `./data` if unset).
+For infra topology (Docker services, ports, persistence), see the Infrastructure and Environment sections below.
 
 ## Quick Start
 

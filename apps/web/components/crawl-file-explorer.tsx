@@ -121,7 +121,7 @@ export function CrawlFileExplorer({
     <button
       type="button"
       onClick={() => setOpen(!open)}
-      className="hidden w-10 flex-shrink-0 items-start justify-center self-stretch border-r border-[rgba(175,215,255,0.08)] pt-3 text-[#8787af] transition-colors hover:text-[#afd7ff] md:flex"
+      className="hidden w-10 flex-shrink-0 items-start justify-center self-stretch border-r border-[rgba(175,215,255,0.08)] pt-3 text-[var(--axon-text-muted)] transition-colors hover:text-[var(--axon-accent-blue)] md:flex"
       style={{ background: 'rgba(3, 7, 18, 0.3)' }}
       title={open ? 'Collapse file explorer' : 'Expand file explorer'}
     >
@@ -157,7 +157,7 @@ export function CrawlFileExplorer({
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="size-4 text-[#afd7ff]"
+        className="size-4 text-[var(--axon-accent-blue)]"
       >
         <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
         <path d="M14 2v4a2 2 0 0 0 2 2h4" />
@@ -165,7 +165,7 @@ export function CrawlFileExplorer({
         <path d="M14 18v-3" />
       </svg>
       {files.length > 0 && (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff87af] px-1 text-[9px] font-bold text-white">
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--axon-accent-pink)] px-1 text-[10px] font-bold text-white">
           {files.length > 99 ? '99+' : files.length}
         </span>
       )}
@@ -190,13 +190,15 @@ export function CrawlFileExplorer({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[rgba(175,215,255,0.08)] px-3 py-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[11px] font-semibold text-[#afd7ff]">{domain}</div>
-          <div className="text-[10px] text-[#8787af]">{files.length} pages</div>
+          <div className="truncate text-[12px] font-semibold text-[var(--axon-accent-blue)]">
+            {domain}
+          </div>
+          <div className="text-[11px] text-[var(--axon-text-muted)]">{files.length} pages</div>
         </div>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="ml-2 flex-shrink-0 rounded p-1 text-[#8787af] transition-colors hover:bg-[rgba(175,215,255,0.06)] hover:text-[#afd7ff]"
+          className="ml-2 flex-shrink-0 rounded p-1 text-[var(--axon-text-muted)] transition-colors hover:bg-[rgba(175,215,255,0.06)] hover:text-[var(--axon-accent-blue)]"
           title="Collapse file explorer"
         >
           <svg
@@ -221,7 +223,7 @@ export function CrawlFileExplorer({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter pages..."
-          className="w-full rounded bg-[rgba(175,215,255,0.04)] px-2 py-1.5 text-[11px] text-[#dce6f0] placeholder-[#5f6787] outline-none ring-1 ring-[rgba(175,215,255,0.08)] transition-all focus:ring-[rgba(175,215,255,0.2)]"
+          className="w-full rounded bg-[rgba(175,215,255,0.04)] px-2 py-1.5 text-[12px] text-[var(--axon-text-secondary)] placeholder-[var(--axon-text-subtle)] outline-none ring-1 ring-[rgba(175,215,255,0.08)] transition-all focus:ring-[rgba(175,215,255,0.2)]"
         />
       </div>
 
@@ -243,21 +245,25 @@ export function CrawlFileExplorer({
               onKeyDown={(e) => handleKeyDown(e, file.relative_path)}
               className={`cursor-pointer border-b border-[rgba(175,215,255,0.04)] px-3 py-2 transition-colors ${
                 isActive
-                  ? 'border-l-2 border-l-[#ff87af] bg-[rgba(175,215,255,0.08)]'
+                  ? 'border-l-2 border-l-[var(--axon-accent-pink)] bg-[rgba(175,215,255,0.08)]'
                   : 'border-l-2 border-l-transparent hover:bg-[rgba(175,215,255,0.04)]'
               }`}
             >
               <div className="flex items-start justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <div
-                    className={`truncate text-[11px] font-medium leading-snug ${isActive ? 'text-[#afd7ff]' : 'text-[#dce6f0]'}`}
+                    className={`truncate text-[12px] font-medium leading-snug ${isActive ? 'text-[var(--axon-accent-blue)]' : 'text-[var(--axon-text-secondary)]'}`}
                   >
                     {name}
                   </div>
-                  {crumb && <div className="truncate text-[9px] text-[#5f6787]">{crumb}</div>}
+                  {crumb && (
+                    <div className="truncate text-[10px] text-[var(--axon-text-subtle)]">
+                      {crumb}
+                    </div>
+                  )}
                 </div>
                 <div className="mt-0.5 flex flex-shrink-0 items-center gap-1">
-                  <span className="text-[9px] tabular-nums text-[#5f6787]">
+                  <span className="text-[10px] tabular-nums text-[var(--axon-text-subtle)]">
                     {file.markdown_chars > 1000
                       ? `${(file.markdown_chars / 1000).toFixed(1)}k`
                       : file.markdown_chars}
@@ -267,7 +273,7 @@ export function CrawlFileExplorer({
                       href={fileDownloadUrl(jobId, file.relative_path)}
                       download
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-0.5 text-[#5f6787] transition-colors hover:text-[#afd7ff]"
+                      className="rounded p-0.5 text-[var(--axon-text-subtle)] transition-colors hover:text-[var(--axon-accent-blue)]"
                       title="Download file"
                     >
                       <svg
@@ -290,7 +296,9 @@ export function CrawlFileExplorer({
           )
         })}
         {filteredFiles.length === 0 && filter && (
-          <div className="px-3 py-4 text-center text-[11px] text-[#5f6787]">No matches</div>
+          <div className="px-3 py-4 text-center text-[12px] text-[var(--axon-text-subtle)]">
+            No matches
+          </div>
         )}
       </div>
     </div>

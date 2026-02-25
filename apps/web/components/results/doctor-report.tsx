@@ -19,7 +19,7 @@ function cleanServiceMeta(text: string | undefined): string | undefined {
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-[#8cc0ff]">
+    <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--axon-accent-blue-strong)]">
       {children}
     </h3>
   )
@@ -36,16 +36,18 @@ function MetricTile({
 }) {
   const colorClass =
     accent === 'pink'
-      ? 'text-[#ff87af] border-[rgba(255,135,175,0.28)] bg-[rgba(255,135,175,0.08)]'
+      ? 'text-[var(--axon-accent-pink)] border-[rgba(255,135,175,0.28)] bg-[rgba(255,135,175,0.08)]'
       : accent === 'green'
-        ? 'text-[#87d787] border-[rgba(135,215,135,0.24)] bg-[rgba(135,215,135,0.08)]'
+        ? 'text-[var(--axon-success)] border-[rgba(130,217,160,0.28)] bg-[var(--axon-success-bg)]'
         : accent === 'orange'
-          ? 'text-[#ffb38a] border-[rgba(255,179,138,0.26)] bg-[rgba(255,179,138,0.08)]'
-          : 'text-[#afd7ff] border-[rgba(175,215,255,0.24)] bg-[rgba(175,215,255,0.08)]'
+          ? 'text-[var(--axon-warning)] border-[rgba(255,192,134,0.28)] bg-[var(--axon-warning-bg)]'
+          : 'text-[var(--axon-accent-blue)] border-[rgba(175,215,255,0.24)] bg-[rgba(175,215,255,0.08)]'
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 ${colorClass}`}>
-      <div className="text-[9px] uppercase tracking-wider text-[#a4afc2]">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--axon-text-muted)]">
+        {label}
+      </div>
       <div className="mt-1 font-mono text-[16px] font-semibold leading-none">{value}</div>
     </div>
   )
@@ -54,13 +56,13 @@ function MetricTile({
 function StatusPill({ ok }: { ok: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
         ok
-          ? 'bg-[rgba(135,215,135,0.16)] text-[#87d787]'
-          : 'bg-[rgba(255,135,175,0.2)] text-[#ff87af]'
+          ? 'bg-[var(--axon-success-bg)] text-[var(--axon-success)]'
+          : 'bg-[rgba(255,135,175,0.2)] text-[var(--axon-accent-pink)]'
       }`}
     >
-      <span className="text-[8px]">{'\u25CF'}</span>
+      <span className="text-[9px]">{'\u25CF'}</span>
       {ok ? 'ok' : 'fail'}
     </span>
   )
@@ -69,7 +71,7 @@ function StatusPill({ ok }: { ok: boolean }) {
 function ServiceRows({ entries }: { entries: Array<[string, DoctorServiceStatus]> }) {
   return (
     <div className="rounded-lg border border-[rgba(175,215,255,0.14)] bg-[rgba(9,16,34,0.55)]">
-      <div className="grid grid-cols-[110px_130px_1fr] gap-3 border-b border-[rgba(175,215,255,0.12)] px-3 py-2 text-[9px] uppercase tracking-wider text-[#8aa5c8]">
+      <div className="grid grid-cols-[110px_130px_1fr] gap-3 border-b border-[rgba(175,215,255,0.12)] px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--axon-text-dim)]">
         <span>Status</span>
         <span>Latency</span>
         <span>Service</span>
@@ -87,26 +89,30 @@ function ServiceRows({ entries }: { entries: Array<[string, DoctorServiceStatus]
                 <div className="pt-0.5">
                   <StatusPill ok={svc.ok} />
                 </div>
-                <div className="pt-1 font-mono text-[9px] text-[#dce6f0]">
+                <div className="pt-1 font-mono text-[10px] text-[var(--axon-text-secondary)]">
                   {fmtMs(svc.latency_ms)}
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold text-[#dce6f0]">{name}</div>
+                  <div className="text-[12px] font-semibold text-[var(--axon-text-secondary)]">
+                    {name}
+                  </div>
                   {svc.model && (
-                    <div className="mt-0.5 break-words text-[9px] text-[#afd7ff]">{svc.model}</div>
+                    <div className="mt-0.5 break-words text-[10px] text-[var(--axon-accent-blue)]">
+                      {svc.model}
+                    </div>
                   )}
                   {svc.url && (
-                    <div className="mt-0.5 break-all font-mono text-[9px] text-[#8fb6df]">
+                    <div className="mt-0.5 break-all font-mono text-[10px] text-[var(--axon-accent-blue)]">
                       {svc.url}
                     </div>
                   )}
                   {detail && (
-                    <div className="mt-1 whitespace-pre-wrap break-words text-[9px] text-[#9aa8bd]">
+                    <div className="mt-1 whitespace-pre-wrap break-words text-[10px] text-[var(--axon-text-muted)]">
                       {detail}
                     </div>
                   )}
                   {summary && (
-                    <div className="mt-1 whitespace-pre-wrap break-words text-[9px] text-[#9aa8bd]">
+                    <div className="mt-1 whitespace-pre-wrap break-words text-[10px] text-[var(--axon-text-muted)]">
                       {summary}
                     </div>
                   )}
@@ -147,14 +153,16 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
           <span
             className={`inline-block size-2.5 rounded-full ${
               data.all_ok
-                ? 'bg-[#87d787] shadow-[0_0_8px_rgba(135,215,135,0.65)]'
-                : 'bg-[#ff87af] shadow-[0_0_8px_rgba(255,135,175,0.65)]'
+                ? 'bg-[var(--axon-success)] shadow-[0_0_8px_rgba(130,217,160,0.65)]'
+                : 'bg-[var(--axon-accent-pink)] shadow-[0_0_8px_rgba(255,135,175,0.65)]'
             }`}
           />
-          <span className="text-[12px] font-semibold text-[#dce6f0]">
+          <span className="text-[12px] font-semibold text-[var(--axon-text-secondary)]">
             {data.all_ok ? 'System Health: Stable' : 'System Health: Attention Needed'}
           </span>
-          {observedAt && <span className="text-[9px] text-[#9aa8bd]">Observed {observedAt}</span>}
+          {observedAt && (
+            <span className="text-[10px] text-[var(--axon-text-muted)]">Observed {observedAt}</span>
+          )}
         </div>
       </div>
 
@@ -182,10 +190,12 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
               {pipelineEntries.map(([name, ok]) => (
                 <div
                   key={name}
-                  className="flex items-center justify-between rounded-md border border-[rgba(175,215,255,0.08)] bg-[rgba(8,14,30,0.4)] px-2 py-1.5 text-[10px]"
+                  className="flex items-center justify-between rounded-md border border-[rgba(175,215,255,0.08)] bg-[rgba(8,14,30,0.4)] px-2 py-1.5 text-[11px]"
                 >
-                  <span className="text-[#dce6f0]">{name}</span>
-                  <span className={ok ? 'text-[#87d787]' : 'text-[#ff87af]'}>
+                  <span className="text-[var(--axon-text-secondary)]">{name}</span>
+                  <span
+                    className={ok ? 'text-[var(--axon-success)]' : 'text-[var(--axon-accent-pink)]'}
+                  >
                     {ok ? 'up' : 'down'}
                   </span>
                 </div>
@@ -196,14 +206,16 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
           {queueEntries.length > 0 && (
             <div className="rounded-lg border border-[rgba(175,215,255,0.15)] p-3 bg-[rgba(9,16,34,0.55)]">
               <SectionHeader>Queue Names</SectionHeader>
-              <div className="space-y-1.5 font-mono text-[10px]">
+              <div className="space-y-1.5 font-mono text-[11px]">
                 {queueEntries.map(([key, val]) => (
                   <div
                     key={key}
                     className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 rounded-md border border-[rgba(175,215,255,0.08)] bg-[rgba(8,14,30,0.4)] px-2 py-1.5"
                   >
-                    <span className="break-words text-[#87a1c2]">{key}</span>
-                    <span className="break-all text-right text-[#afd7ff]">{val}</span>
+                    <span className="break-words text-[var(--axon-text-dim)]">{key}</span>
+                    <span className="break-all text-right text-[var(--axon-accent-blue)]">
+                      {val}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -213,9 +225,11 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
           {data.browser_runtime && (
             <div className="rounded-lg border border-[rgba(175,215,255,0.15)] p-3 bg-[rgba(9,16,34,0.55)]">
               <SectionHeader>Browser Runtime</SectionHeader>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-[#87a1c2]">Selection</span>
-                <span className="font-mono text-[#afd7ff]">{data.browser_runtime.selection}</span>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[var(--axon-text-dim)]">Selection</span>
+                <span className="font-mono text-[var(--axon-accent-blue)]">
+                  {data.browser_runtime.selection}
+                </span>
               </div>
             </div>
           )}
@@ -223,26 +237,36 @@ export function DoctorReport({ data }: { data: DoctorResult }) {
           {data.timing_ms && (
             <div className="rounded-lg border border-[rgba(175,215,255,0.15)] p-3 bg-[rgba(9,16,34,0.55)]">
               <SectionHeader>Probe Timing</SectionHeader>
-              <div className="space-y-1.5 font-mono text-[10px]">
+              <div className="space-y-1.5 font-mono text-[11px]">
                 <div className="flex justify-between">
-                  <span className="text-[#87a1c2]">crawl report</span>
-                  <span className="text-[#afd7ff]">{fmtMs(data.timing_ms.crawl_report)}</span>
+                  <span className="text-[var(--axon-text-dim)]">crawl report</span>
+                  <span className="text-[var(--axon-accent-blue)]">
+                    {fmtMs(data.timing_ms.crawl_report)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#87a1c2]">extract report</span>
-                  <span className="text-[#afd7ff]">{fmtMs(data.timing_ms.extract_report)}</span>
+                  <span className="text-[var(--axon-text-dim)]">extract report</span>
+                  <span className="text-[var(--axon-accent-blue)]">
+                    {fmtMs(data.timing_ms.extract_report)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#87a1c2]">embed report</span>
-                  <span className="text-[#afd7ff]">{fmtMs(data.timing_ms.embed_report)}</span>
+                  <span className="text-[var(--axon-text-dim)]">embed report</span>
+                  <span className="text-[var(--axon-accent-blue)]">
+                    {fmtMs(data.timing_ms.embed_report)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#87a1c2]">ingest report</span>
-                  <span className="text-[#afd7ff]">{fmtMs(data.timing_ms.ingest_report)}</span>
+                  <span className="text-[var(--axon-text-dim)]">ingest report</span>
+                  <span className="text-[var(--axon-accent-blue)]">
+                    {fmtMs(data.timing_ms.ingest_report)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#87a1c2]">stale/pending query</span>
-                  <span className="text-[#afd7ff]">{fmtMs(data.timing_ms.stale_pending)}</span>
+                  <span className="text-[var(--axon-text-dim)]">stale/pending query</span>
+                  <span className="text-[var(--axon-accent-blue)]">
+                    {fmtMs(data.timing_ms.stale_pending)}
+                  </span>
                 </div>
               </div>
             </div>

@@ -78,7 +78,9 @@ function Section({
       }}
     >
       {title && (
-        <div className="mb-2 text-[11px] font-semibold uppercase text-[#5f87af]">{title}</div>
+        <div className="mb-2 text-[11px] font-semibold uppercase text-[var(--axon-text-dim)]">
+          {title}
+        </div>
       )}
       {children}
     </div>
@@ -92,8 +94,12 @@ function KeyValueTable({ rows }: { rows: Array<{ key: string; value: Scalar }> }
         <tbody>
           {rows.map((row) => (
             <tr key={row.key} className="border-b border-[rgba(175,215,255,0.06)] last:border-b-0">
-              <td className="py-1 pr-4 align-top text-[#8787af]">{humanizeKey(row.key)}</td>
-              <td className="py-1 align-top text-[#dce6f0]">{scalarLabel(row.value)}</td>
+              <td className="py-1 pr-4 align-top text-[var(--axon-text-muted)]">
+                {humanizeKey(row.key)}
+              </td>
+              <td className="py-1 align-top text-[var(--axon-text-secondary)]">
+                {scalarLabel(row.value)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -113,7 +119,7 @@ function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
             {columns.map((col) => (
               <th
                 key={col}
-                className="border-b border-[rgba(175,215,255,0.12)] py-1.5 pr-4 text-left text-[10px] uppercase tracking-wider text-[#8787af]"
+                className="border-b border-[rgba(175,215,255,0.12)] py-1.5 pr-4 text-left text-[10px] uppercase tracking-wider text-[var(--axon-text-muted)]"
               >
                 {humanizeKey(col)}
               </th>
@@ -124,7 +130,7 @@ function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
           {rows.map((row, idx) => (
             <tr key={idx} className="border-b border-[rgba(175,215,255,0.06)] last:border-b-0">
               {columns.map((col) => (
-                <td key={col} className="py-1.5 pr-4 text-[#dce6f0]">
+                <td key={col} className="py-1.5 pr-4 text-[var(--axon-text-secondary)]">
                   {scalarLabel(row[col])}
                 </td>
               ))}
@@ -140,7 +146,7 @@ function NodeView({ value, title }: { value: unknown; title?: string }) {
   if (isScalar(value)) {
     return (
       <Section title={title}>
-        <div className="text-[13px] text-[#dce6f0]">{scalarLabel(value)}</div>
+        <div className="text-[13px] text-[var(--axon-text-secondary)]">{scalarLabel(value)}</div>
       </Section>
     )
   }
@@ -158,7 +164,7 @@ function NodeView({ value, title }: { value: unknown; title?: string }) {
     if (value.length === 0) {
       return (
         <Section title={title}>
-          <div className="text-[12px] text-[#8787af]">(empty list)</div>
+          <div className="text-[12px] text-[var(--axon-text-muted)]">(empty list)</div>
         </Section>
       )
     }
@@ -189,7 +195,7 @@ function NodeView({ value, title }: { value: unknown; title?: string }) {
             <NodeView key={key} value={nested} title={humanizeKey(key)} />
           ))}
           {scalarRows.length === 0 && nestedRows.length === 0 && (
-            <div className="text-[12px] text-[#8787af]">(empty object)</div>
+            <div className="text-[12px] text-[var(--axon-text-muted)]">(empty object)</div>
           )}
         </div>
       </Section>
@@ -198,7 +204,7 @@ function NodeView({ value, title }: { value: unknown; title?: string }) {
 
   return (
     <Section title={title}>
-      <div className="text-[13px] text-[#dce6f0]">{String(value)}</div>
+      <div className="text-[13px] text-[var(--axon-text-secondary)]">{String(value)}</div>
     </Section>
   )
 }
