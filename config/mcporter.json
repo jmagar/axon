@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "axon": {
+      "command": "/home/jmagar/workspace/axon_rust/target/debug/axon-mcp"
+    }
+  },
+  "imports": []
+}

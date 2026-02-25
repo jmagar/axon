@@ -13,7 +13,6 @@ interface RawRendererProps {
 export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRendererProps) {
   const hasJson = stdoutJson.length > 0
   const hasLines = stdoutLines.length > 0
-  const parsedFromLines = hasJson ? null : parseStructuredLinePayload(stdoutLines)
 
   if (!hasJson && !hasLines) {
     if (isProcessing) {
@@ -33,9 +32,7 @@ export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRender
 
   const copyText = hasJson
     ? stdoutJson.map((obj) => formatStructuredText(obj)).join('\n\n')
-    : parsedFromLines
-      ? formatStructuredText(parsedFromLines)
-      : stdoutLines.join('\n')
+    : stdoutLines.join('\n')
 
   return (
     <div className="relative">
@@ -46,8 +43,6 @@ export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRender
             <StructuredDataView key={i} data={obj} />
           ))}
         </div>
-      ) : parsedFromLines ? (
-        <StructuredDataView data={parsedFromLines} />
       ) : (
         <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-[var(--axon-text-secondary)]">
           {stdoutLines.join('\n')}
@@ -55,32 +50,4 @@ export function RawRenderer({ stdoutJson, stdoutLines, isProcessing }: RawRender
       )}
     </div>
   )
-}
-
-function parseStructuredLinePayload(lines: string[]): unknown | null {
-  if (lines.length === 0) return null
-
-  const joined = lines.join('\n').trim()
-  if (!joined) return null
-
-  if (joined.startsWith('{') || joined.startsWith('[')) {
-    try {
-      return JSON.parse(joined)
-    } catch {
-      // fall through
-    }
-  }
-
-  if (lines.length === 1) {
-    const line = lines[0].trim()
-    if (line.startsWith('{') || line.startsWith('[')) {
-      try {
-        return JSON.parse(line)
-      } catch {
-        return null
-      }
-    }
-  }
-
-  return null
 }

@@ -68,10 +68,10 @@ export default function DashboardPage() {
     }
   }, [])
 
-  // Canvas intensity: full on execute start, pulse on done/error
+  // Canvas intensity: full on execute start, pulse on command done/error.
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
-      if (msg.type === 'done' || msg.type === 'error') {
+      if (msg.type === 'command.done' || msg.type === 'command.error') {
         canvasRef.current?.setIntensity(0.15)
         setTimeout(() => canvasRef.current?.setIntensity(0), 3000)
       }

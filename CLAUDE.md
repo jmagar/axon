@@ -22,6 +22,19 @@ cargo run --bin axon -- scrape https://example.com --wait true
 
 > **Note:** The binary is named `axon`. Build with `cargo build --bin axon`.
 
+## MCP Server (`axon-mcp`)
+
+Axon ships an MCP server binary that exposes a single tool (`axon`) with `action`/`subaction` routing for crawl/extract/embed/ingest/RAG/discovery/ops workflows.
+
+```bash
+cargo build --release --bin axon-mcp
+./target/release/axon-mcp
+```
+
+MCP docs:
+- `docs/MCP.md` (runtime/design guide)
+- `docs/MCP-TOOL-SCHEMA.md` (wire contract schema source of truth)
+
 ## Commands
 
 | Command | Purpose | Async? |

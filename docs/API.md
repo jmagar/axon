@@ -1,7 +1,7 @@
 # API Reference
 
 Version: 1.0.0
-Last Updated: 01:26:53 | 02/25/2026 EST
+Last Updated: 16:51:32 | 02/25/2026 EST
 
 ## Table of Contents
 
@@ -42,7 +42,7 @@ Defined in `apps/web/lib/ws-protocol.ts` as `WsClientMsg`.
 | Type | Shape | Description |
 |---|---|---|
 | `execute` | `{ type, mode, input, flags }` | Run one allowed axon mode via subprocess |
-| `cancel` | `{ type, id }` | Cancel async job by id |
+| `cancel` | `{ type, id, mode?, job_id? }` | Cancel async job (legacy id + v2 context fields) |
 | `read_file` | `{ type, path }` | Read a generated file from crawl output context |
 
 `mode` is allowlisted by server-side `ALLOWED_MODES` in `crates/web/execute/mod.rs`.
@@ -53,18 +53,23 @@ Defined in `apps/web/lib/ws-protocol.ts` as `WsServerMsg`.
 
 | Type | Shape | Description |
 |---|---|---|
-| `command_start` | `{ mode }` | Command accepted and about to run |
-| `output` | `{ line }` | generic output line |
 | `log` | `{ line }` | stderr/log line |
-| `stdout_json` | `{ data }` | parsed JSON stdout payload |
-| `stdout_line` | `{ line }` | raw stdout line |
-| `crawl_progress` | `{ job_id, status, pages_crawled, ... }` | async crawl status polling update |
-| `crawl_files` | `{ files, output_dir, job_id? }` | output manifest payload |
-| `file_content` | `{ path, content }` | markdown/text file content |
-| `screenshot_files` | `{ files[] }` | screenshot metadata |
+| `command.start` | `{ data: { ctx } }` | Command accepted and context established |
+| `command.output.json` | `{ data: { ctx, data } }` | structured command payload |
+| `command.output.line` | `{ data: { ctx, line } }` | raw command output line |
+| `command.done` | `{ data: { ctx, payload: { exit_code, elapsed_ms? } } }` | command completed |
+| `command.error` | `{ data: { ctx, payload: { message, elapsed_ms? } } }` | command/request failed |
+| `job.status` | `{ data: { ctx, payload: { status, error?, metrics? } } }` | async job status update |
+| `job.progress` | `{ data: { ctx, payload: { phase, percent?, processed?, total? } } }` | async progress update |
+| `job.cancel.response` | `{ data: { ctx, payload: { ok, mode?, job_id?, message? } } }` | cancel attempt result |
+| `artifact.list` | `{ data: { ctx, artifacts[] } }` | artifact metadata list |
+| `artifact.content` | `{ data: { ctx, path, content } }` | artifact content payload |
+| `crawl_progress` | `{ job_id, status, pages_crawled, ... }` | crawl compatibility stream (retained) |
+| `crawl_files` | `{ files, output_dir, job_id? }` | crawl compatibility manifest (retained) |
+| `file_content` | `{ path, content }` | compatibility file content message |
 | `stats` | `{ aggregate, containers, container_count }` | docker runtime stats |
-| `done` | `{ exit_code, elapsed_ms }` | command completed |
-| `error` | `{ message, elapsed_ms?, stderr? }` | command/request failed |
+
+`ctx` fields: `exec_id`, `mode`, `input`.
 
 ### Mode Execution Rules
 
@@ -238,6 +243,8 @@ HTTP:
 
 - Active UI runtime is `apps/web`.
 - Legacy static UI served by `axon serve` remains available but is deprecated.
+- `/ws` v2 event names are canonical (`command.*`, `job.*`, `artifact.*`).
+- `crawl_progress`, `crawl_files`, and `file_content` remain as compatibility channels.
 - Keep `apps/web/lib/ws-protocol.ts` and Rust websocket payloads in sync.
 
 ## Source Map
@@ -253,4 +260,3 @@ HTTP:
 - `apps/web/app/api/pulse/doc/route.ts`
 - `apps/web/app/api/pulse/save/route.ts`
 - `apps/web/app/api/ai/copilot/route.ts`
-

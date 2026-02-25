@@ -31,6 +31,31 @@ pub struct JobProgressPayload {
     pub total: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommandDonePayload {
+    pub exit_code: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommandErrorPayload {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JobCancelResponsePayload {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,6 +75,20 @@ pub struct ArtifactEntry {
 pub enum WsEventV2 {
     #[serde(rename = "command.start")]
     CommandStart { ctx: CommandContext },
+    #[serde(rename = "command.output.json")]
+    CommandOutputJson { ctx: CommandContext, data: Value },
+    #[serde(rename = "command.output.line")]
+    CommandOutputLine { ctx: CommandContext, line: String },
+    #[serde(rename = "command.done")]
+    CommandDone {
+        ctx: CommandContext,
+        payload: CommandDonePayload,
+    },
+    #[serde(rename = "command.error")]
+    CommandError {
+        ctx: CommandContext,
+        payload: CommandErrorPayload,
+    },
     #[serde(rename = "job.status")]
     JobStatus {
         ctx: CommandContext,
@@ -64,5 +103,16 @@ pub enum WsEventV2 {
     ArtifactList {
         ctx: CommandContext,
         artifacts: Vec<ArtifactEntry>,
+    },
+    #[serde(rename = "artifact.content")]
+    ArtifactContent {
+        ctx: CommandContext,
+        path: String,
+        content: String,
+    },
+    #[serde(rename = "job.cancel.response")]
+    JobCancelResponse {
+        ctx: CommandContext,
+        payload: JobCancelResponsePayload,
     },
 }

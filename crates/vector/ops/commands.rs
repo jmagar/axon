@@ -1,7 +1,7 @@
-mod ask;
+pub(crate) mod ask;
 mod evaluate;
 mod query;
-mod streaming;
+pub(crate) mod streaming;
 mod suggest;
 
 pub use ask::run_ask_native;

@@ -7,6 +7,7 @@ pub mod extract;
 pub mod github;
 pub mod ingest;
 pub mod ingest_common;
+pub mod job_contracts;
 pub mod map;
 pub mod probe;
 pub mod reddit;
