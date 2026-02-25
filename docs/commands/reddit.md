@@ -1,5 +1,8 @@
 # axon reddit
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 Ingest a subreddit or Reddit thread into Qdrant. Authenticates via Reddit OAuth2 client credentials, fetches posts and comment threads, and embeds the content into the configured Qdrant collection.
 
 ## Synopsis

@@ -1,5 +1,8 @@
 # Monolith Policy
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 This repository enforces a ratcheting policy to prevent new monolithic files and functions from being introduced.
 
 ## Scope

@@ -1,5 +1,8 @@
 # YouTube Ingest
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 > CLI reference (flags, subcommands, examples): [`docs/commands/youtube.md`](../commands/youtube.md)
 
 Ingests a single YouTube video transcript into Qdrant via `yt-dlp`. No API key required.

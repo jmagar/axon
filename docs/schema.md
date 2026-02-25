@@ -1,5 +1,8 @@
 # Database Schema
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 Tables are auto-created on first worker/command start via `CREATE TABLE IF NOT EXISTS` in each `*_jobs.rs` file's `ensure_schema()` function.
 
 ## axon_crawl_jobs

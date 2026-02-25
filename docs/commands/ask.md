@@ -1,5 +1,8 @@
 # axon ask
 
+Version: 1.0.0
+Last Updated: 01:26:53 | 02/25/2026 EST
+
 RAG-powered Q&A. Retrieves relevant chunks from the local Qdrant knowledge base, reranks them by relevance, builds a context window, and calls the configured LLM to generate a grounded answer.
 
 ## Synopsis
