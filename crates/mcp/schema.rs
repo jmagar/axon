@@ -24,6 +24,7 @@ pub enum AxonRequest {
     Research(ResearchRequest),
     Ask(AskRequest),
     Screenshot(ScreenshotRequest),
+    Refresh(RefreshRequest),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
@@ -292,6 +293,33 @@ pub struct ScreenshotRequest {
     pub full_page: Option<bool>,
     pub viewport: Option<String>,
     pub output: Option<String>,
+    pub response_mode: Option<ResponseMode>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RefreshSubaction {
+    Start,
+    Status,
+    Cancel,
+    List,
+    Cleanup,
+    Clear,
+    Recover,
+    Schedule,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RefreshRequest {
+    pub subaction: RefreshSubaction,
+    pub url: Option<String>,
+    pub urls: Option<Vec<String>>,
+    pub job_id: Option<String>,
+    pub schedule_subaction: Option<String>,
+    pub schedule_name: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<usize>,
     pub response_mode: Option<ResponseMode>,
 }
 

@@ -10,7 +10,7 @@ Container build assets and runtime supervision scripts for Axon services.
 
 ## Layout
 - `Dockerfile`: primary Axon image build used for worker/runtime containers.
-- `Dockerfile.chrome`: Chrome/headless browser service image build.
+- `chrome/Dockerfile`: Chrome/headless browser service image build.
 - `s6/`: s6-overlay init and service definitions for worker processes.
 - `scripts/healthcheck-workers.sh`: health probe script used by worker container.
 - `rabbitmq/20-axon.conf`: RabbitMQ runtime configuration overlay.
@@ -21,6 +21,7 @@ Container build assets and runtime supervision scripts for Axon services.
 - `s6/s6-rc.d/extract-worker/run`: launches extract worker process.
 - `s6/s6-rc.d/embed-worker/run`: launches embed worker process.
 - `s6/s6-rc.d/ingest-worker/run`: launches ingest worker process.
+- `s6/s6-rc.d/web-server/run`: launches axon serve (HTTP + WebSocket) process.
 - `s6/s6-rc.d/user/contents.d/*`: composes enabled worker services.
 
 ## Integration Points

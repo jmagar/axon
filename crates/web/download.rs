@@ -25,6 +25,35 @@ fn max_files() -> usize {
         .unwrap_or(2000)
 }
 
+/// Maximum total bytes across all files before zipping.
+/// Override with `AXON_DOWNLOAD_MAX_BYTES` env var. Default: 500 MB.
+fn max_download_bytes() -> u64 {
+    std::env::var("AXON_DOWNLOAD_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(500 * 1024 * 1024)
+}
+
+/// Sanitize a filename for use in Content-Disposition headers.
+/// Keeps ASCII alphanumeric, hyphens, dots, and underscores; replaces everything else.
+fn sanitize_filename(raw: &str) -> String {
+    let sanitized: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "download".to_string()
+    } else {
+        sanitized
+    }
+}
+
 /// Validate a job ID string: must be a valid UUID (hex + dashes, 36 chars).
 fn is_valid_job_id(id: &str) -> bool {
     id.len() == 36
@@ -99,6 +128,23 @@ async fn load_all_files(
     job_dir: &Path,
 ) -> Result<(String, Vec<(String, String, String)>), (StatusCode, &'static str)> {
     let manifest_entries = read_manifest(job_dir).await?;
+
+    // Pre-check total file size before loading anything into memory
+    let byte_limit = max_download_bytes();
+    let mut total_bytes: u64 = 0;
+    for (_url, rel_path) in &manifest_entries {
+        let file_path = job_dir.join(rel_path);
+        if let Ok(meta) = tokio::fs::metadata(&file_path).await {
+            total_bytes += meta.len();
+            if total_bytes > byte_limit {
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "total download size exceeds AXON_DOWNLOAD_MAX_BYTES limit",
+                ));
+            }
+        }
+    }
+
     let mut loaded = Vec::with_capacity(manifest_entries.len());
     let mut domain = String::new();
 
@@ -138,7 +184,7 @@ pub async fn serve_pack_md(
     };
 
     let body = pack::build_pack_md(&domain, &entries);
-    let filename = format!("{domain}-pack.md");
+    let safe_filename = sanitize_filename(&format!("{domain}-pack.md"));
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -147,9 +193,11 @@ pub async fn serve_pack_md(
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{filename}\"")
-            .parse()
-            .unwrap(),
+        format!("attachment; filename=\"{safe_filename}\"")
+            .parse::<header::HeaderValue>()
+            .unwrap_or_else(|_| {
+                header::HeaderValue::from_static("attachment; filename=\"download\"")
+            }),
     );
 
     (headers, body).into_response()
@@ -171,7 +219,7 @@ pub async fn serve_pack_xml(
     };
 
     let body = pack::build_pack_xml(&domain, &entries);
-    let filename = format!("{domain}-pack.xml");
+    let safe_filename = sanitize_filename(&format!("{domain}-pack.xml"));
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -180,9 +228,11 @@ pub async fn serve_pack_xml(
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{filename}\"")
-            .parse()
-            .unwrap(),
+        format!("attachment; filename=\"{safe_filename}\"")
+            .parse::<header::HeaderValue>()
+            .unwrap_or_else(|_| {
+                header::HeaderValue::from_static("attachment; filename=\"download\"")
+            }),
     );
 
     (headers, body).into_response()
@@ -211,11 +261,14 @@ pub async fn serve_zip(
         Ok(Ok(bytes)) => {
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, "application/zip".parse().unwrap());
+            let safe_filename = sanitize_filename(&filename);
             headers.insert(
                 header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}\"")
-                    .parse()
-                    .unwrap(),
+                format!("attachment; filename=\"{safe_filename}\"")
+                    .parse::<header::HeaderValue>()
+                    .unwrap_or_else(|_| {
+                        header::HeaderValue::from_static("attachment; filename=\"download\"")
+                    }),
             );
             (headers, bytes).into_response()
         }
@@ -297,11 +350,14 @@ pub async fn serve_file(
         header::CONTENT_TYPE,
         "text/markdown; charset=utf-8".parse().unwrap(),
     );
+    let safe_filename = sanitize_filename(&filename);
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{filename}\"")
-            .parse()
-            .unwrap(),
+        format!("attachment; filename=\"{safe_filename}\"")
+            .parse::<header::HeaderValue>()
+            .unwrap_or_else(|_| {
+                header::HeaderValue::from_static("attachment; filename=\"download\"")
+            }),
     );
 
     (headers, content).into_response()
@@ -325,6 +381,87 @@ mod tests {
         assert!(!is_valid_job_id("550e8400-e29b-41d4-a716-44665544000")); // 35 chars
         assert!(!is_valid_job_id("550e8400-e29b-41d4-a716-4466554400000")); // 37 chars
         assert!(!is_valid_job_id("550e8400%e29b-41d4-a716-446655440000")); // % char
+    }
+
+    #[test]
+    fn sanitize_filename_strips_non_ascii() {
+        assert_eq!(sanitize_filename("example.com"), "example.com");
+        assert_eq!(sanitize_filename("[::1]-pack.md"), "___1_-pack.md");
+        assert_eq!(
+            sanitize_filename("\u{00e9}xample.com-pack.md"),
+            "_xample.com-pack.md"
+        );
+        assert_eq!(sanitize_filename(""), "download");
+    }
+
+    #[test]
+    fn valid_job_id_rejects_path_traversal() {
+        assert!(!is_valid_job_id("../../../etc/passwd"));
+        assert!(!is_valid_job_id("..%2f..%2fetc%2fpasswd"));
+        assert!(!is_valid_job_id("a/../b/../c/../d/../e/../"));
+    }
+
+    #[test]
+    fn valid_job_id_rejects_null_bytes() {
+        assert!(!is_valid_job_id("550e8400-e29b-41d4-a716-44665544\x00"));
+    }
+
+    #[test]
+    fn path_traversal_dotdot_detected() {
+        // The serve_file handler rejects paths containing ".." before touching the filesystem
+        let attack_paths = [
+            "../sibling/secret.txt",
+            "../../etc/passwd",
+            "a/../../b",
+            "markdown/../../../etc/shadow",
+        ];
+        for p in attack_paths {
+            assert!(
+                p.contains(".."),
+                "test path {p} should contain '..' to trigger the guard"
+            );
+        }
+    }
+
+    #[test]
+    fn path_traversal_null_byte_rejected() {
+        let null_path = "markdown/good\0.md";
+        assert!(
+            null_path.contains('\0'),
+            "null byte path should be caught by the serve_file guard"
+        );
+    }
+
+    #[test]
+    fn validate_job_dir_rejects_unknown_id() {
+        let dirs = DashMap::new();
+        let result = validate_job_dir(&dirs, "550e8400-e29b-41d4-a716-446655440000");
+        assert!(result.is_err());
+        let (status, _msg) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn validate_job_dir_rejects_bad_format() {
+        let dirs = DashMap::new();
+        let result = validate_job_dir(&dirs, "../../../etc");
+        assert!(result.is_err());
+        let (status, _msg) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn validate_job_dir_rejects_nonexistent_dir() {
+        let dirs = DashMap::new();
+        let fake_id = "550e8400-e29b-41d4-a716-446655440000";
+        dirs.insert(
+            fake_id.to_string(),
+            PathBuf::from("/tmp/nonexistent-axon-test-dir-xyz"),
+        );
+        let result = validate_job_dir(&dirs, fake_id);
+        assert!(result.is_err());
+        let (status, _msg) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[test]

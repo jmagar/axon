@@ -811,6 +811,9 @@ export function PulseWorkspace() {
               markdown={documentMarkdown}
               onMarkdownChange={setDocumentMarkdown}
               scrollStorageKey="axon.web.pulse.editor-scroll"
+              mobilePane={mobilePane}
+              onMobilePaneChange={setMobilePane}
+              isDesktop={isDesktop}
             />
           </div>
           <div

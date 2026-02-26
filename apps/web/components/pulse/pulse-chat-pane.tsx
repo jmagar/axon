@@ -1,9 +1,10 @@
 'use client'
 
-import { ChevronDown, Copy, MessageSquare, PenLine, RotateCcw, X } from 'lucide-react'
+import { ChevronDown, Copy, RotateCcw, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
 import { PulseMarkdown } from './pulse-markdown'
+import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import type { ChatMessage } from './pulse-workspace'
 
 // ── Tool-use style helpers ─────────────────────────────────────────────────────
@@ -403,36 +404,11 @@ export function PulseChatPane({
         <div className="flex items-center gap-1.5">
           <p className="ui-label flex-none">Pulse Chat</p>
 
-          {/* Mobile pane switcher */}
           {!isDesktop && (
-            <>
-              <button
-                type="button"
-                onClick={() => onMobilePaneChange('chat')}
-                aria-pressed={mobilePane === 'chat'}
-                title="Chat pane"
-                className={`inline-flex size-6 items-center justify-center rounded border transition-colors ${
-                  mobilePane === 'chat'
-                    ? 'border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.18)] text-[var(--axon-accent-pink-strong)]'
-                    : 'border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)]'
-                }`}
-              >
-                <MessageSquare className="size-3" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onMobilePaneChange('editor')}
-                aria-pressed={mobilePane === 'editor'}
-                title="Editor pane"
-                className={`inline-flex size-6 items-center justify-center rounded border transition-colors ${
-                  mobilePane === 'editor'
-                    ? 'border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.18)] text-[var(--axon-accent-pink-strong)]'
-                    : 'border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)]'
-                }`}
-              >
-                <PenLine className="size-3" />
-              </button>
-            </>
+            <PulseMobilePaneSwitcher
+              mobilePane={mobilePane}
+              onMobilePaneChange={onMobilePaneChange}
+            />
           )}
 
           <div className="min-w-0 flex-1" />
