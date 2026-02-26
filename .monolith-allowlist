@@ -40,3 +40,5 @@ crates/web/execute/mod.rs
 apps/web/hooks/use-ws-messages.ts
 crates/cli/commands/crawl.rs
 crates/vector/ops/commands/ask/context.rs
+# 509 lines — citation-quality gates + test suite; test block accounts for overage (2026-02-26)
+crates/vector/ops/commands/ask.rs

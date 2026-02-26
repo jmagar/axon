@@ -3,6 +3,11 @@ use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{muted, primary, print_phase};
 use spider_agent::{Agent, ResearchOptions, SearchOptions, TimeRange};
 use std::error::Error;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Instant;
 
 pub async fn research_payload(
     cfg: &Config,
@@ -11,6 +16,7 @@ pub async fn research_payload(
     offset: usize,
     time_range: Option<TimeRange>,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
+    let started = Instant::now();
     if cfg.tavily_api_key.is_empty() {
         return Err("research requires TAVILY_API_KEY — set it in .env".into());
     }
@@ -92,7 +98,10 @@ pub async fn research_payload(
             "prompt_tokens": research.usage.prompt_tokens,
             "completion_tokens": research.usage.completion_tokens,
             "total_tokens": research.usage.total_tokens,
-        }
+        },
+        "timing_ms": {
+            "total": started.elapsed().as_millis(),
+        },
     }))
 }
 
@@ -116,7 +125,35 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
     println!("  {} {}", muted("provider=tavily model="), cfg.openai_model);
     println!();
 
-    let payload = research_payload(cfg, &query, cfg.search_limit, 0, None).await?;
+    let started = Instant::now();
+    let running = Arc::new(AtomicBool::new(true));
+    let running_tick = Arc::clone(&running);
+    let tick_started = started;
+    let ticker = if !cfg.json_output {
+        Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                if !running_tick.load(Ordering::Relaxed) {
+                    break;
+                }
+                eprintln!(
+                    "  {} research in progress... {}ms",
+                    muted("progress"),
+                    tick_started.elapsed().as_millis()
+                );
+            }
+        }))
+    } else {
+        None
+    };
+
+    let payload = research_payload(cfg, &query, cfg.search_limit, 0, None).await;
+    running.store(false, Ordering::Relaxed);
+    if let Some(t) = ticker {
+        let _ = t.await;
+    }
+    let payload = payload?;
+
     let search_results = payload["search_results"]
         .as_array()
         .cloned()
@@ -129,6 +166,7 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let prompt_tokens = payload["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
     let completion_tokens = payload["usage"]["completion_tokens"].as_u64().unwrap_or(0);
     let total_tokens = payload["usage"]["total_tokens"].as_u64().unwrap_or(0);
+    let total_ms = started.elapsed().as_millis();
 
     println!("{} {}", primary("Search Results:"), search_results.len());
     println!();
@@ -170,6 +208,7 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
             total_tokens
         );
     }
+    println!("  {} total={}ms", muted("timing"), total_ms);
 
     log_done("command=research complete");
     Ok(())
