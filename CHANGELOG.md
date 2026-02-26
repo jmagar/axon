@@ -9,7 +9,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| TBD | feat(docker) | axon-web service + chrome Dockerfile move + web-server s6 worker |
+| `167ccb3` | feat(docker) | axon-web service + chrome Dockerfile move + web-server s6 worker |
 | `6a65ead` | docs(changelog) | update unreleased section with 10 commits since last entry |
 | `d1f20a4` | feat(web+crawl) | pulse workspace overhaul + refresh schedules + crawl download pack |
 | `115e264` | feat(refresh) | add refresh job pipeline and command manifests |
