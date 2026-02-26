@@ -203,7 +203,7 @@ services:
       context: apps/web
       dockerfile: ../../docker/web/Dockerfile
     ports:
-      - "127.0.0.1:49010:49010"
+      - "49010:49010"
     environment:
       HOST: "0.0.0.0"
       PORT: "49010"

@@ -1,15 +1,19 @@
 export function packMdUrl(jobId: string): string {
-  return `/download/${jobId}/pack.md`
+  return `/download/${encodeURIComponent(jobId)}/pack.md`
 }
 
 export function packXmlUrl(jobId: string): string {
-  return `/download/${jobId}/pack.xml`
+  return `/download/${encodeURIComponent(jobId)}/pack.xml`
 }
 
 export function archiveZipUrl(jobId: string): string {
-  return `/download/${jobId}/archive.zip`
+  return `/download/${encodeURIComponent(jobId)}/archive.zip`
 }
 
 export function fileDownloadUrl(jobId: string, relPath: string): string {
-  return `/download/${jobId}/file/${relPath}`
+  const encoded = relPath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  return `/download/${encodeURIComponent(jobId)}/file/${encoded}`
 }

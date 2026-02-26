@@ -34,12 +34,12 @@ Incoming request map is parsed strictly with serde:
 
 ## Preferred Client Actions
 Use CLI-identical top-level actions:
-- `ingest`, `extract`, `embed`, `crawl`
+- `ingest`, `extract`, `embed`, `crawl`, `refresh`
 - `query`, `retrieve`
 - `doctor`, `domains`, `sources`, `stats`
 - `search`, `map`, `scrape`, `research`, `ask`, `screenshot`, `help`, `status`
 
-For lifecycle management (`status|cancel|list|cleanup|clear|recover`), use canonical families with `subaction`:
+For lifecycle management (`status|cancel|list|cleanup|clear|recover`), use canonical families with `subaction`. `refresh` also supports `schedule` subaction with `schedule_subaction` param (`list`, `create`, `delete`, `enable`, `disable`):
 
 ```json
 { "action": "ingest", "subaction": "status", "job_id": "..." }
@@ -65,6 +65,7 @@ These actions do not require `subaction`:
 - `extract`: `start|status|cancel|list|cleanup|clear|recover`
 - `embed`: `start|status|cancel|list|cleanup|clear|recover`
 - `ingest`: `start|status|cancel|list|cleanup|clear|recover`
+- `refresh`: `start|status|cancel|list|cleanup|clear|recover|schedule`
 - `query`: `query`
 - `retrieve`: `retrieve`
 - `search`: `search`

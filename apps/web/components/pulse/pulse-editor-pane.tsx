@@ -1,7 +1,7 @@
 'use client'
 
-import { Bold, Code2, Italic, Strikethrough, Underline } from 'lucide-react'
 import { serializeMd } from '@platejs/markdown'
+import { Bold, Code2, Italic, Strikethrough, Underline } from 'lucide-react'
 import { Plate, usePlateEditor } from 'platejs/react'
 import { useEffect, useRef } from 'react'
 import { CopilotKit } from '@/components/editor/plugins/copilot-kit'
@@ -9,17 +9,24 @@ import { Editor, EditorContainer } from '@/components/ui/editor'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
 import { Toolbar, ToolbarGroup } from '@/components/ui/toolbar'
 import { markdownToPlateNodes } from '@/lib/markdown'
+import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 
 interface PulseEditorPaneProps {
   markdown: string
   onMarkdownChange: (md: string) => void
   scrollStorageKey?: string
+  mobilePane?: 'chat' | 'editor'
+  onMobilePaneChange?: (pane: 'chat' | 'editor') => void
+  isDesktop?: boolean
 }
 
 export function PulseEditorPane({
   markdown,
   onMarkdownChange,
   scrollStorageKey = 'axon.web.pulse.editor-scroll',
+  mobilePane = 'editor',
+  onMobilePaneChange,
+  isDesktop = true,
 }: PulseEditorPaneProps) {
   const editor = usePlateEditor({
     plugins: CopilotKit,
@@ -35,7 +42,7 @@ export function PulseEditorPane({
     isApplyingExternalUpdateRef.current = true
     // biome-ignore lint/suspicious/noExplicitAny: Plate editor value assignment is not strongly typed
     ;(editor as any).children = markdownToPlateNodes(markdown) as any
-    ;((editor as unknown) as { onChange: () => void }).onChange()
+    ;(editor as unknown as { onChange: () => void }).onChange()
     isApplyingExternalUpdateRef.current = false
   }, [editor, markdown])
 
@@ -61,6 +68,15 @@ export function PulseEditorPane({
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="border-b border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1">
+          <div className="mb-1 flex items-center gap-1.5 px-1.5">
+            <p className="ui-label flex-none">Editor</p>
+            {!isDesktop && onMobilePaneChange && (
+              <PulseMobilePaneSwitcher
+                mobilePane={mobilePane}
+                onMobilePaneChange={onMobilePaneChange}
+              />
+            )}
+          </div>
           <Toolbar className="flex-wrap gap-0.5">
             <ToolbarGroup>
               <MarkToolbarButton nodeType="bold" tooltip="Bold (Ctrl+B)">
@@ -86,7 +102,10 @@ export function PulseEditorPane({
           onScroll={() => {
             if (!editorScrollRef.current) return
             try {
-              window.localStorage.setItem(scrollStorageKey, String(editorScrollRef.current.scrollTop))
+              window.localStorage.setItem(
+                scrollStorageKey,
+                String(editorScrollRef.current.scrollTop),
+              )
             } catch {
               // Ignore storage failures.
             }

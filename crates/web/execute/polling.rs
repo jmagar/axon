@@ -203,7 +203,16 @@ pub(super) async fn poll_async_job(
 
         let exe = match resolve_exe() {
             Ok(e) => e,
-            Err(_) => break,
+            Err(e) => {
+                send_error_dual(
+                    tx,
+                    ctx,
+                    format!("poll aborted: cannot find axon binary: {e}"),
+                    Some(start.elapsed().as_millis() as u64),
+                )
+                .await;
+                break;
+            }
         };
 
         let out = Command::new(&exe)

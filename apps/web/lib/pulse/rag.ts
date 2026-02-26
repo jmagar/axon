@@ -23,6 +23,38 @@ function excerptDocument(markdown: string, maxChars = 4000): string {
   return truncate(markdown, maxChars)
 }
 
+function buildConversationHistorySection(
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+): string | null {
+  if (history.length === 0) return null
+
+  const maxTurns = 24
+  const maxCharsPerTurn = 1200
+  const maxTotalChars = 14_000
+  const normalized = history
+    .slice(-maxTurns)
+    .map((turn) => {
+      const role = turn.role === 'user' ? 'User' : 'Assistant'
+      const content = truncate(turn.content.trim(), maxCharsPerTurn)
+      return `${role}: ${content}`
+    })
+    .filter((line) => line.length > 0)
+
+  if (normalized.length === 0) return null
+
+  const lines: string[] = []
+  let used = 0
+  for (const line of normalized) {
+    const projected = used + line.length + 1
+    if (projected > maxTotalChars) break
+    lines.push(line)
+    used = projected
+  }
+
+  if (lines.length === 0) return null
+  return lines.join('\n\n')
+}
+
 export async function retrieveFromCollections(
   query: string,
   selectedCollections: string[],
@@ -94,6 +126,7 @@ export async function retrieveFromCollections(
 
 export function buildPulseSystemPrompt(req: PulseChatRequest, citations: PulseCitation[]): string {
   const doc = excerptDocument(req.documentMarkdown)
+  const conversationHistory = buildConversationHistorySection(req.conversationHistory)
   const citationContext = citations
     .map((c, i) => `(${i + 1}) [${c.collection}] ${c.title} ${c.url}\n${c.snippet}`)
     .join('\n\n')
@@ -121,6 +154,13 @@ export function buildPulseSystemPrompt(req: PulseChatRequest, citations: PulseCi
     parts.push(
       'Crawled sources (content indexed in cortex collection — see Retrieved context below):',
       req.threadSources.join('\n'),
+    )
+  }
+
+  if (conversationHistory) {
+    parts.push(
+      'Conversation history (oldest to newest, excluding the latest user message):',
+      conversationHistory,
     )
   }
 
