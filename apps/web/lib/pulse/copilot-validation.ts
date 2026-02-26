@@ -1,9 +1,9 @@
 import { z } from 'zod'
 
 export const CopilotRequestSchema = z.object({
-  prompt: z.string().min(1),
-  system: z.string().optional(),
-  model: z.string().optional(),
+  prompt: z.string().min(1).max(8000),
+  system: z.string().max(4000).optional(),
+  model: z.string().max(100).optional(),
 })
 
 export interface CopilotValidationResult {

@@ -51,6 +51,35 @@ pub fn load_mcp_config() -> Config {
     if let Some(v) = env("AXON_INGEST_QUEUE") {
         cfg.ingest_queue = v;
     }
+    if let Some(v) = env("AXON_REFRESH_QUEUE") {
+        cfg.refresh_queue = v;
+    }
+
+    // Ask authoritative tuning
+    if let Some(v) = env("AXON_ASK_AUTHORITATIVE_DOMAINS") {
+        cfg.ask_authoritative_domains = v
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    if let Some(v) = env("AXON_ASK_AUTHORITATIVE_BOOST") {
+        if let Ok(f) = v.parse::<f64>() {
+            cfg.ask_authoritative_boost = f.clamp(0.0, 0.5);
+        }
+    }
+    if let Some(v) = env("AXON_ASK_AUTHORITATIVE_ALLOWLIST") {
+        cfg.ask_authoritative_allowlist = v
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    if let Some(v) = env("AXON_ASK_MIN_CITATIONS_NONTRIVIAL") {
+        if let Ok(n) = v.parse::<usize>() {
+            cfg.ask_min_citations_nontrivial = n.clamp(1, 5);
+        }
+    }
 
     if let Some(v) = env("AXON_CHROME_REMOTE_URL") {
         cfg.chrome_remote_url = Some(normalize_local_service_url(v));

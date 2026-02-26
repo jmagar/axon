@@ -42,6 +42,51 @@ describe('pulse rag prompt builder', () => {
     expect(prompt).toContain('Evidence text')
   })
 
+  it('includes prior conversation turns in the system prompt', () => {
+    const prompt = buildPulseSystemPrompt(
+      {
+        prompt: 'summarize',
+        documentMarkdown: '# Doc',
+        selectedCollections: ['pulse'],
+        threadSources: [],
+        conversationHistory: [
+          { role: 'user', content: 'First user turn' },
+          { role: 'assistant', content: 'First assistant turn' },
+        ],
+        permissionLevel: 'accept-edits',
+        model: 'sonnet',
+      },
+      [],
+    )
+    expect(prompt).toContain(
+      'Conversation history (oldest to newest, excluding the latest user message):',
+    )
+    expect(prompt).toContain('User: First user turn')
+    expect(prompt).toContain('Assistant: First assistant turn')
+  })
+
+  it('bounds conversation history to recent turns', () => {
+    const history = Array.from({ length: 30 }, (_, index) => ({
+      role: (index % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: `turn-${index}`,
+    }))
+    const prompt = buildPulseSystemPrompt(
+      {
+        prompt: 'summarize',
+        documentMarkdown: '# Doc',
+        selectedCollections: ['pulse'],
+        threadSources: [],
+        conversationHistory: history,
+        permissionLevel: 'accept-edits',
+        model: 'sonnet',
+      },
+      [],
+    )
+
+    expect(prompt).not.toContain('turn-0')
+    expect(prompt).toContain('turn-29')
+  })
+
   it('truncates oversized document context', () => {
     const prompt = buildPulseSystemPrompt(
       {

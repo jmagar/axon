@@ -3,9 +3,9 @@ use super::schema::{
     ArtifactsRequest, ArtifactsSubaction, AskRequest, AxonRequest, AxonToolResponse, CrawlRequest,
     CrawlSubaction, DoctorRequest, DomainsRequest, EmbedRequest, EmbedSubaction, ExtractRequest,
     ExtractSubaction, HelpRequest, IngestRequest, IngestSourceType, IngestSubaction, MapRequest,
-    McpRenderMode, QueryRequest, ResearchRequest, ResponseMode, RetrieveRequest, ScrapeRequest,
-    ScreenshotRequest, SearchRequest, SearchTimeRange, SessionsIngestOptions, SourcesRequest,
-    StatsRequest, StatusRequest, parse_axon_request,
+    McpRenderMode, QueryRequest, RefreshRequest, RefreshSubaction, ResearchRequest, ResponseMode,
+    RetrieveRequest, ScrapeRequest, ScreenshotRequest, SearchRequest, SearchTimeRange,
+    SessionsIngestOptions, SourcesRequest, StatsRequest, StatusRequest, parse_axon_request,
 };
 use crate::crates::cli::commands::map::map_payload;
 use crate::crates::cli::commands::research::research_payload;
@@ -31,6 +31,12 @@ use crate::crates::jobs::extract::{
 use crate::crates::jobs::ingest::{
     IngestSource, cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs, get_ingest_job,
     list_ingest_jobs, recover_stale_ingest_jobs, start_ingest_job,
+};
+use crate::crates::jobs::refresh::{
+    RefreshScheduleCreate, cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs,
+    create_refresh_schedule, delete_refresh_schedule, get_refresh_job, list_refresh_jobs,
+    list_refresh_schedules, recover_stale_refresh_jobs, set_refresh_schedule_enabled,
+    start_refresh_job,
 };
 use crate::crates::vector::ops::commands::query_results;
 use crate::crates::vector::ops::qdrant::{domains_payload, retrieve_result, sources_payload};
@@ -362,7 +368,7 @@ fn map_search_time_range(range: &SearchTimeRange) -> TimeRange {
 impl AxonMcpServer {
     #[tool(
         name = "axon",
-        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
+        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
     )]
     async fn axon(
         &self,
@@ -390,6 +396,7 @@ impl AxonMcpServer {
             AxonRequest::Research(req) => self.handle_research(req).await?,
             AxonRequest::Ask(req) => self.handle_ask(req).await?,
             AxonRequest::Screenshot(req) => self.handle_screenshot(req).await?,
+            AxonRequest::Refresh(req) => self.handle_refresh(req).await?,
         };
         serde_json::to_string(&response).map_err(|e| internal_error(e.to_string()))
     }
@@ -849,6 +856,176 @@ impl AxonMcpServer {
         }
     }
 
+    async fn handle_refresh(&self, req: RefreshRequest) -> Result<AxonToolResponse, ErrorData> {
+        let response_mode = parse_response_mode(req.response_mode);
+        match req.subaction {
+            RefreshSubaction::Start => {
+                let urls = req
+                    .urls
+                    .or_else(|| req.url.map(|u| vec![u]))
+                    .ok_or_else(|| invalid_params("urls or url is required for refresh.start"))?;
+                if urls.is_empty() {
+                    return Err(invalid_params("urls cannot be empty"));
+                }
+                let id = start_refresh_job(self.cfg.as_ref(), &urls)
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "start",
+                    serde_json::json!({ "job_id": id.to_string() }),
+                ))
+            }
+            RefreshSubaction::Status => {
+                let id = parse_job_id(req.job_id.as_ref())?;
+                let job = get_refresh_job(self.cfg.as_ref(), id)
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                respond_with_mode(
+                    "refresh",
+                    "status",
+                    response_mode,
+                    &format!("refresh-status-{id}"),
+                    serde_json::json!({ "job": job }),
+                )
+            }
+            RefreshSubaction::Cancel => {
+                let id = parse_job_id(req.job_id.as_ref())?;
+                let canceled = cancel_refresh_job(self.cfg.as_ref(), id)
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "cancel",
+                    serde_json::json!({ "job_id": id.to_string(), "canceled": canceled }),
+                ))
+            }
+            RefreshSubaction::List => {
+                let limit = parse_limit(req.limit, 20);
+                let offset = parse_offset(req.offset);
+                let fetch_limit = ((offset as i64) + limit).clamp(1, 500);
+                let jobs = list_refresh_jobs(self.cfg.as_ref(), fetch_limit)
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                let jobs = jobs
+                    .into_iter()
+                    .skip(offset)
+                    .take(limit as usize)
+                    .collect::<Vec<_>>();
+                respond_with_mode(
+                    "refresh",
+                    "list",
+                    response_mode,
+                    "refresh-list",
+                    serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
+                )
+            }
+            RefreshSubaction::Cleanup => {
+                let deleted = cleanup_refresh_jobs(self.cfg.as_ref())
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "cleanup",
+                    serde_json::json!({ "deleted": deleted }),
+                ))
+            }
+            RefreshSubaction::Clear => {
+                let deleted = clear_refresh_jobs(self.cfg.as_ref())
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "clear",
+                    serde_json::json!({ "deleted": deleted }),
+                ))
+            }
+            RefreshSubaction::Recover => {
+                let recovered = recover_stale_refresh_jobs(self.cfg.as_ref())
+                    .await
+                    .map_err(|e| internal_error(e.to_string()))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "recover",
+                    serde_json::json!({ "recovered": recovered }),
+                ))
+            }
+            RefreshSubaction::Schedule => {
+                let sub = req.schedule_subaction.as_deref().unwrap_or("list");
+                match sub {
+                    "list" => {
+                        let limit = parse_limit(req.limit, 20);
+                        let schedules = list_refresh_schedules(self.cfg.as_ref(), limit)
+                            .await
+                            .map_err(|e| internal_error(e.to_string()))?;
+                        respond_with_mode(
+                            "refresh",
+                            "schedule",
+                            response_mode,
+                            "refresh-schedules",
+                            serde_json::json!({ "schedules": schedules }),
+                        )
+                    }
+                    "create" => {
+                        let name = req.schedule_name.ok_or_else(|| {
+                            invalid_params("schedule_name is required for schedule create")
+                        })?;
+                        let urls = req.urls.or_else(|| req.url.map(|u| vec![u]));
+                        let schedule = create_refresh_schedule(
+                            self.cfg.as_ref(),
+                            &RefreshScheduleCreate {
+                                name,
+                                seed_url: None,
+                                urls,
+                                every_seconds: 3600,
+                                enabled: true,
+                                next_run_at: chrono::Utc::now(),
+                            },
+                        )
+                        .await
+                        .map_err(|e| internal_error(e.to_string()))?;
+                        Ok(AxonToolResponse::ok(
+                            "refresh",
+                            "schedule",
+                            serde_json::json!({ "created": schedule }),
+                        ))
+                    }
+                    "delete" => {
+                        let name = req.schedule_name.ok_or_else(|| {
+                            invalid_params("schedule_name is required for schedule delete")
+                        })?;
+                        let deleted = delete_refresh_schedule(self.cfg.as_ref(), &name)
+                            .await
+                            .map_err(|e| internal_error(e.to_string()))?;
+                        Ok(AxonToolResponse::ok(
+                            "refresh",
+                            "schedule",
+                            serde_json::json!({ "name": name, "deleted": deleted }),
+                        ))
+                    }
+                    "enable" | "disable" => {
+                        let name = req.schedule_name.ok_or_else(|| {
+                            invalid_params("schedule_name is required for schedule enable/disable")
+                        })?;
+                        let enabled = sub == "enable";
+                        let updated =
+                            set_refresh_schedule_enabled(self.cfg.as_ref(), &name, enabled)
+                                .await
+                                .map_err(|e| internal_error(e.to_string()))?;
+                        Ok(AxonToolResponse::ok(
+                            "refresh",
+                            "schedule",
+                            serde_json::json!({ "name": name, "enabled": enabled, "updated": updated }),
+                        ))
+                    }
+                    other => Err(invalid_params(format!(
+                        "unknown schedule_subaction: {other}; expected list, create, delete, enable, disable"
+                    ))),
+                }
+            }
+        }
+    }
+
     async fn handle_query(&self, req: QueryRequest) -> Result<AxonToolResponse, ErrorData> {
         let query = req
             .query
@@ -1219,6 +1396,7 @@ impl AxonMcpServer {
                     "extract": ["start", "status", "cancel", "list", "cleanup", "clear", "recover"],
                     "embed": ["start", "status", "cancel", "list", "cleanup", "clear", "recover"],
                     "ingest": ["start", "status", "cancel", "list", "cleanup", "clear", "recover"],
+                    "refresh": ["start", "status", "cancel", "list", "cleanup", "clear", "recover", "schedule"],
                     "query": ["query"],
                     "retrieve": ["retrieve"],
                     "search": ["search"],
