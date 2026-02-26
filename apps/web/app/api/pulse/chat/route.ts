@@ -33,18 +33,10 @@ const CLAUDE_MODEL_ARG: Record<PulseModel, string> = {
   opus: 'opus',
   haiku: 'haiku',
 }
-// Claude context budget in characters. Claude Code reports usage as a fraction of the model's
-// usable context. The `claude` subprocess that Pulse spawns also loads ~/.claude/CLAUDE.md and
-// all MCP / skills instructions — content we can't fully enumerate from the filesystem.
-// We calibrate against the observable baseline: a fresh Pulse request with only CLAUDE.md
-// injected (~36k chars measured) accounts for ~21% of the total context Claude Code reports.
-// Dividing: 36k / 0.21 ≈ 175k chars effective budget. We use that as the denominator so
-// the Pulse bar tracks the same scale as Claude Code's own context meter.
-const MODEL_CONTEXT_BUDGET_CHARS: Record<PulseModel, number> = {
-  sonnet: 175_000,
-  opus: 175_000,
-  haiku: 175_000,
-}
+// Context budget in chars: 200k token window × ~4 chars/token = 800k chars.
+// We measure everything we actually send to the claude subprocess in chars (system prompt,
+// CLAUDE.md, user content) and express it as a fraction of this budget.
+const MODEL_CONTEXT_BUDGET_CHARS = 800_000
 
 interface ClaudeStreamResult {
   ok: boolean
@@ -53,6 +45,12 @@ interface ClaudeStreamResult {
   session_id?: string
   toolUses: PulseToolUse[]
   blocks: PulseMessageBlock[]
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+  }
 }
 
 // Stream-json event shapes (NDJSON, one event per line)
@@ -73,6 +71,13 @@ interface ClaudeStreamEvent {
   // tool_result fields
   tool_use_id?: string
   content?: unknown
+  // usage reported in the result event
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+  }
 }
 
 function runClaudeStream(args: string[]): Promise<ClaudeStreamResult> {
@@ -140,6 +145,7 @@ function runClaudeStream(args: string[]): Promise<ClaudeStreamResult> {
       const toolUseIdToIdx = new Map<string, number>()
       let result = ''
       let session_id: string | undefined
+      let usage: ClaudeStreamResult['usage'] | undefined
 
       for (const line of stdout.split('\n')) {
         const trimmed = line.trim()
@@ -215,10 +221,11 @@ function runClaudeStream(args: string[]): Promise<ClaudeStreamResult> {
         if (event.type === 'result') {
           result = event.result ?? ''
           session_id = event.session_id
+          if (event.usage) usage = event.usage
         }
       }
 
-      resolve({ ok: true, result, session_id, toolUses, blocks })
+      resolve({ ok: true, result, session_id, toolUses, blocks, usage })
     })
   })
 }
@@ -321,17 +328,18 @@ export async function POST(request: Request) {
       (total, entry) => total + entry.content.length,
       0,
     )
-    const promptChars = req.prompt.length
-    const documentChars = req.documentMarkdown.length
+    // Measure everything we actually send to the claude subprocess.
+    // GLOBAL_CLAUDE_MD_CHARS: the ~/.claude/CLAUDE.md the CLI always injects.
+    // systemPromptChars: our --system-prompt string.
+    // The rest: user-supplied content for this request.
     const contextCharsTotal =
       GLOBAL_CLAUDE_MD_CHARS +
       systemPromptChars +
-      promptChars +
-      documentChars +
+      req.prompt.length +
+      req.documentMarkdown.length +
       conversationChars +
       citationChars +
       threadSourceChars
-    const contextBudgetChars = MODEL_CONTEXT_BUDGET_CHARS[req.model]
 
     return NextResponse.json({
       text,
@@ -343,14 +351,8 @@ export async function POST(request: Request) {
       metadata: {
         model: req.model,
         elapsedMs: Date.now() - startedAt,
-        systemPromptChars,
-        promptChars,
-        documentChars,
-        conversationChars,
-        citationChars,
-        threadSourceChars,
         contextCharsTotal,
-        contextBudgetChars,
+        contextBudgetChars: MODEL_CONTEXT_BUDGET_CHARS,
       },
     } satisfies PulseChatResponse)
   } catch (error: unknown) {

@@ -108,7 +108,7 @@ services:
     container_name: axon-chrome
     build:
       context: .
-      dockerfile: docker/Dockerfile.chrome
+      dockerfile: docker/chrome/Dockerfile
     env_file: []  # no app secrets needed in the browser container
     shm_size: "2gb"
     ports:
@@ -166,6 +166,8 @@ services:
         condition: service_healthy
       axon-chrome:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:49000:49000"   # axon serve (HTTP + WebSocket)
     deploy:
       resources:
         limits:
@@ -178,7 +180,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/command/s6-svstat -u /run/service/crawl-worker >/dev/null && /command/s6-svstat -u /run/service/extract-worker >/dev/null && /command/s6-svstat -u /run/service/embed-worker >/dev/null && /command/s6-svstat -u /run/service/ingest-worker >/dev/null",
+          "/command/s6-svstat -u /run/service/crawl-worker >/dev/null && /command/s6-svstat -u /run/service/extract-worker >/dev/null && /command/s6-svstat -u /run/service/embed-worker >/dev/null && /command/s6-svstat -u /run/service/ingest-worker >/dev/null && /command/s6-svstat -u /run/service/web-server >/dev/null",
         ]
       interval: 30s
       timeout: 10s
@@ -193,6 +195,28 @@ services:
       - ${HOST_HOME:-${HOME}}/.claude/projects:/home/axon/.claude/projects:ro
       - ${HOST_HOME:-${HOME}}/.codex/sessions:/home/axon/.codex/sessions:ro
       - ${HOST_HOME:-${HOME}}/.gemini:/home/axon/.gemini:ro
+
+  axon-web:
+    <<: *common-service
+    container_name: axon-web
+    build:
+      context: apps/web
+      dockerfile: ../../docker/web/Dockerfile
+    ports:
+      - "127.0.0.1:49010:49010"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "49010"
+      AXON_BACKEND_URL: "http://axon-workers:49000"
+      NEXT_PUBLIC_AXON_PORT: "49000"
+      # Set WATCHPACK_POLLING=true in .env if file-watch events don't propagate
+    volumes:
+      - ./apps/web:/app               # bind-mount source for hot reload
+      - /app/node_modules             # anonymous vol: preserves container's node_modules
+      - /app/.next                    # anonymous vol: preserves Next.js build cache
+    depends_on:
+      axon-workers:
+        condition: service_healthy
 
 networks:
   axon:

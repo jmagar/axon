@@ -61,10 +61,6 @@ export interface WorkspaceContextState {
   turns: number
   sourceCount: number
   threadSourceCount: number
-  promptChars: number
-  documentChars: number
-  conversationChars: number
-  citationChars: number
   contextCharsTotal: number
   contextBudgetChars: number
   lastLatencyMs: number
@@ -279,7 +275,9 @@ export function useWsMessagesProvider() {
   const [hasResults, setHasResults] = useState(false)
   const [crawlFiles, setCrawlFiles] = useState<CrawlFile[]>([])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [virtualFileContentByPath, setVirtualFileContentByPath] = useState<Record<string, string>>({})
+  const [virtualFileContentByPath, setVirtualFileContentByPath] = useState<Record<string, string>>(
+    {},
+  )
   const [currentOutputDir, setCurrentOutputDir] = useState<string | null>(null)
   const currentModeRef = useRef('')
   const currentInputRef = useRef('')
@@ -384,7 +382,8 @@ export function useWsMessagesProvider() {
           if (msg.data.ctx.mode === 'scrape' && maybeJobData) {
             const markdown =
               typeof maybeJobData.markdown === 'string' ? maybeJobData.markdown : null
-            const url = typeof maybeJobData.url === 'string' ? maybeJobData.url : currentInputRef.current
+            const url =
+              typeof maybeJobData.url === 'string' ? maybeJobData.url : currentInputRef.current
             if (markdown && markdown.length > 0) {
               const basename = url.replace(/^https?:\/\//i, '').replace(/[^a-z0-9]+/gi, '-')
               const relativePath = `virtual/scrape-${basename || 'result'}.md`
@@ -564,7 +563,9 @@ export function useWsMessagesProvider() {
                 '',
                 'Use these sidebar files for deeper details:',
                 listedFiles || '- (No files listed yet)',
-                outputDir ? `Base output directory: ${outputDir}` : 'Base output directory: (not provided)',
+                outputDir
+                  ? `Base output directory: ${outputDir}`
+                  : 'Base output directory: (not provided)',
                 '',
                 'Execution summary payload:',
                 summary,
