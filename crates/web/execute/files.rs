@@ -106,15 +106,9 @@ pub(super) async fn send_screenshot_files_from_json(
     ctx: &CommandContext,
 ) {
     let mut artifacts = Vec::new();
-    let mut legacy_files = Vec::new();
     for obj in jsons {
         let path_str = obj.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let size_bytes = obj.get("size_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
-        let source_url = obj
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
         if path_str.is_empty() {
             continue;
         }
@@ -127,21 +121,12 @@ pub(super) async fn send_screenshot_files_from_json(
         artifacts.push(ArtifactEntry {
             kind: Some("screenshot".to_string()),
             path: Some(path_str.to_string()),
-            download_url: Some(serve_url.clone()),
+            download_url: Some(serve_url),
             mime: Some("image/png".to_string()),
             size_bytes: Some(size_bytes),
         });
-        legacy_files.push(json!({
-            "name": name,
-            "serve_url": serve_url,
-            "size_bytes": size_bytes,
-            "url": source_url,
-        }));
     }
     if !artifacts.is_empty() {
-        let _ = tx
-            .send(json!({ "type": "screenshot_files", "files": legacy_files }).to_string())
-            .await;
         send_artifact_list_v2(tx, ctx, artifacts).await;
     }
 }
