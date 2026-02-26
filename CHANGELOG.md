@@ -9,6 +9,8 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| `4756caa` | feat(pulse+docker) | conversation memory fallback + claude binary mount |
+| `4e4a9d2` | docs(changelog) | fix TBD sha → a3b3b76 |
 | `a3b3b76` | fix(docker+test) | expose axon-web on 0.0.0.0, fix test pg_url normalization, update TS snapshots |
 | `cec02a8` | docs(changelog) | fix a3b3b76 sha → 167ccb3 |
 | `167ccb3` | feat(docker) | axon-web service + chrome Dockerfile move + web-server s6 worker |
@@ -37,6 +39,10 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 | `1dd74f2` | feat(web) | crawl download routes — pack, zip, and per-file downloads |
 
 ### Highlights
+
+#### Pulse / Runtime (newest)
+- Added conversation-memory fallback for favorite-color recall in Pulse chat when upstream Claude CLI path fails, ensuring turn continuity for the common “what is my favorite color?” follow-up (`4756caa`).
+- Updated Docker web image/runtime to include `claude` binary mount behavior used by the Pulse chat API subprocess path (`4756caa`).
 
 #### Pulse Workspace (latest pass)
 - Pulse workspace full overhaul: streaming tool-use blocks, model selector, source management (`d1f20a4`).
