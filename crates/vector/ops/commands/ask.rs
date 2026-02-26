@@ -6,6 +6,7 @@ use crate::crates::vector::ops::ranking;
 use spider::url::Url;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error;
+use std::io::Write;
 
 mod context;
 pub(crate) use context::{AskContext, build_ask_context};
@@ -68,10 +69,12 @@ async fn ask_llm_answer(
     cfg: &Config,
     _query: &str,
     context: &str,
-) -> Result<(String, u128), Box<dyn Error>> {
+) -> Result<(String, u128, bool), Box<dyn Error>> {
     let client = http_client()?;
     let llm_started = std::time::Instant::now();
-    let streamed = ask_llm_streaming(cfg, client, _query, context, false).await;
+    let stream_to_stdout = !cfg.json_output;
+    let streamed = ask_llm_streaming(cfg, client, _query, context, stream_to_stdout).await;
+    let streamed_ok = streamed.is_ok();
     let answer = match streamed {
         Ok(value) => value,
         Err(e) => {
@@ -81,7 +84,11 @@ async fn ask_llm_answer(
             ask_llm_non_streaming(cfg, client, _query, context).await?
         }
     };
-    Ok((answer, llm_started.elapsed().as_millis()))
+    Ok((
+        answer,
+        llm_started.elapsed().as_millis(),
+        stream_to_stdout && streamed_ok,
+    ))
 }
 
 fn emit_ask_result(
@@ -510,11 +517,19 @@ pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
     let ctx = build_ask_context(cfg, &query).await?;
     emit_ask_diagnostics(cfg, &ctx);
-    let (raw_answer, llm_elapsed_ms) = ask_llm_answer(cfg, &query, &ctx.context).await?;
-    let answer = normalize_ask_answer(cfg, &query, &raw_answer, &ctx.context);
     if !cfg.json_output {
         println!("{}", primary("Conversation"));
         println!("  {} {}", primary("You:"), query);
+        print!("  {} ", primary("Assistant:"));
+        std::io::stdout().flush()?;
+    }
+    let (raw_answer, llm_elapsed_ms, streamed_to_stdout) =
+        ask_llm_answer(cfg, &query, &ctx.context).await?;
+    let answer = normalize_ask_answer(cfg, &query, &raw_answer, &ctx.context);
+    if !cfg.json_output && streamed_to_stdout {
+        println!();
+    }
+    if !cfg.json_output && !streamed_to_stdout {
         println!("  {} {}", primary("Assistant:"), answer);
     }
     let total_elapsed_ms = ask_started.elapsed().as_millis();
@@ -538,13 +553,15 @@ mod tests {
 
     #[test]
     fn normalize_ask_answer_replaces_sources_with_deduped_section() {
-        let context = "Sources:\n## Top Chunk [S1]: https://a.dev/docs\n\n---\n\n## Top Chunk [S2]: https://b.dev/docs";
+        // Use docs.* hostnames so is_official_docs_source() matches and the
+        // Procedural query gate ("how do I …") does not block the answer.
+        let context = "Sources:\n## Top Chunk [S1]: https://docs.a.dev/guide\n\n---\n\n## Top Chunk [S2]: https://docs.b.dev/api";
         let raw = "Use command X [S2] and Y [S1].\n\n## Sources\n- [S1] dup\n- [S1] dup";
         let normalized = normalize_ask_answer(&cfg(), "how do I use this?", raw, context);
         assert!(normalized.contains("Use command X [S2] and Y [S1]."));
         assert!(normalized.contains("## Sources"));
-        assert!(normalized.contains("- [S1] https://a.dev/docs"));
-        assert!(normalized.contains("- [S2] https://b.dev/docs"));
+        assert!(normalized.contains("- [S1] https://docs.a.dev/guide"));
+        assert!(normalized.contains("- [S2] https://docs.b.dev/api"));
         assert!(!normalized.contains("dup"));
     }
 

@@ -15,14 +15,18 @@ pub(crate) async fn begin_schema_migration_tx<'a>(
     lock_key: i64,
 ) -> Result<Transaction<'a, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL lock_timeout = ($1::bigint || 'ms')::interval")
-        .bind(SCHEMA_LOCK_TIMEOUT_MS)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("SET LOCAL statement_timeout = ($1::bigint || 'ms')::interval")
-        .bind(SCHEMA_STATEMENT_TIMEOUT_MS)
-        .execute(&mut *tx)
-        .await?;
+    // SET LOCAL does not accept parameter markers — embed the literal ms values directly.
+    // These are compile-time constants so there is no injection risk.
+    sqlx::query(&format!(
+        "SET LOCAL lock_timeout = '{SCHEMA_LOCK_TIMEOUT_MS}ms'"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(&format!(
+        "SET LOCAL statement_timeout = '{SCHEMA_STATEMENT_TIMEOUT_MS}ms'"
+    ))
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(lock_key)
         .execute(&mut *tx)
