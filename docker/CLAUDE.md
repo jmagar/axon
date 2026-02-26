@@ -5,7 +5,10 @@ Last Modified: 2026-02-25
 ```
 docker/
 ├── Dockerfile          # Multi-stage: cargo-chef → build → runtime
-├── Dockerfile.chrome   # headless_browser + chrome-headless-shell (CDP proxy on 9222)
+├── chrome/
+│   └── Dockerfile      # headless_browser + chrome-headless-shell (CDP proxy on 9222)
+├── web/
+│   └── Dockerfile      # Next.js dev image (node:24-alpine, pnpm, hot reload)
 ├── rabbitmq/           # rabbitmq.conf + definitions.json (preconfigured vhost/user)
 └── s6/
     ├── cont-init.d/
@@ -16,6 +19,7 @@ docker/
         ├── extract-worker/
         ├── embed-worker/
         ├── ingest-worker/
+        ├── web-server/
         └── user/
             └── contents.d/   # Lists which services are in the user bundle
 ```
@@ -96,12 +100,35 @@ docker exec axon-workers tail -f /var/log/crawl-worker/current
 # Check a worker's exit status / restart count
 docker exec axon-workers s6-svstat /run/service/crawl-worker
 
+# Check the web-server (axon serve) specifically
+docker exec axon-workers s6-svstat /run/service/web-server
+
 # Restart a single worker without restarting the container
 docker exec axon-workers s6-svc -r /run/service/crawl-worker
 
 # Open a shell as axon user
 docker exec -it -u axon axon-workers bash
 ```
+
+## Hot Reload Dev Workflow
+
+The `axon-web` container bind-mounts `apps/web/` into `/app`, so source changes are
+reflected immediately without rebuilding the image.
+
+```bash
+# Start the full stack (build + run)
+docker compose up -d
+
+# Edit apps/web/app/page.tsx — save — browser auto-refreshes (HMR)
+
+# Rebuild after pnpm-lock.yaml changes (new deps added):
+docker compose build axon-web
+docker compose rm axon-web && docker compose up -d axon-web
+```
+
+**Note:** Docker stats (the bollard poller in `axon serve`) will be silently unavailable
+when running inside `axon-workers` — the container has no `/var/run/docker.sock` mount.
+HTTP and WebSocket endpoints remain fully functional.
 
 ## Port Reference
 
@@ -115,5 +142,7 @@ docker exec -it -u axon axon-workers bash
 | axon-qdrant gRPC | 53334 | 6334 |
 | axon-chrome mgmt | 6000 | 6000 |
 | axon-chrome CDP | 9222 | 9222 |
+| axon-workers web-server | 49000 | 49000 |
+| axon-web (Next.js) | 49010 | 49010 |
 
 All ports bind to `127.0.0.1:PORT` — not externally exposed.

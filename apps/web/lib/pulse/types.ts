@@ -81,12 +81,6 @@ export interface PulseChatResponse {
   metadata?: {
     model: PulseModel
     elapsedMs: number
-    systemPromptChars: number
-    promptChars: number
-    documentChars: number
-    conversationChars: number
-    citationChars: number
-    threadSourceChars: number
     contextCharsTotal: number
     contextBudgetChars: number
   }

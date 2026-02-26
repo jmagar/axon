@@ -160,10 +160,6 @@ export function PulseWorkspace() {
   const model = pulseModel as PulseModel
   const permissionLevel = pulsePermissionLevel as PulsePermissionLevel
   const [lastContextStats, setLastContextStats] = useState<{
-    promptChars: number
-    documentChars: number
-    conversationChars: number
-    citationChars: number
     contextCharsTotal: number
     contextBudgetChars: number
   } | null>(null)
@@ -497,10 +493,6 @@ export function PulseWorkspace() {
           setLastResponseLatencyMs(data.metadata.elapsedMs)
           setLastResponseModel(data.metadata.model)
           setLastContextStats({
-            promptChars: data.metadata.promptChars,
-            documentChars: data.metadata.documentChars,
-            conversationChars: data.metadata.conversationChars,
-            citationChars: data.metadata.citationChars,
             contextCharsTotal: data.metadata.contextCharsTotal,
             contextBudgetChars: data.metadata.contextBudgetChars,
           })
@@ -568,20 +560,8 @@ export function PulseWorkspace() {
       turns: chatHistory.length,
       sourceCount: indexedSources.length,
       threadSourceCount: activeThreadSources.length,
-      promptChars: lastContextStats?.promptChars ?? workspacePrompt?.length ?? 0,
-      documentChars: lastContextStats?.documentChars ?? documentMarkdown.length,
-      conversationChars:
-        lastContextStats?.conversationChars ??
-        chatHistory.reduce((total, message) => total + message.content.length, 0),
-      citationChars: lastContextStats?.citationChars ?? 0,
-      contextCharsTotal:
-        lastContextStats?.contextCharsTotal ??
-        (workspacePrompt?.length ?? 0) +
-          documentMarkdown.length +
-          chatHistory.reduce((total, message) => total + message.content.length, 0),
-      contextBudgetChars:
-        lastContextStats?.contextBudgetChars ??
-        (model === 'opus' ? 200_000 : model === 'haiku' ? 80_000 : 120_000),
+      contextCharsTotal: lastContextStats?.contextCharsTotal ?? 0,
+      contextBudgetChars: lastContextStats?.contextBudgetChars ?? 0,
       lastLatencyMs: lastResponseLatencyMs ?? 0,
       model,
       permissionLevel,
@@ -589,9 +569,7 @@ export function PulseWorkspace() {
     })
   }, [
     activeThreadSources.length,
-    chatHistory,
     chatHistory.length,
-    documentMarkdown.length,
     indexedSources.length,
     lastResponseLatencyMs,
     lastContextStats,
@@ -599,7 +577,6 @@ export function PulseWorkspace() {
     permissionLevel,
     saveStatus,
     updateWorkspaceContext,
-    workspacePrompt,
   ])
 
   useEffect(() => {
@@ -800,16 +777,6 @@ export function PulseWorkspace() {
         desktopPaneOrder={desktopPaneOrder}
         onSwapPanes={() =>
           setDesktopPaneOrder((prev) => (prev === 'editor-first' ? 'chat-first' : 'editor-first'))
-        }
-        contextCharsTotal={
-          lastContextStats?.contextCharsTotal ??
-          (workspacePrompt?.length ?? 0) +
-            documentMarkdown.length +
-            chatHistory.reduce((sum, m) => sum + m.content.length, 0)
-        }
-        contextBudgetChars={
-          lastContextStats?.contextBudgetChars ??
-          (model === 'opus' ? 200_000 : model === 'haiku' ? 80_000 : 120_000)
         }
       />
       <div className="flex h-[58vh] overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.42)] lg:h-[68vh]">
