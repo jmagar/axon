@@ -5,10 +5,11 @@ use std::env;
 use tokio::time::{Duration as TokioDuration, sleep, timeout};
 
 fn pg_url() -> Option<String> {
-    env::var("AXON_TEST_PG_URL")
+    let url = env::var("AXON_TEST_PG_URL")
         .ok()
         .or_else(|| env::var("AXON_PG_URL").ok())
-        .filter(|v| !v.trim().is_empty())
+        .filter(|v| !v.trim().is_empty())?;
+    Some(crate::crates::core::config::parse::normalize_local_service_url(url))
 }
 
 fn amqp_url() -> Option<String> {

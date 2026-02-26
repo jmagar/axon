@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next'
 
-const axonPort = process.env.NEXT_PUBLIC_AXON_PORT || '3939'
+const axonBackendUrl =
+  process.env.AXON_BACKEND_URL || `http://localhost:${process.env.NEXT_PUBLIC_AXON_PORT || '3939'}`
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -11,15 +12,15 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/ws',
-        destination: `http://localhost:${axonPort}/ws`,
+        destination: `${axonBackendUrl}/ws`,
       },
       {
         source: '/download/:path*',
-        destination: `http://localhost:${axonPort}/download/:path*`,
+        destination: `${axonBackendUrl}/download/:path*`,
       },
       {
         source: '/output/:path*',
-        destination: `http://localhost:${axonPort}/output/:path*`,
+        destination: `${axonBackendUrl}/output/:path*`,
       },
     ]
   },

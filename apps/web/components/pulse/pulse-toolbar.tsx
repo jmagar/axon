@@ -13,29 +13,6 @@ interface PulseToolbarProps {
   onDesktopViewModeChange: (mode: DesktopViewMode) => void
   desktopPaneOrder: DesktopPaneOrder
   onSwapPanes: () => void
-  contextCharsTotal: number
-  contextBudgetChars: number
-}
-
-function ContextBar({ used, budget }: { used: number; budget: number }) {
-  if (budget <= 0) return null
-  const pct = Math.min(100, (used / budget) * 100)
-  const color =
-    pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-400' : 'bg-[var(--axon-accent-blue)]'
-  const label = `${Math.round(pct)}% context used (${(used / 1000).toFixed(1)}k / ${(budget / 1000).toFixed(0)}k chars)`
-  return (
-    <div title={label} className="flex items-center gap-1.5">
-      <div className="h-1 w-16 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-        {Math.round(pct)}%
-      </span>
-    </div>
-  )
 }
 
 export function PulseToolbar({
@@ -46,8 +23,6 @@ export function PulseToolbar({
   onDesktopViewModeChange,
   desktopPaneOrder,
   onSwapPanes,
-  contextCharsTotal,
-  contextBudgetChars,
 }: PulseToolbarProps) {
   return (
     <div className="flex items-center gap-x-[var(--pulse-control-gap)] rounded-lg border border-[rgba(255,135,175,0.08)] bg-[rgba(10,18,35,0.32)] px-[var(--space-2)] py-[var(--space-2)]">
@@ -59,8 +34,6 @@ export function PulseToolbar({
         className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-[var(--space-2)] py-[var(--pulse-pill-pad-y)] text-[length:var(--text-md)] font-medium text-[var(--axon-text-primary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.35)] sm:flex-none sm:w-[40ch]"
         placeholder="Document title..."
       />
-
-      <ContextBar used={contextCharsTotal} budget={contextBudgetChars} />
 
       {isDesktop && (
         <div className="ml-auto flex items-center gap-1">

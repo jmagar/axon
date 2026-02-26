@@ -877,22 +877,30 @@ export function Omnibox() {
           </div>
         </div>
       )}
-      {workspaceMode === 'pulse' && workspaceContext && workspaceContext.turns > 0 && (
+      {workspaceContext && workspaceContext.turns > 0 && (
         <div
           className={`rounded-md border border-[rgba(95,135,175,0.2)] bg-[rgba(10,18,35,0.32)] px-2 py-1.5 ${
             isProcessing ? 'shadow-[0_0_0_1px_rgba(175,215,255,0.2)]' : ''
           }`}
-          title={`${workspaceContext.turns} turns · ${workspaceContext.threadSourceCount} active sources · ${contextFileCount} files · ${workspaceContext.contextCharsTotal.toLocaleString()} / ${workspaceContext.contextBudgetChars.toLocaleString()} chars · last ${(workspaceContext.lastLatencyMs / 1000).toFixed(1)}s${
+          title={`${workspaceContext.turns} turns · ${workspaceContext.threadSourceCount} active sources · ${contextFileCount} files · ${workspaceContext.contextCharsTotal.toLocaleString()} / ${workspaceContext.contextBudgetChars.toLocaleString()} chars (${contextUtilizationPercent.toFixed(1)}%) · last ${(workspaceContext.lastLatencyMs / 1000).toFixed(1)}s${
             isProcessing && currentMode ? ` · processing ${currentMode}` : ''
           }`}
         >
-          <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,135,175,0.12)]">
-            <div
-              className={`h-full rounded-full bg-[linear-gradient(90deg,rgba(95,135,175,0.85),rgba(255,135,175,0.9)) ${
-                isProcessing ? 'animate-pulse' : ''
-              }`}
-              style={{ width: `${contextUtilizationPercent}%` }}
-            />
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[rgba(255,135,175,0.2)]">
+              <div
+                className={`h-full rounded-full bg-[linear-gradient(90deg,rgba(95,135,175,0.85),rgba(255,135,175,0.9))] ${
+                  isProcessing ? 'animate-pulse' : ''
+                }`}
+                style={{
+                  width: `${contextUtilizationPercent}%`,
+                  minWidth: contextUtilizationPercent > 0 ? '3px' : undefined,
+                }}
+              />
+            </div>
+            <span className="shrink-0 font-mono text-[10px] text-[rgba(175,215,255,0.5)]">
+              {contextUtilizationPercent.toFixed(1)}%
+            </span>
           </div>
         </div>
       )}
