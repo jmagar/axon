@@ -86,15 +86,18 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
         .with_state(state)
         .merge(download_routes);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let host = std::env::var("AXON_SERVE_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let addr: SocketAddr = format!("{host}:{port}")
+        .parse()
+        .unwrap_or_else(|_| SocketAddr::from(([127, 0, 0, 1], port)));
 
     #[cfg(debug_assertions)]
     log_info(&format!(
-        "Axon web UI listening on http://0.0.0.0:{port} (dev mode — hot reload from {})",
+        "Axon web UI listening on http://{addr} (dev mode — hot reload from {})",
         static_dir().display()
     ));
     #[cfg(not(debug_assertions))]
-    log_info(&format!("Axon web UI listening on http://0.0.0.0:{port}"));
+    log_info(&format!("Axon web UI listening on http://{addr}"));
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
