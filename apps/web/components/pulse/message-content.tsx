@@ -1,6 +1,6 @@
 'use client'
 
-import { Brain, ChevronDown, Copy, RotateCcw } from 'lucide-react'
+import { Brain, ChevronDown, Copy, History, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import type { PulseMessageBlock } from '@/lib/pulse/types'
 import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
@@ -72,10 +72,36 @@ export function groupBlocksForRender(blocks: PulseMessageBlock[]): RenderGroup[]
   return result
 }
 
+// ── Session handoff chip ───────────────────────────────────────────────────────
+
+const HANDOFF_PREFIX = "I'm loading a previous Claude Code session from project:"
+
+function parseHandoffLabel(content: string): string | null {
+  if (!content.startsWith(HANDOFF_PREFIX)) return null
+  // Extract project name: "...from project: **foo**..."
+  const match = /from project: \*\*(.+?)\*\*/.exec(content)
+  const project = match?.[1] ?? 'unknown'
+  const turnCount = (content.match(/### (USER|ASSISTANT):/g) ?? []).length
+  return `Loaded session: ${project} · ${turnCount} turns`
+}
+
 // ── Message content renderer ───────────────────────────────────────────────────
 
 export function MessageContent({ msg }: { msg: ChatMessage }) {
   if (msg.isError) return null
+
+  // Compact chip for session handoff messages
+  if (msg.role === 'user') {
+    const handoffLabel = parseHandoffLabel(msg.content)
+    if (handoffLabel) {
+      return (
+        <div className="flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--axon-text-dim)]">
+          <History className="size-3 shrink-0 text-[var(--axon-accent-blue)]" />
+          <span>{handoffLabel}</span>
+        </div>
+      )
+    }
+  }
 
   const hasStructuredBlocks =
     msg.blocks?.some((b) => b.type === 'tool_use' || b.type === 'thinking') ?? false

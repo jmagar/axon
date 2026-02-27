@@ -1,17 +1,21 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { BookOpen, ChevronDown } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { usePulseAutosave } from '@/hooks/use-pulse-autosave'
 import { usePulseChat } from '@/hooks/use-pulse-chat'
 import { usePulsePersistence } from '@/hooks/use-pulse-persistence'
+import { usePulseSettings } from '@/hooks/use-pulse-settings'
 import { useSplitPane } from '@/hooks/use-split-pane'
 import { useWsMessages } from '@/hooks/use-ws-messages'
 import type { ValidationResult } from '@/lib/pulse/doc-ops'
 import type { DocOperation, PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
+import { PULSE_WORKSPACE_STATE_KEY } from '@/lib/pulse/workspace-persistence'
 import { PulseChatPane } from './pulse-chat-pane'
 import { PulseEditorPane } from './pulse-editor-pane'
+import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import { PulseOpConfirmation } from './pulse-op-confirmation'
 import { PulseToolbar } from './pulse-toolbar'
 
@@ -36,11 +40,13 @@ export function PulseWorkspace() {
   const [documentTitle, setDocumentTitle] = useState('Untitled')
   const [pendingOps, setPendingOps] = useState<DocOperation[] | null>(null)
   const [pendingValidation, setPendingValidation] = useState<ValidationResult | null>(null)
+  const [sourcesExpanded, setSourcesExpanded] = useState(false)
 
   const model = pulseModel as PulseModel
   const permissionLevel = pulsePermissionLevel as PulsePermissionLevel
 
   const lastHandledPromptVersionRef = useRef(0)
+  const { settings: pulseSettings } = usePulseSettings()
 
   const {
     desktopSplitPercent,
@@ -111,7 +117,40 @@ export function PulseWorkspace() {
     onApplyOperations: applyOperations,
     onPendingOps: setPendingOps,
     onPendingValidation: setPendingValidation,
+    effort: pulseSettings.effort,
+    maxTurns: pulseSettings.maxTurns,
+    maxBudgetUsd: pulseSettings.maxBudgetUsd,
+    appendSystemPrompt: pulseSettings.appendSystemPrompt,
+    disableSlashCommands: pulseSettings.disableSlashCommands,
+    noSessionPersistence: pulseSettings.noSessionPersistence,
+    fallbackModel: pulseSettings.fallbackModel,
+    allowedTools: pulseSettings.allowedTools,
+    disallowedTools: pulseSettings.disallowedTools,
   })
+
+  const latestCitationCount = useMemo(() => {
+    for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
+      const msg = chatHistory[i]
+      if (msg.role === 'assistant' && msg.citations && msg.citations.length > 0) {
+        return msg.citations.length
+      }
+    }
+    return 0
+  }, [chatHistory])
+
+  const handleNewSession = useCallback(() => {
+    setChatHistory([])
+    setDocumentMarkdown('')
+    setDocumentTitle('Untitled')
+    setChatSessionId(null)
+    setIndexedSources([])
+    setActiveThreadSources([])
+    try {
+      window.localStorage.removeItem(PULSE_WORKSPACE_STATE_KEY)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [setChatHistory, setChatSessionId, setIndexedSources, setActiveThreadSources])
 
   usePulsePersistence({
     permissionLevel,
@@ -222,19 +261,50 @@ export function PulseWorkspace() {
   }, [workspacePromptVersion, workspacePrompt, handlePrompt])
 
   return (
-    <div className="mt-1 space-y-1.5">
-      <PulseToolbar
-        title={documentTitle}
-        onTitleChange={setDocumentTitle}
-        isDesktop={isDesktop}
-        desktopViewMode={desktopViewMode}
-        onDesktopViewModeChange={setDesktopViewMode}
-        desktopPaneOrder={desktopPaneOrder}
-        onSwapPanes={() =>
-          setDesktopPaneOrder((prev) => (prev === 'editor-first' ? 'chat-first' : 'editor-first'))
-        }
-      />
-      <div className="flex h-[58vh] overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.42)] lg:h-[68vh]">
+    <div className={`space-y-1.5 ${isDesktop ? 'mt-1' : 'pt-11'}`}>
+      {/* Fixed mobile header — title + SRC + pane switcher */}
+      {!isDesktop && chatHistory.length > 0 && (
+        <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[rgba(255,135,175,0.1)] bg-[rgba(3,7,18,0.45)] px-3 backdrop-blur-lg lg:hidden">
+          {/* Space for AXON logo (fixed left-6 top-5 z-10) */}
+          <div className="w-14 shrink-0" />
+          {/* Spacer */}
+          <div className="flex-1" />
+          {/* SRC button + pane switcher */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSourcesExpanded((prev) => !prev)}
+              className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] px-1.5 py-0.5 text-[var(--axon-text-subtle)]"
+              aria-expanded={sourcesExpanded}
+              title={sourcesExpanded ? 'Hide sources' : 'Show sources'}
+            >
+              <BookOpen className="size-3" />
+              {Math.max(activeThreadSources.length, latestCitationCount)}
+              <ChevronDown
+                className={`size-3 transition-transform ${sourcesExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+            <PulseMobilePaneSwitcher mobilePane={mobilePane} onMobilePaneChange={setMobilePane} />
+          </div>
+        </div>
+      )}
+
+      {/* Desktop toolbar */}
+      {isDesktop && (
+        <PulseToolbar
+          title={documentTitle}
+          onTitleChange={setDocumentTitle}
+          isDesktop={isDesktop}
+          desktopViewMode={desktopViewMode}
+          onDesktopViewModeChange={setDesktopViewMode}
+          desktopPaneOrder={desktopPaneOrder}
+          onSwapPanes={() =>
+            setDesktopPaneOrder((prev) => (prev === 'editor-first' ? 'chat-first' : 'editor-first'))
+          }
+          onNewSession={handleNewSession}
+        />
+      )}
+      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.42)] lg:h-[calc(100vh-12rem)]">
         {crawlFiles.length > 0 && (
           <CrawlFileExplorer
             files={crawlFiles}
@@ -266,9 +336,6 @@ export function PulseWorkspace() {
               markdown={documentMarkdown}
               onMarkdownChange={setDocumentMarkdown}
               scrollStorageKey="axon.web.pulse.editor-scroll"
-              mobilePane={mobilePane}
-              onMobilePaneChange={setMobilePane}
-              isDesktop={isDesktop}
             />
           </div>
           <div
@@ -312,9 +379,8 @@ export function PulseWorkspace() {
                 setActiveThreadSources((prev) => prev.filter((existingUrl) => existingUrl !== url))
               }
               onRetry={(prompt) => void handlePrompt(prompt)}
-              mobilePane={mobilePane}
-              onMobilePaneChange={setMobilePane}
-              isDesktop={isDesktop}
+              sourcesExpanded={sourcesExpanded}
+              onSourcesExpandedChange={setSourcesExpanded}
               requestNotice={requestNotice}
             />
             {pendingOps && pendingValidation && (

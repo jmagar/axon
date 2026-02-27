@@ -57,7 +57,25 @@ export interface ClaudeStreamEvent {
   }
 }
 
-export function buildClaudeArgs(prompt: string, systemPrompt: string, model: PulseModel): string[] {
+export interface ClaudeBuildExtra {
+  effort?: string
+  maxTurns?: number
+  maxBudgetUsd?: number
+  appendSystemPrompt?: string
+  // Additional CLI flags from Claude Code docs
+  disableSlashCommands?: boolean
+  noSessionPersistence?: boolean
+  fallbackModel?: string
+  allowedTools?: string
+  disallowedTools?: string
+}
+
+export function buildClaudeArgs(
+  prompt: string,
+  systemPrompt: string,
+  model: PulseModel,
+  extra?: ClaudeBuildExtra,
+): string[] {
   const args = [
     '-p',
     prompt,
@@ -66,9 +84,11 @@ export function buildClaudeArgs(prompt: string, systemPrompt: string, model: Pul
     '--verbose',
     '--system-prompt',
     systemPrompt,
-    // Disable all MCP servers — the subprocess runs in a container where
-    // none of the globally-configured MCPs are reachable. Without this flag
-    // the CLI hangs trying to connect to all servers before answering.
+    // Load MCPs exclusively from the project-owned config file.
+    // --strict-mcp-config ensures ~/.claude.json MCPs are ignored entirely —
+    // only what's in mcp.json is loaded, preventing hangs on unreachable servers.
+    '--mcp-config',
+    '/home/node/.claude/mcp.json',
     '--strict-mcp-config',
     // No TTY in the container — skip all interactive permission prompts.
     '--dangerously-skip-permissions',
@@ -77,7 +97,7 @@ export function buildClaudeArgs(prompt: string, systemPrompt: string, model: Pul
     '--include-partial-messages',
     // Calibrate inference effort for document-grounded Q&A.
     '--effort',
-    'medium',
+    extra?.effort ?? 'medium',
     // Explicit plugin dir inside the project-owned ~/.claude mount.
     '--plugin-dir',
     '/home/node/.claude/plugins',
@@ -85,6 +105,30 @@ export function buildClaudeArgs(prompt: string, systemPrompt: string, model: Pul
   const modelArg = CLAUDE_MODEL_ARG[model]
   if (modelArg) {
     args.push('--model', modelArg)
+  }
+  if (extra?.appendSystemPrompt) {
+    args.push('--append-system-prompt', extra.appendSystemPrompt)
+  }
+  if (extra?.maxTurns && extra.maxTurns > 0) {
+    args.push('--max-turns', String(extra.maxTurns))
+  }
+  if (extra?.maxBudgetUsd && extra.maxBudgetUsd > 0) {
+    args.push('--max-budget-usd', String(extra.maxBudgetUsd))
+  }
+  if (extra?.disableSlashCommands) {
+    args.push('--disable-slash-commands')
+  }
+  if (extra?.noSessionPersistence) {
+    args.push('--no-session-persistence')
+  }
+  if (extra?.fallbackModel) {
+    args.push('--fallback-model', extra.fallbackModel)
+  }
+  if (extra?.allowedTools) {
+    args.push('--allowedTools', extra.allowedTools)
+  }
+  if (extra?.disallowedTools) {
+    args.push('--disallowedTools', extra.disallowedTools)
   }
   return args
 }

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is apps/web (context: apps/web in docker-compose.yaml).
-# s6-overlay supervises three services: pnpm-dev, claude-session, claude-watcher.
+# s6-overlay supervises one service: pnpm-dev (Next.js dev server).
 # PID 1 must be root (/init) — cannot use USER node with s6-overlay.
 # Services drop privileges via s6-setuidgid node in their run scripts.
 
@@ -13,12 +13,13 @@ ARG S6_OVERLAY_VERSION=3.2.1.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
+        git \
         inotify-tools \
         openssh-client \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# s6-overlay for process supervision (pnpm-dev + claude-session + claude-watcher)
+# s6-overlay for process supervision (pnpm-dev)
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
@@ -78,8 +79,6 @@ RUN find /etc/s6-overlay/s6-rc.d -type f -name run    -exec chmod +x {} + \
     && chmod +x /etc/cont-init.d/* \
     && mkdir -p \
         /var/log/axon/pnpm-dev \
-        /var/log/axon/claude-session \
-        /var/log/axon/claude-watcher \
     && chown -R node:node /var/log/axon
 
 # NOTE: s6-overlay v3 requires root for /init (PID 1) to manage process

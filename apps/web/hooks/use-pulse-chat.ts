@@ -25,6 +25,15 @@ interface UsePulseChatInput {
   onApplyOperations: (ops: DocOperation[]) => void
   onPendingOps: (ops: DocOperation[] | null) => void
   onPendingValidation: (v: ValidationResult | null) => void
+  effort?: string
+  maxTurns?: number
+  maxBudgetUsd?: number
+  appendSystemPrompt?: string
+  disableSlashCommands?: boolean
+  noSessionPersistence?: boolean
+  fallbackModel?: string
+  allowedTools?: string
+  disallowedTools?: string
 }
 
 export function usePulseChat({
@@ -35,6 +44,15 @@ export function usePulseChat({
   onApplyOperations,
   onPendingOps,
   onPendingValidation,
+  effort,
+  maxTurns,
+  maxBudgetUsd,
+  appendSystemPrompt,
+  disableSlashCommands,
+  noSessionPersistence,
+  fallbackModel,
+  allowedTools,
+  disallowedTools,
 }: UsePulseChatInput) {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [isChatLoading, setIsChatLoading] = useState(false)
@@ -265,6 +283,15 @@ export function usePulseChat({
           scrapedContext,
           permissionLevel,
           model,
+          effort,
+          maxTurns,
+          maxBudgetUsd,
+          appendSystemPrompt,
+          disableSlashCommands,
+          noSessionPersistence,
+          fallbackModel,
+          allowedTools,
+          disallowedTools,
         })
 
         if (inFlightPromptRef.current !== promptId) return
@@ -329,10 +356,19 @@ export function usePulseChat({
     },
     [
       activeThreadSources,
+      allowedTools,
+      appendSystemPrompt,
       chatSessionId,
       createMessage,
+      disableSlashCommands,
+      disallowedTools,
       documentMarkdown,
+      effort,
+      fallbackModel,
+      maxBudgetUsd,
+      maxTurns,
       model,
+      noSessionPersistence,
       onApplyOperations,
       onPendingOps,
       onPendingValidation,
