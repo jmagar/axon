@@ -1,6 +1,16 @@
 'use client'
 
-import { ArrowLeftRight, Columns2, FileText, MessageSquare, Plus } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  Bot,
+  Columns2,
+  FileText,
+  MessageSquare,
+  Network,
+  Plus,
+  Settings2,
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 type DesktopViewMode = 'chat' | 'editor' | 'both'
 type DesktopPaneOrder = 'editor-first' | 'chat-first'
@@ -26,6 +36,7 @@ export function PulseToolbar({
   onSwapPanes = () => {},
   onNewSession,
 }: PulseToolbarProps) {
+  const router = useRouter()
   return (
     <div className="flex items-center gap-x-[var(--pulse-control-gap)] rounded-lg border border-[rgba(255,135,175,0.08)] bg-[rgba(10,18,35,0.32)] px-[var(--space-2)] py-[var(--space-2)]">
       <input
@@ -118,6 +129,36 @@ export function PulseToolbar({
               </button>
             </>
           )}
+
+          {/* Nav — MCP, Agents, Settings */}
+          <span className="mx-0.5 h-4 w-px bg-[rgba(255,135,175,0.16)]" />
+          <button
+            type="button"
+            onClick={() => router.push('/mcp')}
+            title="MCP Servers"
+            aria-label="MCP Servers"
+            className="inline-flex size-6 items-center justify-center rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)]"
+          >
+            <Network className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/agents')}
+            title="Available Agents"
+            aria-label="Available Agents"
+            className="inline-flex size-6 items-center justify-center rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)]"
+          >
+            <Bot className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/settings')}
+            title="Settings"
+            aria-label="Open settings"
+            className="inline-flex size-6 items-center justify-center rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)]"
+          >
+            <Settings2 className="size-3" />
+          </button>
         </div>
       )}
     </div>

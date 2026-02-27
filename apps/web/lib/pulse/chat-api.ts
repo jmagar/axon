@@ -40,6 +40,9 @@ export interface RunChatPromptOptions {
   fallbackModel?: string
   allowedTools?: string
   disallowedTools?: string
+  addDir?: string
+  betas?: string
+  toolsRestrict?: string
 }
 
 async function readNdjsonStream(
@@ -133,6 +136,9 @@ export async function runChatPrompt(opts: RunChatPromptOptions): Promise<PulseCh
     fallbackModel,
     allowedTools,
     disallowedTools,
+    addDir,
+    betas,
+    toolsRestrict,
   } = opts
 
   const response = await fetch('/api/pulse/chat', {
@@ -158,6 +164,9 @@ export async function runChatPrompt(opts: RunChatPromptOptions): Promise<PulseCh
       fallbackModel,
       allowedTools,
       disallowedTools,
+      addDir,
+      betas,
+      toolsRestrict,
     }),
   })
 

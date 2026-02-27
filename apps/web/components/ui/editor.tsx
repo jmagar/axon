@@ -16,6 +16,7 @@ const editorContainerVariants = cva(
     },
     variants: {
       variant: {
+        axon: 'h-full bg-transparent',
         comment: cn(
           'flex flex-wrap justify-between gap-1 px-1 py-0.5 text-sm',
           'rounded-md border-[1.5px] border-transparent bg-transparent',
@@ -72,6 +73,7 @@ const editorVariants = cva(
       variant: {
         ai: 'w-full px-0 text-base md:text-sm',
         aiChat: 'max-h-[min(70vh,320px)] w-full overflow-y-auto px-3 py-2 text-base md:text-sm',
+        axon: 'h-full min-h-full px-3 py-2.5 text-[length:var(--text-md)] leading-[var(--leading-copy)] text-[var(--axon-text-secondary)] bg-transparent',
         comment: cn('rounded-none border-none bg-transparent text-sm'),
         default: 'size-full px-16 pt-4 pb-72 text-base sm:px-[max(64px,calc(50%-350px))]',
         demo: 'size-full px-16 pt-4 pb-72 text-base sm:px-[max(64px,calc(50%-350px))]',
