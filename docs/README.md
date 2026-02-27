@@ -15,6 +15,7 @@ Documentation index for Axon.
 - [Job Lifecycle](./JOB-LIFECYCLE.md)
 - [Serve Runtime](./SERVE.md)
 - [Live Test Scripts](./LIVE-TEST-SCRIPTS.md)
+- [Testing Guide](./TESTING.md)
 
 ## MCP Docs
 - [MCP Runtime Guide](./MCP.md)

@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { PulseChatPane, computeMessageVirtualWindow } from '@/components/pulse/pulse-chat-pane'
+import { computeMessageVirtualWindow, PulseChatPane } from '@/components/pulse/pulse-chat-pane'
 import type { ChatMessage } from '@/components/pulse/pulse-workspace'
 
 describe('pulse chat virtualization', () => {

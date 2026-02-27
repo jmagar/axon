@@ -25,11 +25,7 @@ export function MarkdownBlock({ markdown, className }: MarkdownBlockProps) {
   return (
     <Plate key={markdown} editor={editor} readOnly>
       <EditorContainer variant="default" className="h-auto border-none bg-transparent">
-        <Editor
-          variant="none"
-          readOnly
-          className={`px-0 py-0 ui-long-copy ${className ?? ''}`}
-        />
+        <Editor variant="none" readOnly className={`px-0 py-0 ui-long-copy ${className ?? ''}`} />
       </EditorContainer>
     </Plate>
   )

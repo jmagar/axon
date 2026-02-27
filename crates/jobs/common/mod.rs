@@ -120,34 +120,39 @@ pub(crate) fn test_config(pg_url: &str) -> crate::crates::core::config::Config {
 }
 
 #[cfg(test)]
+pub(crate) fn parse_dotenv_content(content: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let mut value = v.trim().to_string();
+        if ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+            && value.len() >= 2
+        {
+            value = value[1..value.len() - 1].to_string();
+        }
+        map.insert(key.to_string(), value);
+    }
+    map
+}
+
+#[cfg(test)]
 pub(crate) fn resolve_test_pg_url() -> Option<String> {
     fn read_dotenv_map() -> HashMap<String, String> {
-        let mut map = HashMap::new();
         let Ok(content) = fs::read_to_string(".env") else {
-            return map;
+            return HashMap::new();
         };
-        for raw in content.lines() {
-            let line = raw.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let Some((k, v)) = line.split_once('=') else {
-                continue;
-            };
-            let key = k.trim();
-            if key.is_empty() {
-                continue;
-            }
-            let mut value = v.trim().to_string();
-            if ((value.starts_with('"') && value.ends_with('"'))
-                || (value.starts_with('\'') && value.ends_with('\'')))
-                && value.len() >= 2
-            {
-                value = value[1..value.len() - 1].to_string();
-            }
-            map.insert(key.to_string(), value);
-        }
-        map
+        parse_dotenv_content(&content)
     }
 
     fn non_empty_env(name: &str) -> Option<String> {
