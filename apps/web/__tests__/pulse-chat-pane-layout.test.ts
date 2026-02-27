@@ -1,8 +1,9 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { computeMessageVirtualWindow, PulseChatPane } from '@/components/pulse/pulse-chat-pane'
-import type { ChatMessage } from '@/components/pulse/pulse-workspace'
+import { computeMessageVirtualWindow } from '@/components/pulse/chat-utils'
+import { PulseChatPane } from '@/components/pulse/pulse-chat-pane'
+import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
 
 describe('pulse chat virtualization', () => {
   it('does not virtualize short conversations', () => {

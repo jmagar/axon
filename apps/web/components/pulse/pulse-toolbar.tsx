@@ -8,21 +8,21 @@ type DesktopPaneOrder = 'editor-first' | 'chat-first'
 interface PulseToolbarProps {
   title: string
   onTitleChange: (title: string) => void
-  isDesktop: boolean
-  desktopViewMode: DesktopViewMode
-  onDesktopViewModeChange: (mode: DesktopViewMode) => void
-  desktopPaneOrder: DesktopPaneOrder
-  onSwapPanes: () => void
+  isDesktop?: boolean
+  desktopViewMode?: DesktopViewMode
+  onDesktopViewModeChange?: (mode: DesktopViewMode) => void
+  desktopPaneOrder?: DesktopPaneOrder
+  onSwapPanes?: () => void
 }
 
 export function PulseToolbar({
   title,
   onTitleChange,
-  isDesktop,
-  desktopViewMode,
-  onDesktopViewModeChange,
-  desktopPaneOrder,
-  onSwapPanes,
+  isDesktop = false,
+  desktopViewMode = 'both',
+  onDesktopViewModeChange = () => {},
+  desktopPaneOrder = 'editor-first',
+  onSwapPanes = () => {},
 }: PulseToolbarProps) {
   return (
     <div className="flex items-center gap-x-[var(--pulse-control-gap)] rounded-lg border border-[rgba(255,135,175,0.08)] bg-[rgba(10,18,35,0.32)] px-[var(--space-2)] py-[var(--space-2)]">

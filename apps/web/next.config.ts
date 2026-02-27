@@ -5,6 +5,17 @@ const axonBackendUrl =
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  transpilePackages: [
+    '@platejs/ai',
+    '@platejs/basic-nodes',
+    '@platejs/code-block',
+    '@platejs/link',
+    '@platejs/list',
+    '@platejs/markdown',
+    '@platejs/media',
+    '@platejs/table',
+    'platejs',
+  ],
   turbopack: {
     root: __dirname,
   },
