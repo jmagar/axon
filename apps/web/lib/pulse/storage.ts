@@ -74,7 +74,9 @@ function parseFrontmatter(raw: string): StoredDoc | null {
     title: String(parseMaybeJson(meta.title) ?? 'Untitled'),
     markdown,
     tags: (parseMaybeJson(meta.tags) as string[] | undefined) ?? [],
-    collections: (parseMaybeJson(meta.collections) as string[] | undefined) ?? ['pulse'],
+    collections: (parseMaybeJson(meta.collections) as string[] | undefined) ?? [
+      process.env.AXON_COLLECTION ?? 'cortex',
+    ],
     createdAt: String(parseMaybeJson(meta.createdAt) ?? new Date().toISOString()),
     updatedAt: String(parseMaybeJson(meta.updatedAt) ?? new Date().toISOString()),
   }
@@ -92,7 +94,7 @@ export async function savePulseDoc(
     title: payload.title,
     markdown: payload.markdown,
     tags: payload.tags ?? [],
-    collections: payload.collections ?? ['pulse'],
+    collections: payload.collections ?? [process.env.AXON_COLLECTION ?? 'cortex'],
     createdAt: now,
     updatedAt: now,
   }
