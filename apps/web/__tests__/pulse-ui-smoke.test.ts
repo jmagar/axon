@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { PulseChatPane } from '@/components/pulse/pulse-chat-pane'
 import { PulseToolbar } from '@/components/pulse/pulse-toolbar'
-import type { ChatMessage } from '@/components/pulse/pulse-workspace'
 import { detectPulsePromptIntent } from '@/lib/pulse/prompt-intent'
+import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
 
 describe('pulse UI smoke workflow', () => {
   it('covers source intent parsing and compact toolbar render', () => {

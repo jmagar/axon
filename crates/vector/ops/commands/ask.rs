@@ -271,6 +271,9 @@ fn classify_query(query: &str) -> AskQueryClass {
     ]
     .iter()
     .any(|needle| lower.contains(needle));
+    // ConfigSchema takes precedence over Procedural when both match (e.g. "how do I configure
+    // openai.yaml?"). This means ask_strict_config_schema gates such queries, not
+    // ask_strict_procedural, even though the query is also procedural in nature.
     if config_schema {
         AskQueryClass::ConfigSchema
     } else if procedural {
@@ -305,6 +308,18 @@ fn source_matches_domain_list(source: &str, domains: &[String]) -> bool {
     })
 }
 
+fn url_path_is_docs_like(source: &str) -> bool {
+    let path = source
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .map(|(_, path)| path)
+        .unwrap_or("");
+    path.starts_with("docs/")
+        || path.starts_with("documentation/")
+        || path.starts_with("guide/")
+        || path.starts_with("reference/")
+}
+
 fn is_official_docs_source(source: &str, cfg: &Config) -> bool {
     if source_matches_domain_list(source, &cfg.ask_authoritative_domains)
         || source_matches_domain_list(source, &cfg.ask_authoritative_allowlist)
@@ -314,7 +329,10 @@ fn is_official_docs_source(source: &str, cfg: &Config) -> bool {
     let Some(host) = host_from_source(source) else {
         return false;
     };
-    host.starts_with("docs.") || host.starts_with("developers.") || host.contains(".docs.")
+    host.starts_with("docs.")
+        || host.starts_with("developers.")
+        || host.contains(".docs.")
+        || url_path_is_docs_like(source)
 }
 
 fn query_file_like_tokens(query: &str) -> Vec<String> {
@@ -474,9 +492,10 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
 
     match query_class {
         AskQueryClass::Procedural => {
-            if !cited_sources
-                .iter()
-                .any(|source| is_official_docs_source(source, cfg))
+            if cfg.ask_strict_procedural
+                && !cited_sources
+                    .iter()
+                    .any(|source| is_official_docs_source(source, cfg))
             {
                 insufficiency_reasons.push(
                     "Procedural query requires at least one official-docs citation.".to_string(),
@@ -484,9 +503,10 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
             }
         }
         AskQueryClass::ConfigSchema => {
-            if !cited_sources
-                .iter()
-                .any(|source| has_exact_page_citation(source, query))
+            if cfg.ask_strict_config_schema
+                && !cited_sources
+                    .iter()
+                    .any(|source| has_exact_page_citation(source, query))
             {
                 insufficiency_reasons.push(
                     "Config/schema query requires at least one exact-page citation.".to_string(),
@@ -647,6 +667,102 @@ mod tests {
         );
         assert!(normalized.starts_with("Insufficient evidence in indexed sources"));
         assert!(normalized.contains("requires at least 2 unique citations"));
+    }
+
+    #[test]
+    fn url_path_is_docs_like_recognizes_common_prefixes() {
+        assert!(super::url_path_is_docs_like(
+            "https://platejs.org/docs/getting-started"
+        ));
+        assert!(super::url_path_is_docs_like(
+            "https://vuejs.org/guide/introduction"
+        ));
+        assert!(super::url_path_is_docs_like(
+            "https://react.dev/reference/react"
+        ));
+        assert!(super::url_path_is_docs_like(
+            "https://example.com/documentation/setup"
+        ));
+        // /api/ is excluded — REST endpoints like /api/v1/users are not docs pages
+        assert!(!super::url_path_is_docs_like(
+            "https://example.com/api/client"
+        ));
+        assert!(!super::url_path_is_docs_like(
+            "https://medium.com/blog/my-post"
+        ));
+        assert!(!super::url_path_is_docs_like("https://platejs.org/"));
+        assert!(!super::url_path_is_docs_like("https://example.com/about"));
+    }
+
+    #[test]
+    fn is_official_docs_source_accepts_docs_path_prefix() {
+        let cfg = cfg();
+        // platejs.org/docs/* qualifies via url_path_is_docs_like()
+        assert!(super::is_official_docs_source(
+            "https://platejs.org/docs/getting-started",
+            &cfg
+        ));
+        // medium.com blog post does not qualify
+        assert!(!super::is_official_docs_source(
+            "https://medium.com/blog/my-post",
+            &cfg
+        ));
+    }
+
+    #[test]
+    fn strict_procedural_false_bypasses_gate5() {
+        let mut cfg = cfg();
+        cfg.ask_strict_procedural = false;
+        // Source is a blog — would fail Gate 5 when strict=true
+        let context = "Sources:\n## Top Chunk [S1]: https://blog.example.net/post";
+        let raw =
+            "Do A then B then C. This is a comprehensive guide with all necessary steps [S1].";
+        let normalized = normalize_ask_answer(&cfg, "how do I set this up?", raw, context);
+        // Should NOT produce "Insufficient evidence" when strict=false
+        assert!(
+            !normalized.starts_with("Insufficient evidence in indexed sources"),
+            "expected answer, got: {normalized}"
+        );
+    }
+
+    #[test]
+    fn strict_config_schema_false_bypasses_gate6() {
+        let mut cfg = cfg();
+        cfg.ask_strict_config_schema = false;
+        cfg.ask_min_citations_nontrivial = 1; // Gate 3 must not block before Gate 6 is tested
+        // Source path doesn't contain "openai.yaml" — would fail Gate 6 when strict=true
+        let context = "Sources:\n## Top Chunk [S1]: https://docs.example.com/";
+        let raw = "Use openai.yaml fields like model and tools [S1].";
+        let normalized = normalize_ask_answer(
+            &cfg,
+            "what is openai.yaml in an mcp server repo?",
+            raw,
+            context,
+        );
+        // Should NOT produce "Insufficient evidence" when strict=false
+        assert!(
+            !normalized.starts_with("Insufficient evidence in indexed sources"),
+            "expected answer, got: {normalized}"
+        );
+    }
+
+    #[test]
+    fn platejs_docs_url_passes_procedural_gate() {
+        let mut cfg = cfg();
+        cfg.ask_min_citations_nontrivial = 1;
+        let context = "Sources:\n## Top Chunk [S1]: https://platejs.org/docs/plugin/bold";
+        let raw = "Install the bold plugin from @udecode/plate-basic-marks and add it to your editor's plugins array [S1].";
+        let normalized = normalize_ask_answer(
+            &cfg,
+            "how do I add bold formatting to a PlateJS editor?",
+            raw,
+            context,
+        );
+        assert!(
+            !normalized.starts_with("Insufficient evidence in indexed sources"),
+            "platejs.org/docs/* should pass Gate 5: {normalized}"
+        );
+        assert!(normalized.contains("## Sources"));
     }
 
     #[test]
