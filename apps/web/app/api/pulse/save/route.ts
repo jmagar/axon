@@ -12,6 +12,29 @@ const SaveRequestSchema = z.object({
   embed: z.boolean().default(true),
 })
 
+/** GET first; only PUT on 404 — safe to call on existing collections. */
+async function ensureCollection(
+  qdrantUrl: string,
+  collection: string,
+  vectorSize: number,
+): Promise<void> {
+  const getRes = await fetch(`${qdrantUrl}/collections/${encodeURIComponent(collection)}`)
+  if (getRes.ok) return
+  if (getRes.status !== 404) {
+    throw new Error(`Qdrant collection check failed: ${getRes.status}`)
+  }
+  const createRes = await fetch(`${qdrantUrl}/collections/${encodeURIComponent(collection)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vectors: { size: vectorSize, distance: 'Cosine' } }),
+  })
+  if (!createRes.ok) {
+    throw new Error(
+      `Qdrant collection create failed: ${createRes.status} ${await createRes.text().catch(() => '')}`,
+    )
+  }
+}
+
 function chunkText(text: string, size: number, overlap: number): string[] {
   if (size <= 0 || overlap < 0 || size <= overlap) {
     return [text]
@@ -61,6 +84,7 @@ export async function POST(request: Request) {
 
           if (embedResponse.ok) {
             const vectors = (await embedResponse.json()) as number[][]
+            await ensureCollection(qdrantUrl, collection, vectors[0]?.length ?? 0)
             const points = vectors.map((vector, i) => ({
               id: randomUUID(),
               vector,
