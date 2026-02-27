@@ -202,10 +202,14 @@ services:
     build:
       context: apps/web
       dockerfile: ../../docker/web/Dockerfile
+      additional_contexts:
+        web-s6: docker/web/s6-rc.d
+        web-cont-init: docker/web/cont-init.d
     ports:
       - "49010:49010"
     environment:
       HOST: "0.0.0.0"
+      HOME: /home/node
       PORT: "49010"
       AXON_BACKEND_URL: "http://axon-workers:49000"
       NEXT_PUBLIC_AXON_PORT: "49000"

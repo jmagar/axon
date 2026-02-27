@@ -172,9 +172,7 @@ function KeyValueTable({
   return (
     <div>
       <FilterInput value={filter} onChange={setFilter} />
-      <div className="ui-meta mb-2">
-        {fmtNum(rows.length)} entries
-      </div>
+      <div className="ui-meta mb-2">{fmtNum(rows.length)} entries</div>
       <div className="max-h-[55vh] overflow-auto">
         <table className="ui-table-dense">
           <thead className="sticky top-0" style={{ background: 'rgba(3, 7, 18, 0.95)' }}>
@@ -258,9 +256,7 @@ function DomainsTable({ data }: { data: DomainsResult }) {
   return (
     <div>
       <FilterInput value={filter} onChange={setFilter} />
-      <div className="ui-meta mb-2">
-        {fmtNum(rows.length)} domains
-      </div>
+      <div className="ui-meta mb-2">{fmtNum(rows.length)} domains</div>
       <div className="max-h-[55vh] overflow-auto">
         <table className="ui-table-dense">
           <thead className="sticky top-0" style={{ background: 'rgba(3, 7, 18, 0.95)' }}>
@@ -356,19 +352,13 @@ function MapTable({ data }: { data: MapResult }) {
         </span>
       </div>
       <FilterInput value={filter} onChange={setFilter} />
-      <div className="ui-meta mb-2">
-        {fmtNum(filtered.length)} URLs
-      </div>
+      <div className="ui-meta mb-2">{fmtNum(filtered.length)} URLs</div>
       <div className="max-h-[50vh] overflow-auto">
         <table className="ui-table-dense">
           <thead className="sticky top-0" style={{ background: 'rgba(3, 7, 18, 0.95)' }}>
             <tr>
-              <th className="ui-table-head w-12">
-                #
-              </th>
-              <th className="ui-table-head">
-                URL
-              </th>
+              <th className="ui-table-head w-12">#</th>
+              <th className="ui-table-head">URL</th>
             </tr>
           </thead>
           <tbody>
@@ -417,15 +407,9 @@ function StatusTable({ data }: { data: StatusResult }) {
             <table className="ui-table-dense">
               <thead>
                 <tr>
-                  <th className="ui-table-head">
-                    ID
-                  </th>
-                  <th className="ui-table-head">
-                    URL
-                  </th>
-                  <th className="ui-table-head">
-                    Status
-                  </th>
+                  <th className="ui-table-head">ID</th>
+                  <th className="ui-table-head">URL</th>
+                  <th className="ui-table-head">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -498,12 +482,8 @@ function SuggestTable({ data }: { data: SuggestResult }) {
         <table className="ui-table-dense">
           <thead className="sticky top-0" style={{ background: 'rgba(3, 7, 18, 0.95)' }}>
             <tr>
-              <th className="ui-table-head">
-                URL
-              </th>
-              <th className="ui-table-head">
-                Reason
-              </th>
+              <th className="ui-table-head">URL</th>
+              <th className="ui-table-head">Reason</th>
             </tr>
           </thead>
           <tbody>

@@ -1,9 +1,11 @@
 'use client'
 
+import { streamInsertChunk, useChatChunk } from '@platejs/ai/react'
 import { serializeMd } from '@platejs/markdown'
 import { Bold, Code2, Italic, Strikethrough, Underline } from 'lucide-react'
 import { Plate, usePlateEditor } from 'platejs/react'
 import { useEffect, useRef } from 'react'
+import { useAIChatSetup } from '@/components/editor/plugins/ai-chat-kit'
 import { CopilotKit } from '@/components/editor/plugins/copilot-kit'
 import { Editor, EditorContainer } from '@/components/ui/editor'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
@@ -18,6 +20,22 @@ interface PulseEditorPaneProps {
   mobilePane?: 'chat' | 'editor'
   onMobilePaneChange?: (pane: 'chat' | 'editor') => void
   isDesktop?: boolean
+}
+
+/** Inner component that wires AI chat hooks requiring the Plate editor context. */
+function PulseEditorInner({ editor }: { editor: ReturnType<typeof usePlateEditor> }) {
+  useAIChatSetup(editor)
+
+  useChatChunk({
+    onChunk: ({ chunk }: { chunk: string }) => {
+      if (editor) streamInsertChunk(editor, chunk)
+    },
+    onFinish: () => {
+      // Leave inserted content in place for the user to review.
+    },
+  })
+
+  return null
 }
 
 export function PulseEditorPane({
@@ -66,6 +84,7 @@ export function PulseEditorPane({
         onMarkdownChange(md)
       }}
     >
+      {editor && <PulseEditorInner editor={editor} />}
       <div className="flex h-full min-h-0 flex-col">
         <div className="border-b border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1">
           <div className="mb-1 flex items-center gap-1.5 px-1.5">

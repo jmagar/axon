@@ -77,11 +77,7 @@ function Section({
         borderColor: 'rgba(255,135,175,0.08)',
       }}
     >
-      {title && (
-        <div className="ui-label mb-2">
-          {title}
-        </div>
-      )}
+      {title && <div className="ui-label mb-2">{title}</div>}
       {children}
     </div>
   )
@@ -97,9 +93,7 @@ function KeyValueTable({ rows }: { rows: Array<{ key: string; value: Scalar }> }
               <td className="ui-table-cell ui-table-cell-muted pr-4 align-top">
                 {humanizeKey(row.key)}
               </td>
-              <td className="ui-table-cell align-top">
-                {scalarLabel(row.value)}
-              </td>
+              <td className="ui-table-cell align-top">{scalarLabel(row.value)}</td>
             </tr>
           ))}
         </tbody>
@@ -141,11 +135,11 @@ function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
 
 function NodeView({ value, title }: { value: unknown; title?: string }) {
   if (isScalar(value)) {
-      return (
-        <Section title={title}>
-          <div className="ui-long-copy">{scalarLabel(value)}</div>
-        </Section>
-      )
+    return (
+      <Section title={title}>
+        <div className="ui-long-copy">{scalarLabel(value)}</div>
+      </Section>
+    )
   }
 
   if (Array.isArray(value)) {

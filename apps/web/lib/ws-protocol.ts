@@ -442,6 +442,6 @@ export const NO_INPUT_MODES: ReadonlySet<string> = new Set([
 ])
 
 /** Modes in the workspace category bypass the WS executor entirely. */
-export function isWorkspaceMode(id: string): boolean {
+export function isWorkspaceMode(_id: string): boolean {
   return false
 }

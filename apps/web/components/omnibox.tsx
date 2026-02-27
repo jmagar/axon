@@ -36,6 +36,29 @@ export function shouldPreservePulseWorkspaceForMode(
   )
 }
 
+function isUrlLikeToken(token: string): boolean {
+  if (!token) return false
+  if (/^https?:\/\//i.test(token)) return true
+  if (token.includes('@')) return false
+  return /^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(token)
+}
+
+function shouldRunCommandForInput(selectedMode: ModeId, rawInput: string): boolean {
+  const trimmed = rawInput.trim()
+  if (!trimmed) return NO_INPUT_MODES.has(selectedMode)
+  const firstToken = trimmed.split(/\s+/)[0] ?? ''
+  return isUrlLikeToken(firstToken)
+}
+
+function normalizeUrlInput(rawInput: string): string {
+  const trimmed = rawInput.trim()
+  const firstToken = trimmed.split(/\s+/)[0] ?? ''
+  if (!trimmed || /^https?:\/\//i.test(firstToken)) return trimmed
+  if (!isUrlLikeToken(firstToken)) return trimmed
+  if (firstToken !== trimmed) return trimmed
+  return `https://${trimmed}`
+}
+
 export function Omnibox() {
   const { send, subscribe } = useAxonWs()
   const {
@@ -73,29 +96,6 @@ export function Omnibox() {
   const startTimeRef = useRef(0)
   const execIdRef = useRef(0)
   const [optionValues, setOptionValues] = useState<CommandOptionValues>({})
-
-  function isUrlLikeToken(token: string): boolean {
-    if (!token) return false
-    if (/^https?:\/\//i.test(token)) return true
-    if (token.includes('@')) return false
-    return /^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(token)
-  }
-
-  function shouldRunCommandForInput(selectedMode: ModeId, rawInput: string): boolean {
-    const trimmed = rawInput.trim()
-    if (!trimmed) return NO_INPUT_MODES.has(selectedMode)
-    const firstToken = trimmed.split(/\s+/)[0] ?? ''
-    return isUrlLikeToken(firstToken)
-  }
-
-  function normalizeUrlInput(rawInput: string): string {
-    const trimmed = rawInput.trim()
-    const firstToken = trimmed.split(/\s+/)[0] ?? ''
-    if (!trimmed || /^https?:\/\//i.test(firstToken)) return trimmed
-    if (!isUrlLikeToken(firstToken)) return trimmed
-    if (firstToken !== trimmed) return trimmed
-    return `https://${trimmed}`
-  }
 
   const selectedModeDef = MODES.find((m) => m.id === mode) ?? MODES[0]
   const hasOptions = (getCommandSpec(mode)?.commandOptions.length ?? 0) > 0
@@ -522,7 +522,7 @@ export function Omnibox() {
           isProcessing
             ? 'border-[rgba(175,215,255,0.4)] shadow-[0_0_20px_rgba(175,215,255,0.15)]'
             : 'border-[rgba(255,135,175,0.18)]'
-        } min-h-[46px] focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.08)]`}
+        } min-h-[92px] focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.08)]`}
         style={{
           background: 'rgba(10, 18, 35, 0.65)',
           borderWidth: '1.5px',
@@ -910,9 +910,6 @@ export function Omnibox() {
           <span className="font-semibold text-[var(--axon-accent-pink)]">{modeAppliedLabel}</span>
         </div>
       )}
-      <div className="ui-meta rounded-md border border-[rgba(95,135,175,0.16)] bg-[rgba(10,18,35,0.28)] px-2 py-1">
-        Enter send · @mode switch · Alt+1/2/3 model · Alt+Shift+1/2/3 permission
-      </div>
     </div>
   )
 }

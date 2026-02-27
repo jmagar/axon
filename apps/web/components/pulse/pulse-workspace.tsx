@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useWsMessages } from '@/hooks/use-ws-messages'
+import { parsePulseChatStreamChunk } from '@/lib/pulse/chat-stream'
 import type { ValidationResult } from '@/lib/pulse/doc-ops'
 import { validateDocOperations } from '@/lib/pulse/doc-ops'
 import { checkPermission } from '@/lib/pulse/permissions'
@@ -142,9 +143,10 @@ export function PulseWorkspace() {
   const [chatSessionId, setChatSessionId] = useState<string | null>(null)
   const [indexedSources, setIndexedSources] = useState<string[]>([])
   const [activeThreadSources, setActiveThreadSources] = useState<string[]>([])
-  const [scrapedContext, setScrapedContext] = useState<{ url: string; markdown: string } | null>(
-    null,
-  )
+  const [scrapedContext, setScrapedContext] = useState<{
+    url: string
+    markdown: string
+  } | null>(null)
   // Track the last command's mode+input so we can record crawled URLs on done.
   const lastCmdModeRef = useRef('')
   const lastCmdInputRef = useRef('')
@@ -157,6 +159,8 @@ export function PulseWorkspace() {
   const [lastResponseLatencyMs, setLastResponseLatencyMs] = useState<number | null>(null)
   const [lastResponseModel, setLastResponseModel] = useState<PulseModel | null>(null)
   const [requestNotice, setRequestNotice] = useState<string | null>(null)
+  const [streamPhase, setStreamPhase] = useState<'started' | 'thinking' | 'finalizing' | null>(null)
+  const [liveToolUses, setLiveToolUses] = useState<PulseToolUse[]>([])
   const model = pulseModel as PulseModel
   const permissionLevel = pulsePermissionLevel as PulsePermissionLevel
   const [lastContextStats, setLastContextStats] = useState<{
@@ -174,8 +178,14 @@ export function PulseWorkspace() {
   const desktopSplitPercentRef = useRef(desktopSplitPercent)
   const mobileSplitPercentRef = useRef(mobileSplitPercent)
   const hasHydratedPersistedStateRef = useRef(false)
-  const dragStartRef = useRef<{ pointerX: number; startPercent: number } | null>(null)
-  const verticalDragStartRef = useRef<{ pointerY: number; startPercent: number } | null>(null)
+  const dragStartRef = useRef<{
+    pointerX: number
+    startPercent: number
+  } | null>(null)
+  const verticalDragStartRef = useRef<{
+    pointerY: number
+    startPercent: number
+  } | null>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const splitHandleRef = useRef<HTMLDivElement>(null)
   const desktopSplitStorageKey = 'axon.web.pulse.editor-split.desktop'
@@ -221,7 +231,7 @@ export function PulseWorkspace() {
     } finally {
       hasHydratedPersistedStateRef.current = true
     }
-  }, [])
+  }, [setPulseModel, setPulsePermissionLevel])
 
   // Capture context from scrape/crawl commands so Claude knows what the user indexed.
   useEffect(() => {
@@ -334,6 +344,15 @@ export function PulseWorkspace() {
     [],
   )
 
+  const updateChatMessage = useCallback(
+    (messageId: string, transform: (message: ChatMessage) => ChatMessage) => {
+      setChatHistory((prev) =>
+        prev.map((message) => (message.id === messageId ? transform(message) : message)),
+      )
+    },
+    [],
+  )
+
   const applyOperations = useCallback((ops: DocOperation[]) => {
     setDocumentMarkdown((prev) => {
       let next = prev
@@ -360,8 +379,18 @@ export function PulseWorkspace() {
   const runChatPrompt = useCallback(
     async (
       prompt: string,
-      conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+      conversationHistory: Array<{
+        role: 'user' | 'assistant'
+        content: string
+      }>,
       signal: AbortSignal,
+      onEvent?: (event: {
+        type: 'status' | 'assistant_delta' | 'tool_use' | 'thinking_content'
+        phase?: 'started' | 'thinking' | 'finalizing'
+        delta?: string
+        tool?: PulseToolUse
+        content?: string
+      }) => void,
     ) => {
       const response = await fetch('/api/pulse/chat', {
         method: 'POST',
@@ -384,7 +413,10 @@ export function PulseWorkspace() {
         let detail = ''
         if (errorBody) {
           try {
-            const parsed = JSON.parse(errorBody) as { error?: unknown; message?: unknown }
+            const parsed = JSON.parse(errorBody) as {
+              error?: unknown
+              message?: unknown
+            }
             detail =
               typeof parsed.error === 'string'
                 ? parsed.error
@@ -398,6 +430,91 @@ export function PulseWorkspace() {
         const suffix = detail ? `: ${detail}` : ''
         throw new Error(`Pulse chat failed (${response.status})${suffix}`)
       }
+
+      const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+      const isNdjson =
+        contentType.includes('application/x-ndjson') || contentType.includes('application/ndjson')
+
+      if (isNdjson && response.body) {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let remainder = ''
+        let doneResponse: PulseChatResponse | null = null
+        const seenEventIds = new Set<string>()
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value, { stream: true })
+          const parsed = parsePulseChatStreamChunk(chunk, remainder)
+          remainder = parsed.remainder
+
+          for (const event of parsed.events) {
+            if (seenEventIds.has(event.event_id)) {
+              continue
+            }
+            seenEventIds.add(event.event_id)
+            if (event.type === 'status') {
+              onEvent?.({ type: 'status', phase: event.phase })
+              continue
+            }
+            if (event.type === 'assistant_delta') {
+              onEvent?.({ type: 'assistant_delta', delta: event.delta })
+              continue
+            }
+            if (event.type === 'thinking_content') {
+              onEvent?.({ type: 'thinking_content', content: event.content })
+              continue
+            }
+            if (event.type === 'tool_use') {
+              onEvent?.({ type: 'tool_use', tool: event.tool })
+              continue
+            }
+            if (event.type === 'error') {
+              throw new Error(event.error || 'Pulse stream error')
+            }
+            if (event.type === 'done') {
+              doneResponse = event.response
+            }
+          }
+        }
+
+        const finalTail = remainder.trim()
+        if (finalTail) {
+          try {
+            const parsedEvent = JSON.parse(finalTail) as {
+              type?: string
+              event_id?: string
+            }
+            if (
+              typeof parsedEvent.event_id === 'string' &&
+              seenEventIds.has(parsedEvent.event_id)
+            ) {
+              return (
+                doneResponse ??
+                (() => {
+                  throw new Error('Pulse stream ended without a final response')
+                })()
+              )
+            }
+            if (parsedEvent.type === 'done') {
+              doneResponse = (parsedEvent as { response: PulseChatResponse }).response
+            } else if (parsedEvent.type === 'error') {
+              const message = (parsedEvent as { error?: string }).error ?? 'Pulse stream error'
+              throw new Error(message)
+            }
+          } catch {
+            // Ignore trailing malformed NDJSON fragments.
+          }
+        }
+
+        if (!doneResponse) {
+          throw new Error('Pulse stream ended without a final response')
+        }
+
+        return doneResponse
+      }
+
       return (await response.json()) as PulseChatResponse
     },
     [activeThreadSources, chatSessionId, documentMarkdown, model, permissionLevel, scrapedContext],
@@ -434,6 +551,8 @@ export function PulseWorkspace() {
 
       setChatHistory((prev) => [...prev, createMessage({ role: 'user', content: trimmed })])
       setIsChatLoading(true)
+      setStreamPhase('started')
+      setLiveToolUses([])
 
       const conversationHistory = chatHistoryRef.current.map((m) => ({
         role: m.role,
@@ -459,8 +578,6 @@ export function PulseWorkspace() {
             }
             return merged.slice(-200)
           })
-          // Inject scraped markdown directly so Claude knows the content
-          // without waiting for RAG retrieval.
           if (result.markdownBySrc && Object.keys(result.markdownBySrc).length > 0) {
             const firstUrl = result.indexed[0]
             const md = firstUrl ? result.markdownBySrc[firstUrl] : undefined
@@ -484,8 +601,80 @@ export function PulseWorkspace() {
         }
 
         const boundedPrompt = intent.prompt.slice(0, 8000)
-        const data = await runChatPrompt(boundedPrompt, conversationHistory, controller.signal)
+        const assistantDraft = createMessage({
+          role: 'assistant',
+          content: '',
+          toolUses: [],
+          blocks: [],
+        })
+
+        let partialText = ''
+        const partialTools: PulseToolUse[] = []
+        const partialBlocks: PulseMessageBlock[] = []
+        let draftAdded = false
+        function ensureDraftAdded() {
+          if (!draftAdded) {
+            draftAdded = true
+            setChatHistory((prev) => [...prev, assistantDraft])
+          }
+        }
+
+        const data = await runChatPrompt(
+          boundedPrompt,
+          conversationHistory,
+          controller.signal,
+          (event) => {
+            if (inFlightPromptRef.current !== promptId) return
+            if (event.type === 'status' && event.phase) {
+              setStreamPhase(event.phase)
+              return
+            }
+            if (event.type === 'thinking_content' && event.content) {
+              ensureDraftAdded()
+              partialBlocks.push({ type: 'thinking', content: event.content })
+              updateChatMessage(assistantDraft.id!, (message) => ({
+                ...message,
+                blocks: [...partialBlocks],
+              }))
+              return
+            }
+            if (event.type === 'assistant_delta' && event.delta) {
+              ensureDraftAdded()
+              partialText += event.delta
+              const lastBlock = partialBlocks[partialBlocks.length - 1]
+              if (lastBlock?.type === 'text') {
+                lastBlock.content += event.delta
+              } else {
+                partialBlocks.push({ type: 'text', content: event.delta })
+              }
+              updateChatMessage(assistantDraft.id!, (message) => ({
+                ...message,
+                content: partialText,
+                blocks: [...partialBlocks],
+              }))
+              return
+            }
+            if (event.type === 'tool_use' && event.tool) {
+              ensureDraftAdded()
+              partialTools.push(event.tool)
+              partialBlocks.push({
+                type: 'tool_use',
+                name: event.tool.name,
+                input: event.tool.input,
+              })
+              setLiveToolUses([...partialTools])
+              updateChatMessage(assistantDraft.id!, (message) => ({
+                ...message,
+                toolUses: [...partialTools],
+                blocks: [...partialBlocks],
+              }))
+            }
+          },
+        )
+
         if (inFlightPromptRef.current !== promptId) return
+        // Ensure the draft is in history even if no stream events arrived (e.g. non-NDJSON path).
+        ensureDraftAdded()
         if (data.sessionId) {
           setChatSessionId(data.sessionId)
         }
@@ -497,17 +686,15 @@ export function PulseWorkspace() {
             contextBudgetChars: data.metadata.contextBudgetChars,
           })
         }
-        setChatHistory((prev) => [
-          ...prev,
-          createMessage({
-            role: 'assistant',
-            content: data.text,
-            citations: data.citations,
-            operations: data.operations,
-            toolUses: data.toolUses,
-            blocks: data.blocks,
-          }),
-        ])
+
+        updateChatMessage(assistantDraft.id!, (message) => ({
+          ...message,
+          content: data.text || partialText,
+          citations: data.citations,
+          operations: data.operations,
+          toolUses: data.toolUses,
+          blocks: data.blocks,
+        }))
 
         if (data.operations.length > 0) {
           const permission = checkPermission(permissionLevel, data.operations, {
@@ -524,7 +711,11 @@ export function PulseWorkspace() {
           }
         }
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return
+        if (err instanceof Error && err.name === 'AbortError') {
+          setRequestNotice('Request stopped. Partial response preserved.')
+          window.setTimeout(() => setRequestNotice(null), 1800)
+          return
+        }
         if (inFlightPromptRef.current !== promptId) return
         const message = err instanceof Error ? err.message : 'Unknown error'
         setChatHistory((prev) => [
@@ -542,6 +733,8 @@ export function PulseWorkspace() {
         }
         if (inFlightPromptRef.current === promptId) {
           setIsChatLoading(false)
+          setStreamPhase(null)
+          setLiveToolUses([])
         }
       }
     },
@@ -552,8 +745,21 @@ export function PulseWorkspace() {
       permissionLevel,
       runChatPrompt,
       runSourcePrompt,
+      updateChatMessage,
     ],
   )
+
+  const handleCancelPrompt = useCallback(() => {
+    if (!activePromptAbortRef.current) return
+    activePromptAbortRef.current.abort()
+    activePromptAbortRef.current = null
+    inFlightPromptRef.current += 1
+    setIsChatLoading(false)
+    setStreamPhase(null)
+    setLiveToolUses([])
+    setRequestNotice('Request stopped. Partial response preserved.')
+    window.setTimeout(() => setRequestNotice(null), 1800)
+  }, [])
 
   useEffect(() => {
     updateWorkspaceContext({
@@ -611,7 +817,7 @@ export function PulseWorkspace() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [setPulseModel, setPulsePermissionLevel])
 
   useEffect(() => {
     try {
@@ -819,11 +1025,15 @@ export function PulseWorkspace() {
           <div
             ref={splitHandleRef}
             role="separator"
+            aria-valuenow={0}
             aria-orientation="vertical"
             className={`w-2 cursor-col-resize rounded bg-[rgba(255,135,175,0.14)] transition-colors hover:bg-[rgba(175,215,255,0.2)] ${desktopViewMode === 'both' ? 'hidden lg:block' : 'hidden'}`}
             style={{ order: isDesktop ? 2 : 2 }}
             onPointerDown={(event) => {
-              dragStartRef.current = { pointerX: event.clientX, startPercent: desktopSplitPercent }
+              dragStartRef.current = {
+                pointerX: event.clientX,
+                startPercent: desktopSplitPercent,
+              }
               splitHandleRef.current?.classList.add('bg-[rgba(175,215,255,0.3)]')
             }}
           />
@@ -837,11 +1047,16 @@ export function PulseWorkspace() {
                   ? 'flex'
                   : 'hidden'
             } min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
-            style={{ order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 3 : 1) : 1 }}
+            style={{
+              order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 3 : 1) : 1,
+            }}
           >
             <PulseChatPane
               messages={chatHistory}
               isLoading={isChatLoading}
+              streamingPhase={streamPhase}
+              liveToolUses={liveToolUses}
+              onCancelRequest={handleCancelPrompt}
               indexedSources={indexedSources}
               activeThreadSources={activeThreadSources}
               onRemoveSource={(url) =>

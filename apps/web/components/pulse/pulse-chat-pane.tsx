@@ -1,122 +1,226 @@
 'use client'
 
-import { ChevronDown, Copy, RotateCcw, X } from 'lucide-react'
+import {
+  Bot,
+  Brain,
+  ChevronDown,
+  Command,
+  Copy,
+  File,
+  FilePen,
+  FilePlus,
+  FileText,
+  Globe,
+  Package,
+  Plug2,
+  RotateCcw,
+  Square,
+  Terminal,
+  X,
+  Zap,
+} from 'lucide-react'
+import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
 import { PulseMarkdown } from './pulse-markdown'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import type { ChatMessage } from './pulse-workspace'
 
-// ── Tool-use style helpers ─────────────────────────────────────────────────────
+// ── Tool badge system ──────────────────────────────────────────────────────────
 
-type BadgeStyle = { dot: string; border: string; bg: string; label: string }
+type ToolCategory = 'agent' | 'skill' | 'mcp' | 'file' | 'bash' | 'web' | 'plugin' | 'builtin'
 
-function toolBadgeStyle(name: string): BadgeStyle {
-  if (['Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS'].includes(name)) {
-    return {
-      dot: 'bg-[var(--axon-accent-blue)]',
-      border: 'border-[rgba(175,215,255,0.22)]',
-      bg: 'bg-[rgba(15,23,42,0.55)]',
-      label: 'text-[var(--axon-accent-blue)]',
-    }
-  }
-  if (name === 'Bash') {
-    return {
-      dot: 'bg-amber-400',
-      border: 'border-[rgba(245,158,11,0.28)]',
-      bg: 'bg-[rgba(30,20,5,0.55)]',
-      label: 'text-amber-300',
-    }
-  }
-  if (['WebFetch', 'WebSearch'].includes(name)) {
-    return {
-      dot: 'bg-teal-400',
-      border: 'border-[rgba(45,212,191,0.28)]',
-      bg: 'bg-[rgba(5,20,20,0.55)]',
-      label: 'text-teal-300',
-    }
-  }
-  if (name === 'Task' || name.includes(':')) {
-    return {
-      dot: 'bg-[var(--axon-accent-pink)]',
-      border: 'border-[rgba(255,135,175,0.28)]',
-      bg: 'bg-[rgba(20,5,15,0.55)]',
-      label: 'text-[var(--axon-accent-pink)]',
-    }
-  }
-  return {
-    dot: 'bg-emerald-400',
-    border: 'border-[rgba(52,211,153,0.24)]',
-    bg: 'bg-[rgba(5,20,10,0.55)]',
-    label: 'text-emerald-300',
+type CategoryStyle = {
+  border: string
+  bg: string
+  label: string
+  categoryName: string
+}
+
+const CATEGORY_STYLES: Record<ToolCategory, CategoryStyle> = {
+  agent: {
+    border: 'border-[rgba(255,135,175,0.4)]',
+    bg: 'bg-[rgba(20,5,15,0.7)]',
+    label: 'text-[var(--axon-accent-pink)]',
+    categoryName: 'Agent',
+  },
+  skill: {
+    border: 'border-[rgba(167,139,250,0.4)]',
+    bg: 'bg-[rgba(15,5,25,0.7)]',
+    label: 'text-violet-300',
+    categoryName: 'Skill',
+  },
+  mcp: {
+    border: 'border-[rgba(34,211,238,0.4)]',
+    bg: 'bg-[rgba(5,20,25,0.7)]',
+    label: 'text-cyan-300',
+    categoryName: 'MCP',
+  },
+  file: {
+    border: 'border-[rgba(175,215,255,0.32)]',
+    bg: 'bg-[rgba(10,15,30,0.7)]',
+    label: 'text-[var(--axon-accent-blue)]',
+    categoryName: 'File',
+  },
+  bash: {
+    border: 'border-[rgba(245,158,11,0.4)]',
+    bg: 'bg-[rgba(25,15,5,0.7)]',
+    label: 'text-amber-300',
+    categoryName: 'Bash',
+  },
+  web: {
+    border: 'border-[rgba(45,212,191,0.4)]',
+    bg: 'bg-[rgba(5,20,18,0.7)]',
+    label: 'text-teal-300',
+    categoryName: 'Web',
+  },
+  plugin: {
+    border: 'border-[rgba(251,146,60,0.4)]',
+    bg: 'bg-[rgba(25,12,5,0.7)]',
+    label: 'text-orange-300',
+    categoryName: 'Plugin',
+  },
+  builtin: {
+    border: 'border-[rgba(148,163,184,0.32)]',
+    bg: 'bg-[rgba(15,18,25,0.7)]',
+    label: 'text-slate-300',
+    categoryName: 'Tool',
+  },
+}
+
+function classifyTool(name: string): ToolCategory {
+  if (name === 'Task') return 'agent'
+  if (name === 'Skill') return 'skill'
+  if (name.startsWith('mcp__')) return 'mcp'
+  if (['Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS'].includes(name)) return 'file'
+  if (name === 'Bash') return 'bash'
+  if (name === 'WebFetch' || name === 'WebSearch') return 'web'
+  if (name.includes(':')) return 'plugin'
+  return 'builtin'
+}
+
+function CategoryIcon({
+  category,
+  className = 'size-2.5',
+}: {
+  category: ToolCategory
+  className?: string
+}) {
+  switch (category) {
+    case 'agent':
+      return <Bot className={className} />
+    case 'skill':
+      return <Zap className={className} />
+    case 'mcp':
+      return <Plug2 className={className} />
+    case 'file':
+      return <File className={className} />
+    case 'bash':
+      return <Terminal className={className} />
+    case 'web':
+      return <Globe className={className} />
+    case 'plugin':
+      return <Package className={className} />
+    default:
+      return <Command className={className} />
   }
 }
 
-function toolInputSummary(use: PulseToolUse): string {
-  const { name, input } = use
-  const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  if (name === 'Read' || name === 'Write' || name === 'Edit') {
-    const p = str(input.file_path)
-    return p ? (p.split('/').pop() ?? p) : ''
-  }
-  if (name === 'Bash') return str(input.command).slice(0, 52)
-  if (name === 'Glob') return str(input.pattern).slice(0, 44)
-  if (name === 'Grep') return str(input.pattern).slice(0, 44)
-  if (name === 'WebFetch' || name === 'WebSearch') {
-    const raw = str(input.url ?? input.query)
-    try {
-      return new URL(raw).hostname
-    } catch {
-      return raw.slice(0, 40)
+type BadgeTool = { name: string; input: Record<string, unknown>; result?: string }
+
+function ToolCallBadge({ tool }: { tool: BadgeTool }) {
+  const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const category = classifyTool(tool.name)
+  const style = CATEGORY_STYLES[category]
+  const isOpen = open || pinned
+
+  useEffect(() => {
+    if (!pinned) return
+    function onOutsideClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setPinned(false)
+        setOpen(false)
+      }
     }
-  }
-  if (name === 'Task') return str(input.description).slice(0, 52)
-  if (name === 'LS') return str(input.path).split('/').pop() ?? str(input.path)
-  return ''
-}
+    document.addEventListener('mousedown', onOutsideClick)
+    return () => document.removeEventListener('mousedown', onOutsideClick)
+  }, [pinned])
 
-// ── Expandable tool call card ──────────────────────────────────────────────────
+  const displayName = tool.name.startsWith('mcp__')
+    ? tool.name.split('__').slice(1).join(' › ')
+    : tool.name
 
-type ToolUseBlock = Extract<PulseMessageBlock, { type: 'tool_use' }>
-
-function ToolCallBlock({ block }: { block: ToolUseBlock }) {
-  const [expanded, setExpanded] = useState(false)
-  const style = toolBadgeStyle(block.name)
-  const summary = toolInputSummary({ name: block.name, input: block.input })
+  const inputLines = Object.entries(tool.input)
+    .slice(0, 4)
+    .map(([k, v]) => ({
+      key: k,
+      val: (typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 80),
+    }))
 
   return (
-    <div className={`rounded-lg border ${style.border} ${style.bg} text-[length:var(--text-xs)]`}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip wrapper, mouse events intentional
+    <div
+      ref={ref}
+      className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => {
+        if (!pinned) setOpen(false)
+      }}
+    >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
+        onClick={() => setPinned((v) => !v)}
+        className={`inline-flex size-5 items-center justify-center rounded border transition-colors duration-100 ${style.border} ${style.bg} ${style.label}`}
+        aria-label={tool.name}
+        title={tool.name}
       >
-        <span className={`size-1.5 shrink-0 rounded-full ${style.dot}`} />
-        <span className={`font-semibold ${style.label}`}>{block.name}</span>
-        {summary && (
-          <span className="min-w-0 flex-1 truncate text-[var(--axon-text-dim)]">· {summary}</span>
-        )}
-        <ChevronDown
-          className={`ml-auto size-3 shrink-0 text-[var(--axon-text-dim)] transition-transform duration-150 ${
-            expanded ? 'rotate-180' : ''
-          }`}
-        />
+        <CategoryIcon category={category} />
       </button>
 
-      {expanded && (
-        <div className="border-t border-[rgba(255,255,255,0.06)] px-2 pb-2 pt-1.5 space-y-2">
-          <div>
-            <p className="ui-label mb-1">Input</p>
-            <pre className="max-h-[140px] overflow-y-auto whitespace-pre-wrap break-all rounded bg-[rgba(0,0,0,0.25)] p-1.5 text-[length:var(--text-xs)] leading-[var(--leading-copy)] text-[var(--axon-text-secondary)]">
-              {JSON.stringify(block.input, null, 2)}
-            </pre>
+      {isOpen && (
+        <div className="absolute bottom-full left-0 z-50 mb-1.5 w-52 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(8,12,22,0.97)] shadow-[0_8px_24px_rgba(3,7,18,0.55)] backdrop-blur-sm">
+          <div
+            className={`flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.07)] px-2 py-1.5`}
+          >
+            <span
+              className={`inline-flex size-3.5 shrink-0 items-center justify-center rounded border ${style.border} ${style.bg}`}
+            >
+              <CategoryIcon category={category} className="size-2" />
+            </span>
+            <span
+              className={`min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-semibold ${style.label}`}
+            >
+              {displayName}
+            </span>
+            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+              {style.categoryName}
+            </span>
           </div>
-          {block.result && (
-            <div>
-              <p className="ui-label mb-1">Result</p>
-              <pre className="max-h-[100px] overflow-y-auto whitespace-pre-wrap break-all rounded bg-[rgba(0,0,0,0.25)] p-1.5 text-[length:var(--text-xs)] leading-[var(--leading-copy)] text-[var(--axon-text-dim)]">
-                {block.result}
-              </pre>
+
+          {inputLines.length > 0 && (
+            <div className="space-y-0.5 px-2 py-1.5">
+              {inputLines.map(({ key, val }) => (
+                <div
+                  key={key}
+                  className="grid grid-cols-[auto_1fr] gap-1.5 text-[length:var(--text-2xs)]"
+                >
+                  <span className="shrink-0 text-[var(--axon-text-dim)]">{key}</span>
+                  <span className="truncate text-[var(--axon-text-secondary)]">{val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tool.result && (
+            <div className="border-t border-[rgba(255,255,255,0.07)] px-2 py-1.5">
+              <p className="mb-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+                Result
+              </p>
+              <p className="line-clamp-3 text-[length:var(--text-2xs)] text-[var(--axon-text-secondary)]">
+                {tool.result}
+              </p>
             </div>
           )}
         </div>
@@ -125,20 +229,134 @@ function ToolCallBlock({ block }: { block: ToolUseBlock }) {
   )
 }
 
-// ── Doc-op pill (operations are post-processed, not inline in stream) ──────────
+// ── Thinking block (collapsible reasoning display) ────────────────────────────
+
+function ThinkingBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-lg border border-[rgba(167,139,250,0.2)] bg-[rgba(15,5,30,0.4)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
+      >
+        <Brain className="size-3 shrink-0 text-violet-400" />
+        <span className="text-[length:var(--text-xs)] font-medium text-violet-300">Reasoning</span>
+        <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+          {open ? 'hide' : `${content.length} chars`}
+        </span>
+        <ChevronDown
+          className={`size-3 text-violet-300 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && (
+        <div className="border-t border-[rgba(167,139,250,0.15)] px-2.5 py-2">
+          <p className="whitespace-pre-wrap font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--axon-text-secondary)]">
+            {content}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Block grouping (collapse consecutive tool calls into badge rows) ───────────
+
+type RenderGroup =
+  | { kind: 'text'; content: string }
+  | { kind: 'thinking'; content: string }
+  | { kind: 'tools'; tools: BadgeTool[] }
+
+function groupBlocksForRender(blocks: PulseMessageBlock[]): RenderGroup[] {
+  const result: RenderGroup[] = []
+  let toolBatch: BadgeTool[] = []
+
+  for (const block of blocks) {
+    if (block.type === 'tool_use') {
+      toolBatch.push({ name: block.name, input: block.input, result: block.result })
+    } else if (block.type === 'thinking') {
+      if (toolBatch.length > 0) {
+        result.push({ kind: 'tools', tools: toolBatch })
+        toolBatch = []
+      }
+      result.push({ kind: 'thinking', content: block.content })
+    } else if (block.type === 'text') {
+      if (toolBatch.length > 0) {
+        result.push({ kind: 'tools', tools: toolBatch })
+        toolBatch = []
+      }
+      result.push({ kind: 'text', content: block.content })
+    }
+  }
+  if (toolBatch.length > 0) result.push({ kind: 'tools', tools: toolBatch })
+  return result
+}
+
+// ── Doc-op badge (operations are post-processed, not inline in stream) ─────────
+
+const DOC_OP_META: Record<string, { label: string; Icon: React.FC<{ className?: string }> }> = {
+  replace_document: { label: 'Replace doc', Icon: FilePen },
+  append_markdown: { label: 'Append', Icon: FilePlus },
+  insert_section: { label: 'Insert section', Icon: FileText },
+}
 
 function DocOpBadge({ type, heading }: { type: string; heading?: string }) {
-  const labels: Record<string, string> = {
-    replace_document: 'Replace doc',
-    append_markdown: 'Append',
-    insert_section: heading ? `Insert · ${heading}` : 'Insert section',
-  }
-  const label = labels[type] ?? type
+  const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const meta = DOC_OP_META[type] ?? { label: type, Icon: FileText }
+  const { label, Icon } = meta
+  const displayLabel = type === 'insert_section' && heading ? `Insert · ${heading}` : label
+  const isOpen = open || pinned
+
+  useEffect(() => {
+    if (!pinned) return
+    function onOutsideClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setPinned(false)
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onOutsideClick)
+    return () => document.removeEventListener('mousedown', onOutsideClick)
+  }, [pinned])
+
   return (
-    <span className="ui-chip inline-flex shrink-0 items-center gap-1 rounded-full border border-[rgba(52,211,153,0.24)] bg-[rgba(5,20,10,0.55)] px-2 py-0.5">
-      <span className="inline-block size-1.5 shrink-0 rounded-full bg-emerald-400" />
-      <span className="font-medium text-emerald-300">{label}</span>
-    </span>
+    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip wrapper, mouse events intentional
+    <div
+      ref={ref}
+      className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => {
+        if (!pinned) setOpen(false)
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setPinned((v) => !v)}
+        className="inline-flex size-5 items-center justify-center rounded border border-[rgba(52,211,153,0.4)] bg-[rgba(5,20,10,0.7)] text-emerald-300 transition-colors duration-100"
+        aria-label={displayLabel}
+        title={displayLabel}
+      >
+        <Icon className="size-2.5" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute bottom-full left-0 z-50 mb-1.5 w-44 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(8,12,22,0.97)] shadow-[0_8px_24px_rgba(3,7,18,0.55)] backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 px-2 py-1.5">
+            <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded border border-[rgba(52,211,153,0.4)] bg-[rgba(5,20,10,0.7)]">
+              <Icon className="size-2 text-emerald-300" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-semibold text-emerald-300">
+              {displayLabel}
+            </span>
+            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+              Doc op
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -147,24 +365,32 @@ function DocOpBadge({ type, heading }: { type: string; heading?: string }) {
 function MessageContent({ msg }: { msg: ChatMessage }) {
   if (msg.isError) return null
 
-  // Only use block rendering when there are tool_use blocks; otherwise the
-  // blocks array contains Claude's raw JSON response text and we should
-  // render the already-parsed msg.content instead.
-  const hasToolCalls = msg.blocks?.some((b) => b.type === 'tool_use') ?? false
-  if (hasToolCalls && msg.blocks) {
+  const hasStructuredBlocks =
+    msg.blocks?.some((b) => b.type === 'tool_use' || b.type === 'thinking') ?? false
+  if (hasStructuredBlocks && msg.blocks) {
+    const groups = groupBlocksForRender(msg.blocks)
     return (
       <div className="space-y-1.5">
-        {msg.blocks.map((block, i) => {
-          if (block.type === 'text') {
+        {groups.map((group, i) => {
+          if (group.kind === 'thinking') {
+            return <ThinkingBlock key={i} content={group.content} />
+          }
+          if (group.kind === 'text') {
             return msg.role === 'assistant' ? (
-              <PulseMarkdown key={i} content={block.content} />
+              <PulseMarkdown key={i} content={group.content} />
             ) : (
               <p key={i} className="ui-copy whitespace-pre-wrap">
-                {block.content}
+                {group.content}
               </p>
             )
           }
-          return <ToolCallBlock key={i} block={block} />
+          return (
+            <div key={i} className="flex flex-wrap gap-1">
+              {group.tools.map((tool, j) => (
+                <ToolCallBadge key={`${tool.name}-${j}`} tool={tool} />
+              ))}
+            </div>
+          )
         })}
       </div>
     )
@@ -181,6 +407,9 @@ function MessageContent({ msg }: { msg: ChatMessage }) {
 interface PulseChatPaneProps {
   messages: ChatMessage[]
   isLoading: boolean
+  streamingPhase?: 'started' | 'thinking' | 'finalizing' | null
+  liveToolUses?: PulseToolUse[]
+  onCancelRequest?: () => void
   indexedSources: string[]
   activeThreadSources: string[]
   onRemoveSource: (url: string) => void
@@ -223,9 +452,21 @@ function formatMessageTime(createdAt: number | undefined): string {
   return new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatStreamPhaseLabel(
+  phase: 'started' | 'thinking' | 'finalizing' | null | undefined,
+): string {
+  if (phase === 'started') return 'Starting'
+  if (phase === 'thinking') return 'Thinking'
+  if (phase === 'finalizing') return 'Finalizing'
+  return 'Thinking'
+}
+
 export function PulseChatPane({
   messages,
   isLoading,
+  streamingPhase,
+  liveToolUses = [],
+  onCancelRequest,
   indexedSources,
   activeThreadSources,
   onRemoveSource,
@@ -312,7 +553,7 @@ export function PulseChatPane({
     } catch {
       // Ignore storage restore failures.
     }
-  }, [])
+  }, [messages.length])
 
   useEffect(() => {
     try {
@@ -365,7 +606,7 @@ export function PulseChatPane({
     } else if (messages.length > 0) {
       setShowJumpToLatest(true)
     }
-  }, [isLoading, isNearBottom, messages])
+  }, [isNearBottom, messages])
 
   async function handleCopyError(content: string) {
     try {
@@ -671,9 +912,28 @@ export function PulseChatPane({
         )}
 
         {isLoading && (
-          <div className="flex items-center gap-2 px-1 text-[length:var(--text-xs)] text-[var(--axon-text-dim)]">
-            <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
-            Claude is thinking...
+          <div className="space-y-1.5 rounded-md border border-[rgba(175,215,255,0.2)] bg-[rgba(10,18,35,0.45)] px-2 py-1.5 text-[length:var(--text-xs)] text-[var(--axon-text-dim)]">
+            <div className="flex items-center gap-2">
+              <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
+              <span>Claude {formatStreamPhaseLabel(streamingPhase).toLowerCase()}...</span>
+              {onCancelRequest && (
+                <button
+                  type="button"
+                  onClick={onCancelRequest}
+                  className="ml-auto inline-flex items-center gap-1 rounded border border-[rgba(255,135,135,0.3)] bg-[rgba(127,29,29,0.28)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-rose-200"
+                >
+                  <Square className="size-2.5" />
+                  Stop
+                </button>
+              )}
+            </div>
+            {liveToolUses.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {liveToolUses.map((toolUse, index) => (
+                  <ToolCallBadge key={`${toolUse.name}-${index}`} tool={toolUse} />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
