@@ -12,6 +12,10 @@ describe('pulse rag prompt builder', () => {
         conversationHistory: [],
         permissionLevel: 'accept-edits',
         model: 'sonnet',
+        effort: 'medium',
+        maxTurns: 0,
+        maxBudgetUsd: 0,
+        appendSystemPrompt: '',
       },
       [],
     )
@@ -28,6 +32,10 @@ describe('pulse rag prompt builder', () => {
         conversationHistory: [],
         permissionLevel: 'plan',
         model: 'sonnet',
+        effort: 'medium',
+        maxTurns: 0,
+        maxBudgetUsd: 0,
+        appendSystemPrompt: '',
       },
       [
         {
@@ -55,6 +63,10 @@ describe('pulse rag prompt builder', () => {
         ],
         permissionLevel: 'accept-edits',
         model: 'sonnet',
+        effort: 'medium',
+        maxTurns: 0,
+        maxBudgetUsd: 0,
+        appendSystemPrompt: '',
       },
       [],
     )
@@ -79,6 +91,10 @@ describe('pulse rag prompt builder', () => {
         conversationHistory: history,
         permissionLevel: 'accept-edits',
         model: 'sonnet',
+        effort: 'medium',
+        maxTurns: 0,
+        maxBudgetUsd: 0,
+        appendSystemPrompt: '',
       },
       [],
     )
@@ -97,6 +113,10 @@ describe('pulse rag prompt builder', () => {
         conversationHistory: [],
         permissionLevel: 'bypass-permissions',
         model: 'sonnet',
+        effort: 'medium',
+        maxTurns: 0,
+        maxBudgetUsd: 0,
+        appendSystemPrompt: '',
       },
       [],
     )

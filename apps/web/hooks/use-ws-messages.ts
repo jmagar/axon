@@ -291,7 +291,14 @@ export function useWsMessagesProvider() {
   const currentJobIdRef = useRef<string | null>(null)
   const [lifecycleEntries, setLifecycleEntries] = useState<WsLifecycleEntry[]>([])
   const [cancelResponse, setCancelResponse] = useState<CancelResponseState | null>(null)
-  const [workspaceMode, setWorkspaceMode] = useState<string | null>('pulse')
+  const [workspaceMode, setWorkspaceMode] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return 'pulse'
+    try {
+      return window.localStorage.getItem('axon.web.workspace-mode') ?? 'pulse'
+    } catch {
+      return 'pulse'
+    }
+  })
   const [workspacePrompt, setWorkspacePrompt] = useState<string | null>(null)
   const [workspacePromptVersion, setWorkspacePromptVersion] = useState(0)
   const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContextState | null>(null)
@@ -324,6 +331,18 @@ export function useWsMessagesProvider() {
   useEffect(() => {
     virtualFileContentByPathRef.current = virtualFileContentByPath
   }, [virtualFileContentByPath])
+
+  useEffect(() => {
+    try {
+      if (workspaceMode === null) {
+        window.localStorage.removeItem('axon.web.workspace-mode')
+      } else {
+        window.localStorage.setItem('axon.web.workspace-mode', workspaceMode)
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [workspaceMode])
 
   const setCurrentJobIdTracked = useCallback((jobId: string | null) => {
     currentJobIdRef.current = jobId
@@ -708,6 +727,11 @@ export function useWsMessagesProvider() {
     currentInputRef.current = ''
     setCurrentMode('')
     setWorkspaceMode(null)
+    try {
+      window.localStorage.removeItem('axon.web.workspace-mode')
+    } catch {
+      // Ignore storage errors.
+    }
     if (workspacePromptDebounceRef.current) {
       clearTimeout(workspacePromptDebounceRef.current)
       workspacePromptDebounceRef.current = null

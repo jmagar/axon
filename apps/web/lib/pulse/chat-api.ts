@@ -31,6 +31,15 @@ export interface RunChatPromptOptions {
   scrapedContext: { url: string; markdown: string } | null
   permissionLevel: PulsePermissionLevel
   model: PulseModel
+  effort?: string
+  maxTurns?: number
+  maxBudgetUsd?: number
+  appendSystemPrompt?: string
+  disableSlashCommands?: boolean
+  noSessionPersistence?: boolean
+  fallbackModel?: string
+  allowedTools?: string
+  disallowedTools?: string
 }
 
 async function readNdjsonStream(
@@ -115,6 +124,15 @@ export async function runChatPrompt(opts: RunChatPromptOptions): Promise<PulseCh
     scrapedContext,
     permissionLevel,
     model,
+    effort,
+    maxTurns,
+    maxBudgetUsd,
+    appendSystemPrompt,
+    disableSlashCommands,
+    noSessionPersistence,
+    fallbackModel,
+    allowedTools,
+    disallowedTools,
   } = opts
 
   const response = await fetch('/api/pulse/chat', {
@@ -131,6 +149,15 @@ export async function runChatPrompt(opts: RunChatPromptOptions): Promise<PulseCh
       conversationHistory,
       permissionLevel,
       model,
+      effort,
+      maxTurns,
+      maxBudgetUsd,
+      appendSystemPrompt,
+      disableSlashCommands,
+      noSessionPersistence,
+      fallbackModel,
+      allowedTools,
+      disallowedTools,
     }),
   })
 

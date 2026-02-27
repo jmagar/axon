@@ -54,3 +54,5 @@ apps/web/components/pulse/pulse-workspace.tsx
 crates/cli/commands/refresh.rs
 # 539 lines — status command with extended job table output; split planned
 crates/cli/commands/status.rs
+# 701 lines — full settings page with 8 CLI sections + sidebar nav; split planned (2026-02-27)
+apps/web/app/settings/page.tsx
