@@ -3,6 +3,13 @@ Last Modified: 2026-02-25
 
 Self-hosted web crawling and RAG pipeline powered by Spider.rs. Single binary (`axon`) backed by a local Docker stack.
 
+## CI Status
+
+[![CI](https://github.com/jmagar/axon_rust/actions/workflows/ci.yml/badge.svg)](https://github.com/jmagar/axon_rust/actions/workflows/ci.yml)
+
+- `mcp-smoke`: runs as a dedicated job in the `CI` workflow and executes `./scripts/test-mcp-tools-mcporter.sh`.
+- `test-infra`: manual lane (`workflow_dispatch`) for ignored infra-backed tests; use Actions -> CI -> Run workflow -> `run_infra_tests=true`.
+
 ## Overview
 
 Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&A. It runs on a local Docker stack (Postgres, Redis, RabbitMQ, Qdrant) and external model endpoints (TEI and OpenAI-compatible API).
@@ -48,6 +55,7 @@ For infra topology (Docker services, ports, persistence), see the Infrastructure
 - [crates/web](crates/web/README.md)
 - [docker](docker/README.md)
 - [docs index](docs/README.md)
+- [testing guide](docs/TESTING.md)
 
 ## MCP Server
 
@@ -635,6 +643,46 @@ cargo build --bin axon                        # debug
 cargo build --release --bin axon              # release
 cargo check                                   # fast type check
 ```
+
+### Local Dev Workflow (Optimized)
+
+Use `just` targets for a faster Rust loop:
+
+```bash
+# install optional local tools
+just nextest-install
+just llvm-cov-install
+
+# local default test lane (nextest when available, skips worker_e2e)
+just test
+
+# fastest inner loop (unit/lib focused)
+just test-fast
+
+# explicit infra-dependent tests (worker_e2e)
+just test-infra
+
+# watch mode: check + test type-check + fast lib tests
+just watch-check
+
+# branch-level coverage report (lcov)
+just coverage-branch
+```
+
+Notes:
+- `just` auto-enables `sccache` and `mold` if installed (`RUSTC_WRAPPER=sccache`, `-fuse-ld=mold`).
+- Worker E2E tests are marked `#[ignore]` and intended to run explicitly via `just test-infra`.
+- Build/test/check/clippy commands in local and CI paths are lockfile-strict (`--locked`).
+
+### Manual CI Infra Lane
+
+Use the optional GitHub Actions lane when you want CI to run ignored infra-backed worker tests:
+
+1. Open `Actions` -> `CI` -> `Run workflow`.
+2. Set `run_infra_tests` to `true`.
+3. Start the run; the `test-infra` job will execute `just test-infra` with Postgres/Redis/RabbitMQ services.
+
+This lane is manual-only (`workflow_dispatch`) so normal PR/push CI stays fast.
 
 ### Lint
 

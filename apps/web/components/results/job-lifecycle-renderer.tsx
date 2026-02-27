@@ -133,10 +133,7 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
         />
         <div className="min-w-0 flex-1">
           <span className="ui-mono text-[var(--axon-accent-blue)]">{job.jobId}</span>
-          <span
-            className="ml-2 ui-label"
-            style={{ color: PHASE_META[job.status].color }}
-          >
+          <span className="ml-2 ui-label" style={{ color: PHASE_META[job.status].color }}>
             {PHASE_META[job.status].label}
           </span>
         </div>
@@ -145,21 +142,15 @@ function JobCard({ job, commandMode }: { job: JobState; commandMode: string | nu
       {/* Error display */}
       {job.status === 'failed' && job.errorText && (
         <div className="mb-3 rounded-md border border-[rgba(255,95,135,0.2)] bg-[rgba(255,95,135,0.06)] px-3 py-2">
-          <div className="ui-label mb-1 text-[var(--axon-accent-pink)]">
-            Error
-          </div>
-          <div className="ui-mono text-[var(--axon-text-secondary)]">
-            {job.errorText}
-          </div>
+          <div className="ui-label mb-1 text-[var(--axon-accent-pink)]">Error</div>
+          <div className="ui-mono text-[var(--axon-text-secondary)]">{job.errorText}</div>
         </div>
       )}
 
       {/* Result summary for completed jobs */}
       {job.status === 'completed' && job.resultSummary && (
         <div className="mb-3 space-y-0.5">
-          <div className="ui-label mb-1">
-            Result
-          </div>
+          <div className="ui-label mb-1">Result</div>
           {Object.entries(job.resultSummary).map(([key, val]) => (
             <div key={key} className="flex justify-between py-0.5 text-[length:var(--text-sm)]">
               <span className="text-[var(--axon-text-muted)]">{key}</span>
@@ -281,12 +272,8 @@ export function JobLifecycleRenderer({
   if (errorMessage && jobs.length === 0) {
     return (
       <div className="rounded-md border border-[rgba(255,95,135,0.2)] bg-[rgba(255,95,135,0.06)] px-4 py-3">
-        <div className="ui-label mb-1 text-[var(--axon-accent-pink)]">
-          Error
-        </div>
-        <div className="ui-mono text-[var(--axon-text-secondary)]">
-          {errorMessage}
-        </div>
+        <div className="ui-label mb-1 text-[var(--axon-accent-pink)]">Error</div>
+        <div className="ui-mono text-[var(--axon-text-secondary)]">{errorMessage}</div>
       </div>
     )
   }

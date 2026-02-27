@@ -70,6 +70,7 @@ export interface PulseToolUse {
 export type PulseMessageBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; name: string; input: Record<string, unknown>; result?: string }
+  | { type: 'thinking'; content: string }
 
 export interface PulseChatResponse {
   text: string
@@ -83,6 +84,10 @@ export interface PulseChatResponse {
     elapsedMs: number
     contextCharsTotal: number
     contextBudgetChars: number
+    first_delta_ms?: number | null
+    time_to_done_ms?: number
+    delta_count?: number
+    aborted?: boolean
   }
 }
 

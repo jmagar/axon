@@ -1,8 +1,45 @@
 # syntax=docker/dockerfile:1
+#
+# Build context is apps/web (context: apps/web in docker-compose.yaml).
+# s6-overlay supervises three services: pnpm-dev, claude-session, claude-watcher.
+# PID 1 must be root (/init) — cannot use USER node with s6-overlay.
+# Services drop privileges via s6-setuidgid node in their run scripts.
+
 FROM node:24-slim
 
+ARG S6_OVERLAY_VERSION=3.2.1.0
+
 # Install system deps + AI CLIs as root into system paths
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates openssh-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        inotify-tools \
+        openssh-client \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# s6-overlay for process supervision (pnpm-dev + claude-session + claude-watcher)
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) s6_arch="x86_64" ;; \
+      arm64) s6_arch="aarch64" ;; \
+      *) echo "Unsupported arch: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz"; \
+    curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz.sha256 \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz.sha256"; \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz" \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz"; \
+    curl -fsSL -o "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256" \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz.sha256"; \
+    cd /tmp && sha256sum -c s6-overlay-noarch.tar.xz.sha256; \
+    cd /tmp && sha256sum -c "s6-overlay-${s6_arch}.tar.xz.sha256"; \
+    tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz; \
+    tar -C / -Jxpf "/tmp/s6-overlay-${s6_arch}.tar.xz"; \
+    rm -f "/tmp/s6-overlay-noarch.tar.xz" "/tmp/s6-overlay-noarch.tar.xz.sha256" \
+          "/tmp/s6-overlay-${s6_arch}.tar.xz" "/tmp/s6-overlay-${s6_arch}.tar.xz.sha256"
 
 # Claude: installer drops a symlink into $HOME/.local/bin pointing to the real
 # binary under $HOME/.local/share/claude/versions/. Move the actual binary
@@ -25,12 +62,28 @@ WORKDIR /app
 # so the node user can write into them at runtime
 RUN mkdir -p /app/.next /app/node_modules && chown -R node:node /app
 
-# Copy dep manifests only — source is bind-mounted at runtime for hot reload
+# Copy dep manifests only — source is bind-mounted at runtime for hot reload.
+# Build context is apps/web so paths are relative to that directory.
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# Drop to non-root for runtime
-USER node
+# s6 service definitions injected via additional_contexts (web-s6: docker/web/s6-rc.d)
+COPY --from=web-s6 . /etc/s6-overlay/s6-rc.d/
 
-# next dev binds to all interfaces when HOST=0.0.0.0 (set in docker-compose env)
-CMD ["pnpm", "run", "dev"]
+# cont-init.d scripts injected via additional_contexts (web-cont-init: docker/web/cont-init.d)
+COPY --from=web-cont-init . /etc/cont-init.d/
+
+RUN find /etc/s6-overlay/s6-rc.d -type f -name run    -exec chmod +x {} + \
+    && find /etc/s6-overlay/s6-rc.d -type f -name finish -exec chmod +x {} + \
+    && chmod +x /etc/cont-init.d/* \
+    && mkdir -p \
+        /var/log/axon/pnpm-dev \
+        /var/log/axon/claude-session \
+        /var/log/axon/claude-watcher \
+    && chown -R node:node /var/log/axon
+
+# NOTE: s6-overlay v3 requires root for /init (PID 1) to manage process
+# supervision. Services drop privileges via s6-setuidgid in their run scripts.
+# Do NOT add USER node here.
+
+ENTRYPOINT ["/init"]

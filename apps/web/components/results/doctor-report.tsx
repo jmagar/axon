@@ -19,11 +19,7 @@ function cleanServiceMeta(text: string | undefined): string | undefined {
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="ui-label mb-2 text-[var(--axon-accent-blue-strong)]">
-      {children}
-    </h3>
-  )
+  return <h3 className="ui-label mb-2 text-[var(--axon-accent-blue-strong)]">{children}</h3>
 }
 
 function MetricTile({
@@ -170,9 +166,7 @@ export function DoctorReport({ data }: DoctorReportProps) {
           <span className="text-[length:var(--text-sm)] font-semibold text-[var(--axon-text-secondary)]">
             {data.all_ok ? 'System Health: Stable' : 'System Health: Attention Needed'}
           </span>
-          {observedAt && (
-            <span className="ui-meta">Observed {observedAt}</span>
-          )}
+          {observedAt && <span className="ui-meta">Observed {observedAt}</span>}
         </div>
       </div>
 

@@ -77,7 +77,7 @@ function runAxonScrape(urls: string[]): Promise<CommandResult> {
 
       resolve({
         ok: code === 0,
-        output: (stdout + '\n' + stderr).trim(),
+        output: `${stdout}\n${stderr}`.trim(),
         markdownBySrc,
       })
     })

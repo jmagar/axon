@@ -174,14 +174,15 @@ High-level subsystem map:
   - `crates/crawl/engine.rs`
   - `crates/core/http.rs` and `crates/core/content.rs`
 - Async jobs:
-  - `crates/jobs/{crawl,extract,embed,ingest}.rs`
+  - `crates/jobs/crawl/` (manifest, processor, repo, sitemap, watchdog, worker, runtime)
+  - `crates/jobs/{extract,embed}/` modules, `crates/jobs/ingest.rs`
   - `crates/jobs/common/*` and `crates/jobs/worker_lane.rs`
   - job states in `crates/jobs/status.rs`
 - Vector + RAG:
   - `crates/vector/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
 - Web runtimes:
   - WebSocket execution bridge: `crates/web.rs`
-  - Active UI: `apps/web/*` (Next.js omnibox and pulse workspace)
+  - Active UI: `apps/web/` (Next.js — omnibox, Pulse workspace, port 49010)
 
 ## Infrastructure
 

@@ -143,7 +143,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
           : recentScrollRef.current
     if (!target) return
     target.scrollTop = tabScrollMapRef.current[activeTab] ?? 0
-  }, [activeTab, hasResults, isPulseWorkspace])
+  }, [activeTab])
 
   const rememberScroll = (tabId: TabId, value: number) => {
     tabScrollMapRef.current[tabId] = value

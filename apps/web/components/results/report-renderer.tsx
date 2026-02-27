@@ -44,11 +44,7 @@ export function ReportRenderer({ result, commandMode }: ReportRendererProps) {
 // ---------------------------------------------------------------------------
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="ui-label mb-1.5">
-      {children}
-    </h3>
-  )
+  return <h3 className="ui-label mb-1.5">{children}</h3>
 }
 
 function AskPill({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
@@ -147,12 +143,8 @@ function AskReport({ data }: { data: AskResult }) {
           <span className="inline-flex size-4 items-center justify-center rounded-[6px] border border-[rgba(175,215,255,0.3)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]">
             <Sparkles size={10} />
           </span>
-          <span className="ui-label">
-            Ask
-          </span>
-          <p className="min-w-[180px] flex-1 break-words ui-long-copy">
-            {data.query}
-          </p>
+          <span className="ui-label">Ask</span>
+          <p className="min-w-[180px] flex-1 break-words ui-long-copy">{data.query}</p>
           <AskPill label="total" value={fmtMs(data.timing_ms.total)} icon={<Clock3 size={10} />} />
           <AskPill
             label="ret"
@@ -205,10 +197,10 @@ function EvaluateReport({ data }: { data: EvaluateResult }) {
       {/* Query */}
       <div>
         <SectionHeader>Query</SectionHeader>
-        <p className="text-[length:var(--text-base)] font-medium text-[var(--axon-text-secondary)]">{data.query}</p>
-        <span className="ui-meta mt-1">
-          {data.ref_chunk_count} reference chunks
-        </span>
+        <p className="text-[length:var(--text-base)] font-medium text-[var(--axon-text-secondary)]">
+          {data.query}
+        </p>
+        <span className="ui-meta mt-1">{data.ref_chunk_count} reference chunks</span>
       </div>
 
       {/* Side-by-side RAG vs Baseline */}
@@ -331,10 +323,7 @@ function RawTextReport({ data }: { data: unknown[] }) {
         }
         const text = typeof item === 'string' ? item : formatStructuredText(item)
         return (
-          <div
-            key={`text-${idx}`}
-            className="whitespace-pre-wrap ui-long-copy"
-          >
+          <div key={`text-${idx}`} className="whitespace-pre-wrap ui-long-copy">
             {text}
           </div>
         )
