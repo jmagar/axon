@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     if (embed) {
       const teiUrl = process.env.TEI_URL
       const qdrantUrl = process.env.QDRANT_URL
-      const collection = collections?.[0] ?? 'pulse'
+      const collection = collections?.[0] ?? process.env.AXON_COLLECTION ?? 'cortex'
 
       if (teiUrl && qdrantUrl && markdown.trim()) {
         try {
