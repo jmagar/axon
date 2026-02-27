@@ -9,7 +9,8 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| `TBD` | feat(web+pulse) | settings full page, session cards, workspace persistence, new session button |
+| `TBD` | feat(web) | settings redesign, MCP config page, agents listing, PlateJS theming, MCP status indicators, nav icons in header, 72 tests |
+| `f6e5e11` | feat(web) | settings page, session cards, workspace persistence, PWA scaffold |
 | `884af14` | fix(web) | fix Pulse chat 'Claude CLI exited 1' due to root-owned .claude dirs |
 | `d7ad5bb` | fix(ask) | remove brittle Gate 5/6 URL heuristics; trust LLM citation grounding |
 | `c246b22` | fix(rust) | address 5 PR review comments (env_bool fallback, authoritative_ratio, touch_running_job dedup, cancel exit 130) |
@@ -62,7 +63,16 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 - **TypeScript (7 fixes):** `tool-badge.tsx` guards `JSON.stringify` undefined before `.slice`; `use-pulse-autosave` clears `setTimeout` ref on unmount; `use-pulse-chat` block update is now immutable (spread instead of mutation); `workspace-persistence` NaN-safe `parseSplit()` helper; pulse/chat route stale comment removed; pulse/save route guards empty embedding response before `ensureCollection`.
 - **Infra / Docs (4 fixes):** `20-pnpm-install` sentinel touch gated on successful install (exits 1 on failure); `docker-compose.yaml` SSH mount commented out (opt-in); `docs/SERVE.md` legacy browser-UI instructions removed; `commands/axon/crawl.md` `errors`/`worker` subcommands added to argument-hint.
 
-#### Pulse Settings Page + Session Cards (TBD)
+#### MCP Config, Agents, Status Indicators, Omnibox Nav (TBD)
+- **MCP configuration page** (`/mcp`): full CRUD for `~/.claude/mcp.json` — form-based (stdio command+args / HTTP URL) and raw JSON editor tab, delete confirmation, glass-morphic design. Accessible directly from the omnibox Network icon.
+- **MCP server status indicators**: `/api/mcp/status` probes each server on page load — HTTP via `AbortSignal.timeout(4s)` fetch, stdio via `which <command>`. Cards show animated status dot (green glow = online, red = offline, yellow pulse = checking).
+- **Agents listing page** (`/agents`): parses `claude agents` CLI output into grouped card grid with source badges (Built-in/Project/Global). Shimmer skeleton loading and empty state with actionable message.
+- **Omnibox nav buttons**: Network (→ `/mcp`), Bot (→ `/agents`), Settings2 (→ `/settings`) icons in every omnibox instance. Previously only Settings was one-click accessible.
+- **Settings redesign**: NeuralCanvas background bleeds through glass-morphic panels; all 3-option card selectors replaced with `<select>` dropdowns; 3 new CLI flags wired end-to-end (`--add-dir`, `--betas`, `--tools`).
+- **PlateJS Axon theme**: `.axon-editor` CSS scope, `axon` CVA variants, toolbar hover/active/tooltip colors aligned to design system.
+- **72 new tests**: `build-claude-args.test.ts` (49), `agents/parser.test.ts` (11), `mcp/route.test.ts` (12).
+
+#### Pulse Settings Page + Session Cards (f6e5e11)
 - **Settings full page** (`/settings`): replaced popup panel with a proper Next.js route — sticky header with back button and "Reset to defaults", sidebar nav on lg+, 8 sections: Model, Permission Mode, Reasoning Effort, Limits, Custom Instructions, Tools & Permissions, Session Behavior, Keyboard Shortcuts.
 - **5 new CLI flags** wired end-to-end through the entire settings → API stack: `--allowedTools`, `--disallowedTools`, `--disable-slash-commands`, `--no-session-persistence`, `--fallback-model`. Each passes from `usePulseSettings` → `usePulseChat` → `chat-api.ts` → `route.ts` → `buildClaudeArgs`.
 - **Session cards**: `extractPreview()` in `session-scanner.ts` reads the first 4 KB of each JSONL file to extract the first real user message (≤80 chars) as a preview. "tmp" project label hidden; UUID filename capped at 20 chars as fallback. Limited to 4 cards.
@@ -72,7 +82,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 - **Omnibox**: settings gear always visible and navigates to `/settings` via `router.push`; controlled `input` cleared when leaving Pulse workspace.
 - `settings-panel.tsx` deleted (no remaining consumers).
 
-#### Pulse Module Splits (TBD)
+#### Pulse Module Splits (7be0ba0)
 - Broke three over-limit files into 13 focused modules — no behavioral changes, zero re-exports:
   - `route.ts` (562→388 lines) split into `replay-cache.ts`, `claude-stream-types.ts`, `stream-parser.ts`
   - `pulse-workspace.tsx` (1093→342 lines) split into `hooks/use-pulse-chat.ts`, `use-pulse-persistence.ts`, `use-split-pane.ts`, `use-pulse-autosave.ts`, `lib/pulse/workspace-persistence.ts`, `lib/pulse/chat-api.ts`
@@ -81,7 +91,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 - `computeMessageVirtualWindow` relocated to `chat-utils.ts`; test import updated directly (no shim).
 - All 110 tests pass, TSC clean, Biome clean.
 
-#### Ask / Strict Gates (TBD)
+#### Ask / Strict Gates (d7ad5bb)
 - Added `ask_strict_procedural` and `ask_strict_config_schema` config fields (both default `true`) — allow disabling Gate 5 (official-docs source check) and Gate 6 (exact-page-citation check) via env vars `AXON_ASK_STRICT_PROCEDURAL` / `AXON_ASK_STRICT_CONFIG_SCHEMA` without code changes.
 - `crates/vector/ops/commands/ask.rs` extended with corresponding gate logic.
 

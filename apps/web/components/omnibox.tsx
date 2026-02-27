@@ -1,15 +1,6 @@
 'use client'
 
-import {
-  SendHorizontal,
-  Settings2,
-  Shield,
-  ShieldCheck,
-  ShieldOff,
-  Square,
-  Wrench,
-} from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { SendHorizontal, Shield, ShieldCheck, ShieldOff, Square, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useWsMessages } from '@/hooks/use-ws-messages'
