@@ -73,3 +73,11 @@ pub(super) fn env_f64_clamped(key: &str, default: f64, min: f64, max: f64) -> f6
         .unwrap_or(default)
         .clamp(min, max)
 }
+
+pub(super) fn env_bool(key: &str, default: bool) -> bool {
+    env::var(key)
+        .ok()
+        .filter(|v| !v.is_empty()) // empty string = not set = use default (matches project convention)
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+        .unwrap_or(default)
+}

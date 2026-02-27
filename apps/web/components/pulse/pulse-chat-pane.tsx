@@ -1,409 +1,26 @@
 'use client'
 
-import {
-  Bot,
-  Brain,
-  ChevronDown,
-  Command,
-  Copy,
-  File,
-  FilePen,
-  FilePlus,
-  FileText,
-  Globe,
-  Package,
-  Plug2,
-  RotateCcw,
-  Square,
-  Terminal,
-  X,
-  Zap,
-} from 'lucide-react'
-import type React from 'react'
+import { ChevronDown, Square, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
-import { PulseMarkdown } from './pulse-markdown'
+import type { PulseToolUse } from '@/lib/pulse/types'
+import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
+import {
+  CHAT_SCROLL_STORAGE_KEY,
+  computeMessageVirtualWindow,
+  formatStreamPhaseLabel,
+  MESSAGE_ESTIMATED_HEIGHT,
+  SOURCE_EXPANDED_STORAGE_KEY,
+  SOURCE_LIST_OPEN_STORAGE_KEY,
+  SOURCE_LIST_SCROLL_STORAGE_KEY,
+  SOURCE_OVERSCAN,
+  SOURCE_ROW_HEIGHT,
+  SOURCE_VIRTUAL_THRESHOLD,
+} from './chat-utils'
+import { MessageBubble } from './message-content'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
-import type { ChatMessage } from './pulse-workspace'
-
-// ── Tool badge system ──────────────────────────────────────────────────────────
-
-type ToolCategory = 'agent' | 'skill' | 'mcp' | 'file' | 'bash' | 'web' | 'plugin' | 'builtin'
-
-type CategoryStyle = {
-  border: string
-  bg: string
-  label: string
-  categoryName: string
-}
-
-const CATEGORY_STYLES: Record<ToolCategory, CategoryStyle> = {
-  agent: {
-    border: 'border-[rgba(255,135,175,0.4)]',
-    bg: 'bg-[rgba(20,5,15,0.7)]',
-    label: 'text-[var(--axon-accent-pink)]',
-    categoryName: 'Agent',
-  },
-  skill: {
-    border: 'border-[rgba(167,139,250,0.4)]',
-    bg: 'bg-[rgba(15,5,25,0.7)]',
-    label: 'text-violet-300',
-    categoryName: 'Skill',
-  },
-  mcp: {
-    border: 'border-[rgba(34,211,238,0.4)]',
-    bg: 'bg-[rgba(5,20,25,0.7)]',
-    label: 'text-cyan-300',
-    categoryName: 'MCP',
-  },
-  file: {
-    border: 'border-[rgba(175,215,255,0.32)]',
-    bg: 'bg-[rgba(10,15,30,0.7)]',
-    label: 'text-[var(--axon-accent-blue)]',
-    categoryName: 'File',
-  },
-  bash: {
-    border: 'border-[rgba(245,158,11,0.4)]',
-    bg: 'bg-[rgba(25,15,5,0.7)]',
-    label: 'text-amber-300',
-    categoryName: 'Bash',
-  },
-  web: {
-    border: 'border-[rgba(45,212,191,0.4)]',
-    bg: 'bg-[rgba(5,20,18,0.7)]',
-    label: 'text-teal-300',
-    categoryName: 'Web',
-  },
-  plugin: {
-    border: 'border-[rgba(251,146,60,0.4)]',
-    bg: 'bg-[rgba(25,12,5,0.7)]',
-    label: 'text-orange-300',
-    categoryName: 'Plugin',
-  },
-  builtin: {
-    border: 'border-[rgba(148,163,184,0.32)]',
-    bg: 'bg-[rgba(15,18,25,0.7)]',
-    label: 'text-slate-300',
-    categoryName: 'Tool',
-  },
-}
-
-function classifyTool(name: string): ToolCategory {
-  if (name === 'Task') return 'agent'
-  if (name === 'Skill') return 'skill'
-  if (name.startsWith('mcp__')) return 'mcp'
-  if (['Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS'].includes(name)) return 'file'
-  if (name === 'Bash') return 'bash'
-  if (name === 'WebFetch' || name === 'WebSearch') return 'web'
-  if (name.includes(':')) return 'plugin'
-  return 'builtin'
-}
-
-function CategoryIcon({
-  category,
-  className = 'size-2.5',
-}: {
-  category: ToolCategory
-  className?: string
-}) {
-  switch (category) {
-    case 'agent':
-      return <Bot className={className} />
-    case 'skill':
-      return <Zap className={className} />
-    case 'mcp':
-      return <Plug2 className={className} />
-    case 'file':
-      return <File className={className} />
-    case 'bash':
-      return <Terminal className={className} />
-    case 'web':
-      return <Globe className={className} />
-    case 'plugin':
-      return <Package className={className} />
-    default:
-      return <Command className={className} />
-  }
-}
-
-type BadgeTool = { name: string; input: Record<string, unknown>; result?: string }
-
-function ToolCallBadge({ tool }: { tool: BadgeTool }) {
-  const [open, setOpen] = useState(false)
-  const [pinned, setPinned] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const category = classifyTool(tool.name)
-  const style = CATEGORY_STYLES[category]
-  const isOpen = open || pinned
-
-  useEffect(() => {
-    if (!pinned) return
-    function onOutsideClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setPinned(false)
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onOutsideClick)
-    return () => document.removeEventListener('mousedown', onOutsideClick)
-  }, [pinned])
-
-  const displayName = tool.name.startsWith('mcp__')
-    ? tool.name.split('__').slice(1).join(' › ')
-    : tool.name
-
-  const inputLines = Object.entries(tool.input)
-    .slice(0, 4)
-    .map(([k, v]) => ({
-      key: k,
-      val: (typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 80),
-    }))
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip wrapper, mouse events intentional
-    <div
-      ref={ref}
-      className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => {
-        if (!pinned) setOpen(false)
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setPinned((v) => !v)}
-        className={`inline-flex size-5 items-center justify-center rounded border transition-colors duration-100 ${style.border} ${style.bg} ${style.label}`}
-        aria-label={tool.name}
-        title={tool.name}
-      >
-        <CategoryIcon category={category} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full left-0 z-50 mb-1.5 w-52 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(8,12,22,0.97)] shadow-[0_8px_24px_rgba(3,7,18,0.55)] backdrop-blur-sm">
-          <div
-            className={`flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.07)] px-2 py-1.5`}
-          >
-            <span
-              className={`inline-flex size-3.5 shrink-0 items-center justify-center rounded border ${style.border} ${style.bg}`}
-            >
-              <CategoryIcon category={category} className="size-2" />
-            </span>
-            <span
-              className={`min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-semibold ${style.label}`}
-            >
-              {displayName}
-            </span>
-            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-              {style.categoryName}
-            </span>
-          </div>
-
-          {inputLines.length > 0 && (
-            <div className="space-y-0.5 px-2 py-1.5">
-              {inputLines.map(({ key, val }) => (
-                <div
-                  key={key}
-                  className="grid grid-cols-[auto_1fr] gap-1.5 text-[length:var(--text-2xs)]"
-                >
-                  <span className="shrink-0 text-[var(--axon-text-dim)]">{key}</span>
-                  <span className="truncate text-[var(--axon-text-secondary)]">{val}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tool.result && (
-            <div className="border-t border-[rgba(255,255,255,0.07)] px-2 py-1.5">
-              <p className="mb-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-                Result
-              </p>
-              <p className="line-clamp-3 text-[length:var(--text-2xs)] text-[var(--axon-text-secondary)]">
-                {tool.result}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Thinking block (collapsible reasoning display) ────────────────────────────
-
-function ThinkingBlock({ content }: { content: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="rounded-lg border border-[rgba(167,139,250,0.2)] bg-[rgba(15,5,30,0.4)]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
-      >
-        <Brain className="size-3 shrink-0 text-violet-400" />
-        <span className="text-[length:var(--text-xs)] font-medium text-violet-300">Reasoning</span>
-        <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-          {open ? 'hide' : `${content.length} chars`}
-        </span>
-        <ChevronDown
-          className={`size-3 text-violet-300 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-      {open && (
-        <div className="border-t border-[rgba(167,139,250,0.15)] px-2.5 py-2">
-          <p className="whitespace-pre-wrap font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--axon-text-secondary)]">
-            {content}
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Block grouping (collapse consecutive tool calls into badge rows) ───────────
-
-type RenderGroup =
-  | { kind: 'text'; content: string }
-  | { kind: 'thinking'; content: string }
-  | { kind: 'tools'; tools: BadgeTool[] }
-
-function groupBlocksForRender(blocks: PulseMessageBlock[]): RenderGroup[] {
-  const result: RenderGroup[] = []
-  let toolBatch: BadgeTool[] = []
-
-  for (const block of blocks) {
-    if (block.type === 'tool_use') {
-      toolBatch.push({ name: block.name, input: block.input, result: block.result })
-    } else if (block.type === 'thinking') {
-      if (toolBatch.length > 0) {
-        result.push({ kind: 'tools', tools: toolBatch })
-        toolBatch = []
-      }
-      result.push({ kind: 'thinking', content: block.content })
-    } else if (block.type === 'text') {
-      if (toolBatch.length > 0) {
-        result.push({ kind: 'tools', tools: toolBatch })
-        toolBatch = []
-      }
-      result.push({ kind: 'text', content: block.content })
-    }
-  }
-  if (toolBatch.length > 0) result.push({ kind: 'tools', tools: toolBatch })
-  return result
-}
-
-// ── Doc-op badge (operations are post-processed, not inline in stream) ─────────
-
-const DOC_OP_META: Record<string, { label: string; Icon: React.FC<{ className?: string }> }> = {
-  replace_document: { label: 'Replace doc', Icon: FilePen },
-  append_markdown: { label: 'Append', Icon: FilePlus },
-  insert_section: { label: 'Insert section', Icon: FileText },
-}
-
-function DocOpBadge({ type, heading }: { type: string; heading?: string }) {
-  const [open, setOpen] = useState(false)
-  const [pinned, setPinned] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const meta = DOC_OP_META[type] ?? { label: type, Icon: FileText }
-  const { label, Icon } = meta
-  const displayLabel = type === 'insert_section' && heading ? `Insert · ${heading}` : label
-  const isOpen = open || pinned
-
-  useEffect(() => {
-    if (!pinned) return
-    function onOutsideClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setPinned(false)
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onOutsideClick)
-    return () => document.removeEventListener('mousedown', onOutsideClick)
-  }, [pinned])
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip wrapper, mouse events intentional
-    <div
-      ref={ref}
-      className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => {
-        if (!pinned) setOpen(false)
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setPinned((v) => !v)}
-        className="inline-flex size-5 items-center justify-center rounded border border-[rgba(52,211,153,0.4)] bg-[rgba(5,20,10,0.7)] text-emerald-300 transition-colors duration-100"
-        aria-label={displayLabel}
-        title={displayLabel}
-      >
-        <Icon className="size-2.5" />
-      </button>
-
-      {isOpen && (
-        <div className="absolute bottom-full left-0 z-50 mb-1.5 w-44 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(8,12,22,0.97)] shadow-[0_8px_24px_rgba(3,7,18,0.55)] backdrop-blur-sm">
-          <div className="flex items-center gap-1.5 px-2 py-1.5">
-            <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded border border-[rgba(52,211,153,0.4)] bg-[rgba(5,20,10,0.7)]">
-              <Icon className="size-2 text-emerald-300" />
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-semibold text-emerald-300">
-              {displayLabel}
-            </span>
-            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-              Doc op
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Message content renderer ───────────────────────────────────────────────────
-
-function MessageContent({ msg }: { msg: ChatMessage }) {
-  if (msg.isError) return null
-
-  const hasStructuredBlocks =
-    msg.blocks?.some((b) => b.type === 'tool_use' || b.type === 'thinking') ?? false
-  if (hasStructuredBlocks && msg.blocks) {
-    const groups = groupBlocksForRender(msg.blocks)
-    return (
-      <div className="space-y-1.5">
-        {groups.map((group, i) => {
-          if (group.kind === 'thinking') {
-            return <ThinkingBlock key={i} content={group.content} />
-          }
-          if (group.kind === 'text') {
-            return msg.role === 'assistant' ? (
-              <PulseMarkdown key={i} content={group.content} />
-            ) : (
-              <p key={i} className="ui-copy whitespace-pre-wrap">
-                {group.content}
-              </p>
-            )
-          }
-          return (
-            <div key={i} className="flex flex-wrap gap-1">
-              {group.tools.map((tool, j) => (
-                <ToolCallBadge key={`${tool.name}-${j}`} tool={tool} />
-              ))}
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
-
-  if (msg.role === 'assistant') {
-    return <PulseMarkdown content={msg.content} />
-  }
-  return <p className="ui-copy whitespace-pre-wrap">{msg.content}</p>
-}
+import { ToolCallBadge } from './tool-badge'
 
 // ── Main component ─────────────────────────────────────────────────────────────
-
 interface PulseChatPaneProps {
   messages: ChatMessage[]
   isLoading: boolean
@@ -418,47 +35,6 @@ interface PulseChatPaneProps {
   onMobilePaneChange: (pane: 'chat' | 'editor') => void
   isDesktop: boolean
   requestNotice?: string | null
-}
-
-const CHAT_SCROLL_STORAGE_KEY = 'axon.web.pulse.chat-scroll'
-const SOURCE_LIST_SCROLL_STORAGE_KEY = 'axon.web.pulse.source-list-scroll'
-const SOURCE_EXPANDED_STORAGE_KEY = 'axon.web.pulse.sources-expanded'
-const SOURCE_LIST_OPEN_STORAGE_KEY = 'axon.web.pulse.sources-open'
-const MESSAGE_VIRTUAL_THRESHOLD = 120
-const MESSAGE_ESTIMATED_HEIGHT = 156
-const MESSAGE_OVERSCAN = 8
-const SOURCE_VIRTUAL_THRESHOLD = 40
-const SOURCE_ROW_HEIGHT = 24
-const SOURCE_OVERSCAN = 6
-
-export function computeMessageVirtualWindow(
-  totalMessages: number,
-  scrollOffset: number,
-  viewportPx: number,
-): { shouldVirtualize: boolean; start: number; end: number } {
-  const shouldVirtualize = totalMessages > MESSAGE_VIRTUAL_THRESHOLD
-  if (!shouldVirtualize) {
-    return { shouldVirtualize: false, start: 0, end: totalMessages }
-  }
-  const start = Math.max(0, Math.floor(scrollOffset / MESSAGE_ESTIMATED_HEIGHT) - MESSAGE_OVERSCAN)
-  const visibleCount =
-    Math.ceil(Math.max(viewportPx, 1) / MESSAGE_ESTIMATED_HEIGHT) + MESSAGE_OVERSCAN * 2
-  const end = Math.min(totalMessages, start + visibleCount)
-  return { shouldVirtualize: true, start, end }
-}
-
-function formatMessageTime(createdAt: number | undefined): string {
-  if (!createdAt) return ''
-  return new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function formatStreamPhaseLabel(
-  phase: 'started' | 'thinking' | 'finalizing' | null | undefined,
-): string {
-  if (phase === 'started') return 'Starting'
-  if (phase === 'thinking') return 'Thinking'
-  if (phase === 'finalizing') return 'Finalizing'
-  return 'Thinking'
 }
 
 export function PulseChatPane({
@@ -530,6 +106,7 @@ export function PulseChatPane({
   const sourceBottomSpacer = shouldVirtualizeSources
     ? Math.max(0, (activeSources.length - sourceVirtualEnd) * SOURCE_ROW_HEIGHT)
     : 0
+
   function scrollToBottom() {
     const node = scrollRef.current
     if (!node) return
@@ -654,9 +231,7 @@ export function PulseChatPane({
 
           <div className="min-w-0 flex-1" />
 
-          {/* Sources dropdown */}
-
-          <button
+          <button /* sources dropdown */
             type="button"
             onClick={() => setSourcesExpanded((prev) => !prev)}
             className="ui-chip inline-flex flex-none items-center gap-1 rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] px-1.5 py-0.5 text-[var(--axon-text-subtle)]"
@@ -816,93 +391,16 @@ export function PulseChatPane({
             {topSpacerHeight > 0 && <div style={{ height: `${topSpacerHeight}px` }} aria-hidden />}
             {virtualMessages.map((msg, index) => {
               const absoluteIndex = virtualStartIndex + index
-              const isUser = msg.role === 'user'
               return (
-                <article
+                <MessageBubble
                   key={msg.id ?? `legacy-${absoluteIndex}-${msg.role}-${msg.content.slice(0, 24)}`}
-                  className="w-full space-y-1.5"
-                >
-                  <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`rounded-xl border px-3 py-2.5 shadow-[0_6px_18px_rgba(3,7,18,0.3)] ${
-                        isUser
-                          ? 'max-w-[86%] border-[rgba(175,215,255,0.26)] bg-[linear-gradient(140deg,rgba(175,215,255,0.2),rgba(175,215,255,0.08))] text-[var(--axon-text-primary)] md:max-w-[78%] lg:max-w-[70%]'
-                          : 'max-w-[92%] border-[rgba(255,135,175,0.18)] bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] text-[var(--axon-text-secondary)] md:max-w-[86%] lg:max-w-[78%]'
-                      }`}
-                    >
-                      {/* Header: role label + timestamp */}
-                      <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-[0.1em] ${
-                            isUser
-                              ? 'text-[var(--axon-accent-pink-strong)]'
-                              : 'text-[var(--axon-accent-blue-strong)]'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block size-1.5 rounded-full ${
-                              isUser
-                                ? 'bg-[var(--axon-accent-pink)]'
-                                : 'bg-[var(--axon-accent-blue)]'
-                            }`}
-                          />
-                          {isUser ? 'You' : 'Claude'}
-                        </span>
-                        <span className="text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-                          {formatMessageTime(msg.createdAt)}
-                        </span>
-                      </div>
-
-                      {/* Error state */}
-                      {msg.isError ? (
-                        <div className="space-y-2">
-                          <p className="ui-copy whitespace-pre-wrap text-rose-200">{msg.content}</p>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => msg.retryPrompt && onRetry(msg.retryPrompt)}
-                              disabled={!msg.retryPrompt}
-                              className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(255,135,135,0.3)] bg-[rgba(127,29,29,0.28)] px-2 py-1 text-rose-200"
-                            >
-                              <RotateCcw className="size-3" />
-                              Retry
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void handleCopyError(msg.content)
-                              }}
-                              className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(95,135,175,0.3)] bg-[rgba(10,18,35,0.44)] px-2 py-1 text-[var(--axon-text-dim)]"
-                            >
-                              <Copy className="size-3" />
-                              {copyStatus === 'copied'
-                                ? 'Copied'
-                                : copyStatus === 'failed'
-                                  ? 'Copy failed'
-                                  : 'Copy'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Inline blocks (text + tool calls in order) or plain text */
-                        <MessageContent msg={msg} />
-                      )}
-
-                      {/* Doc-op pills — post-processed operations, shown after content */}
-                      {!isUser && (msg.operations?.length ?? 0) > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1 border-t border-[rgba(255,255,255,0.06)] pt-2">
-                          {msg.operations?.map((op, i) => (
-                            <DocOpBadge
-                              key={i}
-                              type={op.type}
-                              heading={'heading' in op ? op.heading : undefined}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </article>
+                  msg={msg}
+                  onRetry={onRetry}
+                  copyStatus={copyStatus}
+                  onCopyError={(content) => {
+                    void handleCopyError(content)
+                  }}
+                />
               )
             })}
             {bottomSpacerHeight > 0 && (

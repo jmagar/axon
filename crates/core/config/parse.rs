@@ -516,6 +516,8 @@ fn into_config(cli: Cli) -> Result<Config, String> {
             1,
             5,
         ),
+        ask_strict_procedural: performance::env_bool("AXON_ASK_STRICT_PROCEDURAL", true),
+        ask_strict_config_schema: performance::env_bool("AXON_ASK_STRICT_CONFIG_SCHEMA", true),
         cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
         cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
         watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),

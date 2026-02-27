@@ -265,6 +265,63 @@ describe('pulse chat route streaming (e2e-like via Vitest; browser e2e harness u
     expect(replayEvents[0]?.event_id).not.toBe(resumeFromId)
   })
 
+  it('returns session_id from claude result event in done response', async () => {
+    queueScenario((child) => {
+      queueMicrotask(() => {
+        child.stdout.write(
+          `${JSON.stringify({ type: 'result', result: '{"text":"Answer","operations":[]}', session_id: 'sess-abc123' })}\n`,
+        )
+        child.emit('close', 0, null)
+      })
+    })
+
+    const response = await post(makeRequest())
+    const events = await readNdjsonEvents(response)
+
+    const doneEvent = events.find((event) => event.type === 'done')
+    expect(doneEvent).toMatchObject({
+      type: 'done',
+      response: {
+        text: 'Answer',
+        sessionId: 'sess-abc123',
+      },
+    })
+  })
+
+  it('passes --resume to claude spawn args when sessionId is in the request', async () => {
+    queueScenario((child) => {
+      queueMicrotask(() => {
+        child.stdout.write(
+          `${JSON.stringify({ type: 'result', result: '{"text":"Resumed","operations":[]}', session_id: 'sess-resume-xyz' })}\n`,
+        )
+        child.emit('close', 0, null)
+      })
+    })
+
+    await post(makeRequest({ prompt: 'hello', sessionId: 'sess-resume-xyz' }))
+
+    const spawnArgs: string[] = spawnSpy.mock.calls[0]?.[1] ?? []
+    const resumeIdx = spawnArgs.indexOf('--resume')
+    expect(resumeIdx).toBeGreaterThanOrEqual(0)
+    expect(spawnArgs[resumeIdx + 1]).toBe('sess-resume-xyz')
+  })
+
+  it('omits --resume from claude spawn args when sessionId is absent', async () => {
+    queueScenario((child) => {
+      queueMicrotask(() => {
+        child.stdout.write(
+          `${JSON.stringify({ type: 'result', result: '{"text":"Fresh","operations":[]}' })}\n`,
+        )
+        child.emit('close', 0, null)
+      })
+    })
+
+    await post(makeRequest({ prompt: 'hello' }))
+
+    const spawnArgs: string[] = spawnSpy.mock.calls[0]?.[1] ?? []
+    expect(spawnArgs.includes('--resume')).toBe(false)
+  })
+
   it('replays from a mid-stream event id through done (dropped-connection resume)', async () => {
     queueScenario((child) => {
       queueMicrotask(() => {

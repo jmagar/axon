@@ -522,7 +522,7 @@ export function Omnibox() {
           isProcessing
             ? 'border-[rgba(175,215,255,0.4)] shadow-[0_0_20px_rgba(175,215,255,0.15)]'
             : 'border-[rgba(255,135,175,0.18)]'
-        } min-h-[92px] focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.08)]`}
+        } focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.08)]`}
         style={{
           background: 'rgba(10, 18, 35, 0.65)',
           borderWidth: '1.5px',
@@ -539,14 +539,14 @@ export function Omnibox() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={'@mention a tool or just start talking'}
-          className="min-w-0 flex-1 bg-transparent px-3 py-2.5 font-mono text-[length:var(--text-base)] leading-[var(--leading-tight)] text-foreground outline-none placeholder:text-[var(--axon-text-subtle)] sm:px-4 sm:py-3"
+          className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-[length:var(--text-base)] leading-[var(--leading-tight)] text-foreground outline-none placeholder:text-[var(--axon-text-subtle)] sm:px-4"
           disabled={isProcessing}
         />
 
         {/* Inline status */}
         <div
           className={`flex shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap transition-all duration-300 ${
-            statusText ? 'max-w-[320px] px-2.5 opacity-100' : 'max-w-0 px-0 opacity-0'
+            statusText ? 'max-w-[280px] px-2 opacity-100' : 'max-w-0 px-0 opacity-0'
           }`}
         >
           <span
@@ -564,35 +564,37 @@ export function Omnibox() {
         </div>
 
         {/* Divider */}
-        <div className="h-[22px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
 
-        {!NO_INPUT_MODES.has(mode) && input.trim().length > 0 && willRunAsCommand && (
-          <>
-            <div className="inline-flex shrink-0 items-center px-2.5">
-              <span
-                className={`ui-chip rounded-full border px-1.5 py-0.5 ${'border-[rgba(175,215,255,0.38)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]'}`}
-              >
-                {selectedModeDef.label}
-              </span>
-            </div>
-            <div className="h-[22px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
-          </>
-        )}
-
+        {/* Unified mode icon chip — icon-only; highlights when a URL command will run */}
         {showModeSelector && (
-          <>
-            <div className="h-[22px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
-            <div className="inline-flex shrink-0 items-center px-2.5">
-              <span className="ui-chip rounded-full border border-[rgba(95,135,175,0.28)] bg-[rgba(10,18,35,0.48)] px-1.5 py-0.5 text-[var(--axon-accent-blue)]">
-                {selectedModeDef.label}
-              </span>
-            </div>
-          </>
+          <div className="inline-flex shrink-0 items-center px-2">
+            <span
+              className={`flex items-center justify-center rounded-full border p-1.5 transition-colors duration-200 ${
+                willRunAsCommand && !NO_INPUT_MODES.has(mode) && input.trim().length > 0
+                  ? 'border-[rgba(175,215,255,0.38)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]'
+                  : 'border-[rgba(95,135,175,0.28)] bg-[rgba(10,18,35,0.48)] text-[var(--axon-accent-blue)]'
+              }`}
+              title={selectedModeDef.label}
+            >
+              <svg
+                className="size-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={selectedModeDef.icon} />
+              </svg>
+            </span>
+          </div>
         )}
 
         {workspaceMode === 'pulse' && (
           <>
-            <div className="h-[22px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+            <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
             <div ref={toolsRef} className="relative flex shrink-0 items-center">
               <button
                 type="button"
@@ -601,10 +603,8 @@ export function Omnibox() {
                   setDropdownOpen(false)
                   setOptionsOpen(false)
                 }}
-                className={`relative flex items-center justify-center rounded-md border px-2.5 py-2 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)] ${
-                  toolsOpen
-                    ? 'border-[rgba(175,215,255,0.42)] bg-[rgba(175,215,255,0.12)]'
-                    : 'border-[rgba(255,135,175,0.22)] bg-transparent'
+                className={`relative flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)] ${
+                  toolsOpen ? 'text-[var(--axon-accent-blue)]' : ''
                 }`}
                 title={`Pulse tools · ${pulseModel} · ${pulsePermissionLevel}`}
                 aria-label="Pulse tools"
@@ -617,7 +617,7 @@ export function Omnibox() {
                   <ShieldCheck className="size-3.5" />
                 )}
                 {isProcessing && currentMode && (
-                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex size-2 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
+                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
                 )}
               </button>
               {toolsOpen && (
@@ -668,16 +668,17 @@ export function Omnibox() {
           </>
         )}
 
-        {/* Options button */}
+        {/* Options button — icon-only with active-count badge */}
         {hasOptions && (
           <>
+            <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
             <button
               type="button"
               onClick={() => {
                 setOptionsOpen((prev) => !prev)
                 setDropdownOpen(false)
               }}
-              className={`flex shrink-0 items-center gap-1.5 bg-transparent px-2.5 py-2.5 text-[length:var(--text-xs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
+              className={`relative flex shrink-0 items-center justify-center bg-transparent px-2 py-1.5 transition-colors duration-150 ${
                 optionsOpen
                   ? 'text-[var(--axon-accent-pink-strong)]'
                   : 'text-[var(--axon-text-muted)] hover:text-[var(--axon-accent-blue)]'
@@ -703,23 +704,24 @@ export function Omnibox() {
                 <line x1="10" y1="8" x2="14" y2="8" />
                 <line x1="18" y1="16" x2="22" y2="16" />
               </svg>
-              <span>Options</span>
               {activeOptionCount > 0 && (
-                <span className="inline-flex min-w-[14px] items-center justify-center rounded-full border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] px-1 text-[length:var(--text-2xs)] leading-[var(--leading-tight)] text-[var(--axon-accent-pink-strong)]">
+                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-[14px] items-center justify-center rounded-full border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] px-1 text-[length:var(--text-2xs)] leading-[var(--leading-tight)] text-[var(--axon-accent-pink-strong)]">
                   {activeOptionCount}
                 </span>
               )}
             </button>
-            <div className="h-[22px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
           </>
         )}
 
-        {/* Action control — icon-only send/cancel */}
+        {/* Divider before send/cancel */}
+        <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+
+        {/* Send / cancel */}
         <button
           type="button"
           onClick={isProcessing ? cancel : execute}
           disabled={!isProcessing && !input.trim() && !NO_INPUT_MODES.has(mode)}
-          className={`flex shrink-0 items-center gap-1.5 bg-transparent px-3 py-2.5 text-[length:var(--text-xs)] font-semibold uppercase tracking-wider transition-all duration-150 ${
+          className={`flex shrink-0 items-center justify-center bg-transparent px-2.5 py-1.5 transition-all duration-150 ${
             modeAppliedLabel
               ? 'text-[var(--axon-accent-pink)] drop-shadow-[0_0_6px_rgba(175,215,255,0.45)]'
               : 'text-[var(--axon-accent-blue)] hover:text-white'
@@ -729,12 +731,12 @@ export function Omnibox() {
           {isProcessing ? <Square className="size-3.5" /> : <SendHorizontal className="size-3.5" />}
         </button>
 
+        {/* Chevron — mode dropdown toggle */}
         {showModeSelector && (
-          /* Arrow toggle — click to open mode dropdown */
           <button
             type="button"
             onClick={() => setDropdownOpen((prev) => !prev)}
-            className="flex shrink-0 items-center justify-center rounded-r-[10px] bg-transparent px-3 py-2.5 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)]"
+            className="flex shrink-0 items-center justify-center rounded-r-[10px] bg-transparent px-2 py-1.5 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)]"
             title="Select mode"
           >
             <svg
