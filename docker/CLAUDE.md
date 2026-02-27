@@ -4,11 +4,17 @@ Last Modified: 2026-02-25
 ## Files
 ```
 docker/
-├── Dockerfile          # Multi-stage: cargo-chef → build → runtime
+├── Dockerfile          # Multi-stage: cargo-chef → build → runtime (axon-workers)
 ├── chrome/
 │   └── Dockerfile      # headless_browser + chrome-headless-shell (CDP proxy on 9222)
 ├── web/
-│   └── Dockerfile      # Next.js dev image (node:24-alpine, pnpm, hot reload)
+│   ├── Dockerfile      # Next.js + s6-overlay (pnpm-dev + claude-session + claude-watcher)
+│   └── s6-rc.d/        # s6 service definitions for axon-web
+│       ├── pnpm-dev/   # Next.js dev server (s6-setuidgid node pnpm run dev)
+│       ├── claude-session/  # Persistent Claude Code session (--continue --fork-session)
+│       ├── claude-watcher/  # inotifywait hot-reload trigger for claude-session
+│       └── user/
+│           └── contents.d/  # Registers pnpm-dev, claude-session, claude-watcher
 ├── rabbitmq/           # rabbitmq.conf + definitions.json (preconfigured vhost/user)
 └── s6/
     ├── cont-init.d/
@@ -112,6 +118,8 @@ docker exec -it -u axon axon-workers bash
 
 ## Hot Reload Dev Workflow
 
+### Next.js (axon-web)
+
 The `axon-web` container bind-mounts `apps/web/` into `/app`, so source changes are
 reflected immediately without rebuilding the image.
 
@@ -124,6 +132,29 @@ docker compose up -d
 # Rebuild after pnpm-lock.yaml changes (new deps added):
 docker compose build axon-web
 docker compose rm axon-web && docker compose up -d axon-web
+```
+
+### Claude config hot-reload (axon-web)
+
+`axon-web` runs `claude-session` (persistent Claude Code session) and `claude-watcher`
+(inotifywait loop) as s6 services alongside `pnpm-dev`. When agents, skills, hooks,
+commands, or settings change, `claude-watcher` detects the change and restarts
+`claude-session` so the web app always uses the latest config without a container restart.
+
+See [`docs/CLAUDE-HOT-RELOAD.md`](../docs/CLAUDE-HOT-RELOAD.md) for full details,
+watched paths, verification commands, and troubleshooting.
+
+```bash
+# Check claude-session and claude-watcher status
+docker exec axon-web s6-svstat /run/service/claude-session
+docker exec axon-web s6-svstat /run/service/claude-watcher
+
+# Tail logs
+docker exec axon-web tail -f /var/log/axon/claude-session/current
+docker exec axon-web tail -f /var/log/axon/claude-watcher/current
+
+# Manual restart (force config reload)
+docker exec axon-web s6-svc -r /run/service/claude-session
 ```
 
 **Note:** Docker stats (the bollard poller in `axon serve`) will be silently unavailable

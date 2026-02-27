@@ -155,6 +155,7 @@ async fn embed_ensure_schema_is_concurrency_safe() -> Result<(), Box<dyn Error>>
 }
 
 #[tokio::test(flavor = "current_thread")]
+#[ignore = "requires AMQP infra"]
 async fn embed_worker_e2e_processes_pending_job_to_terminal_status() -> Result<(), Box<dyn Error>> {
     let local = tokio::task::LocalSet::new();
     local

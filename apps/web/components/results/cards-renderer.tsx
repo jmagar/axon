@@ -70,9 +70,7 @@ function QueryCards({ results }: { results: QueryResult[] }) {
 
               {/* Source tag if different from URL */}
               {r.source && r.source !== r.url && (
-                <span className="ui-meta mt-0.5 block truncate">
-                  {r.source}
-                </span>
+                <span className="ui-meta mt-0.5 block truncate">{r.source}</span>
               )}
             </div>
 

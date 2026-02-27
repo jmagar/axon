@@ -32,11 +32,7 @@ function KvRow({ label, value, accent }: { label: string; value: string; accent?
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="ui-label mb-1.5 mt-3 first:mt-0">
-      {children}
-    </h3>
-  )
+  return <h3 className="ui-label mb-1.5 mt-3 first:mt-0">{children}</h3>
 }
 
 // ---------------------------------------------------------------------------

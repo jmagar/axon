@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { shouldPreservePulseWorkspaceForMode } from '@/components/omnibox'
 import type { LocalDocFile } from '@/lib/omnibox'
 import {
   deriveOmniboxPhase,
@@ -9,7 +10,6 @@ import {
   rankModeSuggestions,
   replaceActiveMention,
 } from '@/lib/omnibox'
-import { shouldPreservePulseWorkspaceForMode } from '@/components/omnibox'
 import { MODES } from '@/lib/ws-protocol'
 
 describe('omnibox mention parsing', () => {

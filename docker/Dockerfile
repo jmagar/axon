@@ -43,6 +43,22 @@ WORKDIR /src
 
 COPY --from=chef /usr/local/cargo/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
 
+# sccache: compiler cache used by .cargo/config.toml (rustc-wrapper = "sccache").
+# Prebuilt binary is much faster than cargo install.
+ARG SCCACHE_VERSION=0.9.1
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) sccache_arch="x86_64-unknown-linux-musl" ;; \
+      arm64) sccache_arch="aarch64-unknown-linux-musl" ;; \
+      *) echo "Unsupported arch: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/sccache.tar.gz \
+      "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-${sccache_arch}.tar.gz"; \
+    tar -C /usr/local/bin -xzf /tmp/sccache.tar.gz \
+      --strip-components=1 "sccache-v${SCCACHE_VERSION}-${sccache_arch}/sccache"; \
+    rm /tmp/sccache.tar.gz
+
 # Cook dependencies first — this layer is cached as long as recipe.json is
 # unchanged (i.e., Cargo.toml / Cargo.lock have not changed).
 COPY --from=planner /src/axon_rust/recipe.json recipe.json
@@ -81,6 +97,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
+        inotify-tools \
         libssl3 \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -140,6 +157,8 @@ RUN chmod +x /etc/cont-init.d/* \
         /var/log/axon/embed-worker \
         /var/log/axon/extract-worker \
         /var/log/axon/ingest-worker \
+        /var/log/axon/claude-session \
+        /var/log/axon/claude-watcher \
         /app/logs \
     && chown -R axon:axon /var/log/axon /app
 

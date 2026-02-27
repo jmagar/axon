@@ -15,11 +15,52 @@ For branding, theme, layout, and frontend UX decisions: `apps/web`.
 ## Directory Intent
 
 - `crates/web.rs`: Axum server wiring and routes
-- `crates/web/execute/`: subprocess execution + output streaming
+- `crates/web/execute/mod.rs`: subprocess launch + WS output pump entry point
+- `crates/web/execute/events.rs`: WS event type definitions
+- `crates/web/execute/files.rs`: output file serving for completed jobs
+- `crates/web/execute/polling.rs`: job-completion polling loop
+- `crates/web/execute/tests/`: execute integration tests
 - `crates/web/docker_stats.rs`: container stats streaming
 - `crates/web/download.rs`: artifact download endpoints
 - `crates/web/pack.rs`: output packaging helpers
+- `crates/web/logs/`: log streaming support
+
+## WebSocket Protocol
+
+Single multiplexed WS connection. Messages keyed by `"type"`:
+
+| Direction | type | Payload |
+|-----------|------|---------|
+| Client → Server | `execute` | `{ "mode": "...", "input": "..." }` |
+| Client → Server | `cancel` | `{ "job_id": "..." }` |
+| Server → Client | `output` | stdout JSON data |
+| Server → Client | `log` | stderr progress/spinner text |
+| Server → Client | `done` | job completed |
+| Server → Client | `error` | job failed with message |
+| Server → Client | `stats` | Docker container stats (polled every 500ms via bollard) |
+
+ANSI codes are stripped from log output via `console::strip_ansi_codes()`.
+
+## Security Model
+
+`execute/mod.rs` enforces strict whitelists before spawning any subprocess:
+- **`ALLOWED_MODES`**: list of valid CLI subcommands (e.g. `scrape`, `crawl`, `ask`) — rejects anything not in this list
+- **`ALLOWED_FLAGS`**: set of permitted CLI flags — rejects unknown flags
+
+Unknown modes or flags return an error WS event without spawning a process. Do not bypass these whitelists when adding new execute routes.
+
+## Docker Stats Caveat
+
+`docker_stats.rs` polls bollard for container stats every 500ms and broadcasts to all WS clients. This requires `/var/run/docker.sock` to be mounted. When running inside `axon-workers`, the socket is **not** mounted — stats will be silently unavailable. HTTP/WS endpoints remain functional.
 
 ## Agent Guidance
 
 When asked to review or polish the frontend visual system, audit and update `apps/web` first.
+
+## Testing
+
+```bash
+cargo test web            # WS bridge + execute pipeline tests
+cargo test download       # artifact download endpoint tests
+cargo test -- --nocapture # show subprocess output during tests
+```
