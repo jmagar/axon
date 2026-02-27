@@ -433,14 +433,6 @@ pub struct Config {
     /// Env: `AXON_ASK_MIN_CITATIONS_NONTRIVIAL` (clamped 1–5). Default: 2.
     pub ask_min_citations_nontrivial: usize,
 
-    /// If false, Procedural queries skip the official-docs-source gate (Gate 5).
-    /// Env: `AXON_ASK_STRICT_PROCEDURAL` (true/1/yes = strict). Default: true.
-    pub ask_strict_procedural: bool,
-
-    /// If false, ConfigSchema queries skip the exact-page-citation gate (Gate 6).
-    /// Env: `AXON_ASK_STRICT_CONFIG_SCHEMA` (true/1/yes = strict). Default: true.
-    pub ask_strict_config_schema: bool,
-
     /// Run the command on a recurring schedule every N seconds (`None` = one-shot). Flag: `--cron-every-seconds`.
     pub cron_every_seconds: Option<u64>,
 
@@ -633,8 +625,6 @@ impl Default for Config {
             ask_authoritative_boost: 0.0,
             ask_authoritative_allowlist: vec![],
             ask_min_citations_nontrivial: 2,
-            ask_strict_procedural: true,
-            ask_strict_config_schema: true,
             cron_every_seconds: None,
             cron_max_runs: None,
             watchdog_stale_timeout_secs: 300,
@@ -766,8 +756,6 @@ impl fmt::Debug for Config {
                 "ask_min_citations_nontrivial",
                 &self.ask_min_citations_nontrivial,
             )
-            .field("ask_strict_procedural", &self.ask_strict_procedural)
-            .field("ask_strict_config_schema", &self.ask_strict_config_schema)
             .field("cron_every_seconds", &self.cron_every_seconds)
             .field("cron_max_runs", &self.cron_max_runs)
             .field(
@@ -861,14 +849,6 @@ mod tests {
         assert!((cfg.ask_authoritative_boost - 0.0).abs() < f64::EPSILON);
         assert!(cfg.ask_authoritative_allowlist.is_empty());
         assert_eq!(cfg.ask_min_citations_nontrivial, 2);
-        assert!(
-            cfg.ask_strict_procedural,
-            "ask_strict_procedural should default to true"
-        );
-        assert!(
-            cfg.ask_strict_config_schema,
-            "ask_strict_config_schema should default to true"
-        );
     }
 
     #[test]

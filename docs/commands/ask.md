@@ -94,8 +94,7 @@ The retrieval pipeline is tunable via environment variables. See the [Environmen
 - If you get "No candidates met relevance threshold", lower `AXON_ASK_MIN_RELEVANCE_SCORE` or run `axon crawl`/`axon embed` to add more content to the collection.
 - `ask` queries the local knowledge base only. To search the live web, use `axon research`.
 - For benchmarking RAG quality vs a baseline, use `axon evaluate`.
-- `ask` enforces output policy gates:
-  - Procedural queries must cite at least one official docs source.
-  - Config/schema queries must cite at least one exact page (not just a root domain).
+- `ask` enforces citation-quality gates:
+  - Answers must include inline `[S#]` citations from retrieved context.
   - Non-trivial responses must satisfy `AXON_ASK_MIN_CITATIONS_NONTRIVIAL`.
-  - Failed gates are converted to structured insufficient-evidence output.
+  - Failed gates return structured insufficient-evidence output with next-index suggestions.
