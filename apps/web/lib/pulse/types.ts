@@ -65,6 +65,12 @@ export const PulseChatRequestSchema = z.object({
   allowedTools: z.string().max(2000).default(''),
   /** --disallowedTools: comma-separated tools removed from model context */
   disallowedTools: z.string().max(2000).default(''),
+  /** --add-dir: comma-separated directories Claude can access beyond the working dir */
+  addDir: z.string().optional(),
+  /** --betas: comma-separated beta headers (e.g. interleaved-thinking) */
+  betas: z.string().optional(),
+  /** --tools: restrict which built-in tools are available */
+  toolsRestrict: z.string().optional(),
 })
 
 export type PulseChatRequest = z.infer<typeof PulseChatRequestSchema>

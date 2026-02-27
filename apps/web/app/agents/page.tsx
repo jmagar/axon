@@ -1,0 +1,303 @@
+'use client'
+
+import { ArrowLeft, Bot, RefreshCw } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import type { Agent } from '@/app/api/agents/route'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface AgentsResponse {
+  agents: Agent[]
+  groups: string[]
+  error?: string
+}
+
+// ── Dynamic imports ────────────────────────────────────────────────────────────
+
+const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), { ssr: false })
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function truncateGroupPath(source: string): string {
+  const match = source.match(/^(.*?)\s*\((.+)\)$/)
+  if (!match) return source
+  const label = match[1].trim()
+  const rawPath = match[2]
+  const parts = rawPath.split('/').filter(Boolean)
+  const short = parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : rawPath
+  return `${label} (${short})`
+}
+
+function sourceBadgeStyle(source: string): { bg: string; color: string; label: string } {
+  const lower = source.toLowerCase()
+  if (lower === 'built-in') {
+    return { bg: 'rgba(175,215,255,0.15)', color: '#afd7ff', label: 'Built-in' }
+  }
+  if (lower.startsWith('configured') || lower.startsWith('project')) {
+    return { bg: 'rgba(255,135,175,0.15)', color: '#ff87af', label: 'Project' }
+  }
+  return { bg: 'rgba(93,135,175,0.15)', color: '#93aaca', label: 'Global' }
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{
+        background: 'rgba(10,18,35,0.55)',
+        backdropFilter: 'blur(12px)',
+        borderColor: 'rgba(255,135,175,0.12)',
+      }}
+    >
+      <div
+        className="mb-2 h-4 w-2/3 animate-shimmer rounded"
+        style={{
+          background:
+            'linear-gradient(90deg, rgba(255,135,175,0.07) 25%, rgba(255,135,175,0.13) 50%, rgba(255,135,175,0.07) 75%)',
+          backgroundSize: '200% 100%',
+        }}
+      />
+      <div
+        className="h-3 w-full animate-shimmer rounded"
+        style={{
+          background:
+            'linear-gradient(90deg, rgba(255,135,175,0.05) 25%, rgba(255,135,175,0.09) 50%, rgba(255,135,175,0.05) 75%)',
+          backgroundSize: '200% 100%',
+        }}
+      />
+      <div
+        className="mt-1 h-3 w-4/5 animate-shimmer rounded"
+        style={{
+          background:
+            'linear-gradient(90deg, rgba(255,135,175,0.05) 25%, rgba(255,135,175,0.09) 50%, rgba(255,135,175,0.05) 75%)',
+          backgroundSize: '200% 100%',
+        }}
+      />
+    </div>
+  )
+}
+
+function AgentCard({ agent }: { agent: Agent }) {
+  const badge = sourceBadgeStyle(agent.source)
+
+  return (
+    <article
+      className="relative rounded-xl border p-4 transition-all duration-200 hover:border-[rgba(175,215,255,0.25)] hover:shadow-[0_0_20px_rgba(175,215,255,0.06)]"
+      style={{
+        background: 'rgba(10,18,35,0.55)',
+        backdropFilter: 'blur(12px)',
+        borderColor: 'rgba(255,135,175,0.12)',
+      }}
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <span
+          className="text-[13px] font-bold leading-snug text-[var(--axon-text-primary)]"
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          {agent.name}
+        </span>
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest"
+          style={{ background: badge.bg, color: badge.color }}
+        >
+          {badge.label}
+        </span>
+      </div>
+      <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">{agent.description}</p>
+    </article>
+  )
+}
+
+function GroupSection({ source, agents }: { source: string; agents: Agent[] }) {
+  const displayName = truncateGroupPath(source)
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--axon-text-dim)]">
+          {displayName}
+        </p>
+        <span className="text-[10px] text-[var(--axon-text-subtle)]">
+          {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
+        </span>
+        <div className="h-px flex-1 bg-[rgba(255,135,175,0.07)]" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {agents.map((agent) => (
+          <AgentCard key={`${agent.source}-${agent.name}`} agent={agent} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────────
+
+export default function AgentsPage() {
+  const router = useRouter()
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [groups, setGroups] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [spinning, setSpinning] = useState(false)
+
+  const fetchAgents = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/agents')
+      const data = (await res.json()) as AgentsResponse
+      if (data.error) {
+        setError(data.error)
+        setAgents([])
+        setGroups([])
+      } else {
+        setAgents(data.agents)
+        setGroups(data.groups)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch agents')
+      setAgents([])
+      setGroups([])
+    } finally {
+      setLoading(false)
+      setSpinning(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchAgents()
+  }, [fetchAgents])
+
+  function handleRefresh() {
+    setSpinning(true)
+    fetchAgents()
+  }
+
+  return (
+    <div
+      className="flex min-h-dvh flex-col"
+      style={{
+        background:
+          'radial-gradient(ellipse at 14% 10%, rgba(175,215,255,0.08), transparent 34%), radial-gradient(ellipse at 82% 16%, rgba(255,135,175,0.07), transparent 38%), linear-gradient(180deg,#02040b 0%,#030712 60%,#040a14 100%)',
+      }}
+    >
+      {/* Neural background */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <NeuralCanvas profile="subtle" />
+      </div>
+
+      {/* Top bar */}
+      <header
+        className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b px-4"
+        style={{
+          borderColor: 'rgba(255,135,175,0.1)',
+          background: 'rgba(3,7,18,0.9)',
+          backdropFilter: 'blur(16px)',
+          height: '3.25rem',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-text-secondary)]"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="size-3.5" />
+          Back
+        </button>
+        <div className="h-4 w-px bg-[rgba(255,135,175,0.12)]" />
+        <div className="flex items-center gap-2">
+          <Bot className="size-3.5 text-[var(--axon-accent-pink)]" />
+          <h1 className="text-[14px] font-semibold text-[var(--axon-text-primary)]">Agents</h1>
+        </div>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-pink-strong)] disabled:opacity-40"
+          title="Refresh agent list"
+        >
+          <RefreshCw className={`size-3 ${spinning ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </header>
+
+      {/* Main content */}
+      <main className="relative z-10 flex-1">
+        <div className="mx-auto max-w-[960px] px-4 py-8 sm:px-6">
+          {/* Loading state */}
+          {loading && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          )}
+
+          {/* Error state */}
+          {!loading && error && (
+            <div
+              className="rounded-xl border px-6 py-8 text-center"
+              style={{
+                background: 'rgba(10,18,35,0.55)',
+                backdropFilter: 'blur(12px)',
+                borderColor: 'rgba(255,135,175,0.18)',
+              }}
+            >
+              <Bot className="mx-auto mb-3 size-8 text-[var(--axon-text-dim)]" />
+              <p className="mb-1 text-[13px] font-medium text-[var(--axon-text-secondary)]">
+                Could not load agents
+              </p>
+              <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">{error}</p>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && !error && agents.length === 0 && (
+            <div
+              className="rounded-xl border px-6 py-8 text-center"
+              style={{
+                background: 'rgba(10,18,35,0.55)',
+                backdropFilter: 'blur(12px)',
+                borderColor: 'rgba(255,135,175,0.12)',
+              }}
+            >
+              <Bot className="mx-auto mb-3 size-8 text-[var(--axon-text-dim)]" />
+              <p className="mb-1 text-[13px] font-medium text-[var(--axon-text-secondary)]">
+                No agents found
+              </p>
+              <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">
+                Run{' '}
+                <code
+                  className="rounded px-1 py-0.5 text-[10px] text-[var(--axon-text-muted)]"
+                  style={{ background: 'rgba(175,215,255,0.07)' }}
+                >
+                  claude agents
+                </code>{' '}
+                in your terminal to verify the CLI is configured.
+              </p>
+            </div>
+          )}
+
+          {/* Agent groups */}
+          {!loading && !error && agents.length > 0 && (
+            <div>
+              {groups.map((source) => {
+                const groupAgents = agents.filter((a) => a.source === source)
+                if (groupAgents.length === 0) return null
+                return <GroupSection key={source} source={source} agents={groupAgents} />
+              })}
+            </div>
+          )}
+
+          <div className="h-16" />
+        </div>
+      </main>
+    </div>
+  )
+}

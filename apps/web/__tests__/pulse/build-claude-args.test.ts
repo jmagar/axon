@@ -1,0 +1,299 @@
+import { describe, expect, it } from 'vitest'
+
+import { buildClaudeArgs } from '@/app/api/pulse/chat/claude-stream-types'
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const PROMPT = 'Hello, world'
+const SYSTEM = 'You are helpful.'
+const MODEL = 'sonnet' as const
+
+/** Return the value that immediately follows a flag in the args array. */
+function argAfter(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag)
+  return idx === -1 ? undefined : args[idx + 1]
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+describe('buildClaudeArgs', () => {
+  describe('core flags always present', () => {
+    it('includes --output-format stream-json', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(argAfter(args, '--output-format')).toBe('stream-json')
+    })
+
+    it('includes --verbose flag', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).toContain('--verbose')
+    })
+
+    it('includes --system-prompt with the supplied value', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(argAfter(args, '--system-prompt')).toBe(SYSTEM)
+    })
+
+    it('includes --mcp-config', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).toContain('--mcp-config')
+    })
+
+    it('includes --strict-mcp-config flag', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).toContain('--strict-mcp-config')
+    })
+
+    it('includes --dangerously-skip-permissions flag', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).toContain('--dangerously-skip-permissions')
+    })
+
+    it('includes --include-partial-messages flag', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).toContain('--include-partial-messages')
+    })
+
+    it('passes the prompt as the value after -p', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(argAfter(args, '-p')).toBe(PROMPT)
+    })
+  })
+
+  describe('effort', () => {
+    it('defaults to medium when extra is omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(argAfter(args, '--effort')).toBe('medium')
+    })
+
+    it('defaults to medium when extra.effort is undefined', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, {})
+      expect(argAfter(args, '--effort')).toBe('medium')
+    })
+
+    it('uses high when extra.effort is high', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { effort: 'high' })
+      expect(argAfter(args, '--effort')).toBe('high')
+    })
+
+    it('uses low when extra.effort is low', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { effort: 'low' })
+      expect(argAfter(args, '--effort')).toBe('low')
+    })
+  })
+
+  describe('model flag', () => {
+    it('passes --model sonnet for sonnet', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, 'sonnet')
+      expect(argAfter(args, '--model')).toBe('sonnet')
+    })
+
+    it('passes --model opus for opus', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, 'opus')
+      expect(argAfter(args, '--model')).toBe('opus')
+    })
+
+    it('passes --model haiku for haiku', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, 'haiku')
+      expect(argAfter(args, '--model')).toBe('haiku')
+    })
+  })
+
+  describe('appendSystemPrompt', () => {
+    it('appends --append-system-prompt when set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, {
+        appendSystemPrompt: 'Extra instructions.',
+      })
+      expect(argAfter(args, '--append-system-prompt')).toBe('Extra instructions.')
+    })
+
+    it('does not include --append-system-prompt when not set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--append-system-prompt')
+    })
+  })
+
+  describe('maxTurns', () => {
+    it('appends --max-turns when maxTurns > 0', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { maxTurns: 5 })
+      expect(argAfter(args, '--max-turns')).toBe('5')
+    })
+
+    it('does not include --max-turns when maxTurns is 0', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { maxTurns: 0 })
+      expect(args).not.toContain('--max-turns')
+    })
+
+    it('does not include --max-turns when maxTurns is omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--max-turns')
+    })
+  })
+
+  describe('maxBudgetUsd', () => {
+    it('appends --max-budget-usd when maxBudgetUsd > 0', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { maxBudgetUsd: 2.5 })
+      expect(argAfter(args, '--max-budget-usd')).toBe('2.5')
+    })
+
+    it('does not include --max-budget-usd when maxBudgetUsd is 0', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { maxBudgetUsd: 0 })
+      expect(args).not.toContain('--max-budget-usd')
+    })
+
+    it('does not include --max-budget-usd when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--max-budget-usd')
+    })
+  })
+
+  describe('disableSlashCommands', () => {
+    it('includes --disable-slash-commands when true', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { disableSlashCommands: true })
+      expect(args).toContain('--disable-slash-commands')
+    })
+
+    it('does not include --disable-slash-commands when false', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { disableSlashCommands: false })
+      expect(args).not.toContain('--disable-slash-commands')
+    })
+
+    it('does not include --disable-slash-commands when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--disable-slash-commands')
+    })
+  })
+
+  describe('noSessionPersistence', () => {
+    it('includes --no-session-persistence when true', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { noSessionPersistence: true })
+      expect(args).toContain('--no-session-persistence')
+    })
+
+    it('does not include --no-session-persistence when false', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { noSessionPersistence: false })
+      expect(args).not.toContain('--no-session-persistence')
+    })
+  })
+
+  describe('fallbackModel', () => {
+    it('appends --fallback-model when set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { fallbackModel: 'haiku' })
+      expect(argAfter(args, '--fallback-model')).toBe('haiku')
+    })
+
+    it('does not include --fallback-model when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--fallback-model')
+    })
+  })
+
+  describe('allowedTools', () => {
+    it('appends --allowedTools when set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { allowedTools: 'Bash,Read' })
+      expect(argAfter(args, '--allowedTools')).toBe('Bash,Read')
+    })
+
+    it('does not include --allowedTools when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--allowedTools')
+    })
+  })
+
+  describe('disallowedTools', () => {
+    it('appends --disallowedTools when set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { disallowedTools: 'Bash' })
+      expect(argAfter(args, '--disallowedTools')).toBe('Bash')
+    })
+
+    it('does not include --disallowedTools when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--disallowedTools')
+    })
+  })
+
+  describe('addDir', () => {
+    it('appends one --add-dir pair for a single path', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { addDir: '/workspace' })
+      const idx = args.indexOf('--add-dir')
+      expect(idx).not.toBe(-1)
+      expect(args[idx + 1]).toBe('/workspace')
+    })
+
+    it('appends multiple --add-dir pairs for comma-separated paths', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { addDir: '/a,/b' })
+      // Collect all --add-dir values
+      const dirs: string[] = []
+      for (let i = 0; i < args.length - 1; i++) {
+        if (args[i] === '--add-dir') {
+          dirs.push(args[i + 1] as string)
+        }
+      }
+      expect(dirs).toEqual(['/a', '/b'])
+    })
+
+    it('trims spaces around commas', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { addDir: ' /a , /b ' })
+      const dirs: string[] = []
+      for (let i = 0; i < args.length - 1; i++) {
+        if (args[i] === '--add-dir') {
+          dirs.push(args[i + 1] as string)
+        }
+      }
+      expect(dirs).toEqual(['/a', '/b'])
+    })
+
+    it('skips empty segments from consecutive commas', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { addDir: '/a,,/b' })
+      const dirs: string[] = []
+      for (let i = 0; i < args.length - 1; i++) {
+        if (args[i] === '--add-dir') {
+          dirs.push(args[i + 1] as string)
+        }
+      }
+      expect(dirs).toEqual(['/a', '/b'])
+    })
+
+    it('does not include --add-dir when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--add-dir')
+    })
+  })
+
+  describe('betas', () => {
+    it('appends --betas when set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, {
+        betas: 'interleaved-thinking',
+      })
+      expect(argAfter(args, '--betas')).toBe('interleaved-thinking')
+    })
+
+    it('does not include --betas when empty string', () => {
+      // The implementation uses a truthy check, so '' is falsy — not appended.
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { betas: '' })
+      expect(args).not.toContain('--betas')
+    })
+
+    it('does not include --betas when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--betas')
+    })
+  })
+
+  describe('toolsRestrict', () => {
+    it('appends --tools when toolsRestrict is set', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { toolsRestrict: 'Bash,Read' })
+      expect(argAfter(args, '--tools')).toBe('Bash,Read')
+    })
+
+    it('does not include --tools when toolsRestrict is empty string', () => {
+      // The implementation uses a truthy check — '' is falsy, so not appended.
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL, { toolsRestrict: '' })
+      expect(args).not.toContain('--tools')
+    })
+
+    it('does not include --tools when omitted', () => {
+      const args = buildClaudeArgs(PROMPT, SYSTEM, MODEL)
+      expect(args).not.toContain('--tools')
+    })
+  })
+})

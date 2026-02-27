@@ -101,6 +101,9 @@ export async function POST(request: Request) {
       fallbackModel: req.fallbackModel,
       allowedTools: req.allowedTools,
       disallowedTools: req.disallowedTools,
+      addDir: req.addDir,
+      betas: req.betas,
+      toolsRestrict: req.toolsRestrict,
     })
     // Resume the previous Claude Code session when the client supplies one.
     // Safe because cwd is always os.tmpdir() — no project CLAUDE.md is loaded.
