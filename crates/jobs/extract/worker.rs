@@ -5,17 +5,6 @@ use tokio::time::Duration;
 
 const EXTRACT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
-async fn touch_running_extract_job(pool: &PgPool, id: Uuid) -> Result<u64, sqlx::Error> {
-    Ok(sqlx::query(&format!(
-        "UPDATE axon_extract_jobs SET updated_at=NOW() WHERE id=$1 AND status='{running}'",
-        running = JobStatus::Running.as_str(),
-    ))
-    .bind(id)
-    .execute(pool)
-    .await?
-    .rows_affected())
-}
-
 struct ExtractAggregation {
     runs: Vec<serde_json::Value>,
     all_results: Vec<serde_json::Value>,
@@ -228,7 +217,7 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
-                        let _ = touch_running_extract_job(&heartbeat_pool, id).await;
+                        let _ = touch_running_job(&heartbeat_pool, TABLE, id).await;
                     }
                     changed = heartbeat_stop_rx.changed() => {
                         if changed.is_err() || *heartbeat_stop_rx.borrow() {
