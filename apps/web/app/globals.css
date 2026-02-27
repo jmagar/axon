@@ -295,3 +295,51 @@
 .animate-shimmer {
   animation: shimmer 2s ease-in-out infinite;
 }
+
+@keyframes omnibox-sweep {
+  0% {
+    transform: translateX(-150%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(250%);
+    opacity: 0;
+  }
+}
+.animate-omnibox-sweep {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(175, 215, 255, 0.06) 35%,
+    rgba(175, 215, 255, 0.16) 50%,
+    rgba(255, 135, 175, 0.06) 65%,
+    transparent 100%
+  );
+  animation: omnibox-sweep 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes omnibox-progress {
+  0% {
+    transform: translateX(-300%);
+  }
+  100% {
+    transform: translateX(500%);
+  }
+}
+.animate-omnibox-progress {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(175, 215, 255, 0.45) 25%,
+    rgba(255, 135, 175, 0.75) 50%,
+    rgba(175, 215, 255, 0.45) 75%,
+    transparent 100%
+  );
+  animation: omnibox-progress 1.8s ease-in-out infinite;
+}

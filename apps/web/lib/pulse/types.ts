@@ -50,6 +50,21 @@ export const PulseChatRequestSchema = z.object({
     .default([]),
   permissionLevel: PulsePermissionLevel.default('accept-edits'),
   model: PulseModel.default('sonnet'),
+  effort: z.enum(['low', 'medium', 'high']).default('medium'),
+  maxTurns: z.number().int().min(0).max(100).default(0),
+  maxBudgetUsd: z.number().min(0).max(1000).default(0),
+  appendSystemPrompt: z.string().max(4000).default(''),
+  // Additional CLI flags from Claude Code docs
+  /** --disable-slash-commands: disable all skills and slash commands */
+  disableSlashCommands: z.boolean().default(false),
+  /** --no-session-persistence: sessions are not saved to disk */
+  noSessionPersistence: z.boolean().default(false),
+  /** --fallback-model: fallback model alias when primary is overloaded ('' = disabled) */
+  fallbackModel: z.string().max(128).default(''),
+  /** --allowedTools: comma-separated tools that execute without permission prompts */
+  allowedTools: z.string().max(2000).default(''),
+  /** --disallowedTools: comma-separated tools removed from model context */
+  disallowedTools: z.string().max(2000).default(''),
 })
 
 export type PulseChatRequest = z.infer<typeof PulseChatRequestSchema>

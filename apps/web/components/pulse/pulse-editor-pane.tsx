@@ -11,15 +11,11 @@ import { Editor, EditorContainer } from '@/components/ui/editor'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
 import { Toolbar, ToolbarGroup } from '@/components/ui/toolbar'
 import { markdownToPlateNodes } from '@/lib/markdown'
-import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 
 interface PulseEditorPaneProps {
   markdown: string
   onMarkdownChange: (md: string) => void
   scrollStorageKey?: string
-  mobilePane?: 'chat' | 'editor'
-  onMobilePaneChange?: (pane: 'chat' | 'editor') => void
-  isDesktop?: boolean
 }
 
 /** Inner component that wires AI chat hooks requiring the Plate editor context. */
@@ -42,9 +38,6 @@ export function PulseEditorPane({
   markdown,
   onMarkdownChange,
   scrollStorageKey = 'axon.web.pulse.editor-scroll',
-  mobilePane = 'editor',
-  onMobilePaneChange,
-  isDesktop = true,
 }: PulseEditorPaneProps) {
   const editor = usePlateEditor({
     plugins: CopilotKit,
@@ -89,12 +82,6 @@ export function PulseEditorPane({
         <div className="border-b border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1">
           <div className="mb-1 flex items-center gap-1.5 px-1.5">
             <p className="ui-label flex-none">Editor</p>
-            {!isDesktop && onMobilePaneChange && (
-              <PulseMobilePaneSwitcher
-                mobilePane={mobilePane}
-                onMobilePaneChange={onMobilePaneChange}
-              />
-            )}
           </div>
           <Toolbar className="flex-wrap gap-0.5">
             <ToolbarGroup>

@@ -1,6 +1,15 @@
 'use client'
 
-import { SendHorizontal, Shield, ShieldCheck, ShieldOff, Square, Wrench } from 'lucide-react'
+import {
+  SendHorizontal,
+  Settings2,
+  Shield,
+  ShieldCheck,
+  ShieldOff,
+  Square,
+  Wrench,
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useWsMessages } from '@/hooks/use-ws-messages'
@@ -59,7 +68,17 @@ function normalizeUrlInput(rawInput: string): string {
   return `https://${trimmed}`
 }
 
+const PLACEHOLDER_TEXTS = [
+  '@mention a tool or just start talking',
+  'scrape https://docs.example.com',
+  'ask what causes high latency in Qdrant',
+  'crawl docs.astral.sh/ruff',
+  'query semantic search patterns',
+  'embed ./data/knowledge-base',
+]
+
 export function Omnibox() {
+  const router = useRouter()
   const { send, subscribe } = useAxonWs()
   const {
     startExecution,
@@ -96,6 +115,9 @@ export function Omnibox() {
   const startTimeRef = useRef(0)
   const execIdRef = useRef(0)
   const [optionValues, setOptionValues] = useState<CommandOptionValues>({})
+  const [placeholderIdx, setPlaceholderIdx] = useState(0)
+  const [placeholderVisible, setPlaceholderVisible] = useState(true)
+  const [isFocused, setIsFocused] = useState(false)
 
   const selectedModeDef = MODES.find((m) => m.id === mode) ?? MODES[0]
   const hasOptions = (getCommandSpec(mode)?.commandOptions.length ?? 0) > 0
@@ -121,7 +143,7 @@ export function Omnibox() {
       }),
     [input, isProcessing, mentionKind, modeAppliedLabel],
   )
-  const contextFileCount = Object.keys(fileContextMentions).length
+  const _contextFileCount = Object.keys(fileContextMentions).length
   const contextUtilizationPercent = useMemo(() => {
     if (!workspaceContext || workspaceContext.contextBudgetChars <= 0) return 0
     const ratio = (workspaceContext.contextCharsTotal / workspaceContext.contextBudgetChars) * 100
@@ -468,6 +490,26 @@ export function Omnibox() {
     return () => clearTimeout(timer)
   }, [modeAppliedLabel])
 
+  useEffect(() => {
+    if (input || isFocused || isProcessing) return
+    const interval = setInterval(() => {
+      setPlaceholderVisible(false)
+      setTimeout(() => {
+        setPlaceholderIdx((prev) => (prev + 1) % PLACEHOLDER_TEXTS.length)
+        setPlaceholderVisible(true)
+      }, 350)
+    }, 3500)
+    return () => clearInterval(interval)
+  }, [input, isFocused, isProcessing])
+
+  // Clear the controlled input when the user navigates away from the Pulse workspace.
+  // This prevents stale prompts from remaining in the box when the user returns to the landing page.
+  useEffect(() => {
+    if (workspaceMode !== 'pulse') {
+      setInput('')
+    }
+  }, [workspaceMode])
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const hasMentionSelection = activeSuggestions.length > 0 && mentionKind !== 'none'
@@ -518,11 +560,11 @@ export function Omnibox() {
   return (
     <div ref={omniboxRef} className="space-y-2">
       <div
-        className={`relative flex items-center rounded-xl transition-all duration-300 ${
+        className={`relative flex min-h-[44px] items-center rounded-2xl transition-all duration-300 ${
           isProcessing
             ? 'border-[rgba(175,215,255,0.4)] shadow-[0_0_20px_rgba(175,215,255,0.15)]'
             : 'border-[rgba(255,135,175,0.18)]'
-        } focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.08)]`}
+        } focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.18)]`}
         style={{
           background: 'rgba(10, 18, 35, 0.65)',
           borderWidth: '1.5px',
@@ -530,6 +572,36 @@ export function Omnibox() {
           borderColor: isProcessing ? 'rgba(175,215,255, 0.4)' : 'rgba(255,135,175, 0.18)',
         }}
       >
+        {/* Processing sweep shimmer */}
+        {isProcessing && (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+            <div className="animate-omnibox-sweep absolute inset-0" />
+          </div>
+        )}
+
+        {/* Bottom progress bar — processing animation */}
+        {isProcessing && (
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden rounded-b-2xl">
+            <div className="animate-omnibox-progress h-full w-1/3" />
+          </div>
+        )}
+
+        {/* Context utilization strip — persistent when workspace has turns */}
+        {!isProcessing && workspaceContext && workspaceContext.turns > 0 && (
+          <div
+            className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden rounded-b-2xl"
+            title={`Context: ${contextUtilizationPercent.toFixed(1)}% · ${workspaceContext.contextCharsTotal.toLocaleString()} / ${workspaceContext.contextBudgetChars.toLocaleString()} chars`}
+          >
+            <div
+              className="h-full bg-[linear-gradient(90deg,rgba(95,135,175,0.6),rgba(255,135,175,0.75))] transition-[width] duration-700"
+              style={{
+                width: `${contextUtilizationPercent}%`,
+                minWidth: contextUtilizationPercent > 0 ? '3px' : undefined,
+              }}
+            />
+          </div>
+        )}
+
         {/* Text input */}
         <input
           id="axon-omnibox-input"
@@ -538,10 +610,23 @@ export function Omnibox() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={'@mention a tool or just start talking'}
-          className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-[length:var(--text-base)] leading-[var(--leading-tight)] text-foreground outline-none placeholder:text-[var(--axon-text-subtle)] sm:px-4"
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder={PLACEHOLDER_TEXTS[0]}
+          className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm leading-[var(--leading-tight)] text-foreground outline-none placeholder:opacity-0 sm:px-4"
           disabled={isProcessing}
         />
+        {/* Animated placeholder overlay */}
+        {!input && !isProcessing && (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-mono text-sm text-[var(--axon-text-subtle)] transition-opacity duration-300 sm:left-4 ${
+              placeholderVisible && !isFocused ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            {PLACEHOLDER_TEXTS[placeholderIdx]}
+          </span>
+        )}
 
         {/* Inline status */}
         <div
@@ -564,13 +649,13 @@ export function Omnibox() {
         </div>
 
         {/* Divider */}
-        <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
 
         {/* Unified mode icon chip — icon-only; highlights when a URL command will run */}
         {showModeSelector && (
           <div className="inline-flex shrink-0 items-center px-2">
             <span
-              className={`flex items-center justify-center rounded-full border p-1.5 transition-colors duration-200 ${
+              className={`flex items-center justify-center rounded-full border p-1 transition-colors duration-200 ${
                 willRunAsCommand && !NO_INPUT_MODES.has(mode) && input.trim().length > 0
                   ? 'border-[rgba(175,215,255,0.38)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]'
                   : 'border-[rgba(95,135,175,0.28)] bg-[rgba(10,18,35,0.48)] text-[var(--axon-accent-blue)]'
@@ -592,9 +677,21 @@ export function Omnibox() {
           </div>
         )}
 
+        {/* Settings — navigates to /settings full page */}
+        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <button
+          type="button"
+          onClick={() => router.push('/settings')}
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)]"
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <Settings2 className="size-3.5" />
+        </button>
+
         {workspaceMode === 'pulse' && (
           <>
-            <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+            <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
             <div ref={toolsRef} className="relative flex shrink-0 items-center">
               <button
                 type="button"
@@ -671,7 +768,7 @@ export function Omnibox() {
         {/* Options button — icon-only with active-count badge */}
         {hasOptions && (
           <>
-            <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+            <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
             <button
               type="button"
               onClick={() => {
@@ -714,17 +811,19 @@ export function Omnibox() {
         )}
 
         {/* Divider before send/cancel */}
-        <div className="h-[18px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
 
         {/* Send / cancel */}
         <button
           type="button"
           onClick={isProcessing ? cancel : execute}
           disabled={!isProcessing && !input.trim() && !NO_INPUT_MODES.has(mode)}
-          className={`flex shrink-0 items-center justify-center bg-transparent px-2.5 py-1.5 transition-all duration-150 ${
+          className={`flex shrink-0 items-center justify-center bg-transparent px-2.5 py-1.5 transition-all duration-200 ${
             modeAppliedLabel
-              ? 'text-[var(--axon-accent-pink)] drop-shadow-[0_0_6px_rgba(175,215,255,0.45)]'
-              : 'text-[var(--axon-accent-blue)] hover:text-white'
+              ? 'text-[var(--axon-accent-pink)] drop-shadow-[0_0_8px_rgba(175,215,255,0.55)]'
+              : input.trim().length > 0 && !isProcessing
+                ? 'text-[var(--axon-accent-blue)] drop-shadow-[0_0_10px_rgba(255,135,175,0.5)] hover:text-white hover:drop-shadow-[0_0_14px_rgba(255,135,175,0.7)]'
+                : 'text-[var(--axon-accent-blue)] hover:text-white'
           } disabled:opacity-40 disabled:hover:text-[var(--axon-accent-blue)]`}
           title={isProcessing ? 'Cancel' : 'Execute'}
         >
@@ -876,33 +975,6 @@ export function Omnibox() {
                 @{label} ×
               </button>
             ))}
-          </div>
-        </div>
-      )}
-      {workspaceContext && workspaceContext.turns > 0 && (
-        <div
-          className={`rounded-md border border-[rgba(95,135,175,0.2)] bg-[rgba(10,18,35,0.32)] px-2 py-1.5 ${
-            isProcessing ? 'shadow-[0_0_0_1px_rgba(175,215,255,0.2)]' : ''
-          }`}
-          title={`${workspaceContext.turns} turns · ${workspaceContext.threadSourceCount} active sources · ${contextFileCount} files · ${workspaceContext.contextCharsTotal.toLocaleString()} / ${workspaceContext.contextBudgetChars.toLocaleString()} chars (${contextUtilizationPercent.toFixed(1)}%) · last ${(workspaceContext.lastLatencyMs / 1000).toFixed(1)}s${
-            isProcessing && currentMode ? ` · processing ${currentMode}` : ''
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[rgba(255,135,175,0.2)]">
-              <div
-                className={`h-full rounded-full bg-[linear-gradient(90deg,rgba(95,135,175,0.85),rgba(255,135,175,0.9))] ${
-                  isProcessing ? 'animate-pulse' : ''
-                }`}
-                style={{
-                  width: `${contextUtilizationPercent}%`,
-                  minWidth: contextUtilizationPercent > 0 ? '3px' : undefined,
-                }}
-              />
-            </div>
-            <span className="shrink-0 font-mono text-[10px] text-[rgba(175,215,255,0.5)]">
-              {contextUtilizationPercent.toFixed(1)}%
-            </span>
           </div>
         </div>
       )}
