@@ -115,7 +115,7 @@ fn top_domains(candidates: &[ranking::AskCandidate], limit: usize) -> Vec<String
 }
 
 fn authoritative_ratio(candidates: &[ranking::AskCandidate], domains: &[String]) -> f64 {
-    if candidates.is_empty() {
+    if candidates.is_empty() || domains.is_empty() {
         return 0.0;
     }
     let authoritative = candidates
