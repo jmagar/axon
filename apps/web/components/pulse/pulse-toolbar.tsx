@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeftRight, Columns2, FileText, MessageSquare } from 'lucide-react'
+import { ArrowLeftRight, Columns2, FileText, MessageSquare, Plus } from 'lucide-react'
 
 type DesktopViewMode = 'chat' | 'editor' | 'both'
 type DesktopPaneOrder = 'editor-first' | 'chat-first'
@@ -13,6 +13,7 @@ interface PulseToolbarProps {
   onDesktopViewModeChange?: (mode: DesktopViewMode) => void
   desktopPaneOrder?: DesktopPaneOrder
   onSwapPanes?: () => void
+  onNewSession?: () => void
 }
 
 export function PulseToolbar({
@@ -23,6 +24,7 @@ export function PulseToolbar({
   onDesktopViewModeChange = () => {},
   desktopPaneOrder = 'editor-first',
   onSwapPanes = () => {},
+  onNewSession,
 }: PulseToolbarProps) {
   return (
     <div className="flex items-center gap-x-[var(--pulse-control-gap)] rounded-lg border border-[rgba(255,135,175,0.08)] bg-[rgba(10,18,35,0.32)] px-[var(--space-2)] py-[var(--space-2)]">
@@ -97,6 +99,22 @@ export function PulseToolbar({
                 className="inline-flex size-6 items-center justify-center rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-text-secondary)]"
               >
                 <ArrowLeftRight className="size-3" />
+              </button>
+            </>
+          )}
+
+          {/* New session — separator + button */}
+          {onNewSession && (
+            <>
+              <span className="mx-0.5 h-4 w-px bg-[rgba(255,135,175,0.16)]" />
+              <button
+                type="button"
+                onClick={onNewSession}
+                title="New session — clears chat and document"
+                className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] px-1.5 py-0.5 text-[var(--axon-text-subtle)] transition-colors hover:border-[rgba(175,215,255,0.35)] hover:text-[var(--axon-text-secondary)]"
+              >
+                <Plus className="size-3" />
+                <span className="text-[10px] font-medium leading-none">New</span>
               </button>
             </>
           )}

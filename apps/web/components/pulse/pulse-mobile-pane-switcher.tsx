@@ -23,14 +23,13 @@ export function PulseMobilePaneSwitcher({
         aria-selected={mobilePane === 'chat'}
         aria-label="Show chat pane"
         onClick={() => onMobilePaneChange('chat')}
-        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
+        className={`inline-flex items-center justify-center rounded p-1 transition-colors ${
           mobilePane === 'chat'
             ? 'bg-[rgba(175,215,255,0.18)] text-[var(--axon-accent-pink-strong)]'
             : 'text-[var(--axon-text-dim)]'
         }`}
       >
-        <MessageSquare className="size-3" />
-        Chat
+        <MessageSquare className="size-3.5" />
       </button>
       <button
         type="button"
@@ -38,14 +37,13 @@ export function PulseMobilePaneSwitcher({
         aria-selected={mobilePane === 'editor'}
         aria-label="Show editor pane"
         onClick={() => onMobilePaneChange('editor')}
-        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] transition-colors ${
+        className={`inline-flex items-center justify-center rounded p-1 transition-colors ${
           mobilePane === 'editor'
             ? 'bg-[rgba(175,215,255,0.18)] text-[var(--axon-accent-pink-strong)]'
             : 'text-[var(--axon-text-dim)]'
         }`}
       >
-        <PenLine className="size-3" />
-        Editor
+        <PenLine className="size-3.5" />
       </button>
     </div>
   )

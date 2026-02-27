@@ -91,7 +91,17 @@ export async function POST(request: Request) {
       'If no operations are needed, return operations as an empty array.',
     ].join('\n')
 
-    const args = buildClaudeArgs(prompt, systemPrompt, req.model)
+    const args = buildClaudeArgs(prompt, systemPrompt, req.model, {
+      effort: req.effort,
+      maxTurns: req.maxTurns,
+      maxBudgetUsd: req.maxBudgetUsd,
+      appendSystemPrompt: req.appendSystemPrompt,
+      disableSlashCommands: req.disableSlashCommands,
+      noSessionPersistence: req.noSessionPersistence,
+      fallbackModel: req.fallbackModel,
+      allowedTools: req.allowedTools,
+      disallowedTools: req.disallowedTools,
+    })
     // Resume the previous Claude Code session when the client supplies one.
     // Safe because cwd is always os.tmpdir() — no project CLAUDE.md is loaded.
     if (req.sessionId) {

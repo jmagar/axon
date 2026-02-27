@@ -1,23 +1,16 @@
 'use client'
 
-import { Settings2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DockerStats } from '@/components/docker-stats'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { Omnibox } from '@/components/omnibox'
+import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
+import { RecentSessions } from '@/components/recent-sessions'
 import { ResultsPanel } from '@/components/results-panel'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { WsIndicator } from '@/components/ws-indicator'
 import { useAxonWs } from '@/hooks/use-axon-ws'
+import { MOBILE_PANE_STORAGE_KEY } from '@/hooks/use-split-pane'
 import { useWsMessages } from '@/hooks/use-ws-messages'
 import {
   DEFAULT_NEURAL_CANVAS_PROFILE,
@@ -30,7 +23,7 @@ const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), {
 })
 const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 const CANVAS_PROFILE_OPTIONS: NeuralCanvasProfile[] = ['current', 'subtle', 'cinematic', 'electric']
-const CANVAS_PROFILE_LABELS: Record<NeuralCanvasProfile, string> = {
+const _CANVAS_PROFILE_LABELS: Record<NeuralCanvasProfile, string> = {
   current: 'Current',
   subtle: 'Subtle',
   cinematic: 'Cinematic',
@@ -44,6 +37,7 @@ export default function DashboardPage() {
   const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
+  const [landingMobilePane, setLandingMobilePane] = useState<'chat' | 'editor'>('chat')
 
   useEffect(() => {
     try {
@@ -57,7 +51,25 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const handleCanvasProfileChange = useCallback((value: string) => {
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
+      if (saved === 'chat' || saved === 'editor') setLandingMobilePane(saved)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [])
+
+  const handleLandingMobilePaneChange = useCallback((pane: 'chat' | 'editor') => {
+    setLandingMobilePane(pane)
+    try {
+      window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [])
+
+  const _handleCanvasProfileChange = useCallback((value: string) => {
     if (!CANVAS_PROFILE_OPTIONS.includes(value as NeuralCanvasProfile)) return
     const profile = value as NeuralCanvasProfile
     setCanvasProfile(profile)
@@ -108,32 +120,6 @@ export default function DashboardPage() {
     <>
       <NeuralCanvas ref={canvasRef} profile={canvasProfile} />
       <WsIndicator />
-      <div className="fixed right-5 top-4 z-20">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Canvas settings"
-              className="inline-flex size-9 items-center justify-center rounded-full border bg-[color:var(--axon-surface-1)] text-[color:var(--axon-text-secondary)] backdrop-blur-md transition-colors hover:bg-[rgba(12,26,52,0.74)]"
-              style={{ borderColor: 'var(--axon-border-strong)' }}
-            >
-              <Settings2 className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuLabel>Canvas Preset</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup value={canvasProfile} onValueChange={handleCanvasProfileChange}>
-              {CANVAS_PROFILE_OPTIONS.map((profile) => (
-                <DropdownMenuRadioItem key={profile} value={profile}>
-                  {CANVAS_PROFILE_LABELS[profile]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
       {/* Gradient logo — fixed top-left */}
       <div className="fixed left-6 top-5 z-10 select-none">
         <h1
@@ -153,7 +139,7 @@ export default function DashboardPage() {
       <main
         className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
           hasResults
-            ? 'px-2.5 pb-5 pt-12 sm:px-3.5 sm:pb-8'
+            ? `px-2.5 sm:px-3.5 ${isPulseWorkspaceActive ? 'pt-1 pb-[80px] lg:pt-12 sm:pb-[88px]' : 'pt-12 pb-5 sm:pb-8'}`
             : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
         }`}
       >
@@ -170,27 +156,45 @@ export default function DashboardPage() {
           }}
         >
           <div className="flex flex-col gap-2">
-            <div
-              className={`transition-all duration-300 ${
-                isPulseWorkspaceActive ? 'order-2 scale-[0.995]' : 'order-1 scale-100'
-              }`}
-            >
-              <div
-                className={
-                  isPulseWorkspaceActive
-                    ? 'sticky bottom-0 z-20 rounded-lg bg-[rgba(10,18,35,0.62)] p-1 backdrop-blur-xl'
-                    : ''
-                }
-              >
+            {!isPulseWorkspaceActive && (
+              <div className="order-1 scale-100">
                 <Omnibox />
+                {!hasResults && <RecentSessions />}
               </div>
-            </div>
+            )}
             <div className={isPulseWorkspaceActive ? 'order-1' : 'order-2'}>
               <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
             </div>
           </div>
         </div>
       </main>
+
+      {/* Fixed top-right pane switcher — landing page only, mobile only */}
+      {!hasResults && (
+        <div className="fixed right-3 top-0 z-10 flex h-11 items-center lg:hidden">
+          <PulseMobilePaneSwitcher
+            mobilePane={landingMobilePane}
+            onMobilePaneChange={handleLandingMobilePaneChange}
+          />
+        </div>
+      )}
+
+      {/* Fixed bottom omnibox — only when Pulse workspace is active */}
+      {isPulseWorkspaceActive && (
+        <div className="fixed bottom-0 left-0 right-0 z-20 px-2.5 pb-3 sm:px-3.5 sm:pb-4">
+          <div className="mx-auto max-w-[1180px] xl:max-w-[1240px]">
+            <div
+              className="rounded-xl border p-1 backdrop-blur-xl"
+              style={{
+                borderColor: isProcessing ? 'rgba(175,215,255,0.25)' : 'rgba(255,135,175,0.12)',
+                background: 'rgba(10,18,35,0.72)',
+              }}
+            >
+              <Omnibox />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

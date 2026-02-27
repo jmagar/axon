@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesktopPaneOrder, DesktopViewMode } from '@/lib/pulse/workspace-persistence'
 
 const DESKTOP_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.desktop'
 const MOBILE_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.mobile'
+export const MOBILE_PANE_STORAGE_KEY = 'axon.web.pulse.mobile-pane'
 
 export function useSplitPane() {
   const [desktopSplitPercent, setDesktopSplitPercent] = useState(62)
@@ -43,6 +44,8 @@ export function useSplitPane() {
       if (Number.isFinite(parsedMobile) && parsedMobile >= 35 && parsedMobile <= 70) {
         setMobileSplitPercent(parsedMobile)
       }
+      const pane = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
+      if (pane === 'chat' || pane === 'editor') setMobilePane(pane)
     } catch {
       // Ignore storage errors.
     }
@@ -125,6 +128,15 @@ export function useSplitPane() {
     }
   }, [])
 
+  const persistMobilePane = useCallback((pane: 'chat' | 'editor') => {
+    setMobilePane(pane)
+    try {
+      window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [])
+
   return {
     desktopSplitPercent,
     setDesktopSplitPercent,
@@ -132,7 +144,7 @@ export function useSplitPane() {
     setMobileSplitPercent,
     isDesktop,
     mobilePane,
-    setMobilePane,
+    setMobilePane: persistMobilePane,
     desktopViewMode,
     setDesktopViewMode,
     desktopPaneOrder,
