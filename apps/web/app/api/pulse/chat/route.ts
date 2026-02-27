@@ -1,8 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import fs from 'node:fs'
 import os from 'node:os'
-import path from 'node:path'
 import { NextResponse } from 'next/server'
 import {
   createPulseChatStreamEvent,
@@ -18,77 +15,23 @@ import {
   DocOperationSchema,
   PulseChatRequestSchema,
   type PulseChatResponse,
-  type PulseMessageBlock,
-  type PulseModel,
   type PulseToolUse,
 } from '@/lib/pulse/types'
-
-const CLAUDE_TIMEOUT_MS = 300_000 // 5 min — agentic research tasks need room to breathe
-
-// The `claude` CLI always injects ~/.claude/CLAUDE.md (global instructions) into every subprocess
-// regardless of cwd. Cache the size once at module load so we can include it in context accounting.
-let _globalClaudeMdChars = 0
-try {
-  _globalClaudeMdChars = fs.statSync(path.join(os.homedir(), '.claude', 'CLAUDE.md')).size
-} catch {
-  // File absent or unreadable — treat as 0.
-}
-const GLOBAL_CLAUDE_MD_CHARS = _globalClaudeMdChars
-const CLAUDE_MODEL_ARG: Record<PulseModel, string> = {
-  sonnet: 'sonnet',
-  opus: 'opus',
-  haiku: 'haiku',
-}
-// Context budget in chars: 200k token window × ~4 chars/token = 800k chars.
-// We measure everything we actually send to the claude subprocess in chars (system prompt,
-// CLAUDE.md, user content) and express it as a fraction of this budget.
-const MODEL_CONTEXT_BUDGET_CHARS = 800_000
-const HEARTBEAT_INTERVAL_MS = 5_000
-const REPLAY_BUFFER_LIMIT = 512
-const REPLAY_CACHE_TTL_MS = 2 * 60_000
-
-type ReplayCacheEntry = {
-  events: PulseChatStreamEvent[]
-  updatedAt: number
-}
-
-const replayCache = new Map<string, ReplayCacheEntry>()
-
-function pruneReplayCache(now: number): void {
-  for (const [key, entry] of replayCache.entries()) {
-    if (now - entry.updatedAt > REPLAY_CACHE_TTL_MS) {
-      replayCache.delete(key)
-    }
-  }
-}
-
-// Stream-json event shapes (NDJSON, one event per line)
-interface ClaudeStreamAssistantContent {
-  type: 'text' | 'tool_use' | 'thinking'
-  text?: string
-  thinking?: string
-  id?: string
-  name?: string
-  input?: Record<string, unknown>
-}
-interface ClaudeStreamEvent {
-  type: 'system' | 'assistant' | 'tool_result' | 'result'
-  message?: { content?: ClaudeStreamAssistantContent[] }
-  result?: string
-  session_id?: string
-  subtype?: string
-  is_error?: boolean
-  // tool_result fields
-  tool_use_id?: string
-  content?: unknown
-  // usage reported in the result event
-  usage?: {
-    input_tokens: number
-    output_tokens: number
-    cache_read_input_tokens?: number
-    cache_creation_input_tokens?: number
-  }
-}
+import {
+  buildClaudeArgs,
+  CLAUDE_TIMEOUT_MS,
+  computeContextCharsTotal,
+  GLOBAL_CLAUDE_MD_CHARS,
+  HEARTBEAT_INTERVAL_MS,
+  MODEL_CONTEXT_BUDGET_CHARS,
+} from './claude-stream-types'
+import {
+  computeReplayKey,
+  pruneReplayCache,
+  REPLAY_BUFFER_LIMIT,
+  replayCache,
+} from './replay-cache'
+import { createStreamParserState, parseClaudeStreamLine } from './stream-parser'
 
 export async function POST(request: Request) {
   ensureRepoRootEnvLoaded()
@@ -119,20 +62,17 @@ export async function POST(request: Request) {
         : typeof bodyObject.lastEventId === 'string'
           ? bodyObject.lastEventId
           : undefined
-    const replayKey = createHash('sha256')
-      .update(
-        JSON.stringify({
-          prompt: req.prompt,
-          documentMarkdown: req.documentMarkdown,
-          selectedCollections: req.selectedCollections,
-          threadSources: req.threadSources,
-          scrapedContext: req.scrapedContext,
-          conversationHistory: req.conversationHistory,
-          permissionLevel: req.permissionLevel,
-          model: req.model,
-        }),
-      )
-      .digest('hex')
+
+    const replayKey = computeReplayKey({
+      prompt: req.prompt,
+      documentMarkdown: req.documentMarkdown,
+      selectedCollections: req.selectedCollections,
+      threadSources: req.threadSources,
+      scrapedContext: req.scrapedContext,
+      conversationHistory: req.conversationHistory,
+      permissionLevel: req.permissionLevel,
+      model: req.model,
+    })
 
     pruneReplayCache(Date.now())
 
@@ -151,53 +91,22 @@ export async function POST(request: Request) {
       'If no operations are needed, return operations as an empty array.',
     ].join('\n')
 
-    const systemPromptChars = systemPrompt.length
-
-    const computeContextCharsTotal = (): number => {
-      const citationChars = citations.reduce(
-        (total, citation) => total + citation.snippet.length,
-        0,
-      )
-      const threadSourceChars = req.threadSources.reduce(
-        (total, source) => total + source.length,
-        0,
-      )
-      const conversationChars = req.conversationHistory.reduce(
-        (total, entry) => total + entry.content.length,
-        0,
-      )
-      return (
-        GLOBAL_CLAUDE_MD_CHARS +
-        systemPromptChars +
-        req.prompt.length +
-        req.documentMarkdown.length +
-        conversationChars +
-        citationChars +
-        threadSourceChars
-      )
+    const args = buildClaudeArgs(prompt, systemPrompt, req.model)
+    // Resume the previous Claude Code session when the client supplies one.
+    // Safe because cwd is always os.tmpdir() — no project CLAUDE.md is loaded.
+    if (req.sessionId) {
+      args.push('--resume', req.sessionId)
     }
 
-    const args = [
-      '-p',
-      prompt,
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--system-prompt',
-      systemPrompt,
-      // Disable all MCP servers — the subprocess runs in a container where
-      // none of the globally-configured MCPs are reachable. Without this flag
-      // the CLI hangs trying to connect to all servers before answering.
-      '--strict-mcp-config',
-    ]
-    const modelArg = CLAUDE_MODEL_ARG[req.model]
-    if (modelArg) {
-      args.push('--model', modelArg)
-    }
-    // Do NOT --resume a Claude Code session. Resuming a session started in a
-    // project directory would load that project's CLAUDE.md into Pulse's
-    // context (e.g. "you are a Rust coding assistant"). The system prompt
-    // built above is the complete context; each request must be fresh.
+    const contextCharsTotal = computeContextCharsTotal({
+      globalClaudeMdChars: GLOBAL_CLAUDE_MD_CHARS,
+      systemPromptChars: systemPrompt.length,
+      promptLength: req.prompt.length,
+      documentMarkdownLength: req.documentMarkdown.length,
+      citationSnippets: citations.map((c) => c.snippet),
+      threadSources: req.threadSources,
+      conversationHistory: req.conversationHistory,
+    })
 
     const encoder = new TextEncoder()
     const cachedReplay = replayCache.get(replayKey)
@@ -206,8 +115,6 @@ export async function POST(request: Request) {
       start(controller) {
         const replayBuffer = cachedReplay?.events ? [...cachedReplay.events] : []
         let lastEmitAt = Date.now()
-        let firstDeltaMs: number | null = null
-        let deltaCount = 0
         let aborted = request.signal.aborted
 
         const enqueueEvent = (event: PulseChatStreamEvent) => {
@@ -234,16 +141,15 @@ export async function POST(request: Request) {
           controller.close()
         }
 
-        const contextCharsTotal = computeContextCharsTotal()
         const buildTelemetry = () => {
           const elapsed = Date.now() - startedAt
           return {
             elapsedMs: elapsed,
             contextCharsTotal,
             contextBudgetChars: MODEL_CONTEXT_BUDGET_CHARS,
-            first_delta_ms: firstDeltaMs,
+            first_delta_ms: parserState.firstDeltaMs,
             time_to_done_ms: elapsed,
-            delta_count: deltaCount,
+            delta_count: parserState.deltaCount,
             aborted,
           }
         }
@@ -280,10 +186,7 @@ export async function POST(request: Request) {
 
         let stderr = ''
         let stdoutRemainder = ''
-        const toolUses: PulseToolUse[] = []
-        const blocks: PulseMessageBlock[] = []
-        const toolUseIdToIdx = new Map<string, number>()
-        let result = ''
+        const parserState = createStreamParserState()
         let closed = false
 
         const abortHandler = () => {
@@ -319,95 +222,14 @@ export async function POST(request: Request) {
           stdoutRemainder = lines.pop() ?? ''
 
           for (const line of lines) {
-            const trimmed = line.trim()
-            if (!trimmed) continue
-            let event: ClaudeStreamEvent
-            try {
-              event = JSON.parse(trimmed) as ClaudeStreamEvent
-            } catch {
-              continue
-            }
-
-            if (event.type === 'assistant' && event.message?.content) {
-              emit({ type: 'status', phase: 'thinking' })
-              for (const block of event.message.content) {
-                if (block.type === 'text' && block.text) {
-                  blocks.push({ type: 'text', content: block.text })
-                  deltaCount += 1
-                  if (firstDeltaMs === null) {
-                    firstDeltaMs = Date.now() - startedAt
-                  }
-                  emit({ type: 'assistant_delta', delta: block.text })
-                }
-                if (block.type === 'tool_use' && block.name) {
-                  const tool: PulseToolUse = {
-                    name: block.name,
-                    input: block.input ?? {},
-                  }
-                  const idx = blocks.length
-                  blocks.push({
-                    type: 'tool_use',
-                    name: block.name,
-                    input: block.input ?? {},
-                  })
-                  if (block.id) toolUseIdToIdx.set(block.id, idx)
-                  toolUses.push(tool)
-                  emit({ type: 'tool_use', tool })
-                }
-                if (block.type === 'thinking' && block.thinking) {
-                  blocks.push({ type: 'thinking', content: block.thinking })
-                  emit({ type: 'thinking_content', content: block.thinking })
-                }
+            const result = parseClaudeStreamLine(line, parserState, startedAt)
+            if (result.kind === 'skip') continue
+            if (result.kind === 'result') continue // stored in parserState.result
+            if (result.kind === 'tool_result_patch') continue // already patched in parserState.blocks
+            if (result.kind === 'assistant_events') {
+              for (const ev of result.events) {
+                emit(ev)
               }
-            }
-
-            if (event.type === 'tool_result') {
-              const id = event.tool_use_id
-              const raw = event.content
-              let resultText = ''
-              if (typeof raw === 'string') {
-                resultText = raw
-              } else if (Array.isArray(raw)) {
-                resultText = (raw as Array<unknown>)
-                  .map((entry) => {
-                    if (typeof entry !== 'object' || entry === null) return ''
-                    const obj = entry as Record<string, unknown>
-                    if (typeof obj.text === 'string') return obj.text
-                    if (Array.isArray(obj.content)) {
-                      return (obj.content as Array<unknown>)
-                        .map((inner) => {
-                          if (typeof inner !== 'object' || inner === null) return ''
-                          const i = inner as Record<string, unknown>
-                          return typeof i.text === 'string' ? i.text : ''
-                        })
-                        .filter(Boolean)
-                        .join('\n')
-                    }
-                    return ''
-                  })
-                  .filter(Boolean)
-                  .join('\n')
-              }
-              if (id && resultText) {
-                const idx = toolUseIdToIdx.get(id)
-                if (idx !== undefined) {
-                  const b = blocks[idx]
-                  if (b?.type === 'tool_use') {
-                    ;(
-                      b as {
-                        type: 'tool_use'
-                        name: string
-                        input: Record<string, unknown>
-                        result?: string
-                      }
-                    ).result = resultText.slice(0, 600)
-                  }
-                }
-              }
-            }
-
-            if (event.type === 'result') {
-              result = event.result ?? ''
             }
           }
         })
@@ -436,12 +258,16 @@ export async function POST(request: Request) {
             return
           }
 
+          const toolUses: PulseToolUse[] = parserState.toolUses
+          const blocks = parserState.blocks
+          const result = parserState.result
+
           if (aborted) {
             emit({
               type: 'done',
               response: {
                 text: fallbackAssistantText(result),
-                sessionId: undefined,
+                sessionId: parserState.sessionId ?? undefined,
                 citations,
                 operations: [],
                 toolUses,
@@ -466,7 +292,7 @@ export async function POST(request: Request) {
                 type: 'done',
                 response: {
                   text: memoryFallbackText,
-                  sessionId: undefined,
+                  sessionId: parserState.sessionId ?? undefined,
                   citations,
                   operations: [],
                   toolUses: [],
@@ -522,7 +348,7 @@ export async function POST(request: Request) {
             type: 'done',
             response: {
               text,
-              sessionId: undefined, // session resumption disabled — see --resume comment above
+              sessionId: parserState.sessionId ?? undefined, // session resumption disabled — see --resume comment above
               citations,
               operations,
               toolUses,

@@ -2,7 +2,7 @@
 
 import { AIChatPlugin, AIPlugin } from '@platejs/ai/react'
 import type { usePlateEditor } from 'platejs/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type ChatStatus = 'idle' | 'submitted' | 'streaming' | 'error'
 
@@ -96,7 +96,7 @@ export function useAxonAIChat(): ChatHelpers {
     [],
   )
 
-  return { status, messages, sendMessage }
+  return useMemo(() => ({ status, messages, sendMessage }), [status, messages, sendMessage])
 }
 
 /** Wire the chat adapter into AIChatPlugin after the editor mounts. */

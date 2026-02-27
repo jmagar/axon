@@ -9,6 +9,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| `TBD` | refactor(web+pulse+ask) | pulse module splits + ask gates + omnibox/toolbar polish |
 | `ddc19a0` | feat(web+docker+pulse) | pulse thinking blocks + empty bubble fix + claude hot-reload s6 + sccache |
 | `aea1c5c` | fix(web+jobs+ci) | land review fixes, test env alignment, and changelog/session plumbing |
 | `d6b01b2` | fix(pulse) | ensure Qdrant collection exists before upsert |
@@ -48,6 +49,19 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 | `1dd74f2` | feat(web) | crawl download routes — pack, zip, and per-file downloads |
 
 ### Highlights
+
+#### Pulse Module Splits (TBD)
+- Broke three over-limit files into 13 focused modules — no behavioral changes, zero re-exports:
+  - `route.ts` (562→388 lines) split into `replay-cache.ts`, `claude-stream-types.ts`, `stream-parser.ts`
+  - `pulse-workspace.tsx` (1093→342 lines) split into `hooks/use-pulse-chat.ts`, `use-pulse-persistence.ts`, `use-split-pane.ts`, `use-pulse-autosave.ts`, `lib/pulse/workspace-persistence.ts`, `lib/pulse/chat-api.ts`
+  - `pulse-chat-pane.tsx` (952→450 lines) split into `components/pulse/tool-badge.tsx`, `doc-op-badge.tsx`, `message-content.tsx`, `chat-utils.ts`
+- `ChatMessage` interface relocated from `pulse-workspace.tsx` to `lib/pulse/workspace-persistence.ts` (canonical location); all consumers updated in place.
+- `computeMessageVirtualWindow` relocated to `chat-utils.ts`; test import updated directly (no shim).
+- All 110 tests pass, TSC clean, Biome clean.
+
+#### Ask / Strict Gates (TBD)
+- Added `ask_strict_procedural` and `ask_strict_config_schema` config fields (both default `true`) — allow disabling Gate 5 (official-docs source check) and Gate 6 (exact-page-citation check) via env vars `AXON_ASK_STRICT_PROCEDURAL` / `AXON_ASK_STRICT_CONFIG_SCHEMA` without code changes.
+- `crates/vector/ops/commands/ask.rs` extended with corresponding gate logic.
 
 #### Pulse / Thinking Blocks + Empty Bubble Fix (ddc19a0)
 - Wired Claude extended thinking (`type: 'thinking'` stream blocks) end-to-end through all four layers: `route.ts` captures them and emits `thinking_content` stream events; `chat-stream.ts` adds the event type; `types.ts` adds `PulseMessageBlock` thinking variant; `pulse-workspace.tsx` handles events and builds thinking blocks in real-time; `pulse-chat-pane.tsx` renders a collapsible `ThinkingBlock` component (violet-themed, shows char count, expands to monospace reasoning text).
