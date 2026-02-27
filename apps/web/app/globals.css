@@ -343,3 +343,43 @@
   );
   animation: omnibox-progress 1.8s ease-in-out infinite;
 }
+
+/* ── Plate editor — Axon theme overrides ──────────────────────────────────── */
+
+/* Selection highlight: axon cyan with low opacity */
+.axon-editor [data-slate-editor] ::selection {
+  background: rgba(175, 215, 255, 0.18);
+}
+
+/* Caret color: axon cyan */
+.axon-editor [data-slate-editor] {
+  caret-color: #afd7ff;
+}
+
+/* Placeholder text: axon dim text */
+.axon-editor [data-slate-placeholder] {
+  color: var(--axon-text-dim) !important;
+  opacity: 1 !important;
+}
+
+/* Inline code styling */
+.axon-editor [data-slate-editor] code {
+  background: rgba(175, 215, 255, 0.08);
+  border: 1px solid rgba(175, 215, 255, 0.12);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--axon-accent-pink);
+}
+
+/* Bold text */
+.axon-editor [data-slate-editor] strong {
+  color: var(--axon-text-primary);
+  font-weight: 600;
+}
+
+/* Subtle line between editor and toolbar separator */
+.axon-editor .plate-toolbar-separator {
+  background: rgba(255, 135, 175, 0.15);
+}

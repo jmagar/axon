@@ -65,7 +65,7 @@ export function ToolbarSeparator({
 
 // From toggleVariants
 const toolbarButtonVariants = cva(
-  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium text-sm outline-none transition-[color,box-shadow] hover:bg-muted hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-checked:bg-accent aria-checked:text-accent-foreground aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium text-sm outline-none transition-[color,box-shadow] hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-blue)] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-checked:bg-[rgba(175,215,255,0.12)] aria-checked:text-[var(--axon-accent-pink)] aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: 'default',
@@ -103,7 +103,7 @@ const dropdownArrowVariants = cva(
       },
       variant: {
         default:
-          'bg-transparent hover:bg-muted hover:text-muted-foreground aria-checked:bg-accent aria-checked:text-accent-foreground',
+          'bg-transparent hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-blue)] aria-checked:bg-[rgba(175,215,255,0.12)] aria-checked:text-[var(--axon-accent-pink)]',
         outline:
           'border border-input border-l-0 bg-transparent hover:bg-accent hover:text-accent-foreground',
       },
@@ -314,7 +314,7 @@ function TooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         className={cn(
-          'z-50 w-fit origin-(--radix-tooltip-content-transform-origin) text-balance rounded-md bg-primary px-3 py-1.5 text-primary-foreground text-xs',
+          'z-50 w-fit origin-(--radix-tooltip-content-transform-origin) text-balance rounded-md bg-[rgba(3,7,18,0.92)] border border-[rgba(255,135,175,0.15)] backdrop-blur-md text-[var(--axon-text-secondary)] text-[11px]',
           className,
         )}
         data-slot="tooltip-content"

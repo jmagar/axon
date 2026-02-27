@@ -68,6 +68,9 @@ export interface ClaudeBuildExtra {
   fallbackModel?: string
   allowedTools?: string
   disallowedTools?: string
+  addDir?: string
+  betas?: string
+  toolsRestrict?: string
 }
 
 export function buildClaudeArgs(
@@ -129,6 +132,20 @@ export function buildClaudeArgs(
   }
   if (extra?.disallowedTools) {
     args.push('--disallowedTools', extra.disallowedTools)
+  }
+  if (extra?.addDir) {
+    for (const dir of extra.addDir.split(',')) {
+      const trimmed = dir.trim()
+      if (trimmed) {
+        args.push('--add-dir', trimmed)
+      }
+    }
+  }
+  if (extra?.betas) {
+    args.push('--betas', extra.betas)
+  }
+  if (extra?.toolsRestrict) {
+    args.push('--tools', extra.toolsRestrict)
   }
   return args
 }

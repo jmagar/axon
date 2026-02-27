@@ -15,6 +15,9 @@ export interface PulseSettings {
   fallbackModel: string // --fallback-model ('' = disabled)
   allowedTools: string // --allowedTools ('' = all allowed)
   disallowedTools: string // --disallowedTools ('' = none disallowed)
+  addDir: string // --add-dir (comma-separated directories)
+  betas: string // --betas (comma-separated beta headers)
+  toolsRestrict: string // --tools (restrict built-in tools)
 }
 
 const SETTINGS_KEY = 'axon.web.pulse.settings.v1'
@@ -29,6 +32,9 @@ export const DEFAULT_PULSE_SETTINGS: PulseSettings = {
   fallbackModel: '',
   allowedTools: '',
   disallowedTools: '',
+  addDir: '',
+  betas: '',
+  toolsRestrict: '',
 }
 
 // TODO: wire new settings fields (disableSlashCommands, noSessionPersistence, fallbackModel,
@@ -76,6 +82,10 @@ export function usePulseSettings() {
           typeof parsed.disallowedTools === 'string'
             ? parsed.disallowedTools
             : prev.disallowedTools,
+        addDir: typeof parsed.addDir === 'string' ? parsed.addDir : prev.addDir,
+        betas: typeof parsed.betas === 'string' ? parsed.betas : prev.betas,
+        toolsRestrict:
+          typeof parsed.toolsRestrict === 'string' ? parsed.toolsRestrict : prev.toolsRestrict,
       }))
     } catch {
       // Ignore storage errors.
