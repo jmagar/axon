@@ -4,7 +4,7 @@ use crate::crates::core::health::redis_healthy;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::jobs::common::{
     JobTable, enqueue_job, make_pool, mark_job_failed, open_amqp_channel, purge_queue_safe,
-    reclaim_stale_running_jobs,
+    reclaim_stale_running_jobs, touch_running_job,
 };
 use crate::crates::jobs::status::JobStatus;
 use chrono::{DateTime, Utc};
