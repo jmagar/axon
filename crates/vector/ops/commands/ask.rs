@@ -235,144 +235,26 @@ fn indicates_insufficient_evidence(body: &str) -> bool {
         || lower.contains("no relevant information")
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AskQueryClass {
-    Procedural,
-    ConfigSchema,
-    Other,
-}
-
-fn classify_query(query: &str) -> AskQueryClass {
-    let lower = query.to_ascii_lowercase();
-    let procedural = [
-        "how do",
-        "how to",
-        "create ",
-        "setup ",
-        "set up",
-        "configure ",
-        "install ",
-        "steps ",
-        "workflow",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle));
-    let config_schema = [
-        "config",
-        "configuration",
-        "schema",
-        ".yaml",
-        ".yml",
-        ".json",
-        ".toml",
-        "openapi",
-        "field",
-        "property",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle));
-    // ConfigSchema takes precedence over Procedural when both match (e.g. "how do I configure
-    // openai.yaml?"). This means ask_strict_config_schema gates such queries, not
-    // ask_strict_procedural, even though the query is also procedural in nature.
-    if config_schema {
-        AskQueryClass::ConfigSchema
-    } else if procedural {
-        AskQueryClass::Procedural
-    } else {
-        AskQueryClass::Other
-    }
-}
-
 fn is_non_trivial(query: &str, body: &str) -> bool {
     let query_tokens = ranking::tokenize_query(query);
     let body_words = body.split_whitespace().count();
     query_tokens.len() >= 4 || body_words >= 70 || body.len() >= 450
 }
 
-fn host_from_source(source: &str) -> Option<String> {
-    Url::parse(source)
-        .ok()
-        .and_then(|parsed| parsed.host_str().map(|h| h.to_ascii_lowercase()))
-}
-
 fn source_matches_domain_list(source: &str, domains: &[String]) -> bool {
     if domains.is_empty() {
         return false;
     }
-    let Some(host) = host_from_source(source) else {
+    let Some(host) = Url::parse(source)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(|h| h.to_ascii_lowercase()))
+    else {
         return false;
     };
     domains.iter().any(|domain| {
         let normalized = domain.trim().to_ascii_lowercase();
         !normalized.is_empty() && (host == normalized || host.ends_with(&format!(".{normalized}")))
     })
-}
-
-fn url_path_is_docs_like(source: &str) -> bool {
-    let path = source
-        .split_once("://")
-        .and_then(|(_, rest)| rest.split_once('/'))
-        .map(|(_, path)| path)
-        .unwrap_or("");
-    path.starts_with("docs/")
-        || path.starts_with("documentation/")
-        || path.starts_with("guide/")
-        || path.starts_with("reference/")
-}
-
-fn is_official_docs_source(source: &str, cfg: &Config) -> bool {
-    if source_matches_domain_list(source, &cfg.ask_authoritative_domains)
-        || source_matches_domain_list(source, &cfg.ask_authoritative_allowlist)
-    {
-        return true;
-    }
-    let Some(host) = host_from_source(source) else {
-        return false;
-    };
-    host.starts_with("docs.")
-        || host.starts_with("developers.")
-        || host.contains(".docs.")
-        || url_path_is_docs_like(source)
-}
-
-fn query_file_like_tokens(query: &str) -> Vec<String> {
-    query
-        .split_whitespace()
-        .map(|raw| {
-            raw.trim_matches(|c: char| {
-                !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
-            })
-            .to_ascii_lowercase()
-        })
-        .filter(|token| {
-            token.ends_with(".yaml")
-                || token.ends_with(".yml")
-                || token.ends_with(".json")
-                || token.ends_with(".toml")
-                || token.ends_with(".md")
-        })
-        .collect()
-}
-
-fn has_exact_page_citation(source: &str, query: &str) -> bool {
-    let lower_source = source.to_ascii_lowercase();
-    let file_tokens = query_file_like_tokens(query);
-    if file_tokens.iter().any(|token| lower_source.contains(token)) {
-        return true;
-    }
-    let parsed = match Url::parse(source) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
-    let path = parsed.path().to_ascii_lowercase();
-    if path.trim().is_empty() || path == "/" {
-        return false;
-    }
-    let query_tokens = ranking::tokenize_query(query);
-    query_tokens
-        .iter()
-        .filter(|token| token.len() >= 4)
-        .any(|token| path.contains(token))
 }
 
 fn format_insufficient_evidence(
@@ -437,14 +319,20 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
     let body = strip_sources_section(answer);
     let cited = extract_cited_source_ids(&body);
     let mut insufficiency_reasons: Vec<String> = Vec::new();
+
+    // Gate 1: no citations at all
     if cited.is_empty() {
         insufficiency_reasons.push("Answer contained no source citations.".to_string());
         return format_insufficient_evidence(&source_map, None, &insufficiency_reasons);
     }
+
+    // Gate 2: LLM self-flagged insufficient evidence
     if indicates_insufficient_evidence(&body) {
         insufficiency_reasons.push("Model flagged insufficient supporting evidence.".to_string());
         return format_insufficient_evidence(&source_map, Some(&cited), &insufficiency_reasons);
     }
+
+    // Gate 3: citations don't map to retrieved sources
     let mut seen_sources: HashSet<String> = HashSet::new();
     let source_lines = cited
         .iter()
@@ -463,7 +351,7 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
         return format_insufficient_evidence(&source_map, Some(&cited), &insufficiency_reasons);
     }
 
-    let query_class = classify_query(query);
+    // Gate 4: non-trivial answers need minimum unique citations
     let min_citations = if is_non_trivial(query, &body) {
         cfg.ask_min_citations_nontrivial
     } else {
@@ -476,6 +364,7 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
         ));
     }
 
+    // Gate 4b: authoritative allowlist (opt-in, empty by default)
     let cited_sources = source_lines
         .iter()
         .filter_map(|line| line.split_once("] ").map(|(_, source)| source.to_string()))
@@ -488,32 +377,6 @@ fn normalize_ask_answer(cfg: &Config, query: &str, answer: &str, context: &str) 
         insufficiency_reasons.push(
             "Authoritative allowlist is configured, but no cited source matched it.".to_string(),
         );
-    }
-
-    match query_class {
-        AskQueryClass::Procedural => {
-            if cfg.ask_strict_procedural
-                && !cited_sources
-                    .iter()
-                    .any(|source| is_official_docs_source(source, cfg))
-            {
-                insufficiency_reasons.push(
-                    "Procedural query requires at least one official-docs citation.".to_string(),
-                );
-            }
-        }
-        AskQueryClass::ConfigSchema => {
-            if cfg.ask_strict_config_schema
-                && !cited_sources
-                    .iter()
-                    .any(|source| has_exact_page_citation(source, query))
-            {
-                insufficiency_reasons.push(
-                    "Config/schema query requires at least one exact-page citation.".to_string(),
-                );
-            }
-        }
-        AskQueryClass::Other => {}
     }
 
     if !insufficiency_reasons.is_empty() {
@@ -573,8 +436,6 @@ mod tests {
 
     #[test]
     fn normalize_ask_answer_replaces_sources_with_deduped_section() {
-        // Use docs.* hostnames so is_official_docs_source() matches and the
-        // Procedural query gate ("how do I …") does not block the answer.
         let context = "Sources:\n## Top Chunk [S1]: https://docs.a.dev/guide\n\n---\n\n## Top Chunk [S2]: https://docs.b.dev/api";
         let raw = "Use command X [S2] and Y [S1].\n\n## Sources\n- [S1] dup\n- [S1] dup";
         let normalized = normalize_ask_answer(&cfg(), "how do I use this?", raw, context);
@@ -624,36 +485,6 @@ mod tests {
     }
 
     #[test]
-    fn procedural_query_requires_official_docs_citation() {
-        let mut cfg = cfg();
-        cfg.ask_authoritative_domains = vec!["docs.example.com".to_string()];
-        let context = "Sources:\n## Top Chunk [S1]: https://blog.example.net/post";
-        let raw = "Do A then B [S1].";
-        let normalized = normalize_ask_answer(&cfg, "how do I set this up?", raw, context);
-        assert!(normalized.starts_with("Insufficient evidence in indexed sources"));
-        assert!(
-            normalized.contains("Procedural query requires at least one official-docs citation.")
-        );
-    }
-
-    #[test]
-    fn config_schema_query_requires_exact_page_citation() {
-        let cfg = cfg();
-        let context = "Sources:\n## Top Chunk [S1]: https://docs.example.com/";
-        let raw = "Use openai.yaml fields like model and tools [S1].";
-        let normalized = normalize_ask_answer(
-            &cfg,
-            "what is openai.yaml in an mcp server repo?",
-            raw,
-            context,
-        );
-        assert!(normalized.starts_with("Insufficient evidence in indexed sources"));
-        assert!(
-            normalized.contains("Config/schema query requires at least one exact-page citation.")
-        );
-    }
-
-    #[test]
     fn non_trivial_answer_requires_minimum_citation_count() {
         let mut cfg = cfg();
         cfg.ask_min_citations_nontrivial = 2;
@@ -667,175 +498,5 @@ mod tests {
         );
         assert!(normalized.starts_with("Insufficient evidence in indexed sources"));
         assert!(normalized.contains("requires at least 2 unique citations"));
-    }
-
-    #[test]
-    fn url_path_is_docs_like_recognizes_common_prefixes() {
-        assert!(super::url_path_is_docs_like(
-            "https://platejs.org/docs/getting-started"
-        ));
-        assert!(super::url_path_is_docs_like(
-            "https://vuejs.org/guide/introduction"
-        ));
-        assert!(super::url_path_is_docs_like(
-            "https://react.dev/reference/react"
-        ));
-        assert!(super::url_path_is_docs_like(
-            "https://example.com/documentation/setup"
-        ));
-        // /api/ is excluded — REST endpoints like /api/v1/users are not docs pages
-        assert!(!super::url_path_is_docs_like(
-            "https://example.com/api/client"
-        ));
-        assert!(!super::url_path_is_docs_like(
-            "https://medium.com/blog/my-post"
-        ));
-        assert!(!super::url_path_is_docs_like("https://platejs.org/"));
-        assert!(!super::url_path_is_docs_like("https://example.com/about"));
-    }
-
-    #[test]
-    fn is_official_docs_source_accepts_docs_path_prefix() {
-        let cfg = cfg();
-        // platejs.org/docs/* qualifies via url_path_is_docs_like()
-        assert!(super::is_official_docs_source(
-            "https://platejs.org/docs/getting-started",
-            &cfg
-        ));
-        // medium.com blog post does not qualify
-        assert!(!super::is_official_docs_source(
-            "https://medium.com/blog/my-post",
-            &cfg
-        ));
-    }
-
-    #[test]
-    fn strict_procedural_false_bypasses_gate5() {
-        let mut cfg = cfg();
-        cfg.ask_strict_procedural = false;
-        // Source is a blog — would fail Gate 5 when strict=true
-        let context = "Sources:\n## Top Chunk [S1]: https://blog.example.net/post";
-        let raw =
-            "Do A then B then C. This is a comprehensive guide with all necessary steps [S1].";
-        let normalized = normalize_ask_answer(&cfg, "how do I set this up?", raw, context);
-        // Should NOT produce "Insufficient evidence" when strict=false
-        assert!(
-            !normalized.starts_with("Insufficient evidence in indexed sources"),
-            "expected answer, got: {normalized}"
-        );
-    }
-
-    #[test]
-    fn strict_config_schema_false_bypasses_gate6() {
-        let mut cfg = cfg();
-        cfg.ask_strict_config_schema = false;
-        cfg.ask_min_citations_nontrivial = 1; // Gate 3 must not block before Gate 6 is tested
-        // Source path doesn't contain "openai.yaml" — would fail Gate 6 when strict=true
-        let context = "Sources:\n## Top Chunk [S1]: https://docs.example.com/";
-        let raw = "Use openai.yaml fields like model and tools [S1].";
-        let normalized = normalize_ask_answer(
-            &cfg,
-            "what is openai.yaml in an mcp server repo?",
-            raw,
-            context,
-        );
-        // Should NOT produce "Insufficient evidence" when strict=false
-        assert!(
-            !normalized.starts_with("Insufficient evidence in indexed sources"),
-            "expected answer, got: {normalized}"
-        );
-    }
-
-    #[test]
-    fn platejs_docs_url_passes_procedural_gate() {
-        let mut cfg = cfg();
-        cfg.ask_min_citations_nontrivial = 1;
-        let context = "Sources:\n## Top Chunk [S1]: https://platejs.org/docs/plugin/bold";
-        let raw = "Install the bold plugin from @udecode/plate-basic-marks and add it to your editor's plugins array [S1].";
-        let normalized = normalize_ask_answer(
-            &cfg,
-            "how do I add bold formatting to a PlateJS editor?",
-            raw,
-            context,
-        );
-        assert!(
-            !normalized.starts_with("Insufficient evidence in indexed sources"),
-            "platejs.org/docs/* should pass Gate 5: {normalized}"
-        );
-        assert!(normalized.contains("## Sources"));
-    }
-
-    #[test]
-    fn ask_quality_regression_fixtures_five_queries() {
-        let mut cfg = cfg();
-        cfg.ask_authoritative_domains = vec![
-            "docs.claude.com".to_string(),
-            "developers.openai.com".to_string(),
-            "docs.cloud.google.com".to_string(),
-            "geminicli.com".to_string(),
-        ];
-        cfg.ask_min_citations_nontrivial = 2;
-
-        let fixtures = vec![
-            (
-                "claude slash command",
-                "how do you create claude code custom slash commands?",
-                "Sources:\n## Top Chunk [S1]: https://docs.claude.com/en/docs/claude-code/overview\n\n---\n\n## Top Chunk [S2]: https://docs.claude.com/en/docs/claude-code/slash-commands",
-                "Define commands in project instructions and invoke them by slash name [S1][S2].",
-                false,
-            ),
-            (
-                "codex command weak source",
-                "how do you create codex custom slash commands?",
-                "Sources:\n## Top Chunk [S1]: https://medium.com/example/codex-slash-commands",
-                "Create prompt files under ~/.codex/prompts [S1].",
-                true,
-            ),
-            (
-                "gemini command strong source",
-                "how do you create gemini custom slash commands?",
-                "Sources:\n## Top Chunk [S1]: https://geminicli.com/docs/cli/custom-commands\n\n---\n\n## Top Chunk [S2]: https://docs.cloud.google.com/gemini/docs/release-notes",
-                "Use `.toml` command files and reload commands [S1][S2].",
-                false,
-            ),
-            (
-                "openai yaml missing exact page",
-                "what is openai.yaml in an MCP server repo?",
-                "Sources:\n## Top Chunk [S1]: https://openrouter.ai/docs/guides/guides/mcp-servers",
-                "It appears to be related to MCP server config [S1].",
-                true,
-            ),
-            (
-                "claude md weak evidence",
-                "what does CLAUDE.md do in Claude Code?",
-                "Sources:\n## Top Chunk [S1]: https://docs.claude.com/en/docs/claude-code/overview",
-                "It customizes behavior [S1].",
-                false,
-            ),
-        ];
-
-        for (name, query, context, raw, expect_insufficient) in fixtures {
-            let normalized = normalize_ask_answer(&cfg, query, raw, context);
-            if expect_insufficient {
-                assert!(
-                    normalized.starts_with("Insufficient evidence in indexed sources"),
-                    "{name}: expected insufficient format, got: {normalized}"
-                );
-                assert!(normalized.contains("## Why"), "{name}: missing Why section");
-                assert!(
-                    normalized.contains("## Sources"),
-                    "{name}: missing Sources section"
-                );
-            } else {
-                assert!(
-                    normalized.contains("## Sources"),
-                    "{name}: missing Sources section"
-                );
-                assert!(
-                    !normalized.starts_with("Insufficient evidence in indexed sources"),
-                    "{name}: unexpectedly insufficient: {normalized}"
-                );
-            }
-        }
     }
 }
