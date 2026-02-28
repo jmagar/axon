@@ -4,6 +4,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 
 // AXON_WORKSPACE inside the axon-web container is /workspace (bind-mounted from host)
 const WORKSPACE_ROOT = process.env.AXON_WORKSPACE ?? '/workspace'
+// Claude CLI config dir inside the axon-web container (node user's home)
+const CLAUDE_ROOT = path.resolve(process.env.CLAUDE_CONFIG ?? '/home/node/.claude')
+const CLAUDE_PREFIX = '__claude'
 
 const TEXT_EXTENSIONS = new Set([
   '.md',
@@ -65,18 +68,26 @@ const IGNORE_DIRS = new Set([
   'coverage',
 ])
 
-/** Returns safe resolved path or error string */
-function validatePath(raw: string): { safe: string } | { error: string } {
-  // Normalize: strip leading slash, resolve against workspace root
+/** Returns safe resolved path + which root it belongs to, or an error string */
+function validatePath(raw: string): { safe: string; isClaudeRoot: boolean } | { error: string } {
+  // Claude config paths: "__claude" or "__claude/..."
+  if (raw === CLAUDE_PREFIX || raw.startsWith(`${CLAUDE_PREFIX}/`)) {
+    const relative = raw.length > CLAUDE_PREFIX.length ? raw.slice(CLAUDE_PREFIX.length + 1) : ''
+    const resolved = relative ? path.resolve(CLAUDE_ROOT, relative) : CLAUDE_ROOT
+    if (resolved !== CLAUDE_ROOT && !resolved.startsWith(CLAUDE_ROOT + path.sep)) {
+      return { error: 'Path is outside Claude config' }
+    }
+    return { safe: resolved, isClaudeRoot: true }
+  }
+
+  // Workspace paths: strip leading slash, resolve against workspace root
   const relative = raw.replace(/^\/+/, '')
   const resolved = path.resolve(WORKSPACE_ROOT, relative)
   const workspaceNorm = path.resolve(WORKSPACE_ROOT)
-
-  // Must be at or below WORKSPACE_ROOT (prevent path traversal)
   if (resolved !== workspaceNorm && !resolved.startsWith(workspaceNorm + path.sep)) {
     return { error: 'Path is outside workspace' }
   }
-  return { safe: resolved }
+  return { safe: resolved, isClaudeRoot: false }
 }
 
 export async function GET(req: NextRequest) {
@@ -88,7 +99,7 @@ export async function GET(req: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const safePath = validation.safe
+  const { safe: safePath, isClaudeRoot } = validation
 
   if (action === 'list') {
     try {
@@ -101,21 +112,29 @@ export async function GET(req: NextRequest) {
       const items = entries
         .filter((e) => !e.name.startsWith('.') || e.name === '.env.example')
         .filter((e) => !e.isDirectory() || !IGNORE_DIRS.has(e.name))
-        .map((e) => ({
-          name: e.name,
-          type: e.isDirectory() ? ('directory' as const) : ('file' as const),
-          path: path.relative(WORKSPACE_ROOT, path.join(safePath, e.name)),
-        }))
+        .map((e) => {
+          const absoluteItem = path.join(safePath, e.name)
+          const itemPath = isClaudeRoot
+            ? `${CLAUDE_PREFIX}/${path.relative(CLAUDE_ROOT, absoluteItem)}`
+            : path.relative(WORKSPACE_ROOT, absoluteItem)
+          return {
+            name: e.name,
+            type: e.isDirectory() ? ('directory' as const) : ('file' as const),
+            path: itemPath,
+          }
+        })
         .sort((a, b) => {
           // Dirs first, then files, then alphabetical within each group
           if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
           return a.name.localeCompare(b.name)
         })
 
-      return NextResponse.json({
-        path: path.relative(WORKSPACE_ROOT, safePath) || '.',
-        items,
-      })
+      const responsePath = isClaudeRoot
+        ? safePath === CLAUDE_ROOT
+          ? CLAUDE_PREFIX
+          : `${CLAUDE_PREFIX}/${path.relative(CLAUDE_ROOT, safePath)}`
+        : path.relative(WORKSPACE_ROOT, safePath) || '.'
+      return NextResponse.json({ path: responsePath, items })
     } catch {
       return NextResponse.json({ error: 'Directory not found' }, { status: 404 })
     }

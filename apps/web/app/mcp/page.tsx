@@ -163,7 +163,7 @@ function McpPageInner() {
           <ArrowLeft className="size-3.5" />
           Back
         </button>
-        <div className="h-4 w-px bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-4 w-px bg-[var(--border-subtle)]" />
         <div className="flex items-center gap-2">
           <Network className="size-3.5 text-[var(--axon-primary-strong)]" />
           <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">MCP Servers</h1>
