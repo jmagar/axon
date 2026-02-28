@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  FolderOpen,
   SendHorizontal,
   Settings2,
   Shield,
@@ -675,6 +676,17 @@ export function Omnibox() {
             </span>
           </div>
         )}
+
+        {/* Workspace — navigates to /workspace file explorer */}
+        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <Link
+          href="/workspace"
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-accent-blue)] transition-colors duration-150 hover:text-white"
+          title="Workspace"
+          aria-label="Open workspace"
+        >
+          <FolderOpen className="size-3.5" />
+        </Link>
 
         {/* Settings — navigates to /settings full page */}
         <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
