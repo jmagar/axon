@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  CheckCircle2,
   FolderOpen,
   SendHorizontal,
   Settings2,
@@ -9,6 +10,7 @@ import {
   ShieldOff,
   Square,
   Wrench,
+  XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -118,6 +120,15 @@ export function Omnibox() {
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
   const [placeholderVisible, setPlaceholderVisible] = useState(true)
   const [isFocused, setIsFocused] = useState(false)
+  const [completionStatus, setCompletionStatus] = useState<{
+    type: 'done' | 'error'
+    text: string
+    exitCode?: number
+  } | null>(null)
+  const [mentionTipSeen, setMentionTipSeen] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return localStorage.getItem('axon-mention-tip-seen') === '1'
+  })
 
   const selectedModeDef = MODES.find((m) => m.id === mode) ?? MODES[0]
   const hasOptions = (getCommandSpec(mode)?.commandOptions.length ?? 0) > 0
@@ -204,6 +215,15 @@ export function Omnibox() {
       }
     })
   }, [mode, subscribe])
+
+  // Capture completion status so it persists after statusText clears
+  useEffect(() => {
+    if (statusType === 'done' || statusType === 'error') {
+      setCompletionStatus({ type: statusType, text: statusText })
+      const t = setTimeout(() => setCompletionStatus(null), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [statusType, statusText])
 
   // Global "/" and Cmd/Ctrl+K shortcuts to focus the omnibox.
   useEffect(() => {
@@ -628,24 +648,69 @@ export function Omnibox() {
           </span>
         )}
 
+        {/* @mention discovery tip */}
+        {!mentionTipSeen && isFocused && !input && (
+          <div
+            role="status"
+            className="absolute -bottom-6 left-2 text-[10px] text-[var(--text-dim)] animate-fade-in"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            Tip: type{' '}
+            <kbd className="rounded border border-[var(--border-subtle)] px-1 font-mono text-[10px] text-[var(--text-muted)]">
+              @
+            </kbd>{' '}
+            to attach a file
+            <button
+              type="button"
+              onClick={() => {
+                setMentionTipSeen(true)
+                localStorage.setItem('axon-mention-tip-seen', '1')
+              }}
+              className="ml-2 text-[var(--text-dim)] hover:text-[var(--text-muted)]"
+            >
+              x
+            </button>
+          </div>
+        )}
+
         {/* Inline status */}
         <div
           className={`flex shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap transition-all duration-300 ${
-            statusText ? 'max-w-[280px] px-2 opacity-100' : 'max-w-0 px-0 opacity-0'
+            statusText || completionStatus
+              ? 'max-w-[280px] px-2 opacity-100'
+              : 'max-w-0 px-0 opacity-0'
           }`}
         >
-          <span
-            className={`size-1.5 shrink-0 rounded-full ${
-              statusType === 'processing'
-                ? 'animate-pulse bg-[var(--axon-accent-pink)] shadow-[0_0_8px_rgba(175,215,255,0.7)]'
-                : statusType === 'done'
-                  ? 'bg-[var(--axon-accent-blue)] shadow-[0_0_6px_rgba(255,135,175,0.5)]'
-                  : 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.5)]'
-            }`}
-          />
-          <span className="font-mono text-[length:var(--text-xs)] tracking-wide text-[var(--axon-text-muted)]">
-            {statusText}
-          </span>
+          {statusText ? (
+            <>
+              <span
+                className={`size-1.5 shrink-0 rounded-full ${
+                  statusType === 'processing'
+                    ? 'animate-pulse bg-[var(--axon-accent-pink)] shadow-[0_0_8px_rgba(175,215,255,0.7)]'
+                    : statusType === 'done'
+                      ? 'bg-[var(--axon-accent-blue)] shadow-[0_0_6px_rgba(255,135,175,0.5)]'
+                      : 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.5)]'
+                }`}
+              />
+              <span className="font-mono text-[length:var(--text-xs)] tracking-wide text-[var(--axon-text-muted)]">
+                {statusText}
+              </span>
+            </>
+          ) : completionStatus ? (
+            <div
+              className={`flex items-center gap-1.5 text-xs transition-all duration-200 ${
+                completionStatus.type === 'error'
+                  ? 'text-[var(--axon-secondary)]'
+                  : 'text-[var(--axon-success)]'
+              }`}
+            >
+              {completionStatus.type === 'done' && <CheckCircle2 className="size-3" />}
+              {completionStatus.type === 'error' && <XCircle className="size-3" />}
+              <span className="font-mono text-[length:var(--text-xs)] tracking-wide">
+                {completionStatus.text}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* Divider */}
@@ -892,16 +957,17 @@ export function Omnibox() {
                   {MODE_CATEGORY_LABELS[cat]}
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-0.5">
-                  {visibleItems.map((m) => (
+                  {visibleItems.map((m, idx) => (
                     <button
                       key={m.id}
                       type="button"
                       onClick={() => selectMode(m.id)}
-                      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium transition-all duration-150 ${
+                      className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium transition-all duration-150 animate-fade-in-up ${
                         m.id === mode
                           ? 'bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink)]'
                           : 'text-[var(--axon-text-muted)] hover:bg-[rgba(255,135,175,0.1)] hover:text-[var(--axon-accent-blue)]'
                       }`}
+                      style={{ animationDelay: `${idx * 35}ms`, animationFillMode: 'backwards' }}
                     >
                       <svg
                         className="size-3.5 shrink-0"

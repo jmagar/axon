@@ -4,7 +4,7 @@ export interface NeuralCanvasRGB {
   b: number
 }
 
-export type NeuralCanvasProfile = 'current' | 'subtle' | 'cinematic' | 'electric'
+export type NeuralCanvasProfile = 'current' | 'subtle' | 'cinematic' | 'electric' | 'zen'
 
 export interface NeuralCanvasPalette {
   core: NeuralCanvasRGB
@@ -105,6 +105,27 @@ export const NEURAL_CANVAS_PRESETS: Record<NeuralCanvasProfile, VisualPresetConf
       bright: { r: 92, g: 205, b: 255 },
       backgroundInner: { r: 18, g: 86, b: 226 },
       backgroundOuter: { r: 4, g: 16, b: 44 },
+    },
+  },
+  zen: {
+    brightness: 0.3,
+    density: 0.4,
+    glow: 0.2,
+    pulse: 0.25,
+    activity: 0.2,
+    backgroundInterval: 6,
+    parallaxDepth: 0.3,
+    burstThreshold: 0.95,
+    burstStrength: 0.15,
+    calmRecovery: 2.0,
+    palette: {
+      core: { r: 180, g: 210, b: 255 },
+      bright: { r: 30, g: 100, b: 180 },
+      mid: { r: 10, g: 55, b: 130 },
+      dim: { r: 5, g: 28, b: 80 },
+      faint: { r: 2, g: 12, b: 40 },
+      backgroundInner: { r: 4, g: 18, b: 58 },
+      backgroundOuter: { r: 1, g: 3, b: 12 },
     },
   },
 }
