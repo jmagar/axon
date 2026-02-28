@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-jetbrains-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -99,7 +99,7 @@
   --axon-text-secondary: #dce6f0;
   --axon-text-muted: #93aaca;
   --axon-text-subtle: #6f89ad;
-  --axon-text-dim: #5f87af;
+  --axon-text-dim: #7a96b8;
   --axon-success: #82d9a0;
   --axon-success-bg: rgba(130, 217, 160, 0.14);
   --axon-warning: #ffc086;
@@ -125,6 +125,45 @@
   --density-comfortable-row-y: 0.5rem;
   --density-compact-cell-x: 0.5rem;
   --density-comfortable-cell-x: 0.75rem;
+
+  /* ── Axon Design Tokens v2 ── */
+
+  /* Typography semantic mapping */
+  --font-display: var(--font-space-mono);
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* Brand palette — named correctly */
+  --axon-primary: #87afff;
+  --axon-primary-strong: #afd7ff;
+  --axon-secondary: #ff87af;
+  --axon-secondary-strong: #ff9ec0;
+
+  /* Surface tiers */
+  --surface-base: rgba(10, 18, 35, 0.85);
+  --surface-elevated: rgba(10, 18, 35, 0.6);
+  --surface-float: rgba(10, 18, 35, 0.35);
+
+  /* Borders */
+  --border-subtle: rgba(135, 175, 255, 0.15);
+  --border-standard: rgba(135, 175, 255, 0.28);
+  --border-strong: rgba(135, 175, 255, 0.4);
+  --border-accent: rgba(255, 135, 175, 0.25);
+
+  /* Text */
+  --text-primary: #e8f4f8;
+  --text-secondary: #b8cfe0;
+  --text-muted: #7a96b8;
+  --text-dim: #4d6a8a;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(135, 175, 255, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(135, 175, 255, 0.1);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(135, 175, 255, 0.14);
+
+  /* Focus ring */
+  --focus-ring-color: rgba(135, 175, 255, 0.5);
 }
 
 .dark {
@@ -169,13 +208,36 @@
   }
   body {
     background:
-      radial-gradient(circle at 14% 12%, rgba(175, 215, 255, 0.12), transparent 34%),
-      radial-gradient(circle at 82% 18%, rgba(255, 135, 175, 0.1), transparent 38%),
-      linear-gradient(180deg, #02040b 0%, var(--axon-bg) 58%, #040a14 100%);
+      radial-gradient(circle at 15% 35%, rgba(135, 175, 255, 0.22), transparent 42%),
+      radial-gradient(circle at 85% 20%, rgba(255, 135, 175, 0.16), transparent 45%),
+      radial-gradient(circle at 50% 80%, rgba(95, 175, 135, 0.07), transparent 50%),
+      linear-gradient(180deg, #020812 0%, var(--axon-bg) 50%, #020812 100%);
+    background-attachment: fixed;
     color: var(--axon-text-primary);
-    font-feature-settings: "cv01", "cv02", "cv03", "ss01";
-    line-height: var(--leading-copy);
-    letter-spacing: 0.005em;
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-feature-settings:
+      "kern" 1,
+      "liga" 1;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+  }
+
+  /* Grain overlay for texture and depth */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Global accessible focus ring */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
   }
 }
 
@@ -263,10 +325,28 @@
   color: #a8bbd6;
 }
 
+/* Typography display classes */
+.font-display {
+  font-family: var(--font-display), "Space Mono", monospace;
+  letter-spacing: -0.01em;
+}
+
+.font-body {
+  font-family: var(--font-sans), "Sora", system-ui, sans-serif;
+}
+
+/* Apply display font to all headings globally */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display), "Space Mono", monospace;
+}
+
 /* Themed scrollbars — outside @layer for specificity over Tailwind resets */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 135, 175, 0.15) transparent;
+  scrollbar-color: rgba(135, 175, 255, 0.35) transparent;
   -webkit-overflow-scrolling: touch;
 }
 *::-webkit-scrollbar {
@@ -277,11 +357,11 @@
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 135, 175, 0.15);
+  background: rgba(135, 175, 255, 0.35);
   border-radius: 3px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 135, 175, 0.25);
+  background: rgba(135, 175, 255, 0.45);
 }
 
 @keyframes shimmer {
@@ -342,6 +422,122 @@
     transparent 100%
   );
   animation: omnibox-progress 1.8s ease-in-out infinite;
+}
+
+/* ── Motion Library v1 ── */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes badge-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(135, 175, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px rgba(135, 175, 255, 0.25);
+  }
+}
+
+@keyframes breathing {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes check-bounce {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes divider-glow {
+  from {
+    box-shadow: none;
+  }
+  to {
+    box-shadow: 0 0 12px rgba(135, 175, 255, 0.3);
+  }
+}
+
+@keyframes slide-down-reveal {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 600px;
+    opacity: 1;
+  }
+}
+
+@utility animate-fade-in-up {
+  animation: fade-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.25s ease-out forwards;
+}
+
+@utility animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+@utility animate-badge-glow {
+  animation: badge-glow 1.6s ease-in-out infinite;
+}
+
+@utility animate-breathing {
+  animation: breathing 1.6s ease-in-out infinite;
+}
+
+@utility animate-check-bounce {
+  animation: check-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@utility animate-slide-down {
+  animation: slide-down-reveal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  overflow: hidden;
 }
 
 /* ── Plate editor — Axon theme overrides ──────────────────────────────────── */
