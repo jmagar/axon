@@ -285,10 +285,10 @@ export function PulseWorkspace() {
               aria-expanded={sourcesExpanded}
               title={sourcesExpanded ? 'Hide sources' : 'Show sources'}
             >
-              <BookOpen className="size-3" />
+              <BookOpen className="size-3.5" />
               {Math.max(activeThreadSources.length, latestCitationCount)}
               <ChevronDown
-                className={`size-3 transition-transform ${sourcesExpanded ? 'rotate-180' : ''}`}
+                className={`size-3.5 transition-transform ${sourcesExpanded ? 'rotate-180' : ''}`}
               />
             </button>
             <PulseMobilePaneSwitcher mobilePane={mobilePane} onMobilePaneChange={setMobilePane} />
@@ -335,7 +335,7 @@ export function PulseWorkspace() {
                   : 'hidden'
             } min-w-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:flex-none`}
             style={{
-              flexBasis: `${isDesktop ? desktopSplitPercent : mobileSplitPercent}%`,
+              flexBasis: isDesktop ? `${desktopSplitPercent}%` : '100%',
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 1 : 3) : 2,
             }}
           >
@@ -378,7 +378,7 @@ export function PulseWorkspace() {
                 : mobilePane === 'chat'
                   ? 'flex'
                   : 'hidden'
-            } min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
+            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
             style={{
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 3 : 1) : 1,
             }}

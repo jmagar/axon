@@ -91,10 +91,10 @@
   --axon-surface-3: rgba(15, 23, 42, 0.28);
   --axon-border: rgba(255, 135, 175, 0.12);
   --axon-border-strong: rgba(255, 135, 175, 0.22);
-  --axon-accent-blue: #ff87af;
-  --axon-accent-blue-strong: #ff9ec0;
-  --axon-accent-pink: #afd7ff;
-  --axon-accent-pink-strong: #87afff;
+  --axon-accent-pink: #ff87af;
+  --axon-accent-pink-strong: #ff9ec0;
+  --axon-accent-blue: #afd7ff;
+  --axon-accent-blue-strong: #87afff;
   --axon-text-primary: #e8f4f8;
   --axon-text-secondary: #dce6f0;
   --axon-text-muted: #93aaca;
@@ -104,7 +104,7 @@
   --axon-success-bg: rgba(130, 217, 160, 0.14);
   --axon-warning: #ffc086;
   --axon-warning-bg: rgba(255, 192, 134, 0.14);
-  --axon-danger-bg: rgba(175, 215, 255, 0.1);
+  --axon-danger-bg: rgba(255, 135, 175, 0.1);
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;

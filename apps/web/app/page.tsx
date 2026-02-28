@@ -8,6 +8,7 @@ import { DockerStats } from '@/components/docker-stats'
 import { LandingCards } from '@/components/landing-cards'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { Omnibox } from '@/components/omnibox'
+import { PulseEditorPane } from '@/components/pulse/pulse-editor-pane'
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { ResultsPanel } from '@/components/results-panel'
 import { WsIndicator } from '@/components/ws-indicator'
@@ -35,6 +36,27 @@ export default function DashboardPage() {
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
   const [landingMobilePane, setLandingMobilePane] = useState<'chat' | 'editor'>('chat')
+  const [landingEditorMarkdown, setLandingEditorMarkdown] = useState('')
+
+  // Persist landing editor content across tab switches / page unloads
+  const LANDING_EDITOR_KEY = 'axon.web.landing.editor-content'
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(LANDING_EDITOR_KEY)
+      if (saved) setLandingEditorMarkdown(saved)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [])
+
+  const handleLandingEditorChange = useCallback((md: string) => {
+    setLandingEditorMarkdown(md)
+    try {
+      window.localStorage.setItem(LANDING_EDITOR_KEY, md)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -126,7 +148,9 @@ export default function DashboardPage() {
         className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
           hasResults
             ? `px-2.5 sm:px-3.5 ${isPulseWorkspaceActive ? 'pt-1 pb-[80px] lg:pt-12 sm:pb-[88px]' : 'pt-12 pb-5 sm:pb-8'}`
-            : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+            : !isPulseWorkspaceActive && landingMobilePane === 'editor'
+              ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+              : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
         }`}
       >
         {/* Interface card — glass-morphic */}
@@ -152,11 +176,23 @@ export default function DashboardPage() {
             )}
             <div className={isPulseWorkspaceActive ? 'order-1' : 'order-2'}>
               {!isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults && (
-                <div className="flex items-center justify-center rounded-xl border border-[var(--border-subtle)] py-14 text-sm text-[var(--text-dim)] lg:hidden">
-                  Run a command to see results here
+                <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                  <PulseEditorPane
+                    markdown={landingEditorMarkdown}
+                    onMarkdownChange={handleLandingEditorChange}
+                    scrollStorageKey="axon.web.landing.editor-scroll"
+                  />
                 </div>
               )}
-              <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+              <div
+                className={
+                  !isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults
+                    ? 'hidden lg:block'
+                    : undefined
+                }
+              >
+                <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+              </div>
             </div>
           </div>
         </div>
@@ -178,7 +214,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/mcp')}
             title="MCP Servers"
             aria-label="MCP Servers"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Network className="size-3.5" />
           </button>
@@ -187,7 +223,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/agents')}
             title="Available Agents"
             aria-label="Available Agents"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Bot className="size-3.5" />
           </button>
@@ -196,7 +232,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/settings')}
             title="Settings"
             aria-label="Open settings"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Settings2 className="size-3.5" />
           </button>
@@ -210,7 +246,7 @@ export default function DashboardPage() {
             <div
               className="rounded-xl border p-1 backdrop-blur-xl"
               style={{
-                borderColor: isProcessing ? 'rgba(175,215,255,0.25)' : 'rgba(255,135,175,0.12)',
+                borderColor: isProcessing ? 'rgba(175,215,255,0.25)' : 'var(--border-subtle)',
                 background: 'rgba(10,18,35,0.85)',
               }}
             >
