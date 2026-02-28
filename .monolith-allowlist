@@ -59,3 +59,6 @@ apps/web/app/settings/page.tsx
 
 # 630 lines — pre-existing table renderer for results panel; split planned (2026-02-28)
 apps/web/components/results/table-renderer.tsx
+
+# 744 lines — generic AMQP/polling lane orchestrator for embed/extract/refresh; split planned (2026-02-28)
+crates/jobs/worker_lane.rs

@@ -30,9 +30,12 @@ pub(crate) fn stale_watchdog_payload(
         let existing_first_seen = obj
             .get("_watchdog")
             .and_then(|w| {
-                let same_observed = w.get("observed_updated_at").and_then(|v| v.as_str())
-                    == Some(observed_updated_at.to_rfc3339().as_str());
-                if same_observed {
+                // Parse stored timestamp and compare as DateTime<Utc> to avoid
+                // RFC3339 format drift (Z vs +00:00, microsecond precision) across
+                // Postgres TIMESTAMPTZ roundtrips silently breaking the timer.
+                let stored_str = w.get("observed_updated_at").and_then(|v| v.as_str())?;
+                let stored_dt = DateTime::parse_from_rfc3339(stored_str).ok()?;
+                if stored_dt.with_timezone(&Utc) == observed_updated_at {
                     w.get("first_seen_stale_at")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
@@ -66,7 +69,12 @@ pub(crate) fn stale_watchdog_confirmed(
     else {
         return false;
     };
-    if observed != observed_updated_at.to_rfc3339() {
+    // Parse stored timestamp and compare as DateTime<Utc> — avoids RFC3339 format
+    // drift (Z vs +00:00, variable microsecond precision) across Postgres roundtrips.
+    let Ok(stored_dt) = DateTime::parse_from_rfc3339(observed) else {
+        return false;
+    };
+    if stored_dt.with_timezone(&Utc) != observed_updated_at {
         return false;
     }
     let Some(first_seen) = watchdog
