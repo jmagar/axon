@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
   DEFAULT_NEURAL_CANVAS_PROFILE,
   getNeuralCanvasPreset,
@@ -20,6 +20,24 @@ export interface NeuralCanvasHandle {
 
 export interface NeuralCanvasProps {
   profile?: NeuralCanvasProfile
+}
+
+const STORAGE_KEY = 'axon-canvas-profile'
+
+export function useNeuralCanvasProfile() {
+  const [profile, setProfile] = useState<NeuralCanvasProfile>(() => {
+    if (typeof window === 'undefined') return DEFAULT_NEURAL_CANVAS_PROFILE
+    return (
+      (localStorage.getItem(STORAGE_KEY) as NeuralCanvasProfile) ?? DEFAULT_NEURAL_CANVAS_PROFILE
+    )
+  })
+
+  const changeProfile = useCallback((p: NeuralCanvasProfile) => {
+    setProfile(p)
+    localStorage.setItem(STORAGE_KEY, p)
+  }, [])
+
+  return { profile, changeProfile }
 }
 
 // ---------------------------------------------------------------------------
