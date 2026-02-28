@@ -9,6 +9,17 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| `e73906a` | feat(pages) | modal delete dialogs, MCP single save, settings typography, empty states, layout improvements |
+| `7ca6184` | feat(pulse) | motion, empty state, message alignment, tool badge discoverability, mobile pane labels, divider improvements |
+| `e3a0c96` | feat(omnibox) | status bar persistence, @mention discovery tip, staggered suggestions |
+| `4bdee4b` | feat(ui) | button/input hover micro-interactions, branded focus rings, scrollbar contrast fix |
+| `e56c72d` | feat(web) | add CodeViewer component with line numbers and copy button |
+| `648010c` | feat(web) | add /workspace file explorer page with tree + viewer |
+| `b585aef` | feat(design) | establish design token foundation — fonts, palette, motion, atmosphere, shadows, a11y |
+| `dcb077a` | feat(web) | add CodeViewer component with line numbers and copy button |
+| `074ad72` | feat(web) | add workspace (FolderOpen) nav icon to omnibox toolbar |
+| `63e71ff` | feat(web) | add /api/workspace route for AXON_WORKSPACE file browsing |
+| `8e1f4e1` | fix(web) | prefix unused liveToolUses prop + update changelog sha |
 | `bc62851` | fix(web) | fix duplicate tool badges and raw-JSON response text in Pulse chat |
 | `b20a7a3` | fix | address all 12 PR review comments from cubic-dev-ai |
 | `d9823b2` | feat(web+jobs+mcp) | SSRF hardening, AMQP reconnect backoff, multi-lane workers, expanded tests |
@@ -64,6 +75,23 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 | `1dd74f2` | feat(web) | crawl download routes — pack, zip, and per-file downloads |
 
 ### Highlights
+
+#### UI Design System Overhaul — 7-Agent Parallel Implementation (b585aef..e73906a)
+33 design review issues addressed across 6 commits using a parallel agent team with zero file conflicts.
+
+- **Design token foundation (`b585aef`):** Space_Mono (display) + Sora (body) fonts replace Outfit; 30+ CSS custom properties (`--axon-primary/secondary`, `--surface-*`, `--border-*`, `--shadow-sm/md/lg/xl`, `--focus-ring-color`, `--text-*`); 8 new `@keyframes` + 7 `@utility` Tailwind animation aliases; 3-radial + linear gradient body background with grain overlay via `body::before`; WCAG contrast fixes (`--axon-text-dim` 3.2:1 → 5.1:1, scrollbar pink 0.15 → blue 0.35).
+- **UI primitives (`4bdee4b`):** Button hover scale (1.03/0.98) + primary glow; branded `--focus-ring-color` outline on all interactive elements (button, input, tabs, dropdown); scrollbar thumb WCAG fix; hardcoded rgba audit across `ui/` components.
+- **Omnibox (`e3a0c96`):** Status bar persists 4 s post-completion with CheckCircle2/XCircle icons; dismissible `@mention` discovery tip backed by localStorage; staggered 35 ms suggestion reveals via `animate-fade-in-up`.
+- **Neural canvas (`e3a0c96`):** New `zen` profile (brightness 0.3, density 0.4, 20 particles, high burstThreshold) for low-CPU focused-work mode; `useNeuralCanvasProfile` hook with localStorage persistence exported for parent consumers.
+- **Pulse chat (`7ca6184`):** Asymmetric message alignment (user right 72%, assistant left 80%); ThinkingBlock word count + `animate-fade-in` reveal; radial-glow empty state with scale-in animation; 3-dot breathing loading indicator; labeled mobile pane switcher with `role="tablist"` ARIA; drag-handle divider with grip dots; unsaved title indicator dot.
+- **Results panel (`e73906a`):** Virtual scrolling via `@tanstack/react-virtual` (threshold: 200 rows); top-N toggle for 1000+ row tables; failure-first service grouping in doctor report; asymmetric 2:1 metric grid; `animate-fade-in-up` stagger on table rows; focus rings on crawl-file-explorer and command-options-panel; copy button success state with `animate-check-bounce`.
+- **Pages (`e73906a`):** Modal overlay delete confirmation (MCP + settings reset) replaces inline toggle; unified MCP save button (single sticky footer, dispatches to form/JSON tab handler); `font-display` section headers with icon container; improved empty states with contextual guidance; settings sidebar `border-r` accent, gradient `SectionDivider`, `border-l-2` left accent bars on sections, `max-w-[780px]`.
+
+#### Workspace File Explorer (63e71ff..e56c72d)
+- **`/api/workspace` route (`63e71ff`):** Serves AXON_WORKSPACE directory tree over HTTP; SSRF-guarded path traversal prevention.
+- **Workspace nav icon (`074ad72`):** FolderOpen icon added to omnibox toolbar linking to `/workspace`.
+- **`/workspace` page (`648010c`):** Full-page file explorer with tree sidebar + content viewer; directory navigation.
+- **CodeViewer component (`dcb077a`, `e56c72d`):** Syntax-highlighted code viewer with line numbers and one-click copy.
 
 #### Security Hardening + Worker Resilience (ebca63c..HEAD)
 - **SSRF guards (web):** `validateAddDir()` in `buildClaudeArgs` checks `--add-dir` paths against `ALLOWED_DIR_ROOTS` (`/home/node`, `/tmp`, `/workspace`); `validateStatusUrl()` in `/api/mcp/status` blocks `localhost`, `127.x`, `10.x`, `192.168.x`, `172.16-31.x`, and IPv6 loopback/ULA ranges before probing MCP HTTP servers.

@@ -203,10 +203,32 @@ pub async fn cancel_extract_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn 
     .await?
     .rows_affected();
 
-    let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    let mut conn = redis_client.get_multiplexed_async_connection().await?;
-    let key = format!("axon:extract:cancel:{id}");
-    let _: () = conn.set_ex(key, "1", 86400).await?;
+    if rows > 0 {
+        // Redis cancel signal is best-effort: DB update already succeeded,
+        // so we log a warning but do NOT propagate Redis errors.
+        match redis::Client::open(cfg.redis_url.clone()) {
+            Ok(redis_client) => match redis_client.get_multiplexed_async_connection().await {
+                Ok(mut conn) => {
+                    let key = format!("axon:extract:cancel:{id}");
+                    if let Err(e) = conn.set_ex::<_, _, ()>(key, "1", 86400).await {
+                        log_warn(&format!(
+                            "extract cancel: Redis SET failed for job {id} (DB already updated): {e}"
+                        ));
+                    }
+                }
+                Err(e) => {
+                    log_warn(&format!(
+                        "extract cancel: Redis connect failed for job {id} (DB already updated): {e}"
+                    ));
+                }
+            },
+            Err(e) => {
+                log_warn(&format!(
+                    "extract cancel: Redis client open failed for job {id} (DB already updated): {e}"
+                ));
+            }
+        }
+    }
     Ok(rows > 0)
 }
 
