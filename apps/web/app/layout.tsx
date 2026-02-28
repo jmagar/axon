@@ -1,17 +1,23 @@
 import type { Metadata, Viewport } from 'next'
-import { JetBrains_Mono, Outfit } from 'next/font/google'
+import { JetBrains_Mono, Sora, Space_Mono } from 'next/font/google'
 import { ServiceWorkerRegistration } from '@/components/service-worker'
 import { Providers } from './providers'
 import './globals.css'
 
-const outfit = Outfit({
-  variable: '--font-sans',
+const spaceMono = Space_Mono({
+  variable: '--font-space-mono',
+  subsets: ['latin'],
+  weight: ['400', '700'],
+})
+
+const sora = Sora({
+  variable: '--font-sora',
   subsets: ['latin'],
   weight: ['300', '400', '500', '600', '700'],
 })
 
 const jetbrainsMono = JetBrains_Mono({
-  variable: '--font-mono',
+  variable: '--font-jetbrains-mono',
   weight: ['400', '500'],
   subsets: ['latin'],
 })
@@ -37,7 +43,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${outfit.variable} ${jetbrainsMono.variable} antialiased`}>
+      <body
+        className={`${spaceMono.variable} ${sora.variable} ${jetbrainsMono.variable} antialiased`}
+      >
         <Providers>{children}</Providers>
         <ServiceWorkerRegistration />
       </body>
