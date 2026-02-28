@@ -223,7 +223,7 @@ function TextInput({
 }
 
 const GLASS_SELECT =
-  'w-full rounded-lg border border-[rgba(255,135,175,0.2)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[rgba(175,215,255,0.4)] focus:bg-[rgba(10,18,35,0.82)] cursor-pointer appearance-none transition-all duration-200'
+  'w-full rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.82)] cursor-pointer appearance-none transition-all duration-200'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -501,7 +501,7 @@ export default function SettingsPage() {
                           maxTurns: Math.max(0, Math.min(200, Number(e.target.value))),
                         })
                       }
-                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                      className="w-full rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                       placeholder="0 (unlimited)"
                       style={{ backdropFilter: 'blur(4px)' }}
                     />
@@ -531,7 +531,7 @@ export default function SettingsPage() {
                           maxBudgetUsd: Math.max(0, Math.min(1000, Number(e.target.value))),
                         })
                       }
-                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                      className="w-full rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                       placeholder="0 (unlimited)"
                       style={{ backdropFilter: 'blur(4px)' }}
                     />
@@ -558,7 +558,7 @@ export default function SettingsPage() {
                   placeholder="e.g. Always respond in bullet points. Prefer TypeScript. Be concise."
                   rows={5}
                   maxLength={4000}
-                  className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(255,135,175,0.3)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                  className="w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                   style={{ backdropFilter: 'blur(4px)' }}
                 />
                 <div className="mt-1.5 flex justify-between text-[10px] text-[var(--text-dim)]">
@@ -794,7 +794,7 @@ export default function SettingsPage() {
                             {ki > 0 && (
                               <span className="text-[10px] text-[var(--text-dim)]">+</span>
                             )}
-                            <kbd className="rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.6)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-dim)]">
+                            <kbd className="rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.6)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-dim)]">
                               {k}
                             </kbd>
                           </span>

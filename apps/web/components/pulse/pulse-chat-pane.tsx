@@ -274,7 +274,7 @@ export function PulseChatPane({
                         href={citation.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="block rounded border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.45)] px-1.5 py-1 transition-colors hover:border-[rgba(175,215,255,0.38)]"
+                        className="block rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.45)] px-1.5 py-1 transition-colors hover:border-[var(--focus-ring-color)]"
                       >
                         <div className="mb-0.5 flex items-center justify-between gap-1">
                           <p className="line-clamp-1 text-[length:var(--text-xs)] font-semibold text-[var(--axon-secondary)]">

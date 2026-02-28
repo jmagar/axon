@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronRight, Clock, FolderOpen, Network } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, FolderOpen, Network } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { type SessionSummary, useRecentSessions } from '@/hooks/use-recent-sessions'
@@ -14,33 +14,71 @@ function Card({
   title,
   href,
   children,
+  storageKey,
 }: {
   icon: React.ReactNode
   title: string
   href?: string
   children: React.ReactNode
+  storageKey: string
 }) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(storageKey) === 'collapsed') setCollapsed(true)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [storageKey])
+
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    try {
+      if (next) {
+        window.localStorage.setItem(storageKey, 'collapsed')
+      } else {
+        window.localStorage.removeItem(storageKey)
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
   return (
     <div
       className="flex flex-col rounded-xl border"
       style={{
         borderColor: 'var(--border-subtle)',
         background: 'rgba(4,8,20,0.45)',
-        minHeight: '180px',
+        minHeight: collapsed ? undefined : '180px',
       }}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: 'var(--border-subtle)' }}
+        className="flex items-center justify-between px-3 py-2"
+        style={{
+          borderColor: 'var(--border-subtle)',
+          borderBottom: collapsed ? undefined : '1px solid var(--border-subtle)',
+        }}
       >
-        <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+        >
           <span className="text-[rgba(175,215,255,0.55)] [&>svg]:size-3.5">{icon}</span>
           <span className="text-[10px] font-semibold uppercase tracking-widest text-[rgba(175,215,255,0.4)]">
             {title}
           </span>
-        </div>
-        {href && (
+          <ChevronDown
+            className={`size-3 text-[rgba(175,215,255,0.3)] transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+          />
+        </button>
+        {href && !collapsed && (
           <Link
             href={href}
             className="flex items-center gap-0.5 text-[10px] text-[rgba(175,215,255,0.3)] transition-colors hover:text-[rgba(175,215,255,0.7)]"
@@ -52,7 +90,7 @@ function Card({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden p-2">{children}</div>
+      {!collapsed && <div className="flex-1 overflow-hidden p-2">{children}</div>}
     </div>
   )
 }
@@ -272,13 +310,18 @@ function McpContent() {
 export function LandingCards() {
   return (
     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Card icon={<Clock />} title="Sessions">
+      <Card icon={<Clock />} title="Sessions" storageKey="axon.landing.card.sessions">
         <SessionsContent />
       </Card>
-      <Card icon={<FolderOpen />} title="Files" href="/workspace">
+      <Card
+        icon={<FolderOpen />}
+        title="Files"
+        href="/workspace"
+        storageKey="axon.landing.card.files"
+      >
         <FilesContent />
       </Card>
-      <Card icon={<Network />} title="MCP" href="/mcp">
+      <Card icon={<Network />} title="MCP" href="/mcp" storageKey="axon.landing.card.mcp">
         <McpContent />
       </Card>
     </div>

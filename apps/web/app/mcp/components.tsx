@@ -44,7 +44,7 @@ export const EMPTY_FORM: FormState = {
 // ── CSS helpers ────────────────────────────────────────────────────────────────
 
 export const INPUT_CLS =
-  'w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.7)]'
+  'w-full rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.7)]'
 
 export const LABEL_CLS =
   'mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]'
@@ -142,14 +142,14 @@ export function KvEditor({
                 value={p.key}
                 onChange={(e) => updatePair(i, 'key', e.target.value)}
                 placeholder="KEY"
-                className="w-2/5 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)]"
+                className="w-2/5 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)]"
               />
               <input
                 type="text"
                 value={p.value}
                 onChange={(e) => updatePair(i, 'value', e.target.value)}
                 placeholder="value"
-                className="min-w-0 flex-1 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)]"
+                className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)]"
               />
               <button
                 type="button"
@@ -200,7 +200,7 @@ export function McpServerCard({
 }) {
   const isHttp = Boolean(cfg.url)
   return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.38)] px-4 py-3.5 transition-all duration-150 hover:border-[rgba(255,135,175,0.2)] hover:bg-[rgba(10,18,35,0.55)]">
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.38)] px-4 py-3.5 transition-all duration-150 hover:border-[var(--border-standard)] hover:bg-[rgba(10,18,35,0.55)]">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           {/* Status dot */}
@@ -384,7 +384,7 @@ export function McpServerForm({
 
             <div>
               <span className={LABEL_CLS}>Type</span>
-              <div className="mt-1.5 inline-flex overflow-hidden rounded-lg border border-[rgba(255,135,175,0.15)]">
+              <div className="mt-1.5 inline-flex overflow-hidden rounded-lg border border-[var(--border-subtle)]">
                 {(['stdio', 'http'] as const).map((t) => (
                   <button
                     key={t}
@@ -392,7 +392,7 @@ export function McpServerForm({
                     onClick={() => updateField('type', t)}
                     className={`flex items-center gap-1.5 px-4 py-2 text-[12px] font-medium transition-colors ${
                       form.type === t
-                        ? 'bg-[rgba(255,135,175,0.12)] text-[var(--axon-primary)]'
+                        ? 'bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary)]'
                         : 'bg-[rgba(10,18,35,0.5)] text-[var(--text-dim)] hover:bg-[rgba(10,18,35,0.7)] hover:text-[var(--text-secondary)]'
                     }`}
                   >
@@ -473,7 +473,7 @@ export function McpServerForm({
               }}
               rows={14}
               spellCheck={false}
-              className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.6)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] outline-none focus:border-[rgba(175,215,255,0.35)]"
+              className="w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.6)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] outline-none focus:border-[var(--focus-ring-color)]"
             />
             {jsonError && <p className="text-[11px] text-red-400">{jsonError}</p>}
           </div>
