@@ -148,7 +148,7 @@ function McpPageInner() {
       <header
         className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b px-4"
         style={{
-          borderColor: 'rgba(255,135,175,0.1)',
+          borderColor: 'var(--border-subtle)',
           background: 'rgba(3,7,18,0.9)',
           backdropFilter: 'blur(16px)',
           height: '3.25rem',
@@ -157,7 +157,7 @@ function McpPageInner() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-text-secondary)]"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)] sm:min-h-0"
           aria-label="Go back"
         >
           <ArrowLeft className="size-3.5" />
@@ -165,14 +165,14 @@ function McpPageInner() {
         </button>
         <div className="h-4 w-px bg-[rgba(255,135,175,0.12)]" />
         <div className="flex items-center gap-2">
-          <Network className="size-3.5 text-[var(--axon-accent-pink)]" />
-          <h1 className="text-[14px] font-semibold text-[var(--axon-text-primary)]">MCP Servers</h1>
+          <Network className="size-3.5 text-[var(--axon-primary-strong)]" />
+          <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">MCP Servers</h1>
         </div>
         <div className="flex-1" />
         <button
           type="button"
           onClick={openAdd}
-          className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.18)] bg-[rgba(175,215,255,0.07)] px-3 py-1.5 text-[12px] font-semibold text-[var(--axon-accent-pink)] transition-colors hover:bg-[rgba(175,215,255,0.13)]"
+          className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.18)] bg-[rgba(175,215,255,0.07)] px-3 py-1.5 text-[12px] font-semibold text-[var(--axon-primary-strong)] transition-colors hover:bg-[rgba(175,215,255,0.13)]"
         >
           <Plus className="size-3.5" />
           Add Server
@@ -205,7 +205,7 @@ function McpPageInner() {
           {/* Server list */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <div className="size-6 animate-spin rounded-full border-2 border-[rgba(175,215,255,0.2)] border-t-[var(--axon-accent-pink)]" />
+              <div className="size-6 animate-spin rounded-full border-2 border-[rgba(175,215,255,0.2)] border-t-[var(--axon-primary-strong)]" />
             </div>
           ) : servers.length === 0 && !formOpen ? (
             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-float)] p-8 text-center animate-fade-in">

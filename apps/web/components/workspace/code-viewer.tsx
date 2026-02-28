@@ -22,17 +22,17 @@ export function CodeViewer({ content, language, fileName }: CodeViewerProps) {
   const lines = content.split('\n')
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-lg border border-[rgba(175,215,255,0.08)]">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-lg border border-[var(--border-subtle)]">
       {/* Toolbar */}
       {(fileName || language) && (
-        <div className="flex items-center justify-between border-b border-[rgba(175,215,255,0.08)] bg-[rgba(4,10,20,0.8)] px-4 py-2">
-          <span className="font-mono text-[11px] text-[rgba(175,215,255,0.5)]">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 py-2">
+          <span className="font-mono text-[11px] text-[var(--text-muted)]">
             {fileName ?? language}
           </span>
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded px-2 py-1 text-[11px] text-[rgba(175,215,255,0.5)] transition-colors hover:bg-[rgba(175,215,255,0.08)] hover:text-[rgba(175,215,255,0.9)]"
+            className="flex min-h-[44px] items-center gap-1.5 rounded px-3 py-1 text-[11px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1 sm:min-h-0 sm:px-2"
           >
             {copied ? (
               <>
@@ -52,14 +52,14 @@ export function CodeViewer({ content, language, fileName }: CodeViewerProps) {
         <table className="w-full border-collapse font-mono text-xs">
           <tbody>
             {lines.map((line, i) => (
-              <tr key={i} className="hover:bg-[rgba(255,255,255,0.02)]">
+              <tr key={i} className="hover:bg-[var(--surface-float)]">
                 <td
-                  className="w-10 select-none border-r border-[rgba(255,255,255,0.04)] pr-3 text-right text-[rgba(200,210,230,0.2)]"
+                  className="w-10 select-none border-r border-[var(--border-subtle)] pr-3 text-right text-[var(--text-dim)]"
                   style={{ minWidth: '2.5rem', paddingLeft: '0.5rem' }}
                 >
                   {i + 1}
                 </td>
-                <td className="whitespace-pre pl-4 text-[rgba(200,220,245,0.8)]">{line || ' '}</td>
+                <td className="whitespace-pre pl-4 text-[var(--text-secondary)]">{line || ' '}</td>
               </tr>
             ))}
           </tbody>

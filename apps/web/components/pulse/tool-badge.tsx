@@ -26,7 +26,7 @@ const CATEGORY_STYLES: Record<ToolCategory, CategoryStyle> = {
   agent: {
     border: 'border-[rgba(255,135,175,0.4)]',
     bg: 'bg-[rgba(20,5,15,0.7)]',
-    label: 'text-[var(--axon-accent-pink)]',
+    label: 'text-[var(--axon-primary-strong)]',
     categoryName: 'Agent',
   },
   skill: {
@@ -44,7 +44,7 @@ const CATEGORY_STYLES: Record<ToolCategory, CategoryStyle> = {
   file: {
     border: 'border-[rgba(175,215,255,0.32)]',
     bg: 'bg-[rgba(10,15,30,0.7)]',
-    label: 'text-[var(--axon-accent-blue)]',
+    label: 'text-[var(--axon-secondary)]',
     categoryName: 'File',
   },
   bash: {
@@ -188,7 +188,7 @@ export function ToolCallBadge({ tool }: { tool: BadgeTool }) {
             >
               {displayName}
             </span>
-            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-dim)]">
               {style.categoryName}
             </span>
           </div>
@@ -200,8 +200,8 @@ export function ToolCallBadge({ tool }: { tool: BadgeTool }) {
                   key={key}
                   className="grid grid-cols-[auto_1fr] gap-1.5 text-[length:var(--text-2xs)]"
                 >
-                  <span className="shrink-0 text-[var(--axon-text-dim)]">{key}</span>
-                  <span className="truncate text-[var(--axon-text-secondary)]">{val}</span>
+                  <span className="shrink-0 text-[var(--text-dim)]">{key}</span>
+                  <span className="truncate text-[var(--text-secondary)]">{val}</span>
                 </div>
               ))}
             </div>
@@ -209,10 +209,8 @@ export function ToolCallBadge({ tool }: { tool: BadgeTool }) {
 
           {tool.result && (
             <div className="border-t border-[rgba(255,255,255,0.07)] px-2 py-1.5">
-              <p className="mb-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
-                Result
-              </p>
-              <p className="line-clamp-3 text-[length:var(--text-2xs)] text-[var(--axon-text-secondary)]">
+              <p className="mb-0.5 text-[length:var(--text-2xs)] text-[var(--text-dim)]">Result</p>
+              <p className="line-clamp-3 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
                 {tool.result}
               </p>
             </div>

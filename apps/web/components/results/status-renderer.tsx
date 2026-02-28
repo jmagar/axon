@@ -25,8 +25,8 @@ export function StatusRenderer({ result }: StatusRendererProps) {
 function KvRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div className="flex justify-between py-1 text-[length:var(--text-sm)]">
-      <span className="text-[var(--axon-text-muted)]">{label}</span>
-      <span className={`tabular-nums ${accent ?? 'text-[var(--axon-accent-blue)]'}`}>{value}</span>
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className={`tabular-nums ${accent ?? 'text-[var(--axon-secondary)]'}`}>{value}</span>
     </div>
   )
 }
@@ -64,7 +64,7 @@ function StatsPanel({ data }: { data: StatsResult }) {
 
   return (
     <div
-      className="rounded-lg border border-[rgba(255,135,175,0.08)] p-4"
+      className="rounded-lg border border-[var(--border-subtle)] p-4"
       style={{ background: 'rgba(10, 18, 35, 0.3)' }}
     >
       {/* Collection info */}
@@ -140,7 +140,7 @@ function StatsPanel({ data }: { data: StatsResult }) {
 function DedupePanel({ data }: { data: DedupeResult }) {
   return (
     <div
-      className="rounded-lg border border-[rgba(255,135,175,0.08)] p-4"
+      className="rounded-lg border border-[var(--border-subtle)] p-4"
       style={{ background: 'rgba(10, 18, 35, 0.3)' }}
     >
       <SectionHeader>Deduplication Results</SectionHeader>
@@ -151,7 +151,7 @@ function DedupePanel({ data }: { data: DedupeResult }) {
           label="Points deleted"
           value={fmtNum(data.deleted)}
           accent={
-            data.deleted > 0 ? 'text-[var(--axon-accent-pink)]' : 'text-[var(--axon-success)]'
+            data.deleted > 0 ? 'text-[var(--axon-primary-strong)]' : 'text-[var(--axon-success)]'
           }
         />
       </div>

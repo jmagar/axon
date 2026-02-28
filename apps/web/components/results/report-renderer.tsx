@@ -49,10 +49,10 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function AskPill({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <span className="ui-chip-status rounded-md border border-[rgba(255,135,175,0.2)] bg-[rgba(14,25,48,0.62)] text-[var(--axon-accent-blue)]">
-      {icon && <span className="text-[var(--axon-accent-blue-strong)]">{icon}</span>}
-      <span className="uppercase tracking-wide text-[var(--axon-text-dim)]">{label}</span>
-      <span className="text-[var(--axon-text-secondary)]">{value}</span>
+    <span className="ui-chip-status rounded-md border border-[var(--border-standard)] bg-[rgba(14,25,48,0.62)] text-[var(--axon-secondary)]">
+      {icon && <span className="text-[var(--axon-secondary-strong)]">{icon}</span>}
+      <span className="uppercase tracking-wide text-[var(--text-dim)]">{label}</span>
+      <span className="text-[var(--text-secondary)]">{value}</span>
     </span>
   )
 }
@@ -69,18 +69,18 @@ function Collapsible({
   const [open, setOpen] = useState(defaultOpen)
   return (
     <div
-      className="rounded-lg border border-[rgba(255,135,175,0.08)]"
+      className="rounded-lg border border-[var(--border-subtle)]"
       style={{ background: 'rgba(10, 18, 35, 0.3)' }}
     >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[length:var(--text-sm)] font-medium text-[var(--axon-text-muted)] transition-colors hover:text-[var(--axon-accent-blue)]"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[length:var(--text-sm)] font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--axon-secondary)]"
       >
         <span className="text-[length:var(--text-sm)]">{open ? '\u25BC' : '\u25B6'}</span>
         {title}
       </button>
-      {open && <div className="border-t border-[rgba(255,135,175,0.06)] px-3 py-2">{children}</div>}
+      {open && <div className="border-t border-[var(--border-subtle)] px-3 py-2">{children}</div>}
     </div>
   )
 }
@@ -88,8 +88,8 @@ function Collapsible({
 function TimingRow({ label, ms }: { label: string; ms: number }) {
   return (
     <div className="flex justify-between text-[length:var(--text-sm)]">
-      <span className="text-[var(--axon-text-muted)]">{label}</span>
-      <span className="tabular-nums text-[var(--axon-accent-blue)]">{fmtMs(ms)}</span>
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className="tabular-nums text-[var(--axon-secondary)]">{fmtMs(ms)}</span>
     </div>
   )
 }
@@ -116,8 +116,8 @@ function DiagnosticsPanel({ diag }: { diag: AskDiagnostics }) {
 function KV({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
-      <span className="text-[var(--axon-text-muted)]">{label}</span>
-      <span className="text-[var(--axon-accent-blue)]">{value}</span>
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className="text-[var(--axon-secondary)]">{value}</span>
     </div>
   )
 }
@@ -133,14 +133,14 @@ function AskReport({ data }: { data: AskResult }) {
     <div className="space-y-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
       {/* Omnibox-style meta strip */}
       <div
-        className="rounded-lg border border-[rgba(255,135,175,0.14)] px-2 py-1"
+        className="rounded-lg border border-[var(--border-subtle)] px-2 py-1"
         style={{
           background:
             'linear-gradient(130deg, rgba(14,24,46,0.78) 0%, rgba(10,18,36,0.58) 55%, rgba(24,16,38,0.5) 100%)',
         }}
       >
         <div className="flex flex-wrap items-center gap-1">
-          <span className="inline-flex size-4 items-center justify-center rounded-[6px] border border-[rgba(175,215,255,0.3)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]">
+          <span className="inline-flex size-4 items-center justify-center rounded-[6px] border border-[rgba(175,215,255,0.3)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary)]">
             <Sparkles size={10} />
           </span>
           <span className="ui-label">Ask</span>
@@ -169,14 +169,14 @@ function AskReport({ data }: { data: AskResult }) {
 
       {/* Answer */}
       <div
-        className="rounded-lg border border-[rgba(255,135,175,0.12)] px-2 py-1.5"
+        className="rounded-lg border border-[var(--border-subtle)] px-2 py-1.5"
         style={{
           background:
             'linear-gradient(145deg, rgba(11,20,40,0.72), rgba(8,15,31,0.52) 60%, rgba(20,14,36,0.42))',
         }}
       >
         <div className="ui-label mb-1 flex items-center gap-1">
-          <MessageSquareQuote size={11} className="text-[var(--axon-accent-blue)]" />
+          <MessageSquareQuote size={11} className="text-[var(--axon-secondary)]" />
           <span>Answer</span>
         </div>
         <div className="animate-in fade-in-0 duration-500">
@@ -197,7 +197,7 @@ function EvaluateReport({ data }: { data: EvaluateResult }) {
       {/* Query */}
       <div>
         <SectionHeader>Query</SectionHeader>
-        <p className="text-[length:var(--text-base)] font-medium text-[var(--axon-text-secondary)]">
+        <p className="text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">
           {data.query}
         </p>
         <span className="ui-meta mt-1">{data.ref_chunk_count} reference chunks</span>
@@ -246,7 +246,7 @@ function EvaluateReport({ data }: { data: EvaluateResult }) {
             <TimingRow label="Baseline LLM" ms={data.timing_ms.baseline_llm} />
             <TimingRow label="Research" ms={data.timing_ms.research_elapsed_ms} />
             <TimingRow label="Analysis LLM" ms={data.timing_ms.analysis_llm_ms} />
-            <div className="mt-1 border-t border-[rgba(255,135,175,0.08)] pt-1">
+            <div className="mt-1 border-t border-[var(--border-subtle)] pt-1">
               <TimingRow label="Total" ms={data.timing_ms.total} />
             </div>
           </div>
@@ -276,15 +276,15 @@ function DebugReport({ data }: { data: DebugResult }) {
         <SectionHeader>LLM Debug Analysis</SectionHeader>
         <div className="ui-meta mb-2 flex gap-4">
           <span>
-            Model: <span className="text-[var(--axon-accent-blue)]">{data.llm_debug.model}</span>
+            Model: <span className="text-[var(--axon-secondary)]">{data.llm_debug.model}</span>
           </span>
           <span>
             Base URL:{' '}
-            <span className="text-[var(--axon-accent-blue-strong)]">{data.llm_debug.base_url}</span>
+            <span className="text-[var(--axon-secondary-strong)]">{data.llm_debug.base_url}</span>
           </span>
         </div>
         <div
-          className="whitespace-pre-wrap rounded-lg border border-[rgba(255,135,175,0.08)] p-3 ui-long-copy"
+          className="whitespace-pre-wrap rounded-lg border border-[var(--border-subtle)] p-3 ui-long-copy"
           style={{ background: 'rgba(10, 18, 35, 0.4)' }}
         >
           {data.llm_debug.analysis}

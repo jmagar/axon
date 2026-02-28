@@ -200,7 +200,7 @@ High-level subsystem map:
 | `axon-qdrant` | qdrant/qdrant:v1.13.1 | `53333`, `53334` (gRPC) | Vector store |
 | `axon-chrome` | built from docker/chrome/Dockerfile | `6000` (management), `9222` (CDP proxy) | headless_browser + chrome-headless-shell |
 | `axon-workers` | built from Dockerfile | — | 4 workers (crawl/extract/embed/ingest) (also serves HTTP/WS on port 49000) |
-| `axon-web` | docker/web/Dockerfile | `49010` | Next.js dev UI with hot reload |
+| `axon-web` | docker/web/Dockerfile | `49010` | Next.js dev UI with hot reload. `pnpm-watcher` s6 service auto-installs new packages within 3s of `pnpm add` on host — no rebuild needed. |
 
 All services live on the `axon` bridge network. Data volumes use `${AXON_DATA_DIR:-./data}/axon/...` (override with `AXON_DATA_DIR` in `.env`).
 

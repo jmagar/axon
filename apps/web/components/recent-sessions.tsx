@@ -50,10 +50,10 @@ function SessionCard({
       className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-50"
       style={{
         border: '1px solid var(--axon-border)',
-        background: loading ? 'rgba(255,135,175,0.04)' : 'transparent',
+        background: loading ? 'rgba(175,215,255,0.04)' : 'transparent',
       }}
       onMouseEnter={(e) => {
-        if (!loading) e.currentTarget.style.background = 'rgba(255,135,175,0.06)'
+        if (!loading) e.currentTarget.style.background = 'rgba(175,215,255,0.06)'
       }}
       onMouseLeave={(e) => {
         if (!loading) e.currentTarget.style.background = 'transparent'
@@ -63,7 +63,7 @@ function SessionCard({
         {session.project !== 'tmp' && (
           <span
             className="block truncate text-xs font-semibold"
-            style={{ color: 'var(--axon-accent-pink)' }}
+            style={{ color: 'var(--axon-primary-strong)' }}
           >
             {session.project}
           </span>
@@ -76,11 +76,11 @@ function SessionCard({
       <div className="ml-3 shrink-0 text-right">
         <span
           className="block text-[11px]"
-          style={{ color: failed ? 'var(--axon-accent-blue)' : 'var(--axon-text-subtle)' }}
+          style={{ color: failed ? 'var(--axon-secondary)' : 'var(--text-dim)' }}
         >
           {loading ? 'Loading…' : failed ? 'Failed to load' : formatRelativeTime(session.mtimeMs)}
         </span>
-        <span className="block text-[10px]" style={{ color: 'var(--axon-text-dim)' }}>
+        <span className="block text-[10px]" style={{ color: 'var(--text-dim)' }}>
           {formatBytes(session.sizeBytes)}
         </span>
       </div>
@@ -93,7 +93,7 @@ export function RecentSessions() {
 
   if (isLoading) {
     return (
-      <div className="mt-3 text-center text-xs" style={{ color: 'var(--axon-text-dim)' }}>
+      <div className="mt-3 text-center text-xs" style={{ color: 'var(--text-dim)' }}>
         Loading sessions…
       </div>
     )

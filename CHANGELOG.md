@@ -9,6 +9,8 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| `8d85538` | fix(jobs) | address all P0/P1/P2 code review issues — 8-agent team landing |
+| `5dc43f1` | chore | update changelog for UI overhaul + workspace explorer; misc Rust job fixes |
 | `e73906a` | feat(pages) | modal delete dialogs, MCP single save, settings typography, empty states, layout improvements |
 | `7ca6184` | feat(pulse) | motion, empty state, message alignment, tool badge discoverability, mobile pane labels, divider improvements |
 | `e3a0c96` | feat(omnibox) | status bar persistence, @mention discovery tip, staggered suggestions |

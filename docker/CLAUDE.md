@@ -1,5 +1,5 @@
 # docker/ — Container Build & s6 Supervision
-Last Modified: 2026-02-27
+Last Modified: 2026-02-28
 
 ## Files
 ```
@@ -8,13 +8,18 @@ docker/
 ├── chrome/
 │   └── Dockerfile      # headless_browser + chrome-headless-shell (CDP proxy on 9222)
 ├── web/
-│   ├── Dockerfile      # Next.js + s6-overlay (pnpm-dev + claude-session + claude-watcher)
+│   ├── Dockerfile      # Next.js + s6-overlay (pnpm-dev + pnpm-watcher + claude-session + claude-watcher)
+│   ├── cont-init.d/
+│   │   ├── 10-trust-workspace       # Marks /workspace as git-safe
+│   │   ├── 15-fix-claude-dir-ownership  # chown /home/node/.claude so Claude CLI can write
+│   │   └── 20-pnpm-install          # Syncs node_modules if lockfile changed since last start
 │   └── s6-rc.d/        # s6 service definitions for axon-web
-│       ├── pnpm-dev/   # Next.js dev server (s6-setuidgid node pnpm run dev)
+│       ├── pnpm-dev/        # Next.js dev server (s6-setuidgid node pnpm run dev)
+│       ├── pnpm-watcher/    # Polls pnpm-lock.yaml every 3s; runs pnpm install + restarts pnpm-dev on change
 │       ├── claude-session/  # Persistent Claude Code session (--continue --fork-session)
 │       ├── claude-watcher/  # inotifywait hot-reload trigger for claude-session
 │       └── user/
-│           └── contents.d/  # Registers pnpm-dev, claude-session, claude-watcher
+│           └── contents.d/  # Registers pnpm-dev, pnpm-watcher, claude-session, claude-watcher
 ├── rabbitmq/           # rabbitmq.conf + definitions.json (preconfigured vhost/user)
 └── s6/
     ├── cont-init.d/
@@ -122,15 +127,47 @@ docker exec -it -u axon axon-workers bash
 The `axon-web` container bind-mounts `apps/web/` into `/app`, so source changes are
 reflected immediately without rebuilding the image.
 
+**Adding/removing packages is fully automatic** — no rebuild or manual restart required:
+
 ```bash
-# Start the full stack (build + run)
-docker compose up -d
+# Add a package on the host
+pnpm add <package>
 
-# Edit apps/web/app/page.tsx — save — browser auto-refreshes (HMR)
+# pnpm-watcher detects the lockfile change within 3s, runs pnpm install inside
+# the container, then restarts pnpm-dev automatically.
+```
 
-# Rebuild after pnpm-lock.yaml changes (new deps added):
+Two mechanisms keep `node_modules` in sync:
+
+| Mechanism | When it runs | What it does |
+|-----------|-------------|--------------|
+| `cont-init.d/20-pnpm-install` | Every container start | Compares lockfile mtime to sentinel; installs if lockfile is newer |
+| `s6 pnpm-watcher` | Continuously (3s poll) | Watches lockfile mtime; installs + restarts `pnpm-dev` on any change |
+
+**Why polling instead of inotifywait:** Docker bind-mount writes from the host don't
+propagate inotify events into the container's inotify watches — the same reason
+`WATCHPACK_POLLING=true` exists in the compose file. Polling at 3s sidesteps this.
+
+**Anonymous volume note:** `node_modules` and `.next` are anonymous volumes that shadow
+the bind-mount. This isolates them from the host but means a fresh container starts with
+the image's `node_modules`. `20-pnpm-install` handles any drift at startup;
+`pnpm-watcher` handles drift while running.
+
+```bash
+# Verify pnpm-watcher is running
+docker exec axon-web s6-svstat /run/service/pnpm-watcher
+
+# Tail its logs
+docker exec axon-web tail -f /var/log/axon/pnpm-watcher/current
+
+# Manual sync (if something goes wrong)
+docker exec axon-web sh -c "cd /app && pnpm install --frozen-lockfile"
+docker exec axon-web s6-svc -r /run/service/pnpm-dev
+
+# Only rebuild the image when Dockerfile itself changes (not for package changes)
 docker compose build axon-web
-docker compose rm axon-web && docker compose up -d axon-web
+docker stop axon-web && docker rm axon-web
+docker compose create axon-web && docker start axon-web
 ```
 
 ### Claude config hot-reload (axon-web)

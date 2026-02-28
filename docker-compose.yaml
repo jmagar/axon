@@ -131,7 +131,7 @@ services:
         max-file: "3"
         compress: "true"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsSL http://127.0.0.1:6000/json/version > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsSL --max-time 4 http://127.0.0.1:6000/json/version > /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -165,7 +165,7 @@ services:
       axon-qdrant:
         condition: service_healthy
       axon-chrome:
-        condition: service_healthy
+        condition: service_started  # Chrome unhealthy (GPU crash etc.) must not block workers
     ports:
       - "127.0.0.1:49000:49000"   # axon serve (HTTP + WebSocket)
     deploy:
