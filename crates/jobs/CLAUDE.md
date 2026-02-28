@@ -11,9 +11,11 @@ jobs/
 ├── crawl/           # manifest, processor, repo, sitemap, watchdog, worker, runtime
 ├── extract/         # Extract worker
 ├── embed/           # Embed worker
-├── ingest.rs        # Ingest job schema + worker (github/reddit/youtube)
+├── refresh/         # Refresh job scheduler, processor, schedule, state, worker
+├── ingest.rs        # Ingest job schema + worker (github/reddit/youtube/sessions)
 ├── status.rs        # JobStatus enum
-└── worker_lane.rs   # Multi-lane coordination for ingest
+└── worker_lane.rs   # Generic AMQP/polling lane runtime — used by embed, extract, and refresh workers
+                     # (Crawl uses its own loop in crawl/runtime/worker/loops.rs due to !Send spider futures)
 ```
 
 ## Critical Patterns
@@ -54,9 +56,11 @@ All internal async channels use `tokio::sync::mpsc::channel(256)` — **never** 
 - `watchdog.rs` (crawl_jobs): marks jobs stuck in `running` state as `failed` after `AXON_JOB_STALE_TIMEOUT_SECS` (default 300s) + `AXON_JOB_STALE_CONFIRM_SECS` (60s) grace period
 - `axon crawl recover` subcommand: reclaims all stale jobs (re-queues them as `pending`)
 
-### worker_lane.rs (Ingest)
+### worker_lane.rs (Embed / Extract / Refresh)
 
-`AXON_INGEST_LANES` (default 2) controls how many ingest jobs run in parallel. Each lane holds one AMQP consumer. Lane count is separate from per-job concurrency.
+`worker_lane.rs` is the **generic** AMQP/polling lane runtime shared by embed, extract, and refresh workers. The crawl worker does **not** use it — crawl has its own loop in `crawl/runtime/worker/loops.rs` because spider.rs futures are `!Send` and require single-threaded pinning.
+
+`AXON_INGEST_LANES` (default 2) controls how many ingest jobs run in parallel via `worker_lane.rs`. Each lane holds one AMQP consumer. Lane count is separate from per-job concurrency.
 
 ## ingest_jobs Schema Difference
 `axon_ingest_jobs` uses `source_type` + `target` columns instead of `url`/`urls_json` used by all other job tables. When querying or listing ingest jobs, join/filter on `source_type` (`github`/`reddit`/`youtube`) not on `url`.
