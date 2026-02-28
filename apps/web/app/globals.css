@@ -554,7 +554,7 @@ h4 {
 
 /* Placeholder text: axon dim text — higher specificity to override Slate defaults */
 :root .axon-editor [data-slate-placeholder] {
-  color: var(--axon-text-dim);
+  color: var(--text-dim);
   opacity: 1;
 }
 
@@ -566,16 +566,16 @@ h4 {
   padding: 0.1em 0.35em;
   font-family: var(--font-mono);
   font-size: 0.85em;
-  color: var(--axon-accent-pink);
+  color: var(--axon-primary);
 }
 
 /* Bold text */
 .axon-editor [data-slate-editor] strong {
-  color: var(--axon-text-primary);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 /* Subtle line between editor and toolbar separator */
 .axon-editor .plate-toolbar-separator {
-  background: rgba(255, 135, 175, 0.15);
+  background: var(--border-subtle);
 }

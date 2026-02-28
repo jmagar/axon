@@ -271,7 +271,7 @@ export function PulseWorkspace() {
     <div className={`space-y-1.5 ${isDesktop ? 'mt-1' : 'pt-11'}`}>
       {/* Fixed mobile header — title + SRC + pane switcher */}
       {!isDesktop && chatHistory.length > 0 && (
-        <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[rgba(255,135,175,0.1)] bg-[rgba(3,7,18,0.45)] pl-3 pr-28 backdrop-blur-lg lg:hidden">
+        <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[rgba(3,7,18,0.45)] pl-3 pr-28 backdrop-blur-lg lg:hidden">
           {/* Space for AXON logo (fixed left-6 top-5 z-10) */}
           <div className="w-14 shrink-0" />
           {/* Spacer */}
@@ -281,7 +281,7 @@ export function PulseWorkspace() {
             <button
               type="button"
               onClick={() => setSourcesExpanded((prev) => !prev)}
-              className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] px-1.5 py-0.5 text-[var(--axon-text-subtle)]"
+              className="ui-chip inline-flex items-center gap-1 rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] px-1.5 py-0.5 text-[var(--text-dim)]"
               aria-expanded={sourcesExpanded}
               title={sourcesExpanded ? 'Hide sources' : 'Show sources'}
             >
@@ -311,7 +311,7 @@ export function PulseWorkspace() {
           onNewSession={handleNewSession}
         />
       )}
-      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
+      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
         {crawlFiles.length > 0 && (
           <CrawlFileExplorer
             files={crawlFiles}
@@ -333,7 +333,7 @@ export function PulseWorkspace() {
                 : mobilePane === 'editor'
                   ? 'flex'
                   : 'hidden'
-            } min-w-0 overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.5)] lg:flex-none`}
+            } min-w-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:flex-none`}
             style={{
               flexBasis: `${isDesktop ? desktopSplitPercent : mobileSplitPercent}%`,
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 1 : 3) : 2,
@@ -378,7 +378,7 @@ export function PulseWorkspace() {
                 : mobilePane === 'chat'
                   ? 'flex'
                   : 'hidden'
-            } min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
+            } min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
             style={{
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 3 : 1) : 1,
             }}

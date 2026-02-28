@@ -18,7 +18,7 @@ export function CardsRenderer({ result }: CardsRendererProps) {
 function scoreColor(score: number): string {
   if (score >= 0.7) return 'var(--axon-success)'
   if (score >= 0.4) return 'var(--axon-warning)'
-  return 'var(--axon-accent-pink)'
+  return 'var(--axon-primary-strong)'
 }
 
 function scoreBg(score: number): string {
@@ -33,7 +33,7 @@ function scoreBg(score: number): string {
 
 function QueryCards({ results }: { results: QueryResult[] }) {
   if (results.length === 0) {
-    return <div className="text-sm text-[var(--axon-text-muted)]">No results</div>
+    return <div className="text-sm text-[var(--text-muted)]">No results</div>
   }
 
   return (
@@ -41,7 +41,7 @@ function QueryCards({ results }: { results: QueryResult[] }) {
       {results.map((r) => (
         <div
           key={`${r.rank}-${r.url}`}
-          className="rounded-lg border border-[rgba(255,135,175,0.08)] p-3 transition-colors hover:border-[rgba(255,135,175,0.15)]"
+          className="rounded-lg border border-[var(--border-subtle)] p-3 transition-colors hover:border-[var(--border-standard)]"
           style={{ background: 'rgba(10, 18, 35, 0.4)' }}
         >
           {/* Header: rank badge + score + URL */}
@@ -51,7 +51,7 @@ function QueryCards({ results }: { results: QueryResult[] }) {
               className="ui-chip flex size-6 shrink-0 items-center justify-center rounded-full"
               style={{
                 background: 'rgba(135, 175, 255, 0.15)',
-                color: 'var(--axon-accent-blue-strong)',
+                color: 'var(--axon-secondary-strong)',
               }}
             >
               {r.rank}
@@ -63,7 +63,7 @@ function QueryCards({ results }: { results: QueryResult[] }) {
                 href={r.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate text-[length:var(--text-base)] font-medium text-[var(--axon-accent-blue-strong)] transition-colors hover:text-[var(--axon-accent-blue)] hover:underline"
+                className="block truncate text-[length:var(--text-base)] font-medium text-[var(--axon-secondary-strong)] transition-colors hover:text-[var(--axon-secondary)] hover:underline"
               >
                 {r.url}
               </a>

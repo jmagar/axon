@@ -62,7 +62,7 @@ export function DocOpBadge({ type, heading }: { type: string; heading?: string }
             <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] font-semibold text-emerald-300">
               {displayLabel}
             </span>
-            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+            <span className="shrink-0 rounded border border-[rgba(255,255,255,0.1)] px-1 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-dim)]">
               Doc op
             </span>
           </div>

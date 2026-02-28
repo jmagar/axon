@@ -23,7 +23,7 @@ function ThinkingBlock({ content }: { content: string }) {
       >
         <Brain className="size-3 shrink-0 text-violet-400" />
         <span className="text-[length:var(--text-xs)] font-medium text-violet-300">Reasoning</span>
-        <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+        <span className="ml-auto text-[length:var(--text-2xs)] text-[var(--text-dim)]">
           {open ? 'hide' : `${wordCount} ${wordCount === 1 ? 'word' : 'words'}`}
         </span>
         <ChevronDown
@@ -32,7 +32,7 @@ function ThinkingBlock({ content }: { content: string }) {
       </button>
       {open && (
         <div className="border-t border-[rgba(167,139,250,0.15)] px-2.5 py-2 animate-fade-in">
-          <p className="whitespace-pre-wrap font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--axon-text-secondary)]">
+          <p className="whitespace-pre-wrap font-mono text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]">
             {content}
           </p>
         </div>
@@ -96,8 +96,8 @@ export function MessageContent({ msg }: { msg: ChatMessage }) {
     const handoffLabel = parseHandoffLabel(msg.content)
     if (handoffLabel) {
       return (
-        <div className="flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--axon-text-dim)]">
-          <History className="size-3 shrink-0 text-[var(--axon-accent-blue)]" />
+        <div className="flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-dim)]">
+          <History className="size-3 shrink-0 text-[var(--axon-secondary)]" />
           <span>{handoffLabel}</span>
         </div>
       )
@@ -176,22 +176,20 @@ export function MessageBubble({
         <div
           className={`rounded-xl border px-3 py-2.5 ${
             isUser
-              ? 'border-[var(--border-standard)] bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] shadow-[var(--shadow-md)] text-[var(--axon-text-primary)]'
-              : 'border-[rgba(255,135,175,0.18)] bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] shadow-[0_6px_18px_rgba(3,7,18,0.3)] text-[var(--axon-text-secondary)]'
+              ? 'border-[var(--border-standard)] bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] shadow-[var(--shadow-md)] text-[var(--text-primary)]'
+              : 'border-[rgba(255,135,175,0.18)] bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] shadow-[0_6px_18px_rgba(3,7,18,0.3)] text-[var(--text-secondary)]'
           }`}
         >
           {/* Header: role label + timestamp */}
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span
               className={`inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-[0.1em] ${
-                isUser
-                  ? 'text-[var(--axon-accent-pink-strong)]'
-                  : 'text-[var(--axon-accent-blue-strong)]'
+                isUser ? 'text-[var(--axon-primary)]' : 'text-[var(--axon-secondary-strong)]'
               }`}
             >
               <span
                 className={`inline-block size-1.5 rounded-full ${
-                  isUser ? 'bg-[var(--axon-accent-pink)]' : 'bg-[var(--axon-accent-blue)]'
+                  isUser ? 'bg-[var(--axon-primary-strong)]' : 'bg-[var(--axon-secondary)]'
                 }`}
               />
               {isUser ? 'You' : 'Cortex'}

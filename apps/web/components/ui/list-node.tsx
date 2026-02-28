@@ -9,7 +9,7 @@ export function ListElement(props: PlateElementProps) {
     <PlateElement
       {...props}
       as={Tag}
-      className={`my-1.5 space-y-0.5 pl-4 text-[var(--axon-text-secondary)] ${ordered ? 'list-decimal' : 'list-disc'}`}
+      className={`my-1.5 space-y-0.5 pl-4 text-[var(--text-secondary)] ${ordered ? 'list-decimal' : 'list-disc'}`}
     >
       {props.children}
     </PlateElement>
