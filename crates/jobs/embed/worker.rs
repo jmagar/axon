@@ -150,6 +150,13 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
         log_info(&format!(
             "embed worker started job {id} input={input_preview}"
         ));
+        // Heartbeat pattern: shared across embed, extract, ingest, and refresh workers.
+        // If this pattern needs to change, update all four copies:
+        // - crates/jobs/embed/worker.rs  (this file)
+        // - crates/jobs/extract/worker.rs
+        // - crates/jobs/ingest.rs
+        // - crates/jobs/refresh/processor.rs
+        // TODO: Extract into common::spawn_heartbeat_task(pool, table, id, interval_secs) -> JoinHandle
         let heartbeat_pool = pool.clone();
         let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
         let heartbeat_task = tokio::spawn(async move {
@@ -233,10 +240,10 @@ async fn process_claimed_embed_job(cfg: Config, pool: PgPool, id: Uuid) {
     }
 }
 
-pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+pub async fn run_embed_worker(cfg: &Config) -> anyhow::Result<()> {
     // Validate required environment variables before attempting any connections.
     if let Err(msg) = validate_worker_env_vars() {
-        return Err(msg.into());
+        return Err(anyhow::anyhow!("{msg}"));
     }
 
     let pool = make_pool(cfg).await?;
@@ -256,5 +263,7 @@ pub async fn run_embed_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let process_fn: ProcessFn =
         std::sync::Arc::new(|cfg, pool, id| Box::pin(process_claimed_embed_job(cfg, pool, id)));
 
-    run_job_worker(cfg, pool, &wc, process_fn).await
+    run_job_worker(cfg, pool, &wc, process_fn)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }

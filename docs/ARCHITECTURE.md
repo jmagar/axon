@@ -192,10 +192,40 @@ State model:
 
 Job families:
 
-- Crawl: `crates/jobs/crawl/runtime.rs` (+ runtime worker modules)
-- Extract: `crates/jobs/extract.rs`
-- Embed: `crates/jobs/embed.rs`
-- Ingest (`github`, `reddit`, `youtube`, `sessions`; lifecycle details in `docs/JOB-LIFECYCLE.md`): `crates/jobs/ingest.rs`
+- Crawl: `crates/jobs/crawl/runtime/worker/loops.rs` (own AMQP consumer loop — see Worker Architecture below)
+- Extract: `crates/jobs/extract/worker.rs` (uses `worker_lane.rs`)
+- Embed: `crates/jobs/embed/worker.rs` (uses `worker_lane.rs`)
+- Ingest (`github`, `reddit`, `youtube`, `sessions`): `crates/jobs/ingest.rs` (uses `worker_lane.rs`)
+- Refresh: `crates/jobs/refresh/worker.rs` (uses `worker_lane.rs`; lifecycle details in `docs/JOB-LIFECYCLE.md`)
+
+### Worker Architecture
+
+#### Generic Worker Lane (worker_lane.rs)
+
+`worker_lane.rs` provides a generic AMQP/polling consumer loop shared by:
+- Embed worker (`crates/jobs/embed/worker.rs`)
+- Extract worker (`crates/jobs/extract/worker.rs`)
+- Refresh worker (`crates/jobs/refresh/worker.rs`)
+- Ingest worker (`crates/jobs/ingest.rs`)
+
+Each worker type creates N lanes (configurable via `AXON_*_LANES` env vars).
+Each lane holds one AMQP consumer channel and processes jobs sequentially.
+
+#### Why the Crawl Worker Doesn't Use worker_lane.rs
+
+The crawl worker has its own AMQP consumer loop in `crates/jobs/crawl/runtime/worker/loops.rs`.
+
+**Root cause**: `spider.rs` futures are `!Send`. They cannot be:
+- Spawned with `tokio::spawn()` (requires `Send + 'static`)
+- Moved across thread boundaries (including `FuturesUnordered`)
+
+The crawl worker works around this by pinning futures with `tokio::pin!()` and
+polling them inside a `select!` loop on a single task. This preserves the
+1-job-per-lane guarantee while keeping the non-Send future alive on the same thread.
+
+**Consequence**: Any change to the generic lane logic (backoff, QoS, reconnect) must
+also be manually applied to `crawl/runtime/worker/loops.rs`. The two reconnect loops
+also have subtly different backoff reset semantics (see `CLAUDE.md` "AMQP reconnect backoff").
 
 ## Vector and RAG Pipeline
 
@@ -282,12 +312,15 @@ flowchart TD
 
 ## Data Model and Persistence
 
-Primary relational tables (see `docs/schema.md`):
+Primary relational tables (see `docs/SCHEMA.md`):
 
 - `axon_crawl_jobs`
 - `axon_extract_jobs`
 - `axon_embed_jobs`
 - `axon_ingest_jobs`
+- `axon_refresh_jobs`
+- `axon_refresh_targets` (per-URL conditional request state)
+- `axon_refresh_schedules` (recurring refresh definitions)
 
 Common columns:
 
@@ -296,6 +329,12 @@ Common columns:
 Ingest-specific discriminator:
 
 - `source_type` + `target` replace URL-based identifiers.
+
+Refresh-specific:
+
+- `urls_json` array of URLs to re-check.
+- `axon_refresh_targets` stores per-URL ETag/hash state across jobs.
+- `axon_refresh_schedules` defines recurring refresh intervals.
 
 Storage responsibilities:
 
@@ -374,10 +413,15 @@ Crawl/jobs/vector:
 - `crates/jobs/status.rs`
 - `crates/jobs/common/job_ops.rs`
 - `crates/jobs/worker_lane.rs`
-- `crates/jobs/crawl/runtime.rs`
-- `crates/jobs/extract.rs`
-- `crates/jobs/embed.rs`
+- `crates/jobs/crawl/runtime/worker/loops.rs`
+- `crates/jobs/extract/worker.rs`
+- `crates/jobs/embed/worker.rs`
 - `crates/jobs/ingest.rs`
+- `crates/jobs/refresh/mod.rs`
+- `crates/jobs/refresh/processor.rs`
+- `crates/jobs/refresh/schedule.rs`
+- `crates/jobs/refresh/state.rs`
+- `crates/jobs/refresh/worker.rs`
 - `crates/vector/ops.rs`
 - `crates/vector/ops/tei.rs`
 
@@ -395,6 +439,24 @@ Web + UI:
 - `apps/web/lib/ws-protocol.ts`
 - `apps/web/app/api/omnibox/files/route.ts`
 - `apps/web/app/api/pulse/chat/route.ts`
+
+## Security: Destructive Operations
+
+The following CLI operations are **unauthenticated** — any process with network
+access to Postgres/RabbitMQ can invoke them:
+
+- `axon crawl clear` — deletes ALL crawl jobs
+- `axon extract clear` — deletes ALL extract jobs
+- `axon refresh clear` — deletes ALL refresh jobs
+- `axon crawl cancel <id>` — cancels a specific job
+- `axon refresh cancel <id>` — cancels a specific refresh job
+
+**Accepted risk**: Axon is a self-hosted single-user tool. All services are bound
+to `127.0.0.1` (or internal Docker network). External exposure is prevented at
+the infrastructure layer (Docker port mappings, Tailscale ACLs).
+
+**Mitigation if needed**: Bind Postgres/RabbitMQ to localhost only (already the
+default in `docker-compose.yaml`). Add network-level ACLs via Tailscale.
 
 ---
 

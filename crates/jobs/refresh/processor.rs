@@ -1,21 +1,21 @@
-use super::state::{load_target_states, upsert_target_state};
+use super::state::load_target_states;
+use super::url_processor::{RefreshUrlContext, validate_output_dir};
 use super::{
     REFRESH_HEARTBEAT_INTERVAL_SECS, RefreshJobConfig, RefreshPageResult, RefreshRunSummary,
     RefreshTargetState, TABLE,
 };
 use crate::crates::core::config::Config;
-use crate::crates::core::content::{to_markdown, url_to_filename};
+use crate::crates::core::content::to_markdown;
 use crate::crates::core::http::{http_client, validate_url};
 use crate::crates::core::logging::log_warn;
-use crate::crates::crawl::manifest::ManifestEntry;
 use crate::crates::jobs::common::{mark_job_completed, mark_job_failed, touch_running_job};
 use crate::crates::jobs::status::JobStatus;
-use crate::crates::vector::ops::embed_text_with_metadata;
 use reqwest::StatusCode;
 use reqwest::header::{ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::error::Error;
+use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::time::Duration;
 use uuid::Uuid;
@@ -112,6 +112,7 @@ async fn fetch_and_process_url(
 /// Returns `None` if setup failed (job already marked failed).
 async fn setup_refresh_job_context(
     pool: &PgPool,
+    cfg: &Config,
     id: Uuid,
 ) -> Option<(
     RefreshJobConfig,
@@ -146,9 +147,17 @@ async fn setup_refresh_job_context(
         }
     };
 
+    // SEC-M-5: Validate output_dir against path traversal before creating directories.
+    let output_base = &cfg.output_dir;
     let run_dir = std::path::PathBuf::from(&job_cfg.output_dir)
         .join("refresh")
         .join(id.to_string());
+
+    if let Err(e) = validate_output_dir(&run_dir, output_base) {
+        let _ = mark_job_failed(pool, TABLE, id, &format!("output_dir rejected: {e}")).await;
+        return None;
+    }
+
     let markdown_dir = run_dir.join("markdown");
 
     if let Err(err) = tokio::fs::create_dir_all(&markdown_dir).await {
@@ -207,105 +216,6 @@ async fn setup_refresh_job_context(
     ))
 }
 
-/// Process a single URL within a refresh job: fetch, hash-compare, write markdown, embed.
-#[allow(clippy::too_many_arguments)]
-async fn process_single_refresh_url(
-    cfg: &Config,
-    pool: &PgPool,
-    client: &reqwest::Client,
-    url: &str,
-    previous: Option<&RefreshTargetState>,
-    markdown_dir: &std::path::Path,
-    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
-    embed: bool,
-    id: Uuid,
-    summary: &mut RefreshRunSummary,
-    changed_idx: &mut u32,
-) {
-    match refresh_one_url(client, url, previous).await {
-        Ok(result) => {
-            if result.status_code >= 400 {
-                summary.failed += 1;
-                let error_text = format!("HTTP {}", result.status_code);
-                let _ = upsert_target_state(pool, url, &result, Some(&error_text)).await;
-                return;
-            }
-
-            if result.not_modified {
-                summary.not_modified += 1;
-                summary.unchanged += 1;
-                let _ = upsert_target_state(pool, url, &result, None).await;
-                return;
-            }
-
-            if result.changed {
-                *changed_idx += 1;
-                summary.changed += 1;
-
-                if let Some(markdown) = result.markdown.as_deref() {
-                    let filename = url_to_filename(url, *changed_idx);
-                    let file_path = markdown_dir.join(&filename);
-                    if let Err(err) = tokio::fs::write(&file_path, markdown.as_bytes()).await {
-                        summary.failed += 1;
-                        let _ = upsert_target_state(
-                            pool,
-                            url,
-                            &result,
-                            Some(&format!("write markdown failed: {err}")),
-                        )
-                        .await;
-                        return;
-                    }
-
-                    let entry = ManifestEntry {
-                        url: url.to_string(),
-                        relative_path: format!("markdown/{filename}"),
-                        markdown_chars: result.markdown_chars.unwrap_or(0),
-                        content_hash: result.content_hash.clone(),
-                        changed: true,
-                    };
-                    if let Ok(mut line) = serde_json::to_string(&entry) {
-                        line.push('\n');
-                        let _ = manifest.write_all(line.as_bytes()).await;
-                    }
-
-                    if embed {
-                        match embed_text_with_metadata(cfg, markdown, url, "refresh", None).await {
-                            Ok(chunks) => {
-                                summary.embedded_chunks += chunks;
-                            }
-                            Err(err) => {
-                                log_warn(&format!(
-                                    "refresh embed failed for url={} job_id={}: {}",
-                                    url, id, err
-                                ));
-                            }
-                        }
-                    }
-                }
-            } else {
-                summary.unchanged += 1;
-            }
-
-            let _ = upsert_target_state(pool, url, &result, None).await;
-        }
-        Err(err) => {
-            summary.failed += 1;
-            let fallback = RefreshPageResult {
-                status_code: 0,
-                etag: previous.and_then(|s| s.etag.clone()),
-                last_modified: previous.and_then(|s| s.last_modified.clone()),
-                content_hash: previous.and_then(|s| s.content_hash.clone()),
-                markdown_chars: None,
-                markdown: None,
-                changed: false,
-                not_modified: false,
-            };
-            let _ = upsert_target_state(pool, url, &fallback, Some(&err.to_string())).await;
-        }
-    }
-}
-
 /// Finalize a refresh job: stop heartbeat, write final result to DB.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_refresh_job(
@@ -352,9 +262,49 @@ async fn finalize_refresh_job(
     }
 }
 
+/// Flush progress to DB if enough URLs have been checked or enough time has elapsed.
+async fn maybe_flush_progress(
+    pool: &PgPool,
+    id: Uuid,
+    summary: &RefreshRunSummary,
+    total: usize,
+    run_dir: &std::path::Path,
+    last_flush: &mut Instant,
+) {
+    const FLUSH_INTERVAL_SECS: u64 = 10;
+    const FLUSH_EVERY_N: usize = 25;
+
+    if last_flush.elapsed() < Duration::from_secs(FLUSH_INTERVAL_SECS)
+        && !summary.checked.is_multiple_of(FLUSH_EVERY_N)
+    {
+        return;
+    }
+
+    let _ = sqlx::query(&format!(
+        "UPDATE axon_refresh_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
+        running = JobStatus::Running.as_str(),
+    ))
+    .bind(id)
+    .bind(serde_json::json!({
+        "phase": "refreshing",
+        "checked": summary.checked,
+        "changed": summary.changed,
+        "unchanged": summary.unchanged,
+        "not_modified": summary.not_modified,
+        "failed": summary.failed,
+        "embedded_chunks": summary.embedded_chunks,
+        "total": total,
+        "output_dir": run_dir.to_string_lossy(),
+    }))
+    .execute(pool)
+    .await;
+
+    *last_flush = Instant::now();
+}
+
 pub(crate) async fn process_refresh_job(cfg: Config, pool: PgPool, id: Uuid) {
     let Some((job_cfg, run_dir, mut manifest, heartbeat_stop_tx, heartbeat_task)) =
-        setup_refresh_job_context(&pool, id).await
+        setup_refresh_job_context(&pool, &cfg, id).await
     else {
         return;
     };
@@ -389,43 +339,39 @@ pub(crate) async fn process_refresh_job(cfg: Config, pool: PgPool, id: Uuid) {
 
     let markdown_dir = run_dir.join("markdown");
     let mut changed_idx: u32 = 0;
+    let mut last_progress_flush = Instant::now();
+
+    let mut ctx = RefreshUrlContext {
+        cfg: &cfg,
+        pool: &pool,
+        client,
+        markdown_dir: &markdown_dir,
+        manifest: &mut manifest,
+        job_id: id,
+        embed: job_cfg.embed,
+    };
 
     for url in &job_cfg.urls {
         summary.checked += 1;
         let previous = states.get(url);
 
-        process_single_refresh_url(
-            &cfg,
-            &pool,
-            client,
+        super::url_processor::process_single_refresh_url(
+            &mut ctx,
             url,
             previous,
-            &markdown_dir,
-            &mut manifest,
-            job_cfg.embed,
-            id,
             &mut summary,
             &mut changed_idx,
         )
         .await;
 
-        let _ = sqlx::query(&format!(
-            "UPDATE axon_refresh_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
-            running = JobStatus::Running.as_str(),
-        ))
-        .bind(id)
-        .bind(serde_json::json!({
-            "phase": "refreshing",
-            "checked": summary.checked,
-            "changed": summary.changed,
-            "unchanged": summary.unchanged,
-            "not_modified": summary.not_modified,
-            "failed": summary.failed,
-            "embedded_chunks": summary.embedded_chunks,
-            "total": job_cfg.urls.len(),
-            "output_dir": run_dir.to_string_lossy(),
-        }))
-        .execute(&pool)
+        maybe_flush_progress(
+            &pool,
+            id,
+            &summary,
+            job_cfg.urls.len(),
+            &run_dir,
+            &mut last_progress_flush,
+        )
         .await;
     }
 
@@ -485,13 +431,11 @@ mod tests {
         });
         let url = format!("{}/page", server.base_url());
 
-        // First fetch to get the hash
         let client = reqwest::Client::new();
         let first = fetch_and_process_url(&client, &url, None).await.unwrap();
-        assert!(first.changed); // first time = changed
+        assert!(first.changed);
         let hash = first.content_hash.clone().unwrap();
 
-        // Second fetch with matching hash
         let prev = RefreshTargetState {
             etag: None,
             last_modified: None,

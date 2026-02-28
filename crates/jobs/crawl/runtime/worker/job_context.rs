@@ -32,12 +32,10 @@ async fn fetch_job_row(
 }
 
 async fn maybe_cancel_job_before_start(
-    cfg: &Config,
+    redis_conn: &mut redis::aio::MultiplexedConnection,
     pool: &PgPool,
     id: Uuid,
 ) -> Result<bool, Box<dyn Error>> {
-    let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    let mut redis_conn = redis_client.get_multiplexed_async_connection().await?;
     let cancel_key = format!("axon:crawl:cancel:{id}");
     let cancel_before: Option<String> = redis_conn
         .get(&cancel_key)
@@ -164,7 +162,16 @@ pub(super) async fn load_job_execution_context(
         return Ok(None);
     };
 
-    if maybe_cancel_job_before_start(cfg, pool, id).await? {
+    let redis_client = redis::Client::open(cfg.redis_url.clone())?;
+    let mut redis_conn = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        redis_client.get_multiplexed_async_connection(),
+    )
+    .await
+    .map_err(|_| "redis connect timeout (3s) in job context")?
+    .map_err(|e| format!("redis connect failed in job context: {e}"))?;
+
+    if maybe_cancel_job_before_start(&mut redis_conn, pool, id).await? {
         return Ok(None);
     }
 

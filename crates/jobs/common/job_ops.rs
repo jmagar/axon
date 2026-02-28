@@ -1,4 +1,4 @@
-//! Job lifecycle operations: claim, mark failed.
+//! Job lifecycle operations: claim, complete, fail, cancel, heartbeat.
 
 use crate::crates::jobs::status::JobStatus;
 use anyhow::{Context, Result};
@@ -9,7 +9,15 @@ use uuid::Uuid;
 use super::JobTable;
 
 /// Atomically claim the next pending job from the given table.
-/// Uses `FOR UPDATE SKIP LOCKED` for safe concurrent worker access.
+///
+/// # Concurrency Safety
+///
+/// Uses `FOR UPDATE SKIP LOCKED`: multiple workers can call this concurrently
+/// without blocking each other. Workers that encounter a locked row skip it
+/// and move to the next available pending job. This guarantees:
+/// - No two workers process the same job
+/// - No worker is blocked waiting for another worker's lock
+/// - The `UPDATE` (status → 'running') is atomic with the claim
 pub async fn claim_next_pending(pool: &PgPool, table: JobTable) -> Result<Option<Uuid>> {
     let table = table.as_str();
     let query = format!(
@@ -75,6 +83,12 @@ pub async fn mark_job_failed(
 ///
 /// If `result_json` is provided, it is written to the job row; otherwise the
 /// existing result payload is preserved.
+///
+/// # Idempotency Contract
+///
+/// If called twice for the same job, the second call returns `Ok(false)` — the
+/// `WHERE status='running'` guard prevents double-completion. This is safe to call
+/// from both the job handler and the watchdog.
 pub async fn mark_job_completed(
     pool: &PgPool,
     table: JobTable,
@@ -100,6 +114,14 @@ pub async fn mark_job_completed(
 }
 
 /// Cancel a pending or running job.
+///
+/// # Behavior
+///
+/// Cancels a job if and only if it is in `pending` or `running` state.
+/// Returns `Ok(true)` if the job was canceled, `Ok(false)` if the job was
+/// already in a terminal state (`completed`, `failed`, `canceled`).
+///
+/// This is safe to call concurrently — only one caller will get `true`.
 pub async fn cancel_pending_or_running_job(
     pool: &PgPool,
     table: JobTable,
@@ -124,6 +146,18 @@ pub async fn cancel_pending_or_running_job(
 }
 
 /// Touch a running job heartbeat by updating `updated_at`.
+///
+/// # Watchdog Relationship
+///
+/// `touch_running_job` updates `updated_at` to `NOW()`. The watchdog
+/// (`reclaim_stale_running_jobs`) marks jobs as stale when their `updated_at`
+/// is older than `stale_timeout_secs`. Heartbeat tasks must call this at
+/// intervals shorter than `stale_timeout_secs` to keep long-running jobs alive.
+///
+/// # Idempotency
+///
+/// Only updates rows WHERE `status='running'`. Calling this on a completed or
+/// failed job is a no-op (no error, no rows affected).
 pub async fn touch_running_job(pool: &PgPool, table: JobTable, id: Uuid) -> Result<()> {
     let table_name = table.as_str();
     let query = format!(
