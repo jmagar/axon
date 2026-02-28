@@ -77,6 +77,7 @@ regex = "1"
 # without requiring live services.
 httpmock = "0.8"
 insta = "1"
+serial_test = "3"
 
 [lints.rust]
 unsafe_code = "deny"

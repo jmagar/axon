@@ -42,8 +42,7 @@ crates/cli/commands/crawl.rs
 crates/vector/ops/commands/ask/context.rs
 # 509 lines — citation-quality gates + test suite; test block accounts for overage (2026-02-26)
 crates/vector/ops/commands/ask.rs
-# 704 lines — refresh pipeline landed in one pass; split/refactor follow-up needed (2026-02-26)
-crates/jobs/refresh.rs
+# refresh pipeline split into processor.rs + url_processor.rs (2026-02-28)
 
 # feat/crawl-download-pack additions (2026-02-26)
 # 660 lines — pulse chat pane with streaming tool-use blocks; split planned
@@ -60,5 +59,4 @@ apps/web/app/settings/page.tsx
 # 630 lines — pre-existing table renderer for results panel; split planned (2026-02-28)
 apps/web/components/results/table-renderer.tsx
 
-# 744 lines — generic AMQP/polling lane orchestrator for embed/extract/refresh; split planned (2026-02-28)
-crates/jobs/worker_lane.rs
+# worker_lane split into worker_lane/{mod,amqp,poll,delivery}.rs (2026-02-28)

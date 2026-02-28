@@ -71,12 +71,20 @@ RUN apt-get update \
 
 # Keep the full archive directory — chrome-headless-shell needs icudtl.dat and
 # other resource files in the same directory as the binary to start correctly.
-RUN curl -fsSL -o /tmp/chrome.zip \
-        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
-    && unzip -q /tmp/chrome.zip -d /opt/ \
-    && mv /opt/chrome-headless-shell-linux64 /opt/chrome \
-    && chmod +x /opt/chrome/chrome-headless-shell \
-    && rm -f /tmp/chrome.zip
+#
+# Chrome for Testing downloads are served over HTTPS from Google's CDN
+# (storage.googleapis.com) with TLS certificate verification. The version is
+# pinned via CHROME_VERSION build arg. Google does not publish separate hash
+# files for Chrome for Testing — HTTPS + version pinning is the integrity model.
+# To update: check https://googlechromelabs.github.io/chrome-for-testing/ for
+# available versions.
+RUN set -eux; \
+    curl -fsSL -o /tmp/chrome.zip \
+        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-headless-shell-linux64.zip"; \
+    unzip -q /tmp/chrome.zip -d /opt/; \
+    mv /opt/chrome-headless-shell-linux64 /opt/chrome; \
+    chmod +x /opt/chrome/chrome-headless-shell; \
+    rm -f /tmp/chrome.zip
 
 COPY --from=builder /usr/local/cargo/bin/headless_browser /usr/local/bin/headless_browser
 
