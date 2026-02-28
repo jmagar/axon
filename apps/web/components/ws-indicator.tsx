@@ -12,7 +12,7 @@ export function WsIndicator() {
         background: 'rgba(3, 7, 18, 0.6)',
         borderColor:
           status === 'connected' ? 'rgba(130, 217, 160, 0.18)' : 'rgba(255,135,175, 0.08)',
-        color: status === 'connected' ? 'var(--axon-text-muted)' : 'var(--axon-text-subtle)',
+        color: status === 'connected' ? 'var(--text-muted)' : 'var(--text-dim)',
         letterSpacing: '0.5px',
       }}
     >
@@ -22,7 +22,7 @@ export function WsIndicator() {
             ? 'bg-[var(--axon-success)] shadow-[0_0_6px_rgba(130,217,160,0.55)]'
             : status === 'reconnecting'
               ? 'animate-pulse bg-[var(--axon-warning)] shadow-[0_0_6px_rgba(255,192,134,0.45)]'
-              : 'bg-[var(--axon-text-subtle)]'
+              : 'bg-[var(--text-dim)]'
         }`}
       />
       <span>{statusLabel}</span>

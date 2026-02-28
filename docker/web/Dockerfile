@@ -79,6 +79,7 @@ RUN find /etc/s6-overlay/s6-rc.d -type f -name run    -exec chmod +x {} + \
     && chmod +x /etc/cont-init.d/* \
     && mkdir -p \
         /var/log/axon/pnpm-dev \
+        /var/log/axon/pnpm-watcher \
     && chown -R node:node /var/log/axon
 
 # NOTE: s6-overlay v3 requires root for /init (PID 1) to manage process

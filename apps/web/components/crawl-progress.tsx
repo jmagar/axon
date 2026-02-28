@@ -36,14 +36,14 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
   return (
     <div className="mb-3 space-y-1.5">
       {/* Progress bar */}
-      <div className="relative h-[3px] overflow-hidden rounded-full bg-[rgba(255,135,175,0.08)]">
+      <div className="relative h-[3px] overflow-hidden rounded-full bg-[var(--surface-elevated)]">
         {isProcessing && discovered > 0 && pct < 100 ? (
           <div
             className="h-full rounded-full transition-all duration-700"
             style={{
               width: `${pct}%`,
               background:
-                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue))',
+                'linear-gradient(90deg, var(--axon-primary-strong), var(--axon-secondary))',
             }}
           />
         ) : isProcessing ? (
@@ -51,7 +51,7 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
             className="absolute inset-0 animate-shimmer rounded-full"
             style={{
               background:
-                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue), var(--axon-accent-pink))',
+                'linear-gradient(90deg, var(--axon-primary-strong), var(--axon-secondary), var(--axon-primary-strong))',
               backgroundSize: '200% 100%',
             }}
           />
@@ -61,16 +61,16 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
             style={{
               width: '100%',
               background:
-                'linear-gradient(90deg, var(--axon-accent-pink), var(--axon-accent-blue))',
+                'linear-gradient(90deg, var(--axon-primary-strong), var(--axon-secondary))',
             }}
           />
         )}
       </div>
 
       {/* Counts label */}
-      <div className="flex items-center gap-2 text-[11px] text-[var(--axon-text-muted)]">
+      <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
         {isProcessing && (
-          <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
+          <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--axon-primary-strong)]" />
         )}
         <span>
           {pages > 0 ? (

@@ -24,7 +24,7 @@ function Card({
     <div
       className="flex flex-col rounded-xl border"
       style={{
-        borderColor: 'rgba(255,135,175,0.08)',
+        borderColor: 'var(--border-subtle)',
         background: 'rgba(4,8,20,0.45)',
         minHeight: '180px',
       }}
@@ -32,7 +32,7 @@ function Card({
       {/* Header */}
       <div
         className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: 'rgba(255,135,175,0.06)' }}
+        style={{ borderColor: 'var(--border-subtle)' }}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-[rgba(175,215,255,0.55)] [&>svg]:size-3.5">{icon}</span>
@@ -63,7 +63,7 @@ function Card({
 
 function Dim({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center py-4 text-[11px] italic text-[rgba(200,210,230,0.2)]">
+    <div className="flex h-full items-center justify-center py-4 text-[11px] italic text-[var(--text-dim)]">
       {children}
     </div>
   )
@@ -106,7 +106,7 @@ function SessionRow({
       type="button"
       onClick={() => void handleClick()}
       disabled={loading}
-      className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left transition-colors disabled:opacity-50 hover:bg-[rgba(255,135,175,0.05)]"
+      className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left transition-colors disabled:opacity-50 hover:bg-[var(--surface-float)]"
     >
       <div className="min-w-0 flex-1">
         {session.project !== 'tmp' && (
@@ -170,7 +170,7 @@ function FilesContent() {
         <Link
           key={e.path}
           href="/workspace"
-          className="flex items-center gap-1.5 rounded px-2 py-1.5 transition-colors hover:bg-[rgba(175,215,255,0.05)]"
+          className="flex items-center gap-1.5 rounded px-2 py-1.5 transition-colors hover:bg-[var(--surface-float)]"
         >
           <span className="text-[rgba(175,215,255,0.4)]">
             {e.type === 'directory' ? (
@@ -195,6 +195,7 @@ function FilesContent() {
 interface McpServerEntry {
   name: string
   type: 'stdio' | 'http'
+  status: 'online' | 'offline' | 'unknown'
 }
 
 function McpContent() {
@@ -202,12 +203,22 @@ function McpContent() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/mcp')
-      .then((r) => r.json())
-      .then((d: { mcpServers?: Record<string, { url?: string }> }) => {
-        const entries: McpServerEntry[] = Object.entries(d.mcpServers ?? {})
+    Promise.all([
+      fetch('/api/mcp').then((r) => r.json()) as Promise<{
+        mcpServers?: Record<string, { url?: string }>
+      }>,
+      fetch('/api/mcp/status').then((r) => r.json()) as Promise<{
+        servers?: Record<string, { status: 'online' | 'offline' | 'unknown' }>
+      }>,
+    ])
+      .then(([cfg, stat]) => {
+        const entries: McpServerEntry[] = Object.entries(cfg.mcpServers ?? {})
           .slice(0, 5)
-          .map(([name, cfg]) => ({ name, type: cfg.url ? 'http' : 'stdio' }))
+          .map(([name, s]) => ({
+            name,
+            type: s.url ? 'http' : 'stdio',
+            status: stat.servers?.[name]?.status ?? 'unknown',
+          }))
         setServers(entries)
       })
       .catch(() => setServers([]))
@@ -223,9 +234,22 @@ function McpContent() {
         <Link
           key={s.name}
           href="/mcp"
-          className="flex items-center justify-between rounded px-2 py-1.5 transition-colors hover:bg-[rgba(175,215,255,0.05)]"
+          className="flex items-center justify-between rounded px-2 py-1.5 transition-colors hover:bg-[var(--surface-float)]"
         >
-          <span className="truncate text-[11px] text-[rgba(200,220,245,0.7)]">{s.name}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span
+              className="size-1.5 shrink-0 rounded-full"
+              style={{
+                background:
+                  s.status === 'online'
+                    ? 'rgba(120,220,140,0.9)'
+                    : s.status === 'offline'
+                      ? 'rgba(255,100,100,0.8)'
+                      : 'rgba(180,180,180,0.35)',
+              }}
+            />
+            <span className="truncate text-[11px] text-[rgba(200,220,245,0.7)]">{s.name}</span>
+          </span>
           <span
             className="ml-2 shrink-0 rounded px-1.5 text-[9px] font-semibold uppercase tracking-wider"
             style={{

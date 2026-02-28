@@ -11,11 +11,11 @@ export function CodeBlockElement(props: PlateElementProps) {
       className="my-2 overflow-hidden rounded-lg border border-[rgba(175,215,255,0.14)] bg-[rgba(5,10,22,0.65)]"
     >
       {lang && (
-        <div className="border-b border-[rgba(175,215,255,0.1)] px-3 py-1 font-mono text-[0.68rem] tracking-widest text-[var(--axon-text-dim)] uppercase">
+        <div className="border-b border-[rgba(175,215,255,0.1)] px-3 py-1 font-mono text-[0.68rem] tracking-widest text-[var(--text-dim)] uppercase">
           {lang}
         </div>
       )}
-      <pre className="overflow-x-auto p-3 font-mono text-[0.8rem] leading-[1.6] text-[var(--axon-text-secondary)]">
+      <pre className="overflow-x-auto p-3 font-mono text-[0.8rem] leading-[1.6] text-[var(--text-secondary)]">
         <code>{props.children}</code>
       </pre>
     </PlateElement>
