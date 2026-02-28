@@ -144,7 +144,7 @@ export const ToolbarButton = withTooltip(function ToolbarButton({
           <>
             <div className="flex flex-1 items-center gap-2 whitespace-nowrap">{children}</div>
             <div>
-              <ChevronDown className="size-3.5 text-muted-foreground" data-icon />
+              <ChevronDown className="size-3.5 text-[var(--text-dim)]" data-icon />
             </div>
           </>
         ) : (
@@ -232,7 +232,7 @@ export function ToolbarSplitButtonSecondary({
       role="button"
       {...props}
     >
-      <ChevronDown className="size-3.5 text-muted-foreground" data-icon />
+      <ChevronDown className="size-3.5 text-[var(--text-dim)]" data-icon />
     </span>
   )
 }
@@ -353,7 +353,7 @@ export function ToolbarMenuGroup({
         )}
       >
         {label && (
-          <DropdownMenuLabel className="select-none font-semibold text-muted-foreground text-xs">
+          <DropdownMenuLabel className="select-none font-semibold text-[var(--text-dim)] text-xs">
             {label}
           </DropdownMenuLabel>
         )}

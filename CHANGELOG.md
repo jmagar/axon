@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-02-28
+Last Modified: 2026-02-28 (session: workspace virtual dirs, Claude folder, UI polish)
 
 ## [Unreleased] — feat/crawl-download-pack
 
@@ -9,6 +9,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| `b2d8a74` | feat(web+docker) | PlateJS editor integration, pnpm-watcher s6 service, chrome health fix |
 | `8d85538` | fix(jobs) | address all P0/P1/P2 code review issues — 8-agent team landing |
 | `5dc43f1` | chore | update changelog for UI overhaul + workspace explorer; misc Rust job fixes |
 | `e73906a` | feat(pages) | modal delete dialogs, MCP single save, settings typography, empty states, layout improvements |

@@ -1,14 +1,20 @@
 'use client'
 
 import {
+  BookOpen,
+  Bot,
   ChevronDown,
   ChevronRight,
+  Clock,
   File,
   FileCode,
   FileJson,
   FileText,
   Folder,
   FolderOpen,
+  HardDrive,
+  Star,
+  Tag,
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 
@@ -16,11 +22,15 @@ export interface FileEntry {
   name: string
   type: 'file' | 'directory'
   path: string // relative to workspace root
+  apiPath?: string
+  virtual?: boolean
+  iconType?: 'workspace' | 'docs' | 'favorites' | 'recents' | 'tags' | 'claude'
+  preloadedChildren?: FileEntry[]
 }
 
 interface FileTreeProps {
   entries: FileEntry[]
-  selectedPath: string | null
+  selectedPath?: string | null
   onSelect: (entry: FileEntry) => void
   depth?: number
 }
@@ -31,6 +41,26 @@ function fileIcon(name: string) {
   if (['ts', 'tsx', 'js', 'jsx', 'rs', 'go', 'py', 'sh'].includes(ext)) return FileCode
   if (['json', 'jsonl', 'toml', 'yaml', 'yml'].includes(ext)) return FileJson
   return File
+}
+
+function dirIcon(entry: FileEntry, expanded: boolean) {
+  if (entry.type !== 'directory') return fileIcon(entry.name)
+  switch (entry.iconType) {
+    case 'workspace':
+      return HardDrive
+    case 'docs':
+      return BookOpen
+    case 'favorites':
+      return Star
+    case 'recents':
+      return Clock
+    case 'tags':
+      return Tag
+    case 'claude':
+      return Bot
+    default:
+      return expanded ? FolderOpen : Folder
+  }
 }
 
 function TreeNode({
@@ -50,14 +80,25 @@ function TreeNode({
   const isSelected = selectedPath === entry.path
 
   const toggle = useCallback(async () => {
-    if (entry.type !== 'directory') {
-      onSelect(entry)
+    // Always call onSelect for both files and directories
+    onSelect(entry)
+
+    if (entry.type !== 'directory') return
+
+    // If preloadedChildren are available, use them directly without fetching
+    if (entry.preloadedChildren !== undefined) {
+      if (children === null) {
+        setChildren(entry.preloadedChildren)
+      }
+      setExpanded((e) => !e)
       return
     }
+
     if (!expanded && children === null) {
       setLoading(true)
       try {
-        const res = await fetch(`/api/workspace?action=list&path=${encodeURIComponent(entry.path)}`)
+        const fetchPath = entry.apiPath ?? entry.path
+        const res = await fetch(`/api/workspace?action=list&path=${encodeURIComponent(fetchPath)}`)
         const data = await res.json()
         setChildren(data.items ?? [])
       } catch {
@@ -70,8 +111,10 @@ function TreeNode({
   }, [entry, expanded, children, onSelect])
 
   const indent = depth * 12
-  const IconComp =
-    entry.type === 'directory' ? (expanded ? FolderOpen : Folder) : fileIcon(entry.name)
+  const isVirtualRoot = entry.virtual && depth === 0
+  const IconComp = dirIcon(entry, expanded)
+
+  const dirIconColor = isSelected ? 'text-[var(--axon-primary)]' : 'text-[rgba(175,215,255,0.5)]'
 
   return (
     <div>
@@ -80,12 +123,13 @@ function TreeNode({
         onClick={toggle}
         className={[
           'flex w-full min-h-[44px] items-center gap-1.5 rounded px-2 py-2 text-left',
-          'sm:min-h-0 sm:py-[3px]',
-          'text-xs font-mono transition-colors duration-150',
+          isVirtualRoot ? 'sm:min-h-0 sm:py-1.5' : 'sm:min-h-0 sm:py-[3px]',
+          isVirtualRoot ? 'text-[11px] font-medium tracking-wide font-mono' : 'text-xs font-mono',
+          'transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1',
           isSelected
-            ? 'bg-[var(--surface-elevated)] text-[var(--axon-secondary)]'
-            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-float)] hover:text-[var(--text-primary)]',
+            ? 'bg-[rgba(175,215,255,0.08)] text-[var(--axon-primary)]'
+            : 'text-[var(--text-secondary)] hover:bg-[rgba(175,215,255,0.04)] hover:text-[var(--text-primary)]',
         ].join(' ')}
         style={{ paddingLeft: `${8 + indent}px` }}
       >
@@ -104,8 +148,9 @@ function TreeNode({
         )}
         <IconComp
           className={[
-            'size-3 shrink-0',
-            entry.type === 'directory' ? 'text-[var(--axon-primary)]' : 'text-[var(--text-dim)]',
+            isVirtualRoot ? 'size-3.5' : 'size-3',
+            'shrink-0',
+            entry.type === 'directory' ? dirIconColor : 'text-[var(--text-dim)]',
           ].join(' ')}
         />
         <span className="truncate">{entry.name}</span>
@@ -133,7 +178,7 @@ function TreeNode({
   )
 }
 
-export function FileTree({ entries, selectedPath, onSelect, depth = 0 }: FileTreeProps) {
+export function FileTree({ entries, selectedPath = null, onSelect, depth = 0 }: FileTreeProps) {
   return (
     <div className="select-none">
       {entries.map((entry) => (
