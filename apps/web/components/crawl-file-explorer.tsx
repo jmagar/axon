@@ -149,13 +149,13 @@ export function CrawlFileExplorer({
   if (!open) {
     return (
       <>
-        <div className="hidden w-12 flex-shrink-0 items-start justify-center self-stretch border-r border-[rgba(255,135,175,0.08)] pt-2 md:flex">
+        <div className="hidden w-12 flex-shrink-0 items-start justify-center self-stretch border-r border-[var(--border-subtle)] pt-2 md:flex">
           <button
             type="button"
             onClick={() => setOpen(true)}
             aria-label={openLabel}
             title={openLabel}
-            className="ui-chip inline-flex items-center gap-1 rounded-md border border-[rgba(255,135,175,0.14)] bg-[rgba(10,18,35,0.7)] px-2 py-1 text-[var(--axon-accent-blue)] transition-colors hover:bg-[rgba(255,135,175,0.1)]"
+            className="ui-chip inline-flex items-center gap-1 rounded-md border border-[var(--border-accent)] bg-[var(--surface-base)] px-2 py-1 text-[var(--axon-primary)] transition-colors hover:bg-[var(--surface-float)]"
           >
             {fileIcon}
             <span>{fileCountLabel}</span>
@@ -166,11 +166,11 @@ export function CrawlFileExplorer({
           onClick={() => setOpen(true)}
           aria-label={openLabel}
           title={openLabel}
-          className="ui-chip fixed bottom-4 left-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-[rgba(255,135,175,0.2)] bg-[rgba(8,15,30,0.9)] px-3 py-2 text-[var(--axon-accent-blue)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 md:hidden"
+          className="ui-chip fixed bottom-[max(1rem,env(safe-area-inset-bottom,1rem))] left-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-[var(--border-accent)] bg-[var(--surface-base)] px-3 py-2 text-[var(--axon-primary)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 md:hidden"
         >
           {fileIcon}
           <span>Files</span>
-          <span className="rounded bg-[rgba(255,135,175,0.18)] px-1 text-[length:var(--text-2xs)] leading-4 text-[var(--axon-text-primary)]">
+          <span className="rounded bg-[rgba(135,175,255,0.18)] px-1 text-[length:var(--text-2xs)] leading-4 text-[var(--text-primary)]">
             {fileCountLabel}
           </span>
         </button>
@@ -181,13 +181,12 @@ export function CrawlFileExplorer({
   const panel = (
     <div
       ref={panelRef}
-      className="flex w-full flex-shrink-0 flex-col border-r border-[rgba(255,135,175,0.08)] md:w-[260px]"
-      style={{ background: 'rgba(3, 7, 18, 0.3)' }}
+      className="flex w-full flex-shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-float)] md:w-[260px]"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[rgba(255,135,175,0.08)] px-3 py-2">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[length:var(--text-md)] font-semibold text-[var(--axon-accent-blue)]">
+          <div className="truncate text-[length:var(--text-md)] font-semibold text-[var(--axon-primary)]">
             {domain}
           </div>
           <div className="ui-meta">{files.length} pages</div>
@@ -196,7 +195,7 @@ export function CrawlFileExplorer({
           type="button"
           onClick={() => setOpen(false)}
           aria-label="Collapse file explorer"
-          className="ml-2 flex-shrink-0 rounded p-1 text-[var(--axon-text-muted)] transition-colors hover:bg-[rgba(255,135,175,0.06)] hover:text-[var(--axon-accent-blue)]"
+          className="ml-2 flex-shrink-0 rounded p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1"
           title="Collapse file explorer"
         >
           <svg
@@ -215,13 +214,13 @@ export function CrawlFileExplorer({
       </div>
 
       {/* Filter input */}
-      <div className="border-b border-[rgba(255,135,175,0.08)] px-2 py-1.5">
+      <div className="border-b border-[var(--border-subtle)] px-2 py-1.5">
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter pages..."
-          className="w-full rounded bg-[rgba(255,135,175,0.04)] px-2 py-1.5 text-[length:var(--text-md)] text-[var(--axon-text-secondary)] placeholder-[var(--axon-text-subtle)] outline-none ring-1 ring-[rgba(255,135,175,0.08)] transition-all focus:ring-[rgba(255,135,175,0.2)]"
+          className="w-full rounded bg-[var(--surface-elevated)] px-2 py-2 text-[length:var(--text-md)] text-[var(--text-secondary)] placeholder-[var(--text-dim)] outline-none ring-1 ring-[var(--border-subtle)] transition-all focus:ring-[var(--focus-ring-color)] sm:py-1.5"
         />
       </div>
 
@@ -241,7 +240,7 @@ export function CrawlFileExplorer({
               tabIndex={0}
               onClick={() => handleSelect(file.relative_path)}
               onKeyDown={(e) => handleKeyDown(e, file.relative_path)}
-              className={`cursor-pointer border-b border-[var(--border-subtle)] px-3 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-[-2px] focus-visible:rounded-sm ${
+              className={`cursor-pointer border-b border-[var(--border-subtle)] px-3 py-2.5 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-[-2px] focus-visible:rounded-sm sm:py-2 ${
                 isActive
                   ? 'border-l-2 border-l-[var(--axon-secondary)] bg-[rgba(255,135,175,0.08)]'
                   : 'border-l-2 border-l-transparent hover:bg-[var(--surface-float)]'
@@ -250,18 +249,18 @@ export function CrawlFileExplorer({
               <div className="flex items-start justify-between gap-1.5">
                 <div className="min-w-0 flex-1">
                   <div
-                    className={`truncate text-[length:var(--text-md)] font-medium leading-[var(--leading-tight)] ${isActive ? 'text-[var(--axon-accent-blue)]' : 'text-[var(--axon-text-secondary)]'}`}
+                    className={`truncate text-[length:var(--text-md)] font-medium leading-[var(--leading-tight)] ${isActive ? 'text-[var(--axon-primary)]' : 'text-[var(--text-secondary)]'}`}
                   >
                     {name}
                   </div>
                   {crumb && (
-                    <div className="truncate text-[length:var(--text-xs)] text-[var(--axon-text-subtle)]">
+                    <div className="truncate text-[length:var(--text-xs)] text-[var(--text-dim)]">
                       {crumb}
                     </div>
                   )}
                 </div>
                 <div className="mt-0.5 flex flex-shrink-0 items-center gap-1">
-                  <span className="text-[length:var(--text-xs)] tabular-nums text-[var(--axon-text-subtle)]">
+                  <span className="text-[length:var(--text-xs)] tabular-nums text-[var(--text-dim)]">
                     {file.markdown_chars > 1000
                       ? `${(file.markdown_chars / 1000).toFixed(1)}k`
                       : file.markdown_chars}
@@ -272,7 +271,7 @@ export function CrawlFileExplorer({
                       download
                       aria-label={`Download ${name}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-0.5 text-[var(--axon-text-subtle)] transition-colors hover:text-[var(--axon-accent-blue)]"
+                      className="rounded p-1.5 text-[var(--text-dim)] transition-colors hover:text-[var(--axon-primary)] focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1 sm:p-0.5"
                       title="Download file"
                     >
                       <svg
@@ -295,7 +294,7 @@ export function CrawlFileExplorer({
           )
         })}
         {filteredFiles.length === 0 && filter && (
-          <div className="px-3 py-4 text-center text-[length:var(--text-md)] text-[var(--axon-text-subtle)]">
+          <div className="px-3 py-4 text-center text-[length:var(--text-md)] text-[var(--text-dim)]">
             No matches
           </div>
         )}
@@ -319,10 +318,10 @@ export function CrawlFileExplorer({
         />
         {/* Drawer */}
         <div
-          className={`fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[320px] flex-col overflow-hidden rounded-r-xl border-r border-[rgba(255,135,175,0.12)] shadow-2xl transition-transform duration-300 ease-out ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[320px] flex-col overflow-hidden rounded-r-xl border-r border-[var(--border-accent)] shadow-xl transition-transform duration-300 ease-out ${
             open ? 'translate-x-0' : '-translate-x-full'
           }`}
-          style={{ background: 'rgba(8, 15, 30, 0.97)' }}
+          style={{ background: 'rgba(10,18,35,0.97)' }}
         >
           {panel}
         </div>

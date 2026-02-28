@@ -583,13 +583,13 @@ export function Omnibox() {
         className={`relative flex min-h-[52px] items-center rounded-2xl transition-all duration-300 sm:min-h-[44px] ${
           isProcessing
             ? 'border-[rgba(175,215,255,0.4)] shadow-[0_0_20px_rgba(175,215,255,0.15)]'
-            : 'border-[rgba(255,135,175,0.18)]'
-        } focus-within:border-[rgba(255,135,175,0.4)] focus-within:shadow-[0_0_0_3px_rgba(255,135,175,0.18)]`}
+            : 'border-[var(--border-accent)]'
+        } focus-within:border-[var(--axon-secondary)] focus-within:shadow-[0_0_0_3px_var(--border-accent)]`}
         style={{
           background: 'rgba(10, 18, 35, 0.80)',
           borderWidth: '1.5px',
           borderStyle: 'solid',
-          borderColor: isProcessing ? 'rgba(175,215,255, 0.4)' : 'rgba(255,135,175, 0.18)',
+          borderColor: isProcessing ? 'rgba(175,215,255, 0.4)' : 'var(--border-accent)',
         }}
       >
         {/* Processing sweep shimmer */}
@@ -640,7 +640,7 @@ export function Omnibox() {
         {!input && !isProcessing && (
           <span
             aria-hidden="true"
-            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-mono text-sm text-[var(--axon-text-subtle)] transition-opacity duration-300 sm:left-4 ${
+            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-mono text-sm text-[var(--text-dim)] transition-opacity duration-300 sm:left-4 ${
               placeholderVisible && !isFocused ? 'opacity-100' : 'opacity-0'
             }`}
           >
@@ -686,13 +686,13 @@ export function Omnibox() {
               <span
                 className={`size-1.5 shrink-0 rounded-full ${
                   statusType === 'processing'
-                    ? 'animate-pulse bg-[var(--axon-accent-pink)] shadow-[0_0_8px_rgba(175,215,255,0.7)]'
+                    ? 'animate-pulse bg-[var(--axon-primary-strong)] shadow-[0_0_8px_rgba(175,215,255,0.7)]'
                     : statusType === 'done'
-                      ? 'bg-[var(--axon-accent-blue)] shadow-[0_0_6px_rgba(255,135,175,0.5)]'
+                      ? 'bg-[var(--axon-secondary)] shadow-[0_0_6px_rgba(255,135,175,0.5)]'
                       : 'bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.5)]'
                 }`}
               />
-              <span className="font-mono text-[length:var(--text-xs)] tracking-wide text-[var(--axon-text-muted)]">
+              <span className="font-mono text-[length:var(--text-xs)] tracking-wide text-[var(--text-muted)]">
                 {statusText}
               </span>
             </>
@@ -714,7 +714,7 @@ export function Omnibox() {
         </div>
 
         {/* Divider */}
-        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
 
         {/* Unified mode icon chip — icon-only; highlights when a URL command will run */}
         {showModeSelector && (
@@ -722,8 +722,8 @@ export function Omnibox() {
             <span
               className={`flex items-center justify-center rounded-full border p-1 transition-colors duration-200 ${
                 willRunAsCommand && !NO_INPUT_MODES.has(mode) && input.trim().length > 0
-                  ? 'border-[rgba(175,215,255,0.38)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink-strong)]'
-                  : 'border-[rgba(95,135,175,0.28)] bg-[rgba(10,18,35,0.48)] text-[var(--axon-accent-blue)]'
+                  ? 'border-[rgba(175,215,255,0.38)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary)]'
+                  : 'border-[rgba(95,135,175,0.28)] bg-[rgba(10,18,35,0.48)] text-[var(--axon-secondary)]'
               }`}
               title={selectedModeDef.label}
             >
@@ -743,10 +743,10 @@ export function Omnibox() {
         )}
 
         {/* Workspace — navigates to /workspace file explorer */}
-        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
         <Link
           href="/workspace"
-          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-accent-blue)] transition-colors duration-150 hover:text-white"
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
           title="Workspace"
           aria-label="Open workspace"
         >
@@ -754,10 +754,10 @@ export function Omnibox() {
         </Link>
 
         {/* Settings — navigates to /settings full page */}
-        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
         <Link
           href="/settings"
-          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-accent-blue)] transition-colors duration-150 hover:text-white"
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
           title="Settings"
           aria-label="Open settings"
         >
@@ -766,7 +766,7 @@ export function Omnibox() {
 
         {workspaceMode === 'pulse' && (
           <>
-            <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+            <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
             <div ref={toolsRef} className="relative flex shrink-0 items-center">
               <button
                 type="button"
@@ -775,7 +775,7 @@ export function Omnibox() {
                   setDropdownOpen(false)
                   setOptionsOpen(false)
                 }}
-                className={`relative flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-accent-blue)] transition-colors duration-150 hover:text-white ${
+                className={`relative flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white ${
                   toolsOpen ? 'text-white' : ''
                 }`}
                 title={`Pulse tools · ${pulseModel} · ${pulsePermissionLevel}`}
@@ -789,16 +789,16 @@ export function Omnibox() {
                   <ShieldCheck className="size-3.5" />
                 )}
                 {isProcessing && currentMode && (
-                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex size-1.5 animate-pulse rounded-full bg-[var(--axon-accent-pink)]" />
+                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 inline-flex size-1.5 animate-pulse rounded-full bg-[var(--axon-primary-strong)]" />
                 )}
               </button>
               {toolsOpen && (
                 <div
-                  className="absolute right-0 top-[calc(100%+6px)] z-50 w-44 space-y-2 rounded-md border border-[rgba(255,135,175,0.2)] bg-[rgba(10,18,35,0.96)] p-2 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+                  className="absolute right-0 top-[calc(100%+6px)] z-50 w-44 space-y-2 rounded-md border border-[var(--border-standard)] bg-[rgba(10,18,35,0.96)] p-2 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
                   role="dialog"
                   aria-label="Pulse model and permission controls"
                 >
-                  <div className="flex items-center gap-1.5 text-[var(--axon-text-dim)]">
+                  <div className="flex items-center gap-1.5 text-[var(--text-dim)]">
                     <Wrench className="size-3" />
                     <span className="ui-label">Tools</span>
                   </div>
@@ -809,7 +809,7 @@ export function Omnibox() {
                       name="omnibox_pulse_model_selector"
                       value={pulseModel}
                       onChange={(e) => setPulseModel(e.target.value as typeof pulseModel)}
-                      className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--axon-text-primary)] outline-none"
+                      className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none"
                       aria-label="Model selector"
                     >
                       <option value="sonnet">Sonnet</option>
@@ -826,7 +826,7 @@ export function Omnibox() {
                       onChange={(e) =>
                         setPulsePermissionLevel(e.target.value as typeof pulsePermissionLevel)
                       }
-                      className="h-7 w-full rounded border border-[rgba(255,135,175,0.2)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--axon-text-primary)] outline-none"
+                      className="h-7 w-full rounded border border-[var(--border-standard)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none"
                       aria-label="Permission selector"
                     >
                       <option value="plan">Plan</option>
@@ -843,7 +843,7 @@ export function Omnibox() {
         {/* Options button — icon-only with active-count badge */}
         {hasOptions && (
           <>
-            <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+            <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
             <button
               type="button"
               onClick={() => {
@@ -852,8 +852,8 @@ export function Omnibox() {
               }}
               className={`relative flex shrink-0 items-center justify-center bg-transparent px-2 py-1.5 transition-colors duration-150 ${
                 optionsOpen
-                  ? 'text-[var(--axon-accent-pink-strong)]'
-                  : 'text-[var(--axon-text-muted)] hover:text-[var(--axon-accent-blue)]'
+                  ? 'text-[var(--axon-primary)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--axon-secondary)]'
               }`}
               title="Command options"
             >
@@ -877,7 +877,7 @@ export function Omnibox() {
                 <line x1="18" y1="16" x2="22" y2="16" />
               </svg>
               {activeOptionCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-[14px] items-center justify-center rounded-full border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] px-1 text-[length:var(--text-2xs)] leading-[var(--leading-tight)] text-[var(--axon-accent-pink-strong)]">
+                <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-[14px] items-center justify-center rounded-full border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] px-1 text-[length:var(--text-2xs)] leading-[var(--leading-tight)] text-[var(--axon-primary)]">
                   {activeOptionCount}
                 </span>
               )}
@@ -886,7 +886,7 @@ export function Omnibox() {
         )}
 
         {/* Divider before send/cancel */}
-        <div className="h-[20px] w-px shrink-0 bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
 
         {/* Send / cancel */}
         <button
@@ -895,11 +895,11 @@ export function Omnibox() {
           disabled={!isProcessing && !input.trim() && !NO_INPUT_MODES.has(mode)}
           className={`flex shrink-0 items-center justify-center bg-transparent px-2.5 py-1.5 transition-all duration-200 ${
             modeAppliedLabel
-              ? 'text-[var(--axon-accent-pink)] drop-shadow-[0_0_8px_rgba(175,215,255,0.55)]'
+              ? 'text-[var(--axon-primary-strong)] drop-shadow-[0_0_8px_rgba(175,215,255,0.55)]'
               : input.trim().length > 0 && !isProcessing
-                ? 'text-[var(--axon-accent-blue)] drop-shadow-[0_0_10px_rgba(255,135,175,0.5)] hover:text-white hover:drop-shadow-[0_0_14px_rgba(255,135,175,0.7)]'
-                : 'text-[var(--axon-accent-blue)] hover:text-white'
-          } disabled:opacity-40 disabled:hover:text-[var(--axon-accent-blue)]`}
+                ? 'text-[var(--axon-secondary)] drop-shadow-[0_0_10px_rgba(255,135,175,0.5)] hover:text-white hover:drop-shadow-[0_0_14px_rgba(255,135,175,0.7)]'
+                : 'text-[var(--axon-secondary)] hover:text-white'
+          } disabled:opacity-40 disabled:hover:text-[var(--axon-secondary)]`}
           title={isProcessing ? 'Cancel' : 'Execute'}
         >
           {isProcessing ? <Square className="size-3.5" /> : <SendHorizontal className="size-3.5" />}
@@ -910,7 +910,7 @@ export function Omnibox() {
           <button
             type="button"
             onClick={() => setDropdownOpen((prev) => !prev)}
-            className="flex shrink-0 items-center justify-center rounded-r-[10px] bg-transparent px-2 py-1.5 text-[var(--axon-text-muted)] transition-colors duration-150 hover:text-[var(--axon-accent-blue)]"
+            className="flex shrink-0 items-center justify-center rounded-r-[10px] bg-transparent px-2 py-1.5 text-[var(--text-muted)] transition-colors duration-150 hover:text-[var(--axon-secondary)]"
             title="Select mode"
           >
             <svg
@@ -926,7 +926,7 @@ export function Omnibox() {
 
         {/* Mode dropdown — triggered by arrow button OR by typing @ */}
         <div
-          className={`absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[65vh] space-y-1 overflow-y-auto rounded-xl border border-[rgba(255,135,175,0.15)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,135,175,0.08)] backdrop-blur-xl transition-all duration-200 ${
+          className={`absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[65vh] space-y-1 overflow-y-auto rounded-xl border border-[var(--border-standard)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,135,175,0.08)] backdrop-blur-xl transition-all duration-200 ${
             effectiveDropdownOpen
               ? 'visible translate-y-0 opacity-100'
               : 'invisible -translate-y-1 opacity-0'
@@ -934,9 +934,9 @@ export function Omnibox() {
           style={{ background: 'rgba(15, 23, 42, 0.95)' }}
         >
           {mentionKind === 'mode' && activeMentionToken?.query && (
-            <div className="px-2.5 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--axon-text-dim)]">
+            <div className="px-2.5 pb-1 pt-1 text-[length:var(--text-2xs)] text-[var(--text-dim)]">
               Showing results for{' '}
-              <span className="text-[var(--axon-accent-blue)]">@{activeMentionToken.query}</span>
+              <span className="text-[var(--axon-secondary)]">@{activeMentionToken.query}</span>
             </div>
           )}
           {MODE_CATEGORY_ORDER.map((cat) => {
@@ -953,7 +953,7 @@ export function Omnibox() {
             if (visibleItems.length === 0) return null
             return (
               <div key={cat}>
-                <div className="px-2.5 pb-1 pt-1.5 text-[length:var(--text-2xs)] font-bold uppercase tracking-[0.15em] text-[var(--axon-text-dim)]">
+                <div className="px-2.5 pb-1 pt-1.5 text-[length:var(--text-2xs)] font-bold uppercase tracking-[0.15em] text-[var(--text-dim)]">
                   {MODE_CATEGORY_LABELS[cat]}
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(118px,1fr))] gap-0.5">
@@ -964,8 +964,8 @@ export function Omnibox() {
                       onClick={() => selectMode(m.id)}
                       className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium transition-all duration-150 animate-fade-in-up ${
                         m.id === mode
-                          ? 'bg-[rgba(175,215,255,0.12)] text-[var(--axon-accent-pink)]'
-                          : 'text-[var(--axon-text-muted)] hover:bg-[rgba(255,135,175,0.1)] hover:text-[var(--axon-accent-blue)]'
+                          ? 'bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary-strong)]'
+                          : 'text-[var(--text-muted)] hover:bg-[var(--surface-float)] hover:text-[var(--axon-secondary)]'
                       }`}
                       style={{ animationDelay: `${idx * 35}ms`, animationFillMode: 'backwards' }}
                     >
@@ -992,7 +992,7 @@ export function Omnibox() {
         {/* Options popover */}
         {hasOptions && (
           <div
-            className={`absolute right-0 top-[calc(100%+6px)] z-50 w-[min(560px,92vw)] rounded-xl border border-[rgba(255,135,175,0.15)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,135,175,0.08)] backdrop-blur-xl transition-all duration-200 ${
+            className={`absolute right-0 top-[calc(100%+6px)] z-50 w-[min(560px,92vw)] rounded-xl border border-[var(--border-standard)] p-2 shadow-[0_16px_48px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,135,175,0.08)] backdrop-blur-xl transition-all duration-200 ${
               optionsOpen
                 ? 'visible translate-y-0 opacity-100'
                 : 'invisible -translate-y-1 opacity-0'
@@ -1004,10 +1004,10 @@ export function Omnibox() {
         )}
       </div>
       {fileSuggestions.length > 0 && mentionKind === 'file' && (
-        <div className="rounded-lg border border-[rgba(255,135,175,0.14)] bg-[rgba(10,18,35,0.45)] px-2 py-1.5">
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.45)] px-2 py-1.5">
           <div className="ui-label mb-1 flex items-center justify-between">
             <span>File Context</span>
-            <span className="text-[var(--axon-text-dim)]">{omniboxPhase.replace('-', ' ')}</span>
+            <span className="text-[var(--text-dim)]">{omniboxPhase.replace('-', ' ')}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {fileSuggestions.map((candidate, idx) => (
@@ -1020,8 +1020,8 @@ export function Omnibox() {
                 }}
                 className={`rounded-md border px-2 py-1 text-[length:var(--text-xs)] font-semibold transition-all ${
                   idx === mentionSelectionIndex
-                    ? 'border-[rgba(175,215,255,0.5)] bg-[rgba(175,215,255,0.18)] text-[var(--axon-accent-pink-strong)]'
-                    : 'border-[rgba(255,135,175,0.25)] bg-[rgba(255,135,175,0.08)] text-[var(--axon-accent-blue)] hover:bg-[rgba(255,135,175,0.14)]'
+                    ? 'border-[rgba(175,215,255,0.5)] bg-[rgba(175,215,255,0.18)] text-[var(--axon-primary)]'
+                    : 'border-[rgba(255,135,175,0.25)] bg-[rgba(255,135,175,0.08)] text-[var(--axon-secondary)] hover:bg-[rgba(255,135,175,0.14)]'
                 }`}
               >
                 @{candidate.label}
@@ -1046,7 +1046,7 @@ export function Omnibox() {
                     return next
                   })
                 }}
-                className="rounded-md border border-[rgba(95,135,175,0.45)] bg-[rgba(95,135,175,0.12)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--axon-accent-blue)]"
+                className="rounded-md border border-[rgba(95,135,175,0.45)] bg-[rgba(95,135,175,0.12)] px-2 py-1 text-[length:var(--text-xs)] font-semibold text-[var(--axon-secondary)]"
               >
                 @{label} ×
               </button>
@@ -1055,9 +1055,11 @@ export function Omnibox() {
         </div>
       )}
       {modeAppliedLabel && (
-        <div className="rounded-md border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.1)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--axon-accent-pink-strong)]">
+        <div className="rounded-md border border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.1)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--axon-primary)]">
           Mode selected:{' '}
-          <span className="font-semibold text-[var(--axon-accent-pink)]">{modeAppliedLabel}</span>
+          <span className="font-semibold text-[var(--axon-primary-strong)]">
+            {modeAppliedLabel}
+          </span>
         </div>
       )}
     </div>

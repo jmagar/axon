@@ -152,7 +152,7 @@ export default function DashboardPage() {
             )}
             <div className={isPulseWorkspaceActive ? 'order-1' : 'order-2'}>
               {!isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults && (
-                <div className="flex items-center justify-center rounded-xl border border-[rgba(255,135,175,0.1)] py-14 text-sm text-[var(--axon-text-dim)] lg:hidden">
+                <div className="flex items-center justify-center rounded-xl border border-[var(--border-subtle)] py-14 text-sm text-[var(--text-dim)] lg:hidden">
                   Run a command to see results here
                 </div>
               )}
@@ -178,7 +178,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/mcp')}
             title="MCP Servers"
             aria-label="MCP Servers"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Network className="size-3.5" />
           </button>
@@ -187,7 +187,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/agents')}
             title="Available Agents"
             aria-label="Available Agents"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Bot className="size-3.5" />
           </button>
@@ -196,7 +196,7 @@ export default function DashboardPage() {
             onClick={() => router.push('/settings')}
             title="Settings"
             aria-label="Open settings"
-            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--axon-text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-accent-pink)] backdrop-blur-sm"
+            className="flex items-center justify-center size-7 rounded border border-[rgba(255,135,175,0.12)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
           >
             <Settings2 className="size-3.5" />
           </button>

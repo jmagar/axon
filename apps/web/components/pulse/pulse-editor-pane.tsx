@@ -2,14 +2,32 @@
 
 import { streamInsertChunk, useChatChunk } from '@platejs/ai/react'
 import { serializeMd } from '@platejs/markdown'
-import { Bold, Code2, Italic, Strikethrough, Underline } from 'lucide-react'
+import {
+  Bold,
+  Braces,
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Italic,
+  Link2,
+  Quote,
+  Redo2,
+  Strikethrough,
+  Underline,
+  Undo2,
+} from 'lucide-react'
 import { Plate, usePlateEditor } from 'platejs/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAIChatSetup } from '@/components/editor/plugins/ai-chat-kit'
 import { CopilotKit } from '@/components/editor/plugins/copilot-kit'
+import { BlockTypeButton } from '@/components/ui/block-type-button'
 import { Editor, EditorContainer } from '@/components/ui/editor'
+import { EditorContextMenu } from '@/components/ui/editor-context-menu'
+import { FloatingToolbar } from '@/components/ui/floating-toolbar'
+import { LinkToolbarButton } from '@/components/ui/link-toolbar-button'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
-import { Toolbar, ToolbarGroup } from '@/components/ui/toolbar'
+import { Toolbar, ToolbarButton, ToolbarGroup } from '@/components/ui/toolbar'
 import { markdownToPlateNodes } from '@/lib/markdown'
 
 interface PulseEditorPaneProps {
@@ -46,6 +64,13 @@ export function PulseEditorPane({
   })
   const isApplyingExternalUpdateRef = useRef(false)
   const editorScrollRef = useRef<HTMLDivElement | null>(null)
+  const [wordCount, setWordCount] = useState(
+    () =>
+      markdown
+        .trim()
+        .split(/\s+/)
+        .filter((s) => /\w/.test(s)).length,
+  )
 
   useEffect(() => {
     const current = serializeMd(editor)
@@ -75,18 +100,66 @@ export function PulseEditorPane({
         if (isApplyingExternalUpdateRef.current) return
         const md = serializeMd(editor)
         onMarkdownChange(md)
+        setWordCount(
+          md
+            .trim()
+            .split(/\s+/)
+            .filter((s) => /\w/.test(s)).length,
+        )
       }}
     >
       {editor && <PulseEditorInner editor={editor} />}
       <div className="axon-editor flex h-full min-h-0 flex-col">
         <div
-          className="border-b border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1"
+          className="border-b border-[var(--border-subtle)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1"
           style={{ backdropFilter: 'blur(8px) saturate(180%)' }}
         >
-          <div className="mb-1 flex items-center gap-1.5 px-1.5">
+          <div className="mb-1 flex items-center justify-between px-1.5">
             <p className="ui-label flex-none">Editor</p>
+            <span className="tabular-nums text-[10px] text-[var(--text-dim)]">
+              {wordCount} {wordCount === 1 ? 'word' : 'words'}
+            </span>
           </div>
           <Toolbar className="flex-wrap gap-0.5">
+            <ToolbarGroup>
+              <ToolbarButton
+                size="sm"
+                tooltip="Undo (Ctrl+Z)"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  editor.undo()
+                }}
+              >
+                <Undo2 className="size-3.5" />
+              </ToolbarButton>
+              <ToolbarButton
+                size="sm"
+                tooltip="Redo (Ctrl+Y)"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  editor.redo()
+                }}
+              >
+                <Redo2 className="size-3.5" />
+              </ToolbarButton>
+            </ToolbarGroup>
+            <ToolbarGroup>
+              <BlockTypeButton nodeType="h1" tooltip="Heading 1 (Ctrl+Alt+1)">
+                <Heading1 className="size-3.5" />
+              </BlockTypeButton>
+              <BlockTypeButton nodeType="h2" tooltip="Heading 2 (Ctrl+Alt+2)">
+                <Heading2 className="size-3.5" />
+              </BlockTypeButton>
+              <BlockTypeButton nodeType="h3" tooltip="Heading 3 (Ctrl+Alt+3)">
+                <Heading3 className="size-3.5" />
+              </BlockTypeButton>
+              <BlockTypeButton nodeType="blockquote" tooltip="Quote (Ctrl+Shift+.)">
+                <Quote className="size-3.5" />
+              </BlockTypeButton>
+              <BlockTypeButton nodeType="code_block" tooltip="Code Block (```)">
+                <Braces className="size-3.5" />
+              </BlockTypeButton>
+            </ToolbarGroup>
             <ToolbarGroup>
               <MarkToolbarButton nodeType="bold" tooltip="Bold (Ctrl+B)">
                 <Bold className="size-3.5" />
@@ -100,30 +173,51 @@ export function PulseEditorPane({
               <MarkToolbarButton nodeType="strikethrough" tooltip="Strike (Ctrl+Shift+X)">
                 <Strikethrough className="size-3.5" />
               </MarkToolbarButton>
-              <MarkToolbarButton nodeType="code" tooltip="Code (Ctrl+E)">
+              <MarkToolbarButton nodeType="code" tooltip="Inline code (Ctrl+E)">
                 <Code2 className="size-3.5" />
               </MarkToolbarButton>
+              <LinkToolbarButton size="sm" tooltip="Link (Ctrl+K)">
+                <Link2 className="size-3.5" />
+              </LinkToolbarButton>
             </ToolbarGroup>
           </Toolbar>
         </div>
-        <EditorContainer
-          ref={editorScrollRef}
-          onScroll={() => {
-            if (!editorScrollRef.current) return
-            try {
-              window.localStorage.setItem(
-                scrollStorageKey,
-                String(editorScrollRef.current.scrollTop),
-              )
-            } catch {
-              // Ignore storage failures.
-            }
-          }}
-          variant="axon"
-          className="min-h-0 flex-1"
-        >
-          <Editor variant="axon" placeholder="Start writing, or ask Cortex to help..." />
-        </EditorContainer>
+        <EditorContextMenu>
+          <EditorContainer
+            ref={editorScrollRef}
+            onScroll={() => {
+              if (!editorScrollRef.current) return
+              try {
+                window.localStorage.setItem(
+                  scrollStorageKey,
+                  String(editorScrollRef.current.scrollTop),
+                )
+              } catch {
+                // Ignore storage failures.
+              }
+            }}
+            variant="axon"
+            className="min-h-0 flex-1"
+          >
+            <Editor variant="axon" placeholder="Start writing, or ask Cortex to help..." />
+            <FloatingToolbar />
+          </EditorContainer>
+        </EditorContextMenu>
+        <div className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-2.5 py-1">
+          <span className="text-[10px] text-[var(--text-dim)]">✦ AI copilot active</span>
+          <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
+          <span className="text-[10px] text-[var(--text-dim)]">
+            <kbd className="font-mono">Ctrl+Space</kbd> suggest
+          </span>
+          <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
+          <span className="text-[10px] text-[var(--text-dim)]">
+            <kbd className="font-mono">Tab</kbd> accept
+          </span>
+          <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
+          <span className="text-[10px] text-[var(--text-dim)]">
+            <kbd className="font-mono">Esc</kbd> dismiss
+          </span>
+        </div>
       </div>
     </Plate>
   )

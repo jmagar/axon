@@ -51,7 +51,7 @@ function SkeletonCard() {
       style={{
         background: 'rgba(10,18,35,0.55)',
         backdropFilter: 'blur(12px)',
-        borderColor: 'rgba(255,135,175,0.12)',
+        borderColor: 'var(--border-subtle)',
       }}
     >
       <div
@@ -91,12 +91,12 @@ function AgentCard({ agent }: { agent: Agent }) {
       style={{
         background: 'rgba(10,18,35,0.55)',
         backdropFilter: 'blur(12px)',
-        borderColor: 'rgba(255,135,175,0.12)',
+        borderColor: 'var(--border-subtle)',
       }}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <span
-          className="text-[13px] font-bold leading-snug text-[var(--axon-text-primary)]"
+          className="text-[13px] font-bold leading-snug text-[var(--text-primary)]"
           style={{ fontFamily: 'var(--font-mono)' }}
         >
           {agent.name}
@@ -108,7 +108,7 @@ function AgentCard({ agent }: { agent: Agent }) {
           {badge.label}
         </span>
       </div>
-      <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">{agent.description}</p>
+      <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">{agent.description}</p>
     </article>
   )
 }
@@ -118,13 +118,13 @@ function GroupSection({ source, agents }: { source: string; agents: Agent[] }) {
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--axon-text-dim)]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
           {displayName}
         </p>
-        <span className="text-[10px] text-[var(--axon-text-subtle)]">
+        <span className="text-[10px] text-[var(--text-dim)]">
           {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
         </span>
-        <div className="h-px flex-1 bg-[rgba(255,135,175,0.07)]" />
+        <div className="h-px flex-1 bg-[var(--border-subtle)]" />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {agents.map((agent) => (
@@ -198,7 +198,7 @@ function AgentsPageInner() {
       <header
         className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b px-4"
         style={{
-          borderColor: 'rgba(255,135,175,0.1)',
+          borderColor: 'var(--border-subtle)',
           background: 'rgba(3,7,18,0.9)',
           backdropFilter: 'blur(16px)',
           height: '3.25rem',
@@ -207,23 +207,23 @@ function AgentsPageInner() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-text-secondary)]"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)] sm:min-h-0"
           aria-label="Go back"
         >
           <ArrowLeft className="size-3.5" />
           Back
         </button>
-        <div className="h-4 w-px bg-[rgba(255,135,175,0.12)]" />
+        <div className="h-4 w-px bg-[var(--border-subtle)]" />
         <div className="flex items-center gap-2">
-          <Bot className="size-3.5 text-[var(--axon-accent-pink)]" />
-          <h1 className="text-[14px] font-semibold text-[var(--axon-text-primary)]">Agents</h1>
+          <Bot className="size-3.5 text-[var(--axon-primary-strong)]" />
+          <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Agents</h1>
         </div>
         <div className="flex-1" />
         <button
           type="button"
           onClick={handleRefresh}
           disabled={loading}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-pink-strong)] disabled:opacity-40"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] disabled:opacity-40 sm:min-h-0"
           title="Refresh agent list"
         >
           <RefreshCw className={`size-3 ${spinning ? 'animate-spin' : ''}`} />
@@ -250,14 +250,14 @@ function AgentsPageInner() {
               style={{
                 background: 'rgba(10,18,35,0.55)',
                 backdropFilter: 'blur(12px)',
-                borderColor: 'rgba(255,135,175,0.18)',
+                borderColor: 'var(--border-accent)',
               }}
             >
-              <Bot className="mx-auto mb-3 size-8 text-[var(--axon-text-dim)]" />
-              <p className="mb-1 text-[13px] font-medium text-[var(--axon-text-secondary)]">
+              <Bot className="mx-auto mb-3 size-8 text-[var(--text-dim)]" />
+              <p className="mb-1 text-[13px] font-medium text-[var(--text-secondary)]">
                 Could not load agents
               </p>
-              <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">{error}</p>
+              <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">{error}</p>
             </div>
           )}
 

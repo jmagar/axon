@@ -13,7 +13,7 @@ function renderInline(text: string): ReactNode[] {
       return (
         <code
           key={i}
-          className="rounded bg-[rgba(175,215,255,0.1)] px-[0.3em] py-[0.1em] font-mono text-[0.88em] text-[var(--axon-accent-pink-strong)]"
+          className="rounded bg-[rgba(175,215,255,0.1)] px-[0.3em] py-[0.1em] font-mono text-[0.88em] text-[var(--axon-primary)]"
         >
           {part.slice(1, -1)}
         </code>
@@ -21,14 +21,14 @@ function renderInline(text: string): ReactNode[] {
     }
     if (part.startsWith('**') && part.endsWith('**')) {
       return (
-        <strong key={i} className="font-semibold text-[var(--axon-text-primary)]">
+        <strong key={i} className="font-semibold text-[var(--text-primary)]">
           {part.slice(2, -2)}
         </strong>
       )
     }
     if (part.startsWith('~~') && part.endsWith('~~')) {
       return (
-        <del key={i} className="text-[var(--axon-text-muted)] line-through">
+        <del key={i} className="text-[var(--text-muted)] line-through">
           {part.slice(2, -2)}
         </del>
       )
@@ -44,7 +44,7 @@ function renderInline(text: string): ReactNode[] {
           href={linkMatch[2]}
           target="_blank"
           rel="noreferrer"
-          className="text-[var(--axon-accent-blue)] underline underline-offset-2 hover:text-[var(--axon-accent-blue-strong)]"
+          className="text-[var(--axon-secondary)] underline underline-offset-2 hover:text-[var(--axon-secondary-strong)]"
         >
           {linkMatch[1]}
         </a>
@@ -60,11 +60,11 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-[rgba(175,215,255,0.14)] bg-[rgba(5,10,22,0.65)]">
       {lang && (
-        <div className="border-b border-[rgba(175,215,255,0.1)] px-3 py-1 font-mono text-[0.68rem] tracking-widest text-[var(--axon-text-dim)] uppercase">
+        <div className="border-b border-[rgba(175,215,255,0.1)] px-3 py-1 font-mono text-[0.68rem] tracking-widest text-[var(--text-dim)] uppercase">
           {lang}
         </div>
       )}
-      <pre className="overflow-x-auto p-3 font-mono text-[0.8rem] leading-[1.6] text-[var(--axon-text-secondary)]">
+      <pre className="overflow-x-auto p-3 font-mono text-[0.8rem] leading-[1.6] text-[var(--text-secondary)]">
         <code>{code}</code>
       </pre>
     </div>
@@ -89,13 +89,13 @@ function ListBlock({ items, ordered }: { items: ListEntry[]; ordered: boolean })
   }
   return (
     <Tag
-      className={`my-1.5 space-y-0.5 pl-4 ${ordered ? 'list-decimal' : 'list-disc'} text-[var(--axon-text-secondary)]`}
+      className={`my-1.5 space-y-0.5 pl-4 ${ordered ? 'list-decimal' : 'list-disc'} text-[var(--text-secondary)]`}
     >
       {groups.map((g, i) => (
         <li key={i} className="text-[length:var(--text-md)] leading-[var(--leading-copy)]">
           {renderInline(g.text)}
           {g.children.length > 0 && (
-            <ul className="mt-0.5 space-y-0.5 pl-4 list-[circle] text-[var(--axon-text-secondary)]">
+            <ul className="mt-0.5 space-y-0.5 pl-4 list-[circle] text-[var(--text-secondary)]">
               {g.children.map((c, j) => (
                 <li key={j} className="text-[length:var(--text-md)] leading-[var(--leading-copy)]">
                   {renderInline(c.text)}
@@ -128,7 +128,7 @@ function renderLines(lines: string[]): ReactNode[] {
     nodes.push(
       <blockquote
         key={`bq-${nodes.length}`}
-        className="my-1.5 border-l-2 border-[rgba(175,215,255,0.3)] pl-3 text-[var(--axon-text-muted)] italic"
+        className="my-1.5 border-l-2 border-[rgba(175,215,255,0.3)] pl-3 text-[var(--text-muted)] italic"
       >
         {blockquoteLines.map((line, i) => (
           <p key={i} className="text-[length:var(--text-md)] leading-[var(--leading-copy)]">
@@ -152,10 +152,10 @@ function renderLines(lines: string[]): ReactNode[] {
       const text = heading[2]
       const cls =
         level === 1
-          ? 'mt-3 mb-1 text-[length:var(--text-base)] font-semibold text-[var(--axon-text-primary)]'
+          ? 'mt-3 mb-1 text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]'
           : level === 2
-            ? 'mt-2.5 mb-1 text-[length:var(--text-md)] font-semibold text-[var(--axon-text-primary)]'
-            : 'mt-2 mb-0.5 text-[length:var(--text-md)] font-medium text-[var(--axon-text-secondary)]'
+            ? 'mt-2.5 mb-1 text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]'
+            : 'mt-2 mb-0.5 text-[length:var(--text-md)] font-medium text-[var(--text-secondary)]'
       nodes.push(
         <p key={`h-${i}`} className={cls}>
           {renderInline(text)}
@@ -213,7 +213,7 @@ function renderLines(lines: string[]): ReactNode[] {
     nodes.push(
       <p
         key={`p-${i}`}
-        className="text-[length:var(--text-md)] leading-[var(--leading-copy)] text-[var(--axon-text-secondary)]"
+        className="text-[length:var(--text-md)] leading-[var(--leading-copy)] text-[var(--text-secondary)]"
       >
         {renderInline(line)}
       </p>,

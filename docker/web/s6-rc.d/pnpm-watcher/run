@@ -1,0 +1,40 @@
+#!/command/with-contenv bash
+# shellcheck shell=bash
+# Watch pnpm-lock.yaml for changes and sync node_modules automatically.
+# Uses polling (3s interval) — inotify events don't propagate from the host
+# through bind mounts on this setup (see WATCHPACK_POLLING in docker-compose).
+
+LOCKFILE="/app/pnpm-lock.yaml"
+SENTINEL="/app/node_modules/.pnpm-install-stamp"
+POLL_INTERVAL=3
+
+log() { echo "[pnpm-watcher] $*" >&2; }
+
+sync_packages() {
+    log "pnpm-lock.yaml changed — running pnpm install"
+    if cd /app && CI=true pnpm install --frozen-lockfile >&2; then
+        touch "$SENTINEL"
+        log "done — restarting pnpm-dev"
+        s6-svc -r /run/service/pnpm-dev
+    else
+        log "pnpm install failed"
+    fi
+}
+
+if [ ! -f "$LOCKFILE" ]; then
+    log "pnpm-lock.yaml not found — exiting"
+    exit 0
+fi
+
+log "polling $LOCKFILE every ${POLL_INTERVAL}s"
+
+last_mtime=$(stat -c %Y "$LOCKFILE" 2>/dev/null)
+
+while true; do
+    sleep "$POLL_INTERVAL"
+    mtime=$(stat -c %Y "$LOCKFILE" 2>/dev/null)
+    if [ -n "$mtime" ] && [ "$mtime" != "$last_mtime" ]; then
+        last_mtime="$mtime"
+        sync_packages
+    fi
+done

@@ -79,16 +79,18 @@ function TreeNode({
         type="button"
         onClick={toggle}
         className={[
-          'flex w-full items-center gap-1.5 rounded px-2 py-[3px] text-left',
+          'flex w-full min-h-[44px] items-center gap-1.5 rounded px-2 py-2 text-left',
+          'sm:min-h-0 sm:py-[3px]',
           'text-xs font-mono transition-colors duration-150',
+          'focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1',
           isSelected
-            ? 'bg-[rgba(255,135,175,0.12)] text-[rgba(255,135,175,0.95)]'
-            : 'text-[rgba(200,210,230,0.65)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgba(200,210,230,0.9)]',
+            ? 'bg-[var(--surface-elevated)] text-[var(--axon-secondary)]'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-float)] hover:text-[var(--text-primary)]',
         ].join(' ')}
         style={{ paddingLeft: `${8 + indent}px` }}
       >
         {entry.type === 'directory' ? (
-          <span className="shrink-0 text-[rgba(175,215,255,0.5)]">
+          <span className="shrink-0 text-[var(--text-muted)]">
             {loading ? (
               <span className="inline-block size-3 animate-spin rounded-full border border-current border-t-transparent" />
             ) : expanded ? (
@@ -103,9 +105,7 @@ function TreeNode({
         <IconComp
           className={[
             'size-3 shrink-0',
-            entry.type === 'directory'
-              ? 'text-[rgba(175,215,255,0.6)]'
-              : 'text-[rgba(200,210,230,0.45)]',
+            entry.type === 'directory' ? 'text-[var(--axon-primary)]' : 'text-[var(--text-dim)]',
           ].join(' ')}
         />
         <span className="truncate">{entry.name}</span>
@@ -123,7 +123,7 @@ function TreeNode({
       )}
       {expanded && children && children.length === 0 && (
         <div
-          className="py-0.5 text-[10px] text-[rgba(200,210,230,0.25)] italic"
+          className="py-0.5 text-[10px] text-[var(--text-dim)] italic"
           style={{ paddingLeft: `${8 + indent + 20}px` }}
         >
           empty

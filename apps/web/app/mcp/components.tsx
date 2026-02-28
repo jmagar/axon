@@ -44,10 +44,10 @@ export const EMPTY_FORM: FormState = {
 // ── CSS helpers ────────────────────────────────────────────────────────────────
 
 export const INPUT_CLS =
-  'w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-3 py-2.5 text-[13px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.7)]'
+  'w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.7)]'
 
 export const LABEL_CLS =
-  'mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]'
+  'mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -125,14 +125,14 @@ export function KvEditor({
         <button
           type="button"
           onClick={addPair}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-[var(--axon-text-dim)] hover:bg-[rgba(175,215,255,0.08)] hover:text-[var(--axon-accent-pink)]"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[rgba(175,215,255,0.08)] hover:text-[var(--axon-primary-strong)]"
         >
           <Plus className="size-3" />
           Add
         </button>
       </div>
       {pairs.length === 0 ? (
-        <p className="text-[11px] text-[var(--axon-text-dim)]">None configured.</p>
+        <p className="text-[11px] text-[var(--text-dim)]">None configured.</p>
       ) : (
         <div className="space-y-2">
           {pairs.map((p, i) => (
@@ -142,19 +142,19 @@ export function KvEditor({
                 value={p.key}
                 onChange={(e) => updatePair(i, 'key', e.target.value)}
                 placeholder="KEY"
-                className="w-2/5 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)]"
+                className="w-2/5 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)]"
               />
               <input
                 type="text"
                 value={p.value}
                 onChange={(e) => updatePair(i, 'value', e.target.value)}
                 placeholder="value"
-                className="min-w-0 flex-1 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)]"
+                className="min-w-0 flex-1 rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)]"
               />
               <button
                 type="button"
                 onClick={() => removePair(i)}
-                className="shrink-0 rounded p-1 text-[var(--axon-text-dim)] hover:bg-[rgba(255,100,100,0.12)] hover:text-red-400"
+                className="shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[rgba(255,100,100,0.12)] hover:text-red-400"
                 aria-label="Remove"
               >
                 <X className="size-3.5" />
@@ -200,7 +200,7 @@ export function McpServerCard({
 }) {
   const isHttp = Boolean(cfg.url)
   return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border border-[rgba(255,135,175,0.1)] bg-[rgba(10,18,35,0.38)] px-4 py-3.5 transition-all duration-150 hover:border-[rgba(255,135,175,0.2)] hover:bg-[rgba(10,18,35,0.55)]">
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.38)] px-4 py-3.5 transition-all duration-150 hover:border-[rgba(255,135,175,0.2)] hover:bg-[rgba(10,18,35,0.55)]">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           {/* Status dot */}
@@ -208,7 +208,7 @@ export function McpServerCard({
             className={`inline-block size-2 shrink-0 rounded-full ${STATUS_DOT[status]}`}
             title={STATUS_LABEL[status]}
           />
-          <span className="text-[13px] font-semibold text-[var(--axon-text-primary)]">{name}</span>
+          <span className="text-[13px] font-semibold text-[var(--text-primary)]">{name}</span>
           <span
             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
               isHttp
@@ -220,12 +220,12 @@ export function McpServerCard({
             {isHttp ? 'http' : 'stdio'}
           </span>
           <span
-            className={`text-[10px] ${status === 'online' ? 'text-green-400' : status === 'offline' ? 'text-red-400' : 'text-[var(--axon-text-dim)]'}`}
+            className={`text-[10px] ${status === 'online' ? 'text-green-400' : status === 'offline' ? 'text-red-400' : 'text-[var(--text-dim)]'}`}
           >
             {STATUS_LABEL[status]}
           </span>
         </div>
-        <p className="mt-1 truncate font-mono text-[11px] text-[var(--axon-text-dim)]">
+        <p className="mt-1 truncate font-mono text-[11px] text-[var(--text-dim)]">
           {isHttp ? cfg.url : cfg.command}
         </p>
       </div>
@@ -233,7 +233,7 @@ export function McpServerCard({
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-md p-1.5 text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(175,215,255,0.1)] hover:text-[var(--axon-accent-pink)]"
+          className="rounded-md p-1.5 text-[var(--text-dim)] transition-colors hover:bg-[rgba(175,215,255,0.1)] hover:text-[var(--axon-primary-strong)]"
           aria-label={`Edit ${name}`}
         >
           <Pencil className="size-3.5" />
@@ -241,7 +241,7 @@ export function McpServerCard({
         <button
           type="button"
           onClick={onDelete}
-          className="rounded-md p-1.5 text-[var(--axon-text-dim)] transition-colors hover:bg-[rgba(255,80,80,0.12)] hover:text-red-400"
+          className="rounded-md p-1.5 text-[var(--text-dim)] transition-colors hover:bg-[rgba(255,80,80,0.12)] hover:text-red-400"
           aria-label={`Delete ${name}`}
         >
           <Trash2 className="size-3.5" />
@@ -327,14 +327,14 @@ export function McpServerForm({
       className="overflow-hidden rounded-xl border border-[rgba(175,215,255,0.18)] bg-[rgba(3,7,18,0.65)] shadow-[0_0_32px_rgba(175,215,255,0.04)]"
       style={{ backdropFilter: 'blur(20px) saturate(180%)' }}
     >
-      <div className="flex items-center justify-between border-b border-[rgba(255,135,175,0.1)] px-4 py-3">
-        <h3 className="text-[13px] font-semibold text-[var(--axon-text-primary)]">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+        <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
           {isEditing ? `Edit — ${initial.name}` : 'Add MCP Server'}
         </h3>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md p-1 text-[var(--axon-text-dim)] hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-text-secondary)]"
+          className="rounded-md p-1 text-[var(--text-dim)] hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)]"
           aria-label="Close"
         >
           <X className="size-4" />
@@ -342,7 +342,7 @@ export function McpServerForm({
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-[rgba(255,135,175,0.08)]">
+      <div className="flex border-b border-[var(--border-subtle)]">
         {(['form', 'json'] as const).map((tab) => (
           <button
             key={tab}
@@ -350,8 +350,8 @@ export function McpServerForm({
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-[12px] font-medium transition-colors ${
               activeTab === tab
-                ? 'border-b-2 border-[var(--axon-accent-pink)] text-[var(--axon-accent-pink)]'
-                : 'text-[var(--axon-text-dim)] hover:text-[var(--axon-text-secondary)]'
+                ? 'border-b-2 border-[var(--axon-primary-strong)] text-[var(--axon-primary-strong)]'
+                : 'text-[var(--text-dim)] hover:text-[var(--text-secondary)]'
             }`}
           >
             {tab === 'form' ? 'Form' : 'JSON'}
@@ -392,8 +392,8 @@ export function McpServerForm({
                     onClick={() => updateField('type', t)}
                     className={`flex items-center gap-1.5 px-4 py-2 text-[12px] font-medium transition-colors ${
                       form.type === t
-                        ? 'bg-[rgba(255,135,175,0.12)] text-[var(--axon-accent-pink-strong)]'
-                        : 'bg-[rgba(10,18,35,0.5)] text-[var(--axon-text-dim)] hover:bg-[rgba(10,18,35,0.7)] hover:text-[var(--axon-text-secondary)]'
+                        ? 'bg-[rgba(255,135,175,0.12)] text-[var(--axon-primary)]'
+                        : 'bg-[rgba(10,18,35,0.5)] text-[var(--text-dim)] hover:bg-[rgba(10,18,35,0.7)] hover:text-[var(--text-secondary)]'
                     }`}
                   >
                     {t === 'stdio' ? <Terminal className="size-3" /> : <Globe className="size-3" />}
@@ -462,7 +462,7 @@ export function McpServerForm({
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-[11px] text-[var(--axon-text-dim)]">
+            <p className="text-[11px] text-[var(--text-dim)]">
               Edit the full mcp.json content directly. The first server entry will be saved.
             </p>
             <textarea
@@ -473,7 +473,7 @@ export function McpServerForm({
               }}
               rows={14}
               spellCheck={false}
-              className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.6)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--axon-text-secondary)] outline-none focus:border-[rgba(175,215,255,0.35)]"
+              className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.6)] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] outline-none focus:border-[rgba(175,215,255,0.35)]"
             />
             {jsonError && <p className="text-[11px] text-red-400">{jsonError}</p>}
           </div>

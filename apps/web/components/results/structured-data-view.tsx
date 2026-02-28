@@ -74,7 +74,7 @@ function Section({
       className="rounded-lg border p-3"
       style={{
         background: muted ? 'rgba(10, 18, 35, 0.25)' : 'rgba(10, 18, 35, 0.4)',
-        borderColor: 'rgba(255,135,175,0.08)',
+        borderColor: 'var(--border-subtle)',
       }}
     >
       {title && <div className="ui-label mb-2">{title}</div>}
@@ -89,7 +89,7 @@ function KeyValueTable({ rows }: { rows: Array<{ key: string; value: Scalar }> }
       <table className="ui-table-dense">
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key} className="border-b border-[rgba(255,135,175,0.06)] last:border-b-0">
+            <tr key={row.key} className="border-b border-[var(--border-subtle)] last:border-b-0">
               <td className="ui-table-cell ui-table-cell-muted pr-4 align-top">
                 {humanizeKey(row.key)}
               </td>
@@ -119,7 +119,7 @@ function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
         </thead>
         <tbody>
           {rows.map((row, idx) => (
-            <tr key={idx} className="border-b border-[rgba(255,135,175,0.06)] last:border-b-0">
+            <tr key={idx} className="border-b border-[var(--border-subtle)] last:border-b-0">
               {columns.map((col) => (
                 <td key={col} className="ui-table-cell pr-4">
                   {scalarLabel(row[col])}

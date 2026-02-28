@@ -14,6 +14,7 @@
     "@platejs/ai": "^52.3.1",
     "@platejs/basic-nodes": "^52.0.11",
     "@platejs/code-block": "^52.0.11",
+    "@platejs/floating": "^52.0.11",
     "@platejs/link": "^52.0.11",
     "@platejs/list": "^52.0.11",
     "@platejs/markdown": "^52.3.1",

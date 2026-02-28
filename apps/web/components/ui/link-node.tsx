@@ -10,7 +10,7 @@ export function LinkElement(props: PlateElementProps) {
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="text-[var(--axon-accent-blue)] underline underline-offset-2 hover:text-[var(--axon-accent-blue-strong)]"
+        className="text-[var(--axon-secondary)] underline underline-offset-2 hover:text-[var(--axon-secondary-strong)]"
       >
         {props.children}
       </a>

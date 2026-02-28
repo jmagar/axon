@@ -139,9 +139,7 @@ function SectionHeader({
 }
 
 function FieldHint({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--axon-text-dim)]">{children}</p>
-  )
+  return <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</p>
 }
 
 function SectionDivider() {
@@ -167,14 +165,14 @@ function ToggleRow({
 }) {
   return (
     <div
-      className="flex items-start justify-between gap-4 rounded-xl border border-[rgba(255,135,175,0.1)] px-4 py-3.5 transition-all duration-200"
+      className="flex items-start justify-between gap-4 rounded-xl border border-[var(--border-subtle)] px-4 py-3.5 transition-all duration-200"
       style={{ background: 'rgba(10,18,35,0.58)', backdropFilter: 'blur(8px)' }}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-[var(--axon-text-secondary)]">{label}</p>
-        <p className="mt-0.5 text-[11px] text-[var(--axon-text-dim)]">
+        <p className="text-[13px] font-medium text-[var(--text-secondary)]">{label}</p>
+        <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">
           {description}{' '}
-          <code className="rounded bg-[rgba(175,215,255,0.07)] px-1 py-0.5 font-mono text-[10px] text-[var(--axon-text-muted)]">
+          <code className="rounded bg-[rgba(175,215,255,0.07)] px-1 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">
             {cliFlag}
           </code>
         </p>
@@ -186,7 +184,7 @@ function ToggleRow({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(175,215,255,0.5)]"
-        style={{ background: checked ? 'var(--axon-accent-pink)' : 'rgba(255,135,175,0.15)' }}
+        style={{ background: checked ? 'var(--axon-primary-strong)' : 'var(--surface-elevated)' }}
         aria-label={label}
       >
         <span
@@ -218,14 +216,14 @@ function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200 ${mono ? 'font-mono' : ''}`}
+      className={`w-full rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200 ${mono ? 'font-mono' : ''}`}
       style={{ backdropFilter: 'blur(4px)' }}
     />
   )
 }
 
 const GLASS_SELECT =
-  'w-full rounded-lg border border-[rgba(255,135,175,0.2)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--axon-text-secondary)] outline-none focus:border-[rgba(175,215,255,0.4)] focus:bg-[rgba(10,18,35,0.82)] cursor-pointer appearance-none transition-all duration-200'
+  'w-full rounded-lg border border-[rgba(255,135,175,0.2)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[rgba(175,215,255,0.4)] focus:bg-[rgba(10,18,35,0.82)] cursor-pointer appearance-none transition-all duration-200'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -272,7 +270,7 @@ export default function SettingsPage() {
         <header
           className="sticky top-0 z-30 flex h-13 shrink-0 items-center gap-3 border-b px-4"
           style={{
-            borderColor: 'rgba(255,135,175,0.1)',
+            borderColor: 'var(--border-subtle)',
             background: 'rgba(3,7,18,0.86)',
             backdropFilter: 'blur(20px) saturate(180%)',
             height: '3.25rem',
@@ -281,26 +279,27 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--axon-text-dim)] transition-all duration-200 hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-text-secondary)]"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[var(--text-dim)] transition-all duration-200 hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)] sm:min-h-0"
             aria-label="Go back"
           >
             <ArrowLeft className="size-3.5" />
             Back
           </button>
-          <div className="h-4 w-px bg-[rgba(255,135,175,0.12)]" />
+          <div className="h-4 w-px bg-[var(--border-subtle)]" />
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="size-3.5 text-[var(--axon-accent-pink)]" />
-            <h1 className="text-[14px] font-semibold text-[var(--axon-text-primary)]">Settings</h1>
+            <SlidersHorizontal className="size-3.5 text-[var(--axon-primary-strong)]" />
+            <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Settings</h1>
           </div>
           <div className="flex-1" />
           <button
             type="button"
             onClick={() => setResetConfirming(true)}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--axon-text-dim)] transition-all duration-200 hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-pink-strong)]"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-[var(--text-dim)] transition-all duration-200 hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] sm:min-h-0"
             title="Reset all settings to defaults"
           >
             <RotateCcw className="size-3" />
-            Reset to defaults
+            <span className="hidden sm:inline">Reset to defaults</span>
+            <span className="sm:hidden">Reset</span>
           </button>
         </header>
 
@@ -315,7 +314,7 @@ export default function SettingsPage() {
               backdropFilter: 'blur(16px)',
             }}
           >
-            <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--axon-text-dim)]">
+            <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
               Configuration
             </p>
             {NAV_SECTIONS.map(({ id, label, icon: Icon }) => (
@@ -325,8 +324,8 @@ export default function SettingsPage() {
                 onClick={() => scrollTo(id)}
                 className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium transition-all duration-150 ${
                   activeSection === id
-                    ? 'text-[var(--axon-accent-pink-strong)]'
-                    : 'text-[var(--axon-text-muted)] hover:bg-[rgba(255,135,175,0.06)] hover:text-[var(--axon-text-secondary)]'
+                    ? 'text-[var(--axon-primary)]'
+                    : 'text-[var(--text-muted)] hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)]'
                 }`}
                 style={activeSection === id ? { background: 'rgba(255,135,175,0.12)' } : undefined}
               >
@@ -336,14 +335,14 @@ export default function SettingsPage() {
             ))}
 
             {/* Related links */}
-            <div className="mt-2 pt-3 border-t border-[rgba(255,135,175,0.07)]">
-              <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--axon-text-dim)]">
+            <div className="mt-2 pt-3 border-t border-[var(--border-subtle)]">
+              <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
                 Related
               </p>
               <button
                 type="button"
                 onClick={() => router.push('/mcp')}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-[var(--axon-text-muted)] transition-all duration-150 hover:bg-[rgba(255,135,175,0.06)] hover:text-[var(--axon-text-secondary)]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-[var(--text-muted)] transition-all duration-150 hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)]"
               >
                 <Server className="size-3.5 shrink-0" />
                 MCP Servers
@@ -351,7 +350,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => router.push('/agents')}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-[var(--axon-text-muted)] transition-all duration-150 hover:bg-[rgba(255,135,175,0.06)] hover:text-[var(--axon-text-secondary)]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-[var(--text-muted)] transition-all duration-150 hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)]"
               >
                 <Bot className="size-3.5 shrink-0" />
                 Agents
@@ -362,7 +361,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setResetConfirming(true)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[11px] font-medium text-[var(--axon-text-dim)] transition-all duration-200 hover:bg-[rgba(255,135,175,0.08)] hover:text-[var(--axon-accent-pink-strong)]"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[11px] font-medium text-[var(--text-dim)] transition-all duration-200 hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)]"
               >
                 <RotateCcw className="size-3 shrink-0" />
                 Reset all to defaults
@@ -396,7 +395,7 @@ export default function SettingsPage() {
                   ))}
                 </select>
                 {selectedModel && (
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--axon-text-dim)]">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
                     {selectedModel.sub}
                     {selectedModel.badge && (
                       <span className="ml-1.5 rounded-full border border-[rgba(175,215,255,0.2)] bg-[rgba(175,215,255,0.07)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[rgba(175,215,255,0.5)]">
@@ -431,7 +430,7 @@ export default function SettingsPage() {
                   ))}
                 </select>
                 {selectedPermission && (
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--axon-text-dim)]">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
                     {selectedPermission.sub}
                   </p>
                 )}
@@ -463,7 +462,7 @@ export default function SettingsPage() {
                   ))}
                 </select>
                 {selectedEffort && (
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--axon-text-dim)]">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
                     {selectedEffort.hint} — {selectedEffort.sub}
                   </p>
                 )}
@@ -484,10 +483,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-max-turns"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Max turns
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --max-turns
                       </code>
                     </label>
@@ -502,7 +501,7 @@ export default function SettingsPage() {
                           maxTurns: Math.max(0, Math.min(200, Number(e.target.value))),
                         })
                       }
-                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                       placeholder="0 (unlimited)"
                       style={{ backdropFilter: 'blur(4px)' }}
                     />
@@ -513,10 +512,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-max-budget"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Max budget USD
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --max-budget-usd
                       </code>
                     </label>
@@ -532,7 +531,7 @@ export default function SettingsPage() {
                           maxBudgetUsd: Math.max(0, Math.min(1000, Number(e.target.value))),
                         })
                       }
-                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                      className="w-full rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.35)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                       placeholder="0 (unlimited)"
                       style={{ backdropFilter: 'blur(4px)' }}
                     />
@@ -559,10 +558,10 @@ export default function SettingsPage() {
                   placeholder="e.g. Always respond in bullet points. Prefer TypeScript. Be concise."
                   rows={5}
                   maxLength={4000}
-                  className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--axon-text-secondary)] outline-none placeholder:text-[var(--axon-text-subtle)] focus:border-[rgba(255,135,175,0.3)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
+                  className="w-full resize-none rounded-lg border border-[rgba(255,135,175,0.15)] bg-[rgba(10,18,35,0.65)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[rgba(255,135,175,0.3)] focus:bg-[rgba(10,18,35,0.82)] transition-all duration-200"
                   style={{ backdropFilter: 'blur(4px)' }}
                 />
-                <div className="mt-1.5 flex justify-between text-[10px] text-[var(--axon-text-subtle)]">
+                <div className="mt-1.5 flex justify-between text-[10px] text-[var(--text-dim)]">
                   <span>Applied to every Pulse chat request</span>
                   <span>{settings.appendSystemPrompt.length} / 4000</span>
                 </div>
@@ -583,10 +582,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-allowed-tools"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Allowed tools
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --allowedTools
                       </code>
                     </label>
@@ -605,10 +604,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-disallowed-tools"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Disallowed tools
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --disallowedTools
                       </code>
                     </label>
@@ -627,10 +626,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-tools-restrict"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Restrict built-in tools
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --tools
                       </code>
                     </label>
@@ -651,10 +650,10 @@ export default function SettingsPage() {
                     className="flex items-start gap-2.5 rounded-lg border border-[rgba(175,215,255,0.12)] px-3.5 py-3 transition-all duration-200"
                     style={{ background: 'rgba(10,18,35,0.58)', backdropFilter: 'blur(8px)' }}
                   >
-                    <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--axon-accent-pink)]" />
-                    <p className="text-[11px] leading-relaxed text-[var(--axon-text-dim)]">
+                    <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--axon-primary-strong)]" />
+                    <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
                       Pulse always runs with{' '}
-                      <code className="rounded bg-[rgba(175,215,255,0.07)] px-1 py-0.5 font-mono text-[10px] text-[var(--axon-text-muted)]">
+                      <code className="rounded bg-[rgba(175,215,255,0.07)] px-1 py-0.5 font-mono text-[10px] text-[var(--text-muted)]">
                         --dangerously-skip-permissions
                       </code>{' '}
                       because there is no TTY in the container environment. These tool filters layer
@@ -695,10 +694,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-fallback-model"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Fallback model
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --fallback-model
                       </code>
                     </label>
@@ -722,10 +721,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-add-dir"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Additional directories
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --add-dir
                       </code>
                     </label>
@@ -743,10 +742,10 @@ export default function SettingsPage() {
                   <div>
                     <label
                       htmlFor="settings-betas"
-                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--axon-text-dim)]"
+                      className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--text-dim)]"
                     >
                       Beta features
-                      <code className="ml-1.5 normal-case tracking-normal text-[var(--axon-text-subtle)]">
+                      <code className="ml-1.5 normal-case tracking-normal text-[var(--text-dim)]">
                         --betas
                       </code>
                     </label>
@@ -776,7 +775,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div
-                  className="overflow-hidden rounded-xl border border-[rgba(255,135,175,0.1)]"
+                  className="overflow-hidden rounded-xl border border-[var(--border-subtle)]"
                   style={{ background: 'rgba(10,18,35,0.58)', backdropFilter: 'blur(8px)' }}
                 >
                   {KEYBOARD_SHORTCUTS.map(({ keys, desc }, idx) => (
@@ -784,18 +783,18 @@ export default function SettingsPage() {
                       key={desc}
                       className={`flex items-center justify-between px-4 py-3 ${
                         idx < KEYBOARD_SHORTCUTS.length - 1
-                          ? 'border-b border-[rgba(255,135,175,0.07)]'
+                          ? 'border-b border-[var(--border-subtle)]'
                           : ''
                       }`}
                     >
-                      <span className="text-[12px] text-[var(--axon-text-dim)]">{desc}</span>
+                      <span className="text-[12px] text-[var(--text-dim)]">{desc}</span>
                       <div className="flex items-center gap-1">
                         {keys.map((k, ki) => (
                           <span key={k} className="flex items-center gap-1">
                             {ki > 0 && (
-                              <span className="text-[10px] text-[var(--axon-text-dim)]">+</span>
+                              <span className="text-[10px] text-[var(--text-dim)]">+</span>
                             )}
-                            <kbd className="rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.6)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--axon-text-subtle)]">
+                            <kbd className="rounded border border-[rgba(255,135,175,0.16)] bg-[rgba(10,18,35,0.6)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-dim)]">
                               {k}
                             </kbd>
                           </span>
