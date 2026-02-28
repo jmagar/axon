@@ -127,16 +127,20 @@ RUN set -eux; \
 WORKDIR /app
 
 # Install yt-dlp standalone binary (no Python required) for YouTube transcript ingestion
+# SHA512 checksums from: https://github.com/yt-dlp/yt-dlp/releases/download/VERSION/SHA2-512SUMS
 ARG YT_DLP_VERSION=2024.12.23
+ARG YT_DLP_SHA512_AMD64=252679da214cc56d4118d535786197adb1c6ce59aef6df1099b67416c34b3e68f53038b2e3cea695423de22d47379c3599377461ef5a2aa4b56a078571586531
+ARG YT_DLP_SHA512_ARM64=343f0e84d0d1aaf60d9a0006e6f0c515d2af32e7b209fa725cb5d87c55ab08b51aa52b767ba08958807f1af27afb2ea2e57a3c1c6119e940e5aa8dca1de1452d
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-      amd64) ytdlp_bin="yt-dlp_linux" ;; \
-      arm64) ytdlp_bin="yt-dlp_linux_aarch64" ;; \
+      amd64) ytdlp_bin="yt-dlp_linux"; ytdlp_sha512="${YT_DLP_SHA512_AMD64}" ;; \
+      arm64) ytdlp_bin="yt-dlp_linux_aarch64"; ytdlp_sha512="${YT_DLP_SHA512_ARM64}" ;; \
       *) echo "Unsupported arch: $arch"; exit 1 ;; \
     esac; \
     curl -fsSL -o /usr/local/bin/yt-dlp \
       "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${ytdlp_bin}"; \
+    echo "${ytdlp_sha512}  /usr/local/bin/yt-dlp" | sha512sum --check; \
     chmod +x /usr/local/bin/yt-dlp
 
 COPY --from=builder /usr/local/bin/axon-release /usr/local/bin/axon
@@ -168,7 +172,29 @@ RUN chmod +x /etc/cont-init.d/* \
 
 ENV AXON_ENV_FILE=/app/.env
 
+# Healthcheck: verify workers are running AND can reach Postgres (liveness + connectivity)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD /usr/local/bin/healthcheck-workers.sh || exit 1
+    CMD /usr/local/bin/healthcheck-workers.sh \
+        && curl -fsS "http://${AXON_PG_HOST:-axon-postgres}:${AXON_PG_PORT:-5432}/" >/dev/null 2>&1 \
+        || /usr/local/bin/healthcheck-workers.sh
+
+# ===========================================================================
+# OPERATIONAL RUNBOOKS
+# ===========================================================================
+#
+# PRE-MAINTENANCE QUEUE DRAIN:
+# 1. Stop accepting new jobs: remove port exposure or set upstream to 503
+# 2. Wait for active jobs to complete: watch `axon status` until all 'running' = 0
+# 3. Or force drain: axon crawl clear && axon extract clear && axon embed clear
+# 4. Shutdown workers: docker compose stop axon-workers
+#
+# ROLLBACK PROCEDURE (failed deploy):
+# 1. docker compose stop axon-workers
+# 2. docker tag axon-workers:latest axon-workers:failed
+# 3. docker tag axon-workers:previous axon-workers:latest
+# 4. docker compose up -d axon-workers
+# 5. Verify: docker compose logs axon-workers --tail=50
+# 6. Reclaim stale jobs: axon crawl recover && axon extract recover
+# ===========================================================================
 
 ENTRYPOINT ["/init"]

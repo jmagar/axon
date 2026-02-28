@@ -346,7 +346,9 @@ spider_agent = { version = "2.45", default-features = false, features = ["search
 CLI commands output JSON data to stdout and progress/logs to stderr (Spinner via indicatif, tracing via `log_info`/`log_done`). The web UI streams both: stdout as `"type": "output"`, stderr as `"type": "log"`. ANSI codes stripped via `console::strip_ansi_codes()`.
 
 ### AMQP reconnect backoff
-When a crawl worker's AMQP channel dies (broker restart, consumer_timeout, network blip), the lane reconnects automatically with exponential backoff: starts at 2s, doubles each attempt, capped at 60s. On successful reconnect the backoff resets to the initial value. The current job is not lost — it holds no AMQP reference and completes normally before the reconnect loop fires.
+When a worker's AMQP channel dies (broker restart, consumer_timeout, network blip), the lane reconnects automatically with exponential backoff: starts at 2s, doubles each attempt, capped at 60s. On successful reconnect, the backoff resets to 2s **only if the connection was alive for >=60 seconds** (`ran_for_secs >= AMQP_RECONNECT_MAX_SECS` in `worker_lane.rs`). Short-lived connections that reconnect quickly retain their current backoff value. This prevents rapid reconnect loops from hammering the broker after a transient failure. The current job is not lost — it holds no AMQP reference and completes normally before the reconnect loop fires.
+
+**Note:** The crawl worker's reconnect loop in `crawl/runtime/worker/loops.rs` has different semantics: it resets backoff to `RECONNECT_BACKOFF_INITIAL_SECS` (2s) on **every** successful reconnect (i.e., when `run_amqp_worker_lane` returns `Ok(())`), regardless of how long the connection was alive.
 
 ### Adding fields to `Config` struct
 When adding a new non-`Option` field to `Config` in `crates/core/config.rs`, you **must** also update the inline `Config { .. }` struct literals used in test helpers:

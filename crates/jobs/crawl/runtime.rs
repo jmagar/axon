@@ -5,10 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::error::Error;
-use std::sync::OnceLock;
 use uuid::Uuid;
-
-static SCHEMA_INIT: OnceLock<()> = OnceLock::new();
 
 const TABLE: JobTable = JobTable::Crawl;
 const WORKER_CONCURRENCY: usize = 5;
@@ -61,14 +58,6 @@ pub struct CrawlJob {
     pub finished_at: Option<DateTime<Utc>>,
     pub error_text: Option<String>,
     pub result_json: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct CrawlWatchdogSweepStats {
-    stale_candidates: u64,
-    marked_candidates: u64,
-    reclaimed_jobs: u64,
-    reclaimed_ids: Vec<Uuid>,
 }
 
 fn to_job_config(cfg: &Config) -> CrawlJobConfig {
@@ -139,10 +128,6 @@ async fn latest_completed_result_for_url(
 }
 
 async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
-    if SCHEMA_INIT.get().is_some() {
-        return Ok(());
-    }
-
     let mut tx = begin_schema_migration_tx(pool, CRAWL_SCHEMA_LOCK_KEY).await?;
 
     {
@@ -191,8 +176,6 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     }
 
     tx.commit().await?;
-
-    let _ = SCHEMA_INIT.set(());
     Ok(())
 }
 

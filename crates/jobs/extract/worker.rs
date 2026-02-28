@@ -58,12 +58,10 @@ async fn load_extract_job_inputs(
 }
 
 async fn mark_extract_canceled(
-    cfg: &Config,
+    redis_conn: &mut redis::aio::MultiplexedConnection,
     pool: &PgPool,
     id: Uuid,
 ) -> Result<bool, Box<dyn Error>> {
-    let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    let mut redis_conn = redis_client.get_multiplexed_async_connection().await?;
     let cancel_key = format!("axon:extract:cancel:{id}");
     let cancel_before: Option<String> = redis_conn
         .get(&cancel_key)
@@ -201,7 +199,17 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
         let Some((urls, job_cfg)) = load_extract_job_inputs(pool, id).await? else {
             return Ok::<Option<serde_json::Value>, Box<dyn Error>>(None);
         };
-        if mark_extract_canceled(cfg, pool, id).await? {
+        let redis_client = redis::Client::open(cfg.redis_url.clone())?;
+        let mut redis_conn = tokio::time::timeout(
+            Duration::from_secs(3),
+            redis_client.get_multiplexed_async_connection(),
+        )
+        .await
+        .map_err(|_| -> Box<dyn Error> { "redis connect timeout (3s) in extract worker".into() })?
+        .map_err(|e| -> Box<dyn Error> {
+            format!("redis connect failed in extract worker: {e}").into()
+        })?;
+        if mark_extract_canceled(&mut redis_conn, pool, id).await? {
             return Ok(None);
         }
 
@@ -312,10 +320,7 @@ pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     }
 
     let pool = make_pool(cfg).await?;
-    if SCHEMA_INIT.get().is_none() {
-        ensure_schema(&pool).await?;
-        let _ = SCHEMA_INIT.set(());
-    }
+    ensure_schema(&pool).await?;
 
     let wc = WorkerConfig {
         table: TABLE,
