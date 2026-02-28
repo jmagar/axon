@@ -1,12 +1,9 @@
 use crate::crates::core::config::{Config, RenderMode};
-use crate::crates::core::content::url_to_domain;
+use crate::crates::core::http::validate_url;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
-use crate::crates::crawl::engine::{
-    CrawlSummary, run_crawl_once, should_fallback_to_chrome, update_latest_reflink,
-};
-use crate::crates::jobs::embed::start_embed_job_with_pool;
+use crate::crates::crawl::engine::{CrawlSummary, run_crawl_once, should_fallback_to_chrome};
+use crate::crates::jobs::common::{JobTable, mark_job_completed};
 use crate::crates::jobs::status::JobStatus;
-use crate::crates::vector::ops::qdrant::qdrant_delete_stale_domain_urls;
 use redis::AsyncCommands;
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -15,10 +12,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
 
-use super::super::robots::{RobotsBackfillStats, RobotsDiscoveryStats, append_robots_backfill};
-use super::super::{read_manifest_urls, resolve_initial_mode, write_audit_diff};
+use super::super::{latest_completed_result_for_url, resolve_initial_mode, write_audit_diff};
+use super::embed::maybe_enqueue_embed_job;
 use super::job_context::{JobExecutionContext, load_job_execution_context};
+use super::postprocess::{maybe_append_backfills, maybe_reconcile_stale_urls, update_latest_link};
 use super::result_builder::{CompletedResultContext, build_completed_result};
+
+const TABLE: JobTable = JobTable::Crawl;
 
 pub(super) async fn process_job(
     cfg: &Config,
@@ -32,6 +32,14 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     let Some(ctx) = load_job_execution_context(cfg, pool, id).await? else {
         return Ok(());
     };
+
+    // Re-validate URL from DB before passing to engine — defense-in-depth against
+    // stored injection via a compromised DB row.
+    validate_url(&ctx.url)?;
+
+    // Validate output_dir is not a path traversal attack.
+    validate_output_dir(&ctx.job_cfg.output_dir, &cfg.output_dir)?;
+
     log_info(&format!("crawl worker started job {} url={}", id, ctx.url));
     if maybe_complete_cache_hit(pool, id, &ctx).await? {
         return Ok(());
@@ -44,15 +52,7 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
         .map_err(|e| e.to_string());
     match result {
         Ok(result_json) => {
-            sqlx::query(&format!(
-                "UPDATE axon_crawl_jobs SET status='{completed}', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='{running}'",
-                completed = JobStatus::Completed.as_str(),
-                running = JobStatus::Running.as_str(),
-            ))
-            .bind(id)
-            .bind(result_json)
-            .execute(pool)
-            .await?;
+            mark_job_completed(pool, TABLE, id, Some(&result_json)).await?;
             log_done(&format!("worker completed crawl job {id}"));
         }
         Err(err) => {
@@ -81,6 +81,24 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     Ok(())
 }
 
+/// Validate that `output_dir` does not escape the expected base directory.
+fn validate_output_dir(output_dir: &Path, base_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let canonical = output_dir
+        .canonicalize()
+        .unwrap_or_else(|_| output_dir.to_path_buf());
+    let canonical_base = base_dir
+        .canonicalize()
+        .unwrap_or_else(|_| base_dir.to_path_buf());
+    if !canonical.starts_with(&canonical_base) {
+        return Err(format!(
+            "output_dir path traversal rejected: {:?} is outside {:?}",
+            canonical, canonical_base
+        )
+        .into());
+    }
+    Ok(())
+}
+
 const DEFAULT_CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 
 /// Sentinel string embedded in errors produced by the cancel path.
@@ -99,7 +117,7 @@ async fn maybe_complete_cache_hit(
 
     // Check TTL of previous job result
     if let Some((_, previous_result_json)) =
-        super::super::latest_completed_result_for_url(pool, &ctx.url, id).await?
+        latest_completed_result_for_url(pool, &ctx.url, id).await?
     {
         let Some(previous_manifest_path) = previous_result_json
             .get("output_dir")
@@ -151,15 +169,7 @@ async fn maybe_complete_cache_hit(
         "audit_diff": diff_report,
         "audit_report_path": report_path.to_string_lossy(),
     });
-    sqlx::query(&format!(
-        "UPDATE axon_crawl_jobs SET status='{completed}', updated_at=NOW(), finished_at=NOW(), error_text=NULL, result_json=$2 WHERE id=$1 AND status='{running}'",
-        completed = JobStatus::Completed.as_str(),
-        running = JobStatus::Running.as_str(),
-    ))
-    .bind(id)
-    .bind(result_json)
-    .execute(pool)
-    .await?;
+    mark_job_completed(pool, TABLE, id, Some(&result_json)).await?;
     log_done(&format!("worker completed crawl job {id} (cache hit)"));
     Ok(true)
 }
@@ -377,81 +387,6 @@ async fn run_primary_with_optional_chrome_fallback(
     }
 }
 
-async fn maybe_append_backfills(
-    ctx: &JobExecutionContext,
-    seen_urls: &HashSet<String>,
-    final_summary: &mut CrawlSummary,
-) -> Result<(RobotsBackfillStats, RobotsDiscoveryStats), Box<dyn Error>> {
-    if !ctx.job_cfg.discover_sitemaps {
-        return Ok((
-            RobotsBackfillStats::default(),
-            RobotsDiscoveryStats::default(),
-        ));
-    }
-    // Robots.txt sitemap discovery supplements spider-native crawl_sitemap().
-    // Spider doesn't parse robots.txt for Sitemap: directives, so we do it here.
-    append_robots_backfill(
-        &ctx.job_cfg,
-        &ctx.url,
-        &ctx.job_cfg.output_dir,
-        seen_urls,
-        final_summary,
-    )
-    .await
-}
-
-async fn maybe_reconcile_stale_urls(
-    ctx: &JobExecutionContext,
-    manifest_path: &Path,
-) -> Result<usize, Box<dyn Error>> {
-    // Skip if embedding is off or Qdrant isn't configured.
-    if !ctx.job_cfg.embed || ctx.job_cfg.qdrant_url.is_empty() {
-        return Ok(0);
-    }
-    // Skip for page-limited crawls: the manifest is intentionally incomplete,
-    // so reconciling against it would delete live URLs outside the page cap.
-    if ctx.job_cfg.max_pages > 0 {
-        return Ok(0);
-    }
-    let domain = spider::url::Url::parse(&ctx.url)
-        .ok()
-        .and_then(|u| u.host_str().map(|s| s.to_string()))
-        .unwrap_or_default();
-    if domain.is_empty() {
-        return Ok(0);
-    }
-    let current_urls = read_manifest_urls(manifest_path).await?;
-    if current_urls.is_empty() {
-        return Ok(0);
-    }
-    let deleted = qdrant_delete_stale_domain_urls(&ctx.job_cfg, &domain, &current_urls).await?;
-    if deleted > 0 {
-        log_info(&format!(
-            "crawl reconcile: removed {} stale Qdrant URL(s) for domain={}",
-            deleted, domain
-        ));
-    }
-    Ok(deleted)
-}
-
-async fn maybe_enqueue_embed_job(
-    pool: &PgPool,
-    ctx: &JobExecutionContext,
-    crawl_job_id: Uuid,
-) -> Result<(), Box<dyn Error>> {
-    if !ctx.job_cfg.embed {
-        return Ok(());
-    }
-    let markdown_dir = ctx.job_cfg.output_dir.join("markdown");
-    let embed_job_id =
-        start_embed_job_with_pool(pool, &ctx.job_cfg, &markdown_dir.to_string_lossy()).await?;
-    log_info(&format!(
-        "command=crawl enqueue_embed crawl_job_id={} embed_job_id={}",
-        crawl_job_id, embed_job_id
-    ));
-    Ok(())
-}
-
 async fn run_active_crawl_job(
     pool: &PgPool,
     id: Uuid,
@@ -483,15 +418,7 @@ async fn run_active_crawl_job(
 
         maybe_enqueue_embed_job(pool, ctx, id).await?;
 
-        if let Some(parent) = ctx.job_cfg.output_dir.parent() {
-            let latest_dir = parent.join("latest");
-            if let Err(err) = update_latest_reflink(&ctx.job_cfg.output_dir, &latest_dir).await {
-                log_warn(&format!(
-                    "failed to update 'latest' reflink for domain {}: {err}",
-                    url_to_domain(&ctx.url)
-                ));
-            }
-        }
+        update_latest_link(ctx).await;
 
         let mut result_json = build_completed_result(
             ctx,

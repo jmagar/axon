@@ -1,6 +1,30 @@
-mod processor;
+//! Refresh job table schema uses advisory-lock DDL via `common::schema::begin_schema_migration_tx`.
+//!
+//! # Advisory Lock DDL Pattern
+//!
+//! All schema migrations in this codebase should use `begin_schema_migration_tx(pool, lock_key)`
+//! which:
+//! - Opens a transaction
+//! - Acquires `pg_advisory_xact_lock(lock_key)` (transaction-scoped, auto-released)
+//! - Runs DDL inside the transaction
+//! - Commits -- releasing the lock
+//!
+//! This serializes concurrent schema init across worker processes without deadlock risk.
+//! Lock keys are unique per job table -- see `common/schema.rs` for the canonical implementation.
+//!
+//! # Developer Guide: Adding a New Job Type
+//!
+//! When adding a new job type:
+//! 1. Choose a unique `i64` lock key (use any stable hash of the table name)
+//! 2. Call `begin_schema_migration_tx(pool, MY_LOCK_KEY).await?`
+//! 3. Run all DDL (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`,
+//!    `ALTER TABLE ADD CONSTRAINT ... EXCEPTION WHEN duplicate_object`)
+//! 4. `tx.commit().await?`
+
+pub(crate) mod processor;
 mod schedule;
 mod state;
+pub(crate) mod url_processor;
 mod worker;
 
 use crate::crates::jobs::common::{
@@ -78,6 +102,20 @@ pub struct RefreshJob {
     pub urls_json: serde_json::Value,
     pub result_json: Option<serde_json::Value>,
     pub config_json: serde_json::Value,
+}
+
+impl RefreshJob {
+    /// Parse the raw status string into a typed `JobStatus`.
+    /// Falls back to `JobStatus::Failed` if the string is unrecognized.
+    pub fn job_status(&self) -> JobStatus {
+        match self.status.as_str() {
+            "pending" => JobStatus::Pending,
+            "running" => JobStatus::Running,
+            "completed" => JobStatus::Completed,
+            "canceled" => JobStatus::Canceled,
+            _ => JobStatus::Failed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

@@ -18,7 +18,7 @@ pub(crate) mod watchdog;
 #[cfg(test)]
 use anyhow::Result;
 #[cfg(test)]
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 #[cfg(test)]
 use serde_json::Value;
 #[cfg(test)]
