@@ -480,7 +480,11 @@ export function PulseWorkspace() {
                 <PulseEditorPane
                   markdown={documentMarkdown}
                   onMarkdownChange={setDocumentMarkdown}
-                  scrollStorageKey="axon.web.pulse.editor-scroll"
+                  scrollStorageKey={
+                    currentDocFilename
+                      ? `axon.web.pulse.editor-scroll.${currentDocFilename}`
+                      : 'axon.web.pulse.editor-scroll'
+                  }
                 />
               </>
             )}
