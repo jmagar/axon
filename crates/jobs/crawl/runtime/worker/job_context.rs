@@ -86,8 +86,13 @@ fn build_job_config(cfg: &Config, parsed: &CrawlJobConfig, id: Uuid, url: &str) 
     job_cfg.cache = parsed.cache;
     job_cfg.cache_skip_browser = parsed.cache_skip_browser;
 
+    // Always use the worker's own base output dir (cfg.output_dir), not the
+    // stored job path.  The job config was serialized by the submitter (e.g.
+    // the MCP server on the host), which may have a different filesystem root
+    // than the worker (e.g. running inside Docker at /app).
     let domain = url_to_domain(url);
-    job_cfg.output_dir = PathBuf::from(parsed.output_dir.clone())
+    job_cfg.output_dir = cfg
+        .output_dir
         .join("domains")
         .join(domain)
         .join(id.to_string());
