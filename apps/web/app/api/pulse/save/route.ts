@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
+import type { SavedDocMeta } from '@/lib/pulse/storage'
 import { savePulseDoc, updatePulseDoc } from '@/lib/pulse/storage'
 
 const SaveRequestSchema = z.object({
@@ -11,6 +12,8 @@ const SaveRequestSchema = z.object({
   collections: z.array(z.string()).optional(),
   embed: z.boolean().default(true),
   filename: z.string().optional(),
+  /** Client-cached from last save response — passed back to skip file read on updates. */
+  createdAt: z.string().optional(),
 })
 
 /** GET first; only PUT on 404 — safe to call on existing collections. */
@@ -61,10 +64,25 @@ export async function POST(request: Request) {
       )
     }
 
-    const { title, markdown, tags, collections, embed, filename: incomingFilename } = parsed.data
-    const { path, filename } = incomingFilename
-      ? await updatePulseDoc(incomingFilename, { title, markdown, tags, collections })
+    const {
+      title,
+      markdown,
+      tags,
+      collections,
+      embed,
+      filename: incomingFilename,
+      createdAt: incomingCreatedAt,
+    } = parsed.data
+    const meta: SavedDocMeta = incomingFilename
+      ? await updatePulseDoc(incomingFilename, {
+          title,
+          markdown,
+          tags,
+          collections,
+          createdAt: incomingCreatedAt,
+        })
       : await savePulseDoc({ title, markdown, tags, collections })
+    const { path, filename } = meta
 
     if (embed) {
       const teiUrl = process.env.TEI_URL
@@ -73,6 +91,20 @@ export async function POST(request: Request) {
 
       if (teiUrl && qdrantUrl && markdown.trim()) {
         try {
+          // Pre-delete existing vectors for this document before re-embedding to prevent accumulation
+          if (incomingFilename) {
+            await fetch(
+              `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  filter: { must: [{ key: 'url', match: { value: `pulse://${filename}` } }] },
+                }),
+              },
+            ).catch((err) => console.error('[Pulse] Pre-delete failed (continuing):', err))
+          }
+
           const chunks = chunkText(markdown, 2000, 200)
           const embedResponse = await fetch(`${teiUrl}/embed`, {
             method: 'POST',
@@ -123,7 +155,14 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ path, filename, saved: true })
+    return NextResponse.json({
+      path,
+      filename,
+      saved: true,
+      createdAt: meta.createdAt,
+      tags: meta.tags,
+      collections: meta.collections,
+    })
   } catch (err) {
     console.error('[Pulse] Save route error:', err)
     return NextResponse.json({ error: 'Save failed' }, { status: 500 })

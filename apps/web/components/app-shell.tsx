@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         onSelectFile={selectFile}
         jobId={currentJobId}
       />
-      <div className="relative min-w-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="relative z-[1] min-w-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   )
 }
