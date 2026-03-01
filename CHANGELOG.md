@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-01 (session: xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor)
+Last Modified: 2026-03-01 (session: mobile omnibox sizing fix — sidebar auto-collapse on mobile, textarea ResizeObserver, height: 1px fix; CmdK palette; misc web improvements)
 
 ## [Unreleased] — feat/sidebar
 
@@ -7,6 +7,8 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 ### Highlights
 
+- **Mobile omnibox fix** — three-bug root-cause chain: (1) sidebar auto-collapses on mobile viewports (<768px) when no stored preference, preventing it from consuming 260px of a 390px screen; (2) textarea auto-resize uses `height: '1px'` instead of `'auto'` before reading `scrollHeight` — `'auto'` in a flex layout returns the stretched layout height rather than intrinsic content height; (3) `ResizeObserver` added so height recalculates after sidebar collapse reflows the layout (the `[input]`-dep effect fired once on mount while sidebar was still 260px and never re-ran)
+- **CmdK palette** — new `apps/web/components/cmdk-palette/` component with `CmdKPalette` and `CmdKOutput`; wired into `AppShell`
 - **xterm.js terminal enhancements** — WebGL GPU renderer (`@xterm/addon-webgl`) with context-loss fallback; search decorations (amber highlights + active-match blue) via `allowProposedApi: true`; overview ruler lane (`overviewRulerWidth: 8`) shows match positions in scrollbar; copy-on-select via `onSelectionChange`; visual bell via `onBell` opacity flash; `attachCustomKeyEventHandler` for Ctrl+Shift+C (copy) / Ctrl+Shift+V (paste); all clipboard calls guarded with `?.` for HTTP contexts
 - **Cortex layout refactor** — `app/cortex/layout.tsx` rewritten with proper sidebar integration; Cortex API routes standardised; doctor/status/stats/sources/domains dashboards updated for new layout
 - **Plate.js editor enhancements** — slash commands (`/`), block drag-and-drop, callout blocks, collapsible toggles, table of contents, multi-block selection, block context menu, AI menu, inline comments, suggestion mode, export (HTML/PDF/image/markdown); 15 new plugin kit files wired into `copilot-kit.tsx`; mobile-responsive compact toolbar; `@ai-sdk/gateway@1.0.15` pinned for `ai@5` compatibility; `@platejs/ai` command route rewired with `generateText` for `ai@5` breaking changes (`Output.choice`, `partialOutputStream` removed); `useSearchParams` Suspense guard on `/cortex/sources`
@@ -27,7 +29,8 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor |
+| *(this commit)* | fix(web) | mobile omnibox sizing — sidebar auto-collapse <768px, textarea ResizeObserver + height:1px fix; CmdK palette; web improvements |
+| `27fc39f6` | feat(web) | xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor |
 | `72d1f651` | fix(web) | wire AIKit into CopilotKit + address open items |
 | `b2e2d61d` | fix(web) | address code review findings from Plate.js editor enhancements |
 | `405e0945` | feat(web) | Plate.js editor enhancements — slash, DnD, callouts, toggles, TOC, block selection, AI menu, comments, export; ai@5 compat fixes |
