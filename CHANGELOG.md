@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-02-28 (session: workspace virtual dirs, Claude folder, UI polish)
+Last Modified: 2026-02-28 (session: jobs refactor — heartbeat helper, Redis timeouts, async I/O, unit tests)
 
 ## [Unreleased] — feat/crawl-download-pack
 
@@ -9,6 +9,8 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
+| *(pending)* | fix(jobs) | spawn_heartbeat_task helper, Redis cancel timeouts, async I/O fixes, 7 new unit tests |
+| `1ec5513` | feat(web) | workspace virtual dirs, Claude folder, landing editor, header normalization |
 | `b2d8a74` | feat(web+docker) | PlateJS editor integration, pnpm-watcher s6 service, chrome health fix |
 | `8d85538` | fix(jobs) | address all P0/P1/P2 code review issues — 8-agent team landing |
 | `5dc43f1` | chore | update changelog for UI overhaul + workspace explorer; misc Rust job fixes |

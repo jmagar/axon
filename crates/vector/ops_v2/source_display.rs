@@ -158,7 +158,9 @@ fn find_manifest_for_path(path: &Path) -> Option<PathBuf> {
 
 fn build_manifest_lookup(manifest_path: &Path) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    let Ok(content) = std::fs::read_to_string(manifest_path) else {
+    // block_in_place yields the Tokio thread to other tasks while reading the
+    // manifest file, preventing this sync IO from stalling the async runtime.
+    let Ok(content) = tokio::task::block_in_place(|| std::fs::read_to_string(manifest_path)) else {
         return out;
     };
     let base_dir = manifest_path.parent();
