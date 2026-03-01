@@ -436,6 +436,12 @@ export function useWsMessagesProvider() {
             if (markdown && markdown.length > 0) {
               const basename = url.replace(/^https?:\/\//i, '').replace(/[^a-z0-9]+/gi, '-')
               const relativePath = `virtual/scrape-${basename || 'result'}.md`
+              // Update ref immediately so PDU construction at command.done sees the markdown
+              // without waiting for the useEffect sync after the next render cycle.
+              virtualFileContentByPathRef.current = {
+                ...virtualFileContentByPathRef.current,
+                [relativePath]: markdown,
+              }
               setVirtualFileContentByPath((prev) => ({
                 ...prev,
                 [relativePath]: markdown,

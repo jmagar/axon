@@ -525,15 +525,19 @@ async fn handle_sync_command(
             }
             stdout_accum.push_str(&clean);
             // Try to parse as JSON for structured rendering; fall back to raw text.
+            // Only treat objects and arrays as meaningful structured output — primitive
+            // JSON values (strings, numbers, bools) are likely array elements from
+            // pretty-printed multiline JSON and should not suppress the end-of-stream
+            // full-document recovery pass that correctly parses the whole blob.
             match serde_json::from_str::<serde_json::Value>(&clean) {
-                Ok(parsed) => {
+                Ok(parsed) if parsed.is_object() || parsed.is_array() => {
                     saw_json_line = true;
                     if is_screenshot {
                         screenshot_jsons.push(parsed.clone());
                     }
                     send_command_output_json(&stdout_tx, &stdout_ctx, parsed).await;
                 }
-                Err(_) => {
+                Ok(_) | Err(_) => {
                     send_command_output_line(&stdout_tx, &stdout_ctx, clean).await;
                 }
             }
