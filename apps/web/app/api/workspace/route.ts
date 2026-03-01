@@ -90,6 +90,31 @@ function validatePath(raw: string): { safe: string; isClaudeRoot: boolean } | { 
   return { safe: resolved, isClaudeRoot: false }
 }
 
+/** Re-validates a symlink-resolved real path against the expected root (prevents symlink traversal) */
+function validateRealPath(realPath: string, isClaudeRoot: boolean): boolean {
+  if (isClaudeRoot) {
+    return realPath === CLAUDE_ROOT || realPath.startsWith(CLAUDE_ROOT + path.sep)
+  }
+  const workspaceNorm = path.resolve(WORKSPACE_ROOT)
+  return realPath === workspaceNorm || realPath.startsWith(workspaceNorm + path.sep)
+}
+
+/** Resolve symlinks in safePath and re-validate; throws with 400 status on traversal */
+async function realpathGuard(safePath: string, isClaudeRoot: boolean): Promise<string> {
+  try {
+    const real = await fs.realpath(safePath)
+    if (!validateRealPath(real, isClaudeRoot)) {
+      throw Object.assign(new Error('Path is outside allowed root'), { status: 400 })
+    }
+    return real
+  } catch (err: unknown) {
+    if (err instanceof Error && 'status' in err) throw err
+    // realpath throws ENOENT when path doesn't exist — pass through string-validated path;
+    // the subsequent stat/readFile will throw ENOENT naturally and return 404.
+    return safePath
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const action = searchParams.get('action') ?? 'list'
@@ -99,7 +124,13 @@ export async function GET(req: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const { safe: safePath, isClaudeRoot } = validation
+  const { isClaudeRoot } = validation
+  let safePath: string
+  try {
+    safePath = await realpathGuard(validation.safe, isClaudeRoot)
+  } catch {
+    return NextResponse.json({ error: 'Path is outside allowed root' }, { status: 400 })
+  }
 
   if (action === 'list') {
     try {
