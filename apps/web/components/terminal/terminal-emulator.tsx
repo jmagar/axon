@@ -32,6 +32,7 @@ export interface TerminalEmulatorProps {
 // ---------------------------------------------------------------------------
 
 const TERMINAL_OPTIONS: ITerminalOptions = {
+  allowProposedApi: true,
   theme: {
     background: '#030712',
     foreground: '#e8f4f8',
@@ -222,7 +223,7 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         // Copy-on-select: auto-copy whenever the selection changes and is non-empty
         terminal.onSelectionChange(() => {
           const sel = terminal!.getSelection()
-          if (sel) navigator.clipboard.writeText(sel).catch(() => {})
+          if (sel) navigator.clipboard?.writeText(sel).catch(() => {})
         })
 
         // Visual bell via a brief opacity flash on the container
@@ -241,12 +242,12 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
             const sel = terminal!.getSelection()
-            if (sel) navigator.clipboard.writeText(sel).catch(() => {})
+            if (sel) navigator.clipboard?.writeText(sel).catch(() => {})
             return false
           }
           if (e.ctrlKey && e.shiftKey && e.code === 'KeyV' && e.type === 'keydown') {
             navigator.clipboard
-              .readText()
+              ?.readText()
               .then((text) => {
                 if (text) onDataRef.current(text)
               })
