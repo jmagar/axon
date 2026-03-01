@@ -267,16 +267,10 @@ pub async fn cleanup_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
 
-    // Single-pass CTE delete avoids O(N²) re-scan per batch.
     let deleted = sqlx::query(
-        "WITH to_delete AS (
-            SELECT id FROM axon_crawl_jobs
+        "DELETE FROM axon_crawl_jobs
             WHERE status IN ('failed','canceled')
-               OR (status='pending' AND created_at < NOW() - INTERVAL '1 day')
-            ORDER BY created_at ASC
-            LIMIT 10000
-        )
-        DELETE FROM axon_crawl_jobs WHERE id IN (SELECT id FROM to_delete)",
+               OR (status='pending' AND created_at < NOW() - INTERVAL '1 day')",
     )
     .execute(&pool)
     .await?

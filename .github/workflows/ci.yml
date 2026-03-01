@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           failures=()
-          for file in $(rg -l 'ensure_schema\|fn ensure_schema' crates/jobs/ 2>/dev/null || true); do
+          for file in $(rg -l 'ensure_schema' crates/jobs/ 2>/dev/null || true); do
             if ! rg -q 'begin_schema_migration_tx|advisory' "$file" 2>/dev/null; then
               failures+=("$file")
             fi
