@@ -11,6 +11,8 @@ import {
   Heading3,
   Italic,
   Link2,
+  List,
+  ListOrdered,
   Quote,
   Redo2,
   Strikethrough,
@@ -24,8 +26,10 @@ import { CopilotKit } from '@/components/editor/plugins/copilot-kit'
 import { BlockTypeButton } from '@/components/ui/block-type-button'
 import { Editor, EditorContainer } from '@/components/ui/editor'
 import { EditorContextMenu } from '@/components/ui/editor-context-menu'
+import { FloatingLink } from '@/components/ui/floating-link'
 import { FloatingToolbar } from '@/components/ui/floating-toolbar'
 import { LinkToolbarButton } from '@/components/ui/link-toolbar-button'
+import { ListToolbarButton } from '@/components/ui/list-toolbar-button'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
 import { Toolbar, ToolbarButton, ToolbarGroup } from '@/components/ui/toolbar'
 import { markdownToPlateNodes } from '@/lib/markdown'
@@ -161,6 +165,14 @@ export function PulseEditorPane({
               </BlockTypeButton>
             </ToolbarGroup>
             <ToolbarGroup>
+              <ListToolbarButton nodeType="disc" tooltip="Bullet List">
+                <List className="size-3.5" />
+              </ListToolbarButton>
+              <ListToolbarButton nodeType="decimal" tooltip="Numbered List">
+                <ListOrdered className="size-3.5" />
+              </ListToolbarButton>
+            </ToolbarGroup>
+            <ToolbarGroup>
               <MarkToolbarButton nodeType="bold" tooltip="Bold (Ctrl+B)">
                 <Bold className="size-3.5" />
               </MarkToolbarButton>
@@ -201,6 +213,7 @@ export function PulseEditorPane({
           >
             <Editor variant="axon" placeholder="Start writing, or ask Cortex to help..." />
             <FloatingToolbar />
+            <FloatingLink />
           </EditorContainer>
         </EditorContextMenu>
         <div className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-2.5 py-1">

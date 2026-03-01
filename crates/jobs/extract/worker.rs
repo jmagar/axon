@@ -1,5 +1,6 @@
 use super::*;
 use crate::crates::core::content::ExtractRun;
+use crate::crates::jobs::common::spawn_heartbeat_task;
 use crate::crates::jobs::worker_lane::{ProcessFn, WorkerConfig, run_job_worker};
 use tokio::time::Duration;
 
@@ -216,25 +217,8 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
         let prompt = job_cfg
             .prompt
             .ok_or("extract prompt is required; pass --query")?;
-        let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
-        let heartbeat_pool = pool.clone();
-        let heartbeat_task = tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(Duration::from_secs(EXTRACT_HEARTBEAT_INTERVAL_SECS));
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            loop {
-                tokio::select! {
-                    _ = ticker.tick() => {
-                        let _ = touch_running_job(&heartbeat_pool, TABLE, id).await;
-                    }
-                    changed = heartbeat_stop_rx.changed() => {
-                        if changed.is_err() || *heartbeat_stop_rx.borrow() {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
+        let (heartbeat_stop_tx, heartbeat_task) =
+            spawn_heartbeat_task(pool.clone(), TABLE, id, EXTRACT_HEARTBEAT_INTERVAL_SECS);
         let agg = execute_extract_runs(cfg, urls, prompt.clone(), job_cfg.max_pages).await;
         let _ = heartbeat_stop_tx.send(true);
         if let Err(err) = heartbeat_task.await {
@@ -334,4 +318,99 @@ pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
         Arc::new(|cfg, pool, id| Box::pin(process_claimed_extract_job(cfg, pool, id)));
 
     run_job_worker(cfg, pool, &wc, process_fn).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_run(
+        url: &str,
+        pages_visited: usize,
+        pages_with_data: usize,
+        parser_hits: HashMap<String, usize>,
+    ) -> ExtractRun {
+        ExtractRun {
+            start_url: url.to_string(),
+            pages_visited,
+            pages_with_data,
+            results: vec![],
+            metrics: Default::default(),
+            parser_hits,
+        }
+    }
+
+    #[test]
+    fn append_extract_error_records_url_and_error() {
+        let mut agg = ExtractAggregation::new();
+        append_extract_error(
+            &mut agg,
+            "https://example.com".to_string(),
+            "timeout".to_string(),
+        );
+        assert_eq!(agg.runs.len(), 1);
+        let entry = &agg.runs[0];
+        assert_eq!(
+            entry.get("url").and_then(|v| v.as_str()),
+            Some("https://example.com")
+        );
+        assert_eq!(entry.get("error").and_then(|v| v.as_str()), Some("timeout"));
+        assert_eq!(entry.get("pages_visited").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(entry.get("total_items").and_then(|v| v.as_u64()), Some(0));
+    }
+
+    #[test]
+    fn update_parser_hits_accumulates_counts() {
+        let mut map = serde_json::Map::new();
+        // First run: json=3, table=1
+        let run1 = make_run(
+            "u1",
+            1,
+            1,
+            [("json".to_string(), 3), ("table".to_string(), 1)].into(),
+        );
+        update_parser_hits(&mut map, &run1);
+        assert_eq!(map.get("json").and_then(|v| v.as_u64()), Some(3));
+        assert_eq!(map.get("table").and_then(|v| v.as_u64()), Some(1));
+        // Second run: adds json=2; table is unchanged
+        let run2 = make_run("u2", 1, 1, [("json".to_string(), 2)].into());
+        update_parser_hits(&mut map, &run2);
+        assert_eq!(map.get("json").and_then(|v| v.as_u64()), Some(5));
+        assert_eq!(map.get("table").and_then(|v| v.as_u64()), Some(1));
+    }
+
+    #[test]
+    fn append_extract_success_aggregates_page_counts() {
+        let mut agg = ExtractAggregation::new();
+        let run = make_run("https://example.com", 5, 3, HashMap::new());
+        append_extract_success(&mut agg, run);
+        assert_eq!(agg.pages_visited, 5);
+        assert_eq!(agg.pages_with_data, 3);
+        assert_eq!(agg.runs.len(), 1);
+        let entry = &agg.runs[0];
+        assert_eq!(
+            entry.get("url").and_then(|v| v.as_str()),
+            Some("https://example.com")
+        );
+        assert_eq!(entry.get("pages_visited").and_then(|v| v.as_u64()), Some(5));
+    }
+
+    #[test]
+    fn extract_result_json_has_expected_shape() {
+        let agg = ExtractAggregation::new();
+        let result = extract_result_json("Find prices".to_string(), "gpt-4o".to_string(), agg);
+        assert_eq!(
+            result.get("prompt").and_then(|v| v.as_str()),
+            Some("Find prices")
+        );
+        assert_eq!(result.get("model").and_then(|v| v.as_str()), Some("gpt-4o"));
+        assert_eq!(
+            result.get("pages_visited").and_then(|v| v.as_u64()),
+            Some(0)
+        );
+        assert_eq!(result.get("total_items").and_then(|v| v.as_u64()), Some(0));
+        assert!(result.get("results").and_then(|v| v.as_array()).is_some());
+        assert!(result.get("runs").and_then(|v| v.as_array()).is_some());
+    }
 }

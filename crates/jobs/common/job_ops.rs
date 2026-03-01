@@ -4,6 +4,9 @@ use crate::crates::jobs::status::JobStatus;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use sqlx::PgPool;
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
 use uuid::Uuid;
 
 use super::JobTable;
@@ -170,4 +173,43 @@ pub async fn touch_running_job(pool: &PgPool, table: JobTable, id: Uuid) -> Resu
         .await
         .with_context(|| format!("touch_running_job for job {id} in {table_name}"))?;
     Ok(())
+}
+
+/// Spawn a background heartbeat task that calls [`touch_running_job`] on `interval_secs`
+/// cadence until the returned sender signals stop.
+///
+/// # Usage
+///
+/// ```ignore
+/// let (stop_tx, heartbeat) = spawn_heartbeat_task(pool.clone(), TABLE, id, 15);
+/// // ... do work ...
+/// let _ = stop_tx.send(true);
+/// let _ = heartbeat.await;
+/// ```
+///
+/// Each worker defines its own interval constant (e.g. 15s for embed, 30s for extract).
+pub fn spawn_heartbeat_task(
+    pool: PgPool,
+    table: JobTable,
+    id: Uuid,
+    interval_secs: u64,
+) -> (watch::Sender<bool>, JoinHandle<()>) {
+    let (stop_tx, mut stop_rx) = watch::channel(false);
+    let handle = tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let _ = touch_running_job(&pool, table, id).await;
+                }
+                changed = stop_rx.changed() => {
+                    if changed.is_err() || *stop_rx.borrow() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    (stop_tx, handle)
 }
