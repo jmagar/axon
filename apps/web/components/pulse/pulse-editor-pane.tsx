@@ -84,6 +84,12 @@ export function PulseEditorPane({
     ;(editor as any).children = markdownToPlateNodes(markdown) as any
     ;(editor as unknown as { onChange: () => void }).onChange()
     isApplyingExternalUpdateRef.current = false
+    setWordCount(
+      markdown
+        .trim()
+        .split(/\s+/)
+        .filter((s) => /\w/.test(s)).length,
+    )
   }, [editor, markdown])
 
   useEffect(() => {

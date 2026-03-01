@@ -28,8 +28,7 @@ export function EditorContextMenu({ children }: { children: React.ReactNode }) {
   // Wrap action in rAF so the menu is fully closed and editor focus is
   // restored before the transform fires.
   function withRaf(fn: () => void) {
-    return (e: Event) => {
-      e.preventDefault()
+    return () => {
       requestAnimationFrame(fn)
     }
   }
