@@ -102,22 +102,24 @@ const discussionsData: TDiscussion[] = [
   },
 ]
 
-const avatarUrl = (seed: string) => `https://api.dicebear.com/9.x/glass/svg?seed=${seed}`
+// Local inline-SVG initials avatar — no external network requests (self-hosted policy)
+const avatarUrl = (initial: string, bg: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="${bg}"/><text x="16" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="white">${initial}</text></svg>`)}`
 
 const usersData: Record<string, { id: string; avatarUrl: string; name: string; hue?: number }> = {
   alice: {
     id: 'alice',
-    avatarUrl: avatarUrl('alice6'),
+    avatarUrl: avatarUrl('A', '#5b7dd8'),
     name: 'Alice',
   },
   bob: {
     id: 'bob',
-    avatarUrl: avatarUrl('bob4'),
+    avatarUrl: avatarUrl('B', '#6c8fbf'),
     name: 'Bob',
   },
   charlie: {
     id: 'charlie',
-    avatarUrl: avatarUrl('charlie2'),
+    avatarUrl: avatarUrl('C', '#7a6ab5'),
     name: 'Charlie',
   },
 }
