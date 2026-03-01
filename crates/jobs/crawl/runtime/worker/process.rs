@@ -81,14 +81,41 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     Ok(())
 }
 
+/// Lexically normalize a path by collapsing `.` and `..` components without
+/// hitting the filesystem. Used as a safe fallback when `canonicalize()` fails
+/// (e.g., the directory does not yet exist).
+fn normalize_path_lexically(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut components: Vec<Component<'_>> = Vec::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                // Only pop if the last component is a normal segment (not root)
+                match components.last() {
+                    Some(Component::Normal(_)) => {
+                        components.pop();
+                    }
+                    _ => components.push(c),
+                }
+            }
+            Component::CurDir => {}
+            other => components.push(other),
+        }
+    }
+    components.iter().collect()
+}
+
 /// Validate that `output_dir` does not escape the expected base directory.
 fn validate_output_dir(output_dir: &Path, base_dir: &Path) -> Result<(), Box<dyn Error>> {
+    // Prefer canonicalize() (resolves symlinks + normalizes). If the path does
+    // not yet exist, fall back to lexical normalization so that a path like
+    // `/base/../evil` is caught rather than silently passing the prefix check.
     let canonical = output_dir
         .canonicalize()
-        .unwrap_or_else(|_| output_dir.to_path_buf());
+        .unwrap_or_else(|_| normalize_path_lexically(output_dir));
     let canonical_base = base_dir
         .canonicalize()
-        .unwrap_or_else(|_| base_dir.to_path_buf());
+        .unwrap_or_else(|_| normalize_path_lexically(base_dir));
     if !canonical.starts_with(&canonical_base) {
         return Err(format!(
             "output_dir path traversal rejected: {:?} is outside {:?}",

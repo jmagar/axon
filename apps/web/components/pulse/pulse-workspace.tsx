@@ -2,7 +2,6 @@
 
 import { BookOpen, ChevronDown } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CrawlFileExplorer } from '@/components/crawl-file-explorer'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { usePulseAutosave } from '@/hooks/use-pulse-autosave'
 import { usePulseChat } from '@/hooks/use-pulse-chat'
@@ -18,6 +17,7 @@ import { PulseEditorPane } from './pulse-editor-pane'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import { PulseOpConfirmation } from './pulse-op-confirmation'
 import { PulseToolbar } from './pulse-toolbar'
+import { PulseSidebar } from './sidebar/pulse-sidebar'
 
 export function PulseWorkspace() {
   const {
@@ -312,14 +312,12 @@ export function PulseWorkspace() {
         />
       )}
       <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
-        {crawlFiles.length > 0 && (
-          <CrawlFileExplorer
-            files={crawlFiles}
-            selectedFile={selectedFile}
-            onSelectFile={selectFile}
-            jobId={currentJobId}
-          />
-        )}
+        <PulseSidebar
+          crawlFiles={crawlFiles}
+          selectedFile={selectedFile}
+          onSelectFile={selectFile}
+          jobId={currentJobId}
+        />
         <div
           ref={splitContainerRef}
           className="flex h-full min-w-0 flex-1 flex-col gap-1.5 p-1.5 lg:flex-row lg:gap-1.5"

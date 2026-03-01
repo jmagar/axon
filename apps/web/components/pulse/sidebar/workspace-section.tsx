@@ -1,0 +1,64 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { type FileEntry, FileTree } from '@/components/workspace/file-tree'
+
+interface WorkspaceSectionProps {
+  onSelect?: (entry: FileEntry) => void
+}
+
+export function WorkspaceSection({ onSelect }: WorkspaceSectionProps) {
+  const [entries, setEntries] = useState<FileEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch('/api/workspace?action=list&path=')
+      .then((res) => res.json())
+      .then((data: { items?: FileEntry[] }) => {
+        if (!cancelled) setEntries(data.items ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleSelect = useCallback(
+    (entry: FileEntry) => {
+      setSelectedPath(entry.path)
+      onSelect?.(entry)
+    },
+    [onSelect],
+  )
+
+  if (loading) {
+    return (
+      <div className="px-3 py-4 text-center text-[length:var(--text-md)] text-[var(--text-dim)]">
+        Loading workspace...
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="px-3 py-6 text-center text-[length:var(--text-md)] text-[var(--text-dim)]">
+        Workspace is empty
+      </div>
+    )
+  }
+
+  return (
+    <ScrollArea className="max-h-[30vh]">
+      <FileTree entries={entries} selectedPath={selectedPath} onSelect={handleSelect} />
+    </ScrollArea>
+  )
+}
