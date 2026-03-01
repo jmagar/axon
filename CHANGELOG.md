@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-01 (session: job detail pages, docs knowledge base page, sidebar nav cleanup)
+Last Modified: 2026-03-01 (session: pulse autosave optimization, editor UX, z-index fix, ws/shell proxy)
 
 ## [Unreleased] — feat/crawl-download-pack
 
@@ -7,6 +7,9 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 ### Highlights
 
+- **Pulse autosave optimization** — `updatePulseDoc` skips file read when client caches `createdAt`/`tags`/`collections` from last save response; pre-deletes stale Qdrant vectors before re-embed; save response now includes `createdAt`, `tags`, `collections`
+- **Editor UX** — `loadedDocRef` tracks loaded doc param so re-navigation to a different `?doc=` reloads content; `SaveStatusBadge` wrapped in `memo`; `Suspense` fallback skeleton added
+- **Z-index fix** — sidebar `z-[2]`, main content `z-[1]` — prevents NeuralCanvas/floating elements from bleeding over the sidebar
 - **Job Detail Pages (`/jobs/[id]`)** — clickable job rows on `/jobs` now navigate to a dedicated detail page showing status, pages crawled/discovered, markdown created, timing, config, and raw result JSON; live-polls every 3s for running jobs
 - **Knowledge Base (`/docs`)** — new page listing every scraped/crawled page from the axon output directory, grouped by domain, with markdown content viewer; backed by filesystem manifest.jsonl reads (no Qdrant calls)
 - **PTY Shell** — real interactive shell at `/terminal` via `portable-pty` + dedicated `/ws/shell` WebSocket
@@ -16,7 +19,8 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | /jobs/[id] detail page — status, stats, timing, config, live polling |
+| *(this commit)* | fix(web) | pulse autosave: skip file read, pre-delete stale vectors, editor doc-reload fix, z-index |
+| `394917d5` | feat(web) | /jobs/[id] detail page — status, stats, timing, config, live polling |
 | `ac294073` | feat(web) | /docs knowledge base page — filesystem-backed manifest reader |
 | `9fdf8913` | feat(web) | terminal page — real PTY shell via useShellSession |
 | `d7cff203` | feat(web) | useShellSession hook — dedicated /ws/shell WebSocket |

@@ -1,11 +1,15 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { memo, Suspense, useEffect, useRef, useState } from 'react'
 import { PulseEditorPane } from '@/components/pulse/pulse-editor-pane'
 import { usePulseAutosave } from '@/hooks/use-pulse-autosave'
 
-function SaveStatusBadge({ status }: { status: 'idle' | 'saving' | 'saved' | 'error' }) {
+const SaveStatusBadge = memo(function SaveStatusBadge({
+  status,
+}: {
+  status: 'idle' | 'saving' | 'saved' | 'error'
+}) {
   if (status === 'idle') return null
   const label = status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : 'Save failed'
   const color =
@@ -15,7 +19,7 @@ function SaveStatusBadge({ status }: { status: 'idle' | 'saving' | 'saved' | 'er
         ? 'text-[var(--accent-green,#4ade80)]'
         : 'text-[var(--accent-red,#f87171)]'
   return <span className={`text-[11px] tabular-nums ${color}`}>{label}</span>
-}
+})
 
 function EditorPageInner() {
   const searchParams = useSearchParams()
@@ -24,12 +28,12 @@ function EditorPageInner() {
   const [markdown, setMarkdown] = useState('')
   const [title, setTitle] = useState('Untitled')
   const [docFilename, setDocFilename] = useState<string | null>(null)
-  const loadedRef = useRef(false)
+  const loadedDocRef = useRef<string | null>(null)
 
-  // Load doc from ?doc= param on mount
+  // Load doc when ?doc= param changes (survives in-page navigations without unmount)
   useEffect(() => {
-    if (!docParam || loadedRef.current) return
-    loadedRef.current = true
+    if (!docParam || loadedDocRef.current === docParam) return
+    loadedDocRef.current = docParam
     void (async () => {
       try {
         const res = await fetch(`/api/pulse/doc?filename=${encodeURIComponent(docParam)}`)
@@ -85,7 +89,15 @@ function EditorPageInner() {
 
 export default function EditorPage() {
   return (
-    <Suspense>
+    <Suspense
+      fallback={
+        <div className="flex h-screen flex-col bg-[var(--surface-base,#030712)]">
+          <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border-subtle)] px-4 py-2 opacity-40">
+            <div className="h-4 w-32 rounded bg-[var(--text-dim)]" />
+          </div>
+        </div>
+      }
+    >
       <EditorPageInner />
     </Suspense>
   )
