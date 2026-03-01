@@ -252,10 +252,10 @@ export function StatusDashboard() {
         <>
           <SummaryBar data={data} />
           <div className="space-y-3">
-            <JobCard title="Crawl" jobs={data.local_crawl_jobs} color="bg-[#38bdf8]" />
-            <JobCard title="Extract" jobs={data.local_extract_jobs} color="bg-[#a78bfa]" />
-            <JobCard title="Embed" jobs={data.local_embed_jobs} color="bg-[#fbbf24]" />
-            <JobCard title="Ingest" jobs={data.local_ingest_jobs} color="bg-[#fb7185]" />
+            <JobCard title="Crawl" jobs={data.local_crawl_jobs ?? []} color="bg-[#38bdf8]" />
+            <JobCard title="Extract" jobs={data.local_extract_jobs ?? []} color="bg-[#a78bfa]" />
+            <JobCard title="Embed" jobs={data.local_embed_jobs ?? []} color="bg-[#fbbf24]" />
+            <JobCard title="Ingest" jobs={data.local_ingest_jobs ?? []} color="bg-[#fb7185]" />
           </div>
         </>
       )}
