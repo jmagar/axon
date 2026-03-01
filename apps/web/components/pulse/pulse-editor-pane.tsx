@@ -68,6 +68,7 @@ export function PulseEditorPane({
   })
   const isApplyingExternalUpdateRef = useRef(false)
   const editorScrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [wordCount, setWordCount] = useState(
     () =>
       markdown
@@ -92,16 +93,27 @@ export function PulseEditorPane({
     )
   }, [editor, markdown])
 
+  // Defer scroll restore one frame so content has rendered before we set scrollTop.
   useEffect(() => {
     const node = editorScrollRef.current
     if (!node) return
-    try {
-      const saved = Number(window.localStorage.getItem(scrollStorageKey) ?? 0)
-      if (Number.isFinite(saved) && saved > 0) node.scrollTop = saved
-    } catch {
-      // Ignore storage restore failures.
-    }
+    const timerId = setTimeout(() => {
+      try {
+        const saved = Number(window.localStorage.getItem(scrollStorageKey) ?? 0)
+        if (Number.isFinite(saved) && saved > 0) node.scrollTop = saved
+      } catch {
+        // Ignore storage restore failures.
+      }
+    }, 0)
+    return () => clearTimeout(timerId)
   }, [scrollStorageKey])
+
+  // Cleanup debounce timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
+    }
+  }, [])
 
   return (
     <Plate
@@ -208,14 +220,17 @@ export function PulseEditorPane({
             ref={editorScrollRef}
             onScroll={() => {
               if (!editorScrollRef.current) return
-              try {
-                window.localStorage.setItem(
-                  scrollStorageKey,
-                  String(editorScrollRef.current.scrollTop),
-                )
-              } catch {
-                // Ignore storage failures.
-              }
+              if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
+              scrollSaveTimerRef.current = setTimeout(() => {
+                try {
+                  window.localStorage.setItem(
+                    scrollStorageKey,
+                    String(editorScrollRef.current?.scrollTop ?? 0),
+                  )
+                } catch {
+                  // Ignore storage failures.
+                }
+              }, 200)
             }}
             variant="axon"
             className="min-h-0 flex-1"

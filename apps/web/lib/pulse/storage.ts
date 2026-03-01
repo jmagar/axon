@@ -9,14 +9,21 @@ interface SavePayload {
   markdown: string
   tags?: string[]
   collections?: string[]
-  /** Client-supplied on updates — skips the loadPulseDoc file read when all three fields are present. */
+  /** Client-supplied on updates — skips the loadPulseDoc file read when all three are present. */
   createdAt?: string
+  /**
+   * Client-supplied `updatedAt` from the last save response. When provided, the server checks
+   * whether the stored file has been modified by another session since then and logs a warning.
+   * The write always proceeds (last-write-wins); this surfaces silent concurrent-edit data loss.
+   */
+  clientUpdatedAt?: string
 }
 
 export interface SavedDocMeta {
   filename: string
   path: string
   createdAt: string
+  updatedAt: string
   tags: string[]
   collections: string[]
 }
@@ -110,7 +117,7 @@ export async function savePulseDoc(payload: SavePayload): Promise<SavedDocMeta> 
   }
 
   await writeFile(filePath, toFrontmatter(doc), 'utf-8')
-  return { path: filePath, filename, createdAt: now, tags, collections }
+  return { path: filePath, filename, createdAt: now, updatedAt: now, tags, collections }
 }
 
 export async function updatePulseDoc(
@@ -122,13 +129,33 @@ export async function updatePulseDoc(
   const filePath = path.join(PULSE_DIR, safeName)
   const now = new Date().toISOString()
 
-  // Skip the file read when the caller supplies all three preserved fields.
-  // Common autosave path: client caches these from the previous save response.
+  // Skip the file read when the caller supplies all three preserved fields AND is not
+  // requesting a conflict check (no clientUpdatedAt). Common autosave path: client caches
+  // these from the previous save response.
   const hasClientMeta =
     payload.createdAt !== undefined &&
     payload.tags !== undefined &&
-    payload.collections !== undefined
+    payload.collections !== undefined &&
+    payload.clientUpdatedAt === undefined
   const existing = hasClientMeta ? null : await loadPulseDoc(safeName)
+
+  // Conflict detection: log if another session wrote this file since the client's last save.
+  if (payload.clientUpdatedAt && existing && existing.updatedAt !== payload.clientUpdatedAt) {
+    console.warn(
+      '[Pulse] Concurrent edit on',
+      safeName,
+      '— stored:',
+      existing.updatedAt,
+      'client expected:',
+      payload.clientUpdatedAt,
+      '(last-write-wins)',
+    )
+  }
+
+  // Phantom create: file doesn't exist but updatePulseDoc was called — log to aid debugging.
+  if (!existing && !hasClientMeta) {
+    console.warn('[Pulse] updatePulseDoc: file not found, creating:', safeName)
+  }
 
   const tags = payload.tags ?? existing?.tags ?? []
   const collections = payload.collections ??
@@ -144,7 +171,7 @@ export async function updatePulseDoc(
     updatedAt: now,
   }
   await writeFile(filePath, toFrontmatter(doc), 'utf-8')
-  return { path: filePath, filename: safeName, createdAt, tags, collections }
+  return { path: filePath, filename: safeName, createdAt, updatedAt: now, tags, collections }
 }
 
 export async function loadPulseDoc(filename: string): Promise<StoredDoc | null> {

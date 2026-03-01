@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 
 interface DocMeta {
   createdAt: string
+  updatedAt: string
   tags: string[]
   collections: string[]
 }
@@ -16,21 +17,26 @@ export function usePulseAutosave(
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedFilename, setSavedFilename] = useState<string | null>(docFilename ?? null)
   const filenameRef = useRef<string | null>(docFilename ?? null)
-  // Caches createdAt/tags/collections from last save response — sent back on updates
-  // so updatePulseDoc can skip the file read entirely.
+  // Caches createdAt/updatedAt/tags/collections from last save response — sent back on updates
+  // so updatePulseDoc can skip the file read and detect concurrent edits.
   const docMetaRef = useRef<DocMeta | null>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autosaveAbortRef = useRef<AbortController | null>(null)
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedSnapshotRef = useRef('')
 
-  // Keep refs in sync when docFilename prop changes (e.g. after loading a different file).
-  // Reset snapshot guard so loaded content doesn't trigger a phantom re-save.
+  // Sync refs when docFilename prop changes (e.g. loading a different file).
+  // Only wipe docMetaRef and the snapshot guard when the filename actually changes to a
+  // different value — preserves cached metadata when docFilename syncs back the same
+  // value that was already set by the first save (savedFilename → currentDocFilename → prop).
   useEffect(() => {
-    filenameRef.current = docFilename ?? null
-    docMetaRef.current = null
-    setSavedFilename(docFilename ?? null)
-    lastSavedSnapshotRef.current = ''
+    const incoming = docFilename ?? null
+    if (incoming !== filenameRef.current) {
+      docMetaRef.current = null
+      lastSavedSnapshotRef.current = ''
+    }
+    filenameRef.current = incoming
+    setSavedFilename(incoming)
   }, [docFilename])
 
   // Debounced save effect — 1500ms debounce, POST to /api/pulse/save
@@ -56,9 +62,10 @@ export function usePulseAutosave(
           }
           if (filenameRef.current) {
             body.filename = filenameRef.current
-            // Include cached metadata so the server can skip the file read on updates
+            // Include cached metadata so the server can skip the file read and detect conflicts
             if (docMetaRef.current) {
               body.createdAt = docMetaRef.current.createdAt
+              body.updatedAt = docMetaRef.current.updatedAt
               body.tags = docMetaRef.current.tags
               body.collections = docMetaRef.current.collections
             }
@@ -75,6 +82,7 @@ export function usePulseAutosave(
             const data = (await response.json()) as {
               filename?: string
               createdAt?: string
+              updatedAt?: string
               tags?: string[]
               collections?: string[]
             }
@@ -82,10 +90,11 @@ export function usePulseAutosave(
               filenameRef.current = data.filename
               setSavedFilename(data.filename)
             }
-            // Cache metadata for next save to eliminate the file read
-            if (data.createdAt && data.tags && data.collections) {
+            // Cache full metadata for next save
+            if (data.createdAt && data.updatedAt && data.tags && data.collections) {
               docMetaRef.current = {
                 createdAt: data.createdAt,
+                updatedAt: data.updatedAt,
                 tags: data.tags,
                 collections: data.collections,
               }
