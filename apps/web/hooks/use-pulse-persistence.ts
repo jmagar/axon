@@ -3,11 +3,7 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 import type { PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
-import type {
-  ChatMessage,
-  DesktopPaneOrder,
-  DesktopViewMode,
-} from '@/lib/pulse/workspace-persistence'
+import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
 import {
   buildPersistedPayload,
   PULSE_WORKSPACE_STATE_KEY,
@@ -28,8 +24,8 @@ interface UsePulsePersistenceInput {
   mobileSplitPercent: number
   lastResponseLatencyMs: number | null
   lastResponseModel: PulseModel | null
-  desktopViewMode: DesktopViewMode
-  desktopPaneOrder: DesktopPaneOrder
+  showChat: boolean
+  showEditor: boolean
   setPulsePermissionLevel: (v: PulsePermissionLevel) => void
   setPulseModel: (v: PulseModel) => void
   setDocumentMarkdown: (v: string) => void
@@ -43,8 +39,8 @@ interface UsePulsePersistenceInput {
   setMobileSplitPercent: (v: number) => void
   setLastResponseLatencyMs: (v: number | null) => void
   setLastResponseModel: (v: PulseModel | null) => void
-  setDesktopViewMode: (v: DesktopViewMode) => void
-  setDesktopPaneOrder: (v: DesktopPaneOrder) => void
+  setShowChat: (v: boolean) => void
+  setShowEditor: (v: boolean) => void
   messageIdRef: React.MutableRefObject<number>
 }
 
@@ -62,8 +58,8 @@ export function usePulsePersistence({
   mobileSplitPercent,
   lastResponseLatencyMs,
   lastResponseModel,
-  desktopViewMode,
-  desktopPaneOrder,
+  showChat,
+  showEditor,
   setPulsePermissionLevel,
   setPulseModel,
   setDocumentMarkdown,
@@ -77,8 +73,8 @@ export function usePulsePersistence({
   setMobileSplitPercent,
   setLastResponseLatencyMs,
   setLastResponseModel,
-  setDesktopViewMode,
-  setDesktopPaneOrder,
+  setShowChat,
+  setShowEditor,
   messageIdRef,
 }: UsePulsePersistenceInput) {
   const hasHydratedRef = useRef(false)
@@ -106,8 +102,8 @@ export function usePulsePersistence({
       setMobileSplitPercent(restored.mobileSplitPercent)
       setLastResponseLatencyMs(restored.lastResponseLatencyMs)
       setLastResponseModel(restored.lastResponseModel)
-      setDesktopViewMode(restored.desktopViewMode)
-      setDesktopPaneOrder(restored.desktopPaneOrder)
+      setShowChat(restored.showChat)
+      setShowEditor(restored.showEditor)
       messageIdRef.current = restored.chatHistory.length
     } catch {
       // Ignore persistence restore failures.
@@ -120,10 +116,10 @@ export function usePulsePersistence({
     setChatHistory,
     setChatSessionId,
     setCurrentDocFilename,
-    setDesktopPaneOrder,
     setDesktopSplitPercent,
-    setDesktopViewMode,
     setDocumentMarkdown,
+    setShowChat,
+    setShowEditor,
     setDocumentTitle,
     setIndexedSources,
     setLastResponseLatencyMs,
@@ -150,8 +146,8 @@ export function usePulsePersistence({
         mobileSplitPercent,
         lastResponseLatencyMs,
         lastResponseModel,
-        desktopViewMode,
-        desktopPaneOrder,
+        showChat,
+        showEditor,
       })
       window.localStorage.setItem(PULSE_WORKSPACE_STATE_KEY, JSON.stringify(payload))
     } catch {
@@ -162,10 +158,10 @@ export function usePulsePersistence({
     chatHistory,
     chatSessionId,
     currentDocFilename,
-    desktopPaneOrder,
     desktopSplitPercent,
-    desktopViewMode,
     documentMarkdown,
+    showChat,
+    showEditor,
     documentTitle,
     indexedSources,
     lastResponseLatencyMs,
