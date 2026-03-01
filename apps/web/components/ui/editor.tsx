@@ -16,7 +16,7 @@ const editorContainerVariants = cva(
     },
     variants: {
       variant: {
-        axon: 'h-full bg-transparent',
+        axon: 'h-full overflow-x-hidden bg-transparent',
         comment: cn(
           'flex flex-wrap justify-between gap-1 px-1 py-0.5 text-sm',
           'rounded-md border-[1.5px] border-transparent bg-transparent',

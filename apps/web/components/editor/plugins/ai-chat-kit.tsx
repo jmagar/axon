@@ -4,6 +4,8 @@ import { AIChatPlugin, AIPlugin } from '@platejs/ai/react'
 import type { usePlateEditor } from 'platejs/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { AIAnchorElement, AILeaf } from '@/components/ui/ai-node'
+
 type ChatStatus = 'idle' | 'submitted' | 'streaming' | 'error'
 
 interface ChatMessage {
@@ -110,8 +112,11 @@ export function useAIChatSetup(editor: ReturnType<typeof usePlateEditor>) {
 }
 
 export const AIChatKit = [
-  AIPlugin,
+  AIPlugin.configure({
+    render: { node: AIAnchorElement },
+  }),
   AIChatPlugin.configure({
+    render: { node: AILeaf },
     options: {
       mode: 'insert' as const,
     },

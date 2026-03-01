@@ -1,25 +1,19 @@
 import type { Metadata, Viewport } from 'next'
-import { JetBrains_Mono, Sora, Space_Mono } from 'next/font/google'
+import { Noto_Sans, Noto_Sans_Mono } from 'next/font/google'
 import { ServiceWorkerRegistration } from '@/components/service-worker'
 import { Providers } from './providers'
 import './globals.css'
 
-const spaceMono = Space_Mono({
-  variable: '--font-space-mono',
-  subsets: ['latin'],
-  weight: ['400', '700'],
-})
-
-const sora = Sora({
-  variable: '--font-sora',
+const notoSans = Noto_Sans({
+  variable: '--font-noto-sans',
   subsets: ['latin'],
   weight: ['300', '400', '500', '600', '700'],
 })
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: '--font-jetbrains-mono',
-  weight: ['400', '500'],
+const notoSansMono = Noto_Sans_Mono({
+  variable: '--font-noto-sans-mono',
   subsets: ['latin'],
+  weight: ['400', '500', '600'],
 })
 
 export const metadata: Metadata = {
@@ -43,9 +37,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${spaceMono.variable} ${sora.variable} ${jetbrainsMono.variable} antialiased`}
-      >
+      <body className={`${notoSans.variable} ${notoSansMono.variable} antialiased`}>
         <Providers>{children}</Providers>
         <ServiceWorkerRegistration />
       </body>

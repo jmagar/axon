@@ -4,6 +4,7 @@ import type { Descendant } from 'platejs'
 import { normalizeNodeId } from 'platejs'
 import { Plate, usePlateEditor } from 'platejs/react'
 
+import { AIChatKit } from '@/components/editor/plugins/ai-chat-kit'
 import { BasicNodesKit } from '@/components/editor/plugins/basic-nodes-kit'
 import { Editor, EditorContainer } from '@/components/ui/editor'
 
@@ -25,7 +26,7 @@ export function PlateEditor({
   containerClassName,
 }: PlateEditorProps) {
   const editor = usePlateEditor({
-    plugins: BasicNodesKit,
+    plugins: [...BasicNodesKit, ...AIChatKit],
     // biome-ignore lint/suspicious/noExplicitAny: Plate Value type expects TElement[] but Descendant[] works at runtime
     value: (externalValue ?? DEMO_VALUE) as any,
     readOnly,
