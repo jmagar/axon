@@ -128,60 +128,66 @@ export default function DashboardPage() {
     <>
       <NeuralCanvas ref={canvasRef} profile={canvasProfile} />
       <WsIndicator />
-      {/* Main container — centered vertically, slides up on results */}
-      <main
-        className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
-          hasResults
-            ? `px-2.5 sm:px-3.5 ${isPulseWorkspaceActive ? 'pt-1 pb-[80px] lg:pt-12 sm:pb-[88px]' : 'pt-12 pb-5 sm:pb-8'}`
-            : !isPulseWorkspaceActive && landingMobilePane === 'editor'
-              ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
-              : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
-        }`}
-      >
-        {/* Interface card — glass-morphic */}
+      {isPulseWorkspaceActive ? (
+        /* Full-screen workspace — fixed overlay from sidebar right-edge to viewport edge */
         <div
-          className={`rounded-2xl border p-2 transition-all duration-500 sm:p-3 ${
-            isProcessing
-              ? 'shadow-[0_0_80px_rgba(175,215,255,0.1),0_0_30px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
-              : 'shadow-[0_0_60px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
-          }`}
-          style={{
-            borderColor: isProcessing ? 'rgba(175,215,255,0.3)' : 'var(--axon-border)',
-            background: 'var(--axon-surface-3)',
-          }}
+          className="fixed bottom-0 right-0 top-0 z-[3] overflow-hidden"
+          style={{ left: 'var(--sidebar-w, 260px)' }}
         >
-          <div className="flex flex-col gap-2">
-            {!isPulseWorkspaceActive && (
+          <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+        </div>
+      ) : (
+        /* Landing / results — centered glass card */
+        <main
+          className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
+            hasResults
+              ? 'px-2.5 pb-5 pt-12 sm:px-3.5 sm:pb-8'
+              : landingMobilePane === 'editor'
+                ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+                : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+          }`}
+        >
+          {/* Interface card — glass-morphic */}
+          <div
+            className={`rounded-2xl border p-2 transition-all duration-500 sm:p-3 ${
+              isProcessing
+                ? 'shadow-[0_0_80px_rgba(175,215,255,0.1),0_0_30px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
+                : 'shadow-[0_0_60px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
+            }`}
+            style={{
+              borderColor: isProcessing ? 'rgba(175,215,255,0.3)' : 'var(--axon-border)',
+              background: 'var(--axon-surface-3)',
+            }}
+          >
+            <div className="flex flex-col gap-2">
               <div
                 className={`order-1 scale-100 ${landingMobilePane === 'editor' ? 'hidden lg:block' : 'block'}`}
               >
                 <Omnibox />
                 {!hasResults && <LandingCards />}
               </div>
-            )}
-            <div className={isPulseWorkspaceActive ? 'order-1' : 'order-2'}>
-              {!isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults && (
-                <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
-                  <PulseEditorPane
-                    markdown={landingEditorMarkdown}
-                    onMarkdownChange={handleLandingEditorChange}
-                    scrollStorageKey="axon.web.landing.editor-scroll"
-                  />
+              <div className="order-2">
+                {landingMobilePane === 'editor' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseEditorPane
+                      markdown={landingEditorMarkdown}
+                      onMarkdownChange={handleLandingEditorChange}
+                      scrollStorageKey="axon.web.landing.editor-scroll"
+                    />
+                  </div>
+                )}
+                <div
+                  className={
+                    landingMobilePane === 'editor' && !hasResults ? 'hidden lg:block' : undefined
+                  }
+                >
+                  <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
                 </div>
-              )}
-              <div
-                className={
-                  !isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults
-                    ? 'hidden lg:block'
-                    : undefined
-                }
-              >
-                <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
               </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
       {/* Fixed top-right — pane switcher (landing + mobile) + nav icons (always) */}
       <div className="fixed right-3 top-0 z-10 flex h-11 items-center gap-2">

@@ -522,17 +522,32 @@ export function Omnibox() {
   }, [input, isFocused, isProcessing])
 
   // Auto-resize textarea to fit content, capped at ~6 lines before scrolling.
-  // `input` is in the dep array so this fires after every React render that
-  // updates the textarea value — reading scrollHeight from the updated DOM.
+  // Uses '1px' (not 'auto') before reading scrollHeight — 'auto' in a flex layout
+  // can return the stretched layout height instead of the intrinsic content height.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — input triggers the resize, scrollHeight is read from DOM not state
   useEffect(() => {
     const el = inputRef.current
     if (!el) return
-    el.style.height = 'auto'
+    el.style.height = '1px'
     const capped = Math.min(el.scrollHeight, 160)
     el.style.height = `${capped}px`
     el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
   }, [input])
+
+  // Re-run height calc when the textarea's container resizes (e.g. sidebar collapse/expand
+  // causes a layout reflow before the input-dep effect has a chance to re-fire).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      el.style.height = '1px'
+      const capped = Math.min(el.scrollHeight, 160)
+      el.style.height = `${capped}px`
+      el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   // Clear the controlled input when the user navigates away from the Pulse workspace.
   // This prevents stale prompts from remaining in the box when the user returns to the landing page.
