@@ -2,6 +2,7 @@ mod docker_stats;
 mod download;
 mod execute;
 mod pack;
+mod shell;
 
 use crate::crates::core::logging::log_info;
 use axum::Router;
@@ -50,6 +51,7 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
 
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
+        .route("/ws/shell", get(shell_ws_upgrade))
         .route("/output/{*path}", get(serve_output_file))
         .with_state(state)
         .merge(download_routes);
@@ -138,6 +140,10 @@ async fn serve_output_file(
 
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.on_upgrade(move |socket| handle_ws(socket, state))
+}
+
+async fn shell_ws_upgrade(ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(shell::handle_shell_ws)
 }
 
 /// Incoming WS message from the browser.
