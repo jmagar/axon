@@ -1560,7 +1560,18 @@ const createCommentChunks = (editor: PlateEditor) => {
       return [
         {
           delay: faker.number.int({ max: 500, min: 200 }),
-          texts: `{"id":"${nanoid()}","data":{"comment":{"blockId":"${block.id}","comment":"${faker.lorem.sentence()}","content":"${content}"},"status":"${i === indexes.length - 1 ? 'finished' : 'streaming'}"},"type":"data-comment"}`,
+          texts: JSON.stringify({
+            id: nanoid(),
+            data: {
+              comment: {
+                blockId: block.id,
+                comment: faker.lorem.sentence(),
+                content,
+              },
+              status: i === indexes.length - 1 ? 'finished' : 'streaming',
+            },
+            type: 'data-comment',
+          }),
         },
       ]
     })

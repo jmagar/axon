@@ -1,6 +1,5 @@
 'use client'
 
-import { streamInsertChunk, useChatChunk } from '@platejs/ai/react'
 import { serializeMd } from '@platejs/markdown'
 import {
   Bold,
@@ -21,7 +20,7 @@ import {
   Underline,
   Undo2,
 } from 'lucide-react'
-import { Plate, usePlateEditor } from 'platejs/react'
+import { Plate, useEditorRef, usePlateEditor } from 'platejs/react'
 import { useEffect, useRef, useState } from 'react'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
@@ -32,6 +31,13 @@ import { AIToolbarButton } from '@/components/ui/ai-toolbar-button'
 import { BlockContextMenu } from '@/components/ui/block-context-menu'
 import { BlockTypeButton } from '@/components/ui/block-type-button'
 import { CommentToolbarButton } from '@/components/ui/comment-toolbar-button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Editor, EditorContainer } from '@/components/ui/editor'
 import { ExportToolbarButton } from '@/components/ui/export-toolbar-button'
 import { FloatingLink } from '@/components/ui/floating-link'
@@ -42,6 +48,13 @@ import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
 import { Toolbar, ToolbarButton, ToolbarGroup } from '@/components/ui/toolbar'
 import { markdownToPlateNodes } from '@/lib/markdown'
 
+function countWords(text: string): number {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter((s) => /\w/.test(s)).length
+}
+
 interface PulseEditorPaneProps {
   markdown: string
   onMarkdownChange: (md: string) => void
@@ -51,16 +64,6 @@ interface PulseEditorPaneProps {
 /** Inner component that wires AI chat hooks requiring the Plate editor context. */
 function PulseEditorInner({ editor }: { editor: ReturnType<typeof usePlateEditor> }) {
   useAIChatSetup(editor)
-
-  useChatChunk({
-    onChunk: ({ chunk }: { chunk: string }) => {
-      if (editor) streamInsertChunk(editor, chunk)
-    },
-    onFinish: () => {
-      // Leave inserted content in place for the user to review.
-    },
-  })
-
   return null
 }
 
@@ -77,13 +80,7 @@ export function PulseEditorPane({
   const isApplyingExternalUpdateRef = useRef(false)
   const editorScrollRef = useRef<HTMLDivElement | null>(null)
   const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [wordCount, setWordCount] = useState(
-    () =>
-      markdown
-        .trim()
-        .split(/\s+/)
-        .filter((s) => /\w/.test(s)).length,
-  )
+  const [wordCount, setWordCount] = useState(() => countWords(markdown))
 
   useEffect(() => {
     const current = serializeMd(editor)
@@ -93,12 +90,7 @@ export function PulseEditorPane({
     ;(editor as any).children = markdownToPlateNodes(markdown) as any
     ;(editor as unknown as { onChange: () => void }).onChange()
     isApplyingExternalUpdateRef.current = false
-    setWordCount(
-      markdown
-        .trim()
-        .split(/\s+/)
-        .filter((s) => /\w/.test(s)).length,
-    )
+    setWordCount(countWords(markdown))
   }, [editor, markdown])
 
   // Defer scroll restore one frame so content has rendered before we set scrollTop.
@@ -131,15 +123,10 @@ export function PulseEditorPane({
           if (isApplyingExternalUpdateRef.current) return
           const md = serializeMd(editor)
           onMarkdownChange(md)
-          setWordCount(
-            md
-              .trim()
-              .split(/\s+/)
-              .filter((s) => /\w/.test(s)).length,
-          )
+          setWordCount(countWords(md))
         }}
       >
-        {editor && <PulseEditorInner editor={editor} />}
+        <PulseEditorInner editor={editor} />
         <div className="axon-editor flex h-full min-h-0 flex-col">
           {/* ── Desktop toolbar (hidden on mobile) ─────────────────────────────── */}
           <div
@@ -318,11 +305,69 @@ export function PulseEditorPane({
   )
 }
 
-/** Mobile overflow dropdown with all formatting options. */
+/** Mobile overflow dropdown — remaining formatting options not shown in compact toolbar. */
 function MoreFormattingDropdown() {
   return (
-    <ToolbarButton size="sm" tooltip="More formatting">
-      <MoreHorizontal className="size-3.5" />
-    </ToolbarButton>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <ToolbarButton size="sm" tooltip="More formatting">
+          <MoreHorizontal className="size-3.5" />
+        </ToolbarButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="end" className="w-44">
+        <MoreFormattingItems />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** Plate context is required for editor hooks — must be a separate component rendered inside <Plate>. */
+function MoreFormattingItems() {
+  const editor = useEditorRef()
+
+  function toggleBlock(type: string) {
+    editor.tf.toggleBlock(type)
+  }
+
+  function toggleMark(type: string) {
+    editor.tf.toggleMark(type)
+  }
+
+  return (
+    <>
+      <DropdownMenuItem onSelect={() => toggleBlock('h1')}>
+        <Heading1 className="mr-2 size-4" /> Heading 1
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleBlock('h2')}>
+        <Heading2 className="mr-2 size-4" /> Heading 2
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleBlock('h3')}>
+        <Heading3 className="mr-2 size-4" /> Heading 3
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => toggleMark('underline')}>
+        <Underline className="mr-2 size-4" /> Underline
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleMark('strikethrough')}>
+        <Strikethrough className="mr-2 size-4" /> Strikethrough
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleMark('code')}>
+        <Code2 className="mr-2 size-4" /> Inline code
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => toggleBlock('ul')}>
+        <List className="mr-2 size-4" /> Bullet list
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleBlock('ol')}>
+        <ListOrdered className="mr-2 size-4" /> Numbered list
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => toggleBlock('blockquote')}>
+        <Quote className="mr-2 size-4" /> Quote
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleBlock('code_block')}>
+        <Braces className="mr-2 size-4" /> Code block
+      </DropdownMenuItem>
+    </>
   )
 }
