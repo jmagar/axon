@@ -311,7 +311,7 @@ export function PulseWorkspace() {
           onNewSession={handleNewSession}
         />
       )}
-      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
+      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
         {crawlFiles.length > 0 && (
           <CrawlFileExplorer
             files={crawlFiles}
@@ -333,7 +333,7 @@ export function PulseWorkspace() {
                 : mobilePane === 'editor'
                   ? 'flex'
                   : 'hidden'
-            } min-w-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:flex-none`}
+            } min-w-0 overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] lg:flex-none`}
             style={{
               flexBasis: isDesktop ? `${desktopSplitPercent}%` : '100%',
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 1 : 3) : 2,
@@ -378,7 +378,7 @@ export function PulseWorkspace() {
                 : mobilePane === 'chat'
                   ? 'flex'
                   : 'hidden'
-            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
+            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.52)] lg:flex lg:flex-1`}
             style={{
               order: isDesktop ? (desktopPaneOrder === 'editor-first' ? 3 : 1) : 1,
             }}

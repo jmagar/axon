@@ -131,7 +131,7 @@ export default function DashboardPage() {
       {/* Gradient logo — fixed top-left */}
       <div className="fixed left-6 top-5 z-10 select-none">
         <h1
-          className="text-base font-extrabold tracking-[6px]"
+          className="text-base font-extrabold tracking-[3px]"
           style={{
             background: 'linear-gradient(135deg, #afd7ff 0%, #ff87af 50%, #8787af 100%)',
             WebkitBackgroundClip: 'text',

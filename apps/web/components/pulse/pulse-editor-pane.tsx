@@ -115,8 +115,11 @@ export function PulseEditorPane({
       {editor && <PulseEditorInner editor={editor} />}
       <div className="axon-editor flex h-full min-h-0 flex-col">
         <div
-          className="border-b border-[var(--border-subtle)] bg-[rgba(10,18,35,0.32)] px-1.5 py-1"
-          style={{ backdropFilter: 'blur(8px) saturate(180%)' }}
+          className="bg-[rgba(10,18,35,0.32)] px-1.5 py-1"
+          style={{
+            backdropFilter: 'blur(8px) saturate(180%)',
+            boxShadow: '0 1px 0 rgba(135, 175, 255, 0.07)',
+          }}
         >
           <div className="mb-1 flex items-center justify-between px-1.5">
             <p className="ui-label flex-none">Editor</p>
@@ -216,7 +219,10 @@ export function PulseEditorPane({
             <FloatingLink />
           </EditorContainer>
         </EditorContextMenu>
-        <div className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-2.5 py-1">
+        <div
+          className="flex shrink-0 items-center gap-2 px-2.5 py-1"
+          style={{ boxShadow: '0 -1px 0 rgba(135, 175, 255, 0.07)' }}
+        >
           <span className="text-[10px] text-[var(--text-dim)]">✦ AI copilot active</span>
           <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
           <span className="text-[10px] text-[var(--text-dim)]">
