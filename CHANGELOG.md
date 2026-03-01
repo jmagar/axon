@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-01 (session: Plate.js editor enhancements — slash commands, DnD, callouts, toggles, TOC, block selection, AI menu, comments, export, build fixes)
+Last Modified: 2026-03-01 (session: xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor)
 
 ## [Unreleased] — feat/sidebar
 
@@ -7,6 +7,8 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 ### Highlights
 
+- **xterm.js terminal enhancements** — WebGL GPU renderer (`@xterm/addon-webgl`) with context-loss fallback; search decorations (amber highlights + active-match blue) via `allowProposedApi: true`; overview ruler lane (`overviewRulerWidth: 8`) shows match positions in scrollbar; copy-on-select via `onSelectionChange`; visual bell via `onBell` opacity flash; `attachCustomKeyEventHandler` for Ctrl+Shift+C (copy) / Ctrl+Shift+V (paste); all clipboard calls guarded with `?.` for HTTP contexts
+- **Cortex layout refactor** — `app/cortex/layout.tsx` rewritten with proper sidebar integration; Cortex API routes standardised; doctor/status/stats/sources/domains dashboards updated for new layout
 - **Plate.js editor enhancements** — slash commands (`/`), block drag-and-drop, callout blocks, collapsible toggles, table of contents, multi-block selection, block context menu, AI menu, inline comments, suggestion mode, export (HTML/PDF/image/markdown); 15 new plugin kit files wired into `copilot-kit.tsx`; mobile-responsive compact toolbar; `@ai-sdk/gateway@1.0.15` pinned for `ai@5` compatibility; `@platejs/ai` command route rewired with `generateText` for `ai@5` breaking changes (`Output.choice`, `partialOutputStream` removed); `useSearchParams` Suspense guard on `/cortex/sources`
 - **Plate.js editor expansion** — 15 additional `@platejs/*` plugins (callout, caption, combobox, comment, date, emoji, indent, layout, math, mention, resizable, selection, suggestion, toc, basic-styles), supporting packages (`@ai-sdk/react`, `ai`, `@ariakit/react`, `date-fns`, `cmdk`, `lowlight`, etc.), `tailwind-scrollbar-hide` plugin, and new shadcn/ui components (dialog, popover, cursor-overlay)
 - **Cortex dashboard review fixes** — AbortController on all polling dashboards (status/doctor/stats) cancels in-flight fetches on unmount and before each new poll; `disabled={loading || spinning}` on all 5 Refresh buttons; `Object.keys(data).length` badge fix in sources-dashboard; `useSearchParams` seeds filter from `?q=` param so domain drill-down links work; `local_ingest_jobs ?? []` guard in SummaryBar; `AXON_BIN` env var wires the pre-built binary path for Docker (routes were silently broken without it); missing `--sidebar-w` CSS update in `handleNavClick`; `aria-label` + `aria-current="page"` on Cortex sub-links; `target?: string` added to `JobEntry` interface
@@ -25,7 +27,10 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | Plate.js editor enhancements — slash, DnD, callouts, toggles, TOC, block selection, AI menu, comments, export; ai@5 compat fixes |
+| *(this commit)* | feat(web) | xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor |
+| `72d1f651` | fix(web) | wire AIKit into CopilotKit + address open items |
+| `b2e2d61d` | fix(web) | address code review findings from Plate.js editor enhancements |
+| `405e0945` | feat(web) | Plate.js editor enhancements — slash, DnD, callouts, toggles, TOC, block selection, AI menu, comments, export; ai@5 compat fixes |
 | `f27cc810` | chore(deps) | Plate.js editor plugin expansion + dialog/popover/cursor-overlay UI components |
 | `756a081e` | chore | wire AXON_BIN env var for Cortex routes in Docker — routes now fall back to pre-built release binary via /workspace mount |
 | `f5d14901` | fix(web) | address Cortex dashboard review findings — AbortController, disabled state, binary path, accessibility |
