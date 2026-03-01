@@ -108,6 +108,11 @@ export function MessageContent({ msg }: { msg: ChatMessage }) {
     msg.blocks?.some((b) => b.type === 'tool_use' || b.type === 'thinking') ?? false
   if (hasStructuredBlocks && msg.blocks) {
     const groups = groupBlocksForRender(msg.blocks)
+    // Count text groups so we know when msg.content is safe to use as a substitute.
+    // msg.content is the full accumulated response text — using it for every text
+    // group duplicates the full response when there are multiple text segments.
+    // Only substitute msg.content when there is exactly one text group.
+    const textGroupCount = groups.filter((g) => g.kind === 'text').length
     return (
       <div className="space-y-1.5">
         {groups.map((group, i) => {
@@ -116,10 +121,12 @@ export function MessageContent({ msg }: { msg: ChatMessage }) {
           }
           if (group.kind === 'text') {
             // Prefer msg.content (parsed clean text set after completion) over
-            // group.content, which may contain the raw JSON wrapper Claude uses
-            // to encode document operations alongside the response text.
+            // group.content only when there is a single text group — otherwise
+            // msg.content (the full response) would be repeated for each segment.
             const displayContent =
-              msg.role === 'assistant' && msg.content ? msg.content : group.content
+              msg.role === 'assistant' && msg.content && textGroupCount === 1
+                ? msg.content
+                : group.content
             return msg.role === 'assistant' ? (
               <PulseMarkdown key={i} content={displayContent} />
             ) : (

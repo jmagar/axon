@@ -103,7 +103,8 @@ export function FloatingLink() {
             onClick={() => {
               const linkNode = editor.api.node({ match: { type: editor.getType?.('a') ?? 'a' } })
               const url = (linkNode?.[0] as { url?: string } | undefined)?.url
-              if (url) window.open(url, '_blank', 'noopener,noreferrer')
+              if (url && /^https?:\/\//i.test(url))
+                window.open(url, '_blank', 'noopener,noreferrer')
             }}
           >
             <ExternalLink className="size-3.5" />

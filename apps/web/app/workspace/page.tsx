@@ -48,11 +48,25 @@ function formatDate(iso: string): string {
 
 const RECENTS_KEY = 'axon.web.workspace.recents'
 
+function isValidFileEntry(v: unknown): v is FileEntry {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as Record<string, unknown>).name === 'string' &&
+    ((v as Record<string, unknown>).type === 'file' ||
+      (v as Record<string, unknown>).type === 'directory') &&
+    typeof (v as Record<string, unknown>).path === 'string'
+  )
+}
+
 function loadRecents(): FileEntry[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(RECENTS_KEY)
-    return raw ? (JSON.parse(raw) as FileEntry[]) : []
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(isValidFileEntry)
   } catch {
     return []
   }
