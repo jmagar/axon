@@ -1,8 +1,10 @@
 'use client'
 
 import {
+  CalendarClock,
   CheckCircle2,
   FolderOpen,
+  ScrollText,
   SendHorizontal,
   Settings2,
   Shield,
@@ -523,6 +525,9 @@ export function Omnibox() {
   }, [input, isFocused, isProcessing])
 
   // Auto-resize textarea to fit content, capped at ~6 lines before scrolling.
+  // `input` is in the dep array so this fires after every React render that
+  // updates the textarea value — reading scrollHeight from the updated DOM.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — input triggers the resize, scrollHeight is read from DOM not state
   useEffect(() => {
     const el = inputRef.current
     if (!el) return
@@ -530,7 +535,7 @@ export function Omnibox() {
     const capped = Math.min(el.scrollHeight, 160)
     el.style.height = `${capped}px`
     el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
-  }, [])
+  }, [input])
 
   // Clear the controlled input when the user navigates away from the Pulse workspace.
   // This prevents stale prompts from remaining in the box when the user returns to the landing page.
@@ -763,6 +768,28 @@ export function Omnibox() {
           aria-label="Open workspace"
         >
           <FolderOpen className="size-3.5" />
+        </Link>
+
+        {/* Logs — navigates to /logs page */}
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
+        <Link
+          href="/logs"
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
+          title="Logs"
+          aria-label="Open logs"
+        >
+          <ScrollText className="size-3.5" />
+        </Link>
+
+        {/* Tasks — navigates to /tasks scheduler */}
+        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
+        <Link
+          href="/tasks"
+          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
+          title="Tasks"
+          aria-label="Open tasks"
+        >
+          <CalendarClock className="size-3.5" />
         </Link>
 
         {/* Settings — navigates to /settings full page */}

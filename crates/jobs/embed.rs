@@ -256,21 +256,12 @@ pub async fn cleanup_embed_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
         ensure_schema(&pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
-    // Single-pass CTE delete avoids O(N²) re-scan per batch.
-    let deleted = sqlx::query(
-        "WITH to_delete AS (
-            SELECT id FROM axon_embed_jobs
-            WHERE status IN ($1,$2)
-            ORDER BY created_at ASC
-            LIMIT 10000
-        )
-        DELETE FROM axon_embed_jobs WHERE id IN (SELECT id FROM to_delete)",
-    )
-    .bind(JobStatus::Failed.as_str())
-    .bind(JobStatus::Canceled.as_str())
-    .execute(&pool)
-    .await?
-    .rows_affected();
+    let deleted = sqlx::query("DELETE FROM axon_embed_jobs WHERE status IN ($1,$2)")
+        .bind(JobStatus::Failed.as_str())
+        .bind(JobStatus::Canceled.as_str())
+        .execute(&pool)
+        .await?
+        .rows_affected();
     Ok(deleted)
 }
 

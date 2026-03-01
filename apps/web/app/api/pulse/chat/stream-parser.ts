@@ -106,10 +106,18 @@ export function parseClaudeStreamLine(
         const existingIdx = block.id ? state.toolUseIdToIdx.get(block.id) : undefined
         if (existingIdx !== undefined) {
           // Partial-message update: same tool ID seen again with more complete input.
-          // Update the existing block in-place instead of creating a duplicate.
+          // Update both the block and the corresponding toolUses entry in-place
+          // so that state.toolUses stays in sync with state.blocks.
           const existingBlock = state.blocks[existingIdx]
           if (existingBlock?.type === 'tool_use') {
-            existingBlock.input = block.input ?? {}
+            const newInput = block.input ?? {}
+            existingBlock.input = newInput
+            // Count tool_use blocks that precede existingIdx to find the toolUses index.
+            const toolIdx = state.blocks
+              .slice(0, existingIdx)
+              .filter((b) => b.type === 'tool_use').length
+            const existingTool = state.toolUses[toolIdx]
+            if (existingTool) existingTool.input = newInput
           }
         } else {
           const tool: PulseToolUse = {
