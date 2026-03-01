@@ -11,9 +11,17 @@ const SaveRequestSchema = z.object({
   tags: z.array(z.string()).optional(),
   collections: z.array(z.string()).optional(),
   embed: z.boolean().default(true),
-  filename: z.string().optional(),
+  /** Must be a valid slugified filename produced by savePulseDoc. */
+  filename: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[a-z0-9-]+-\d+\.md$/, 'Invalid pulse filename format')
+    .optional(),
   /** Client-cached from last save response — passed back to skip file read on updates. */
   createdAt: z.string().optional(),
+  /** Client-cached updatedAt — triggers server-side concurrent-edit detection. */
+  updatedAt: z.string().optional(),
 })
 
 /** GET first; only PUT on 404 — safe to call on existing collections. */
@@ -72,6 +80,7 @@ export async function POST(request: Request) {
       embed,
       filename: incomingFilename,
       createdAt: incomingCreatedAt,
+      updatedAt: incomingUpdatedAt,
     } = parsed.data
     const meta: SavedDocMeta = incomingFilename
       ? await updatePulseDoc(incomingFilename, {
@@ -80,9 +89,10 @@ export async function POST(request: Request) {
           tags,
           collections,
           createdAt: incomingCreatedAt,
+          clientUpdatedAt: incomingUpdatedAt,
         })
       : await savePulseDoc({ title, markdown, tags, collections })
-    const { path, filename } = meta
+    const { filename } = meta
 
     if (embed) {
       const teiUrl = process.env.TEI_URL
@@ -91,10 +101,11 @@ export async function POST(request: Request) {
 
       if (teiUrl && qdrantUrl && markdown.trim()) {
         try {
-          // Pre-delete existing vectors for this document before re-embedding to prevent accumulation
+          // Pre-delete existing vectors before re-embedding to prevent accumulation.
+          // ?wait=true ensures delete is applied before the upsert begins.
           if (incomingFilename) {
             await fetch(
-              `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete`,
+              `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -112,7 +123,10 @@ export async function POST(request: Request) {
             body: JSON.stringify({ inputs: chunks }),
           })
 
-          if (embedResponse.ok) {
+          if (!embedResponse.ok) {
+            const body = await embedResponse.text().catch(() => '')
+            console.error('[Pulse] TEI embed failed:', embedResponse.status, body)
+          } else {
             const vectors = (await embedResponse.json()) as number[][]
             const vectorSize = vectors[0]?.length
             if (!vectorSize) {
@@ -156,10 +170,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      path,
       filename,
       saved: true,
       createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
       tags: meta.tags,
       collections: meta.collections,
     })

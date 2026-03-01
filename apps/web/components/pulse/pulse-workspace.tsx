@@ -210,7 +210,7 @@ export function PulseWorkspace() {
     setDocumentMarkdown(markdownContent)
     const parts = selectedFile.split('/')
     setDocumentTitle(parts[parts.length - 1] ?? selectedFile)
-    if (selectedFile.includes('.cache/pulse/')) {
+    if (selectedFile.includes('/.cache/pulse/')) {
       const basename = parts[parts.length - 1] ?? null
       setCurrentDocFilename(basename)
     } else {
