@@ -137,7 +137,6 @@ export { WsMessagesContext }
 /** Cap stdout accumulators to prevent unbounded memory growth.
  * Status payloads can be very large JSON documents, so keep a larger window. */
 const MAX_STDOUT_ITEMS = 50000
-const WORKSPACE_PROMPT_DEBOUNCE_MS = 250
 
 function pushCapped<T>(items: T[], item: T): T[] {
   const next = [...items, item]
@@ -298,7 +297,6 @@ export function useWsMessagesProvider() {
   const [pulseModel, setPulseModel] = useState<PulseWorkspaceModel>('sonnet')
   const [pulsePermissionLevel, setPulsePermissionLevel] =
     useState<PulseWorkspacePermission>('accept-edits')
-  const workspacePromptDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedFileRef = useRef<string | null>(null)
   const crawlFilesRef = useRef<CrawlFile[]>([])
   const stdoutJsonRef = useRef<unknown[]>([])
@@ -748,14 +746,8 @@ export function useWsMessagesProvider() {
   const submitWorkspacePrompt = useCallback((prompt: string) => {
     setWorkspaceMode('pulse')
     setHasResults(true)
-    if (workspacePromptDebounceRef.current) {
-      clearTimeout(workspacePromptDebounceRef.current)
-    }
-    workspacePromptDebounceRef.current = setTimeout(() => {
-      setWorkspacePrompt(prompt)
-      setWorkspacePromptVersion((prev) => prev + 1)
-      workspacePromptDebounceRef.current = null
-    }, WORKSPACE_PROMPT_DEBOUNCE_MS)
+    setWorkspacePrompt(prompt)
+    setWorkspacePromptVersion((prev) => prev + 1)
   }, [])
 
   const deactivateWorkspace = useCallback(() => {
@@ -768,10 +760,6 @@ export function useWsMessagesProvider() {
     } catch {
       // Ignore storage errors.
     }
-    if (workspacePromptDebounceRef.current) {
-      clearTimeout(workspacePromptDebounceRef.current)
-      workspacePromptDebounceRef.current = null
-    }
     setWorkspacePrompt(null)
     setWorkspacePromptVersion(0)
     setWorkspaceContext(null)
@@ -779,15 +767,6 @@ export function useWsMessagesProvider() {
 
   const updateWorkspaceContext = useCallback((context: WorkspaceContextState | null) => {
     setWorkspaceContext(context)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (workspacePromptDebounceRef.current) {
-        clearTimeout(workspacePromptDebounceRef.current)
-        workspacePromptDebounceRef.current = null
-      }
-    }
   }, [])
 
   return {
