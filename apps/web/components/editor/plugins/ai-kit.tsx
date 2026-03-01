@@ -10,11 +10,12 @@ import {
 } from '@platejs/ai/react'
 import { getPluginType, KEYS, PathApi } from 'platejs'
 import { usePluginOption } from 'platejs/react'
+import { useEffect } from 'react'
 
 import { AILoadingBar, AIMenu } from '@/components/ui/ai-menu'
 import { AIAnchorElement, AILeaf } from '@/components/ui/ai-node'
 
-import { useChat } from '../use-chat'
+import { useAxonAIChat } from './ai-chat-kit'
 import { CursorOverlayKit } from './cursor-overlay-kit'
 import { MarkdownKit } from './markdown-kit'
 
@@ -32,7 +33,12 @@ export const aiChatPlugin = AIChatPlugin.extend({
   },
   shortcuts: { show: { keys: 'mod+j' } },
   useHooks: ({ editor, getOption }) => {
-    useChat()
+    const chat = useAxonAIChat()
+    // biome-ignore lint/correctness/useExhaustiveDependencies: chat identity changes with status/messages; editor is stable
+    useEffect(() => {
+      // biome-ignore lint/suspicious/noExplicitAny: custom adapter shape differs from platejs internal ChatHelpers
+      editor.setOption(AIChatPlugin, 'chat', chat as any)
+    }, [chat])
 
     const mode = usePluginOption(AIChatPlugin, 'mode')
     const toolName = usePluginOption(AIChatPlugin, 'toolName')

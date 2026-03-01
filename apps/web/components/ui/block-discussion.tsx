@@ -268,28 +268,36 @@ const useResolvedDiscussion = (commentNodes: NodeEntry<TCommentText>[], blockPat
 
   const discussions = usePluginOption(discussionPlugin, 'discussions')
 
-  commentNodes.forEach(([node]) => {
-    const id = api.comment.nodeId(node)
+  // Update the uniquePathMap in an effect to avoid side-effects during render.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: commentNodes is reference-unstable; length+blockPath captures meaningful changes
+  React.useEffect(() => {
     const map = getOption('uniquePathMap')
+    let needsUpdate = false
+    const newMap = new Map(map)
 
-    if (!id) return
+    commentNodes.forEach(([node]) => {
+      const id = api.comment.nodeId(node)
+      if (!id) return
 
-    const previousPath = map.get(id)
+      const previousPath = newMap.get(id)
 
-    // If there are no comment nodes in the corresponding path in the map, then update it.
-    if (PathApi.isPath(previousPath)) {
-      const nodes = api.comment.node({ id, at: previousPath })
-
-      if (!nodes) {
-        setOption('uniquePathMap', new Map(map).set(id, blockPath))
+      if (PathApi.isPath(previousPath)) {
+        const nodes = api.comment.node({ id, at: previousPath })
+        if (!nodes) {
+          newMap.set(id, blockPath)
+          needsUpdate = true
+        }
         return
       }
 
-      return
+      newMap.set(id, blockPath)
+      needsUpdate = true
+    })
+
+    if (needsUpdate) {
+      setOption('uniquePathMap', newMap)
     }
-    // TODO: fix throw error
-    setOption('uniquePathMap', new Map(map).set(id, blockPath))
-  })
+  }, [commentNodes.length, blockPath.join(','), api, getOption, setOption])
 
   const commentsIds = new Set(
     commentNodes.map(([node]) => api.comment.nodeId(node)).filter(Boolean),

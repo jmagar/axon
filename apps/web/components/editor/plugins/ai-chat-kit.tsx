@@ -18,6 +18,7 @@ interface ChatHelpers {
   status: ChatStatus
   messages: ChatMessage[]
   sendMessage: (message: { text: string }, options?: { body?: Record<string, unknown> }) => void
+  stop: () => void
 }
 
 /** Custom chat adapter that streams from /api/ai/chat into the AIChatPlugin. */
@@ -25,6 +26,11 @@ export function useAxonAIChat(): ChatHelpers {
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+    setStatus('idle')
+  }, [])
 
   const sendMessage = useCallback(
     async (message: { text: string }, options?: { body?: Record<string, unknown> }) => {
@@ -98,7 +104,10 @@ export function useAxonAIChat(): ChatHelpers {
     [],
   )
 
-  return useMemo(() => ({ status, messages, sendMessage }), [status, messages, sendMessage])
+  return useMemo(
+    () => ({ status, messages, sendMessage, stop }),
+    [status, messages, sendMessage, stop],
+  )
 }
 
 /** Wire the chat adapter into AIChatPlugin after the editor mounts. */
