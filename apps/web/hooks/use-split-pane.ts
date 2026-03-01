@@ -22,7 +22,6 @@ export function useSplitPane() {
   const verticalDragStartRef = useRef<{ pointerY: number; startPercent: number } | null>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const splitHandleRef = useRef<HTMLDivElement>(null)
-  const showChatRef = useRef(true)
   const showEditorRef = useRef(true)
 
   // Keep refs in sync with state
@@ -32,9 +31,6 @@ export function useSplitPane() {
   useEffect(() => {
     mobileSplitPercentRef.current = mobileSplitPercent
   }, [mobileSplitPercent])
-  useEffect(() => {
-    showChatRef.current = showChat
-  }, [showChat])
   useEffect(() => {
     showEditorRef.current = showEditor
   }, [showEditor])
