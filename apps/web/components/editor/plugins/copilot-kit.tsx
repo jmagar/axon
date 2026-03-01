@@ -6,7 +6,7 @@ import type { TElement } from 'platejs'
 
 import { GhostText } from '@/components/ui/ghost-text'
 
-import { AIChatKit } from './ai-chat-kit'
+import { AIKit } from './ai-kit'
 import { BasicBlocksKit } from './basic-blocks-kit'
 import { BasicMarksKit } from './basic-marks-kit'
 import { CalloutKit } from './callout-kit'
@@ -125,7 +125,7 @@ export const CopilotKit = [
   ...BasicMarksKit,
   ...MarkdownKit,
   ...ExtendedNodesKit,
-  ...AIChatKit,
+  ...AIKit,
   ...SlashKit,
   ...DndKit,
   ...CalloutKit,
