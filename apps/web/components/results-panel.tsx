@@ -88,8 +88,6 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     hasResults,
     currentMode,
     crawlFiles,
-    selectedFile,
-    selectFile,
     crawlProgress,
     stdoutLines,
     stdoutJson,
