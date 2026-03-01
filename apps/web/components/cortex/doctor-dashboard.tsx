@@ -82,8 +82,8 @@ export function DoctorDashboard() {
   }, [])
 
   const allOk = data?.all_ok ?? false
-  const services = data ? Object.entries(data.services) : []
-  const pipelines = data ? Object.entries(data.pipelines) : []
+  const services = data ? Object.entries(data.services ?? {}) : []
+  const pipelines = data ? Object.entries(data.pipelines ?? {}) : []
 
   return (
     <div className="animate-fade-in space-y-4">

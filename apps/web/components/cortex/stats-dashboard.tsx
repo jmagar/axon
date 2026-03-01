@@ -126,7 +126,7 @@ export function StatsDashboard() {
             <MetricCard label="Vectors" value={data.indexed_vectors_count} />
             <MetricCard label="Points" value={data.points_count} />
             <MetricCard label="Docs (est.)" value={data.docs_embedded_estimate} />
-            <MetricCard label="Avg chunks/doc" value={data.avg_chunks_per_doc.toFixed(1)} />
+            <MetricCard label="Avg chunks/doc" value={(data.avg_chunks_per_doc ?? 0).toFixed(1)} />
             <MetricCard label="Dimension" value={data.dimension} />
             <MetricCard label="Segments" value={data.segments_count} />
           </div>
@@ -142,13 +142,13 @@ export function StatsDashboard() {
           </div>
 
           {/* Payload fields */}
-          {data.payload_fields.length > 0 && (
+          {(data.payload_fields ?? []).length > 0 && (
             <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-dim)]">
                 Payload Fields
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {data.payload_fields.map((f) => (
+                {(data.payload_fields ?? []).map((f) => (
                   <span
                     key={f}
                     className="rounded-md bg-[rgba(135,175,255,0.1)] px-2 py-0.5 font-mono text-[10px] text-[var(--axon-primary)]"
@@ -161,7 +161,7 @@ export function StatsDashboard() {
           )}
 
           {/* Command counts */}
-          {Object.keys(data.counts).length > 0 && (
+          {Object.keys(data.counts ?? {}).length > 0 && (
             <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
               <table className="w-full">
                 <thead>
@@ -175,7 +175,7 @@ export function StatsDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(data.counts)
+                  {Object.entries(data.counts ?? {})
                     .sort((a, b) => b[1] - a[1])
                     .map(([cmd, count]) => (
                       <tr
