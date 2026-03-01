@@ -287,7 +287,7 @@ export function PulseWorkspace() {
   }, [workspacePromptVersion, workspacePrompt, handlePrompt])
 
   return (
-    <div className={`space-y-1.5 ${isDesktop ? 'mt-1' : 'pt-11'}`}>
+    <div className={`flex h-full flex-col${!isDesktop ? ' pt-11' : ''}`}>
       {/* Fixed mobile header — title + SRC + pane switcher */}
       {!isDesktop && chatHistory.length > 0 && (
         <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[rgba(3,7,18,0.45)] pl-3 pr-28 backdrop-blur-lg lg:hidden">
@@ -324,7 +324,7 @@ export function PulseWorkspace() {
           onNewSession={handleNewSession}
         />
       )}
-      <div className="flex h-[calc(100dvh-9rem)] overflow-hidden rounded-xl bg-[rgba(10,18,35,0.42)] shadow-[var(--shadow-md)] lg:h-[calc(100vh-12rem)]">
+      <div className="flex flex-1 overflow-hidden bg-[rgba(10,18,35,0.42)]">
         <div
           ref={splitContainerRef}
           className="flex h-full min-w-0 flex-1 flex-col gap-1.5 p-1.5 lg:flex-row lg:gap-0"

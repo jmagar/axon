@@ -99,9 +99,10 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     screenshotFiles,
     currentJobId,
     workspaceMode,
+    workspacePromptVersion,
   } = useWsMessages()
 
-  const isPulseWorkspace = workspaceMode === 'pulse'
+  const isPulseWorkspace = workspaceMode === 'pulse' && workspacePromptVersion > 0
 
   const [activeTab, setActiveTab] = useState<TabId>('content')
   const contentScrollRef = useRef<HTMLDivElement>(null)
@@ -232,6 +233,10 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
     return (
       <RawRenderer stdoutJson={stdoutJson} stdoutLines={stdoutLines} isProcessing={isProcessing} />
     )
+  }
+
+  if (isPulseWorkspace) {
+    return <PulseWorkspace />
   }
 
   return (

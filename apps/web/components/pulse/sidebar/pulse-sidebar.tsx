@@ -102,7 +102,9 @@ export function PulseSidebar({ crawlFiles, selectedFile, onSelectFile, jobId }: 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(COLLAPSED_KEY)
-      const next = stored === 'true'
+      // Auto-collapse on mobile viewports (<768px) if no stored preference
+      const isMobile = window.innerWidth < 768
+      const next = stored !== null ? stored === 'true' : isMobile
       setCollapsed(next)
       document.documentElement.style.setProperty('--sidebar-w', next ? '48px' : '260px')
     } catch {
