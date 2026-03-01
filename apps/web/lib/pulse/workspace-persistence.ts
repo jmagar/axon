@@ -27,9 +27,6 @@ export interface ChatMessage {
   retryPrompt?: string
 }
 
-export type DesktopViewMode = 'chat' | 'editor' | 'both'
-export type DesktopPaneOrder = 'editor-first' | 'chat-first'
-
 export type PersistedPulseWorkspaceState = {
   permissionLevel: PulsePermissionLevel
   model: PulseModel
@@ -44,8 +41,8 @@ export type PersistedPulseWorkspaceState = {
   mobileSplitPercent: number
   lastResponseLatencyMs: number | null
   lastResponseModel: PulseModel | null
-  desktopViewMode: DesktopViewMode
-  desktopPaneOrder: DesktopPaneOrder
+  showChat: boolean
+  showEditor: boolean
   savedAt: number
 }
 
@@ -84,6 +81,16 @@ export function parsePersistedWorkspaceState(
       parsed.permissionLevel === 'bypass-permissions'
         ? parsed.permissionLevel
         : 'accept-edits'
+    // Migration: if old desktopViewMode is present, derive showChat/showEditor from it.
+    // New fields take priority.
+    const showChat =
+      typeof parsed.showChat === 'boolean'
+        ? parsed.showChat
+        : (parsed as Record<string, unknown>).desktopViewMode !== 'editor' // old: 'chat' or 'both' → showChat true
+    const showEditor =
+      typeof parsed.showEditor === 'boolean'
+        ? parsed.showEditor
+        : (parsed as Record<string, unknown>).desktopViewMode !== 'chat' // old: 'editor' or 'both' → showEditor true
     return {
       permissionLevel,
       model,
@@ -97,7 +104,7 @@ export function parsePersistedWorkspaceState(
       activeThreadSources: Array.isArray(parsed.activeThreadSources)
         ? parsed.activeThreadSources.slice(-50)
         : [],
-      desktopSplitPercent: clampSplit(parseSplit(parsed.desktopSplitPercent, 62), 42, 74),
+      desktopSplitPercent: clampSplit(parseSplit(parsed.desktopSplitPercent, 62), 20, 80),
       mobileSplitPercent: clampSplit(parseSplit(parsed.mobileSplitPercent, 56), 35, 70),
       lastResponseLatencyMs:
         typeof parsed.lastResponseLatencyMs === 'number' ? parsed.lastResponseLatencyMs : null,
@@ -107,13 +114,8 @@ export function parsePersistedWorkspaceState(
         parsed.lastResponseModel === 'haiku'
           ? parsed.lastResponseModel
           : null,
-      desktopViewMode:
-        parsed.desktopViewMode === 'chat' ||
-        parsed.desktopViewMode === 'editor' ||
-        parsed.desktopViewMode === 'both'
-          ? parsed.desktopViewMode
-          : 'both',
-      desktopPaneOrder: parsed.desktopPaneOrder === 'chat-first' ? 'chat-first' : 'editor-first',
+      showChat,
+      showEditor,
       savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
     }
   } catch {
