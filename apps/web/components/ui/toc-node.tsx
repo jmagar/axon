@@ -37,7 +37,6 @@ export function TocElement(props: PlateElementProps) {
                 depth: item.depth as 1 | 2 | 3,
               })}
               onClick={(e) => btnProps.onClick(e, item, 'smooth')}
-              aria-current
             >
               {item.title}
             </Button>
