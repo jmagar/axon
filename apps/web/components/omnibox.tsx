@@ -360,7 +360,9 @@ export function Omnibox() {
       if (!trimmedInput && !NO_INPUT_MODES.has(execMode)) return
       const shouldRunCommand = shouldRunCommandForInput(execMode, trimmedInput)
       if (!shouldRunCommand) {
-        activateWorkspace('pulse')
+        if (workspaceMode !== 'pulse') {
+          activateWorkspace('pulse')
+        }
         if (trimmedInput) submitWorkspacePrompt(trimmedInput)
         return
       }
