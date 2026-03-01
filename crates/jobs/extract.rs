@@ -7,7 +7,7 @@ use crate::crates::core::health::redis_healthy;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::jobs::common::{
     JobTable, begin_schema_migration_tx, enqueue_job, make_pool, mark_job_failed,
-    open_amqp_channel, purge_queue_safe, reclaim_stale_running_jobs, touch_running_job,
+    open_amqp_channel, purge_queue_safe, reclaim_stale_running_jobs,
 };
 use crate::crates::jobs::status::JobStatus;
 use chrono::{DateTime, Utc};
@@ -200,21 +200,33 @@ pub async fn cancel_extract_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn 
         // Redis cancel signal is best-effort: DB update already succeeded,
         // so we log a warning but do NOT propagate Redis errors.
         match redis::Client::open(cfg.redis_url.clone()) {
-            Ok(redis_client) => match redis_client.get_multiplexed_async_connection().await {
-                Ok(mut conn) => {
-                    let key = format!("axon:extract:cancel:{id}");
-                    if let Err(e) = conn.set_ex::<_, _, ()>(key, "1", 86400).await {
+            Ok(redis_client) => {
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_secs(3),
+                    redis_client.get_multiplexed_async_connection(),
+                )
+                .await
+                {
+                    Ok(Ok(mut conn)) => {
+                        let key = format!("axon:extract:cancel:{id}");
+                        if let Err(e) = conn.set_ex::<_, _, ()>(key, "1", 86400).await {
+                            log_warn(&format!(
+                                "extract cancel: Redis SET failed for job {id} (DB already updated): {e}"
+                            ));
+                        }
+                    }
+                    Ok(Err(e)) => {
                         log_warn(&format!(
-                            "extract cancel: Redis SET failed for job {id} (DB already updated): {e}"
+                            "extract cancel: Redis connect failed for job {id} (DB already updated): {e}"
+                        ));
+                    }
+                    Err(_) => {
+                        log_warn(&format!(
+                            "extract cancel: Redis connect timeout for job {id} after 3s (DB already updated)"
                         ));
                     }
                 }
-                Err(e) => {
-                    log_warn(&format!(
-                        "extract cancel: Redis connect failed for job {id} (DB already updated): {e}"
-                    ));
-                }
-            },
+            }
             Err(e) => {
                 log_warn(&format!(
                     "extract cancel: Redis client open failed for job {id} (DB already updated): {e}"

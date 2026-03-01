@@ -2,6 +2,7 @@
 
 import { CodeBlockPlugin, CodeLinePlugin } from '@platejs/code-block/react'
 import { LinkPlugin } from '@platejs/link/react'
+import { ListPlugin } from '@platejs/list/react'
 import { ImagePlugin } from '@platejs/media/react'
 import {
   TableCellHeaderPlugin,
@@ -44,6 +45,9 @@ export const ExtendedNodesKit = [
   // Code blocks (fenced ```)
   CodeBlockPlugin.withComponent(CodeBlockElement),
   CodeLinePlugin.withComponent(CodeLineElement),
+
+  // Lists (indent-based, for toolbar-driven list creation + markdown roundtrip)
+  ListPlugin,
 
   // Links
   LinkPlugin.configure({

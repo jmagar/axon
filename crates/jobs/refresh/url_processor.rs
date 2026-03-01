@@ -25,17 +25,20 @@ pub(crate) struct RefreshUrlContext<'a> {
 
 /// Validate that `output_dir` does not escape `base_dir` via path traversal.
 ///
-/// Uses `canonicalize` when paths exist on disk. For non-existent paths, normalizes
-/// by iterating components and resolving `..` segments manually, which catches
-/// traversal attempts like `/base/../../../etc` even when the path doesn't exist.
-pub(crate) fn validate_output_dir(
+/// Uses `tokio::fs::canonicalize` (non-blocking) when paths exist on disk. For
+/// non-existent paths, falls back to manual component-level normalization which
+/// catches traversal attempts like `/base/../../../etc` even when the path does
+/// not yet exist on disk.
+pub(crate) async fn validate_output_dir(
     output_dir: &Path,
     base_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let canonical_output =
-        std::fs::canonicalize(output_dir).unwrap_or_else(|_| normalize_path(output_dir));
-    let canonical_base =
-        std::fs::canonicalize(base_dir).unwrap_or_else(|_| normalize_path(base_dir));
+    let canonical_output = tokio::fs::canonicalize(output_dir)
+        .await
+        .unwrap_or_else(|_| normalize_path(output_dir));
+    let canonical_base = tokio::fs::canonicalize(base_dir)
+        .await
+        .unwrap_or_else(|_| normalize_path(base_dir));
     if !canonical_output.starts_with(&canonical_base) {
         return Err(format!(
             "output_dir path traversal rejected: {} is outside base {}",
@@ -162,24 +165,24 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[test]
-    fn validate_output_dir_rejects_traversal() {
+    #[tokio::test]
+    async fn validate_output_dir_rejects_traversal() {
         let base = PathBuf::from("/tmp/axon-test");
         let traversal = PathBuf::from("/tmp/axon-test/../../../etc");
         assert!(
-            validate_output_dir(&traversal, &base).is_err(),
+            validate_output_dir(&traversal, &base).await.is_err(),
             "path traversal should be rejected"
         );
     }
 
-    #[test]
-    fn validate_output_dir_accepts_safe_subpath() {
+    #[tokio::test]
+    async fn validate_output_dir_accepts_safe_subpath() {
         let base = PathBuf::from("/tmp");
         let safe = PathBuf::from("/tmp/axon-test/output");
         // Both paths may not exist, but the uncanonicalized fallback should accept
         // /tmp/axon-test/output as inside /tmp.
         assert!(
-            validate_output_dir(&safe, &base).is_ok(),
+            validate_output_dir(&safe, &base).await.is_ok(),
             "safe subpath should be accepted"
         );
     }

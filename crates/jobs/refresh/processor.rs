@@ -8,7 +8,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::content::to_markdown;
 use crate::crates::core::http::{http_client, validate_url};
 use crate::crates::core::logging::log_warn;
-use crate::crates::jobs::common::{mark_job_completed, mark_job_failed, touch_running_job};
+use crate::crates::jobs::common::{mark_job_completed, mark_job_failed, spawn_heartbeat_task};
 use crate::crates::jobs::status::JobStatus;
 use reqwest::StatusCode;
 use reqwest::header::{ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
@@ -153,7 +153,7 @@ async fn setup_refresh_job_context(
         .join("refresh")
         .join(id.to_string());
 
-    if let Err(e) = validate_output_dir(&run_dir, output_base) {
+    if let Err(e) = validate_output_dir(&run_dir, output_base).await {
         let _ = mark_job_failed(pool, TABLE, id, &format!("output_dir rejected: {e}")).await;
         return None;
     }
@@ -187,25 +187,8 @@ async fn setup_refresh_job_context(
     };
     let manifest = tokio::io::BufWriter::new(manifest_file);
 
-    let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
-    let heartbeat_pool = pool.clone();
-    let heartbeat_task = tokio::spawn(async move {
-        let mut ticker =
-            tokio::time::interval(Duration::from_secs(REFRESH_HEARTBEAT_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            tokio::select! {
-                _ = ticker.tick() => {
-                    let _ = touch_running_job(&heartbeat_pool, TABLE, id).await;
-                }
-                changed = heartbeat_stop_rx.changed() => {
-                    if changed.is_err() || *heartbeat_stop_rx.borrow() {
-                        break;
-                    }
-                }
-            }
-        }
-    });
+    let (heartbeat_stop_tx, heartbeat_task) =
+        spawn_heartbeat_task(pool.clone(), TABLE, id, REFRESH_HEARTBEAT_INTERVAL_SECS);
 
     Some((
         job_cfg,

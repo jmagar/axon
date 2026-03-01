@@ -44,7 +44,9 @@ export function EditorContextMenu({ children }: { children: React.ReactNode }) {
           <ContextMenu.Item
             className={itemCls}
             onSelect={withRaf(() => {
-              document.execCommand('copy')
+              const text = window.getSelection()?.toString() ?? ''
+              if (text)
+                navigator.clipboard.writeText(text).catch(() => document.execCommand('copy'))
             })}
           >
             Copy
@@ -52,10 +54,31 @@ export function EditorContextMenu({ children }: { children: React.ReactNode }) {
           <ContextMenu.Item
             className={itemCls}
             onSelect={withRaf(() => {
-              document.execCommand('cut')
+              const text = window.getSelection()?.toString() ?? ''
+              if (text) {
+                navigator.clipboard
+                  .writeText(text)
+                  // biome-ignore lint/suspicious/noExplicitAny: deleteFragment not typed on useEditorRef return
+                  .then(() => (editor as any).deleteFragment())
+                  .catch(() => document.execCommand('cut'))
+              }
             })}
           >
             Cut
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={itemCls}
+            onSelect={withRaf(() => {
+              navigator.clipboard
+                .readText()
+                .then((text) => {
+                  // biome-ignore lint/suspicious/noExplicitAny: insertText not typed on useEditorRef return
+                  if (text) (editor as any).insertText(text)
+                })
+                .catch(() => document.execCommand('paste'))
+            })}
+          >
+            Paste
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={separatorCls} />
@@ -165,6 +188,25 @@ export function EditorContextMenu({ children }: { children: React.ReactNode }) {
                   })}
                 >
                   Code Block
+                </ContextMenu.Item>
+                <ContextMenu.Separator className={separatorCls} />
+                <ContextMenu.Item
+                  className={itemCls}
+                  onSelect={withRaf(() => {
+                    // biome-ignore lint/suspicious/noExplicitAny: toggleList not typed on base editor
+                    ;(editor as any).tf.toggleList({ listStyleType: 'disc' })
+                  })}
+                >
+                  Bullet List
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  className={itemCls}
+                  onSelect={withRaf(() => {
+                    // biome-ignore lint/suspicious/noExplicitAny: toggleList not typed on base editor
+                    ;(editor as any).tf.toggleList({ listStyleType: 'decimal' })
+                  })}
+                >
+                  Numbered List
                 </ContextMenu.Item>
               </ContextMenu.SubContent>
             </ContextMenu.Portal>
