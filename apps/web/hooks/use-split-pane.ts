@@ -1,44 +1,52 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DesktopPaneOrder, DesktopViewMode } from '@/lib/pulse/workspace-persistence'
 
 const DESKTOP_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.desktop'
 const MOBILE_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.mobile'
+const SHOW_CHAT_STORAGE_KEY = 'axon.web.pulse.show-chat'
+const SHOW_EDITOR_STORAGE_KEY = 'axon.web.pulse.show-editor'
 export const MOBILE_PANE_STORAGE_KEY = 'axon.web.pulse.mobile-pane'
 
 export function useSplitPane() {
-  const [desktopSplitPercent, setDesktopSplitPercent] = useState(62)
+  const [desktopSplitPercent, setDesktopSplitPercent] = useState(50)
   const [mobileSplitPercent, setMobileSplitPercent] = useState(56)
   const [isDesktop, setIsDesktop] = useState(false)
   const [mobilePane, setMobilePane] = useState<'chat' | 'editor'>('chat')
-  const [desktopViewMode, setDesktopViewMode] = useState<DesktopViewMode>('both')
-  const [desktopPaneOrder, setDesktopPaneOrder] = useState<DesktopPaneOrder>('editor-first')
+  const [showChat, setShowChat] = useState(true)
+  const [showEditor, setShowEditor] = useState(true)
 
-  const desktopSplitPercentRef = useRef(62)
+  const desktopSplitPercentRef = useRef(50)
   const mobileSplitPercentRef = useRef(56)
   const dragStartRef = useRef<{ pointerX: number; startPercent: number } | null>(null)
   const verticalDragStartRef = useRef<{ pointerY: number; startPercent: number } | null>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const splitHandleRef = useRef<HTMLDivElement>(null)
+  const showChatRef = useRef(true)
+  const showEditorRef = useRef(true)
 
   // Keep refs in sync with state
   useEffect(() => {
     desktopSplitPercentRef.current = desktopSplitPercent
   }, [desktopSplitPercent])
-
   useEffect(() => {
     mobileSplitPercentRef.current = mobileSplitPercent
   }, [mobileSplitPercent])
+  useEffect(() => {
+    showChatRef.current = showChat
+  }, [showChat])
+  useEffect(() => {
+    showEditorRef.current = showEditor
+  }, [showEditor])
 
-  // Storage restore effect — load split percentages from localStorage on mount
+  // Storage restore effect
   useEffect(() => {
     try {
       const desktop = window.localStorage.getItem(DESKTOP_SPLIT_STORAGE_KEY)
       const mobile = window.localStorage.getItem(MOBILE_SPLIT_STORAGE_KEY)
       const parsedDesktop = Number(desktop)
       const parsedMobile = Number(mobile)
-      if (Number.isFinite(parsedDesktop) && parsedDesktop >= 42 && parsedDesktop <= 74) {
+      if (Number.isFinite(parsedDesktop) && parsedDesktop >= 20 && parsedDesktop <= 80) {
         setDesktopSplitPercent(parsedDesktop)
       }
       if (Number.isFinite(parsedMobile) && parsedMobile >= 35 && parsedMobile <= 70) {
@@ -46,12 +54,16 @@ export function useSplitPane() {
       }
       const pane = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
       if (pane === 'chat' || pane === 'editor') setMobilePane(pane)
+      const storedShowChat = window.localStorage.getItem(SHOW_CHAT_STORAGE_KEY)
+      const storedShowEditor = window.localStorage.getItem(SHOW_EDITOR_STORAGE_KEY)
+      if (storedShowChat === 'false') setShowChat(false)
+      if (storedShowEditor === 'false') setShowEditor(false)
     } catch {
       // Ignore storage errors.
     }
   }, [])
 
-  // Media query effect — listen for (min-width: 1024px)
+  // Media query effect
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1024px)')
     const update = () => setIsDesktop(media.matches)
@@ -60,7 +72,7 @@ export function useSplitPane() {
     return () => media.removeEventListener('change', update)
   }, [])
 
-  // Horizontal drag effect — pointermove + pointerup on window
+  // Horizontal drag effect — click (< 4px) toggles editor; drag (>= 4px) resizes
   useEffect(() => {
     function onPointerMove(event: PointerEvent) {
       const start = dragStartRef.current
@@ -70,21 +82,35 @@ export function useSplitPane() {
       if (rect.width <= 0) return
       const deltaPx = event.clientX - start.pointerX
       const deltaPercent = (deltaPx / rect.width) * 100
-      const next = Math.max(42, Math.min(74, start.startPercent + deltaPercent))
+      const next = Math.max(20, Math.min(80, start.startPercent + deltaPercent))
       setDesktopSplitPercent(next)
     }
 
-    function stopDrag() {
-      if (!dragStartRef.current) return
+    function stopDrag(event: PointerEvent) {
+      const start = dragStartRef.current
+      if (!start) return
+      const totalMovement = Math.abs(event.clientX - start.pointerX)
       dragStartRef.current = null
-      splitHandleRef.current?.classList.remove('bg-[rgba(175,215,255,0.3)]')
+      splitHandleRef.current?.classList.remove('bg-[rgba(175,215,255,0.15)]')
+      if (totalMovement < 4) {
+        // Click — toggle the editor panel
+        const next = !showEditorRef.current
+        setShowEditor(next)
+        try {
+          window.localStorage.setItem(SHOW_EDITOR_STORAGE_KEY, String(next))
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+      // Drag — persist the new split position
       try {
         window.localStorage.setItem(
           DESKTOP_SPLIT_STORAGE_KEY,
           String(desktopSplitPercentRef.current),
         )
       } catch {
-        // Ignore storage errors.
+        /* ignore */
       }
     }
 
@@ -96,7 +122,7 @@ export function useSplitPane() {
     }
   }, [])
 
-  // Vertical drag effect — pointermove + pointerup on window
+  // Vertical drag effect (mobile)
   useEffect(() => {
     function onPointerMove(event: PointerEvent) {
       const start = verticalDragStartRef.current
@@ -116,7 +142,7 @@ export function useSplitPane() {
       try {
         window.localStorage.setItem(MOBILE_SPLIT_STORAGE_KEY, String(mobileSplitPercentRef.current))
       } catch {
-        // Ignore storage errors.
+        /* ignore */
       }
     }
 
@@ -133,8 +159,32 @@ export function useSplitPane() {
     try {
       window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
     } catch {
-      // Ignore storage errors.
+      /* ignore */
     }
+  }, [])
+
+  const toggleChat = useCallback((next?: boolean) => {
+    setShowChat((prev) => {
+      const value = next ?? !prev
+      try {
+        window.localStorage.setItem(SHOW_CHAT_STORAGE_KEY, String(value))
+      } catch {
+        /* ignore */
+      }
+      return value
+    })
+  }, [])
+
+  const toggleEditor = useCallback((next?: boolean) => {
+    setShowEditor((prev) => {
+      const value = next ?? !prev
+      try {
+        window.localStorage.setItem(SHOW_EDITOR_STORAGE_KEY, String(value))
+      } catch {
+        /* ignore */
+      }
+      return value
+    })
   }, [])
 
   return {
@@ -145,10 +195,12 @@ export function useSplitPane() {
     isDesktop,
     mobilePane,
     setMobilePane: persistMobilePane,
-    desktopViewMode,
-    setDesktopViewMode,
-    desktopPaneOrder,
-    setDesktopPaneOrder,
+    showChat,
+    setShowChat,
+    toggleChat,
+    showEditor,
+    setShowEditor,
+    toggleEditor,
     splitContainerRef,
     splitHandleRef,
     dragStartRef,
