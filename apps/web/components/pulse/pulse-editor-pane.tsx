@@ -1,5 +1,6 @@
 'use client'
 
+import { useListToolbarButton, useListToolbarButtonState } from '@platejs/list/react'
 import { serializeMd } from '@platejs/markdown'
 import {
   Bold,
@@ -24,9 +25,7 @@ import { Plate, useEditorRef, usePlateEditor } from 'platejs/react'
 import { useEffect, useRef, useState } from 'react'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { useAIChatSetup } from '@/components/editor/plugins/ai-chat-kit'
 import { CopilotKit } from '@/components/editor/plugins/copilot-kit'
-import { AIMenu } from '@/components/ui/ai-menu'
 import { AIToolbarButton } from '@/components/ui/ai-toolbar-button'
 import { BlockContextMenu } from '@/components/ui/block-context-menu'
 import { BlockTypeButton } from '@/components/ui/block-type-button'
@@ -59,12 +58,6 @@ interface PulseEditorPaneProps {
   markdown: string
   onMarkdownChange: (md: string) => void
   scrollStorageKey?: string
-}
-
-/** Inner component that wires AI chat hooks requiring the Plate editor context. */
-function PulseEditorInner({ editor }: { editor: ReturnType<typeof usePlateEditor> }) {
-  useAIChatSetup(editor)
-  return null
 }
 
 export function PulseEditorPane({
@@ -126,7 +119,6 @@ export function PulseEditorPane({
           setWordCount(countWords(md))
         }}
       >
-        <PulseEditorInner editor={editor} />
         <div className="axon-editor flex h-full min-h-0 flex-col">
           {/* ── Desktop toolbar (hidden on mobile) ─────────────────────────────── */}
           <div
@@ -262,7 +254,6 @@ export function PulseEditorPane({
               className="min-h-0 flex-1"
             >
               <Editor variant="default" placeholder="Start writing, or ask Cortex to help..." />
-              <AIMenu />
               <FloatingToolbar />
               <FloatingLink />
             </EditorContainer>
@@ -289,8 +280,8 @@ export function PulseEditorPane({
           </div>
 
           {/* ── Mobile footer ───────────────────────────────────────────────────── */}
-          <div
-            className="flex shrink-0 items-center gap-2 px-2.5 py-1.5 sm:hidden pb-[env(safe-area-inset-bottom)]"
+          <Toolbar
+            className="shrink-0 gap-2 px-2.5 py-1.5 sm:hidden pb-[env(safe-area-inset-bottom)]"
             style={{ boxShadow: '0 -1px 0 rgba(135, 175, 255, 0.07)' }}
           >
             <AIToolbarButton size="sm" tooltip="AI">
@@ -298,7 +289,7 @@ export function PulseEditorPane({
             </AIToolbarButton>
             <CommentToolbarButton />
             <ExportToolbarButton />
-          </div>
+          </Toolbar>
         </div>
       </Plate>
     </DndProvider>
@@ -324,6 +315,10 @@ function MoreFormattingDropdown() {
 /** Plate context is required for editor hooks — must be a separate component rendered inside <Plate>. */
 function MoreFormattingItems() {
   const editor = useEditorRef()
+  const discListState = useListToolbarButtonState({ nodeType: 'disc' })
+  const { props: discListProps } = useListToolbarButton(discListState)
+  const decimalListState = useListToolbarButtonState({ nodeType: 'decimal' })
+  const { props: decimalListProps } = useListToolbarButton(decimalListState)
 
   function toggleBlock(type: string) {
     editor.tf.toggleBlock(type)
@@ -355,10 +350,10 @@ function MoreFormattingItems() {
         <Code2 className="mr-2 size-4" /> Inline code
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => toggleBlock('ul')}>
+      <DropdownMenuItem onSelect={() => discListProps.onClick?.()}>
         <List className="mr-2 size-4" /> Bullet list
       </DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => toggleBlock('ol')}>
+      <DropdownMenuItem onSelect={() => decimalListProps.onClick?.()}>
         <ListOrdered className="mr-2 size-4" /> Numbered list
       </DropdownMenuItem>
       <DropdownMenuSeparator />
