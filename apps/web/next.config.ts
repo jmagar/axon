@@ -37,6 +37,10 @@ const nextConfig: NextConfig = {
         destination: `${axonBackendUrl}/ws`,
       },
       {
+        source: '/ws/shell',
+        destination: `${axonBackendUrl}/ws/shell`,
+      },
+      {
         source: '/download/:path*',
         destination: `${axonBackendUrl}/download/:path*`,
       },

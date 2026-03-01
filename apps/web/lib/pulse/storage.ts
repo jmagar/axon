@@ -9,6 +9,16 @@ interface SavePayload {
   markdown: string
   tags?: string[]
   collections?: string[]
+  /** Client-supplied on updates — skips the loadPulseDoc file read when all three fields are present. */
+  createdAt?: string
+}
+
+export interface SavedDocMeta {
+  filename: string
+  path: string
+  createdAt: string
+  tags: string[]
+  collections: string[]
 }
 
 interface StoredDoc {
@@ -82,47 +92,59 @@ function parseFrontmatter(raw: string): StoredDoc | null {
   }
 }
 
-export async function savePulseDoc(
-  payload: SavePayload,
-): Promise<{ path: string; filename: string }> {
+export async function savePulseDoc(payload: SavePayload): Promise<SavedDocMeta> {
   await mkdir(PULSE_DIR, { recursive: true })
   const timestamp = Date.now()
   const filename = `${slugify(payload.title)}-${timestamp}.md`
   const filePath = path.join(PULSE_DIR, filename)
   const now = new Date().toISOString()
+  const tags = payload.tags ?? []
+  const collections = payload.collections ?? [process.env.AXON_COLLECTION ?? 'cortex']
   const doc: StoredDoc = {
     title: payload.title,
     markdown: payload.markdown,
-    tags: payload.tags ?? [],
-    collections: payload.collections ?? [process.env.AXON_COLLECTION ?? 'cortex'],
+    tags,
+    collections,
     createdAt: now,
     updatedAt: now,
   }
 
   await writeFile(filePath, toFrontmatter(doc), 'utf-8')
-  return { path: filePath, filename }
+  return { path: filePath, filename, createdAt: now, tags, collections }
 }
 
 export async function updatePulseDoc(
   filename: string,
   payload: SavePayload,
-): Promise<{ path: string; filename: string }> {
+): Promise<SavedDocMeta> {
   await mkdir(PULSE_DIR, { recursive: true })
   const safeName = path.basename(filename)
   const filePath = path.join(PULSE_DIR, safeName)
   const now = new Date().toISOString()
-  const existing = await loadPulseDoc(safeName)
+
+  // Skip the file read when the caller supplies all three preserved fields.
+  // Common autosave path: client caches these from the previous save response.
+  const hasClientMeta =
+    payload.createdAt !== undefined &&
+    payload.tags !== undefined &&
+    payload.collections !== undefined
+  const existing = hasClientMeta ? null : await loadPulseDoc(safeName)
+
+  const tags = payload.tags ?? existing?.tags ?? []
+  const collections = payload.collections ??
+    existing?.collections ?? [process.env.AXON_COLLECTION ?? 'cortex']
+  const createdAt = payload.createdAt ?? existing?.createdAt ?? now
+
   const doc: StoredDoc = {
     title: payload.title,
     markdown: payload.markdown,
-    tags: payload.tags ?? existing?.tags ?? [],
-    collections: payload.collections ??
-      existing?.collections ?? [process.env.AXON_COLLECTION ?? 'cortex'],
-    createdAt: existing?.createdAt ?? now,
+    tags,
+    collections,
+    createdAt,
     updatedAt: now,
   }
   await writeFile(filePath, toFrontmatter(doc), 'utf-8')
-  return { path: filePath, filename: safeName }
+  return { path: filePath, filename: safeName, createdAt, tags, collections }
 }
 
 export async function loadPulseDoc(filename: string): Promise<StoredDoc | null> {

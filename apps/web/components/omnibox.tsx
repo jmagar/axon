@@ -1,10 +1,7 @@
 'use client'
 
 import {
-  CalendarClock,
   CheckCircle2,
-  FolderOpen,
-  ScrollText,
   SendHorizontal,
   Settings2,
   Shield,
@@ -758,39 +755,6 @@ export function Omnibox() {
             </span>
           </div>
         )}
-
-        {/* Workspace — navigates to /workspace file explorer */}
-        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
-        <Link
-          href="/workspace"
-          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
-          title="Workspace"
-          aria-label="Open workspace"
-        >
-          <FolderOpen className="size-3.5" />
-        </Link>
-
-        {/* Logs — navigates to /logs page */}
-        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
-        <Link
-          href="/logs"
-          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
-          title="Logs"
-          aria-label="Open logs"
-        >
-          <ScrollText className="size-3.5" />
-        </Link>
-
-        {/* Tasks — navigates to /tasks scheduler */}
-        <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
-        <Link
-          href="/tasks"
-          className="flex items-center justify-center bg-transparent px-2 py-1.5 text-[var(--axon-secondary)] transition-colors duration-150 hover:text-white"
-          title="Tasks"
-          aria-label="Open tasks"
-        >
-          <CalendarClock className="size-3.5" />
-        </Link>
 
         {/* Settings — navigates to /settings full page */}
         <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />

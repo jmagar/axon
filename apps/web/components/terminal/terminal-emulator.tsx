@@ -1,5 +1,6 @@
 'use client'
 
+import '@xterm/xterm/css/xterm.css'
 import type { ITerminalOptions } from '@xterm/xterm'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 
