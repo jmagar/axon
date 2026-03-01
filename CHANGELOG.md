@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-01 (session: jobs dashboard UX — color-coded badges, stats bar, sort, relative times, smart truncation, hover actions, active progress)
+Last Modified: 2026-03-01 (session: 3-panel collapsible layout — dual-hydration fix, collapse guard, editor flex, plate MCP entry, crawl worker output_dir fix)
 
 ## [Unreleased] — feat/crawl-download-pack
 
@@ -21,7 +21,10 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | jobs dashboard — color badges, stats bar, sort, relative time, smart truncation, hover actions, active progress |
+| *(this commit)* | chore + fix | mcporter plate MCP entry; crawl worker output_dir uses worker root not job-serialized path |
+| `5dee20a7` | fix(web) | pulse dual-hydration race + both-collapsed restore guard |
+| `4e4633d9` | fix(web) | pulse workspace quality fixes — collapse guard, editor flex, aria |
+| `a941173c` | feat(web) | jobs dashboard — color badges, stats bar, sort, relative time, smart truncation, hover actions, active progress |
 | `61a1696e` | fix(web) | remove unused verticalDragStartRef from pulse-workspace destructure |
 | `3359e863` | feat(web) | 3-panel collapsible layout — chat left, editor right, chevron strips |
 | `cf1323ce` | fix(web) | remove unused showChatRef from use-split-pane |
