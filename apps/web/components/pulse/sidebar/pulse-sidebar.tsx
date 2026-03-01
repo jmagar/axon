@@ -20,7 +20,6 @@ import type { CrawlFile } from '@/lib/ws-protocol'
 import { ExtractedSection } from './extracted-section'
 import { RecentsSection } from './recents-section'
 import { StarredSection } from './starred-section'
-import { TagsSection } from './tags-section'
 import { TemplatesSection } from './templates-section'
 import type { SidebarSectionId } from './types'
 import { WorkspaceSection } from './workspace-section'
@@ -136,7 +135,7 @@ export function PulseSidebar({ crawlFiles, selectedFile, onSelectFile, jobId }: 
 
   return (
     <div
-      className={`flex flex-shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 ${
+      className={`relative z-[2] flex flex-shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 ${
         collapsed ? 'w-12' : 'w-[260px]'
       }`}
     >
