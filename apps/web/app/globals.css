@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sora);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-noto-sans);
+  --font-mono: var(--font-noto-sans-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -129,9 +129,9 @@
   /* ── Axon Design Tokens v2 ── */
 
   /* Typography semantic mapping */
-  --font-display: var(--font-space-mono);
-  --font-sans: var(--font-sora);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-display: var(--font-noto-sans);
+  --font-sans: var(--font-noto-sans);
+  --font-mono: var(--font-noto-sans-mono);
 
   /* Brand palette — named correctly */
   --axon-primary: #87afff;
@@ -217,10 +217,14 @@
     font-family: var(--font-sans), system-ui, sans-serif;
     font-feature-settings:
       "kern" 1,
-      "liga" 1;
+      "liga" 1,
+      "calt" 1,
+      "tnum" 1;
+    font-optical-sizing: auto;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     line-height: 1.6;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
   }
 
   /* Grain overlay for texture and depth */
@@ -284,7 +288,7 @@
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   line-height: var(--leading-tight);
 }
 
@@ -311,7 +315,7 @@
 
 .ui-mono {
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   line-height: var(--leading-tight);
 }
 
@@ -327,12 +331,14 @@
 
 /* Typography display classes */
 .font-display {
-  font-family: var(--font-display), "Space Mono", monospace;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display), "Noto Sans", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-optical-sizing: auto;
 }
 
 .font-body {
-  font-family: var(--font-sans), "Sora", system-ui, sans-serif;
+  font-family: var(--font-sans), "Noto Sans", system-ui, sans-serif;
 }
 
 /* Apply display font to all headings globally */
@@ -340,7 +346,10 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-display), "Space Mono", monospace;
+  font-family: var(--font-display), "Noto Sans", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-optical-sizing: auto;
 }
 
 /* Themed scrollbars — outside @layer for specificity over Tailwind resets */

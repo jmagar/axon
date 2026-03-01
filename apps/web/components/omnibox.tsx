@@ -111,7 +111,7 @@ export function Omnibox() {
   const [recentFileSelections, setRecentFileSelections] = useState<Record<string, number>>({})
   const [showModeSelector, setShowModeSelector] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const omniboxRef = useRef<HTMLDivElement>(null)
   const toolsRef = useRef<HTMLDivElement>(null)
   const startTimeRef = useRef(0)
@@ -522,6 +522,16 @@ export function Omnibox() {
     return () => clearInterval(interval)
   }, [input, isFocused, isProcessing])
 
+  // Auto-resize textarea to fit content, capped at ~6 lines before scrolling.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const capped = Math.min(el.scrollHeight, 160)
+    el.style.height = `${capped}px`
+    el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
+  }, [])
+
   // Clear the controlled input when the user navigates away from the Pulse workspace.
   // This prevents stale prompts from remaining in the box when the user returns to the landing page.
   useEffect(() => {
@@ -623,7 +633,7 @@ export function Omnibox() {
         )}
 
         {/* Text input */}
-        <input
+        <textarea
           id="axon-omnibox-input"
           name="axon_omnibox_input"
           ref={inputRef}
@@ -632,15 +642,17 @@ export function Omnibox() {
           onKeyDown={handleKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          rows={1}
           placeholder={PLACEHOLDER_TEXTS[0]}
-          className="min-w-0 flex-1 bg-transparent px-3 py-3 font-mono text-sm leading-[var(--leading-tight)] text-foreground outline-none placeholder:opacity-0 sm:py-2 sm:px-4"
+          className="min-w-0 flex-1 resize-none bg-transparent px-3 py-3 font-sans text-sm leading-[var(--leading-tight)] text-foreground outline-none placeholder:opacity-0 sm:py-2 sm:px-4"
+          style={{ overflowY: 'hidden' }}
           disabled={isProcessing}
         />
         {/* Animated placeholder overlay */}
         {!input && !isProcessing && (
           <span
             aria-hidden="true"
-            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-mono text-sm text-[var(--text-dim)] transition-opacity duration-300 sm:left-4 ${
+            className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-sans text-sm text-[var(--text-dim)] transition-opacity duration-300 sm:left-4 ${
               placeholderVisible && !isFocused ? 'opacity-100' : 'opacity-0'
             }`}
           >
