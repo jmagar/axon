@@ -9,7 +9,7 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | xterm.js terminal emulator at /terminal — WS integration, design system theming, sidebar nav |
+| `ac16331b` | feat(web) | xterm.js terminal emulator at /terminal — WS integration, design system theming, sidebar nav |
 | `a31a58ea` | fix(docker) | install uvx for neo4j-memory MCP, add pnpm-dev finish script |
 | `2a23d860` | feat(web) | hoist PulseSidebar to AppShell — visible on all pages |
 | `a5dc786c` | fix(docker) | resolve inotify watch limit, EADDRINUSE port race, and node_modules ownership |
