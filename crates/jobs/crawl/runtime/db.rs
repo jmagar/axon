@@ -6,6 +6,7 @@ use crate::crates::jobs::common::{
 };
 use redis::AsyncCommands;
 use std::error::Error;
+use tokio::time::Duration;
 use uuid::Uuid;
 
 use super::{CrawlJob, ensure_schema, reclaim_stale_running_jobs, to_job_config};
@@ -235,16 +236,26 @@ pub async fn cancel_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> 
     .rows_affected();
 
     let redis_client = redis::Client::open(cfg.redis_url.clone())?;
-    match redis_client.get_multiplexed_async_connection().await {
-        Ok(mut conn) => {
+    match tokio::time::timeout(
+        Duration::from_secs(3),
+        redis_client.get_multiplexed_async_connection(),
+    )
+    .await
+    {
+        Ok(Ok(mut conn)) => {
             let key = format!("axon:crawl:cancel:{id}");
             if let Err(err) = conn.set_ex::<_, _, ()>(key, "1", 24 * 60 * 60).await {
                 log_warn(&format!("crawl cancel signal failed for job {id}: {err}"));
             }
         }
-        Err(err) => {
+        Ok(Err(err)) => {
             log_warn(&format!(
                 "crawl cancel signal skipped for job {id}: redis connect failed: {err}"
+            ));
+        }
+        Err(_) => {
+            log_warn(&format!(
+                "crawl cancel signal skipped for job {id}: redis connect timeout after 3s"
             ));
         }
     }

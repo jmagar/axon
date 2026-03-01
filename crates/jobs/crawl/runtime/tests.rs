@@ -1,4 +1,5 @@
 use super::*;
+use crate::crates::core::config::RenderMode;
 use crate::crates::jobs::common::{
     make_pool, open_amqp_channel, resolve_test_pg_url, stale_watchdog_confirmed,
     stale_watchdog_payload, test_config,
@@ -54,6 +55,41 @@ fn crawl_watchdog_confirmed_true_after_confirm_window() {
         &(Utc::now() - Duration::seconds(300)).to_rfc3339(),
     );
     assert!(stale_watchdog_confirmed(&payload, observed, 60));
+}
+
+#[test]
+fn resolve_initial_mode_cache_skip_forces_http() {
+    // cache_skip_browser=true always forces Http regardless of render_mode.
+    assert!(matches!(
+        resolve_initial_mode(RenderMode::Chrome, true),
+        RenderMode::Http
+    ));
+    assert!(matches!(
+        resolve_initial_mode(RenderMode::AutoSwitch, true),
+        RenderMode::Http
+    ));
+}
+
+#[test]
+fn resolve_initial_mode_auto_switch_maps_to_http() {
+    // AutoSwitch downgrades to Http so the first crawl pass uses HTTP.
+    assert!(matches!(
+        resolve_initial_mode(RenderMode::AutoSwitch, false),
+        RenderMode::Http
+    ));
+}
+
+#[test]
+fn resolve_initial_mode_passthrough_for_explicit_modes() {
+    // Explicit Http and Chrome pass through unchanged when cache_skip_browser is false.
+    assert!(matches!(
+        resolve_initial_mode(RenderMode::Http, false),
+        RenderMode::Http
+    ));
+    assert!(matches!(
+        resolve_initial_mode(RenderMode::Chrome, false),
+        RenderMode::Chrome
+    ));
 }
 
 fn amqp_url() -> Option<String> {

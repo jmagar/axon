@@ -2,13 +2,24 @@
 
 import {
   getDOMSelectionBoundingClientRect,
+  offset,
   useFloatingToolbar,
   useFloatingToolbarState,
 } from '@platejs/floating'
-import { Bold, Code2, Heading1, Heading2, Italic, Strikethrough, Underline } from 'lucide-react'
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  Italic,
+  Link2,
+  Strikethrough,
+  Underline,
+} from 'lucide-react'
 import { useEditorId, useEventEditorValue } from 'platejs/react'
 
 import { BlockTypeButton } from '@/components/ui/block-type-button'
+import { LinkToolbarButton } from '@/components/ui/link-toolbar-button'
 import { MarkToolbarButton } from '@/components/ui/mark-toolbar-button'
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from '@/components/ui/toolbar'
 import { cn } from '@/lib/utils'
@@ -30,7 +41,7 @@ export function FloatingToolbar() {
     editorId,
     floatingOptions: {
       getBoundingClientRect: getDOMSelectionBoundingClientRect,
-      middleware: [],
+      middleware: [offset(6)],
       placement: 'top',
     },
     focusedEditorId,
@@ -91,6 +102,9 @@ export function FloatingToolbar() {
           <MarkToolbarButton nodeType="code" tooltip="Inline code ⌘E">
             <Code2 className="size-3.5" />
           </MarkToolbarButton>
+          <LinkToolbarButton size="sm" tooltip="Link">
+            <Link2 className="size-3.5" />
+          </LinkToolbarButton>
         </ToolbarGroup>
       </Toolbar>
     </div>

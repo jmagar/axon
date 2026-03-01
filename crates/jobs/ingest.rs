@@ -5,7 +5,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::jobs::common::{
     JobTable, begin_schema_migration_tx, enqueue_job, make_pool, mark_job_failed, purge_queue_safe,
-    reclaim_stale_running_jobs, touch_running_job,
+    reclaim_stale_running_jobs, spawn_heartbeat_task,
 };
 use crate::crates::jobs::status::JobStatus;
 use crate::crates::jobs::worker_lane::{ProcessFn, WorkerConfig, run_job_worker};
@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::error::Error;
 use std::sync::Arc;
-use tokio::time::Duration;
 use uuid::Uuid;
 
 const TABLE: JobTable = JobTable::Ingest;
@@ -309,24 +308,8 @@ async fn process_ingest_job(cfg: Config, pool: PgPool, id: Uuid) {
         }
     };
 
-    let (heartbeat_stop_tx, mut heartbeat_stop_rx) = tokio::sync::watch::channel(false);
-    let heartbeat_pool = pool.clone();
-    let heartbeat_task = tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(Duration::from_secs(INGEST_HEARTBEAT_INTERVAL_SECS));
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            tokio::select! {
-                _ = ticker.tick() => {
-                    let _ = touch_running_job(&heartbeat_pool, TABLE, id).await;
-                }
-                changed = heartbeat_stop_rx.changed() => {
-                    if changed.is_err() || *heartbeat_stop_rx.borrow() {
-                        break;
-                    }
-                }
-            }
-        }
-    });
+    let (heartbeat_stop_tx, heartbeat_task) =
+        spawn_heartbeat_task(pool.clone(), TABLE, id, INGEST_HEARTBEAT_INTERVAL_SECS);
 
     let result = match &job_cfg.source {
         IngestSource::Github {
