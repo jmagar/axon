@@ -5,45 +5,59 @@
 # Example:
 # crates/core/massive_module.rs
 
-# Pre-existing large files — tracked for future refactoring (2026-02-19)
-scripts/qdrant-quality.py
-# 598 lines — configure_website + run_crawl_once + reflink helpers (2026-02-23)
-crates/crawl/engine.rs
-# 505 lines — tei_embed + embed pipeline + retry logic (2026-02-23)
-crates/vector/ops/tei.rs
-# 562 lines — vendored monolith enforcement script, not Rust (2026-02-23)
-scripts/enforce_monoliths.py
-# 1081 lines — imperative canvas animation ported from neural.js, splitting hurts animation coherence (2026-02-24)
-apps/web/components/neural-canvas.tsx
-# 630 lines — omnibox command/file suggestions + keyboard interaction state machine (2026-02-25)
-apps/web/components/omnibox.tsx
-# 1598 lines — unified MCP action router + artifact policy + resource handler; refactor planned (2026-02-25)
-crates/mcp/server.rs
-# 584 lines — websocket command execution module with protocol/state handling; refactor planned (2026-02-25)
-crates/web/execute/mod.rs
+# === Pre-existing large files NOT touched in this refactor wave ===
+# These files were already over 500 lines before the monolith splits.
+# They are tracked here for future refactoring.
 
-# pre-existing >500 lines touched during review-fix batch (2026-02-26)
-apps/web/hooks/use-ws-messages.ts
-crates/cli/commands/crawl.rs
-crates/vector/ops/commands/ask/context.rs
-# feat/crawl-download-pack additions (2026-02-26)
-# 849 lines — pulse workspace orchestration + crawl file explorer; split planned
-# refresh pipeline split into processor.rs + url_processor.rs (2026-02-28)
-# 539 lines — status command with extended job table output; split planned
-crates/cli/commands/status.rs
-# 802 lines — cyberpunk glass observatory redesign + 3 new CLI fields (addDir/betas/toolsRestrict) + NeuralCanvas bg; split planned (2026-02-27)
-apps/web/app/settings/page.tsx
+# 1117 lines — Rust config type definitions; large enum/struct surface area (2026-02-19)
+crates/core/config/types.rs
+# 879 lines — config parsing logic; tightly coupled to types.rs (2026-02-19)
+crates/core/config/parse.rs
+# 669 lines — code generation script, not application code (2026-02-19)
+scripts/generate_mcp_schema_doc.py
+# 665 lines — HTTP client utilities; split planned (2026-02-19)
+crates/core/http.rs
+# 595 lines — download pack logic; split planned (2026-02-26)
+crates/web/download.rs
+# 578 lines — ingest job orchestration; split planned (2026-02-19)
+crates/jobs/ingest.rs
+# 563 lines — test module; large test files are acceptable (2026-02-19)
+crates/jobs/common/tests.rs
+# 562 lines — Reddit ingest pipeline; split planned (2026-02-19)
+crates/ingest/reddit.rs
+# 558 lines — screenshot command with browser automation; split planned (2026-02-19)
+crates/cli/commands/screenshot.rs
+# 543 lines — CLI argument definitions; tightly coupled to config types (2026-02-19)
+crates/core/config/cli.rs
+# 521 lines — content extraction utilities; split planned (2026-02-19)
+crates/core/content.rs
+# 502 lines — ask command implementation; split planned (2026-02-19)
+crates/vector/ops/commands/ask.rs
+# 501 lines — refresh processor; split planned (2026-02-28)
+crates/jobs/refresh/processor.rs
+# 501 lines — MCP components page; split planned (2026-03-01)
+apps/web/app/mcp/components.tsx
 
-# worker_lane split into worker_lane/{mod,amqp,poll,delivery}.rs (2026-02-28)
-
-# 545 lines — cmdk palette command UX state machine; split planned (2026-03-02)
-apps/web/components/cmdk-palette/CmdKPalette.tsx
-
-# custom @platejs-based editor/UI components; verified >500 lines and currently incompatible with monolith split policy (2026-03-01)
-apps/web/components/editor/use-chat.ts
-apps/web/components/ui/ai-menu.tsx
-apps/web/components/ui/comment.tsx
-apps/web/components/ui/emoji-toolbar-button.tsx
-apps/web/components/ui/font-color-toolbar-button.tsx
-apps/web/components/ui/table-icons.tsx
-apps/web/components/ui/table-node.tsx
+# === Successfully split in this wave (2026-03-02) — all entries removed ===
+# engine.rs: 598→297, split into engine/{runtime,url_utils}.rs
+# tei.rs: 505→119, split into tei/{pipeline,prepare,qdrant_store,tei_client}.rs
+# enforce_monoliths.py: 562→10, split into enforce_monoliths_{impl,helpers}.py
+# neural-canvas.tsx: 1081→2, split into neural-canvas-{core,impl}.tsx + 9 sibling modules
+# server.rs: 1598→157, split into server/{common,handlers_*}.rs
+# execute/mod.rs: 584→140, split into execute/{args,async_mode,cancel,constants,context,exe,sync_mode,ws_send}.rs
+# use-ws-messages.ts: 506→330, split into ws-messages/{handlers,runtime,types}.ts
+# crawl.rs: 598→205, split into crawl/subcommands.rs
+# ask/context.rs: split into context/{build,heuristics,retrieval,tests}.rs
+# status.rs: 539→232, split into status/presentation.rs
+# settings/page.tsx: 802→1, split into page-impl-content.tsx + settings-{components,data,sections}.tsx
+# CmdKPalette.tsx: 545→254, split into cmdk-palette-{dialog,types}.ts
+# use-chat.ts: reduced to 284 after fake-stream extraction
+# use-chat-fake-stream.ts: 1281→167, split into 5 sample modules + builders
+# table-icons-icons.tsx: 678→8, split into table-icons-{border-a,border-b,icons-core}.tsx
+# omnibox.tsx: 630→4, split into omnibox/{component,impl,hooks,effects,input-bar,dropdowns,types}
+# page-impl.tsx: 805→3, split into page-impl-content.tsx + settings modules
+# neural-canvas-impl.tsx: 1310→4, split into neural-canvas-core.tsx + 9 modules
+# qdrant-quality.py: split into 8 focused modules
+# qdrant_quality_impl.py: 1258→481, split into reporting/analysis modules
+# enforce_monoliths_impl.py: 562→208, split into helpers module
+# ai-menu.tsx, comment.tsx, emoji-toolbar-button.tsx, font-color-toolbar-button.tsx, table-icons.tsx, table-node.tsx: all under 500
