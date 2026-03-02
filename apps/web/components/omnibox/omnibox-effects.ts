@@ -239,14 +239,18 @@ export function useOmniboxEffects(params: OmniboxEffectsParams) {
   // Placeholder rotation
   useEffect(() => {
     if (input || isFocused || isProcessing) return
+    let innerTimeout: ReturnType<typeof setTimeout> | undefined
     const interval = setInterval(() => {
       setPlaceholderVisible(false)
-      setTimeout(() => {
+      innerTimeout = setTimeout(() => {
         setPlaceholderIdx((prev: number) => (prev + 1) % PLACEHOLDER_TEXTS.length)
         setPlaceholderVisible(true)
       }, 350)
     }, 3500)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      clearTimeout(innerTimeout)
+    }
   }, [input, isFocused, isProcessing, setPlaceholderVisible, setPlaceholderIdx])
 
   // Auto-resize textarea

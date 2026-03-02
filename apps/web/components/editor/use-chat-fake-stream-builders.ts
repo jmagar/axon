@@ -110,7 +110,14 @@ const createTableCellChunks = (editor: PlateEditor) => {
   const chunks = cellIds.map((cellId, i) => [
     {
       delay: faker.number.int({ max: 300, min: 100 }),
-      texts: `{"id":"${nanoid()}","data":{"cellUpdate":{"id":"${cellId}","content":"${faker.lorem.sentence()}"},"status":"${i === cellIds.length - 1 ? 'finished' : 'streaming'}"},"type":"data-table"}`,
+      texts: JSON.stringify({
+        id: nanoid(),
+        data: {
+          cellUpdate: { id: cellId, content: faker.lorem.sentence() },
+          status: i === cellIds.length - 1 ? 'finished' : 'streaming',
+        },
+        type: 'data-table',
+      }),
     },
   ])
 
