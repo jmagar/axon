@@ -205,7 +205,11 @@ pub async fn get_job(cfg: &Config, id: Uuid) -> Result<Option<CrawlJob>, Box<dyn
     Ok(row)
 }
 
-pub async fn list_jobs(cfg: &Config, limit: i64) -> Result<Vec<CrawlJob>, Box<dyn Error>> {
+pub async fn list_jobs(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<CrawlJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     let rows = sqlx::query_as::<_, CrawlJob>(
@@ -214,10 +218,11 @@ pub async fn list_jobs(cfg: &Config, limit: i64) -> Result<Vec<CrawlJob>, Box<dy
             , result_json
         FROM axon_crawl_jobs
         ORDER BY created_at DESC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         "#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?;
     Ok(rows)

@@ -70,34 +70,35 @@ async fn run_status_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
-    let (crawl_raw, extract_raw, embed_raw, ingest_raw, refresh_raw) = spider::tokio::try_join!(
+    let (crawl_raw, extract_raw, embed_raw, ingest_raw, refresh_raw) = tokio::join!(
         async {
-            list_jobs(cfg, 20)
+            list_jobs(cfg, 20, 0)
                 .await
                 .map_err(|e| format!("crawl status lookup failed: {e}"))
         },
         async {
-            list_extract_jobs(cfg, 20)
+            list_extract_jobs(cfg, 20, 0)
                 .await
                 .map_err(|e| format!("extract status lookup failed: {e}"))
         },
         async {
-            list_embed_jobs(cfg, 20)
+            list_embed_jobs(cfg, 20, 0)
                 .await
                 .map_err(|e| format!("embed status lookup failed: {e}"))
         },
         async {
-            list_ingest_jobs(cfg, 20)
+            list_ingest_jobs(cfg, 20, 0)
                 .await
                 .map_err(|e| format!("ingest status lookup failed: {e}"))
         },
         async {
-            list_refresh_jobs(cfg, 20)
+            list_refresh_jobs(cfg, 20, 0)
                 .await
                 .map_err(|e| format!("refresh status lookup failed: {e}"))
-        },
-    )?;
+        }
+    );
     let crawl = crawl_raw
+        .unwrap_or_default()
         .into_iter()
         .filter(|job| {
             include_status_job(
@@ -108,6 +109,7 @@ async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
         })
         .collect();
     let extract = extract_raw
+        .unwrap_or_default()
         .into_iter()
         .filter(|job| {
             include_status_job(
@@ -118,6 +120,7 @@ async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
         })
         .collect();
     let embed = embed_raw
+        .unwrap_or_default()
         .into_iter()
         .filter(|job| {
             include_status_job(
@@ -128,6 +131,7 @@ async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
         })
         .collect();
     let ingest = ingest_raw
+        .unwrap_or_default()
         .into_iter()
         .filter(|job| {
             include_status_job(
@@ -138,6 +142,7 @@ async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
         })
         .collect();
     let refresh = refresh_raw
+        .unwrap_or_default()
         .into_iter()
         .filter(|job| {
             include_status_job(

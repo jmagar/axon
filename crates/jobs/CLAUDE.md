@@ -11,7 +11,7 @@ jobs/
 ├── crawl/           # manifest, processor, repo, sitemap, watchdog, worker, runtime
 ├── extract/         # Extract worker
 ├── embed/           # Embed worker
-├── refresh/         # Refresh job scheduler, processor, schedule, state, worker
+├── refresh/         # Periodic URL re-indexing scheduler (RefreshSchedule CRUD + worker)
 ├── ingest.rs        # Ingest job schema + worker (github/reddit/youtube/sessions)
 ├── status.rs        # JobStatus enum
 └── worker_lane.rs   # Generic AMQP/polling lane runtime — used by embed, extract, and refresh workers
@@ -55,6 +55,23 @@ All internal async channels use `tokio::sync::mpsc::channel(256)` — **never** 
 
 - `watchdog.rs` (crawl_jobs): marks jobs stuck in `running` state as `failed` after `AXON_JOB_STALE_TIMEOUT_SECS` (default 300s) + `AXON_JOB_STALE_CONFIRM_SECS` (60s) grace period
 - `axon crawl recover` subcommand: reclaims all stale jobs (re-queues them as `pending`)
+
+### Refresh Module (`refresh/`)
+
+`refresh/` implements **periodic URL re-indexing**: users create `RefreshSchedule` records (via `create_refresh_schedule`) that specify a URL and recurrence. `claim_due_refresh_schedules` polls for overdue schedules, enqueues re-crawl jobs, and updates `last_ran_at`. The worker (`run_refresh_worker`) runs as a separate s6 service (`refresh-worker`) and loops via `worker_lane.rs`.
+
+Key exported API: `create_refresh_schedule`, `delete_refresh_schedule`, `list_refresh_schedules`, `set_refresh_schedule_enabled`, `start_refresh_job`, `recover_stale_refresh_jobs_startup`.
+
+### AMQP Reconnect Backoff — Crawl vs Others
+
+Two different reconnect semantics exist in this codebase:
+
+| Worker | Location | Backoff reset condition |
+|--------|----------|------------------------|
+| `embed`, `extract`, `refresh` | `worker_lane.rs` | Resets to 2s **only** if connection was alive ≥60s |
+| `crawl` | `crawl/runtime/worker/loops.rs` | Resets to 2s on **every** successful reconnect |
+
+The crawl worker's simpler policy is intentional — spider.rs futures are `!Send` and the crawl worker loop has different lifetime semantics than the generic lane. Do not "fix" one to match the other.
 
 ### worker_lane.rs (Embed / Extract / Refresh)
 

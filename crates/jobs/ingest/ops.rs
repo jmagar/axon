@@ -58,14 +58,19 @@ pub async fn get_ingest_job(cfg: &Config, id: Uuid) -> Result<Option<IngestJob>,
     .await?)
 }
 
-pub async fn list_ingest_jobs(cfg: &Config, limit: i64) -> Result<Vec<IngestJob>, Box<dyn Error>> {
+pub async fn list_ingest_jobs(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<IngestJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     Ok(sqlx::query_as::<_, IngestJob>(
         "SELECT id,status,source_type,target,created_at,updated_at,started_at,finished_at,\
-         error_text,result_json,config_json FROM axon_ingest_jobs ORDER BY created_at DESC LIMIT $1",
+         error_text,result_json,config_json FROM axon_ingest_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?)
 }

@@ -1,7 +1,7 @@
 # crates/mcp
 Last Modified: 2026-02-25
 
-Axon MCP server crate for the `axon-mcp` binary.
+Axon MCP server crate backing the `axon mcp` command.
 
 ## Scope
 - MCP transport and server wiring (`server.rs`)
@@ -21,8 +21,8 @@ See source-of-truth docs:
 
 ## Local Development
 ```bash
-cargo check --bin axon-mcp
 cargo check --bin axon
+cargo run --bin axon -- mcp
 ```
 
 ## Schema Validation / Smoke Tests

@@ -16,7 +16,6 @@ use crate::crates::vector::ops::qdrant::{domains_payload, sources_payload};
 use crate::crates::vector::ops::stats_payload;
 use rmcp::ErrorData;
 use std::fs;
-use tokio::process::Command;
 
 impl AxonMcpServer {
     pub(super) async fn handle_screenshot(
@@ -218,27 +217,9 @@ impl AxonMcpServer {
         &self,
         _req: DoctorRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let axon_bin = std::env::current_exe()
-            .map_err(|e| internal_error(e.to_string()))?
-            .with_file_name("axon");
-        let output = Command::new(&axon_bin)
-            .arg("doctor")
-            .arg("--json")
-            .output()
+        let payload = crate::crates::cli::commands::doctor::build_doctor_report(self.cfg.as_ref())
             .await
-            .map_err(|e| internal_error(format!("failed to execute {:?}: {e}", axon_bin)))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(internal_error(format!(
-                "doctor command failed with code {:?}: {}",
-                output.status.code(),
-                stderr.trim()
-            )));
-        }
-        let stdout = String::from_utf8(output.stdout)
-            .map_err(|e| internal_error(format!("invalid utf8 from doctor output: {e}")))?;
-        let payload = serde_json::from_str::<serde_json::Value>(&stdout)
-            .map_err(|e| internal_error(format!("invalid doctor json output: {e}")))?;
+            .map_err(|e| internal_error(e.to_string()))?;
 
         Ok(AxonToolResponse::ok("doctor", "doctor", payload))
     }

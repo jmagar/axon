@@ -229,13 +229,15 @@ pub async fn get_refresh_job(
 pub async fn list_refresh_jobs(
     cfg: &crate::crates::core::config::Config,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<RefreshJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema_once(&pool).await?;
     Ok(sqlx::query_as::<_, RefreshJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json,config_json FROM axon_refresh_jobs ORDER BY created_at DESC LIMIT $1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json,config_json FROM axon_refresh_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?)
 }

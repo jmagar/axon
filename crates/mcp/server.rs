@@ -11,7 +11,7 @@ use crate::crates::core::config::Config;
 use common::{MCP_TOOL_SCHEMA_URI, internal_error, invalid_params};
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    handler::server::wrapper::Parameters,
     model::{
         AnnotateAble, ListResourcesResult, PaginatedRequestParams, RawResource,
         ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
@@ -26,15 +26,11 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AxonMcpServer {
     cfg: Arc<Config>,
-    tool_router: ToolRouter<Self>,
 }
 
 impl AxonMcpServer {
     pub fn new(cfg: Config) -> Self {
-        Self {
-            cfg: Arc::new(cfg),
-            tool_router: Self::tool_router(),
-        }
+        Self { cfg: Arc::new(cfg) }
     }
 }
 
@@ -44,8 +40,8 @@ impl AxonMcpServer {
         name = "axon",
         description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
     )]
-    async fn axon(
-        &self,
+    async fn axon<'a>(
+        &'a self,
         Parameters(raw): Parameters<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<String, ErrorData> {
         let request: AxonRequest =
@@ -68,7 +64,9 @@ impl AxonMcpServer {
             AxonRequest::Artifacts(req) => self.handle_artifacts(req).await?,
             AxonRequest::Scrape(req) => self.handle_scrape(req).await?,
             AxonRequest::Research(req) => self.handle_research(req).await?,
-            AxonRequest::Ask(req) => self.handle_ask(req).await?,
+            AxonRequest::Ask(req) => tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(self.handle_ask(req))
+            })?,
             AxonRequest::Screenshot(req) => self.handle_screenshot(req).await?,
             AxonRequest::Refresh(req) => self.handle_refresh(req).await?,
         };
@@ -85,7 +83,7 @@ fn mcp_tool_schema_markdown() -> String {
     )
 }
 
-#[tool_handler]
+#[tool_handler(router = Self::tool_router())]
 impl ServerHandler for AxonMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {

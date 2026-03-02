@@ -167,17 +167,18 @@ pub async fn get_extract_job(cfg: &Config, id: Uuid) -> Result<Option<ExtractJob
     .fetch_optional(&pool)
     .await?)
 }
-
 pub async fn list_extract_jobs(
     cfg: &Config,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<ExtractJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     Ok(sqlx::query_as::<_, ExtractJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json FROM axon_extract_jobs ORDER BY created_at DESC LIMIT $1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json FROM axon_extract_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?)
 }
@@ -294,7 +295,7 @@ pub async fn recover_stale_extract_jobs(cfg: &Config) -> Result<u64, Box<dyn Err
     Ok(stats.reclaimed_jobs)
 }
 
-pub async fn extract_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+pub async fn extract_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     let pg_ok = make_pool(cfg).await.is_ok();
     let amqp_ok = open_amqp_channel(cfg, &cfg.extract_queue).await.is_ok();
     let redis_ok = redis_healthy(&cfg.redis_url).await;

@@ -2,9 +2,9 @@
 Last Modified: 2026-02-25
 
 ## Purpose
-`crates/mcp` implements the Axon Model Context Protocol server (`axon-mcp`) that exposes crawler/RAG capabilities through a single MCP tool.
+`crates/mcp` implements the Axon Model Context Protocol server (`axon mcp`) that exposes crawler/RAG capabilities through a single MCP tool.
 
-- Binary entrypoint: `mcp_main.rs`
+- CLI entrypoint: `main.rs` subcommand `mcp`
 - Transport: stdio
 - MCP tool: `axon`
 - Routing model: consolidated `action` + `subaction`
@@ -39,6 +39,8 @@ Domains (`action`):
 - `retrieve`
 - `search`
 - `map`
+- `scrape`
+- `ask`
 - `doctor`
 - `domains`
 - `sources`
@@ -115,7 +117,7 @@ Default response behavior is artifact-first:
 `load_mcp_config()` in `config.rs` must reuse existing Axon env vars. Do not create a parallel MCP env namespace.
 
 Expected runtime model:
-- `axon-mcp` runs inside the same stack environment as workers.
+- `axon mcp` runs inside the same stack environment as workers.
 - Existing `.env`/container env should be sufficient.
 
 ## Implementation Rules
@@ -132,7 +134,7 @@ Expected runtime model:
 Build:
 
 ```bash
-cargo build --bin axon-mcp
+cargo run --bin axon -- mcp
 ```
 
 Schema/introspection:
@@ -155,7 +157,6 @@ When adding a new subaction, add at least one smoke example here.
 - [ ] `schema.rs` updated
 - [ ] `server.rs` routing/handler updated
 - [ ] docs contract updated (`docs/MCP-TOOL-SCHEMA.md`)
-- [ ] `cargo check --bin axon-mcp` passes
 - [ ] `cargo check --bin axon` still passes
 
 This is the way.

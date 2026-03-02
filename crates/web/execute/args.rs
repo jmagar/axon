@@ -13,13 +13,16 @@ pub(super) fn build_args(mode: &str, input: &str, flags: &serde_json::Value) -> 
         );
         if is_job_subcmd {
             for part in parts {
-                let p = part.trim();
+                let p = part.trim().trim_start_matches('-');
                 if !p.is_empty() {
                     args.push(p.to_string());
                 }
             }
         } else {
-            args.push(trimmed.to_string());
+            let sanitized = trimmed.trim_start_matches('-');
+            if !sanitized.is_empty() {
+                args.push(sanitized.to_string());
+            }
         }
     }
 

@@ -71,7 +71,7 @@ def _emit_header(emit, today: str) -> None:
 
 def _emit_contract(emit) -> None:
     emit("## Contract")
-    emit("- MCP server binary: `axon-mcp`")
+    emit("- MCP server command: `axon mcp`")
     emit("- Tool count: `1`")
     emit("- Tool name: `axon`")
     emit("- Primary route field: `action`")
