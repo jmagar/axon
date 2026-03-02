@@ -473,3 +473,69 @@ async fn run_active_crawl_job(
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::poll_cancel_key;
+    use crate::crates::jobs::common::{resolve_test_redis_url, test_config};
+    use redis::AsyncCommands;
+    use std::error::Error;
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn cancel_key_set_triggers_poll_completion() -> Result<(), Box<dyn Error>> {
+        let Some(redis_url) = resolve_test_redis_url() else {
+            return Ok(());
+        };
+        let id = Uuid::new_v4();
+        let key = format!("axon:crawl:cancel:{id}");
+
+        let client = redis::Client::open(redis_url.clone())?;
+        let mut conn = client.get_multiplexed_async_connection().await?;
+        conn.set_ex::<_, _, ()>(&key, "1", 60).await?;
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = redis_url;
+
+        // Immediate first-poll finds the key → future completes well under 5s.
+        let result = tokio::time::timeout(Duration::from_secs(5), poll_cancel_key(&cfg, id)).await;
+        assert!(
+            result.is_ok(),
+            "set cancel key must trigger poll completion"
+        );
+
+        let _: () = conn.del(&key).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_key_absent_parks_poll() -> Result<(), Box<dyn Error>> {
+        let Some(redis_url) = resolve_test_redis_url() else {
+            return Ok(());
+        };
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = redis_url;
+        let id = Uuid::new_v4();
+
+        // No key set — after the immediate first-poll misses, the loop sleeps 3s.
+        // 200ms timeout fires before the 3s sleep completes.
+        let result =
+            tokio::time::timeout(Duration::from_millis(200), poll_cancel_key(&cfg, id)).await;
+        assert!(result.is_err(), "absent cancel key must park the poller");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_key_unreachable_redis_fails_safe() -> Result<(), Box<dyn Error>> {
+        // No env var needed — port 1 is always unreachable (ECONNREFUSED).
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = "redis://127.0.0.1:1".to_string();
+        let id = Uuid::new_v4();
+
+        // connect_cancel_redis returns None → poll_cancel_key calls pending() → parks forever.
+        let result = tokio::time::timeout(Duration::from_secs(5), poll_cancel_key(&cfg, id)).await;
+        assert!(result.is_err(), "unreachable Redis must park, never cancel");
+        Ok(())
+    }
+}

@@ -17,7 +17,7 @@ impl Default for Config {
             search_limit: 10,
             max_pages: 0,
             max_depth: 5,
-            include_subdomains: true,
+            include_subdomains: false,
             exclude_path_prefix: Vec::new(),
             output_dir: PathBuf::from(".cache/axon-rust/output"),
             output_path: None,
