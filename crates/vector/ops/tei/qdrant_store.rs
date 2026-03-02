@@ -69,3 +69,33 @@ pub(super) async fn qdrant_upsert(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_collection;
+    use crate::crates::jobs::common::{resolve_test_qdrant_url, test_config};
+    use std::error::Error;
+
+    #[tokio::test]
+    async fn ensure_collection_is_idempotent() -> Result<(), Box<dyn Error>> {
+        let Some(qdrant_url) = resolve_test_qdrant_url() else {
+            return Ok(());
+        };
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.qdrant_url = qdrant_url;
+        cfg.collection = format!("test_{}", uuid::Uuid::new_v4().simple());
+
+        // First call creates the collection.
+        ensure_collection(&cfg, 4).await?;
+        // Second call must not error — verifies the GET-first bug fix (no 409 Conflict).
+        ensure_collection(&cfg, 4).await?;
+
+        // Cleanup: delete the ephemeral test collection.
+        let base = cfg.qdrant_url.trim_end_matches('/');
+        let _ = reqwest::Client::new()
+            .delete(format!("{}/collections/{}", base, cfg.collection))
+            .send()
+            .await;
+        Ok(())
+    }
+}

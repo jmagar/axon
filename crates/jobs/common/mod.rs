@@ -175,28 +175,26 @@ pub(crate) fn resolve_test_pg_url() -> Option<String> {
             return Some(crate::crates::core::config::parse::normalize_local_service_url(url));
         }
 
-        let axon_pg_url =
-            non_empty_map(&dotenv, "AXON_PG_URL").or_else(|| non_empty_env("AXON_PG_URL"));
-        if let Some(url) = axon_pg_url {
-            return Some(crate::crates::core::config::parse::normalize_local_service_url(url));
-        }
-
-        let pg_user = non_empty_map(&dotenv, "POSTGRES_USER")
-            .or_else(|| non_empty_env("POSTGRES_USER"))
-            .unwrap_or_else(|| "axon".to_string());
-        let pg_password = non_empty_map(&dotenv, "POSTGRES_PASSWORD")
-            .or_else(|| non_empty_env("POSTGRES_PASSWORD"))
-            .unwrap_or_else(|| "postgres".to_string());
-        let pg_db = non_empty_map(&dotenv, "POSTGRES_DB")
-            .or_else(|| non_empty_env("POSTGRES_DB"))
-            .unwrap_or_else(|| "axon".to_string());
-
-        Some(format!(
-            "postgresql://{pg_user}:{pg_password}@127.0.0.1:53432/{pg_db}"
-        ))
+        // Do not fall through to AXON_PG_URL — that is the production database.
+        // If AXON_TEST_PG_URL is not set, tests that require Postgres are skipped.
+        None
     });
 
     RESOLVED_TEST_PG_URL.clone()
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_test_redis_url() -> Option<String> {
+    env::var("AXON_TEST_REDIS_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_test_qdrant_url() -> Option<String> {
+    env::var("AXON_TEST_QDRANT_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
 }
 
 #[cfg(test)]

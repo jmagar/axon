@@ -73,6 +73,19 @@ const CATEGORY_STYLES: Record<ToolCategory, CategoryStyle> = {
   },
 }
 
+function formatToolArg(v: unknown): string {
+  if (typeof v === 'string') return v.slice(0, 80)
+  if (v === null || v === undefined) return 'none'
+  if (typeof v === 'boolean') return v ? 'yes' : 'no'
+  if (typeof v === 'number') return String(v)
+  if (Array.isArray(v)) return `[${v.length} item${v.length !== 1 ? 's' : ''}]`
+  if (typeof v === 'object') {
+    const keys = Object.keys(v as object)
+    return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ', …' : ''}}`
+  }
+  return String(v).slice(0, 80)
+}
+
 export function classifyTool(name: string): ToolCategory {
   if (name === 'Task') return 'agent'
   if (name === 'Skill') return 'skill'
@@ -143,7 +156,7 @@ export function ToolCallBadge({ tool }: { tool: BadgeTool }) {
     .slice(0, 4)
     .map(([k, v]) => ({
       key: k,
-      val: (typeof v === 'string' ? v : (JSON.stringify(v) ?? '')).slice(0, 80),
+      val: formatToolArg(v),
     }))
 
   return (

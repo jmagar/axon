@@ -284,6 +284,7 @@ export function PaletteDialog({
           <CmdKOutput
             mode={state.selectedMode}
             lines={state.lines}
+            jsonCount={state.jsonCount}
             progress={state.progress}
             exitCode={state.exitCode}
             errorMsg={state.errorMsg}

@@ -316,9 +316,10 @@ mod tests {
     }
 
     fn pg_url() -> Option<String> {
+        // Do not fall through to AXON_PG_URL — that is the production database.
+        // If AXON_TEST_PG_URL is not set, tests that require Postgres are skipped.
         env::var("AXON_TEST_PG_URL")
             .ok()
-            .or_else(|| env::var("AXON_PG_URL").ok())
             .filter(|v| !v.trim().is_empty())
     }
 
