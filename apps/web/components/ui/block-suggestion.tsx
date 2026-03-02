@@ -32,6 +32,12 @@ export interface ResolvedSuggestion extends TResolvedSuggestion {
   comments: TComment[]
 }
 
+export interface BlockSuggestionCardProps {
+  idx: number
+  isLast: boolean
+  suggestion: ResolvedSuggestion
+}
+
 const BLOCK_SUGGESTION = '__block__'
 
 const TYPE_TEXT_MAP: Record<string, (node?: TElement) => string> = {
@@ -64,15 +70,7 @@ const TYPE_TEXT_MAP: Record<string, (node?: TElement) => string> = {
   [KEYS.video]: () => 'Video',
 }
 
-export function BlockSuggestionCard({
-  idx,
-  isLast,
-  suggestion,
-}: {
-  idx: number
-  isLast: boolean
-  suggestion: ResolvedSuggestion
-}) {
+export function BlockSuggestionCard({ idx, isLast, suggestion }: BlockSuggestionCardProps) {
   const { api, editor } = useEditorPlugin(SuggestionPlugin)
 
   const userInfo = usePluginOption(discussionPlugin, 'user', suggestion.userId)
@@ -202,6 +200,7 @@ export function BlockSuggestionCard({
               variant="ghost"
               className="size-6 p-1 text-muted-foreground"
               onClick={() => accept(suggestion)}
+              aria-label="Accept suggestion"
             >
               <CheckIcon className="size-4" />
             </Button>
@@ -210,6 +209,7 @@ export function BlockSuggestionCard({
               variant="ghost"
               className="size-6 p-1 text-muted-foreground"
               onClick={() => reject(suggestion)}
+              aria-label="Reject suggestion"
             >
               <XIcon className="size-4" />
             </Button>
@@ -232,31 +232,33 @@ export const useResolveSuggestion = (
 
   const { api, editor, getOption, setOption } = useEditorPlugin(suggestionPlugin)
 
-  suggestionNodes.forEach(([node]) => {
-    const id = api.suggestion.nodeId(node)
+  React.useEffect(() => {
     const map = getOption('uniquePathMap')
 
-    if (!id) return
+    suggestionNodes.forEach(([node]) => {
+      const id = api.suggestion.nodeId(node)
+      if (!id) return
 
-    const previousPath = map.get(id)
+      const previousPath = map.get(id)
 
-    // If there are no suggestion nodes in the corresponding path in the map, then update it.
-    if (PathApi.isPath(previousPath)) {
-      const nodes = api.suggestion.node({ id, at: previousPath, isText: true })
-      const parentNode = api.node(previousPath)
-      let lineBreakId: string | null = null
+      // If there are no suggestion nodes in the corresponding path in the map, then update it.
+      if (PathApi.isPath(previousPath)) {
+        const nodes = api.suggestion.node({ id, at: previousPath, isText: true })
+        const parentNode = api.node(previousPath)
+        let lineBreakId: string | null = null
 
-      if (parentNode && ElementApi.isElement(parentNode[0])) {
-        lineBreakId = api.suggestion.nodeId(parentNode[0]) ?? null
-      }
+        if (parentNode && ElementApi.isElement(parentNode[0])) {
+          lineBreakId = api.suggestion.nodeId(parentNode[0]) ?? null
+        }
 
-      if (!nodes && lineBreakId !== id) {
+        if (!nodes && lineBreakId !== id) {
+          setOption('uniquePathMap', new Map(map).set(id, blockPath))
+        }
+      } else {
         setOption('uniquePathMap', new Map(map).set(id, blockPath))
       }
-    } else {
-      setOption('uniquePathMap', new Map(map).set(id, blockPath))
-    }
-  })
+    })
+  }, [api, blockPath, getOption, setOption, suggestionNodes])
 
   const resolvedSuggestion: ResolvedSuggestion[] = React.useMemo(() => {
     const map = getOption('uniquePathMap')
@@ -357,11 +359,11 @@ export const useResolveSuggestion = (
             if (lineBreakData.type === 'insert') {
               newText += lineBreakData.isLineBreak
                 ? BLOCK_SUGGESTION
-                : BLOCK_SUGGESTION + TYPE_TEXT_MAP[node.type](node)
+                : BLOCK_SUGGESTION + (TYPE_TEXT_MAP[node.type]?.(node) ?? 'Block')
             } else if (lineBreakData.type === 'remove') {
               text += lineBreakData.isLineBreak
                 ? BLOCK_SUGGESTION
-                : BLOCK_SUGGESTION + TYPE_TEXT_MAP[node.type](node)
+                : BLOCK_SUGGESTION + (TYPE_TEXT_MAP[node.type]?.(node) ?? 'Block')
             }
           }
         }

@@ -141,18 +141,36 @@ function CopyButton({
   ...props
 }: { value: (() => string) | string } & Omit<React.ComponentProps<typeof Button>, 'value'>) {
   const [hasCopied, setHasCopied] = React.useState(false)
+  const copyTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(() => {
-    setTimeout(() => {
-      setHasCopied(false)
-    }, 2000)
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current)
+      }
+    }
   }, [])
+
+  const handleCopy = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(typeof value === 'function' ? value() : value)
+      setHasCopied(true)
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current)
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setHasCopied(false)
+      }, 2000)
+    } catch (error) {
+      console.error('Failed to copy code block content.', error)
+      setHasCopied(false)
+    }
+  }, [value])
 
   return (
     <Button
       onClick={() => {
-        void navigator.clipboard.writeText(typeof value === 'function' ? value() : value)
-        setHasCopied(true)
+        void handleCopy()
       }}
       {...props}
     >

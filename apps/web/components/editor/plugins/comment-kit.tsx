@@ -20,22 +20,28 @@ type CommentConfig = ExtendConfig<
 export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
   handlers: {
     onClick: ({ api, event, setOption, type }) => {
-      let leaf = event.target as HTMLElement
-      let isSet = false
-
-      const unsetActiveSuggestion = () => {
+      const unsetActiveComment = () => {
         setOption('activeId', null)
-        isSet = true
       }
 
-      if (!isSlateString(leaf)) unsetActiveSuggestion()
+      if (!(event.target instanceof HTMLElement)) {
+        unsetActiveComment()
+        return
+      }
+
+      let leaf: HTMLElement = event.target
+      let isSet = false
+
+      if (!isSlateString(leaf)) {
+        unsetActiveComment()
+      }
 
       while (leaf.parentElement) {
         if (leaf.classList.contains(`slate-${type}`)) {
           const commentsEntry = api.comment!.node()
 
           if (!commentsEntry) {
-            unsetActiveSuggestion()
+            unsetActiveComment()
 
             break
           }
@@ -51,7 +57,7 @@ export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
         leaf = leaf.parentElement
       }
 
-      if (!isSet) unsetActiveSuggestion()
+      if (!isSet) unsetActiveComment()
     },
   },
   options: {

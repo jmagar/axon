@@ -4,7 +4,7 @@ import { createPlatePlugin } from 'platejs/react'
 import { BlockDiscussion } from '@/components/ui/block-discussion'
 import type { TComment } from '@/components/ui/comment'
 
-export type TDiscussion = {
+export interface TDiscussion {
   id: string
   comments: TComment[]
   createdAt: Date

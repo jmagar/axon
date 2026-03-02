@@ -60,14 +60,19 @@ export function DoctorDashboard() {
       const res = await fetch('/api/cortex/doctor', { signal: controller.signal })
       const json = (await res.json()) as ApiResponse
       if (!json.ok) throw new Error(json.error ?? 'Unknown error')
+      if (abortRef.current !== controller) return
       setData(json.data ?? null)
       setUpdatedAt(new Date())
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
+      if (abortRef.current !== controller) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
-      setSpinning(false)
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setLoading(false)
+        setSpinning(false)
+      }
     }
   }
 

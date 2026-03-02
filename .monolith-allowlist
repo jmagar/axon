@@ -7,28 +7,14 @@
 
 # Pre-existing large files — tracked for future refactoring (2026-02-19)
 scripts/qdrant-quality.py
-# collect_crawl_pages() 145 lines — pre-existing, refactor tracked (2026-02-23)
-crates/crawl/engine/collector.rs
 # 598 lines — configure_website + run_crawl_once + reflink helpers (2026-02-23)
 crates/crawl/engine.rs
-# run_sync_crawl() 122 lines — slightly over limit, refactor tracked (2026-02-23)
-crates/cli/commands/crawl/sync_crawl.rs
 # 505 lines — tei_embed + embed pipeline + retry logic (2026-02-23)
 crates/vector/ops/tei.rs
 # 562 lines — vendored monolith enforcement script, not Rust (2026-02-23)
 scripts/enforce_monoliths.py
-# cdp_screenshot() 199 lines — CDP protocol sequence, splitting mid-flow hurts readability (2026-02-24)
-crates/cli/commands/screenshot.rs
 # 1081 lines — imperative canvas animation ported from neural.js, splitting hurts animation coherence (2026-02-24)
 apps/web/components/neural-canvas.tsx
-# poll_once() 133 lines — single Docker stats polling flow, splitting mid-stream hurts readability (2026-02-24)
-crates/web/docker_stats.rs
-# handle_command() 143 lines — WS subprocess lifecycle (spawn/stream/cancel), splitting mid-flow hurts coherence (2026-02-24)
-crates/web/execute.rs
-# 736 lines — vanilla JS dashboard app, no bundler (2026-02-24)
-crates/web/static/app.js
-# 743 lines — vanilla JS neural canvas animation, no bundler (2026-02-24)
-crates/web/static/neural.js
 # 630 lines — omnibox command/file suggestions + keyboard interaction state machine (2026-02-25)
 apps/web/components/omnibox.tsx
 # 1598 lines — unified MCP action router + artifact policy + resource handler; refactor planned (2026-02-25)
@@ -40,31 +26,20 @@ crates/web/execute/mod.rs
 apps/web/hooks/use-ws-messages.ts
 crates/cli/commands/crawl.rs
 crates/vector/ops/commands/ask/context.rs
-# 509 lines — citation-quality gates + test suite; test block accounts for overage (2026-02-26)
-crates/vector/ops/commands/ask.rs
-# refresh pipeline split into processor.rs + url_processor.rs (2026-02-28)
-
 # feat/crawl-download-pack additions (2026-02-26)
-# 660 lines — pulse chat pane with streaming tool-use blocks; split planned
-apps/web/components/pulse/pulse-chat-pane.tsx
 # 849 lines — pulse workspace orchestration + crawl file explorer; split planned
-apps/web/components/pulse/pulse-workspace.tsx
-# 711 lines — refresh schedule CRUD handlers; split into sub-handlers planned
-crates/cli/commands/refresh.rs
+# refresh pipeline split into processor.rs + url_processor.rs (2026-02-28)
 # 539 lines — status command with extended job table output; split planned
 crates/cli/commands/status.rs
 # 802 lines — cyberpunk glass observatory redesign + 3 new CLI fields (addDir/betas/toolsRestrict) + NeuralCanvas bg; split planned (2026-02-27)
 apps/web/app/settings/page.tsx
 
-# 630 lines — pre-existing table renderer for results panel; split planned (2026-02-28)
-apps/web/components/results/table-renderer.tsx
-
 # worker_lane split into worker_lane/{mod,amqp,poll,delivery}.rs (2026-02-28)
 
-# 670 lines — pre-existing jobs dashboard with table + filters; split planned (2026-03-01)
-apps/web/components/jobs/jobs-dashboard.tsx
+# 545 lines — cmdk palette command UX state machine; split planned (2026-03-02)
+apps/web/components/cmdk-palette/CmdKPalette.tsx
 
-# shadcn/platejs generated UI components — large by design, not split candidates (2026-03-01)
+# custom @platejs-based editor/UI components; verified >500 lines and currently incompatible with monolith split policy (2026-03-01)
 apps/web/components/editor/use-chat.ts
 apps/web/components/ui/ai-menu.tsx
 apps/web/components/ui/comment.tsx

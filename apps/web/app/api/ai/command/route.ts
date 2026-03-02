@@ -25,32 +25,56 @@ import {
 } from './prompt'
 
 export async function POST(req: NextRequest) {
-  const { apiKey: key, ctx, messages: messagesRaw, model } = await req.json()
-
-  const { children, selection, toolName: toolNameParam } = ctx
-
-  const editor = createSlateEditor({
-    plugins: BaseEditorKit,
-    selection,
-    value: children,
-  })
-
-  const apiKey = key || process.env.AI_GATEWAY_API_KEY
-
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Missing AI Gateway API key.' }, { status: 401 })
-  }
-
-  const isSelecting = editor.api.isExpanded()
-
-  const gatewayProvider = createGateway({
-    apiKey,
-  })
-
   try {
+    const body = await req.json()
+    const {
+      apiKey: key,
+      ctx,
+      messages: messagesRaw,
+      model,
+    } = body as {
+      apiKey?: string
+      ctx?: {
+        children?: SlateEditor['children']
+        selection?: SlateEditor['selection']
+        toolName?: string
+      }
+      messages?: ChatMessage[]
+      model?: string
+    }
+
+    if (!ctx || !('children' in ctx) || !('selection' in ctx)) {
+      return NextResponse.json({ error: 'Missing required ctx payload.' }, { status: 400 })
+    }
+    if (!Array.isArray(messagesRaw)) {
+      return NextResponse.json({ error: 'Missing or invalid messages payload.' }, { status: 400 })
+    }
+
+    const { children, selection, toolName: toolNameParam } = ctx
+
+    const editor = createSlateEditor({
+      plugins: BaseEditorKit,
+      selection,
+      value: children,
+    })
+
+    const apiKey = key || process.env.AI_GATEWAY_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Missing AI Gateway API key.' }, { status: 401 })
+    }
+
+    const isSelecting = editor.api.isExpanded()
+    const gatewayProvider = createGateway({ apiKey })
+    const enumOptions = isSelecting ? ['generate', 'edit', 'comment'] : ['generate', 'comment']
+    const validToolNames = new Set<ToolName>(['generate', 'edit', 'comment'])
+    let validatedToolName =
+      typeof toolNameParam === 'string' && validToolNames.has(toolNameParam as ToolName)
+        ? (toolNameParam as ToolName)
+        : undefined
+
     const stream = createUIMessageStream<ChatMessage>({
       execute: async ({ writer }) => {
-        let toolName = toolNameParam
+        let toolName = validatedToolName
 
         if (!toolName) {
           const prompt = getChooseToolPrompt({
@@ -58,9 +82,6 @@ export async function POST(req: NextRequest) {
             messages: messagesRaw,
           })
 
-          const enumOptions = isSelecting
-            ? ['generate', 'edit', 'comment']
-            : ['generate', 'comment']
           const modelId = model || 'google/gemini-2.5-flash'
 
           const { text: rawToolName } = await generateText({
@@ -78,6 +99,12 @@ export async function POST(req: NextRequest) {
           })
 
           toolName = AIToolName
+          validatedToolName = AIToolName
+        } else {
+          writer.write({
+            data: toolName,
+            type: 'data-toolName',
+          })
         }
 
         const stream = streamText({
@@ -183,15 +210,14 @@ const getCommentTool = (
     description: 'Comment on the content',
     inputSchema: z.object({}),
     execute: async () => {
-      const { text } = await generateText({
-        model,
-        prompt: getCommentPrompt(editor, { messages: messagesRaw }),
-        system:
-          'Return a JSON array of comment objects. Each object must have: blockId (string), comment (string), content (string). Only return the JSON array, no other text.',
-      })
-
       const commentDataId = nanoid()
       try {
+        const { text } = await generateText({
+          model,
+          prompt: getCommentPrompt(editor, { messages: messagesRaw }),
+          system:
+            'Return a JSON array of comment objects. Each object must have: blockId (string), comment (string), content (string). Only return the JSON array, no other text.',
+        })
         const comments = JSON.parse(text) as Array<{
           blockId: string
           comment: string
@@ -205,14 +231,14 @@ const getCommentTool = (
           })
         }
       } catch {
-        // Ignore malformed JSON — fall through to finished signal.
+        // Ignore tool and JSON errors — fall through to finished signal.
+      } finally {
+        writer.write({
+          id: nanoid(),
+          data: { comment: null, status: 'finished' },
+          type: 'data-comment',
+        })
       }
-
-      writer.write({
-        id: nanoid(),
-        data: { comment: null, status: 'finished' },
-        type: 'data-comment',
-      })
     },
   })
 
@@ -232,14 +258,13 @@ const getTableTool = (
     description: 'Edit table cells',
     inputSchema: z.object({}),
     execute: async () => {
-      const { text } = await generateText({
-        model,
-        prompt: buildEditTableMultiCellPrompt(editor, messagesRaw),
-        system:
-          'Return a JSON array of cell update objects. Each object must have: id (string cell id), content (string new content). Only return the JSON array, no other text.',
-      })
-
       try {
+        const { text } = await generateText({
+          model,
+          prompt: buildEditTableMultiCellPrompt(editor, messagesRaw),
+          system:
+            'Return a JSON array of cell update objects. Each object must have: id (string cell id), content (string new content). Only return the JSON array, no other text.',
+        })
         const updates = JSON.parse(text) as Array<{ id: string; content: string }>
         for (const cellUpdate of updates) {
           writer.write({
@@ -249,13 +274,13 @@ const getTableTool = (
           })
         }
       } catch {
-        // Ignore malformed JSON — fall through to finished signal.
+        // Ignore tool and JSON errors — fall through to finished signal.
+      } finally {
+        writer.write({
+          id: nanoid(),
+          data: { cellUpdate: null, status: 'finished' },
+          type: 'data-table',
+        })
       }
-
-      writer.write({
-        id: nanoid(),
-        data: { cellUpdate: null, status: 'finished' },
-        type: 'data-table',
-      })
     },
   })

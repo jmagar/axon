@@ -81,6 +81,11 @@ llvm-cov-install:
 coverage-branch:
     if cargo llvm-cov --version >/dev/null 2>&1; then {{rust_dev_env}}; cargo llvm-cov --locked --workspace --all-features --lcov --output-path .cache/coverage/lcov.info; else echo "cargo-llvm-cov not installed. Run: just llvm-cov-install"; exit 1; fi
 
+# ── Codegen ───────────────────────────────────────────────────
+
+gen-mcp-schema *ARGS:
+    python3 scripts/generate_mcp_schema_doc.py {{ARGS}}
+
 clean:
     cargo clean
 

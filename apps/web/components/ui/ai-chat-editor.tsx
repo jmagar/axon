@@ -8,7 +8,11 @@ import { BaseEditorKit } from '@/components/editor/editor-base-kit'
 
 import { EditorStatic } from './editor-static'
 
-export const AIChatEditor = React.memo(function AIChatEditor({ content }: { content: string }) {
+export interface AIChatEditorProps {
+  content: string
+}
+
+export const AIChatEditor = React.memo(function AIChatEditor({ content }: AIChatEditorProps) {
   const aiEditor = usePlateEditor({
     plugins: BaseEditorKit,
   })

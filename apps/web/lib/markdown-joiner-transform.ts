@@ -15,43 +15,51 @@ export const markdownJoinerTransform =
 
     return new TransformStream<TextStreamPart<TOOLS>, TextStreamPart<TOOLS>>({
       async flush(controller) {
-        // Only flush if we haven't seen text-end yet
-        if (!textStreamEnded) {
-          const remaining = joiner.flush()
-          if (remaining && lastTextDeltaId) {
-            controller.enqueue({
-              id: lastTextDeltaId,
-              text: remaining,
-              type: 'text-delta',
-            } as TextStreamPart<TOOLS>)
+        try {
+          // Only flush if we haven't seen text-end yet
+          if (!textStreamEnded) {
+            const remaining = joiner.flush()
+            if (remaining && lastTextDeltaId) {
+              controller.enqueue({
+                id: lastTextDeltaId,
+                text: remaining,
+                type: 'text-delta',
+              } as TextStreamPart<TOOLS>)
+            }
           }
+        } catch (error) {
+          controller.error(error)
         }
       },
       async transform(chunk, controller) {
-        if (chunk.type === 'text-delta') {
-          lastTextDeltaId = chunk.id
-          const processedText = joiner.processText(chunk.text)
-          if (processedText) {
-            controller.enqueue({
-              ...chunk,
-              text: processedText,
-            })
-            await delay(joiner.delayInMs)
+        try {
+          if (chunk.type === 'text-delta') {
+            lastTextDeltaId = chunk.id
+            const processedText = joiner.processText(chunk.text)
+            if (processedText) {
+              controller.enqueue({
+                ...chunk,
+                text: processedText,
+              })
+              await delay(joiner.delayInMs)
+            }
+          } else if (chunk.type === 'text-end') {
+            // Flush any remaining buffer before text-end
+            const remaining = joiner.flush()
+            if (remaining && lastTextDeltaId) {
+              controller.enqueue({
+                id: lastTextDeltaId,
+                text: remaining,
+                type: 'text-delta',
+              } as TextStreamPart<TOOLS>)
+            }
+            textStreamEnded = true
+            controller.enqueue(chunk)
+          } else {
+            controller.enqueue(chunk)
           }
-        } else if (chunk.type === 'text-end') {
-          // Flush any remaining buffer before text-end
-          const remaining = joiner.flush()
-          if (remaining && lastTextDeltaId) {
-            controller.enqueue({
-              id: lastTextDeltaId,
-              text: remaining,
-              type: 'text-delta',
-            } as TextStreamPart<TOOLS>)
-          }
-          textStreamEnded = true
-          controller.enqueue(chunk)
-        } else {
-          controller.enqueue(chunk)
+        } catch (error) {
+          controller.error(error)
         }
       },
     })
@@ -61,7 +69,7 @@ const DEFAULT_DELAY_IN_MS = 10
 const NEST_BLOCK_DELAY_IN_MS = 100
 
 const BOLD_PATTERN = /\*\*.*?\*\*/
-const CODE_LINE_PATTERN = /```[^\s]+/
+const CODE_LINE_PATTERN = /^```(?:\S+)?$/
 const LINK_PATTERN = /^\[.*?\]\(.*?\)$/
 const UNORDERED_LIST_PATTERN = /^[*-]\s+.+/
 const TODO_LIST_PATTERN = /^[*-]\s+\[[ xX]\]\s+.+/

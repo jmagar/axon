@@ -30,13 +30,12 @@ const inputVariants = cva(
   'flex h-[28px] w-full rounded-md border-none bg-transparent px-1.5 py-1 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-transparent md:text-sm',
 )
 
-export function MediaToolbar({
-  children,
-  plugin,
-}: {
+export interface MediaToolbarProps {
   children: React.ReactNode
   plugin: WithRequiredKey
-}) {
+}
+
+export function MediaToolbar({ children, plugin }: MediaToolbarProps) {
   const editor = useEditorRef()
   const readOnly = useReadOnly()
   const selected = useSelected()
@@ -89,7 +88,7 @@ export function MediaToolbar({
 
             <Separator orientation="vertical" className="mx-1 h-6" />
 
-            <Button size="sm" variant="ghost" {...buttonProps}>
+            <Button aria-label="Delete media" size="sm" variant="ghost" {...buttonProps}>
               <Trash2Icon />
             </Button>
           </div>

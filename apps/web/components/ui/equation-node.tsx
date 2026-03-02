@@ -46,14 +46,13 @@ export function EquationElement(props: PlateElementProps<TEquationElement>) {
     <PlateElement className="my-1" {...props}>
       <Popover open={open} onOpenChange={setOpen} modal={false}>
         <PopoverTrigger asChild>
-          <div
+          <button
+            type="button"
             className={cn(
-              'group flex cursor-pointer select-none items-center justify-center rounded-sm hover:bg-primary/10 data-[selected=true]:bg-primary/10',
+              'group flex cursor-pointer select-none items-center justify-center rounded-sm border-0 bg-transparent p-0 hover:bg-primary/10 data-[selected=true]:bg-primary/10',
               props.element.texExpression.length === 0 ? 'bg-muted p-3 pr-9' : 'px-2 py-1',
             )}
             data-selected={selected}
-            contentEditable={false}
-            role="button"
           >
             {props.element.texExpression.length > 0 ? (
               <span ref={katexRef} />
@@ -63,7 +62,7 @@ export function EquationElement(props: PlateElementProps<TEquationElement>) {
                 <div>Add a Tex equation</div>
               </div>
             )}
-          </div>
+          </button>
         </PopoverTrigger>
 
         <EquationPopoverContent
@@ -117,14 +116,14 @@ export function InlineEquationElement(props: PlateElementProps<TEquationElement>
     >
       <Popover open={open} onOpenChange={setOpen} modal={false}>
         <PopoverTrigger asChild>
-          <div
+          <button
+            type="button"
             className={cn(
-              'after:-top-0.5 after:-left-1 after:absolute after:inset-0 after:z-1 after:h-[calc(100%)+4px] after:w-[calc(100%+8px)] after:rounded-sm after:content-[""]',
+              'relative border-0 bg-transparent p-0 text-left after:-top-0.5 after:-left-1 after:absolute after:inset-0 after:z-1 after:h-[calc(100%)+4px] after:w-[calc(100%+8px)] after:rounded-sm after:content-[""]',
               'h-6',
               ((element.texExpression.length > 0 && open) || selected) && 'after:bg-brand/15',
               element.texExpression.length === 0 && 'text-muted-foreground after:bg-neutral-500/10',
             )}
-            contentEditable={false}
           >
             <span
               ref={katexRef}
@@ -139,7 +138,7 @@ export function InlineEquationElement(props: PlateElementProps<TEquationElement>
                 New equation
               </span>
             )}
-          </div>
+          </button>
         </PopoverTrigger>
 
         <EquationPopoverContent
@@ -174,12 +173,6 @@ const EquationPopoverContent = ({
   const editor = useEditorRef()
   const readOnly = useReadOnly()
   const element = useElement<TEquationElement>()
-
-  React.useEffect(() => {
-    if (isInline && open) {
-      setOpen(true)
-    }
-  }, [isInline, open, setOpen])
 
   if (readOnly) return null
 

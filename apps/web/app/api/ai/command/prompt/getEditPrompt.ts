@@ -15,6 +15,133 @@ import {
 import { commonEditRules } from './common'
 import { buildEditTableMultiCellPrompt } from './getEditTablePrompt'
 
+const EDIT_SELECTION_EXAMPLES = [
+  dedent`
+    <instruction>
+    Improve word choice.
+    </instruction>
+
+    <context>
+    This is a <Selection>nice</Selection> person.
+    </context>
+
+    <output>
+    great
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Fix grammar.
+    </instruction>
+
+    <context>
+    He <Selection>go</Selection> to school every day.
+    </context>
+
+    <output>
+    goes
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Make tone more polite.
+    </instruction>
+
+    <context>
+    <Selection>Give me</Selection> the report.
+    </context>
+
+    <output>
+    Please provide
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Make tone more confident.
+    </instruction>
+
+    <context>
+    I <Selection>think</Selection> this might work.
+    </context>
+
+    <output>
+    believe
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Simplify the language.
+    </instruction>
+
+    <context>
+    The results were <Selection>exceedingly</Selection> positive.
+    </context>
+
+    <output>
+    very
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Translate into French.
+    </instruction>
+
+    <context>
+    <Selection>Hello</Selection>
+    </context>
+
+    <output>
+    Bonjour
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Expand the description.
+    </instruction>
+
+    <context>
+    The view was <Selection>beautiful</Selection>.
+    </context>
+
+    <output>
+    breathtaking and full of vibrant colors
+    </output>
+  `,
+  dedent`
+    <instruction>
+    Make it sound more natural.
+    </instruction>
+
+    <context>
+    She <Selection>did a party</Selection> yesterday.
+    </context>
+
+    <output>
+    had a party
+    </output>
+  `,
+]
+
+const EDIT_SELECTION_TASK = dedent`
+  The following <context> contains <Selection> tags marking the editable part.
+  Output only the replacement for the selected text.
+`
+
+const EDIT_SELECTION_RULES_SUFFIX = dedent`
+  - Your response will be directly concatenated with the prefilledResponse, so ensure the result is smooth and coherent.
+  - You may use surrounding text in <context> to ensure the replacement fits naturally.
+`
+
+function getEditSelectionContext(editor: SlateEditor) {
+  addSelection(editor)
+
+  const selectingMarkdown = getMarkdownWithSelection(editor)
+  const endIndex = selectingMarkdown.indexOf('<Selection>')
+  const prefilledResponse = endIndex === -1 ? '' : selectingMarkdown.slice(0, endIndex)
+
+  return { prefilledResponse, selectingMarkdown }
+}
+
 function buildEditMultiBlockPrompt(editor: SlateEditor, messages: ChatMessage[]) {
   const selectingMarkdown = getMarkdownWithSelection(editor)
 
@@ -81,139 +208,31 @@ function buildEditMultiBlockPrompt(editor: SlateEditor, messages: ChatMessage[])
 }
 
 function buildEditSelectionPrompt(editor: SlateEditor, messages: ChatMessage[]) {
-  addSelection(editor)
-
-  const selectingMarkdown = getMarkdownWithSelection(editor)
-  const endIndex = selectingMarkdown.indexOf('<Selection>')
-  const prefilledResponse = endIndex === -1 ? '' : selectingMarkdown.slice(0, endIndex)
+  const { prefilledResponse, selectingMarkdown } = getEditSelectionContext(editor)
 
   return buildStructuredPrompt({
     context: selectingMarkdown,
-    examples: [
-      dedent`
-        <instruction>
-        Improve word choice.
-        </instruction>
-
-        <context>
-        This is a <Selection>nice</Selection> person.
-        </context>
-
-        <output>
-        great
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Fix grammar.
-        </instruction>
-
-        <context>
-        He <Selection>go</Selection> to school every day.
-        </context>
-
-        <output>
-        goes
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Make tone more polite.
-        </instruction>
-
-        <context>
-        <Selection>Give me</Selection> the report.
-        </context>
-
-        <output>
-        Please provide
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Make tone more confident.
-        </instruction>
-
-        <context>
-        I <Selection>think</Selection> this might work.
-        </context>
-
-        <output>
-        believe
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Simplify the language.
-        </instruction>
-
-        <context>
-        The results were <Selection>exceedingly</Selection> positive.
-        </context>
-
-        <output>
-        very
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Translate into French.
-        </instruction>
-
-        <context>
-        <Selection>Hello</Selection>
-        </context>
-
-        <output>
-        Bonjour
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Expand the description.
-        </instruction>
-
-        <context>
-        The view was <Selection>beautiful</Selection>.
-        </context>
-
-        <output>
-        breathtaking and full of vibrant colors
-        </output>
-      `,
-      dedent`
-        <instruction>
-        Make it sound more natural.
-        </instruction>
-
-        <context>
-        She <Selection>did a party</Selection> yesterday.
-        </context>
-
-        <output>
-        had a party
-        </output>
-      `,
-    ],
+    examples: EDIT_SELECTION_EXAMPLES,
     history: formatTextFromMessages(messages),
     instruction: getLastUserInstruction(messages),
     outputFormatting: 'markdown',
     prefilledResponse,
     rules: dedent`
       ${commonEditRules}
-      - Your response will be directly concatenated with the prefilledResponse, so ensure the result is smooth and coherent.
-      - You may use surrounding text in <context> to ensure the replacement fits naturally.
+      ${EDIT_SELECTION_RULES_SUFFIX}
     `,
-    task: dedent`
-      The following <context> contains <Selection> tags marking the editable part.
-      Output only the replacement for the selected text.
-    `,
+    task: EDIT_SELECTION_TASK,
   })
+}
+
+export interface EditPromptOptions {
+  isSelecting: boolean
+  messages: ChatMessage[]
 }
 
 export function getEditPrompt(
   editor: SlateEditor,
-  { isSelecting, messages }: { isSelecting: boolean; messages: ChatMessage[] },
+  { isSelecting, messages }: EditPromptOptions,
 ): [string, 'table' | 'multi-block' | 'selection'] {
   if (!isSelecting) throw new Error('Edit tool is only available when selecting')
 

@@ -25,7 +25,7 @@ Canonical docs:
 
 ## Lifecycle Families (require subaction)
 
-Families: `crawl`, `extract`, `embed`, `ingest`
+Families: `crawl`, `extract`, `embed`, `ingest`, `refresh`
 
 | Subaction | Required | Notes |
 |-----------|----------|-------|
@@ -36,6 +36,7 @@ Families: `crawl`, `extract`, `embed`, `ingest`
 | `cleanup` | — | Remove completed/failed jobs |
 | `clear` | — | Remove all jobs |
 | `recover` | — | Reclaim stale/interrupted jobs |
+| `schedule` | `schedule_subaction` | `refresh` only: `list\|create\|delete\|enable\|disable` |
 
 ### Start Fields by Family
 
@@ -45,6 +46,7 @@ Families: `crawl`, `extract`, `embed`, `ingest`
 | `extract` | `urls` (non-empty array) |
 | `embed` | `input` |
 | `ingest` | `source_type` + `target` |
+| `refresh` | `urls` (non-empty array) |
 
 ## Artifact Inspection
 

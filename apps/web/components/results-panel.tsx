@@ -286,7 +286,7 @@ export function ResultsPanel({ statsSlot }: ResultsPanelProps) {
 
       {/* Content pane */}
       {(activeTab === 'content' || isPulseWorkspace) &&
-        (workspaceMode === 'pulse' ? (
+        (isPulseWorkspace ? (
           <PulseWorkspace />
         ) : (
           <>

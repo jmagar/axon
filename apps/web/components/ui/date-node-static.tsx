@@ -10,19 +10,22 @@ export function DateElementStatic(props: SlateElementProps<TDateElement>) {
       <span className="w-fit rounded-sm bg-muted px-1 text-muted-foreground">
         {element.date ? (
           (() => {
-            const today = new Date()
             const elementDate = new Date(element.date)
+            if (Number.isNaN(elementDate.getTime())) return 'Pick a date'
+
+            const today = new Date()
+            const yesterday = new Date(today)
+            yesterday.setDate(today.getDate() - 1)
+            const tomorrow = new Date(today)
+            tomorrow.setDate(today.getDate() + 1)
+
             const isToday =
               elementDate.getDate() === today.getDate() &&
               elementDate.getMonth() === today.getMonth() &&
               elementDate.getFullYear() === today.getFullYear()
 
-            const isYesterday =
-              new Date(today.setDate(today.getDate() - 1)).toDateString() ===
-              elementDate.toDateString()
-            const isTomorrow =
-              new Date(today.setDate(today.getDate() + 2)).toDateString() ===
-              elementDate.toDateString()
+            const isYesterday = yesterday.toDateString() === elementDate.toDateString()
+            const isTomorrow = tomorrow.toDateString() === elementDate.toDateString()
 
             if (isToday) return 'Today'
             if (isYesterday) return 'Yesterday'
