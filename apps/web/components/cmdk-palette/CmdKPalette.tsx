@@ -18,6 +18,7 @@ function useCmdKPaletteState() {
   const [inputValue, setInputValue] = useState('')
   const [search, setSearch] = useState('')
   const [lines, setLines] = useState<string[]>([])
+  const [jsonCount, setJsonCount] = useState(0)
   const [progress, setProgress] = useState<PaletteProgress | null>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -34,6 +35,7 @@ function useCmdKPaletteState() {
 
   const resetOutput = useCallback(() => {
     setLines([])
+    setJsonCount(0)
     setProgress(null)
     setExitCode(null)
     setErrorMsg(null)
@@ -129,11 +131,7 @@ function useCmdKPaletteState() {
         if (msg.type === 'command.output.line') {
           setLines((prev) => [...prev, msg.data.line])
         } else if (msg.type === 'command.output.json') {
-          try {
-            setLines((prev) => [...prev, JSON.stringify(msg.data.data, null, 2)])
-          } catch {
-            setLines((prev) => [...prev, String(msg.data.data)])
-          }
+          setJsonCount((n) => n + 1)
         } else if (msg.type === 'job.progress') {
           const p = msg.data.payload
           setProgress({
@@ -200,6 +198,7 @@ function useCmdKPaletteState() {
     selectedMode,
     inputValue,
     lines,
+    jsonCount,
     progress,
     exitCode,
     errorMsg,

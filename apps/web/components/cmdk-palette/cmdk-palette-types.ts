@@ -15,6 +15,7 @@ export interface PaletteDialogState {
   selectedMode: ModeDefinition | null
   inputValue: string
   lines: string[]
+  jsonCount: number
   progress: PaletteProgress | null
   exitCode: number | null
   errorMsg: string | null

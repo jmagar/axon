@@ -7,6 +7,7 @@ import type { PaletteProgress } from './CmdKPalette'
 interface Props {
   mode: ModeDefinition
   lines: string[]
+  jsonCount: number
   progress: PaletteProgress | null
   exitCode: number | null
   errorMsg: string | null
@@ -33,6 +34,7 @@ interface CmdKAsyncProgressProps {
 
 interface CmdKOutputLinesProps {
   lines: string[]
+  jsonCount: number
   scrollRef: RefObject<HTMLDivElement | null>
 }
 
@@ -47,10 +49,8 @@ interface CmdKFooterProps {
 const ASYNC_MODES = new Set(['crawl', 'embed', 'github', 'reddit', 'youtube', 'extract'])
 const URL_MODES = new Set(['scrape', 'crawl', 'map', 'extract', 'retrieve'])
 
-function classifyLine(line: string): 'json' | 'error' | 'log' {
-  const trimmed = line.trimStart()
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'json'
-  if (/error|failed|panic/i.test(trimmed)) return 'error'
+function classifyLine(line: string): 'error' | 'log' {
+  if (/error|failed|panic/i.test(line.trimStart())) return 'error'
   return 'log'
 }
 
@@ -206,8 +206,8 @@ function CmdKAsyncProgress({ progress }: CmdKAsyncProgressProps) {
   )
 }
 
-function CmdKOutputLines({ lines, scrollRef }: CmdKOutputLinesProps) {
-  if (lines.length === 0) return null
+function CmdKOutputLines({ lines, jsonCount, scrollRef }: CmdKOutputLinesProps) {
+  if (lines.length === 0 && jsonCount === 0) return null
 
   return (
     <div
@@ -221,14 +221,22 @@ function CmdKOutputLines({ lines, scrollRef }: CmdKOutputLinesProps) {
         gap: 2,
       }}
     >
+      {jsonCount > 0 && (
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-xs)',
+            color: 'var(--axon-primary)',
+            opacity: 0.7,
+            padding: '2px 0',
+          }}
+        >
+          {jsonCount} data object{jsonCount !== 1 ? 's' : ''} received — see results panel
+        </div>
+      )}
       {lines.map((line, i) => {
-        const kind = classifyLine(line)
         const color =
-          kind === 'json'
-            ? 'var(--axon-primary)'
-            : kind === 'error'
-              ? 'var(--axon-secondary)'
-              : 'var(--text-secondary)'
+          classifyLine(line) === 'error' ? 'var(--axon-secondary)' : 'var(--text-secondary)'
         return (
           <div
             key={i}
@@ -302,6 +310,7 @@ function CmdKFooter({ mode, phase, jobId, isAsync, onDismiss }: CmdKFooterProps)
 export function CmdKOutput({
   mode,
   lines,
+  jsonCount,
   progress,
   exitCode,
   errorMsg,
@@ -333,7 +342,7 @@ export function CmdKOutput({
         onCancel={onCancel}
       />
       {isAsync && progress && <CmdKAsyncProgress progress={progress} />}
-      <CmdKOutputLines lines={lines} scrollRef={scrollRef} />
+      <CmdKOutputLines lines={lines} jsonCount={jsonCount} scrollRef={scrollRef} />
       <CmdKFooter mode={mode} phase={phase} jobId={jobId} isAsync={isAsync} onDismiss={onDismiss} />
     </div>
   )

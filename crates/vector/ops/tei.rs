@@ -7,6 +7,8 @@ mod prepare;
 mod qdrant_store;
 mod tei_client;
 mod tei_manifest;
+#[cfg(test)]
+mod tests;
 pub(crate) use tei_client::tei_embed;
 
 #[derive(Debug, Clone, Copy)]

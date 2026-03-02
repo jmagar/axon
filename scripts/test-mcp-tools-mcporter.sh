@@ -94,11 +94,12 @@ run_pipe_case action_crawl_list "mcporter call '$SELECTOR' action:crawl subactio
 run_pipe_case action_extract_list "mcporter call '$SELECTOR' action:extract subaction:list limit:5 offset:0 --output json | jq -e '.ok == true and .action == \"extract\" and .subaction == \"list\"' >/dev/null"
 run_pipe_case action_embed_list "mcporter call '$SELECTOR' action:embed subaction:list limit:5 offset:0 --output json | jq -e '.ok == true and .action == \"embed\" and .subaction == \"list\"' >/dev/null"
 run_pipe_case action_ingest_list "mcporter call '$SELECTOR' action:ingest subaction:list limit:5 offset:0 --output json | jq -e '.ok == true and .action == \"ingest\" and .subaction == \"list\"' >/dev/null"
+run_pipe_case action_refresh_list "mcporter call '$SELECTOR' action:refresh subaction:list limit:5 offset:0 --output json | jq -e '.ok == true and .action == \"refresh\" and .subaction == \"list\"' >/dev/null"
 
-run_pipe_case action_artifacts_head "mcporter call '$SELECTOR' action:artifacts subaction:head path:'.cache/axon-mcp/help-actions.json' limit:10 --output json | jq -e '.ok == true and .action == \"head\" and .subaction == \"head\"' >/dev/null"
-run_pipe_case action_artifacts_wc "mcporter call '$SELECTOR' action:artifacts subaction:wc path:'.cache/axon-mcp/help-actions.json' --output json | jq -e '.ok == true and .action == \"wc\" and .subaction == \"wc\"' >/dev/null"
-run_pipe_case action_artifacts_read "mcporter call '$SELECTOR' action:artifacts subaction:read path:'.cache/axon-mcp/help-actions.json' limit:20 offset:0 --output json | jq -e '.ok == true and .action == \"read\" and .subaction == \"read\"' >/dev/null"
-run_pipe_case action_artifacts_grep "mcporter call '$SELECTOR' action:artifacts subaction:grep path:'.cache/axon-mcp/help-actions.json' pattern:'action' limit:10 offset:0 --output json | jq -e '.ok == true and .action == \"grep\" and .subaction == \"grep\"' >/dev/null"
+run_pipe_case action_artifacts_head "mcporter call '$SELECTOR' action:artifacts subaction:head path:'.cache/axon-mcp/help-actions.json' limit:10 --output json | jq -e '.ok == true and .action == \"artifacts\" and .subaction == \"head\"' >/dev/null"
+run_pipe_case action_artifacts_wc "mcporter call '$SELECTOR' action:artifacts subaction:wc path:'.cache/axon-mcp/help-actions.json' --output json | jq -e '.ok == true and .action == \"artifacts\" and .subaction == \"wc\"' >/dev/null"
+run_pipe_case action_artifacts_read "mcporter call '$SELECTOR' action:artifacts subaction:read path:'.cache/axon-mcp/help-actions.json' limit:20 offset:0 --output json | jq -e '.ok == true and .action == \"artifacts\" and .subaction == \"read\"' >/dev/null"
+run_pipe_case action_artifacts_grep "mcporter call '$SELECTOR' action:artifacts subaction:grep path:'.cache/axon-mcp/help-actions.json' pattern:'action' limit:10 offset:0 --output json | jq -e '.ok == true and .action == \"artifacts\" and .subaction == \"grep\"' >/dev/null"
 
 if [[ "$FULL" -eq 1 ]]; then
   echo "== Full/side-effect checks ==" | tee -a "$SUMMARY"
