@@ -1,5 +1,19 @@
 import { type ModeId, NO_INPUT_MODES } from '@/lib/ws-protocol'
 
+// Modes that require a URL as their primary input token.
+const URL_ONLY_MODES: ReadonlySet<string> = new Set([
+  'scrape',
+  'crawl',
+  'map',
+  'extract',
+  'screenshot',
+  'retrieve',
+  'github',
+  'reddit',
+  'youtube',
+  'embed',
+])
+
 export function shouldPreservePulseWorkspaceForMode(
   workspaceMode: string | null,
   execMode: ModeId,
@@ -20,6 +34,7 @@ export function isUrlLikeToken(token: string): boolean {
 export function shouldRunCommandForInput(selectedMode: ModeId, rawInput: string): boolean {
   const trimmed = rawInput.trim()
   if (!trimmed) return NO_INPUT_MODES.has(selectedMode)
+  if (!URL_ONLY_MODES.has(selectedMode)) return true
   const firstToken = trimmed.split(/\s+/)[0] ?? ''
   return isUrlLikeToken(firstToken)
 }

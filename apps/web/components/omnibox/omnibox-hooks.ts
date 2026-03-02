@@ -212,13 +212,13 @@ export function useOmniboxState() {
       }
 
       const normalizedInput = normalizeUrlInput(trimmedInput)
-      const { enrichedInput, contextFileLabels } = await buildInputWithFileContext(normalizedInput)
-
-      execIdRef.current += 1
       setIsProcessing(true)
+      execIdRef.current += 1
       startTimeRef.current = Date.now()
       setStatusText('processing...')
       setStatusType('processing')
+
+      const { enrichedInput, contextFileLabels } = await buildInputWithFileContext(normalizedInput)
 
       const flags: Record<string, string> = {}
       for (const [key, val] of Object.entries(optionValues)) {
