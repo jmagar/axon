@@ -93,9 +93,10 @@ fn resolve_initial_mode_passthrough_for_explicit_modes() {
 }
 
 fn amqp_url() -> Option<String> {
+    // Do not fall through to AXON_AMQP_URL — that is the production broker.
+    // If AXON_TEST_AMQP_URL is not set, AMQP tests are skipped.
     std::env::var("AXON_TEST_AMQP_URL")
         .ok()
-        .or_else(|| std::env::var("AXON_AMQP_URL").ok())
         .filter(|v| !v.trim().is_empty())
 }
 

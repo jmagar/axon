@@ -81,7 +81,7 @@ Engine tests use a live HTTP server (via `httpmock`) — no Docker services requ
 | Thin pages on known-good site | JS-rendered SPA | Use `--render-mode chrome` |
 | Chrome fallback not triggering | Chrome not reachable | Check `AXON_CHROME_REMOTE_URL`; verify `axon-chrome` is up |
 | Crawl stops at first level | `--max-depth 0` set accidentally | Default is 5; check CLI args |
-| Sitemap backfill fetching wrong domain | `--include-subdomains true` (default) | Pass `--include-subdomains false` to restrict |
+| Crawling other subdomains instead of target host | `--include-subdomains true` enabled | Default is now `false`; only use `--include-subdomains true` when you intentionally want all `*.parent.com` |
 | Locale pages being crawled | Default locale filter only blocks known prefixes | Pass `--exclude-path-prefix none` to disable, or add custom prefixes |
 
 ## Thin Page Lifecycle

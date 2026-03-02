@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-02 (session: MCP as axon mcp subcommand — remove mcp_main.rs + scripts/axon-mcp; CLI common.rs JobStatus trait; smart dotenv loading; misc fixes)
+Last Modified: 2026-03-02 (session: suppress raw JSON in CmdK palette; add vector/cancel integration tests; fix include_subdomains default)
 
 ## [Unreleased] — feat/sidebar
 
@@ -7,6 +7,9 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 ### Highlights
 
+- **CmdK palette — no raw JSON** — `CmdKPalette` tracks `jsonCount` separately; `command.output.json` events increment the counter instead of `JSON.stringify`-ing into the log lines array; `CmdKOutput` shows a "N data objects received — see results panel" badge; `classifyLine` drops the `json` case; `formatToolArg` in `tool-badge.tsx` renders tool call inputs as human-readable labels (arrays as `[N items]`, objects as `{key, key, …}`) instead of raw `JSON.stringify`
+- **Integration tests: vector + cancel** — `resolve_test_redis_url` + `resolve_test_qdrant_url` helpers added to `common/mod.rs` (skip-not-fail if env var unset); `poll_cancel_key` integration test in `process.rs`; `ensure_collection` idempotency test in `qdrant_store.rs`; new `crates/vector/ops/qdrant/tests.rs` (search + url_facets); new `crates/vector/ops/tei/tests.rs` (empty-input short-circuit + 429 retry via httpmock); `resolve_test_pg_url` no longer falls through to `AXON_PG_URL` production DB
+- **`--include-subdomains` default changed to `false`** — was accidentally `true`; default is now documented and matches the CLAUDE.md gotcha note
 - **MCP as `axon mcp` subcommand** — `mcp_main.rs` and `scripts/axon-mcp` deleted; `crates/cli/commands/mcp.rs` added; `CommandKind::Mcp` wired through config stack; MCP server is now a first-class CLI subcommand rather than a separate binary entry point
 - **CLI `common.rs` expansion** — shared `JobStatus` trait + status display helpers extracted from crawl/extract/ingest subcommands, reducing duplication; URL glob expansion now logs a warning at `MAX_EXPANSION_DEPTH`
 - **Smart dotenv loading** — `main.rs` discovers `.env` by walking ancestors from exe path and CWD; `AXON_ENV_FILE` env var for explicit override; graceful fallback chain with per-error warnings
@@ -32,7 +35,10 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | refactor(mcp+cli) | MCP as axon mcp subcommand; CLI common.rs JobStatus trait; smart dotenv loading; misc fixes |
+| *(this commit)* | fix(web)+test(rust) | suppress raw JSON in CmdK palette; add vector/cancel integration tests; fix include_subdomains default |
+| `959537ac` | refactor(mcp) | deduplicate DB queries in handle_status; fix artifacts action field |
+| `76356b0e` | refactor(mcp+cli) | CLI command handlers, MCP wiring, and web fixes |
+| `186a6936` | refactor(mcp+cli) | MCP as axon mcp subcommand; CLI common.rs JobStatus trait; smart dotenv loading; misc fixes |
 | `d022c6f5` | fix(web) | mobile omnibox sizing — sidebar auto-collapse <768px, textarea ResizeObserver + height:1px fix; CmdK palette; web improvements |
 | `27fc39f6` | feat(web) | xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor |
 | `72d1f651` | fix(web) | wire AIKit into CopilotKit + address open items |

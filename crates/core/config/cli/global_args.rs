@@ -13,8 +13,8 @@ pub(in crate::crates::core::config) struct GlobalArgs {
     #[arg(global = true, long, default_value_t = 5)]
     pub(in crate::crates::core::config) max_depth: usize,
 
-    /// Include links from subdomains. Disable with `--include-subdomains false`.
-    #[arg(global = true, long, action = ArgAction::Set, default_value_t = true)]
+    /// Crawl subdomains of the start URL's parent domain. Enable with `--include-subdomains true`.
+    #[arg(global = true, long, action = ArgAction::Set, default_value_t = false)]
     pub(in crate::crates::core::config) include_subdomains: bool,
 
     #[arg(global = true, long = "exclude-path-prefix", value_delimiter = ',')]
