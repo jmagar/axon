@@ -86,27 +86,26 @@ function Draggable(props: PlateElementProps) {
 
   const [previewTop, setPreviewTop] = React.useState(0)
 
-  const resetPreview = () => {
+  const resetPreview = React.useCallback(() => {
     if (previewRef.current) {
       previewRef.current.replaceChildren()
       previewRef.current?.classList.add('hidden')
     }
-  }
+  }, [previewRef])
 
   // clear up virtual multiple preview when drag end
   React.useEffect(() => {
     if (!isDragging) {
       resetPreview()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, resetPreview])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: previewRef is a stable ref object
   React.useEffect(() => {
     if (isAboutToDrag) {
       previewRef.current?.classList.remove('opacity-0')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAboutToDrag, previewRef.current?.classList.remove])
+  }, [isAboutToDrag])
 
   const [dragButtonTop, setDragButtonTop] = React.useState(0)
 
@@ -290,7 +289,6 @@ const DragHandle = React.memo(function DragHandle({
             resetPreview()
           }}
           data-plate-prevent-deselect
-          role="button"
         >
           <GripVertical className="text-muted-foreground" />
         </div>

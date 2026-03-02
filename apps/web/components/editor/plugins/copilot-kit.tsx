@@ -78,9 +78,11 @@ const copilotStreamingFetch: typeof fetch = async (input, init) => {
         if (!emitted && finalCompletion) {
           controller.enqueue(encoder.encode(finalCompletion))
         }
+        controller.close()
+      } catch (error) {
+        controller.error(error instanceof Error ? error : new Error(String(error)))
       } finally {
         reader.releaseLock()
-        controller.close()
       }
     },
   })

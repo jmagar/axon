@@ -540,14 +540,29 @@ export function Omnibox() {
   // causes a layout reflow before the input-dep effect has a chance to re-fire).
   useEffect(() => {
     const el = inputRef.current
-    if (!el) return
+    const container = el?.parentElement
+    if (!el || !container) return
     const observer = new ResizeObserver(() => {
-      el.style.height = '1px'
-      const capped = Math.min(el.scrollHeight, 160)
-      el.style.height = `${capped}px`
-      el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden'
+      requestAnimationFrame(() => {
+        const previousHeight = el.style.height
+        const previousOverflow = el.style.overflowY
+
+        el.style.height = '1px'
+        const capped = Math.min(el.scrollHeight, 160)
+        const nextHeight = `${capped}px`
+        const nextOverflow = el.scrollHeight > 160 ? 'auto' : 'hidden'
+
+        if (previousHeight === nextHeight && previousOverflow === nextOverflow) {
+          el.style.height = previousHeight
+          el.style.overflowY = previousOverflow
+          return
+        }
+
+        el.style.height = nextHeight
+        el.style.overflowY = nextOverflow
+      })
     })
-    observer.observe(el)
+    observer.observe(container)
     return () => observer.disconnect()
   }, [])
 

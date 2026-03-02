@@ -8,6 +8,7 @@ export async function GET() {
     const data = await runAxonCommandWs('domains', 60_000)
     return NextResponse.json({ ok: true, data })
   } catch (err) {
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
+    console.error('domains route failed', err)
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
   }
 }

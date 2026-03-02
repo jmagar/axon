@@ -63,9 +63,12 @@ export function AIMenu() {
   React.useEffect(() => {
     if (streaming) {
       const anchor = api.aiChat.node({ anchor: true })
+      if (!anchor?.[0]) return
       setTimeout(() => {
-        const anchorDom = editor.api.toDOMNode(anchor![0])!
-        setAnchorElement(anchorDom)
+        const anchorDom = editor.api.toDOMNode(anchor[0])
+        if (anchorDom) {
+          setAnchorElement(anchorDom)
+        }
       }, 0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,7 +89,11 @@ export function AIMenu() {
 
   useEditorChat({
     onOpenBlockSelection: (blocks: NodeEntry[]) => {
-      show(editor.api.toDOMNode(blocks.at(-1)![0])!)
+      const lastBlock = blocks.at(-1)
+      if (!lastBlock) return
+      const domNode = editor.api.toDOMNode(lastBlock[0])
+      if (!domNode) return
+      show(domNode)
     },
     onOpenChange: (open) => {
       if (!open) {
@@ -95,16 +102,24 @@ export function AIMenu() {
       }
     },
     onOpenCursor: () => {
-      const [ancestor] = editor.api.block({ highest: true })!
+      const ancestorEntry = editor.api.block({ highest: true })
+      if (!ancestorEntry) return
+      const [ancestor] = ancestorEntry
 
       if (!editor.api.isAt({ end: true }) && !editor.api.isEmpty(ancestor)) {
         editor.getApi(BlockSelectionPlugin).blockSelection.set(ancestor.id as string)
       }
 
-      show(editor.api.toDOMNode(ancestor)!)
+      const domNode = editor.api.toDOMNode(ancestor)
+      if (!domNode) return
+      show(domNode)
     },
     onOpenSelection: () => {
-      show(editor.api.toDOMNode(editor.api.blocks().at(-1)![0])!)
+      const lastBlock = editor.api.blocks().at(-1)
+      if (!lastBlock) return
+      const domNode = editor.api.toDOMNode(lastBlock[0])
+      if (!domNode) return
+      show(domNode)
     },
   })
 
@@ -134,7 +149,12 @@ export function AIMenu() {
       if (!anchorNode) return
 
       const block = editor.api.block({ at: anchorNode[1] })
-      setAnchorElement(editor.api.toDOMNode(block![0]!)!)
+      if (!block) return
+
+      const blockDomNode = editor.api.toDOMNode(block[0])
+      if (blockDomNode) {
+        setAnchorElement(blockDomNode)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

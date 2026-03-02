@@ -2,7 +2,7 @@
 
 import {
   Resizable as ResizablePrimitive,
-  type ResizeHandle as ResizeHandlePrimitive,
+  type ResizeHandleProps as ResizeHandlePrimitiveProps,
   useResizeHandle,
   useResizeHandleState,
 } from '@platejs/resizable'
@@ -39,19 +39,19 @@ const resizeHandleVariants = cva('absolute z-40', {
   },
 })
 
-export function ResizeHandle({
-  className,
-  options,
-  ...props
-}: React.ComponentProps<typeof ResizeHandlePrimitive> & VariantProps<typeof resizeHandleVariants>) {
+type ResizeHandleProps = Omit<ResizeHandlePrimitiveProps, 'direction'> &
+  VariantProps<typeof resizeHandleVariants>
+
+export function ResizeHandle({ className, options, direction, ...props }: ResizeHandleProps) {
   const state = useResizeHandleState(options ?? {})
   const resizeHandle = useResizeHandle(state)
+  const resolvedDirection = direction ?? options?.direction
 
   if (state.readOnly) return null
 
   return (
     <div
-      className={cn(resizeHandleVariants({ direction: options?.direction }), className)}
+      className={cn(resizeHandleVariants({ direction: resolvedDirection }), className)}
       data-resizing={state.isResizing}
       {...resizeHandle.props}
       {...props}

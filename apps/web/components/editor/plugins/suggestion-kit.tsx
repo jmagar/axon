@@ -9,14 +9,15 @@ import { SuggestionLeaf, SuggestionLineBreak } from '@/components/ui/suggestion-
 
 import { discussionPlugin } from './discussion-kit'
 
-export type SuggestionConfig = ExtendConfig<
-  BaseSuggestionConfig,
-  {
-    activeId: string | null
-    hoverId: string | null
-    uniquePathMap: Map<string, Path>
-  }
->
+export interface SuggestionConfig
+  extends ExtendConfig<
+    BaseSuggestionConfig,
+    {
+      activeId: string | null
+      hoverId: string | null
+      uniquePathMap: Map<string, Path>
+    }
+  > {}
 
 export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
   BaseSuggestionPlugin,
@@ -32,7 +33,12 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
   handlers: {
     // unset active suggestion when clicking outside of suggestion
     onClick: ({ api, event, setOption, type }) => {
-      let leaf = event.target as HTMLElement
+      if (!(event.target instanceof HTMLElement)) {
+        setOption('activeId', null)
+        return
+      }
+
+      let leaf = event.target
       let isSet = false
 
       const isBlockLeaf = leaf.dataset.blockSuggestion === 'true'

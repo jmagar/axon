@@ -3,12 +3,19 @@ import { SlateElement } from 'platejs/static'
 
 import { cn } from '@/lib/utils'
 
+interface CalloutElementData {
+  backgroundColor?: string
+  icon?: string
+}
+
 export function CalloutElementStatic({ children, className, ...props }: SlateElementProps) {
+  const element = props.element as CalloutElementData
+
   return (
     <SlateElement
       className={cn('my-1 flex rounded-sm bg-muted p-4 pl-3', className)}
       style={{
-        backgroundColor: props.element.backgroundColor as any,
+        backgroundColor: element.backgroundColor,
       }}
       {...props}
     >
@@ -20,7 +27,7 @@ export function CalloutElementStatic({ children, className, ...props }: SlateEle
               '"Apple Color Emoji", "Segoe UI Emoji", NotoColorEmoji, "Noto Color Emoji", "Segoe UI Symbol", "Android Emoji", EmojiSymbols',
           }}
         >
-          <span data-plate-prevent-deserialization>{(props.element.icon as any) || '💡'}</span>
+          <span data-plate-prevent-deserialization>{element.icon ?? '💡'}</span>
         </div>
         <div className="w-full">{children}</div>
       </div>
@@ -32,8 +39,9 @@ export function CalloutElementStatic({ children, className, ...props }: SlateEle
  * DOCX-compatible callout component using table layout for side-by-side icon and content.
  */
 export function CalloutElementDocx({ children, ...props }: SlateElementProps) {
-  const backgroundColor = (props.element.backgroundColor as string) || '#f4f4f5'
-  const icon = (props.element.icon as string) || '💡'
+  const element = props.element as CalloutElementData
+  const backgroundColor = element.backgroundColor ?? '#f4f4f5'
+  const icon = element.icon ?? '💡'
 
   return (
     <SlateElement {...props}>

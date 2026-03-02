@@ -15,10 +15,21 @@ const headingItemVariants = cva(
         1: 'pl-0.5',
         2: 'pl-[26px]',
         3: 'pl-[50px]',
+        4: 'pl-[74px]',
+        5: 'pl-[98px]',
+        6: 'pl-[122px]',
       },
     },
   },
 )
+
+type HeadingDepth = 1 | 2 | 3 | 4 | 5 | 6
+
+const clampHeadingDepth = (depth: number): HeadingDepth => {
+  if (depth <= 1) return 1
+  if (depth >= 6) return 6
+  return depth as HeadingDepth
+}
 
 export function TocElement(props: PlateElementProps) {
   const state = useTocElementState()
@@ -34,7 +45,7 @@ export function TocElement(props: PlateElementProps) {
               key={item.id}
               variant="ghost"
               className={headingItemVariants({
-                depth: item.depth as 1 | 2 | 3,
+                depth: clampHeadingDepth(item.depth),
               })}
               onClick={(e) => btnProps.onClick(e, item, 'smooth')}
             >
