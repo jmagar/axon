@@ -15,25 +15,13 @@ import {
   useEmojiDropdownMenuState,
 } from '@platejs/emoji/react'
 import * as Popover from '@radix-ui/react-popover'
-import {
-  AppleIcon,
-  ClockIcon,
-  CompassIcon,
-  FlagIcon,
-  LeafIcon,
-  LightbulbIcon,
-  MusicIcon,
-  SearchIcon,
-  SmileIcon,
-  StarIcon,
-  XIcon,
-} from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
 import { ToolbarButton } from '@/components/ui/toolbar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { emojiCategoryIcons, emojiSearchIcons } from './emoji-toolbar-icons'
 
 export interface EmojiToolbarButtonProps
   extends React.ComponentPropsWithoutRef<typeof ToolbarButton> {
@@ -47,7 +35,9 @@ export function EmojiToolbarButton({ options, ...props }: EmojiToolbarButtonProp
     <EmojiPopover
       control={
         <ToolbarButton pressed={isOpen} tooltip="Emoji" isDropdown {...props}>
-          <SmileIcon />
+          <span className="inline-flex size-5 items-center justify-center">
+            {emojiCategoryIcons.people.outline}
+          </span>
         </ToolbarButton>
       }
       isOpen={isOpen}
@@ -295,12 +285,12 @@ function EmojiPickerContent({
           {i18n.searchResult}
         </div>
         <div className="relative flex flex-wrap">
-          {searchResult.map((emoji: Emoji, index: number) => (
+          {searchResult.map((entryEmoji: Emoji, index: number) => (
             <EmojiButton
-              key={emoji.id}
+              key={entryEmoji.id}
               onMouseOver={onMouseOver}
               onSelect={onSelectEmoji}
-              emoji={emojiLibrary.getEmoji(emoji.id)}
+              emoji={emojiLibrary.getEmoji(entryEmoji.id)}
               index={index}
             />
           ))}
@@ -488,99 +478,4 @@ function EmojiPickerNavigation({
       </nav>
     </TooltipProvider>
   )
-}
-
-const emojiCategoryIcons: Record<
-  EmojiCategoryList,
-  {
-    outline: React.ReactElement
-    solid: React.ReactElement // Needed to add another solid variant - outline will be used for now
-  }
-> = {
-  activity: {
-    outline: (
-      <svg
-        className="size-full"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M2.1 13.4A10.1 10.1 0 0 0 13.4 2.1" />
-        <path d="m5 4.9 14 14.2" />
-        <path d="M21.9 10.6a10.1 10.1 0 0 0-11.3 11.3" />
-      </svg>
-    ),
-    solid: (
-      <svg
-        className="size-full"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M2.1 13.4A10.1 10.1 0 0 0 13.4 2.1" />
-        <path d="m5 4.9 14 14.2" />
-        <path d="M21.9 10.6a10.1 10.1 0 0 0-11.3 11.3" />
-      </svg>
-    ),
-  },
-
-  custom: {
-    outline: <StarIcon className="size-full" />,
-    solid: <StarIcon className="size-full" />,
-  },
-
-  flags: {
-    outline: <FlagIcon className="size-full" />,
-    solid: <FlagIcon className="size-full" />,
-  },
-
-  foods: {
-    outline: <AppleIcon className="size-full" />,
-    solid: <AppleIcon className="size-full" />,
-  },
-
-  frequent: {
-    outline: <ClockIcon className="size-full" />,
-    solid: <ClockIcon className="size-full" />,
-  },
-
-  nature: {
-    outline: <LeafIcon className="size-full" />,
-    solid: <LeafIcon className="size-full" />,
-  },
-
-  objects: {
-    outline: <LightbulbIcon className="size-full" />,
-    solid: <LightbulbIcon className="size-full" />,
-  },
-
-  people: {
-    outline: <SmileIcon className="size-full" />,
-    solid: <SmileIcon className="size-full" />,
-  },
-
-  places: {
-    outline: <CompassIcon className="size-full" />,
-    solid: <CompassIcon className="size-full" />,
-  },
-
-  symbols: {
-    outline: <MusicIcon className="size-full" />,
-    solid: <MusicIcon className="size-full" />,
-  },
-}
-
-const emojiSearchIcons = {
-  delete: <XIcon className="size-4 text-current" />,
-  loupe: <SearchIcon className="size-4 text-current" />,
 }
