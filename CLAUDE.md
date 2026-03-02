@@ -13,8 +13,8 @@ docker compose up -d
 ./scripts/axon doctor
 ./scripts/axon scrape https://example.com --wait true
 
-# MCP server wrapper (auto-sources .env)
-./scripts/axon-mcp
+# MCP server via CLI subcommand
+./scripts/axon mcp
 
 # Or build and run the binary directly
 cargo build --release --bin axon
@@ -26,13 +26,13 @@ cargo run --bin axon -- scrape https://example.com --wait true
 
 > **Note:** The binary is named `axon`. Build with `cargo build --bin axon`.
 
-## MCP Server (`axon-mcp`)
+## MCP Server (`axon mcp`)
 
-Axon ships an MCP server binary that exposes a single tool (`axon`) with `action`/`subaction` routing for crawl/extract/embed/ingest/RAG/discovery/ops workflows.
+Axon ships an MCP server subcommand that exposes a single tool (`axon`) with `action`/`subaction` routing for crawl/extract/embed/ingest/RAG/discovery/ops workflows.
 
 ```bash
-cargo build --release --bin axon-mcp
-./target/release/axon-mcp
+cargo build --release --bin axon
+./target/release/axon mcp
 ```
 
 MCP docs:
@@ -65,6 +65,7 @@ MCP docs:
 | `status` | Show async job queue status | No |
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
+| `mcp` | Start MCP stdio server | No |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed)
@@ -318,6 +319,9 @@ On HTTP 429 or 503, `tei_embed()` retries up to 10 times with exponential backof
 
 ### Thin page filtering
 Pages with fewer than `--min-markdown-chars` (default: 200) are flagged as thin. If `--drop-thin-markdown true` (default), thin pages are skipped — not saved to disk or embedded.
+
+### `readability: false` — do NOT change
+`build_transform_config()` in `crates/core/content.rs` sets `readability: false`. Changing this to `true` causes Mozilla Readability to score VitePress/sidebar doc layouts as low-quality and strip them to just the page title — produces ~97% thin pages on most documentation sites. `main_content: true` handles structural extraction without the scoring penalty. This setting is the result of a confirmed production regression; do not "improve" it.
 
 ### Collection must exist before upsert
 `ensure_collection()` does a GET first; only issues PUT on 404 (collection not found). This means it's safe on existing collections — no 409 Conflict. Safe to call on every embed.

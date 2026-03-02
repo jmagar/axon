@@ -9,7 +9,7 @@ Module index for Axon’s Rust crate directories.
 - [crawl](./crawl/README.md): crawl engine and crawl manifest logic.
 - [ingest](./ingest/README.md): source adapters (GitHub, Reddit, YouTube, sessions).
 - [jobs](./jobs/README.md): async queue workers and job lifecycle management.
-- [mcp](./mcp/README.md): MCP server crate for `axon-mcp`.
+- [mcp](./mcp/README.md): MCP server crate for `axon mcp`.
 - [vector](./vector/README.md): embeddings, Qdrant operations, retrieval, and RAG.
 - [web](./web/README.md): `axon serve` web runtime and websocket bridge.
 

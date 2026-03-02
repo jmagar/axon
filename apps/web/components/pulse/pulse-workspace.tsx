@@ -273,6 +273,16 @@ export function PulseWorkspace() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [setPulseModel, setPulsePermissionLevel])
 
+  // Keep a ref to the latest handlePrompt so the workspace-prompt effect never needs
+  // handlePrompt in its dependency array.  Without this, any re-creation of handlePrompt
+  // (e.g. documentMarkdown changes during initial state restore) would re-trigger the effect,
+  // and the StrictMode cleanup-then-remount cycle would abort the request then refuse to
+  // restart it (because lastHandledPromptVersionRef is already set).
+  const handlePromptRef = useRef(handlePrompt)
+  useEffect(() => {
+    handlePromptRef.current = handlePrompt
+  }, [handlePrompt])
+
   // Workspace prompt handler effect
   useEffect(() => {
     if (workspacePromptVersion === 0) {
@@ -283,8 +293,16 @@ export function PulseWorkspace() {
     if (workspacePromptVersion <= lastHandledPromptVersionRef.current) return
     lastHandledPromptVersionRef.current = workspacePromptVersion
 
-    void handlePrompt(workspacePrompt)
-  }, [workspacePromptVersion, workspacePrompt, handlePrompt])
+    void handlePromptRef.current(workspacePrompt)
+
+    // On StrictMode cleanup (dev-only mount→unmount→mount cycle), roll back the version
+    // counter so the re-mount is allowed to start a fresh request.
+    return () => {
+      if (lastHandledPromptVersionRef.current === workspacePromptVersion) {
+        lastHandledPromptVersionRef.current = workspacePromptVersion - 1
+      }
+    }
+  }, [workspacePromptVersion, workspacePrompt])
 
   return (
     <div className={`flex h-full flex-col${!isDesktop ? ' pt-11' : ''}`}>

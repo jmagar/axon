@@ -131,8 +131,15 @@ export async function POST(request: Request) {
         let aborted = request.signal.aborted
 
         const enqueueEvent = (event: PulseChatStreamEvent) => {
+          if (closed) return
           lastEmitAt = Date.now()
-          controller.enqueue(encoder.encode(encodePulseChatStreamEvent(event)))
+          try {
+            controller.enqueue(encoder.encode(encodePulseChatStreamEvent(event)))
+          } catch {
+            // Controller was closed externally (client disconnect) — mark closed so no
+            // further enqueue attempts are made. The child will be killed via the abort handler.
+            closed = true
+          }
         }
 
         const persistReplay = () => {
@@ -293,8 +300,12 @@ export async function POST(request: Request) {
           }
 
           if (code !== 0) {
+            // Prefer the result from the stream-json parser (auth errors, tool errors) over
+            // stderr (usually empty for non-zero exits) or raw stdout remainder.
+            const cliErrorDetail = parserState.result || truncateForLog(stderr || stdoutRemainder)
             console.error('[pulse/chat] Claude CLI exited', code, {
               stderr: (stderr || '').slice(0, 500),
+              result: parserState.result.slice(0, 500),
             })
             const memoryFallbackText = resolveConversationMemoryAnswer(
               req.prompt,
@@ -321,7 +332,7 @@ export async function POST(request: Request) {
               return
             }
             emitErrorAndClose(
-              `Claude CLI exited ${code}: ${truncateForLog(stderr || stdoutRemainder)}`,
+              `Claude CLI exited ${code}: ${cliErrorDetail}`,
               'pulse_chat_exit_nonzero',
             )
             return

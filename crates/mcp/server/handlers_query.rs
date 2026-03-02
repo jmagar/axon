@@ -13,7 +13,6 @@ use crate::crates::mcp::schema::{
 use crate::crates::vector::ops::commands::query_results;
 use crate::crates::vector::ops::qdrant::retrieve_result;
 use rmcp::ErrorData;
-use tokio::process::Command;
 
 impl AxonMcpServer {
     pub(super) async fn handle_query(
@@ -202,29 +201,12 @@ impl AxonMcpServer {
             .query
             .ok_or_else(|| invalid_params("query is required for ask"))?;
         let response_mode = parse_response_mode(req.response_mode);
-        let axon_bin = std::env::current_exe()
-            .map_err(|e| internal_error(e.to_string()))?
-            .with_file_name("axon");
-        let output = Command::new(&axon_bin)
-            .arg("ask")
-            .arg("--json")
-            .arg("--query")
-            .arg(&query)
-            .output()
-            .await
-            .map_err(|e| internal_error(format!("failed to execute {:?}: {e}", axon_bin)))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(internal_error(format!(
-                "ask command failed with code {:?}: {}",
-                output.status.code(),
-                stderr.trim()
-            )));
-        }
-        let stdout = String::from_utf8(output.stdout)
-            .map_err(|e| internal_error(format!("invalid utf8 from ask output: {e}")))?;
-        let payload = serde_json::from_str::<serde_json::Value>(&stdout)
-            .map_err(|e| internal_error(format!("invalid ask json output: {e}")))?;
+
+        let payload =
+            crate::crates::vector::ops::commands::ask::ask_payload(self.cfg.as_ref(), &query)
+                .await
+                .map_err(|e| internal_error(e.to_string()))?;
+
         respond_with_mode(
             "ask",
             "ask",

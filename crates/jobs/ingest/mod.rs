@@ -27,7 +27,7 @@ use self::schema::ensure_schema;
 
 const TABLE: JobTable = JobTable::Ingest;
 
-pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     use crate::crates::core::health::redis_healthy;
     use crate::crates::jobs::common::open_amqp_channel;
 
