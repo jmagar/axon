@@ -8,6 +8,7 @@ export async function GET() {
     const data = await runAxonCommandWs('stats', 30_000)
     return NextResponse.json({ ok: true, data })
   } catch (err) {
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
+    console.error('[cortex/stats] failed to fetch stats', err)
+    return NextResponse.json({ ok: false, error: 'Failed to fetch Cortex stats' }, { status: 500 })
   }
 }

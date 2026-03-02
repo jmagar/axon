@@ -24,7 +24,7 @@ export default function CortexLayout({ children }: { children: ReactNode }) {
         style={{ boxShadow: '0 1px 0 rgba(135, 175, 255, 0.07)' }}
       >
         {CORTEX_TABS.map((tab) => {
-          const isActive = pathname === tab.href
+          const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`)
           return (
             <Link
               key={tab.href}

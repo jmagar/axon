@@ -32,7 +32,9 @@ export const VideoElement = withHOC(
 
     const isEditorMounted = useEditorMounted()
 
-    const isTweet = true
+    const isTweet = Boolean(
+      unsafeUrl && /(^https?:\/\/)?(www\.)?(twitter\.com|x\.com)\//i.test(unsafeUrl),
+    )
 
     const { isDragging, handleRef } = useDraggable({
       element: props.element,

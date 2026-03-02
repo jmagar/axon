@@ -17,6 +17,9 @@ pre-commit:
     skills-ref:
       glob: "skills/**"
       run: ./scripts/validate_skills_ref.sh
+    mcp-schema-doc:
+      glob: "crates/mcp/schema.rs"
+      run: python3 scripts/generate_mcp_schema_doc.py && git add docs/MCP-TOOL-SCHEMA.md
     monolith:
       run: if [ -f "$HOME/.claude/hooks/enforce_monoliths.py" ]; then python3 "$HOME/.claude/hooks/enforce_monoliths.py" --staged; else echo "[skip] global monolith enforcer not found at ~/.claude/hooks/enforce_monoliths.py"; fi
     rustfmt:

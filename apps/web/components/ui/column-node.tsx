@@ -86,7 +86,7 @@ const ColumnDragHandle = React.memo(function ColumnDragHandle() {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" className="!px-1 h-5">
+          <Button aria-label="Drag column" variant="ghost" className="!px-1 h-5">
             <GripHorizontal
               className="text-muted-foreground"
               onClick={(event) => {
@@ -159,23 +159,40 @@ function ColumnFloatingToolbar({ children }: React.PropsWithChildren) {
         sideOffset={10}
       >
         <div className="box-content flex h-8 items-center">
-          <Button variant="ghost" className="size-8" onClick={() => onColumnChange(['50%', '50%'])}>
+          <Button
+            aria-label="Set two equal columns"
+            variant="ghost"
+            className="size-8"
+            onClick={() => onColumnChange(['50%', '50%'])}
+          >
             <DoubleColumnOutlined />
           </Button>
           <Button
+            aria-label="Set three equal columns"
             variant="ghost"
             className="size-8"
             onClick={() => onColumnChange(['33%', '33%', '33%'])}
           >
             <ThreeColumnOutlined />
           </Button>
-          <Button variant="ghost" className="size-8" onClick={() => onColumnChange(['70%', '30%'])}>
+          <Button
+            aria-label="Set wide left and narrow right columns"
+            variant="ghost"
+            className="size-8"
+            onClick={() => onColumnChange(['70%', '30%'])}
+          >
             <RightSideDoubleColumnOutlined />
           </Button>
-          <Button variant="ghost" className="size-8" onClick={() => onColumnChange(['30%', '70%'])}>
+          <Button
+            aria-label="Set narrow left and wide right columns"
+            variant="ghost"
+            className="size-8"
+            onClick={() => onColumnChange(['30%', '70%'])}
+          >
             <LeftSideDoubleColumnOutlined />
           </Button>
           <Button
+            aria-label="Set narrow-wide-narrow columns"
             variant="ghost"
             className="size-8"
             onClick={() => onColumnChange(['25%', '50%', '25%'])}
@@ -184,7 +201,12 @@ function ColumnFloatingToolbar({ children }: React.PropsWithChildren) {
           </Button>
 
           <Separator orientation="vertical" className="mx-1 h-6" />
-          <Button variant="ghost" className="size-8" {...buttonProps}>
+          <Button
+            aria-label="Delete column group"
+            variant="ghost"
+            className="size-8"
+            {...buttonProps}
+          >
             <Trash2Icon />
           </Button>
         </div>

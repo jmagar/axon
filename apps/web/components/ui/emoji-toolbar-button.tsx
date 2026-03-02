@@ -35,12 +35,12 @@ import { ToolbarButton } from '@/components/ui/toolbar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-export function EmojiToolbarButton({
-  options,
-  ...props
-}: {
+export interface EmojiToolbarButtonProps
+  extends React.ComponentPropsWithoutRef<typeof ToolbarButton> {
   options?: EmojiDropdownMenuOptions
-} & React.ComponentPropsWithoutRef<typeof ToolbarButton>) {
+}
+
+export function EmojiToolbarButton({ options, ...props }: EmojiToolbarButtonProps) {
   const { emojiPickerState, isOpen, setIsOpen } = useEmojiDropdownMenuState(options)
 
   return (
@@ -63,17 +63,14 @@ export function EmojiToolbarButton({
   )
 }
 
-export function EmojiPopover({
-  children,
-  control,
-  isOpen,
-  setIsOpen,
-}: {
+export interface EmojiPopoverProps {
   children: React.ReactNode
   control: React.ReactNode
   isOpen: boolean
   setIsOpen: (open: boolean) => void
-}) {
+}
+
+export function EmojiPopover({ children, control, isOpen, setIsOpen }: EmojiPopoverProps) {
   return (
     <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
       <Popover.Trigger asChild>{control}</Popover.Trigger>
@@ -83,6 +80,10 @@ export function EmojiPopover({
       </Popover.Portal>
     </Popover.Root>
   )
+}
+
+export interface EmojiPickerProps extends Omit<UseEmojiPickerType, 'icons'> {
+  icons?: EmojiIconList<React.ReactElement>
 }
 
 export function EmojiPicker({
@@ -106,9 +107,7 @@ export function EmojiPicker({
   handleCategoryClick,
   onMouseOver,
   onSelectEmoji,
-}: Omit<UseEmojiPickerType, 'icons'> & {
-  icons?: EmojiIconList<React.ReactElement>
-}) {
+}: EmojiPickerProps) {
   return (
     <div
       className={cn(
@@ -234,7 +233,7 @@ function EmojiPickerContent({
   const getRowWidth = settings.perLine.value * settings.buttonSize.value
 
   const isCategoryVisible = React.useCallback(
-    (categoryId: any) =>
+    (categoryId: EmojiCategoryList) =>
       visibleCategories.has(categoryId) ? visibleCategories.get(categoryId) : false,
     [visibleCategories],
   )
@@ -433,7 +432,7 @@ function EmojiPickerPreview({
 }: Pick<UseEmojiPickerType, 'emoji' | 'hasFound' | 'i18n' | 'isSearching'>) {
   const showPickEmoji = !emoji && (!isSearching || hasFound)
   const showNoEmoji = isSearching && !hasFound
-  const showPreview = emoji && !showNoEmoji && !showNoEmoji
+  const showPreview = Boolean(emoji) && !showNoEmoji
 
   return (
     <>

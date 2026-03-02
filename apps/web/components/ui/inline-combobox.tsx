@@ -31,7 +31,7 @@ type FilterFn = (
   search: string,
 ) => boolean
 
-type InlineComboboxContextValue = {
+interface InlineComboboxContextValue {
   filter: FilterFn | false
   inputProps: UseComboboxInputResult['props']
   inputRef: React.RefObject<HTMLInputElement | null>
@@ -51,7 +51,7 @@ const defaultFilter: FilterFn = ({ group, keywords = [], label, value }, search)
   return Array.from(uniqueTerms).some((keyword) => filterWords(keyword!, search))
 }
 
-type InlineComboboxProps = {
+interface InlineComboboxProps {
   children: React.ReactNode
   element: TElement
   trigger: string
@@ -314,12 +314,10 @@ const InlineComboboxItem = ({
 
   const store = useComboboxContext()!
 
-  // Optimization: Do not subscribe to value if filter is false
-  // biome-ignore lint/correctness/useHookAtTopLevel: shadcn-generated pattern — hook called conditionally as optimization
-  const search = filter && store.useState('value')
+  const search = store.useState('value')
 
   const visible = React.useMemo(
-    () => !filter || filter({ group, keywords, label, value }, search as string),
+    () => !filter || filter({ group, keywords, label, value }, search),
     [filter, group, keywords, label, value, search],
   )
 

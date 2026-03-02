@@ -63,7 +63,7 @@ export function FloatingToolbar() {
     ? {
         ...style,
         top:
-          typeof style.top === 'number'
+          typeof style.top === 'number' && typeof window !== 'undefined'
             ? Math.min(style.top, (window.visualViewport?.height ?? window.innerHeight) - 60)
             : style.top,
       }

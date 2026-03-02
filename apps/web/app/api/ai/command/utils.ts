@@ -44,7 +44,7 @@ export const list = (items: string[] | undefined) =>
         .join('\n')
     : ''
 
-export type StructuredPromptSections = {
+export interface StructuredPromptSections {
   context?: string
   examples?: string[] | string
   history?: string
@@ -169,7 +169,8 @@ export function formatTextFromMessages(
   // No history needed if no messages or only one message
   if (!messages || messages.length <= 1) return ''
 
-  const historyMessages = options?.limit ? messages.slice(-options.limit) : messages
+  const historyMessages =
+    options?.limit !== undefined ? messages.slice(-Math.max(0, options.limit)) : messages
 
   return historyMessages
     .map((message) => {
@@ -225,7 +226,8 @@ const removeEscapeSelection = (editor: SlateEditor, text: string) => {
 
   // If the selection is on a void element, inserting the placeholder will fail, and the string must be replaced manually.
   if (!newText.includes(SELECTION_END)) {
-    const [_, end] = RangeApi.edges(editor.selection!)
+    if (!editor.selection) return newText
+    const [_, end] = RangeApi.edges(editor.selection)
 
     const node = editor.api.block({ at: end.path })
 
