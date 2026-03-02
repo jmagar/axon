@@ -57,6 +57,11 @@ container/*.local.yaml
 /http-cacache/
 /storage/
 
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
 # Node artifacts (root-level, not part of the Rust workspace)
 /node_modules/
 /package.json
