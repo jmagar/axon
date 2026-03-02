@@ -6,8 +6,8 @@ mod shell;
 
 use crate::crates::core::logging::log_info;
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use dashmap::DashMap;
@@ -64,9 +64,12 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
     log_info(&format!("Axon web UI listening on http://{addr}"));
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }
@@ -142,7 +145,17 @@ async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
-async fn shell_ws_upgrade(ws: WebSocketUpgrade) -> Response {
+async fn shell_ws_upgrade(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            "Shell access is restricted to localhost",
+        )
+            .into_response();
+    }
     ws.on_upgrade(shell::handle_shell_ws)
 }
 

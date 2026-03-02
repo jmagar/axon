@@ -266,8 +266,8 @@ jobs:
           path: .cache/huggingface
           key: hf-tei-${{ runner.os }}-BAAI-bge-small-en-v1.5-v1
 
-      - name: Build axon binaries (release)
-        run: cargo build --release --locked --bin axon --bin axon-mcp
+      - name: Build axon binary (release)
+        run: cargo build --release --locked --bin axon
 
       - name: Write CI mcporter config
         run: |
@@ -275,7 +275,8 @@ jobs:
           {
             "mcpServers": {
               "axon": {
-                "command": "${{ github.workspace }}/target/release/axon-mcp"
+                "command": "${{ github.workspace }}/target/release/axon",
+                "args": ["mcp"]
               }
             },
             "imports": []

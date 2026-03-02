@@ -12,7 +12,7 @@ ingest/
 │   ├── files.rs # file tree fetch + raw content via reqwest
 │   ├── issues.rs# octocrab paginated issues + PRs
 │   └── wiki.rs  # git clone --depth=1 subprocess; no wiki = Ok(0)
-├── github.rs    # re-export shim (if present) — canonical logic is in github/
+├── github.rs    # re-export shim — canonical logic is in github/; this file re-exports the public API
 ├── reddit.rs    # Subreddit post/comment ingestion via Reddit OAuth2 API
 ├── youtube.rs   # YouTube transcript ingestion via yt-dlp subprocess
 └── sessions/    # AI session export parsers

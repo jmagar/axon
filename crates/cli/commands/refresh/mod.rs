@@ -208,7 +208,7 @@ async fn handle_refresh_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_refresh_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let jobs = list_refresh_jobs(cfg, 50).await?;
+    let jobs = list_refresh_jobs(cfg, 50, 0).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
         return Ok(());
@@ -383,7 +383,7 @@ mod tests {
 
         handle_refresh_schedule_run_due(&cfg).await?;
 
-        let jobs = list_refresh_jobs(&cfg, 50).await?;
+        let jobs = list_refresh_jobs(&cfg, 50, 0).await?;
         let matching_job = jobs.iter().find(|job| {
             serde_json::from_value::<Vec<String>>(job.urls_json.clone())
                 .map(|urls| urls == manifest_urls)

@@ -34,6 +34,25 @@ website.with_retry(retries as u8)   // clamp to u8 — must not exceed 255
 
 Chrome requires `AXON_CHROME_REMOTE_URL` set. If not set, HTTP result is kept.
 
+### Junk URL Filter (`is_junk_discovered_url`)
+`engine.rs` registers `website.set_on_link_find()` during `configure_website()` which calls `is_junk_discovered_url()` on every discovered link **before** the blacklist regex and before any fetch. Rejecting here prevents bad URLs from entering the crawl queue at all.
+
+Heuristics (each sufficient to reject):
+- URL length > 2048 characters
+- Encoded HTML tags in URL path (`%3C`/`%3E`)
+- Template literal placeholders (`%7B`/`%7D`)
+- 3 or more `%20` sequences in the URL path
+- JS string concat artifact: `%20)` anywhere in path
+
+Returns `CaseInsensitiveString::default()` to reject; returns the original string to allow. Only checks the URL path, not the query string, to avoid false positives on legitimate query parameters.
+
+### Mid-Crawl Cancellation (Redis Key)
+`run_active_crawl_job` in `process.rs` wraps the crawl future in a `tokio::select!` that races against a cancel poller:
+- Polls Redis key `axon:crawl:cancel:{job_id}` every **3 seconds** via `is_crawl_canceled()`
+- If the key exists, the crawl future is dropped — drop semantics on `progress_tx` cause the progress task to exit cleanly
+- **Fail-safe:** `is_crawl_canceled` returns `false` on any Redis error — a Redis outage never false-cancels a crawl
+- Cancel a running crawl: `axon crawl cancel <job_id>` (sets the Redis key)
+
 ### readability: false (DO NOT CHANGE)
 `build_transform_config()` in `crates/core/content.rs` sets `readability: false`. Changing to `true` causes Mozilla Readability to score VitePress/sidebar docs as low-quality and strip them to just the title — produces ~97% thin pages on most doc sites. `main_content: true` handles structural extraction without the scoring penalty.
 
