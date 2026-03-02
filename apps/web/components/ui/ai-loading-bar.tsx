@@ -59,7 +59,11 @@ export function AILoadingBar() {
           size="sm"
           variant="ghost"
           className="flex items-center gap-1 text-xs"
-          onClick={() => api.aiChat.stop()}
+          onClick={() => {
+            api.aiChat.stop()
+            // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
+            ;(chat as any).stop?.()
+          }}
         >
           <PauseIcon className="h-4 w-4" />
           Stop
