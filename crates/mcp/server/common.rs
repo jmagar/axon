@@ -223,7 +223,7 @@ pub(super) fn respond_with_mode(
     artifact_stem: &str,
     payload: serde_json::Value,
 ) -> Result<AxonToolResponse, ErrorData> {
-    let text = serde_json::to_string_pretty(&payload).map_err(|e| internal_error(e.to_string()))?;
+    let text = serde_json::to_string(&payload).map_err(|e| internal_error(e.to_string()))?;
     let artifact = write_text_artifact(artifact_stem, &text)?;
     match mode {
         ResponseMode::Path => Ok(AxonToolResponse::ok(

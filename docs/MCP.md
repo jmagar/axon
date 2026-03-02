@@ -2,7 +2,7 @@
 Last Modified: 2026-02-25
 
 ## Purpose
-`axon-mcp` exposes Axon through one MCP tool named `axon`.
+`axon mcp` exposes Axon through one MCP tool named `axon`.
 
 - Transport: stdio
 - Tool count: 1
@@ -14,13 +14,12 @@ Canonical schema and action contract:
 - `docs/MCP-TOOL-SCHEMA.md`
 
 Implementation:
-- `mcp_main.rs`
 - `crates/mcp/schema.rs`
 - `crates/mcp/server.rs`
 - `crates/mcp/config.rs`
 
 ## Runtime Model
-`axon-mcp` is expected to run in the same environment as Axon workers.
+`axon mcp` is expected to run in the same environment as Axon workers.
 
 It reuses existing stack env vars (no MCP-only env namespace):
 - `AXON_PG_URL`

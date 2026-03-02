@@ -54,6 +54,21 @@ Unknown modes or flags return an error WS event without spawning a process. Do n
 
 `docker_stats.rs` polls bollard for container stats every 500ms and broadcasts to all WS clients. This requires `/var/run/docker.sock` to be mounted. When running inside `axon-workers`, the socket is **not** mounted — stats will be silently unavailable. HTTP/WS endpoints remain functional.
 
+## Ports
+
+| Binding | Purpose |
+|---------|---------|
+| `0.0.0.0:49000` | HTTP + WebSocket server (`axon serve`) |
+
+Port 49000 is the backend server port. The Next.js frontend (`apps/web`) at port 49010 proxies to it.
+
+## Adding a New HTTP Endpoint
+
+1. Add the route in `crates/web.rs` (`Router::new().route(...)`)
+2. Implement the handler as a free function in the appropriate `crates/web/` module
+3. Add the handler to `ALLOWED_MODES` or `ALLOWED_FLAGS` if it involves subprocess execution
+4. Write an integration test in `crates/web/execute/tests/` or a snapshot test if response shape is fixed
+
 ## Agent Guidance
 
 When asked to review or polish the frontend visual system, audit and update `apps/web` first.
@@ -65,3 +80,12 @@ cargo test web            # WS bridge + execute pipeline tests
 cargo test download       # artifact download endpoint tests
 cargo test -- --nocapture # show subprocess output during tests
 ```
+
+Snapshot tests use `insta`. After intentional response shape changes, update snapshots:
+
+```bash
+cargo test web -- --nocapture   # run to generate new snapshots
+cargo insta review              # approve/reject each diff interactively
+```
+
+Snapshot files live in `crates/web/snapshots/` and are committed to git.

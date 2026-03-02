@@ -1,11 +1,12 @@
 use super::audit;
-use crate::crates::cli::commands::common::truncate_chars;
-use crate::crates::cli::commands::job_contracts::{
-    JobCancelResponse, JobErrorsResponse, JobStatusResponse, JobSummaryEntry,
+use crate::crates::cli::commands::common::{
+    handle_job_cancel, handle_job_cleanup, handle_job_clear, handle_job_errors, handle_job_recover,
+    handle_job_status, truncate_chars,
 };
+use crate::crates::cli::commands::job_contracts::JobSummaryEntry;
 use crate::crates::core::config::Config;
 use crate::crates::core::ui::{
-    accent, confirm_destructive, muted, primary, print_kv, status_text, symbol_for_status,
+    accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
 };
 use crate::crates::jobs::crawl::{
     CrawlJob, cancel_job, cleanup_jobs, clear_jobs, get_job, list_jobs, recover_stale_crawl_jobs,
@@ -19,14 +20,44 @@ pub(super) async fn maybe_handle_subcommand(cfg: &Config) -> Result<bool, Box<dy
         return Ok(false);
     };
     match subcmd {
-        "status" => handle_status_subcommand(cfg).await?,
-        "cancel" => handle_cancel_subcommand(cfg).await?,
-        "errors" => handle_errors_subcommand(cfg).await?,
+        "status" => {
+            let id = parse_required_job_id(cfg, "status")?;
+            let job = get_job(cfg, id).await?;
+            handle_status_subcommand(cfg, job, id).await?;
+        }
+        "cancel" => {
+            let id = parse_required_job_id(cfg, "cancel")?;
+            let canceled = cancel_job(cfg, id).await?;
+            handle_job_cancel(cfg, id, canceled, "crawl")?;
+        }
+        "errors" => {
+            let id = parse_required_job_id(cfg, "errors")?;
+            let job = get_job(cfg, id).await?;
+            handle_job_errors(cfg, job, id, "crawl")?;
+        }
         "list" => handle_list_subcommand(cfg).await?,
-        "cleanup" => handle_cleanup_subcommand(cfg).await?,
-        "clear" => handle_clear_subcommand(cfg).await?,
+        "cleanup" => {
+            let removed = cleanup_jobs(cfg).await?;
+            handle_job_cleanup(cfg, removed, "crawl")?;
+        }
+        "clear" => {
+            if confirm_destructive(cfg, "Clear all crawl jobs and purge crawl queue?")? {
+                let removed = clear_jobs(cfg).await?;
+                handle_job_clear(cfg, removed, "crawl")?;
+            } else if cfg.json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({ "removed": 0, "queue_purged": false })
+                );
+            } else {
+                println!("{} aborted", symbol_for_status("canceled"));
+            }
+        }
         "worker" => run_worker(cfg).await?,
-        "recover" => handle_recover_subcommand(cfg).await?,
+        "recover" => {
+            let reclaimed = recover_stale_crawl_jobs(cfg).await?;
+            handle_job_recover(cfg, reclaimed, "crawl")?;
+        }
         "audit" => {
             let url = cfg.positional.get(1).map(|s| s.as_str()).unwrap_or("");
             if url.is_empty() {
@@ -96,23 +127,21 @@ fn print_status_metrics(metrics: &serde_json::Value) {
     }
 }
 
-fn print_job_not_found(id: Uuid) {
-    println!(
-        "{} {}",
-        symbol_for_status("error"),
-        muted(&format!("job not found: {id}"))
-    );
-}
-
-async fn handle_status_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let id = parse_required_job_id(cfg, "status")?;
-    match get_job(cfg, id).await? {
+async fn handle_status_subcommand(
+    cfg: &Config,
+    job: Option<CrawlJob>,
+    id: Uuid,
+) -> Result<(), Box<dyn Error>> {
+    match job {
         Some(job) if cfg.json_output => {
-            let response = JobStatusResponse::from_crawl(&job);
-            println!("{}", serde_json::to_string_pretty(&response)?);
+            handle_job_status(cfg, Some(job), id, "Crawl")?;
         }
         Some(job) => {
-            print_kv("Crawl Status for", &job.id.to_string());
+            println!(
+                "{} {}",
+                primary("Crawl Status for"),
+                accent(&job.id.to_string())
+            );
             println!(
                 "  {} {}",
                 symbol_for_status(&job.status),
@@ -130,65 +159,7 @@ async fn handle_status_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
             println!();
             println!("Job ID: {}", job.id);
         }
-        None => print_job_not_found(id),
-    }
-    Ok(())
-}
-
-async fn handle_cancel_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let id = parse_required_job_id(cfg, "cancel")?;
-    let canceled = cancel_job(cfg, id).await?;
-    if cfg.json_output {
-        println!(
-            "{}",
-            serde_json::json!(JobCancelResponse::new(id, canceled))
-        );
-    } else if canceled {
-        println!(
-            "{} canceled crawl job {}",
-            symbol_for_status("canceled"),
-            accent(&id.to_string())
-        );
-        println!("Job ID: {id}");
-    } else {
-        println!(
-            "{} no cancellable crawl job found for ID: {}",
-            symbol_for_status("error"),
-            accent(&id.to_string())
-        );
-        println!("Job ID: {id}");
-    }
-    Ok(())
-}
-
-async fn handle_errors_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let id = parse_required_job_id(cfg, "errors")?;
-    match get_job(cfg, id).await? {
-        Some(job) if cfg.json_output => {
-            println!(
-                "{}",
-                serde_json::json!(JobErrorsResponse::from_job(
-                    id,
-                    job.status.clone(),
-                    job.error_text.clone()
-                ))
-            );
-        }
-        Some(job) => {
-            println!(
-                "{} {} {}",
-                symbol_for_status(&job.status),
-                accent(&id.to_string()),
-                status_text(&job.status)
-            );
-            println!(
-                "  {} {}",
-                muted("Error:"),
-                job.error_text.unwrap_or_else(|| "None".to_string())
-            );
-            println!("Job ID: {id}");
-        }
-        None => print_job_not_found(id),
+        None => handle_job_status::<CrawlJob>(cfg, None, id, "Crawl")?,
     }
     Ok(())
 }
@@ -251,7 +222,7 @@ fn job_progress_summary(job: &CrawlJob) -> Option<String> {
 }
 
 async fn handle_list_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let jobs = list_jobs(cfg, 50).await?;
+    let jobs = list_jobs(cfg, 50, 0).await?;
     if cfg.json_output {
         let entries: Vec<JobSummaryEntry> = jobs.iter().map(JobSummaryEntry::from_crawl).collect();
         println!("{}", serde_json::to_string_pretty(&entries)?);
@@ -282,62 +253,6 @@ async fn handle_list_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-    }
-    Ok(())
-}
-
-async fn handle_cleanup_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let removed = cleanup_jobs(cfg).await?;
-    if cfg.json_output {
-        println!("{}", serde_json::json!({"removed": removed}));
-    } else {
-        println!(
-            "{} removed {} crawl jobs",
-            symbol_for_status("completed"),
-            removed
-        );
-    }
-    Ok(())
-}
-
-async fn handle_clear_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if !confirm_destructive(cfg, "Clear all crawl jobs and purge crawl queue?")? {
-        if cfg.json_output {
-            println!(
-                "{}",
-                serde_json::json!({"removed": 0, "queue_purged": false})
-            );
-        } else {
-            println!("{} aborted", symbol_for_status("canceled"));
-        }
-        return Ok(());
-    }
-    let removed = clear_jobs(cfg).await?;
-    if cfg.json_output {
-        println!(
-            "{}",
-            serde_json::json!({"removed": removed, "queue_purged": true})
-        );
-    } else {
-        println!(
-            "{} cleared {} crawl jobs and purged queue",
-            symbol_for_status("completed"),
-            removed
-        );
-    }
-    Ok(())
-}
-
-async fn handle_recover_subcommand(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let reclaimed = recover_stale_crawl_jobs(cfg).await?;
-    if cfg.json_output {
-        println!("{}", serde_json::json!({"reclaimed": reclaimed}));
-    } else {
-        println!(
-            "{} reclaimed {} stale crawl jobs",
-            symbol_for_status("completed"),
-            reclaimed
-        );
     }
     Ok(())
 }

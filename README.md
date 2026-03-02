@@ -16,7 +16,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `map`, `search`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `serve`
+- Commands: `scrape`, `crawl`, `map`, `search`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
 - Async queue-backed jobs for `crawl`/`extract`/`embed`
 - **Surgical Incremental Crawling**: SHA-256 content hashing, Reflink/Hardlink storage reuse, and smart embedding skips for unchanged pages.
 - TEI embeddings + Qdrant vector storage
@@ -25,7 +25,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 - Automation-friendly JSON mode via `--json`
 - Legacy static web UI via `axon serve` (deprecated) — see `docs/serve.md`
 - Next.js web app (`apps/web`) with keyboard-first omnibox (`/` focus, `@mode` switching, `@file` context mentions)
-- MCP server binary `axon-mcp` exposing a single `axon` tool (`action`/`subaction`) for crawler/RAG integration
+- MCP server via `axon mcp` exposing a single `axon` tool (`action`/`subaction`) for crawler/RAG integration
 
 ## Architecture
 
@@ -59,11 +59,11 @@ For infra topology (Docker services, ports, persistence), see the Infrastructure
 
 ## MCP Server
 
-Axon includes an MCP server binary:
+Axon includes an MCP server command:
 
 ```bash
-cargo build --release --bin axon-mcp
-./target/release/axon-mcp
+cargo build --release --bin axon
+./target/release/axon mcp
 ```
 
 Documentation:

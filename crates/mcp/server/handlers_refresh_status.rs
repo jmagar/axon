@@ -87,15 +87,9 @@ impl AxonMcpServer {
             RefreshSubaction::List => {
                 let limit = parse_limit(req.limit, 20);
                 let offset = parse_offset(req.offset);
-                let fetch_limit = ((offset as i64) + limit).clamp(1, 500);
-                let jobs = list_refresh_jobs(self.cfg.as_ref(), fetch_limit)
+                let jobs = list_refresh_jobs(self.cfg.as_ref(), limit, offset as i64)
                     .await
                     .map_err(|e| internal_error(e.to_string()))?;
-                let jobs = jobs
-                    .into_iter()
-                    .skip(offset)
-                    .take(limit as usize)
-                    .collect::<Vec<_>>();
                 respond_with_mode(
                     "refresh",
                     "list",

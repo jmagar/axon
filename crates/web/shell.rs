@@ -92,24 +92,44 @@ async fn run_shell(
     });
 
     // WS receive loop: dispatches input + resize to PTY
-    while let Some(Ok(msg)) = ws_rx.next().await {
-        match msg {
-            Message::Text(text) => match serde_json::from_str::<ShellClientMsg>(&text) {
-                Ok(ShellClientMsg::Input { data }) => {
-                    let _ = pty_in_tx.send(data.into_bytes()).await;
+    let mut unacked_pings = 0;
+    loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(30), ws_rx.next()).await {
+            Ok(Some(Ok(msg))) => {
+                unacked_pings = 0; // Reset on any message received
+                match msg {
+                    Message::Text(text) => match serde_json::from_str::<ShellClientMsg>(&text) {
+                        Ok(ShellClientMsg::Input { data }) => {
+                            let _ = pty_in_tx.send(data.into_bytes()).await;
+                        }
+                        Ok(ShellClientMsg::Resize { cols, rows }) => {
+                            let _ = master.resize(PtySize {
+                                rows,
+                                cols,
+                                pixel_width: 0,
+                                pixel_height: 0,
+                            });
+                        }
+                        Err(_) => {}
+                    },
+                    Message::Close(_) => break,
+                    Message::Pong(_) => {} // Keepalive response
+                    _ => {}
                 }
-                Ok(ShellClientMsg::Resize { cols, rows }) => {
-                    let _ = master.resize(PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
+            }
+            Ok(Some(Err(_))) | Ok(None) => break,
+            Err(_) => {
+                // Timeout elapsed
+                if unacked_pings >= 2 {
+                    tracing::debug!("Closing shell WS due to keepalive timeout");
+                    break;
                 }
-                Err(_) => {}
-            },
-            Message::Close(_) => break,
-            _ => {}
+                let mut tx = ws_tx.lock().await;
+                if tx.send(Message::Ping(vec![].into())).await.is_err() {
+                    break;
+                }
+                unacked_pings += 1;
+            }
         }
     }
 
