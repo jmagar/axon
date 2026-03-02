@@ -14,6 +14,9 @@ const headingItemVariants = cva(
         1: 'pl-0.5',
         2: 'pl-[26px]',
         3: 'pl-[50px]',
+        4: 'pl-[74px]',
+        5: 'pl-[98px]',
+        6: 'pl-[122px]',
       },
     },
   },
@@ -29,10 +32,10 @@ export function TocElementStatic(props: SlateElementProps) {
         {headingList.length > 0 ? (
           headingList.map((item) => (
             <Button
-              key={item.title}
+              key={`${item.id}:${item.path.join('.')}`}
               variant="ghost"
               className={headingItemVariants({
-                depth: item.depth as 1 | 2 | 3,
+                depth: Math.min(Math.max(item.depth, 1), 6) as 1 | 2 | 3 | 4 | 5 | 6,
               })}
             >
               {item.title}
@@ -79,8 +82,9 @@ const getHeadingList = (editor?: SlateEditor) => {
   Array.from(values).forEach(([node, path]) => {
     const { type } = node
     const title = NodeApi.string(node)
-    const depth = headingDepth[type]
-    const id = node.id as string
+    const depth = headingDepth[type] ?? 1
+    const id =
+      typeof node.id === 'string' && node.id.length > 0 ? node.id : `heading-${path.join('-')}`
 
     if (title) {
       headingList.push({ id, depth, path, title, type })
@@ -102,6 +106,9 @@ export function TocElementDocx(props: SlateElementProps) {
     1: '0',
     2: '24pt',
     3: '48pt',
+    4: '72pt',
+    5: '96pt',
+    6: '120pt',
   }
 
   return (

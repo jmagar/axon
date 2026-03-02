@@ -45,14 +45,18 @@ export function StatsDashboard() {
       const res = await fetch('/api/cortex/stats', { signal: controller.signal })
       const json = (await res.json()) as ApiResponse
       if (!json.ok) throw new Error(json.error ?? 'Unknown error')
+      if (abortRef.current !== controller) return
       setData(json.data ?? null)
       setUpdatedAt(new Date())
     } catch (err) {
+      if (abortRef.current !== controller) return
       if (err instanceof Error && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
-      setSpinning(false)
+      if (abortRef.current === controller) {
+        setLoading(false)
+        setSpinning(false)
+      }
     }
   }
 

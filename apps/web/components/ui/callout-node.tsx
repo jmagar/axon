@@ -10,12 +10,19 @@ import { cn } from '@/lib/utils'
 
 import { EmojiPicker, EmojiPopover } from './emoji-toolbar-button'
 
+interface CalloutElementData {
+  backgroundColor?: string
+  icon?: string
+}
+
 export function CalloutElement({
   attributes,
   children,
   className,
   ...props
 }: React.ComponentProps<typeof PlateElement>) {
+  const element = props.element as CalloutElementData
+
   const { emojiPickerState, isOpen, setIsOpen } = useEmojiDropdownMenuState({
     closeOnSelect: true,
   })
@@ -29,7 +36,7 @@ export function CalloutElement({
     <PlateElement
       className={cn('my-1 flex rounded-sm bg-muted p-4 pl-3', className)}
       style={{
-        backgroundColor: props.element.backgroundColor as any,
+        backgroundColor: element.backgroundColor,
       }}
       attributes={{
         ...attributes,
@@ -50,7 +57,7 @@ export function CalloutElement({
               }}
               contentEditable={false}
             >
-              {(props.element.icon as any) || '💡'}
+              {element.icon ?? '💡'}
             </Button>
           }
         >

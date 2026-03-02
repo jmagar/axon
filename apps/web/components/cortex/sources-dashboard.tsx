@@ -22,6 +22,10 @@ export function SourcesDashboard() {
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
   const parentRef = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    setQuery(searchParams.get('q') ?? '')
+  }, [searchParams])
+
   async function load(isManual = false) {
     if (isManual) setSpinning(true)
     setError(null)

@@ -33,12 +33,11 @@ export function TableRowElementStatic(props: SlateElementProps) {
   )
 }
 
-export function TableCellElementStatic({
-  isHeader,
-  ...props
-}: SlateElementProps<TTableCellElement> & {
+export interface TableCellElementStaticProps extends SlateElementProps<TTableCellElement> {
   isHeader?: boolean
-}) {
+}
+
+export function TableCellElementStatic({ isHeader, ...props }: TableCellElementStaticProps) {
   const { editor, element } = props
   const { api } = editor.getPlugin(BaseTablePlugin)
 

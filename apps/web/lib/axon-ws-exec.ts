@@ -8,15 +8,47 @@
 
 const WORKERS_WS_URL = process.env.AXON_WORKERS_WS_URL ?? 'ws://axon-workers:49000/ws'
 
+interface WsMessageEvent {
+  data: unknown
+}
+
+interface WsCloseEvent {
+  code: number
+}
+
+interface WsLike {
+  addEventListener(type: 'open', listener: () => void): void
+  addEventListener(type: 'message', listener: (event: WsMessageEvent) => void): void
+  addEventListener(type: 'error', listener: () => void): void
+  addEventListener(type: 'close', listener: (event: WsCloseEvent) => void): void
+  close(): void
+  send(data: string): void
+}
+
+type WebSocketConstructor = new (url: string) => WsLike
+
+async function resolveWebSocketConstructor(): Promise<WebSocketConstructor> {
+  const nativeConstructor = globalThis.WebSocket as unknown as WebSocketConstructor | undefined
+  if (nativeConstructor) return nativeConstructor
+
+  // Use dynamic module name to avoid type-check coupling to ws type declarations.
+  const wsModuleName = 'ws'
+  const wsModule = (await import(wsModuleName)) as { WebSocket?: WebSocketConstructor }
+  if (wsModule.WebSocket) return wsModule.WebSocket
+
+  throw new Error('WebSocket runtime is unavailable. Install ws or use Node.js 22+.')
+}
+
 /**
  * Run a synchronous axon command via the axon-workers WS bridge and return
  * the parsed JSON result. Rejects on timeout, connection error, or if the
  * command itself fails.
  */
 export async function runAxonCommandWs(mode: string, timeoutMs = 30_000): Promise<unknown> {
+  const WebSocketImpl = await resolveWebSocketConstructor()
+
   return new Promise((resolve, reject) => {
-    // Node.js 22+ has native WebSocket globally available.
-    const ws = new WebSocket(WORKERS_WS_URL)
+    const ws = new WebSocketImpl(WORKERS_WS_URL)
     let result: unknown
     let settled = false
 
@@ -42,7 +74,7 @@ export async function runAxonCommandWs(mode: string, timeoutMs = 30_000): Promis
       ws.send(JSON.stringify({ type: 'execute', mode, input: '', flags: {} }))
     })
 
-    ws.addEventListener('message', (event: MessageEvent) => {
+    ws.addEventListener('message', (event) => {
       try {
         const msg = JSON.parse(String(event.data)) as { type: string; data?: unknown }
         if (msg.type === 'command.output.json') {
@@ -64,7 +96,7 @@ export async function runAxonCommandWs(mode: string, timeoutMs = 30_000): Promis
       finish(new Error(`WebSocket connection error (${WORKERS_WS_URL})`))
     })
 
-    ws.addEventListener('close', (event: CloseEvent) => {
+    ws.addEventListener('close', (event) => {
       if (!settled) {
         finish(new Error(`WebSocket closed unexpectedly (code ${event.code})`))
       }

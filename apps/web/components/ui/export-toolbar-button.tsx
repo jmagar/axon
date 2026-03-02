@@ -29,28 +29,36 @@ export function ExportToolbarButton(props: React.ComponentProps<typeof DropdownM
 
     const style = document.createElement('style')
     document.head.append(style)
+    try {
+      const rootNode = editor.api.toDOMNode(editor)
+      if (!rootNode) {
+        throw new Error('Editor DOM node is unavailable for export.')
+      }
 
-    const canvas = await html2canvas(editor.api.toDOMNode(editor)!, {
-      onclone: (document: Document) => {
-        const editorElement = document.querySelector('[contenteditable="true"]')
-        if (editorElement) {
-          Array.from(editorElement.querySelectorAll('*')).forEach((element) => {
-            const existingStyle = element.getAttribute('style') || ''
-            element.setAttribute(
-              'style',
-              `${existingStyle}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important`,
-            )
-          })
-        }
-      },
-    })
-    style.remove()
-
-    return canvas
+      return await html2canvas(rootNode, {
+        onclone: (document: Document) => {
+          const editorElement = document.querySelector('[contenteditable="true"]')
+          if (editorElement) {
+            Array.from(editorElement.querySelectorAll('*')).forEach((element) => {
+              const existingStyle = element.getAttribute('style') || ''
+              element.setAttribute(
+                'style',
+                `${existingStyle}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important`,
+              )
+            })
+          }
+        },
+      })
+    } finally {
+      style.remove()
+    }
   }
 
   const downloadFile = async (url: string, filename: string) => {
     const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`Failed to download ${filename}: ${response.status}`)
+    }
 
     const blob = await response.blob()
     const blobUrl = window.URL.createObjectURL(blob)
@@ -65,6 +73,14 @@ export function ExportToolbarButton(props: React.ComponentProps<typeof DropdownM
     // Clean up the blob URL
     window.URL.revokeObjectURL(blobUrl)
   }
+
+  const runExport = React.useCallback(async (job: () => Promise<void>) => {
+    try {
+      await job()
+    } catch (error) {
+      console.error('Export failed:', error)
+    }
+  }, [])
 
   const exportToPdf = async () => {
     const canvas = await getCanvas()
@@ -151,10 +167,18 @@ export function ExportToolbarButton(props: React.ComponentProps<typeof DropdownM
 
       <DropdownMenuContent align="start">
         <DropdownMenuGroup>
-          <DropdownMenuItem onSelect={exportToHtml}>Export as HTML</DropdownMenuItem>
-          <DropdownMenuItem onSelect={exportToPdf}>Export as PDF</DropdownMenuItem>
-          <DropdownMenuItem onSelect={exportToImage}>Export as Image</DropdownMenuItem>
-          <DropdownMenuItem onSelect={exportToMarkdown}>Export as Markdown</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void runExport(exportToHtml)}>
+            Export as HTML
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void runExport(exportToPdf)}>
+            Export as PDF
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void runExport(exportToImage)}>
+            Export as Image
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void runExport(exportToMarkdown)}>
+            Export as Markdown
+          </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

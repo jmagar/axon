@@ -13,7 +13,6 @@ import {
   useTableMergeState,
 } from '@platejs/table/react'
 import { PopoverAnchor } from '@radix-ui/react-popover'
-import { cva } from 'class-variance-authority'
 import {
   ArrowDown,
   ArrowLeft,
@@ -428,7 +427,7 @@ export function TableRowElement({ children, ...props }: PlateElementProps<TTable
   )
 }
 
-function RowDragHandle({ dragRef }: { dragRef: React.Ref<any> }) {
+function RowDragHandle({ dragRef }: { dragRef: React.Ref<HTMLElement> }) {
   const editor = useEditorRef()
   const element = useElement()
 
@@ -552,7 +551,7 @@ export function TableCellElement({
                 className={cn(
                   'absolute top-0 z-30 hidden h-full w-1 bg-ring',
                   'right-[-1.5px]',
-                  columnResizeVariants({ colIndex: colIndex as any }),
+                  getColumnResizeClassName(colIndex),
                 )}
               />
               {colIndex === 0 && (
@@ -578,20 +577,9 @@ export function TableCellHeaderElement(props: React.ComponentProps<typeof TableC
   return <TableCellElement {...props} isHeader />
 }
 
-const columnResizeVariants = cva('fade-in hidden animate-in', {
-  variants: {
-    colIndex: {
-      0: 'group-has-[[data-col="0"]:hover]/table:block group-has-[[data-col="0"][data-resizing="true"]]/table:block',
-      1: 'group-has-[[data-col="1"]:hover]/table:block group-has-[[data-col="1"][data-resizing="true"]]/table:block',
-      2: 'group-has-[[data-col="2"]:hover]/table:block group-has-[[data-col="2"][data-resizing="true"]]/table:block',
-      3: 'group-has-[[data-col="3"]:hover]/table:block group-has-[[data-col="3"][data-resizing="true"]]/table:block',
-      4: 'group-has-[[data-col="4"]:hover]/table:block group-has-[[data-col="4"][data-resizing="true"]]/table:block',
-      5: 'group-has-[[data-col="5"]:hover]/table:block group-has-[[data-col="5"][data-resizing="true"]]/table:block',
-      6: 'group-has-[[data-col="6"]:hover]/table:block group-has-[[data-col="6"][data-resizing="true"]]/table:block',
-      7: 'group-has-[[data-col="7"]:hover]/table:block group-has-[[data-col="7"][data-resizing="true"]]/table:block',
-      8: 'group-has-[[data-col="8"]:hover]/table:block group-has-[[data-col="8"][data-resizing="true"]]/table:block',
-      9: 'group-has-[[data-col="9"]:hover]/table:block group-has-[[data-col="9"][data-resizing="true"]]/table:block',
-      10: 'group-has-[[data-col="10"]:hover]/table:block group-has-[[data-col="10"][data-resizing="true"]]/table:block',
-    },
-  },
-})
+const getColumnResizeClassName = (colIndex: number) =>
+  cn(
+    'fade-in hidden animate-in',
+    `group-has-[[data-col="${colIndex}"]:hover]/table:block`,
+    `group-has-[[data-col="${colIndex}"][data-resizing="true"]]/table:block`,
+  )

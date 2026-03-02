@@ -1,12 +1,12 @@
 ---
 name: axon
 description: >-
-  Axon is a self-hosted RAG engine that crawls, scrapes, extracts, embeds, and queries
-  web content — building a searchable knowledge base that grows with every operation.
-  This skill MUST be invoked before ANY call to the `axon` MCP tool. No exceptions.
-  This skill MUST be used when the user asks to "conduct research", "crawl a site",
-  "scrape a URL", "search the web", "embed content", "query the knowledge base",
-  "ask a question", "ingest a GitHub repo", "check job status", or "run axon doctor".
+  This skill should be used when the user asks to conduct research, crawl a site,
+  scrape or index a URL, search the web, embed content, query the knowledge base,
+  ask a question grounded in indexed docs, ingest a GitHub repo or Reddit thread,
+  re-crawl or refresh previously indexed content, check async job status, run axon
+  doctor, or interact with the axon MCP tool in any capacity. Loads the strict
+  action/subaction routing contract required to avoid invalid_params errors.
 ---
 
 # Axon MCP Skill
@@ -52,6 +52,8 @@ When unsure which actions or subactions exist, call `help` — don't guess.
 
 ## Load Order
 
+**Always invoke this skill before calling the `axon` MCP tool.** The skill loads the live routing contract — without it, requests drift into invalid shapes and `invalid_params` errors.
+
 1. Call `{ "action": "help" }` — live contract from the running server (always authoritative).
 2. Consult [`references/routing-cheatsheet.md`](references/routing-cheatsheet.md) — quick-reference for action routing.
 3. If inside the `axon_rust` repo, read `docs/MCP-TOOL-SCHEMA.md` and `docs/MCP.md` for implementation details.
@@ -79,9 +81,10 @@ When unsure which actions or subactions exist, call `help` — don't guess.
 
 ### Lifecycle Families (require subaction)
 
-Families: `crawl`, `extract`, `embed`, `ingest`
+Families: `crawl`, `extract`, `embed`, `ingest`, `refresh`
 
 Subactions: `start | status | cancel | list | cleanup | clear | recover`
+(`refresh` also supports `schedule` with `schedule_subaction`: `list | create | delete | enable | disable`)
 
 | Family + subaction | Required Fields |
 |--------------------|----------------|
@@ -89,6 +92,7 @@ Subactions: `start | status | cancel | list | cleanup | clear | recover`
 | `extract` + `start` | `urls` (non-empty array) |
 | `embed` + `start` | `input` |
 | `ingest` + `start` | `source_type` + `target` (see below) |
+| `refresh` + `start` | `urls` (non-empty array) |
 | Any family + `status`/`cancel` | `job_id` |
 | Any family + `list` | — (optional `limit`, `offset`) |
 | Any family + `cleanup`/`clear`/`recover` | — |
@@ -126,6 +130,8 @@ Optional: `limit`, `offset` for paginated inspection.
 { "action": "ingest", "source_type": "github", "target": "owner/repo" }
 { "action": "extract", "urls": ["https://example.com/pricing"] }
 { "action": "embed", "input": "https://example.com" }
+{ "action": "refresh", "urls": ["https://example.com"] }
+{ "action": "refresh", "subaction": "schedule", "schedule_subaction": "list" }
 { "action": "crawl", "subaction": "status", "job_id": "<uuid>" }
 { "action": "crawl", "subaction": "list", "limit": 5 }
 { "action": "doctor" }

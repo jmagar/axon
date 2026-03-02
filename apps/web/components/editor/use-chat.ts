@@ -16,7 +16,20 @@ import { discussionPlugin } from './plugins/discussion-kit'
 
 export type ToolName = 'comment' | 'edit' | 'generate'
 
-export type TComment = {
+interface ChatRequestBody {
+  ctx?: {
+    children?: Array<{ type?: string }>
+    selection?: {
+      anchor?: { path?: number[] }
+      focus?: { path?: number[] }
+    }
+  }
+  messages: Array<{
+    parts: Array<{ text?: string; type?: string }>
+  }>
+}
+
+export interface TComment {
   comment: {
     blockId: string
     comment: string
@@ -25,7 +38,7 @@ export type TComment = {
   status: 'finished' | 'streaming'
 }
 
-export type TTableCellUpdate = {
+export interface TTableCellUpdate {
   cellUpdate: {
     content: string
     id: string
@@ -33,7 +46,8 @@ export type TTableCellUpdate = {
   status: 'finished' | 'streaming'
 }
 
-export type MessageDataPart = {
+export interface MessageDataPart {
+  [key: string]: unknown
   toolName: ToolName
   comment?: TComment
   table?: TTableCellUpdate
@@ -64,90 +78,102 @@ export const useChat = () => {
       fetch: (async (input, init) => {
         const bodyOptions = editor.getOptions(aiChatPlugin).chatOptions?.body
 
-        const initBody = JSON.parse(init?.body as string)
+        const initBody = JSON.parse(init?.body as string) as ChatRequestBody
 
         const body = {
           ...initBody,
           ...bodyOptions,
         }
+        const shouldUseFakeFallback =
+          process.env.NODE_ENV === 'development' &&
+          process.env.NEXT_PUBLIC_ENABLE_FAKE_AI_STREAM === 'true'
 
-        const res = await fetch(input, {
-          ...init,
-          body: JSON.stringify(body),
-        })
+        try {
+          const res = await fetch(input, {
+            ...init,
+            body: JSON.stringify(body),
+          })
 
-        if (!res.ok) {
-          let sample: 'comment' | 'markdown' | 'mdx' | 'table' | null = null
+          if (res.ok || !shouldUseFakeFallback) {
+            return res
+          }
+        } catch {
+          if (!shouldUseFakeFallback) {
+            return new Response(JSON.stringify({ error: 'AI request failed' }), {
+              status: 500,
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            })
+          }
+        }
 
-          try {
-            const body = JSON.parse(init?.body as string)
-            const content = body.messages.at(-1).parts.find((p: any) => p.type === 'text')?.text
+        let sample: 'comment' | 'markdown' | 'mdx' | 'table' | null = null
 
-            if (content.includes('Generate a markdown sample')) {
-              sample = 'markdown'
-            } else if (content.includes('Generate a mdx sample')) {
-              sample = 'mdx'
-            } else if (content.includes('comment')) {
-              sample = 'comment'
+        try {
+          const content = body.messages
+            .at(-1)
+            ?.parts.find((p: { text?: string; type?: string }) => p.type === 'text')?.text
+
+          if (content?.includes('Generate a markdown sample')) {
+            sample = 'markdown'
+          } else if (content?.includes('Generate a mdx sample')) {
+            sample = 'mdx'
+          } else if (content?.includes('comment')) {
+            sample = 'comment'
+          }
+
+          // Detect table editing by checking if multiple table cells are selected
+          // Single cell selection should use normal edit flow, only multi-cell uses table tool
+          if (!sample) {
+            // First check: selectedCells from TablePlugin (cell selection mode)
+            const selectedCells = editor.getOption({ key: KEYS.table }, 'selectedCells') || []
+
+            if (selectedCells.length > 1) {
+              sample = 'table'
             }
+            // Second check: selection range spans multiple cells
+            else if (body.ctx?.children && body.ctx?.selection) {
+              const { selection, children } = body.ctx
+              const anchorPath = selection.anchor?.path
+              const focusPath = selection.focus?.path
 
-            // Detect table editing by checking if multiple table cells are selected
-            // Single cell selection should use normal edit flow, only multi-cell uses table tool
-            if (!sample) {
-              // First check: selectedCells from TablePlugin (cell selection mode)
-              const selectedCells = editor.getOption({ key: KEYS.table }, 'selectedCells') || []
+              if (anchorPath && anchorPath.length >= 3) {
+                const rootIndex = anchorPath[0]
+                const rootNode = children[rootIndex]
 
-              if (selectedCells.length > 1) {
-                sample = 'table'
-              }
-              // Second check: selection range spans multiple cells
-              else if (body.ctx?.children && body.ctx?.selection) {
-                const { selection, children } = body.ctx
-                const anchorPath = selection.anchor?.path
-                const focusPath = selection.focus?.path
+                if (rootNode?.type === 'table') {
+                  // Cell path is at index 2 (table -> row -> cell)
+                  const anchorCellPath = anchorPath.slice(0, 3).join(',')
+                  const focusCellPath = focusPath?.slice(0, 3).join(',')
 
-                if (anchorPath && anchorPath.length >= 3) {
-                  const rootIndex = anchorPath[0]
-                  const rootNode = children[rootIndex]
-
-                  if (rootNode?.type === 'table') {
-                    // Cell path is at index 2 (table -> row -> cell)
-                    const anchorCellPath = anchorPath.slice(0, 3).join(',')
-                    const focusCellPath = focusPath?.slice(0, 3).join(',')
-
-                    // Only use table mock if anchor and focus are in different cells
-                    if (focusCellPath && anchorCellPath !== focusCellPath) {
-                      sample = 'table'
-                    }
+                  // Only use table mock if anchor and focus are in different cells
+                  if (focusCellPath && anchorCellPath !== focusCellPath) {
+                    sample = 'table'
                   }
                 }
               }
             }
-          } catch {
-            sample = null
           }
-
-          abortControllerRef.current = new AbortController()
-
-          await new Promise((resolve) => setTimeout(resolve, 400))
-
-          const stream = fakeStreamText({
-            editor,
-            sample,
-            signal: abortControllerRef.current.signal,
-          })
-
-          const response = new Response(stream, {
-            headers: {
-              Connection: 'keep-alive',
-              'Content-Type': 'text/plain',
-            },
-          })
-
-          return response
+        } catch {
+          sample = null
         }
 
-        return res
+        abortControllerRef.current = new AbortController()
+        await new Promise((resolve) => setTimeout(resolve, 400))
+
+        const stream = fakeStreamText({
+          editor,
+          sample,
+          signal: abortControllerRef.current.signal,
+        })
+
+        return new Response(stream, {
+          headers: {
+            Connection: 'keep-alive',
+            'Content-Type': 'text/plain',
+          },
+        })
       }) as typeof fetch,
     }),
     onData(data) {
@@ -158,6 +184,13 @@ export const useChat = () => {
       if (data.type === 'data-table' && data.data) {
         const tableData = data.data as TTableCellUpdate
 
+        const cellUpdate = tableData.cellUpdate
+        if (cellUpdate) {
+          withAIBatch(editor, () => {
+            applyTableCellSuggestion(editor, cellUpdate)
+          })
+        }
+
         if (tableData.status === 'finished') {
           const chatSelection = editor.getOption(AIChatPlugin, 'chatSelection')
 
@@ -167,74 +200,70 @@ export const useChat = () => {
 
           return
         }
-
-        const cellUpdate = tableData.cellUpdate!
-
-        withAIBatch(editor, () => {
-          applyTableCellSuggestion(editor, cellUpdate)
-        })
       }
 
       if (data.type === 'data-comment' && data.data) {
         const commentData = data.data as TComment
+
+        if (commentData.comment) {
+          const aiComment = commentData.comment
+          const range = aiCommentToRange(editor, aiComment)
+
+          if (!range) return console.warn('No range found for AI comment')
+
+          const discussions = editor.getOption(discussionPlugin, 'discussions') || []
+
+          // Generate a new discussion ID
+          const discussionId = nanoid()
+
+          // Create a new comment
+          const newComment = {
+            id: nanoid(),
+            contentRich: [{ children: [{ text: aiComment.comment }], type: 'p' }],
+            createdAt: new Date(),
+            discussionId,
+            isEdited: false,
+            userId: editor.getOption(discussionPlugin, 'currentUserId'),
+          }
+
+          // Create a new discussion
+          const newDiscussion = {
+            id: discussionId,
+            comments: [newComment],
+            createdAt: new Date(),
+            documentContent: deserializeMd(editor, aiComment.content)
+              .map((node: TNode) => NodeApi.string(node))
+              .join('\n'),
+            isResolved: false,
+            userId: editor.getOption(discussionPlugin, 'currentUserId'),
+          }
+
+          // Update discussions
+          const updatedDiscussions = [...discussions, newDiscussion]
+          editor.setOption(discussionPlugin, 'discussions', updatedDiscussions)
+
+          // Apply comment marks to the editor
+          editor.tf.withMerging(() => {
+            editor.tf.setNodes(
+              {
+                [getCommentKey(newDiscussion.id)]: true,
+                [getTransientCommentKey()]: true,
+                [KEYS.comment]: true,
+              },
+              {
+                at: range,
+                match: TextApi.isText,
+                split: true,
+              },
+            )
+          })
+        }
 
         if (commentData.status === 'finished') {
           editor.getApi(BlockSelectionPlugin).blockSelection.deselect()
 
           return
         }
-
-        const aiComment = commentData.comment!
-        const range = aiCommentToRange(editor, aiComment)
-
-        if (!range) return console.warn('No range found for AI comment')
-
-        const discussions = editor.getOption(discussionPlugin, 'discussions') || []
-
-        // Generate a new discussion ID
-        const discussionId = nanoid()
-
-        // Create a new comment
-        const newComment = {
-          id: nanoid(),
-          contentRich: [{ children: [{ text: aiComment.comment }], type: 'p' }],
-          createdAt: new Date(),
-          discussionId,
-          isEdited: false,
-          userId: editor.getOption(discussionPlugin, 'currentUserId'),
-        }
-
-        // Create a new discussion
-        const newDiscussion = {
-          id: discussionId,
-          comments: [newComment],
-          createdAt: new Date(),
-          documentContent: deserializeMd(editor, aiComment.content)
-            .map((node: TNode) => NodeApi.string(node))
-            .join('\n'),
-          isResolved: false,
-          userId: editor.getOption(discussionPlugin, 'currentUserId'),
-        }
-
-        // Update discussions
-        const updatedDiscussions = [...discussions, newDiscussion]
-        editor.setOption(discussionPlugin, 'discussions', updatedDiscussions)
-
-        // Apply comment marks to the editor
-        editor.tf.withMerging(() => {
-          editor.tf.setNodes(
-            {
-              [getCommentKey(newDiscussion.id)]: true,
-              [getTransientCommentKey()]: true,
-              [KEYS.comment]: true,
-            },
-            {
-              at: range,
-              match: TextApi.isText,
-              split: true,
-            },
-          )
-        })
       }
     },
 

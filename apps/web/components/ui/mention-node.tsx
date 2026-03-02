@@ -19,11 +19,11 @@ import {
   InlineComboboxItem,
 } from './inline-combobox'
 
-export function MentionElement(
-  props: PlateElementProps<TMentionElement> & {
-    prefix?: string
-  },
-) {
+export interface MentionElementProps extends PlateElementProps<TMentionElement> {
+  prefix?: string
+}
+
+export function MentionElement(props: MentionElementProps) {
   const element = props.element
 
   const selected = useSelected()
