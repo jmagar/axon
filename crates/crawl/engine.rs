@@ -1,6 +1,7 @@
 mod cdp_render;
 mod collector;
 mod runtime;
+pub(crate) mod sitemap;
 #[cfg(test)]
 mod tests;
 mod thin_refetch;
@@ -21,6 +22,7 @@ use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
 pub(crate) use runtime::resolve_cdp_ws_url;
+pub(crate) use sitemap::{SitemapDiscovery, discover_sitemap_urls};
 pub(crate) use thin_refetch::chrome_refetch_thin_pages;
 pub(crate) use url_utils::{canonicalize_url_for_dedupe, is_excluded_url_path};
 #[cfg(test)]
