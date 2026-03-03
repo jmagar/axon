@@ -1,10 +1,12 @@
 mod audit_diff;
+#[allow(dead_code)] // Task 3 will remove this module
 mod backfill;
 mod manifest_audit;
 mod sitemap;
 #[cfg(test)]
 mod sitemap_migration_tests;
 
+#[allow(unused_imports)] // Task 3 will remove this
 pub(super) use backfill::append_robots_backfill;
 use manifest_audit::CrawlAuditSnapshot;
 pub(crate) use sitemap::discover_sitemap_urls_with_robots;
@@ -35,6 +37,7 @@ pub(super) fn now_epoch_ms() -> u128 {
         .unwrap_or(0)
 }
 
+#[allow(dead_code)] // Task 3 will remove this
 pub(super) async fn fetch_text_with_retry(
     client: &reqwest::Client,
     url: &str,
