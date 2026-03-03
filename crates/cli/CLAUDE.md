@@ -37,7 +37,7 @@ cli/
     ├── research.rs               # Tavily AI research + LLM synthesis
     ├── screenshot/
     │   ├── mod.rs                # Screenshot entry: URL loop, Chrome requirement check
-    │   ├── cdp.rs                # Chrome DevTools Protocol PNG capture
+    │   ├── spider_capture.rs     # Spider-based screenshot capture (replaced raw CDP client)
     │   └── util.rs               # Filename generation, require_chrome(), JSON formatting
     ├── github.rs                 # Ingest GitHub repos (code, issues, PRs, wiki)
     ├── reddit.rs                 # Ingest subreddit posts/comments
