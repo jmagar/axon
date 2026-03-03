@@ -219,7 +219,7 @@ async fn sync_crawl_does_not_append_manifest_via_cli_backfill_codepath() {
 
     let mut summary = crate::crates::crawl::engine::CrawlSummary::default();
 
-    let backfill_result =
+    let _backfill_result =
         append_sitemap_backfill(&cfg, &base, &output_dir, &seen_urls, &mut summary)
             .await
             .expect("engine backfill should succeed");

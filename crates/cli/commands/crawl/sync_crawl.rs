@@ -295,10 +295,6 @@ pub(super) async fn run_sync_crawl(cfg: &Config, start_url: &str) -> Result<(), 
         run_crawl_phase(cfg, start_url, previous_manifest).await?;
 
     if cfg.discover_sitemaps {
-        // Spider-native sitemap already ran inside run_crawl_once() when run_sitemap=true.
-        // append_robots_backfill() supplements that by parsing robots.txt Sitemap: directives,
-        // which spider does not handle natively.
-        //
         // Re-read the manifest to merge any URLs that were written to disk by run_crawl_once
         // but not surfaced in `seen_urls` (e.g. URLs discovered via Spider's own sitemap pass).
         // This prevents double-fetching pages that were already crawled.
@@ -310,8 +306,8 @@ pub(super) async fn run_sync_crawl(cfg: &Config, start_url: &str) -> Result<(), 
                 .chain(manifest_urls)
                 .collect::<HashSet<String>>()
         };
-        let spinner = Spinner::new("running robots.txt sitemap supplement");
-        let robots_stats = super::audit::append_robots_backfill(
+        let spinner = Spinner::new("running sitemap backfill");
+        let backfill_stats = crate::crates::crawl::engine::append_sitemap_backfill(
             cfg,
             start_url,
             &cfg.output_dir,
@@ -320,8 +316,8 @@ pub(super) async fn run_sync_crawl(cfg: &Config, start_url: &str) -> Result<(), 
         )
         .await?;
         spinner.finish(&format!(
-            "robots.txt supplement complete (written={})",
-            robots_stats.written
+            "sitemap backfill complete (written={})",
+            backfill_stats.written
         ));
     }
 
