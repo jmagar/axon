@@ -10,6 +10,7 @@
 
 use super::util::{format_screenshot_json, require_chrome, url_to_screenshot_filename};
 use crate::crates::core::config::Config;
+use spider::features::chrome_common::{ScreenShotConfig, ScreenshotParams};
 
 // ── 1. Chrome requirement ───────────────────────────────────────────
 
@@ -91,4 +92,35 @@ fn screenshot_filename_sanitizes_url() {
             "filename must not contain '{bad}': {nasty}"
         );
     }
+}
+
+// ── 4. Full-page flag propagation ─────────────────────────────────
+
+#[test]
+fn screenshot_full_page_flag_is_honored() {
+    // Verify that ScreenShotConfig correctly carries full_page=true vs false.
+    // This is the Spider config path used by spider_capture.rs.
+
+    let params_full = ScreenshotParams {
+        full_page: Some(true),
+        ..Default::default()
+    };
+    let config_full = ScreenShotConfig::new(params_full, true, false, None);
+    assert_eq!(config_full.params.full_page, Some(true));
+    assert!(
+        config_full.bytes,
+        "bytes must be true for in-memory capture"
+    );
+    assert!(!config_full.save, "save must be false — we handle writing");
+
+    let params_viewport = ScreenshotParams {
+        full_page: Some(false),
+        ..Default::default()
+    };
+    let config_viewport = ScreenShotConfig::new(params_viewport, true, false, None);
+    assert_eq!(config_viewport.params.full_page, Some(false));
+
+    // Default params should have full_page=None (unset).
+    let params_default = ScreenshotParams::default();
+    assert_eq!(params_default.full_page, None);
 }
