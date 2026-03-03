@@ -1,6 +1,9 @@
 mod cdp;
 mod util;
 
+#[cfg(test)]
+mod screenshot_migration_tests;
+
 pub(crate) use cdp::{cdp_screenshot, resolve_browser_ws_url};
 pub(crate) use util::url_to_screenshot_filename;
 
