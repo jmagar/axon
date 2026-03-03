@@ -374,6 +374,8 @@ pub async fn append_sitemap_backfill(
     let markdown_dir = output_dir.join("markdown");
     tokio::fs::create_dir_all(&markdown_dir).await?;
 
+    // TODO: migrate to http_client() singleton once discover_sitemap_urls
+    // also switches — keep both paths consistent.
     let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
     let client = build_client(timeout_secs)?;
     let mut manifest = BufWriter::new(
@@ -392,10 +394,8 @@ pub async fn append_sitemap_backfill(
     };
 
     for url in candidates {
-        if validate_url(&url).is_err() {
-            stats.failed += 1;
-            continue;
-        }
+        // validate_url is already called inside fetch_text_with_retry —
+        // no need to double-check here.
         let Some(html) =
             fetch_text_with_retry(&client, &url, cfg.fetch_retries, cfg.retry_backoff_ms).await
         else {
