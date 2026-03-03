@@ -1,15 +1,20 @@
-use super::{canonicalize_url_for_dedupe, is_excluded_url_path};
+use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
 use crate::crates::core::config::Config;
 use crate::crates::core::content::{
-    extract_loc_values, extract_loc_with_lastmod, extract_robots_sitemaps,
+    extract_loc_values, extract_loc_with_lastmod, extract_robots_sitemaps, to_markdown,
+    url_to_filename,
 };
 use crate::crates::core::http::{build_client, validate_url};
 use crate::crates::core::logging::log_info;
+use crate::crates::crawl::manifest::ManifestEntry;
+use sha2::{Digest, Sha256};
 use spider::tokio;
 use spider::url::Url;
 use std::collections::{HashSet, VecDeque};
 use std::error::Error;
+use std::path::Path;
 use std::time::Duration;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 /// Result of sitemap discovery including URLs and diagnostic stats.
 #[derive(Debug, Clone, Default)]
@@ -314,4 +319,123 @@ struct SitemapBatchOutput<'a> {
     queue: &'a mut VecDeque<String>,
     out: &'a mut HashSet<String>,
     failed_fetches: usize,
+}
+
+/// Stats returned by [`append_sitemap_backfill`].
+#[derive(Debug, Clone, Default)]
+pub struct BackfillStats {
+    /// Total URLs discovered from sitemaps (before filtering).
+    pub discovered_urls: usize,
+    /// URLs that passed the `seen_urls` + manifest dedup filter.
+    pub candidates: usize,
+    /// URLs fetched successfully (HTTP 2xx).
+    pub fetched_ok: usize,
+    /// Markdown files actually written to disk + manifest.
+    pub written: usize,
+    /// URLs that failed validation, fetch, or I/O.
+    pub failed: usize,
+}
+
+/// Discover sitemap URLs, fetch new ones, convert to markdown, and append
+/// to the manifest. Updates `summary.markdown_files` and `summary.thin_pages`.
+///
+/// This is the engine-level backfill that replaces the CLI's
+/// `append_robots_backfill`. It reuses `discover_sitemap_urls` for discovery
+/// and `fetch_text_with_retry` for fetching.
+pub async fn append_sitemap_backfill(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+    seen_urls: &HashSet<String>,
+    summary: &mut CrawlSummary,
+) -> Result<BackfillStats, Box<dyn Error>> {
+    let discovery = discover_sitemap_urls(cfg, start_url).await?;
+    let manifest_path = output_dir.join("manifest.jsonl");
+
+    // Read existing manifest to avoid double-writing URLs already on disk.
+    let previous_manifest =
+        crate::crates::crawl::manifest::read_manifest_data(&manifest_path).await?;
+    let manifest_urls: HashSet<String> = previous_manifest.keys().cloned().collect();
+
+    let candidates: Vec<String> = discovery
+        .urls
+        .iter()
+        .filter(|url| !seen_urls.contains(*url) && !manifest_urls.contains(*url))
+        .cloned()
+        .collect();
+
+    if candidates.is_empty() {
+        return Ok(BackfillStats {
+            discovered_urls: discovery.discovered_urls,
+            ..BackfillStats::default()
+        });
+    }
+
+    let markdown_dir = output_dir.join("markdown");
+    tokio::fs::create_dir_all(&markdown_dir).await?;
+
+    let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
+    let client = build_client(timeout_secs)?;
+    let mut manifest = BufWriter::new(
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&manifest_path)
+            .await?,
+    );
+
+    let mut idx = summary.markdown_files;
+    let mut stats = BackfillStats {
+        discovered_urls: discovery.discovered_urls,
+        candidates: candidates.len(),
+        ..BackfillStats::default()
+    };
+
+    for url in candidates {
+        if validate_url(&url).is_err() {
+            stats.failed += 1;
+            continue;
+        }
+        let Some(html) =
+            fetch_text_with_retry(&client, &url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+        else {
+            stats.failed += 1;
+            continue;
+        };
+        stats.fetched_ok += 1;
+        let md = to_markdown(&html);
+        let trimmed = md.trim();
+        let markdown_chars = trimmed.len();
+
+        let mut hasher = Sha256::new();
+        hasher.update(trimmed.as_bytes());
+        let content_hash = hex::encode(hasher.finalize());
+
+        if markdown_chars < cfg.min_markdown_chars {
+            summary.thin_pages += 1;
+        }
+        if markdown_chars < cfg.min_markdown_chars && cfg.drop_thin_markdown {
+            continue;
+        }
+
+        idx += 1;
+        let filename = url_to_filename(&url, idx);
+        let file = markdown_dir.join(&filename);
+        tokio::fs::write(&file, trimmed.as_bytes()).await?;
+
+        let entry = ManifestEntry {
+            url: url.clone(),
+            relative_path: format!("markdown/{}", filename),
+            markdown_chars,
+            content_hash: Some(content_hash),
+            changed: true,
+        };
+        let mut line = serde_json::to_string(&entry)?;
+        line.push('\n');
+        manifest.write_all(line.as_bytes()).await?;
+        summary.markdown_files += 1;
+        stats.written += 1;
+    }
+    manifest.flush().await?;
+    Ok(stats)
 }
