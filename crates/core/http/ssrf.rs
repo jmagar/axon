@@ -11,7 +11,9 @@ use super::normalize::normalize_url;
 // test. Production builds never see this — the flag is `#[cfg(test)]`-gated.
 //
 // Thread-local avoids cross-thread races with SSRF tests that assert
-// loopback is blocked. Each test thread controls its own flag independently.
+// loopback is blocked. Code that spawns tokio tasks (e.g. JoinSet) must
+// propagate the flag via `get_allow_loopback()` + `set_allow_loopback()`
+// in the spawned task.
 #[cfg(test)]
 thread_local! {
     static ALLOW_LOOPBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -21,6 +23,13 @@ thread_local! {
 #[cfg(test)]
 pub(crate) fn set_allow_loopback(allow: bool) {
     ALLOW_LOOPBACK.with(|c| c.set(allow));
+}
+
+/// Read the thread-local loopback bypass flag. Only available in test builds.
+/// Used by code that spawns tasks to propagate the flag to child threads.
+#[cfg(test)]
+pub(crate) fn get_allow_loopback() -> bool {
+    ALLOW_LOOPBACK.with(|c| c.get())
 }
 
 /// Reject URLs that would allow SSRF attacks.
