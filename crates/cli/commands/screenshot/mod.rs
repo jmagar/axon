@@ -1,5 +1,3 @@
-#[allow(dead_code)] // TODO: Remove cdp module entirely in Task 3.
-mod cdp;
 mod spider_capture;
 mod util;
 
