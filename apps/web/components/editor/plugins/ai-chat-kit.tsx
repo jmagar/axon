@@ -5,6 +5,7 @@ import type { usePlateEditor } from 'platejs/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AIAnchorElement, AILeaf } from '@/components/ui/ai-node'
+import { apiFetch } from '@/lib/api-fetch'
 
 type ChatStatus = 'idle' | 'submitted' | 'streaming' | 'error'
 
@@ -18,6 +19,7 @@ interface ChatHelpers {
   status: ChatStatus
   messages: ChatMessage[]
   sendMessage: (message: { text: string }, options?: { body?: Record<string, unknown> }) => void
+  stop: () => void
 }
 
 /** Custom chat adapter that streams from /api/ai/chat into the AIChatPlugin. */
@@ -25,6 +27,11 @@ export function useAxonAIChat(): ChatHelpers {
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const abortRef = useRef<AbortController | null>(null)
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+    setStatus('idle')
+  }, [])
 
   const sendMessage = useCallback(
     async (message: { text: string }, options?: { body?: Record<string, unknown> }) => {
@@ -40,7 +47,7 @@ export function useAxonAIChat(): ChatHelpers {
       ])
 
       try {
-        const res = await fetch('/api/ai/chat', {
+        const res = await apiFetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: message.text, ...options?.body }),
@@ -98,7 +105,10 @@ export function useAxonAIChat(): ChatHelpers {
     [],
   )
 
-  return useMemo(() => ({ status, messages, sendMessage }), [status, messages, sendMessage])
+  return useMemo(
+    () => ({ status, messages, sendMessage, stop }),
+    [status, messages, sendMessage, stop],
+  )
 }
 
 /** Wire the chat adapter into AIChatPlugin after the editor mounts. */
@@ -107,7 +117,8 @@ export function useAIChatSetup(editor: ReturnType<typeof usePlateEditor>) {
 
   useEffect(() => {
     if (!editor) return
-    editor.setOption(AIChatPlugin, 'chat', chat as unknown)
+    // biome-ignore lint/suspicious/noExplicitAny: custom chat adapter, types differ from platejs expected shape
+    editor.setOption(AIChatPlugin, 'chat', chat as any)
   }, [editor, chat])
 }
 

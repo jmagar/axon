@@ -81,6 +81,11 @@ llvm-cov-install:
 coverage-branch:
     if cargo llvm-cov --version >/dev/null 2>&1; then {{rust_dev_env}}; cargo llvm-cov --locked --workspace --all-features --lcov --output-path .cache/coverage/lcov.info; else echo "cargo-llvm-cov not installed. Run: just llvm-cov-install"; exit 1; fi
 
+# ── Codegen ───────────────────────────────────────────────────
+
+gen-mcp-schema *ARGS:
+    python3 scripts/generate_mcp_schema_doc.py {{ARGS}}
+
 clean:
     cargo clean
 
@@ -88,16 +93,22 @@ docker-build tag="axon:local":
     docker build -f docker/Dockerfile -t {{tag}} .
 
 up:
-    docker compose up -d --build
+    ./scripts/rebuild-fresh.sh
 
 down:
     docker compose down
 
 docker-up:
-    docker compose up -d --build
+    ./scripts/rebuild-fresh.sh
 
 docker-down:
     docker compose down
+
+rebuild-fresh:
+    ./scripts/rebuild-fresh.sh
+
+check-container-revisions:
+    ./scripts/check-container-revisions.sh
 
 watch-check:
     cargo watch -x 'check -q --locked' -x 'check -q --tests --locked' -x 'test -q --lib --locked -- --skip worker_e2e'

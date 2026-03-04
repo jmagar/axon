@@ -1,193 +1,25 @@
+import { createGateway } from '@ai-sdk/gateway'
+import { generateText } from 'ai'
+import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import type { z } from 'zod'
-import { CopilotRequestSchema } from '@/lib/pulse/copilot-validation'
-import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
+import { apiError } from '@/lib/server/api-error'
 
-type OpenAiSseParseResult = {
-  deltas: string[]
-  remainder: string
-  done: boolean
+const DEFAULT_MODEL = 'gpt-4o-mini'
+const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'gpt-4.1-mini'])
+
+interface CopilotStreamEvent {
+  completion?: string
+  delta?: string
+  type: 'delta' | 'done' | 'error' | 'start'
 }
 
-type CopilotStreamEvent =
-  | { type: 'start' }
-  | { type: 'delta'; delta: string; completion: string }
-  | { type: 'done'; completion: string }
-  | { type: 'error'; error: string }
+export const encodeCopilotStreamEvent = (event: CopilotStreamEvent) => `${JSON.stringify(event)}\n`
 
-export async function POST(request: Request) {
-  ensureRepoRootEnvLoaded()
-
-  const baseUrl = process.env.OPENAI_BASE_URL
-  const apiKey = process.env.OPENAI_API_KEY
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
-
-  if (!baseUrl || !apiKey) {
-    const missing = [...(baseUrl ? [] : ['OPENAI_BASE_URL']), ...(apiKey ? [] : ['OPENAI_API_KEY'])]
-    return NextResponse.json(
-      {
-        error: `${missing.join(', ')} must be set`,
-        missing,
-        hint: 'Set these in apps/web/.env.local (or export them before starting next dev).',
-      },
-      { status: 503 },
-    )
-  }
-
-  try {
-    const body = await request.json()
-    const parsed = CopilotRequestSchema.safeParse(body)
-
-    if (!parsed.success) {
-      return NextResponse.json({ error: firstZodIssue(parsed.error) }, { status: 400 })
-    }
-
-    const wantsNdjsonStream = requestWantsNdjsonStream(request)
-    const { prompt, system } = parsed.data
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 20_000)
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: parsed.data.model ?? model,
-        messages: [
-          ...(system ? [{ role: 'system' as const, content: system }] : []),
-          { role: 'user' as const, content: prompt },
-        ],
-        max_tokens: 200,
-        temperature: 0.7,
-        ...(wantsNdjsonStream ? { stream: true } : {}),
-      }),
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout))
-
-    if (!response.ok) {
-      return NextResponse.json({ error: `LLM API error: ${response.status}` }, { status: 502 })
-    }
-
-    if (wantsNdjsonStream) {
-      return streamNdjsonCompletion(response)
-    }
-
-    const data = await response.json()
-    const completion = data.choices?.[0]?.message?.content ?? ''
-
-    return NextResponse.json({ completion })
-  } catch (err) {
-    console.error('[Copilot] Unhandled error:', err)
-    return NextResponse.json({ error: 'Copilot request failed' }, { status: 500 })
-  }
-}
-
-function firstZodIssue(error: z.ZodError): string {
-  return error.issues[0]?.message ?? 'Invalid request payload'
-}
-
-function requestWantsNdjsonStream(request: Request): boolean {
-  const accept = request.headers.get('accept')?.toLowerCase() ?? ''
-  const streamHeader = request.headers.get('x-copilot-stream')?.toLowerCase()
-  return accept.includes('application/x-ndjson') || streamHeader === '1' || streamHeader === 'true'
-}
-
-function streamNdjsonCompletion(upstream: Response): Response {
-  const contentType = upstream.headers.get('content-type')?.toLowerCase() ?? ''
-
-  if (contentType.includes('application/json')) {
-    return new Response(
-      new ReadableStream({
-        async start(controller) {
-          try {
-            const json = await upstream.json()
-            const completion = json?.choices?.[0]?.message?.content ?? ''
-            controller.enqueue(encodeCopilotStreamEvent({ type: 'start' }))
-            if (completion) {
-              controller.enqueue(
-                encodeCopilotStreamEvent({
-                  type: 'delta',
-                  delta: completion,
-                  completion,
-                }),
-              )
-            }
-            controller.enqueue(encodeCopilotStreamEvent({ type: 'done', completion }))
-          } catch {
-            controller.enqueue(
-              encodeCopilotStreamEvent({ type: 'error', error: 'Invalid upstream JSON response' }),
-            )
-          } finally {
-            controller.close()
-          }
-        },
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/x-ndjson; charset=utf-8',
-          'Cache-Control': 'no-store',
-        },
-      },
-    )
-  }
-
-  return new Response(
-    new ReadableStream({
-      async start(controller) {
-        controller.enqueue(encodeCopilotStreamEvent({ type: 'start' }))
-
-        if (!upstream.body) {
-          controller.enqueue(encodeCopilotStreamEvent({ type: 'done', completion: '' }))
-          controller.close()
-          return
-        }
-
-        const reader = upstream.body.getReader()
-        const decoder = new TextDecoder()
-        let remainder = ''
-        let completion = ''
-
-        try {
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-
-            const parsed = parseOpenAiSseChunk(decoder.decode(value, { stream: true }), remainder)
-            remainder = parsed.remainder
-
-            for (const delta of parsed.deltas) {
-              completion += delta
-              controller.enqueue(encodeCopilotStreamEvent({ type: 'delta', delta, completion }))
-            }
-
-            if (parsed.done) break
-          }
-
-          controller.enqueue(encodeCopilotStreamEvent({ type: 'done', completion }))
-        } catch {
-          controller.enqueue(
-            encodeCopilotStreamEvent({ type: 'error', error: 'Streaming completion failed' }),
-          )
-        } finally {
-          controller.close()
-        }
-      },
-    }),
-    {
-      headers: {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
-        'Cache-Control': 'no-store',
-      },
-    },
-  )
-}
-
-export function encodeCopilotStreamEvent(event: CopilotStreamEvent): string {
-  return `${JSON.stringify(event)}\n`
-}
-
-export function parseOpenAiSseChunk(chunk: string, remainder: string): OpenAiSseParseResult {
+/** Parse OpenAI SSE streaming chunks — re-exported for use by other routes. */
+export function parseOpenAiSseChunk(
+  chunk: string,
+  remainder: string,
+): { deltas: string[]; done: boolean; remainder: string } {
   const combined = remainder + chunk
   const lines = combined.split('\n')
   const nextRemainder = lines.pop() ?? ''
@@ -196,27 +28,82 @@ export function parseOpenAiSseChunk(chunk: string, remainder: string): OpenAiSse
 
   for (const rawLine of lines) {
     const line = rawLine.trim()
-    if (!line || line.startsWith(':') || !line.startsWith('data:')) continue
-
-    const payload = line.slice(5).trim()
-    if (!payload) continue
-    if (payload === '[DONE]') {
+    if (!line || !line.startsWith('data:')) continue
+    const data = line.slice('data:'.length).trim()
+    if (data === '[DONE]') {
       done = true
       break
     }
-
     try {
-      const parsed = JSON.parse(payload) as {
-        choices?: Array<{ delta?: { content?: string } }>
-      }
-      const delta = parsed.choices?.[0]?.delta?.content
+      const parsed = JSON.parse(data)
+      const delta = parsed?.choices?.[0]?.delta?.content
       if (typeof delta === 'string' && delta.length > 0) {
         deltas.push(delta)
       }
     } catch {
-      // Ignore malformed lines and continue parsing the stream.
+      // Ignore malformed SSE lines.
     }
   }
 
-  return { deltas, remainder: nextRemainder, done }
+  return { deltas, done, remainder: nextRemainder }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const model = typeof body?.model === 'string' ? body.model : DEFAULT_MODEL
+    const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
+    const system = typeof body?.system === 'string' ? body.system : undefined
+    const streamNdjson = req.headers.get('x-copilot-stream') === '1'
+
+    if (!ALLOWED_MODELS.has(model)) {
+      return apiError(400, 'Unsupported model')
+    }
+    if (!prompt) {
+      return apiError(400, 'prompt must be a non-empty string')
+    }
+
+    const apiKey = process.env.AI_GATEWAY_API_KEY
+    if (!apiKey) {
+      return apiError(401, 'Missing AI Gateway API key', { code: 'copilot_no_key' })
+    }
+
+    const gateway = createGateway({ apiKey })
+
+    const result = await generateText({
+      abortSignal: req.signal,
+      maxOutputTokens: 50,
+      model: gateway(`openai/${model}`),
+      prompt,
+      system,
+      temperature: 0.7,
+    })
+
+    if (streamNdjson) {
+      const completion = typeof result.text === 'string' ? result.text : ''
+      const events = `${encodeCopilotStreamEvent({ type: 'start' })}${encodeCopilotStreamEvent({
+        completion,
+        type: 'done',
+      })}`
+
+      return new NextResponse(events, {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+        },
+        status: 200,
+      })
+    }
+
+    return NextResponse.json(result)
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return apiError(400, 'Invalid JSON payload')
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      return apiError(408, 'Request timed out', { code: 'copilot_timeout' })
+    }
+
+    return apiError(500, 'Failed to process AI request', { code: 'copilot_internal' })
+  }
 }

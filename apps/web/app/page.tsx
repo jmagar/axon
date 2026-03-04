@@ -1,14 +1,18 @@
 'use client'
 
-import { Bot, Network, Settings2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DockerStats } from '@/components/docker-stats'
 import { LandingCards } from '@/components/landing-cards'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { Omnibox } from '@/components/omnibox'
-import { PulseEditorPane } from '@/components/pulse/pulse-editor-pane'
+
+const PulseEditorPane = dynamic(
+  () =>
+    import('@/components/pulse/pulse-editor-pane').then((m) => ({ default: m.PulseEditorPane })),
+  { ssr: false },
+)
+
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { ResultsPanel } from '@/components/results-panel'
 import { WsIndicator } from '@/components/ws-indicator'
@@ -19,6 +23,7 @@ import {
   DEFAULT_NEURAL_CANVAS_PROFILE,
   type NeuralCanvasProfile,
 } from '@/lib/pulse/neural-canvas-presets'
+import { getStorageItem, setStorageItem } from '@/lib/storage'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 
 const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), {
@@ -28,7 +33,6 @@ const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 const CANVAS_PROFILE_OPTIONS: NeuralCanvasProfile[] = ['current', 'subtle', 'cinematic', 'electric']
 
 export default function DashboardPage() {
-  const router = useRouter()
   const { subscribe } = useAxonWs()
   const canvasRef = useRef<NeuralCanvasHandle>(null)
   const { isProcessing, hasResults, workspaceMode, workspacePromptVersion } = useWsMessages()
@@ -41,51 +45,30 @@ export default function DashboardPage() {
   // Persist landing editor content across tab switches / page unloads
   const LANDING_EDITOR_KEY = 'axon.web.landing.editor-content'
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(LANDING_EDITOR_KEY)
-      if (saved) setLandingEditorMarkdown(saved)
-    } catch {
-      // Ignore storage errors.
-    }
+    const saved = getStorageItem(LANDING_EDITOR_KEY)
+    if (saved) setLandingEditorMarkdown(saved)
   }, [])
 
   const handleLandingEditorChange = useCallback((md: string) => {
     setLandingEditorMarkdown(md)
-    try {
-      window.localStorage.setItem(LANDING_EDITOR_KEY, md)
-    } catch {
-      // Ignore storage errors.
+    setStorageItem(LANDING_EDITOR_KEY, md)
+  }, [])
+
+  useEffect(() => {
+    const raw = getStorageItem(CANVAS_PROFILE_STORAGE_KEY)
+    if (raw && CANVAS_PROFILE_OPTIONS.includes(raw as NeuralCanvasProfile)) {
+      setCanvasProfile(raw as NeuralCanvasProfile)
     }
   }, [])
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(CANVAS_PROFILE_STORAGE_KEY)
-      if (!raw) return
-      if (CANVAS_PROFILE_OPTIONS.includes(raw as NeuralCanvasProfile)) {
-        setCanvasProfile(raw as NeuralCanvasProfile)
-      }
-    } catch {
-      // Ignore storage errors and keep default profile.
-    }
-  }, [])
-
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
-      if (saved === 'chat' || saved === 'editor') setLandingMobilePane(saved)
-    } catch {
-      // Ignore storage errors.
-    }
+    const saved = getStorageItem(MOBILE_PANE_STORAGE_KEY)
+    if (saved === 'chat' || saved === 'editor') setLandingMobilePane(saved)
   }, [])
 
   const handleLandingMobilePaneChange = useCallback((pane: 'chat' | 'editor') => {
     setLandingMobilePane(pane)
-    try {
-      window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
-    } catch {
-      // Ignore storage errors.
-    }
+    setStorageItem(MOBILE_PANE_STORAGE_KEY, pane)
   }, [])
 
   // Canvas intensity: full on execute start, pulse on command done/error.
@@ -128,63 +111,69 @@ export default function DashboardPage() {
     <>
       <NeuralCanvas ref={canvasRef} profile={canvasProfile} />
       <WsIndicator />
-      {/* Main container — centered vertically, slides up on results */}
-      <main
-        className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
-          hasResults
-            ? `px-2.5 sm:px-3.5 ${isPulseWorkspaceActive ? 'pt-1 pb-[80px] lg:pt-12 sm:pb-[88px]' : 'pt-12 pb-5 sm:pb-8'}`
-            : !isPulseWorkspaceActive && landingMobilePane === 'editor'
-              ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
-              : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
-        }`}
-      >
-        {/* Interface card — glass-morphic */}
+      {isPulseWorkspaceActive ? (
+        /* Full-screen workspace — fixed overlay from sidebar right-edge to viewport edge */
         <div
-          className={`rounded-2xl border p-2 transition-all duration-500 sm:p-3 ${
-            isProcessing
-              ? 'shadow-[0_0_80px_rgba(175,215,255,0.1),0_0_30px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
-              : 'shadow-[0_0_60px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
-          }`}
-          style={{
-            borderColor: isProcessing ? 'rgba(175,215,255,0.3)' : 'var(--axon-border)',
-            background: 'var(--axon-surface-3)',
-          }}
+          className="fixed bottom-0 right-0 top-0 z-[3] overflow-hidden"
+          style={{ left: 'var(--sidebar-w, 260px)' }}
         >
-          <div className="flex flex-col gap-2">
-            {!isPulseWorkspaceActive && (
+          <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+        </div>
+      ) : (
+        /* Landing / results — centered glass card */
+        <main
+          className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
+            hasResults
+              ? 'px-2.5 pb-5 pt-12 sm:px-3.5 sm:pb-8'
+              : landingMobilePane === 'editor'
+                ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+                : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
+          }`}
+        >
+          {/* Interface card — glass-morphic */}
+          <div
+            className={`rounded-2xl border p-2 transition-all duration-500 sm:p-3 ${
+              isProcessing
+                ? 'shadow-[0_0_80px_rgba(175,215,255,0.1),0_0_30px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.04)]'
+                : 'shadow-[0_0_60px_rgba(255,135,175,0.05),inset_0_1px_0_rgba(255,255,255,0.02)]'
+            }`}
+            style={{
+              borderColor: isProcessing ? 'rgba(175,215,255,0.3)' : 'var(--axon-border)',
+              background: 'var(--axon-surface-3)',
+            }}
+          >
+            <div className="flex flex-col gap-2">
               <div
                 className={`order-1 scale-100 ${landingMobilePane === 'editor' ? 'hidden lg:block' : 'block'}`}
               >
                 <Omnibox />
                 {!hasResults && <LandingCards />}
               </div>
-            )}
-            <div className={isPulseWorkspaceActive ? 'order-1' : 'order-2'}>
-              {!isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults && (
-                <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
-                  <PulseEditorPane
-                    markdown={landingEditorMarkdown}
-                    onMarkdownChange={handleLandingEditorChange}
-                    scrollStorageKey="axon.web.landing.editor-scroll"
-                  />
+              <div className="order-2">
+                {landingMobilePane === 'editor' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseEditorPane
+                      markdown={landingEditorMarkdown}
+                      onMarkdownChange={handleLandingEditorChange}
+                      scrollStorageKey="axon.web.landing.editor-scroll"
+                    />
+                  </div>
+                )}
+                <div
+                  className={
+                    landingMobilePane === 'editor' && !hasResults ? 'hidden lg:block' : undefined
+                  }
+                >
+                  <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
                 </div>
-              )}
-              <div
-                className={
-                  !isPulseWorkspaceActive && landingMobilePane === 'editor' && !hasResults
-                    ? 'hidden lg:block'
-                    : undefined
-                }
-              >
-                <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
               </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
-      {/* Fixed top-right — pane switcher (landing + mobile) + nav icons (always) */}
-      <div className="fixed right-3 top-0 z-10 flex h-11 items-center gap-2">
+      {/* Fixed top-right — pane switcher (landing + mobile) */}
+      <div className="fixed right-28 top-0 z-10 flex h-11 items-center gap-2">
         {!hasResults && (
           <div className="lg:hidden">
             <PulseMobilePaneSwitcher
@@ -193,35 +182,6 @@ export default function DashboardPage() {
             />
           </div>
         )}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => router.push('/mcp')}
-            title="MCP Servers"
-            aria-label="MCP Servers"
-            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
-          >
-            <Network className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/agents')}
-            title="Available Agents"
-            aria-label="Available Agents"
-            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
-          >
-            <Bot className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/settings')}
-            title="Settings"
-            aria-label="Open settings"
-            className="flex items-center justify-center size-7 rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)] backdrop-blur-sm"
-          >
-            <Settings2 className="size-3.5" />
-          </button>
-        </div>
       </div>
 
       {/* Fixed bottom omnibox — only when Pulse workspace is active */}

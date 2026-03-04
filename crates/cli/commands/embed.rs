@@ -153,7 +153,7 @@ async fn handle_embed_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_embed_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let jobs = list_embed_jobs(cfg, 50).await?;
+    let jobs = list_embed_jobs(cfg, 50, 0).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
         return Ok(());

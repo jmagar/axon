@@ -6,11 +6,20 @@ import type { TElement } from 'platejs'
 
 import { GhostText } from '@/components/ui/ghost-text'
 
-import { AIChatKit } from './ai-chat-kit'
+import { AIKit } from './ai-kit'
 import { BasicBlocksKit } from './basic-blocks-kit'
 import { BasicMarksKit } from './basic-marks-kit'
+import { CalloutKit } from './callout-kit'
+import { CommentKit } from './comment-kit'
+import { DiscussionKit } from './discussion-kit'
+import { DndKit } from './dnd-kit'
 import { ExtendedNodesKit } from './extended-nodes-kit'
 import { MarkdownKit } from './markdown-kit'
+import { SelectionKit } from './selection-kit'
+import { SlashKit } from './slash-kit'
+import { SuggestionKit } from './suggestion-kit'
+import { TocKit } from './toc-kit'
+import { ToggleKit } from './toggle-kit'
 
 type CopilotNdjsonEvent =
   | { type: 'start' }
@@ -69,8 +78,11 @@ const copilotStreamingFetch: typeof fetch = async (input, init) => {
         if (!emitted && finalCompletion) {
           controller.enqueue(encoder.encode(finalCompletion))
         }
-      } finally {
         controller.close()
+      } catch (error) {
+        controller.error(error instanceof Error ? error : new Error(String(error)))
+      } finally {
+        reader.releaseLock()
       }
     },
   })
@@ -115,7 +127,16 @@ export const CopilotKit = [
   ...BasicMarksKit,
   ...MarkdownKit,
   ...ExtendedNodesKit,
-  ...AIChatKit,
+  ...AIKit,
+  ...SlashKit,
+  ...DndKit,
+  ...CalloutKit,
+  ...ToggleKit,
+  ...TocKit,
+  ...SelectionKit,
+  ...DiscussionKit,
+  ...CommentKit,
+  ...SuggestionKit,
   CopilotPlugin.configure(({ api }) => ({
     options: {
       completeOptions: {

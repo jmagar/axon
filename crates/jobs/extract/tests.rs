@@ -1,16 +1,19 @@
 use super::*;
 use crate::crates::jobs::common::{open_amqp_channel, resolve_test_pg_url, test_config};
 use chrono::{DateTime, Duration, Utc};
+use serial_test::serial;
 use tokio::time::{Duration as TokioDuration, sleep, timeout};
 
 fn amqp_url() -> Option<String> {
+    // Do not fall through to AXON_AMQP_URL — that is the production broker.
+    // If AXON_TEST_AMQP_URL is not set, AMQP tests are skipped.
     std::env::var("AXON_TEST_AMQP_URL")
         .ok()
-        .or_else(|| std::env::var("AXON_AMQP_URL").ok())
         .filter(|v| !v.trim().is_empty())
 }
 
 #[tokio::test]
+#[serial]
 async fn extract_start_job_dedupes_active_pending_job() -> Result<(), Box<dyn Error>> {
     let Some(pg_url) = resolve_test_pg_url() else {
         return Ok(());
@@ -32,6 +35,7 @@ async fn extract_start_job_dedupes_active_pending_job() -> Result<(), Box<dyn Er
 }
 
 #[tokio::test]
+#[serial]
 async fn extract_recover_reclaims_confirmed_stale_running_job() -> Result<(), Box<dyn Error>> {
     let Some(pg_url) = resolve_test_pg_url() else {
         return Ok(());

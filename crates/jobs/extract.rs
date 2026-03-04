@@ -2,7 +2,9 @@
 //! See `common/schema.rs` for the canonical pattern.
 
 use crate::crates::core::config::Config;
-use crate::crates::core::content::{DeterministicExtractionEngine, run_extract_with_engine};
+use crate::crates::core::content::{
+    DeterministicExtractionEngine, ExtractWebConfig, run_extract_with_engine,
+};
 use crate::crates::core::health::redis_healthy;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::jobs::common::{
@@ -111,21 +113,23 @@ pub(crate) async fn start_extract_job_with_pool(
         prompt,
         max_pages: cfg.max_pages,
     })?;
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(&format!(
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id
         FROM axon_extract_jobs
-        WHERE status IN ('{pending}','{running}')
+        WHERE status = ANY($3)
           AND urls_json = $1
           AND config_json = $2
         ORDER BY created_at DESC
         LIMIT 1
         "#,
-        pending = JobStatus::Pending.as_str(),
-        running = JobStatus::Running.as_str(),
-    ))
+    )
     .bind(urls_json.clone())
     .bind(cfg_json.clone())
+    .bind(vec![
+        JobStatus::Pending.as_str(),
+        JobStatus::Running.as_str(),
+    ])
     .fetch_optional(pool)
     .await?
     {
@@ -138,11 +142,11 @@ pub(crate) async fn start_extract_job_with_pool(
     }
     let id = Uuid::new_v4();
 
-    sqlx::query(&format!(
-        r#"INSERT INTO axon_extract_jobs (id, status, urls_json, config_json) VALUES ($1, '{pending}', $2, $3)"#,
-        pending = JobStatus::Pending.as_str(),
-    ))
+    sqlx::query(
+        r#"INSERT INTO axon_extract_jobs (id, status, urls_json, config_json) VALUES ($1, $2, $3, $4)"#,
+    )
     .bind(id)
+    .bind(JobStatus::Pending.as_str())
     .bind(urls_json)
     .bind(cfg_json)
     .execute(pool)
@@ -167,17 +171,18 @@ pub async fn get_extract_job(cfg: &Config, id: Uuid) -> Result<Option<ExtractJob
     .fetch_optional(&pool)
     .await?)
 }
-
 pub async fn list_extract_jobs(
     cfg: &Config,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<ExtractJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     Ok(sqlx::query_as::<_, ExtractJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json FROM axon_extract_jobs ORDER BY created_at DESC LIMIT $1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,urls_json,result_json FROM axon_extract_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?)
 }
@@ -185,13 +190,15 @@ pub async fn list_extract_jobs(
 pub async fn cancel_extract_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
-    let rows = sqlx::query(&format!(
-        "UPDATE axon_extract_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status IN ('{pending}','{running}')",
-        canceled = JobStatus::Canceled.as_str(),
-        pending = JobStatus::Pending.as_str(),
-        running = JobStatus::Running.as_str(),
-    ))
+    let rows = sqlx::query(
+        "UPDATE axon_extract_jobs SET status=$2,updated_at=NOW(),finished_at=NOW() WHERE id=$1 AND status = ANY($3)",
+    )
     .bind(id)
+    .bind(JobStatus::Canceled.as_str())
+    .bind(vec![
+        JobStatus::Pending.as_str(),
+        JobStatus::Running.as_str(),
+    ])
     .execute(&pool)
     .await?
     .rows_affected();
@@ -242,15 +249,17 @@ pub async fn cleanup_extract_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     ensure_schema(&pool).await?;
     let mut total = 0u64;
     loop {
-        let deleted = sqlx::query(&format!(
+        let deleted = sqlx::query(
             "DELETE FROM axon_extract_jobs WHERE id IN (
                 SELECT id FROM axon_extract_jobs
-                WHERE status IN ('{failed}','{canceled}')
+                WHERE status = ANY($1)
                 LIMIT 1000
             )",
-            failed = JobStatus::Failed.as_str(),
-            canceled = JobStatus::Canceled.as_str(),
-        ))
+        )
+        .bind(vec![
+            JobStatus::Failed.as_str(),
+            JobStatus::Canceled.as_str(),
+        ])
         .execute(&pool)
         .await?
         .rows_affected();
@@ -294,7 +303,7 @@ pub async fn recover_stale_extract_jobs(cfg: &Config) -> Result<u64, Box<dyn Err
     Ok(stats.reclaimed_jobs)
 }
 
-pub async fn extract_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+pub async fn extract_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     let pg_ok = make_pool(cfg).await.is_ok();
     let amqp_ok = open_amqp_channel(cfg, &cfg.extract_queue).await.is_ok();
     let redis_ok = redis_healthy(&cfg.redis_url).await;
