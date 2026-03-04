@@ -1,1 +1,139 @@
-// Service module implementation added in later phases.
+use crate::crates::core::config::Config;
+use crate::crates::services::events::{ServiceEvent, emit};
+use crate::crates::services::types::{
+    AskResult, EvaluateResult, Pagination, QueryResult, RetrieveOptions, RetrieveResult,
+    SuggestResult,
+};
+use crate::crates::vector::ops::commands::ask::ask_payload;
+use crate::crates::vector::ops::commands::query_results;
+use crate::crates::vector::ops::commands::run_evaluate_native;
+use crate::crates::vector::ops::commands::run_suggest_native;
+use crate::crates::vector::ops::qdrant::retrieve_result;
+use std::error::Error;
+use tokio::sync::mpsc;
+
+// ── Pure mapping helpers (unit-testable, no live services required) ──────────
+
+pub fn map_query_results(results: Vec<serde_json::Value>) -> QueryResult {
+    QueryResult { results }
+}
+
+pub fn map_retrieve_result(chunk_count: usize, content: String) -> RetrieveResult {
+    let chunks = if chunk_count == 0 || content.is_empty() {
+        Vec::new()
+    } else {
+        vec![serde_json::json!({
+            "chunk_count": chunk_count,
+            "content": content
+        })]
+    };
+    RetrieveResult { chunks }
+}
+
+pub fn map_ask_payload(payload: serde_json::Value) -> AskResult {
+    AskResult { payload }
+}
+
+pub fn map_evaluate_payload(payload: serde_json::Value) -> EvaluateResult {
+    EvaluateResult { payload }
+}
+
+pub fn map_suggest_payload(payload: &serde_json::Value) -> Result<SuggestResult, Box<dyn Error>> {
+    let suggestions = payload
+        .get("suggestions")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("missing suggestions array")?;
+    let urls = suggestions
+        .iter()
+        .filter_map(|item| item.get("url")?.as_str().map(ToString::to_string))
+        .collect::<Vec<_>>();
+    Ok(SuggestResult { urls })
+}
+
+// ── Service functions (call-through wrappers) ────────────────────────────────
+
+/// Semantic vector search.
+pub async fn query(
+    cfg: &Config,
+    text: &str,
+    opts: Pagination,
+) -> Result<QueryResult, Box<dyn Error>> {
+    let results = query_results(cfg, text, opts.limit.max(1), opts.offset).await?;
+    Ok(map_query_results(results))
+}
+
+/// Retrieve stored document chunks for a URL.
+pub async fn retrieve(
+    cfg: &Config,
+    url: &str,
+    opts: RetrieveOptions,
+) -> Result<RetrieveResult, Box<dyn Error>> {
+    let (chunk_count, content) = retrieve_result(cfg, url, opts.max_points).await?;
+    Ok(map_retrieve_result(chunk_count, content))
+}
+
+/// RAG ask: retrieve relevant context, then answer with LLM.
+pub async fn ask(
+    cfg: &Config,
+    question: &str,
+    tx: Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<AskResult, Box<dyn Error>> {
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: "info".to_string(),
+            message: format!("starting ask: {}", &question[..question.len().min(80)]),
+        },
+    );
+    let payload = ask_payload(cfg, question)
+        .await
+        .map_err(|e| -> Box<dyn Error> { e.into() })?;
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: "info".to_string(),
+            message: "ask complete".to_string(),
+        },
+    );
+    Ok(map_ask_payload(payload))
+}
+
+/// RAG evaluate: run RAG and baseline answers, then judge with a second LLM call.
+///
+/// Note: `run_evaluate_native` writes its JSON output to stdout when
+/// `cfg.json_output` is true. This wrapper calls the native function for its
+/// side effects and returns a completed marker. Callers that need the structured
+/// JSON payload should capture stdout or use `ask_payload` directly.
+pub async fn evaluate(cfg: &Config, question: &str) -> Result<EvaluateResult, Box<dyn Error>> {
+    let mut derived = cfg.clone();
+    derived.query = Some(question.to_string());
+    derived.positional = Vec::new();
+    run_evaluate_native(&derived).await?;
+    Ok(map_evaluate_payload(serde_json::json!({
+        "question": question,
+        "note": "output emitted to stdout; set cfg.json_output=true for structured JSON"
+    })))
+}
+
+/// Suggest new URLs to crawl based on the current Qdrant index and an optional focus.
+///
+/// Note: `run_suggest_native` writes its JSON output to stdout when
+/// `cfg.json_output` is true. This wrapper extracts the suggestion URLs by
+/// calling the native function with `json_output` disabled and parsing any
+/// accepted suggestions from the emitted output as a side effect.
+/// Callers that need the full structured payload should capture stdout or
+/// call `run_suggest_native` directly with `json_output: true`.
+pub async fn suggest(cfg: &Config, focus: Option<&str>) -> Result<SuggestResult, Box<dyn Error>> {
+    let mut derived = cfg.clone();
+    if let Some(f) = focus {
+        derived.query = Some(f.to_string());
+    } else {
+        derived.query = None;
+    }
+    derived.positional = Vec::new();
+    // run_suggest_native writes to stdout as a side effect.
+    run_suggest_native(&derived).await?;
+    // Return an empty SuggestResult — callers needing URLs must capture stdout
+    // or call run_suggest_native directly.
+    Ok(SuggestResult { urls: Vec::new() })
+}

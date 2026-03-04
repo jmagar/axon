@@ -71,3 +71,96 @@ pub struct StatusResult {
 pub struct DedupeResult {
     pub completed: bool,
 }
+
+// Query / retrieve / ask / evaluate / suggest
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueryResult {
+    pub results: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetrieveResult {
+    pub chunks: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AskResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvaluateResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SuggestResult {
+    pub urls: Vec<String>,
+}
+
+// Scrape / map / search / research
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrapeResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchResult {
+    pub results: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResearchResult {
+    pub payload: serde_json::Value,
+}
+
+// Lifecycle: crawl / embed / extract
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrawlStartResult {
+    pub job_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CrawlJobResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbedStartResult {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmbedJobResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtractStartResult {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtractJobResult {
+    pub payload: serde_json::Value,
+}
+
+// Ingest / screenshot
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IngestResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScreenshotResult {
+    pub payload: serde_json::Value,
+}
