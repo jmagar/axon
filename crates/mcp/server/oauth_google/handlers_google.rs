@@ -62,7 +62,7 @@ pub(crate) async fn oauth_google_login(
     } else {
         "/".to_string()
     };
-    state.put_pending_state(&csrf_state, &return_to).await;
+    state.put_pending_state(&csrf_state, &return_to).await?;
 
     let mut auth_url = Url::parse(&cfg.auth_url).map_err(|_| {
         (
