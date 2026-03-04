@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-04 (session: evaluate page; cortex suggest API; image SHA verification; CLI help contract; module consolidation; command docs; v0.3.0)
+Last Modified: 2026-03-04 (session: full codebase review — 40 findings fixed; 17 CodeRabbit findings fixed; WS OAuth gating; SQL parameterization; Secret<T>; ConfigOverrides; env allowlist hardening; v0.4.0)
 
 ## [Unreleased] — feat/sidebar
 
@@ -7,6 +7,7 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 ### Highlights
 
+- **Full codebase security & quality review (v0.4.0)** — comprehensive 5-phase review covering 244 Rust + 424 TypeScript files; 40 Phase 1 findings (3 Critical, 7 High, 17 Medium, 13 Low) + 17 CodeRabbit findings all addressed; WS OAuth bearer token gating added; all `format!` SQL → parameterized queries (H-03); `Secret<T>` wrapper with `[REDACTED]` debug; `ConfigOverrides` + sub-config scaffolding (A-H-01); `Config::test_default()` (CR-Q); ANTHROPIC_API_KEY + CLAUDE_* passthrough in child env allowlist (H-02/CR-D); `spawn_blocking` replaces `block_in_place` in MCP ask handler (CR-E); token rotation race fixed (CR-F); OAuth state capacity caps (H-05/CR-K); `apply_overrides` returns new `Config` (CR-M); `ServiceUrls` Debug redacts secrets (CR-L); migration table for `axon_session_ingest_state` (CR-B); arch docs for A-H-01/A-M-01/A-M-04/A-M-08
 - **Evaluate page + cortex suggest API** — new `/app/evaluate/page.tsx` for RAG evaluation UI; new `/api/cortex/suggest/route.ts` server route; `apps/web/lib/api-fetch.ts` typed fetch utility; v0.3.0 (minor bump)
 - **Image SHA verification** — `docker/s6/cont-init.d/00-verify-image-sha` and `docker/web/cont-init.d/00-verify-image-sha` added to both worker and web containers; `scripts/check-container-revisions.sh` for CI; `scripts/rebuild-fresh.sh` and `scripts/test-mcp-oauth-protection.sh` added
 - **CLI help contract test** — `tests/cli_help_contract.rs` verifies `axon --help` exit code and output structure; `scripts/check_mcp_http_only.sh` ensures HTTP transport is correctly gated
@@ -67,7 +68,35 @@ This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`)
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat+chore | v0.3.0; evaluate page; cortex/suggest API; image SHA verification cont-init; CLI help contract test; command docs expansion (20+ files); module consolidation; sidebar simplification; script additions |
+| *(this commit)* | feat+chore | v0.4.0; full codebase review — 40 + 17 CR findings fixed; WS OAuth gating; SQL parameterization; Secret<T>; ConfigOverrides; env allowlist hardening |
+| `18c6e6ae` | fix(test) | add #[serial] to extract DB tests to eliminate race condition |
+| `54ced213` | fix(jobs) | fix doctest annotation in status.rs |
+| `79cca7ba` | fix(config) | add Config::test_default() for stable test helpers (CR-Q) |
+| `cf178f6e` | docs,feat | add arch docs (A-H-01, A-M-01, A-M-04, A-M-08) and scrape/evaluate module files |
+| `da712968` | fix(jobs) | H-03 SQL parameterization in ingest/ops.rs |
+| `b6671081` | fix(jobs,mcp,web) | H-03 SQL parameterization (extract/ingest/crawl), spawn_blocking, ANTHROPIC_API_KEY allowlist, sitemap tests |
+| `ee330e95` | fix(jobs,mcp,web) | H-03 SQL params in process.rs, spawn_blocking safety, ? operator cleanup, CLAUDE_* env passthrough |
+| `d95938ce` | fix(web,mcp) | add ANTHROPIC_API_KEY to env allowlist, fix block_in_place panic risk (CR-D, CR-E) |
+| `e3134ef7` | feat(security) | gate /ws with OAuth bearer token; fix cancel mode injection, shell IPv4-mapped loopback, clock sentinel |
+| `61169198` | fix(config) | wire modules, fix Secret timing, align defaults, expand ConfigOverrides, fix Debug (CR-A, CR-G, CR-H, CR-I, CR-L, CR-M) |
+| `57c0250e` | fix(oauth) | fix token rotation race and add pending_state capacity cap (CR-F, CR-K) |
+| `09d15d26` | fix(migrations,docs) | add missing tables/indexes to migration, fix scaling.md network (CR-B, CR-C, CR-N) |
+| `72e7742d` | fix(deps) | bump aws-lc-sys 0.37.1 → 0.38.0 via aws-lc-rs 1.16.1 |
+| `012cdcf4` | fix(ingest) | address 3 code review findings (C-02, M-04, L-06) |
+| `e7238085` | fix | use raw sitemap url count in MapResult and remove shadow test |
+| `4fff3661` | docs | record map command engine unification |
+| `4eea6b93` | test | lock map payload schema after engine unification |
+| `0186de11` | fix(compile) | add missing log crate dependency for web execute module |
+| `b2f4c124` | fix(oauth) | address 8 code review findings (C-01, C-03, H-05, M-02, M-05, M-07, M-09, L-04) |
+| `ddf4e830` | fix(cli) | restore stable JSON schemas for status/cancel/list/errors |
+| `f9c26621` | fix(scrape) | redact headers in debug, fix failure propagation, dedup markdown, CDP timeout, schedule tier |
+| `d2ade357` | fix(omnibox) | exec_id guard, suggestion staleness, useCallback deps, isProcessing sync, empty content |
+| `66fd1ed6` | fix(ssrf) | block IPv6 enum bypass, 0.0.0.0, and redirect SSRF |
+| `f35ce379` | fix(pulse) | auto-scroll MAX_LINES, Enter double-fire, clipboard fallback, empty text guard, unreachable boundary, allowlist expiry |
+| `e63f6473` | fix(web) | api-fetch header merge, token scope, permissionLevel default, CSP, loopback, eviction order |
+| `6f172dbd` | test | add map migration coverage |
+| `3466ddf0` | test | serialize DB-touching integration tests with #[serial] to prevent race conditions |
+| *(this commit v0.3.0)* | feat+chore | v0.3.0; evaluate page; cortex/suggest API; image SHA verification cont-init; CLI help contract test; command docs expansion (20+ files); module consolidation; sidebar simplification; script additions |
 | 7fb1100d | feat(mcp)+chore | MCP HTTP transport + Google OAuth; rmcp 0.17; screenshot CDP→Spider migration; engine sitemap backfill; cleanup |
 | `62bdae5e` | test | add scrape migration contract coverage |
 | `2d004e27` | docs | record screenshot migration to spider api |
