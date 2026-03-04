@@ -5,10 +5,12 @@
 //! when `AXON_TEST_PG_URL` is not set (no live Postgres available).
 
 use super::super::*;
+use serial_test::serial;
 use tokio::time::Duration;
 use uuid::Uuid;
 
 #[tokio::test]
+#[serial]
 async fn spawn_heartbeat_task_advances_updated_at() -> Result<()> {
     let Some(pg_url) = resolve_test_pg_url() else {
         // No test database configured — skip gracefully.
