@@ -236,7 +236,9 @@ async fn handle_refresh_token_grant(
     {
         return resp;
     }
-    state.delete_refresh_token(&refresh).await;
+    // Store the new refresh token BEFORE deleting the old one.
+    // If put_refresh_token fails (e.g. capacity full / 503), the old token
+    // remains valid and the client can retry — no lockout.
     let rotated_refresh = RefreshTokenRecord {
         client_id,
         scope: refresh_record.scope.clone(),
@@ -248,6 +250,7 @@ async fn handle_refresh_token_grant(
     {
         return resp;
     }
+    state.delete_refresh_token(&refresh).await;
     info!(target: "axon.mcp.oauth", identity, "token exchange succeeded (refresh_token)");
     (
         StatusCode::OK,

@@ -177,22 +177,48 @@ impl GoogleOAuthState {
         self.get_session_token(session_id).await.is_some()
     }
 
-    pub(crate) async fn put_pending_state(&self, state: &str, return_to: &str) {
-        let record = PendingStateRecord {
-            return_to: return_to.to_string(),
-            expires_at_unix: unix_now_secs() + 900,
-        };
-        self.inner
-            .pending_state
-            .lock()
-            .await
-            .insert(state.to_string(), record.clone());
+    pub(crate) async fn put_pending_state(
+        &self,
+        state: &str,
+        return_to: &str,
+    ) -> Result<(), Response> {
+        {
+            let mut map = self.inner.pending_state.lock().await;
+            if map.len() >= MAX_OAUTH_STATE_ENTRIES {
+                drop(map);
+                self.cleanup_expired_in_memory().await;
+                let mut map = self.inner.pending_state.lock().await;
+                if map.len() >= MAX_OAUTH_STATE_ENTRIES {
+                    warn!(target: "axon.mcp.oauth", "pending_state at capacity; rejecting authorize request");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(serde_json::json!({
+                            "error": "server_error",
+                            "error_description": "oauth state store at capacity"
+                        })),
+                    )
+                        .into_response());
+                }
+                let record = PendingStateRecord {
+                    return_to: return_to.to_string(),
+                    expires_at_unix: unix_now_secs() + 900,
+                };
+                map.insert(state.to_string(), record);
+            } else {
+                let record = PendingStateRecord {
+                    return_to: return_to.to_string(),
+                    expires_at_unix: unix_now_secs() + 900,
+                };
+                map.insert(state.to_string(), record);
+            }
+        }
         self.redis_set_string(
             &self.key(&format!("pending_state:{state}")),
             return_to,
             Some(900),
         )
         .await;
+        Ok(())
     }
 
     pub(crate) async fn take_pending_state(&self, state: &str) -> Option<String> {
