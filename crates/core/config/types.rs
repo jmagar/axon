@@ -1,12 +1,15 @@
 mod config;
 mod config_impls;
 mod enums;
+pub mod overrides;
+pub mod subconfigs;
 
 pub use config::Config;
 pub use enums::{
     CommandKind, EvaluateResponsesMode, PerformanceProfile, RedditSort, RedditTime, RenderMode,
     ScrapeFormat,
 };
+pub use overrides::ConfigOverrides;
 
 #[cfg(test)]
 mod tests {
