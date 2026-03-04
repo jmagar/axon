@@ -21,6 +21,7 @@ use std::fmt;
 ///
 /// TODO(A-M-07): Wrap `openai_api_key`, `tavily_api_key`, and `github_token`
 /// with `Secret<String>` after migration is complete.
+#[allow(dead_code)]
 #[derive(Clone, Default)]
 pub struct ServiceUrls {
     pub pg_url: String,
@@ -56,6 +57,7 @@ impl fmt::Debug for ServiceUrls {
 ///
 /// TODO(A-M-07): Wrap `github_token` and `reddit_client_secret` with
 /// `Secret<String>` after migration is complete.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct IngestConfig {
     pub github_token: Option<String>, // TODO(A-M-07): Option<Secret<String>>
@@ -85,6 +87,7 @@ impl Default for IngestConfig {
 }
 
 /// Configuration for the `ask`, `evaluate`, and `query` RAG pipeline.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AskConfig {
     pub ask_max_context_chars: usize,
@@ -123,6 +126,7 @@ impl Default for AskConfig {
 }
 
 /// Configuration for Chrome-based crawling and screenshot capture.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ChromeConfig {
     pub chrome_remote_url: Option<String>,
@@ -171,6 +175,7 @@ impl Default for ChromeConfig {
 }
 
 /// Configuration for crawler behavior: depth, filtering, sitemaps, thin pages.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
     pub max_pages: u32,
@@ -223,6 +228,7 @@ impl Default for CrawlConfig {
 }
 
 /// AMQP queue names and related routing configuration.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct QueueConfig {
     pub shared_queue: bool,
