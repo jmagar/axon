@@ -285,9 +285,16 @@ export async function POST(request: Request) {
           'TEMP',
           'XDG_RUNTIME_DIR',
           'DBUS_SESSION_BUS_ADDRESS',
+          // Required for Claude CLI auth when ~/.claude/credentials.json is absent or expired.
+          // Do NOT add other service keys (OPENAI_API_KEY, TAVILY_API_KEY, etc.) here.
+          'ANTHROPIC_API_KEY',
         ])
         const childEnv = Object.fromEntries(
-          Object.entries(process.env).filter(([key]) => CLAUDE_CHILD_ENV_ALLOWLIST.has(key)),
+          // Also pass through all CLAUDE_* vars (e.g. CLAUDE_CONFIG_DIR) so the CLI
+          // can locate its config directory and other runtime settings.
+          Object.entries(process.env).filter(
+            ([key]) => CLAUDE_CHILD_ENV_ALLOWLIST.has(key) || key.startsWith('CLAUDE_'),
+          ),
         ) as NodeJS.ProcessEnv
         const child = spawn('claude', args, {
           cwd: process.env.AXON_WORKSPACE ?? os.tmpdir(),
