@@ -62,13 +62,13 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
             } else {
                 JobStatus::Failed
             };
-            sqlx::query(&format!(
-                "UPDATE axon_crawl_jobs SET status='{status}', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='{running}'",
-                status = status.as_str(),
-                running = JobStatus::Running.as_str(),
-            ))
+            sqlx::query(
+                "UPDATE axon_crawl_jobs SET status=$2, updated_at=NOW(), finished_at=NOW(), error_text=$3 WHERE id=$1 AND status=$4",
+            )
             .bind(id)
+            .bind(status.as_str())
             .bind(err.to_string())
+            .bind(JobStatus::Running.as_str())
             .execute(pool)
             .await?;
             if is_canceled {
@@ -229,12 +229,12 @@ fn spawn_progress_task(
                 "pages_discovered": progress.pages_discovered,
                 "crawl_stream_pages": progress.pages_seen,
             });
-            let _ = sqlx::query(&format!(
-                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
-                running = JobStatus::Running.as_str(),
-            ))
+            let _ = sqlx::query(
+                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status=$3",
+            )
             .bind(progress_job_id)
             .bind(progress_json)
+            .bind(JobStatus::Running.as_str())
             .execute(&progress_pool)
             .await;
             last_update = std::time::Instant::now();
@@ -260,7 +260,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
         Some(c) => c,
         None => {
             std::future::pending::<()>().await;
-            return;
+            unreachable!("pending() never resolves");
         }
     };
 
@@ -284,7 +284,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
                     Some(new_conn) => conn = new_conn,
                     None => {
                         std::future::pending::<()>().await;
-                        return;
+                        unreachable!("pending() never resolves");
                     }
                 }
             }
@@ -296,7 +296,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
                     Some(new_conn) => conn = new_conn,
                     None => {
                         std::future::pending::<()>().await;
-                        return;
+                        unreachable!("pending() never resolves");
                     }
                 }
             }
@@ -468,12 +468,12 @@ async fn run_active_crawl_job(
                             "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
                             "graceful_shutdown": true,
                         });
-                        let _ = sqlx::query(&format!(
-                            "UPDATE axon_crawl_jobs SET result_json=$2, updated_at=NOW() WHERE id=$1 AND status='{running}'",
-                            running = JobStatus::Running.as_str(),
-                        ))
+                        let _ = sqlx::query(
+                            "UPDATE axon_crawl_jobs SET result_json=$2, updated_at=NOW() WHERE id=$1 AND status=$3",
+                        )
                         .bind(id)
                         .bind(&partial_json)
+                        .bind(JobStatus::Running.as_str())
                         .execute(pool)
                         .await;
                     }
