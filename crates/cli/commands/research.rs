@@ -282,10 +282,9 @@ fn parse_search_time_range(value: Option<&str>) -> Option<TimeRange> {
 mod tests {
     use super::*;
     use crate::crates::core::config::CommandKind;
-    use crate::crates::jobs::common::test_config;
 
     fn make_research_cfg(tavily_key: &str, openai_url: &str, openai_model: &str) -> Config {
-        let mut cfg = test_config("");
+        let mut cfg = Config::test_default();
         cfg.command = CommandKind::Research;
         cfg.positional = vec!["test query".to_string()];
         cfg.tavily_api_key = tavily_key.to_string();
