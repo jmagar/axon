@@ -580,6 +580,7 @@ dependencies = [
  "indicatif",
  "insta",
  "lapin",
+ "log",
  "octocrab",
  "portable-pty",
  "proptest",
