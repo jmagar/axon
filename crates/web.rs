@@ -1,9 +1,10 @@
 mod docker_stats;
 mod download;
-mod execute;
+pub mod execute;
 mod pack;
 mod shell;
 
+use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -29,6 +30,12 @@ pub(crate) struct AppState {
     /// Same token used by the Next.js proxy for /api/* routes.
     /// None = gate disabled (open WS, trusted-network deployments only).
     api_token: Option<String>,
+    /// Base server config — shared across all connections.
+    ///
+    /// Tasks 5.2 and 5.3 will use this to drive direct service dispatch
+    /// instead of spawning a subprocess.  Carried as `Arc` so WS handler
+    /// tasks can clone a cheap reference without copying the whole struct.
+    pub(crate) cfg: Arc<Config>,
 }
 
 /// Query parameters for the `/ws` upgrade request.
@@ -40,7 +47,7 @@ struct WsQuery {
 // ── Server startup ────────────────────────────────────────────────────────────
 
 /// Start the axum server on the given port, running until interrupted.
-pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
+pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Error>> {
     let (stats_tx, _) = broadcast::channel::<String>(64);
     let job_dirs: Arc<DashMap<String, PathBuf>> = Arc::new(DashMap::new());
 
@@ -56,6 +63,7 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
         stats_tx: stats_tx.clone(),
         job_dirs: job_dirs.clone(),
         api_token,
+        cfg,
     });
 
     // Spawn Docker stats poller in background
@@ -236,6 +244,9 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     // Shared job_dirs registry for registering completed jobs
     let job_dirs = state.job_dirs.clone();
 
+    // Base config — cloned once per connection, then cheaply per-command via Arc
+    let conn_cfg = state.cfg.clone();
+
     // Subscribe to Docker stats broadcast
     let mut stats_rx = state.stats_tx.subscribe();
 
@@ -298,6 +309,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                 "execute" => {
                     let tx = exec_tx.clone();
                     let job_id = crawl_job_id.clone();
+                    let cmd_cfg = conn_cfg.clone();
                     tokio::spawn(async move {
                         execute::handle_command(
                             &client_msg.mode,
@@ -305,6 +317,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                             &client_msg.flags,
                             tx,
                             job_id,
+                            cmd_cfg,
                         )
                         .await;
                     });
