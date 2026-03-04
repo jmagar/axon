@@ -27,6 +27,22 @@ pub(super) fn is_valid_cancel_job_id(job_id: &str) -> bool {
 
 pub(super) async fn handle_cancel(mode: &str, job_id: &str, tx: mpsc::Sender<String>) {
     let cancel_mode = if mode.is_empty() { "crawl" } else { mode };
+    // H-04: validate cancel_mode against ALLOWED_MODES before spawning a subprocess
+    if !super::constants::ALLOWED_MODES.contains(&cancel_mode) {
+        let ws_ctx = events::CommandContext {
+            exec_id: format!("exec-{}", Uuid::new_v4()),
+            mode: cancel_mode.to_string(),
+            input: job_id.to_string(),
+        };
+        send_error_dual(
+            &tx,
+            &ws_ctx,
+            format!("cancel failed: unknown mode '{cancel_mode}'"),
+            None,
+        )
+        .await;
+        return;
+    }
     let ws_ctx = events::CommandContext {
         exec_id: format!("exec-{}", Uuid::new_v4()),
         mode: cancel_mode.to_string(),
