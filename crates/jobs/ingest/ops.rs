@@ -22,12 +22,12 @@ pub async fn start_ingest_job(cfg: &Config, source: IngestSource) -> Result<Uuid
     let target = target_label(&source);
 
     let id = Uuid::new_v4();
-    sqlx::query(&format!(
+    sqlx::query(
         "INSERT INTO axon_ingest_jobs (id, status, source_type, target, config_json) \
-         VALUES ($1, '{pending}', $2, $3, $4)",
-        pending = JobStatus::Pending.as_str(),
-    ))
+         VALUES ($1, $2, $3, $4, $5)",
+    )
     .bind(id)
+    .bind(JobStatus::Pending.as_str())
     .bind(source_type)
     .bind(&target)
     .bind(cfg_json)
@@ -78,14 +78,16 @@ pub async fn list_ingest_jobs(
 pub async fn cancel_ingest_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
-    let rows = sqlx::query(&format!(
-        "UPDATE axon_ingest_jobs SET status='{canceled}',updated_at=NOW(),finished_at=NOW() \
-         WHERE id=$1 AND status IN ('{pending}','{running}')",
-        canceled = JobStatus::Canceled.as_str(),
-        pending = JobStatus::Pending.as_str(),
-        running = JobStatus::Running.as_str(),
-    ))
+    let rows = sqlx::query(
+        "UPDATE axon_ingest_jobs SET status=$2,updated_at=NOW(),finished_at=NOW() \
+         WHERE id=$1 AND status = ANY($3)",
+    )
     .bind(id)
+    .bind(JobStatus::Canceled.as_str())
+    .bind(vec![
+        JobStatus::Pending.as_str(),
+        JobStatus::Running.as_str(),
+    ])
     .execute(&pool)
     .await?
     .rows_affected();
@@ -95,13 +97,15 @@ pub async fn cancel_ingest_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn E
 pub async fn cleanup_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
-    Ok(sqlx::query(&format!(
-        "DELETE FROM axon_ingest_jobs WHERE status IN ('{failed}','{canceled}') \
-         OR (status = '{completed}' AND finished_at < NOW() - INTERVAL '30 days')",
-        failed = JobStatus::Failed.as_str(),
-        canceled = JobStatus::Canceled.as_str(),
-        completed = JobStatus::Completed.as_str(),
-    ))
+    Ok(sqlx::query(
+        "DELETE FROM axon_ingest_jobs WHERE status = ANY($1) \
+         OR (status = $2 AND finished_at < NOW() - INTERVAL '30 days')",
+    )
+    .bind(vec![
+        JobStatus::Failed.as_str(),
+        JobStatus::Canceled.as_str(),
+    ])
+    .bind(JobStatus::Completed.as_str())
     .execute(&pool)
     .await?
     .rows_affected())

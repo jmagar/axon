@@ -86,9 +86,14 @@ impl AxonMcpServer {
             AxonRequest::Artifacts(req) => self.handle_artifacts(req).await?,
             AxonRequest::Scrape(req) => self.handle_scrape(req).await?,
             AxonRequest::Research(req) => self.handle_research(req).await?,
-            AxonRequest::Ask(req) => tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(self.handle_ask(req))
-            })?,
+            AxonRequest::Ask(req) => {
+                let server = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    tokio::runtime::Handle::current().block_on(server.handle_ask(req))
+                })
+                .await
+                .map_err(|e| internal_error(format!("ask task join error: {e}")))??
+            }
             AxonRequest::Screenshot(req) => self.handle_screenshot(req).await?,
             AxonRequest::Refresh(req) => self.handle_refresh(req).await?,
         };
