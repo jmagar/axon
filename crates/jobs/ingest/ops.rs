@@ -125,14 +125,14 @@ pub async fn clear_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
 pub(crate) async fn mark_completed(pool: &PgPool, id: Uuid, chunks: usize) {
     use crate::crates::core::logging::log_warn;
 
-    match sqlx::query(&format!(
-        "UPDATE axon_ingest_jobs SET status='{completed}',updated_at=NOW(),\
-         finished_at=NOW(),result_json=$2 WHERE id=$1 AND status='{running}'",
-        completed = JobStatus::Completed.as_str(),
-        running = JobStatus::Running.as_str(),
-    ))
+    match sqlx::query(
+        "UPDATE axon_ingest_jobs SET status=$2,updated_at=NOW(),\
+         finished_at=NOW(),result_json=$3 WHERE id=$1 AND status=$4",
+    )
     .bind(id)
+    .bind(JobStatus::Completed.as_str())
     .bind(serde_json::json!({"chunks_embedded": chunks}))
+    .bind(JobStatus::Running.as_str())
     .execute(pool)
     .await
     {
