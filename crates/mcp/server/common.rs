@@ -1,5 +1,4 @@
 use super::AxonMcpServer;
-use crate::crates::cli::commands::scrape::scrape_payload as cli_scrape_payload;
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::mcp::schema::{
     AxonToolResponse, CrawlRequest, McpRenderMode, ResponseMode, SearchTimeRange,
@@ -9,7 +8,6 @@ use crate::crates::services::types::{
 };
 use rmcp::ErrorData;
 use sha2::{Digest, Sha256};
-use spider_agent::TimeRange;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -17,12 +15,6 @@ use uuid::Uuid;
 pub(super) const MCP_TOOL_SCHEMA_URI: &str = "axon://schema/mcp-tool";
 
 impl AxonMcpServer {
-    pub(super) async fn scrape_payload(&self, url: &str) -> Result<serde_json::Value, ErrorData> {
-        cli_scrape_payload(self.cfg.as_ref(), url)
-            .await
-            .map_err(|e| internal_error(e.to_string()))
-    }
-
     pub(super) fn parse_viewport(
         viewport: Option<&str>,
         fallback_w: u32,
@@ -301,15 +293,6 @@ pub(super) fn map_render_mode(mode: McpRenderMode) -> RenderMode {
         McpRenderMode::Http => RenderMode::Http,
         McpRenderMode::Chrome => RenderMode::Chrome,
         McpRenderMode::AutoSwitch => RenderMode::AutoSwitch,
-    }
-}
-
-pub(super) fn map_search_time_range(range: &SearchTimeRange) -> TimeRange {
-    match range {
-        SearchTimeRange::Day => TimeRange::Day,
-        SearchTimeRange::Week => TimeRange::Week,
-        SearchTimeRange::Month => TimeRange::Month,
-        SearchTimeRange::Year => TimeRange::Year,
     }
 }
 
