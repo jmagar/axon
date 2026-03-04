@@ -1,5 +1,6 @@
 use super::super::*;
 use chrono::Utc;
+use serial_test::serial;
 use uuid::Uuid;
 
 // ── make_pool_creates_pool_and_executes_ping ────────────────────────────────
@@ -25,6 +26,7 @@ async fn make_pool_creates_pool_and_executes_ping() -> Result<()> {
 // ── claim_next_pending_claims_oldest_job_first ─────────────────────────────
 
 #[tokio::test]
+#[serial]
 async fn claim_next_pending_claims_oldest_job_first() -> Result<()> {
     let Some(pg_url) = resolve_test_pg_url() else {
         return Ok(());
@@ -54,6 +56,12 @@ async fn claim_next_pending_claims_oldest_job_first() -> Result<()> {
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+
+    // Clean up ALL pending rows before the FIFO test — any pending row (from
+    // prior runs or other serial tests) would be claimed first and break ordering.
+    let _ = sqlx::query("DELETE FROM axon_embed_jobs WHERE status = 'pending'")
+        .execute(&pool)
+        .await;
 
     let id_old = Uuid::new_v4();
     let id_mid = Uuid::new_v4();
@@ -119,6 +127,7 @@ async fn claim_next_pending_claims_oldest_job_first() -> Result<()> {
 // ── count_stale_and_pending_jobs_with_pool_returns_zero_for_empty_tables ───
 
 #[tokio::test]
+#[serial]
 async fn count_stale_and_pending_jobs_with_pool_returns_zero_for_empty_tables() -> Result<()> {
     let Some(pg_url) = resolve_test_pg_url() else {
         return Ok(());
