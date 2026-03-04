@@ -118,6 +118,7 @@ pub(crate) async fn oauth_register_client(
 
 // RFC 6749 §4.1.2.1: validate client_id and redirect_uri BEFORE any error
 // redirects. Error responses must NOT be sent to an unvalidated redirect_uri.
+#[allow(clippy::result_large_err)]
 fn validate_authorize_redirect_uri(
     state: &GoogleOAuthState,
     params: &AuthorizeParams,
@@ -184,6 +185,7 @@ fn validate_authorize_redirect_uri(
     Ok(redirect_uri)
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_pkce_params(params: &AuthorizeParams) -> Result<(), Response> {
     if params.code_challenge.is_none() {
         return Err((
@@ -208,6 +210,7 @@ fn validate_pkce_params(params: &AuthorizeParams) -> Result<(), Response> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_scope(
     scope_opt: Option<String>,
     allowed_scopes: &[String],
