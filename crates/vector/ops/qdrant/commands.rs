@@ -90,20 +90,28 @@ pub async fn run_retrieve_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 pub async fn run_sources_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let facet_limit = env_usize_clamped("AXON_SOURCES_FACET_LIMIT", 100_000, 1, 1_000_000);
-    let sources = qdrant_url_facets(cfg, facet_limit).await?;
+    let pagination = crate::crates::services::types::Pagination {
+        limit: facet_limit,
+        offset: 0,
+    };
+    let result = crate::crates::services::system::sources(cfg, pagination).await?;
+    let url_count = result.urls.len();
     if cfg.json_output {
-        let by_url: BTreeMap<String, usize> = sources.into_iter().collect();
-        println!("{}", serde_json::to_string_pretty(&by_url)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "count": result.count,
+                "limit": result.limit,
+                "offset": result.offset,
+                "urls": result.urls,
+            }))?
+        );
     } else {
         println!("{}", primary("Sources"));
-        for (url, chunks) in &sources {
-            println!(
-                "  • {} {}",
-                accent(url),
-                muted(&format!("(chunks: {chunks})"))
-            );
+        for url in &result.urls {
+            println!("  • {}", accent(url));
         }
-        if sources.len() == facet_limit {
+        if url_count == facet_limit {
             println!(
                 "{}",
                 muted(&format!(
@@ -195,9 +203,18 @@ fn render_fast_domain_results(
 
 async fn try_fast_domains(cfg: &Config) -> Result<bool, Box<dyn Error>> {
     let facet_limit = env_usize_clamped("AXON_DOMAINS_FACET_LIMIT", 100_000, 1, 1_000_000);
-    match qdrant_domain_facets(cfg, facet_limit).await {
-        Ok(domains) => {
-            render_fast_domain_results(cfg, domains)?;
+    let pagination = crate::crates::services::types::Pagination {
+        limit: facet_limit,
+        offset: 0,
+    };
+    match crate::crates::services::system::domains(cfg, pagination).await {
+        Ok(result) => {
+            let pairs: Vec<(String, usize)> = result
+                .domains
+                .into_iter()
+                .map(|f| (f.domain, f.vectors))
+                .collect();
+            render_fast_domain_results(cfg, pairs)?;
             Ok(true)
         }
         Err(err) => {
