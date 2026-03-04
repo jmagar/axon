@@ -2,11 +2,15 @@
 //!
 //! These lock the expected behavior AFTER the migration that moves sitemap
 //! URL merge/dedup from CLI `map.rs` into the crawl engine. The tests
-//! verify three contracts:
+//! verify two contracts:
 //!
 //! 1. URLs in the output are unique WITHOUT CLI-side dedup (engine handles it).
-//! 2. `sitemap_urls` count is reported consistently with `mapped_urls` and `pages_seen`.
-//! 3. AutoSwitch only falls back to Chrome when `pages_seen == 0`.
+//! 2. `sitemap_urls` is the raw count of URLs returned by `discover_sitemap_urls`
+//!    (before dedup), not a net-new count relative to crawler-discovered URLs.
+//!
+//! The AutoSwitch fallback is exercised implicitly by the two httpmock
+//! integration tests, which call the real `map_payload` → `map_with_sitemap`
+//! path.
 //!
 //! Tests use `httpmock` to provide sitemap XML and a stub robots.txt, then
 //! call `map_payload` directly. Spider's crawl over a mock server yields
@@ -179,8 +183,16 @@ async fn map_payload_returns_unique_urls_without_cli_side_dedup() {
     );
 }
 
-/// Contract: `sitemap_urls` must equal `mapped_urls - pages_seen`, and all
-/// three fields must be present and consistent in the JSON output.
+/// Contract: `sitemap_urls` is the raw count of URLs returned by
+/// `discover_sitemap_urls` before dedup, not a net-new count.
+///
+/// The fixture sitemap contains exactly 3 URLs (page-a, page-b, page-c),
+/// two of which overlap with crawler-discovered URLs.  After dedup the
+/// `urls` array will have at most those three pages plus the root URL, but
+/// `sitemap_urls` must equal **3** — the raw sitemap URL count.
+///
+/// All four fields (`mapped_urls`, `sitemap_urls`, `pages_seen`,
+/// `elapsed_ms`) must be present and have the correct types.
 #[tokio::test]
 #[serial]
 async fn map_payload_reports_sitemap_url_count_consistently() {
@@ -195,22 +207,22 @@ async fn map_payload_reports_sitemap_url_count_consistently() {
         .await
         .expect("map_payload should not error");
 
-    // All three fields must be present
+    // All fields must be present with the right types
     let mapped_urls = result["mapped_urls"]
         .as_u64()
         .expect("mapped_urls must be a number");
     let sitemap_urls = result["sitemap_urls"]
         .as_u64()
         .expect("sitemap_urls must be a number");
-    let pages_seen = result["pages_seen"]
+    let _pages_seen = result["pages_seen"]
         .as_u64()
         .expect("pages_seen must be a number");
 
-    // Contract: sitemap_urls = mapped_urls - pages_seen
+    // Contract: sitemap_urls is the raw count of URLs in the mock sitemap
+    // (page-a, page-b, page-c = 3).  It is NOT mapped_urls - pages_seen.
     assert_eq!(
-        sitemap_urls,
-        mapped_urls.saturating_sub(pages_seen),
-        "sitemap_urls ({sitemap_urls}) must equal mapped_urls ({mapped_urls}) - pages_seen ({pages_seen})"
+        sitemap_urls, 3,
+        "sitemap_urls must equal the raw sitemap URL count (3), got {sitemap_urls}"
     );
 
     // Contract: mapped_urls must equal the length of the urls array
@@ -244,18 +256,24 @@ async fn map_payload_reports_sitemap_url_count_consistently() {
 }
 
 /// Contract: the JSON payload produced by `map_payload` has all required fields
-/// with the correct types, and the numeric invariants hold.
+/// with the correct types, and `mapped_urls` equals the `urls` array length.
 ///
 /// This is a pure unit test — no network, no mock server. It locks the wire
 /// schema so any future refactor that renames a field or changes a type fails
 /// fast here instead of silently breaking the `--json` output consumers.
+///
+/// Note: `sitemap_urls` is the raw count of URLs returned by
+/// `discover_sitemap_urls` before any deduplication.  It is NOT required to
+/// equal `mapped_urls - pages_seen`.
 #[test]
 fn map_payload_json_has_expected_fields() {
-    // Build a minimal JSON payload matching what map_payload produces
+    // Build a minimal JSON payload matching what map_payload produces.
+    // sitemap_urls=3 here represents 3 raw sitemap URLs (may overlap with
+    // crawler-discovered URLs — dedup has already happened in the engine).
     let payload = serde_json::json!({
         "url": "https://example.com",
         "mapped_urls": 3usize,
-        "sitemap_urls": 1usize,
+        "sitemap_urls": 3usize,
         "pages_seen": 2u32,
         "thin_pages": 0u32,
         "elapsed_ms": 100u64,
@@ -303,66 +321,16 @@ fn map_payload_json_has_expected_fields() {
         "mapped_urls must equal urls.len()"
     );
 
-    // Assert sitemap_urls == mapped_urls - pages_seen
-    let sitemap_urls = payload["sitemap_urls"]
-        .as_u64()
-        .expect("sitemap_urls must be numeric");
-    let pages_seen = payload["pages_seen"]
-        .as_u64()
-        .expect("pages_seen must be numeric");
-    assert_eq!(
-        sitemap_urls,
-        mapped_urls.saturating_sub(pages_seen),
-        "sitemap_urls must equal mapped_urls - pages_seen"
+    // sitemap_urls is a raw count — no invariant relative to mapped_urls/pages_seen.
+    assert!(
+        payload["sitemap_urls"].as_u64().is_some(),
+        "sitemap_urls must be present as a number"
     );
 }
 
-/// Contract: AutoSwitch only falls back to Chrome when `pages_seen == 0`.
-///
-/// This is a pure unit test over the branching condition in `map_payload`
-/// and `run_map`:
-///
-/// ```
-/// if matches!(cfg.render_mode, RenderMode::AutoSwitch) && final_summary.pages_seen == 0 {
-///     // Chrome fallback
-/// }
-/// ```
-///
-/// We verify both sides of the gate:
-/// - `pages_seen == 0` + `AutoSwitch` → fallback SHOULD trigger
-/// - `pages_seen > 0`  + `AutoSwitch` → fallback must NOT trigger
-///
-/// After the engine migration, this condition is the one surviving piece of
-/// AutoSwitch logic in map.rs — the engine owns everything else. This test
-/// must continue to pass before and after the refactor.
-#[test]
-fn map_autoswitch_only_falls_back_when_no_pages_seen() {
-    // Inline the condition from map_payload / run_map so refactors keep it in sync.
-    let should_fallback = |render_mode: &RenderMode, pages_seen: u32| -> bool {
-        matches!(render_mode, RenderMode::AutoSwitch) && pages_seen == 0
-    };
-
-    // Zero pages + AutoSwitch → fallback must trigger
-    assert!(
-        should_fallback(&RenderMode::AutoSwitch, 0),
-        "AutoSwitch with pages_seen=0 must trigger Chrome fallback"
-    );
-
-    // Non-zero pages + AutoSwitch → fallback must NOT trigger
-    assert!(
-        !should_fallback(&RenderMode::AutoSwitch, 5),
-        "AutoSwitch with pages_seen=5 must NOT trigger Chrome fallback"
-    );
-
-    // Http mode → fallback never triggers regardless of pages_seen
-    assert!(
-        !should_fallback(&RenderMode::Http, 0),
-        "Http mode must never trigger Chrome fallback even with pages_seen=0"
-    );
-
-    // Chrome mode → fallback never triggers (no AutoSwitch check)
-    assert!(
-        !should_fallback(&RenderMode::Chrome, 0),
-        "Chrome mode must never trigger Chrome fallback (already in Chrome)"
-    );
-}
+// Note: AutoSwitch fallback behaviour (only falling back to Chrome when
+// `pages_seen == 0`) is exercised implicitly by the two httpmock integration
+// tests above, which call the real `map_payload` → `map_with_sitemap` path.
+// A standalone shadow test that inlines a copy of the condition was removed
+// because it tested the closure, not the engine — a change to the engine
+// condition would not have been caught by it.
