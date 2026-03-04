@@ -154,10 +154,7 @@ fn validate_authorize_redirect_uri(
                 .into_response());
         }
     };
-    let cfg = match state.config() {
-        Ok(cfg) => cfg,
-        Err(resp) => return Err(resp),
-    };
+    let cfg = state.config()?;
     if !is_allowed_redirect_uri(&redirect_uri, cfg.redirect_policy) {
         return Err((
             StatusCode::BAD_REQUEST,
