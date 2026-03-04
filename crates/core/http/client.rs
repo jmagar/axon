@@ -19,6 +19,16 @@ pub fn http_client() -> anyhow::Result<&'static reqwest::Client> {
 pub fn build_client(timeout_secs: u64) -> Result<reqwest::Client, HttpError> {
     Ok(reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let url_string = attempt.url().as_str().to_owned();
+            match validate_url(&url_string) {
+                Ok(()) => attempt.follow(),
+                Err(_) => attempt.error(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("SSRF: redirect to blocked URL {url_string}"),
+                )),
+            }
+        }))
         .build()?)
 }
 

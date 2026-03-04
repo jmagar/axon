@@ -82,13 +82,12 @@ pub fn validate_url(url: &str) -> Result<(), HttpError> {
         return Err(HttpError::BlockedHost(host.to_string()));
     }
 
-    // Use parsed.host() for typed extraction — host_str().parse::<IpAddr>()
-    // silently fails for IPv6 because spider::url::Url returns zone-scoped or
-    // bracket-ambiguous representations. The Host enum gives us the parsed addr directly.
-    match parsed.host() {
-        Some(spider::url::Host::Ipv4(v4)) => check_ip(IpAddr::V4(v4))?,
-        Some(spider::url::Host::Ipv6(v6)) => check_ip(IpAddr::V6(v6))?,
-        _ => {}
+    // Use host_str() + parse::<IpAddr>() directly. Do NOT use
+    // spider::url::Host::Ipv4/Ipv6 enum variants — they silently fail for IPv6
+    // (confirmed production bug, see CLAUDE.md).
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = bare.parse::<IpAddr>() {
+        check_ip(ip)?;
     }
 
     Ok(())
@@ -104,7 +103,7 @@ fn check_ip(ip: IpAddr) -> Result<(), HttpError> {
             return Ok(());
         }
     }
-    if ip.is_loopback() {
+    if ip.is_loopback() || ip.is_unspecified() {
         return Err(HttpError::BlockedIpRange(ip));
     }
     match ip {
