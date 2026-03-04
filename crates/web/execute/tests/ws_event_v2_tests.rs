@@ -1,8 +1,10 @@
 use super::events::{
     ArtifactEntry, CommandContext, JobProgressPayload, JobStatusPayload, WsEventV2,
 };
+use crate::crates::core::config::Config;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -263,6 +265,7 @@ async fn sync_single_line_json_emits_one_structured_event() {
         exec_id: "exec-dup-check".to_string(),
         mode: "query".to_string(),
         input: "test".to_string(),
+        cfg: Arc::new(Config::default()),
     };
 
     let child = Command::new("sh")

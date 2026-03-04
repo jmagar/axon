@@ -8,6 +8,7 @@ mod context;
 pub(crate) mod events;
 mod exe;
 pub(crate) mod files;
+pub mod overrides;
 mod polling;
 mod sync_mode;
 mod ws_send;
@@ -42,6 +43,7 @@ fn allowed_flags() -> &'static [(&'static str, &'static str)] {
     ALLOWED_FLAGS
 }
 
+use crate::crates::core::config::Config;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::process::Command;
@@ -113,11 +115,13 @@ pub(super) async fn handle_command(
     flags: &serde_json::Value,
     tx: mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
+    cfg: Arc<Config>,
 ) {
     let context = ExecCommandContext {
         exec_id: format!("exec-{}", Uuid::new_v4()),
         mode: mode.to_string(),
         input: input.to_string(),
+        cfg,
     };
     let ws_ctx = context.to_ws_ctx();
 
