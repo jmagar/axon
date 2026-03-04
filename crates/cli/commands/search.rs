@@ -51,23 +51,27 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Err("search requires a query (positional or --query)".into());
     };
 
-    print_phase("◐", "Searching", &query);
+    if !cfg.json_output {
+        print_phase("◐", "Searching", &query);
+    }
 
-    let time_range = if let Some(ref range) = cfg.search_time_range {
-        match range.as_str() {
-            "day" => Some(TimeRange::Day),
-            "week" => Some(TimeRange::Week),
-            "month" => Some(TimeRange::Month),
-            "year" => Some(TimeRange::Year),
-            other => {
-                log_warn(&format!("Unknown search_time_range '{other}'; ignoring"));
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let time_range = parse_search_time_range(cfg.search_time_range.as_deref());
     let results = search_results(cfg, &query, cfg.search_limit, 0, time_range).await?;
+
+    if cfg.json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "query": query,
+                "limit": cfg.search_limit,
+                "offset": 0,
+                "search_time_range": cfg.search_time_range.as_deref(),
+                "results": results,
+            }))?
+        );
+        log_done("command=search complete");
+        return Ok(());
+    }
 
     println!("{}", primary(&format!("Search Results for \"{}\"", query)));
     println!("{} {}", muted("Found"), results.len());
@@ -90,14 +94,28 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// TODO: This function is duplicated in research.rs. Extract to commands/common.rs as a shared helper.
+fn parse_search_time_range(value: Option<&str>) -> Option<TimeRange> {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        Some("day") => Some(TimeRange::Day),
+        Some("week") => Some(TimeRange::Week),
+        Some("month") => Some(TimeRange::Month),
+        Some("year") => Some(TimeRange::Year),
+        Some(other) => {
+            log_warn(&format!("Unknown search_time_range '{other}'; ignoring"));
+            None
+        }
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crates::core::config::CommandKind;
-    use crate::crates::jobs::common::test_config;
 
     fn make_search_cfg(key: &str, query: &str) -> Config {
-        let mut cfg = test_config("");
+        let mut cfg = Config::test_default();
         cfg.command = CommandKind::Search;
         cfg.positional = vec![query.to_string()];
         cfg.tavily_api_key = key.to_string();
@@ -121,5 +139,32 @@ mod tests {
             cfg.search_time_range.is_none(),
             "search_time_range should default to None"
         );
+    }
+
+    #[test]
+    fn parse_search_time_range_supports_known_values() {
+        assert!(matches!(
+            parse_search_time_range(Some("day")),
+            Some(TimeRange::Day)
+        ));
+        assert!(matches!(
+            parse_search_time_range(Some("week")),
+            Some(TimeRange::Week)
+        ));
+        assert!(matches!(
+            parse_search_time_range(Some("month")),
+            Some(TimeRange::Month)
+        ));
+        assert!(matches!(
+            parse_search_time_range(Some("year")),
+            Some(TimeRange::Year)
+        ));
+    }
+
+    #[test]
+    fn parse_search_time_range_rejects_unknown_values() {
+        assert!(parse_search_time_range(Some("decade")).is_none());
+        assert!(parse_search_time_range(Some("")).is_none());
+        assert!(parse_search_time_range(None).is_none());
     }
 }

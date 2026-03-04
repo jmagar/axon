@@ -1,11 +1,11 @@
 'use client'
 
 import { ArrowLeft, Bot, RefreshCw } from 'lucide-react'
-import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import type { Agent } from '@/app/api/agents/route'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { apiFetch } from '@/lib/api-fetch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,10 +14,6 @@ interface AgentsResponse {
   groups: string[]
   error?: string
 }
-
-// ── Dynamic imports ────────────────────────────────────────────────────────────
-
-const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), { ssr: false })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -149,7 +145,7 @@ function AgentsPageInner() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/agents', { signal })
+      const res = await apiFetch('/api/agents', { signal })
       const data = (await res.json()) as AgentsResponse
       if (data.error) {
         setError(data.error)
@@ -189,11 +185,6 @@ function AgentsPageInner() {
           'radial-gradient(ellipse at 14% 10%, rgba(175,215,255,0.08), transparent 34%), radial-gradient(ellipse at 82% 16%, rgba(255,135,175,0.07), transparent 38%), linear-gradient(180deg,#02040b 0%,#030712 60%,#040a14 100%)',
       }}
     >
-      {/* Neural background */}
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <NeuralCanvas profile="subtle" />
-      </div>
-
       {/* Top bar */}
       <header
         className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b px-4"

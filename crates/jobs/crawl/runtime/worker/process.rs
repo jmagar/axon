@@ -62,13 +62,13 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
             } else {
                 JobStatus::Failed
             };
-            sqlx::query(&format!(
-                "UPDATE axon_crawl_jobs SET status='{status}', updated_at=NOW(), finished_at=NOW(), error_text=$2 WHERE id=$1 AND status='{running}'",
-                status = status.as_str(),
-                running = JobStatus::Running.as_str(),
-            ))
+            sqlx::query(
+                "UPDATE axon_crawl_jobs SET status=$2, updated_at=NOW(), finished_at=NOW(), error_text=$3 WHERE id=$1 AND status=$4",
+            )
             .bind(id)
+            .bind(status.as_str())
             .bind(err.to_string())
+            .bind(JobStatus::Running.as_str())
             .execute(pool)
             .await?;
             if is_canceled {
@@ -229,12 +229,12 @@ fn spawn_progress_task(
                 "pages_discovered": progress.pages_discovered,
                 "crawl_stream_pages": progress.pages_seen,
             });
-            let _ = sqlx::query(&format!(
-                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status='{running}'",
-                running = JobStatus::Running.as_str(),
-            ))
+            let _ = sqlx::query(
+                "UPDATE axon_crawl_jobs SET updated_at=NOW(), result_json=$2 WHERE id=$1 AND status=$3",
+            )
             .bind(progress_job_id)
             .bind(progress_json)
+            .bind(JobStatus::Running.as_str())
             .execute(&progress_pool)
             .await;
             last_update = std::time::Instant::now();
@@ -260,7 +260,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
         Some(c) => c,
         None => {
             std::future::pending::<()>().await;
-            return;
+            unreachable!("pending() never resolves");
         }
     };
 
@@ -284,7 +284,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
                     Some(new_conn) => conn = new_conn,
                     None => {
                         std::future::pending::<()>().await;
-                        return;
+                        unreachable!("pending() never resolves");
                     }
                 }
             }
@@ -296,7 +296,7 @@ async fn poll_cancel_key(cfg: &Config, id: Uuid) {
                     Some(new_conn) => conn = new_conn,
                     None => {
                         std::future::pending::<()>().await;
-                        return;
+                        unreachable!("pending() never resolves");
                     }
                 }
             }
@@ -363,6 +363,7 @@ async fn run_primary_with_optional_chrome_fallback(
     ctx: &JobExecutionContext,
     id: Uuid,
     progress_tx: tokio::sync::mpsc::Sender<CrawlSummary>,
+    crawl_id: &str,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
     let initial_mode =
         resolve_initial_mode(ctx.job_cfg.render_mode, ctx.job_cfg.cache_skip_browser);
@@ -374,6 +375,7 @@ async fn run_primary_with_optional_chrome_fallback(
         Some(progress_tx.clone()),
         false, // HTTP probe: sitemap runs in the final pass only
         ctx.previous_manifest.clone(),
+        Some(crawl_id),
     )
     .await?;
 
@@ -395,6 +397,7 @@ async fn run_primary_with_optional_chrome_fallback(
         Some(progress_tx),
         ctx.job_cfg.discover_sitemaps, // Chrome final pass: run sitemap if enabled
         ctx.previous_manifest.clone(),
+        Some(crawl_id),
     )
     .await
     {
@@ -422,12 +425,69 @@ async fn run_active_crawl_job(
     let manifest_path = ctx.job_cfg.output_dir.join("manifest.jsonl");
     let (progress_tx, progress_task) = spawn_progress_task(pool, id);
 
+    // Build the spider control target: crawl_id + url. spider::utils::shutdown()
+    // matches against this composite key to signal the correct crawl instance.
+    let crawl_id = id.to_string();
+    let control_target = format!("{crawl_id}{}", ctx.url);
+
     let final_prompt = ctx.extraction_prompt.clone();
     let result = async {
+        // Race the crawl against the Redis cancel poller. When cancel fires,
+        // signal spider's in-process control thread for an immediate graceful
+        // stop — spider drains in-flight requests and returns partial results
+        // instead of the future being abruptly dropped.
+        let crawl_fut = run_primary_with_optional_chrome_fallback(ctx, id, progress_tx, &crawl_id);
+        tokio::pin!(crawl_fut);
+
         let (summary, seen_urls) = tokio::select! {
-            result = run_primary_with_optional_chrome_fallback(ctx, id, progress_tx) => result?,
+            result = &mut crawl_fut => result?,
             _ = poll_cancel_key(&ctx.job_cfg, id) => {
-                log_info(&format!("crawl job {id} canceled mid-crawl; stopping"));
+                log_info(&format!("crawl job {id} canceled — signaling graceful shutdown"));
+                spider::utils::shutdown(&control_target).await;
+                // The crawl future is still alive — await it so spider finishes
+                // draining in-flight requests and returns partial results.
+                // Timeout: if spider doesn't stop within 30s, give up and hard-cancel.
+                let drain_result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    crawl_fut,
+                ).await;
+                match drain_result {
+                    Ok(Ok((summary, _seen_urls))) => {
+                        log_info(&format!(
+                            "crawl job {id} shutdown complete (partial pages={})",
+                            summary.pages_seen
+                        ));
+                        // Save partial results before marking canceled — the data
+                        // is already on disk and worth preserving.
+                        let partial_json = serde_json::json!({
+                            "phase": "canceled",
+                            "md_created": summary.markdown_files,
+                            "thin_md": summary.thin_pages,
+                            "pages_crawled": summary.pages_seen,
+                            "elapsed_ms": summary.elapsed_ms,
+                            "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
+                            "graceful_shutdown": true,
+                        });
+                        let _ = sqlx::query(
+                            "UPDATE axon_crawl_jobs SET result_json=$2, updated_at=NOW() WHERE id=$1 AND status=$3",
+                        )
+                        .bind(id)
+                        .bind(&partial_json)
+                        .bind(JobStatus::Running.as_str())
+                        .execute(pool)
+                        .await;
+                    }
+                    Ok(Err(e)) => {
+                        log_warn(&format!(
+                            "crawl job {id} shutdown drain failed: {e}"
+                        ));
+                    }
+                    Err(_) => {
+                        log_warn(&format!(
+                            "crawl job {id} shutdown drain timed out after 30s"
+                        ));
+                    }
+                }
                 return Err(format!("crawl job {id} {CANCEL_SENTINEL}").into());
             }
         };
@@ -472,4 +532,70 @@ async fn run_active_crawl_job(
         ));
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::poll_cancel_key;
+    use crate::crates::jobs::common::{resolve_test_redis_url, test_config};
+    use redis::AsyncCommands;
+    use std::error::Error;
+    use std::time::Duration;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn cancel_key_set_triggers_poll_completion() -> Result<(), Box<dyn Error>> {
+        let Some(redis_url) = resolve_test_redis_url() else {
+            return Ok(());
+        };
+        let id = Uuid::new_v4();
+        let key = format!("axon:crawl:cancel:{id}");
+
+        let client = redis::Client::open(redis_url.clone())?;
+        let mut conn = client.get_multiplexed_async_connection().await?;
+        conn.set_ex::<_, _, ()>(&key, "1", 60).await?;
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = redis_url;
+
+        // Immediate first-poll finds the key → future completes well under 5s.
+        let result = tokio::time::timeout(Duration::from_secs(5), poll_cancel_key(&cfg, id)).await;
+        assert!(
+            result.is_ok(),
+            "set cancel key must trigger poll completion"
+        );
+
+        let _: () = conn.del(&key).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_key_absent_parks_poll() -> Result<(), Box<dyn Error>> {
+        let Some(redis_url) = resolve_test_redis_url() else {
+            return Ok(());
+        };
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = redis_url;
+        let id = Uuid::new_v4();
+
+        // No key set — after the immediate first-poll misses, the loop sleeps 3s.
+        // 200ms timeout fires before the 3s sleep completes.
+        let result =
+            tokio::time::timeout(Duration::from_millis(200), poll_cancel_key(&cfg, id)).await;
+        assert!(result.is_err(), "absent cancel key must park the poller");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_key_unreachable_redis_fails_safe() -> Result<(), Box<dyn Error>> {
+        // No env var needed — port 1 is always unreachable (ECONNREFUSED).
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.redis_url = "redis://127.0.0.1:1".to_string();
+        let id = Uuid::new_v4();
+
+        // connect_cancel_redis returns None → poll_cancel_key calls pending() → parks forever.
+        let result = tokio::time::timeout(Duration::from_secs(5), poll_cancel_key(&cfg, id)).await;
+        assert!(result.is_err(), "unreachable Redis must park, never cancel");
+        Ok(())
+    }
 }

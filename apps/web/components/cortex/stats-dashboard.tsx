@@ -1,7 +1,8 @@
 'use client'
 
 import { AlertCircle, BarChart2, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { apiFetch } from '@/lib/api-fetch'
 import type { StatsResult } from '@/lib/result-types'
 
 interface ApiResponse {
@@ -33,29 +34,41 @@ export function StatsDashboard() {
   const [loading, setLoading] = useState(true)
   const [spinning, setSpinning] = useState(false)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   async function load(isManual = false) {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     if (isManual) setSpinning(true)
     setError(null)
     try {
-      const res = await fetch('/api/cortex/stats')
+      const res = await apiFetch('/api/cortex/stats', { signal: controller.signal })
       const json = (await res.json()) as ApiResponse
       if (!json.ok) throw new Error(json.error ?? 'Unknown error')
+      if (abortRef.current !== controller) return
       setData(json.data ?? null)
       setUpdatedAt(new Date())
     } catch (err) {
+      if (abortRef.current !== controller) return
+      if (err instanceof Error && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
-      setSpinning(false)
+      if (abortRef.current === controller) {
+        setLoading(false)
+        setSpinning(false)
+      }
     }
   }
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable within the render; deps would cause double-fetch on mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load intentionally captured at mount; abortRef cleanup handles unmount race
   useEffect(() => {
     void load()
     const id = setInterval(() => void load(), 30_000)
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+      abortRef.current?.abort()
+    }
   }, [])
 
   return (
@@ -83,7 +96,7 @@ export function StatsDashboard() {
         <button
           type="button"
           onClick={() => void load(true)}
-          disabled={loading}
+          disabled={loading || spinning}
           className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] disabled:opacity-40"
         >
           <RefreshCw className={`size-3.5 ${spinning ? 'animate-spin' : ''}`} />
@@ -118,7 +131,7 @@ export function StatsDashboard() {
             <MetricCard label="Vectors" value={data.indexed_vectors_count} />
             <MetricCard label="Points" value={data.points_count} />
             <MetricCard label="Docs (est.)" value={data.docs_embedded_estimate} />
-            <MetricCard label="Avg chunks/doc" value={data.avg_chunks_per_doc.toFixed(1)} />
+            <MetricCard label="Avg chunks/doc" value={(data.avg_chunks_per_doc ?? 0).toFixed(1)} />
             <MetricCard label="Dimension" value={data.dimension} />
             <MetricCard label="Segments" value={data.segments_count} />
           </div>
@@ -134,13 +147,13 @@ export function StatsDashboard() {
           </div>
 
           {/* Payload fields */}
-          {data.payload_fields.length > 0 && (
+          {(data.payload_fields ?? []).length > 0 && (
             <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-dim)]">
                 Payload Fields
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {data.payload_fields.map((f) => (
+                {(data.payload_fields ?? []).map((f) => (
                   <span
                     key={f}
                     className="rounded-md bg-[rgba(135,175,255,0.1)] px-2 py-0.5 font-mono text-[10px] text-[var(--axon-primary)]"
@@ -153,7 +166,7 @@ export function StatsDashboard() {
           )}
 
           {/* Command counts */}
-          {Object.keys(data.counts).length > 0 && (
+          {Object.keys(data.counts ?? {}).length > 0 && (
             <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
               <table className="w-full">
                 <thead>
@@ -167,7 +180,7 @@ export function StatsDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(data.counts)
+                  {Object.entries(data.counts ?? {})
                     .sort((a, b) => b[1] - a[1])
                     .map(([cmd, count]) => (
                       <tr

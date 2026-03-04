@@ -80,6 +80,9 @@ export const PulseChatRequestSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9,\-.:]*$/, 'toolsRestrict contains invalid characters')
     .optional(),
+  /** Stream replay: resume from this event ID (supports both camelCase and snake_case). */
+  lastEventId: z.string().max(128).optional(),
+  last_event_id: z.string().max(128).optional(),
 })
 
 export type PulseChatRequest = z.infer<typeof PulseChatRequestSchema>

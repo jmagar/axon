@@ -3,6 +3,7 @@ use anyhow::{Result as AnyResult, anyhow};
 use futures_util::StreamExt;
 use std::error::Error;
 use std::io::Write;
+use tokio::sync::mpsc::UnboundedSender;
 
 pub(crate) const ASK_RAG_SYSTEM_PROMPT: &str = r###"You are a source-grounded technical assistant.
 
@@ -54,6 +55,12 @@ pub(crate) struct JudgeContext<'a> {
     pub baseline_elapsed_ms: u128,
     pub source_count: usize,
     pub context_chars: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TaggedToken {
+    pub stream: &'static str,
+    pub delta: String,
 }
 
 fn judge_system_prompt() -> &'static str {
@@ -128,6 +135,7 @@ fn process_sse_line(
     answer: &mut String,
     print_tokens: bool,
     saw_stream_payload: &mut bool,
+    tagged: Option<(&UnboundedSender<TaggedToken>, &'static str)>,
 ) -> Result<bool, Box<dyn Error>> {
     let trimmed = line.trim();
     if trimmed.is_empty() || !trimmed.starts_with("data: ") {
@@ -144,6 +152,12 @@ fn process_sse_line(
     if let Some(token) = extract_sse_token(data) {
         *saw_stream_payload = true;
         answer.push_str(&token);
+        if let Some((tx, stream)) = tagged {
+            let _ = tx.send(TaggedToken {
+                stream,
+                delta: token.clone(),
+            });
+        }
         if print_tokens {
             print!("{token}");
             std::io::stdout().flush()?;
@@ -152,9 +166,34 @@ fn process_sse_line(
     Ok(false)
 }
 
+/// Scan `answer` (from `search_from` onwards) for a second `\n## Sources` occurrence.
+/// Returns the byte index of the second occurrence if found, so the caller can truncate there.
+/// `first_sources_pos` tracks where the first one was seen (None = not yet).
+fn check_sources_repetition(
+    answer: &str,
+    search_from: usize,
+    first_sources_pos: &mut Option<usize>,
+) -> Option<usize> {
+    let haystack = answer[search_from..].to_ascii_lowercase();
+    let needle = "\n## sources";
+    if let Some(rel) = haystack.find(needle) {
+        let abs = search_from + rel;
+        match *first_sources_pos {
+            None => {
+                *first_sources_pos = Some(abs);
+            }
+            Some(_) => {
+                return Some(abs);
+            }
+        }
+    }
+    None
+}
+
 async fn run_sse_stream(
     req: reqwest::RequestBuilder,
     print_tokens: bool,
+    tagged: Option<(&UnboundedSender<TaggedToken>, &'static str)>,
 ) -> Result<String, Box<dyn Error>> {
     let response = req.send().await?;
     if !response.status().is_success() {
@@ -165,6 +204,9 @@ async fn run_sse_stream(
     let mut answer = String::new();
     let mut pending = String::new();
     let mut saw_stream_payload = false;
+    // Repetition guard: tracks position of first \n## Sources so we can detect a second.
+    let mut first_sources_pos: Option<usize> = None;
+    let mut sources_search_from = 0usize;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
@@ -176,15 +218,40 @@ async fn run_sse_stream(
             if line.ends_with('\r') {
                 let _ = line.pop();
             }
-            let done = process_sse_line(&line, &mut answer, print_tokens, &mut saw_stream_payload)?;
+            let len_before = answer.len();
+            let done = process_sse_line(
+                &line,
+                &mut answer,
+                print_tokens,
+                &mut saw_stream_payload,
+                tagged,
+            )?;
             if done {
                 return Ok(answer);
+            }
+            // Only scan newly appended content for the repetition pattern.
+            if answer.len() > len_before {
+                let scan_from = sources_search_from.saturating_sub(10); // small overlap for split tokens
+                if let Some(second_pos) =
+                    check_sources_repetition(&answer, scan_from, &mut first_sources_pos)
+                {
+                    // Second ## Sources found — truncate and stop streaming.
+                    answer.truncate(second_pos);
+                    return Ok(answer);
+                }
+                sources_search_from = answer.len().saturating_sub(15);
             }
         }
     }
 
     if !pending.trim().is_empty() {
-        let _ = process_sse_line(&pending, &mut answer, print_tokens, &mut saw_stream_payload)?;
+        let _ = process_sse_line(
+            &pending,
+            &mut answer,
+            print_tokens,
+            &mut saw_stream_payload,
+            tagged,
+        )?;
     }
 
     if saw_stream_payload && !answer.trim().is_empty() {
@@ -211,7 +278,28 @@ pub(crate) async fn ask_llm_streaming(
         "stream": true
     }));
 
-    run_sse_stream(req, print_tokens).await
+    run_sse_stream(req, print_tokens, None).await
+}
+
+pub(crate) async fn ask_llm_streaming_tagged(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    context: &str,
+    stream: &'static str,
+    tx: &UnboundedSender<TaggedToken>,
+) -> Result<String, Box<dyn Error>> {
+    let req = build_openai_chat_request(client, cfg).json(&serde_json::json!({
+        "model": cfg.openai_model,
+        "messages": [
+            {"role": "system", "content": ASK_RAG_SYSTEM_PROMPT},
+            {"role": "user", "content": format!("Question: {}\n\nContext:\n{}", query, context)}
+        ],
+        "temperature": 0.1,
+        "stream": true
+    }));
+
+    run_sse_stream(req, false, Some((tx, stream))).await
 }
 
 pub(crate) async fn ask_llm_non_streaming(
@@ -258,7 +346,27 @@ pub(crate) async fn baseline_llm_streaming(
         "stream": true
     }));
 
-    run_sse_stream(req, print_tokens).await
+    run_sse_stream(req, print_tokens, None).await
+}
+
+pub(crate) async fn baseline_llm_streaming_tagged(
+    cfg: &Config,
+    client: &reqwest::Client,
+    query: &str,
+    stream: &'static str,
+    tx: &UnboundedSender<TaggedToken>,
+) -> Result<String, Box<dyn Error>> {
+    let req = build_openai_chat_request(client, cfg).json(&serde_json::json!({
+        "model": cfg.openai_model,
+        "messages": [
+            {"role": "system", "content": "You are a knowledgeable technical assistant. Answer the following question accurately and thoroughly, drawing on your full training knowledge. Where you are uncertain or your knowledge may be outdated, say so explicitly rather than presenting uncertain information as fact. For technical questions, be specific: include exact values, function names, and configuration details where you know them."},
+            {"role": "user", "content": query}
+        ],
+        "temperature": 0.1,
+        "stream": true
+    }));
+
+    run_sse_stream(req, false, Some((tx, stream))).await
 }
 
 pub(crate) async fn baseline_llm_non_streaming(
@@ -299,7 +407,7 @@ pub(crate) async fn judge_llm_streaming(
         "temperature": 0.3,
         "stream": true
     }));
-    run_sse_stream(req, print_tokens).await
+    run_sse_stream(req, print_tokens, None).await
 }
 
 pub(crate) async fn judge_llm_non_streaming(
@@ -322,4 +430,87 @@ pub(crate) async fn judge_llm_non_streaming(
         .as_str()
         .unwrap_or("(no analysis)")
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn test_sources_repetition_no_sources() {
+        let answer = "Some answer with no sources section.";
+        let mut first = None;
+        assert!(check_sources_repetition(answer, 0, &mut first).is_none());
+        assert!(first.is_none());
+    }
+
+    #[test]
+    fn test_sources_repetition_single_sources() {
+        let answer = "Good answer.\n\n## Sources\n- [S1] https://example.com";
+        let mut first = None;
+        assert!(check_sources_repetition(answer, 0, &mut first).is_none());
+        assert!(first.is_some()); // first occurrence recorded
+    }
+
+    #[test]
+    fn test_sources_repetition_detects_second() {
+        let answer = "Good answer.\n\n## Sources\n- [S1] url\n\n## Sources\n## Sources\n## Sources";
+        let mut first = None;
+        // First scan: records first occurrence. May find both occurrences at once
+        // (returns Some) or just the first (returns None, sets `first`).
+        if let Some(second_pos) = check_sources_repetition(answer, 0, &mut first) {
+            // Both occurrences found in a single scan.
+            let truncated = &answer[..second_pos];
+            assert!(truncated.contains("- [S1] url"));
+        } else {
+            // First occurrence recorded in `first`; scan again to find the second.
+            let first_pos = first.expect("first occurrence must be set after first scan");
+            if let Some(second_pos) = check_sources_repetition(answer, first_pos + 1, &mut first) {
+                let truncated = &answer[..second_pos];
+                assert!(
+                    truncated.contains("- [S1] url"),
+                    "should preserve first sources block"
+                );
+                assert!(
+                    !truncated[truncated.find("## Sources").unwrap() + 11..].contains("## Sources"),
+                    "truncated answer should not have a second ## Sources"
+                );
+            } else {
+                panic!("should detect second ## Sources");
+            }
+        }
+    }
+
+    #[test]
+    fn test_sources_repetition_case_insensitive() {
+        let answer = "Answer.\n## SOURCES\nlist\n## sources\nrepeat";
+        let mut first = None;
+        let r1 = check_sources_repetition(answer, 0, &mut first);
+        if r1.is_none() {
+            let r2 = check_sources_repetition(answer, first.unwrap() + 1, &mut first);
+            assert!(r2.is_some(), "case-insensitive second detection failed");
+        }
+    }
+
+    #[test]
+    fn test_process_sse_line_emits_tagged_token() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TaggedToken>();
+        let mut answer = String::new();
+        let mut saw = false;
+        let done = process_sse_line(
+            r#"data: {"choices":[{"delta":{"content":"hello"}}]}"#,
+            &mut answer,
+            false,
+            &mut saw,
+            Some((&tx, "with_context")),
+        )
+        .expect("process_sse_line should succeed");
+        assert!(!done);
+        assert!(saw);
+        assert_eq!(answer, "hello");
+        let evt = rx.try_recv().expect("expected tagged token event");
+        assert_eq!(evt.stream, "with_context");
+        assert_eq!(evt.delta, "hello");
+    }
 }

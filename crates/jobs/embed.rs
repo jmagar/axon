@@ -175,17 +175,21 @@ pub async fn get_embed_job(cfg: &Config, id: Uuid) -> Result<Option<EmbedJob>, B
     .fetch_optional(&pool)
     .await?)
 }
-
-pub async fn list_embed_jobs(cfg: &Config, limit: i64) -> Result<Vec<EmbedJob>, Box<dyn Error>> {
+pub async fn list_embed_jobs(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<EmbedJob>, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {
         ensure_schema(&pool).await?;
         let _ = SCHEMA_INIT.set(());
     }
     Ok(sqlx::query_as::<_, EmbedJob>(
-        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json,config_json FROM axon_embed_jobs ORDER BY created_at DESC LIMIT $1"#,
+        r#"SELECT id,status,created_at,updated_at,started_at,finished_at,error_text,input_text,result_json,config_json FROM axon_embed_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&pool)
     .await?)
 }
@@ -297,7 +301,7 @@ pub async fn recover_stale_embed_jobs(cfg: &Config) -> Result<u64, Box<dyn Error
     Ok(stats.reclaimed_jobs)
 }
 
-pub async fn embed_doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+pub async fn embed_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     let pg_ok = make_pool(cfg).await.is_ok();
     let amqp_ok = match open_amqp_connection_and_channel(cfg, &cfg.embed_queue).await {
         Ok((conn, ch)) => {

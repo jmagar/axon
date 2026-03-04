@@ -2,6 +2,7 @@
 
 import { AlertCircle, Globe, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '@/lib/api-fetch'
 import type { DomainsResult } from '@/lib/result-types'
 
 interface ApiResponse {
@@ -26,7 +27,7 @@ export function DomainsDashboard() {
     if (isManual) setSpinning(true)
     setError(null)
     try {
-      const res = await fetch('/api/cortex/domains')
+      const res = await apiFetch('/api/cortex/domains')
       const json = (await res.json()) as ApiResponse
       if (!json.ok) throw new Error(json.error ?? 'Unknown error')
       setData(json.data ?? null)
@@ -72,7 +73,7 @@ export function DomainsDashboard() {
         <button
           type="button"
           onClick={() => void load(true)}
-          disabled={loading}
+          disabled={loading || spinning}
           className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-float)] hover:text-[var(--axon-primary)] disabled:opacity-40"
         >
           <RefreshCw className={`size-3.5 ${spinning ? 'animate-spin' : ''}`} />

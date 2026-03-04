@@ -1,12 +1,60 @@
 # Changelog
-Last Modified: 2026-03-01 (session: Cortex virtual folder in sidebar — status/doctor/sources/domains/stats diagnostic pages)
+Last Modified: 2026-03-04 (session: post-v0.4.0 stabilization + release prep; CI/test hardening; WS/API token docs and compose/docker updates; services-layer execution plan hardening; v0.4.1)
 
-## [Unreleased] — feat/crawl-download-pack
+## [Unreleased] — feat/sidebar
 
-This section documents commits on `feat/crawl-download-pack` relative to `main` (`4777f76`).
+This section documents commits on `feat/sidebar` relative to `main` (`51a2c9c8`).
 
 ### Highlights
 
+- **Post-v0.4.0 stabilization** — fixed MCP OAuth smoke env handling and serialized crawl DB tests to reduce flakes; fixed 4 failing CI checks; pinned Vitest timezone (`TZ=UTC`) and refreshed snapshots for deterministic test output
+- **Release prep + execution hardening (v0.4.1)** — updated web/container/docs env wiring and token guidance (`AXON_WEB_API_TOKEN`/`NEXT_PUBLIC_AXON_API_TOKEN`), refreshed Docker/compose defaults, and fully hardened the services-layer refactor execution plan with strict preflight, safety rails, and parallel-worker dispatch protocol
+- **Full codebase security & quality review (v0.4.0)** — comprehensive 5-phase review covering 244 Rust + 424 TypeScript files; 40 Phase 1 findings (3 Critical, 7 High, 17 Medium, 13 Low) + 17 CodeRabbit findings all addressed; WS OAuth bearer token gating added; all `format!` SQL → parameterized queries (H-03); `Secret<T>` wrapper with `[REDACTED]` debug; `ConfigOverrides` + sub-config scaffolding (A-H-01); `Config::test_default()` (CR-Q); ANTHROPIC_API_KEY + CLAUDE_* passthrough in child env allowlist (H-02/CR-D); `spawn_blocking` replaces `block_in_place` in MCP ask handler (CR-E); token rotation race fixed (CR-F); OAuth state capacity caps (H-05/CR-K); `apply_overrides` returns new `Config` (CR-M); `ServiceUrls` Debug redacts secrets (CR-L); migration table for `axon_session_ingest_state` (CR-B); arch docs for A-H-01/A-M-01/A-M-04/A-M-08
+- **Evaluate page + cortex suggest API** — new `/app/evaluate/page.tsx` for RAG evaluation UI; new `/api/cortex/suggest/route.ts` server route; `apps/web/lib/api-fetch.ts` typed fetch utility; v0.3.0 (minor bump)
+- **Image SHA verification** — `docker/s6/cont-init.d/00-verify-image-sha` and `docker/web/cont-init.d/00-verify-image-sha` added to both worker and web containers; `scripts/check-container-revisions.sh` for CI; `scripts/rebuild-fresh.sh` and `scripts/test-mcp-oauth-protection.sh` added
+- **CLI help contract test** — `tests/cli_help_contract.rs` verifies `axon --help` exit code and output structure; `scripts/check_mcp_http_only.sh` ensures HTTP transport is correctly gated
+- **Sidebar simplification** — `SidebarSectionId` pruned to `'extracted' | 'workspace'`; `recents-section`, `starred-section`, `templates-section` removed; `workspace-section.tsx` and `file-tree.tsx` updated
+- **Docs reorganization** — `commands/axon/`, `commands/codex/`, `commands/gemini/` skill command stubs deleted; 20+ `docs/commands/*.md` reference files added covering all CLI subcommands; new `docs/CONTEXT-INJECTION.md`, `docs/schema.md` added; `scripts/check_no_mod_rs.sh` and `scripts/check_no_next_middleware.sh` added for CI
+- **Module consolidation** — `mod.rs` indirection pattern replaced with single-file modules across `crates/core/config/cli.rs`, `crates/core/config/types.rs`, `crates/core/http.rs`, `crates/jobs/common.rs`, `crates/jobs/ingest.rs`, `crates/jobs/refresh.rs`, `crates/jobs/worker_lane.rs`, `crates/web/execute.rs`, `crates/web/download.rs`, `crates/ingest/reddit.rs`; deleted corresponding `mod.rs` files
+- **Map migration tests** — `crates/cli/commands/map_migration_tests.rs` added (TDD red phase): `map_payload_returns_unique_urls_without_cli_side_dedup`, `map_payload_reports_sitemap_url_count_consistently`, `map_autoswitch_only_falls_back_when_no_pages_seen`; wired via `#[cfg(test)] mod map_migration_tests` in `map.rs`
+- **CLI/config refactor** — `crates/cli/commands/crawl.rs`, `map.rs`, `mcp.rs`, `research.rs`, `search.rs`, `youtube.rs` updated; `crates/core/config.rs`, `config/parse/build_config.rs`, `config/parse/helpers.rs`, `config/types/config.rs`, `config/types/config_impls.rs`, `config/types/enums.rs` updated; `crates/cli/commands/crawl/runtime.rs` updated
+- **Web/Docker updates** — `apps/web/lib/axon-ws-exec.ts` updated; `apps/web/middleware.ts` deleted; `docker-compose.yaml`, `docker/Dockerfile`, `docker/web/Dockerfile` updated; image SHA verification scripts added to s6 cont-init
+- **CI improvements** — `.github/workflows/ci.yml` updated; `lefthook.yml` refined; `Justfile` updated
+- **MCP HTTP transport + Google OAuth** — `rmcp` upgraded 0.16→0.17 with `transport-streamable-http-server` feature; `run_http_server()` added alongside existing `run_stdio_server()`; new `crates/mcp/server/oauth_google/` module (8 files: config, handlers_broker, handlers_google, handlers_protected, helpers, state, tests, types) implements Google OAuth2 flow with PKCE, session management, and MCP-native auth middleware; s6 `mcp-http` service for Docker; `crates/mcp.rs` replaces `crates/mcp/mod.rs` with `#[path]` attributes
+- **Screenshot CDP→Spider migration** — hand-rolled CDP WebSocket screenshot client deleted; replaced with Spider's `screenshot()` API; contract tests verify full-page capture behavior; scrape migration coverage added
+- **Engine-level sitemap backfill** — `append_sitemap_backfill()` moved from CLI robots loop into `engine.rs`; fires automatically after every crawl; `discover_sitemap_urls_with_robots()` characterization tests; SSRF-safe `build_client` enforced; CLI robots backfill loop removed
+- **API middleware + server-side extraction** — new Next.js `middleware.ts` (125L) with Bearer token auth (`AXON_WEB_API_TOKEN`), origin allowlist (`AXON_WEB_ALLOWED_ORIGINS`), and insecure dev bypass; `lib/server/url-validation.ts` (212L) extracts SSRF guards + URL sanitization from inline route code; `lib/server/api-error.ts` standardizes error responses; `lib/server/pg-pool.ts` centralizes Postgres pool creation; all API routes refactored to use shared server utilities
+- **Omnibox hook extraction** — monolithic `omnibox-hooks.ts` (506→~200L) split into 3 focused hooks: `use-omnibox-execution.ts` (command dispatch), `use-omnibox-keyboard.ts` (key handlers), `use-omnibox-mentions.ts` (@ mentions); `omnibox-types.ts` relocated from component dir to `lib/`
+- **Pulse workspace hook** — new `use-pulse-workspace.ts` (336L) consolidates workspace state management from `pulse-workspace.tsx`; `pulse-error-boundary.tsx` adds React error boundary; `use-timed-notice.ts` hook for auto-dismissing UI notices
+- **Utility extractions** — `lib/debounce.ts`, `lib/storage.ts` (typed localStorage wrapper), `lib/command-options.ts` centralize shared logic previously duplicated across components
+- **10 new test suites** (1250L) — `api-error.test.ts`, `axon-ws-logic.test.ts`, `jobs-route.test.ts`, `pg-pool.test.ts`, `pulse-op-confirmation.test.ts`, `replay-cache-eviction.test.ts`, `url-validation.test.ts`, `use-timed-notice.test.ts`, `workspace-persistence.test.ts`, `ws-messages-handlers.test.ts`
+- **Existing test updates** — connection-buckets, terminal-history, omnibox-snapshot, replay-cache, ws-messages-runtime, ws-protocol tests updated for module extraction imports
+- **Inline Chrome thin-page recovery** — new `cdp_render.rs` module renders thin pages inline via raw CDP WebSocket (`Page.setContent()` — no second HTTP request) while the HTTP crawl continues; `thin_refetch.rs` provides both inline (concurrent semaphore-gated) and batch fallback (spider-based post-crawl) re-fetch paths; `CollectorConfig` gains `chrome_ws_url`, `chrome_timeout_secs`, `output_dir`; `process_page()` extracted as pure function returning `PageOutcome` enum; collector spawns `JoinSet` of Chrome render tasks capped at `THIN_REFETCH_CONCURRENCY=4`
+- **Custom HTTP headers (`--header`)** — new `--header "Key: Value"` repeatable CLI flag; `Config.custom_headers: Vec<String>` threaded through crawl/scrape/extract/Chrome re-fetch paths; headers applied to spider `Website` config and to standalone reqwest calls
+- **Streaming sources dedup** — `check_sources_repetition()` in `streaming.rs` detects and truncates duplicate `## Sources` sections in LLM streaming responses; tracks first occurrence position and truncates at the second
+- **Spider feature flags documentation** — new `docs/spider-feature-flags.md` inventorying all spider/spider_agent feature flags with observable behavior notes
+- **Monolith enforcer improvements** — `enforce_monoliths_helpers.py` and `enforce_monoliths_impl.py` refined; `.monolith-allowlist` updated
+- **CI enhancements** — `.github/workflows/ci.yml` updated with additional service container config
+- **Web test improvements** — new/updated vitest tests for pulse mobile pane switcher; vitest config updates; 14 new web test files for various utilities
+- **Integration/proptest test suite** — new integration tests for AMQP channel/queue (`amqp_integration.rs`), Redis pool (`redis_integration.rs`), heartbeat (`heartbeat.rs`), Postgres pool (`pool_integration.rs`), refresh job scheduling (`schedule_integration_tests.rs`), and WS protocol/allowlist/ANSI stripping (`ws_protocol_tests.rs`); proptest suites for `is_junk_discovered_url` (`url_utils_proptest.rs`), HTTP SSRF validators (`proptest_tests.rs`), and vector input chunking (`input_proptest.rs`); CI adds Redis 8.2, RabbitMQ 4.0, and Qdrant 1.13.1 service containers with health checks + `AXON_TEST_REDIS_URL` / `AXON_TEST_AMQP_URL` / `AXON_TEST_QDRANT_URL` env vars
+- **MCP typed schema** — `crates/mcp/schema.rs` introduces fully-typed `AxonRequest` enum (tagged union, `snake_case`, `schemars::JsonSchema`) covering all 22+ actions (status/crawl/extract/embed/ingest/query/retrieve/search/map/doctor/domains/sources/stats/help/artifacts/scrape/research/ask/screenshot/refresh and more) with per-action request structs
+- **Ask context heuristics module** — budget helpers and supplemental-injection logic extracted to `crates/vector/ops/commands/ask/context/heuristics.rs`; `push_context_entry` respects `max_chars` budget; `should_inject_supplemental` gates domain-boost on coverage gaps; `SUPPLEMENTAL_CONTEXT_BUDGET_PCT` / `SUPPLEMENTAL_MIN_TOP_CHUNKS_FOR_COVERAGE` / `SUPPLEMENTAL_RELEVANCE_BONUS` constants
+- **Qdrant utils + tests expanded** — `crates/vector/ops/qdrant/utils.rs` (+229 lines) and `crates/vector/ops/qdrant/tests.rs` (+366 lines): test helpers, scroll utilities, source display improvements, additional coverage for search and facet paths
+- **Sidebar simplified** — removed `recents-section.tsx`, `starred-section.tsx`, `templates-section.tsx`; `SidebarSectionId` reduced to `'extracted' | 'workspace'`; `StarredItem`, `RecentItem`, `TagDef`, `TaggedItem` types removed from `types.ts`
+- **Web deprecation cleanup** — deleted creator dashboard + route (`/api/creator`, `/creator`), tasks dashboard + route (`/api/tasks`, `/tasks`), and all associated components (`task-form.tsx`, `tasks-dashboard.tsx`, `tasks-list.tsx`, `creator-dashboard.tsx`)
+- **CmdK palette — no raw JSON** — `CmdKPalette` tracks `jsonCount` separately; `command.output.json` events increment the counter instead of `JSON.stringify`-ing into the log lines array; `CmdKOutput` shows a "N data objects received — see results panel" badge; `classifyLine` drops the `json` case; `formatToolArg` in `tool-badge.tsx` renders tool call inputs as human-readable labels (arrays as `[N items]`, objects as `{key, key, …}`) instead of raw `JSON.stringify`
+- **Integration tests: vector + cancel** — `resolve_test_redis_url` + `resolve_test_qdrant_url` helpers added to `common/mod.rs` (skip-not-fail if env var unset); `poll_cancel_key` integration test in `process.rs`; `ensure_collection` idempotency test in `qdrant_store.rs`; new `crates/vector/ops/qdrant/tests.rs` (search + url_facets); new `crates/vector/ops/tei/tests.rs` (empty-input short-circuit + 429 retry via httpmock); `resolve_test_pg_url` no longer falls through to `AXON_PG_URL` production DB
+- **`--include-subdomains` default changed to `false`** — was accidentally `true`; default is now documented and matches the CLAUDE.md gotcha note
+- **MCP as `axon mcp` subcommand** — `mcp_main.rs` and `scripts/axon-mcp` deleted; `crates/cli/commands/mcp.rs` added; `CommandKind::Mcp` wired through config stack; MCP server is now a first-class CLI subcommand rather than a separate binary entry point
+- **CLI `common.rs` expansion** — shared `JobStatus` trait + status display helpers extracted from crawl/extract/ingest subcommands, reducing duplication; URL glob expansion now logs a warning at `MAX_EXPANSION_DEPTH`
+- **Smart dotenv loading** — `main.rs` discovers `.env` by walking ancestors from exe path and CWD; `AXON_ENV_FILE` env var for explicit override; graceful fallback chain with per-error warnings
+- **Mobile omnibox fix** — three-bug root-cause chain: (1) sidebar auto-collapses on mobile viewports (<768px) when no stored preference, preventing it from consuming 260px of a 390px screen; (2) textarea auto-resize uses `height: '1px'` instead of `'auto'` before reading `scrollHeight` — `'auto'` in a flex layout returns the stretched layout height rather than intrinsic content height; (3) `ResizeObserver` added so height recalculates after sidebar collapse reflows the layout (the `[input]`-dep effect fired once on mount while sidebar was still 260px and never re-ran)
+- **CmdK palette** — new `apps/web/components/cmdk-palette/` component with `CmdKPalette` and `CmdKOutput`; wired into `AppShell`
+- **xterm.js terminal enhancements** — WebGL GPU renderer (`@xterm/addon-webgl`) with context-loss fallback; search decorations (amber highlights + active-match blue) via `allowProposedApi: true`; overview ruler lane (`overviewRulerWidth: 8`) shows match positions in scrollbar; copy-on-select via `onSelectionChange`; visual bell via `onBell` opacity flash; `attachCustomKeyEventHandler` for Ctrl+Shift+C (copy) / Ctrl+Shift+V (paste); all clipboard calls guarded with `?.` for HTTP contexts
+- **Cortex layout refactor** — `app/cortex/layout.tsx` rewritten with proper sidebar integration; Cortex API routes standardised; doctor/status/stats/sources/domains dashboards updated for new layout
+- **Plate.js editor enhancements** — slash commands (`/`), block drag-and-drop, callout blocks, collapsible toggles, table of contents, multi-block selection, block context menu, AI menu, inline comments, suggestion mode, export (HTML/PDF/image/markdown); 15 new plugin kit files wired into `copilot-kit.tsx`; mobile-responsive compact toolbar; `@ai-sdk/gateway@1.0.15` pinned for `ai@5` compatibility; `@platejs/ai` command route rewired with `generateText` for `ai@5` breaking changes (`Output.choice`, `partialOutputStream` removed); `useSearchParams` Suspense guard on `/cortex/sources`
+- **Plate.js editor expansion** — 15 additional `@platejs/*` plugins (callout, caption, combobox, comment, date, emoji, indent, layout, math, mention, resizable, selection, suggestion, toc, basic-styles), supporting packages (`@ai-sdk/react`, `ai`, `@ariakit/react`, `date-fns`, `cmdk`, `lowlight`, etc.), `tailwind-scrollbar-hide` plugin, and new shadcn/ui components (dialog, popover, cursor-overlay)
+- **Cortex dashboard review fixes** — AbortController on all polling dashboards (status/doctor/stats) cancels in-flight fetches on unmount and before each new poll; `disabled={loading || spinning}` on all 5 Refresh buttons; `Object.keys(data).length` badge fix in sources-dashboard; `useSearchParams` seeds filter from `?q=` param so domain drill-down links work; `local_ingest_jobs ?? []` guard in SummaryBar; `AXON_BIN` env var wires the pre-built binary path for Docker (routes were silently broken without it); missing `--sidebar-w` CSS update in `handleNavClick`; `aria-label` + `aria-current="page"` on Cortex sub-links; `target?: string` added to `JobEntry` interface
 - **Cortex virtual folder in sidebar** — collapsible "Cortex" folder appended after PAGE_LINKS with Brain icon; 5 sub-links (Status, Doctor, Sources, Domains, Stats); open/closed state persists to `localStorage`; clicking Brain icon while collapsed auto-expands sidebar; active route highlighting on `/cortex/*` paths; 5 API routes (`/api/cortex/*`) spawn the axon binary with `--json`; 5 server component pages under `/app/cortex/`; 5 client dashboard components with loading skeletons, error banners, and refresh buttons; Status polls every 5s with collapsible job cards, Doctor polls every 15s with service health grid + pipeline chips, Sources uses `@tanstack/react-virtual` for virtualized URL table with search filter, Domains renders relative CSS bar chart with clickable domain→sources links, Stats polls every 30s with 6 large metric cards + payload fields + command count table
 - **Jobs dashboard UX overhaul** — color-coded type badges (crawl=sky, embed=amber, extract=violet, ingest=rose), stats summary bar with live counts per status, sortable column headers (type/target/collection/status/started), relative timestamps ("5m ago") with absolute on hover, smart URL truncation (last 2 path segments), row hover actions (cancel/retry/view), animated ping ring + shimmer progress bar for active jobs; API extended with `StatusCounts` from parallel DB queries
 - **Pulse 3-panel collapsible layout** — chat panel left, editor right, chevron strips to collapse/expand; `showChat`/`showEditor` booleans replace `DesktopViewMode`/`DesktopPaneOrder`; `use-split-pane` rewritten for 3-panel chevron layout
@@ -22,7 +70,74 @@ This section documents commits on `feat/crawl-download-pack` relative to `main` 
 
 | Commit | Type | Message |
 |---|---|---|
-| *(this commit)* | feat(web) | Cortex virtual folder in sidebar — status/doctor/sources/domains/stats diagnostic pages with API routes and dashboard components |
+| *(this commit)* | chore(release) | v0.4.1; stage pending web/docker/docs updates; harden services-layer refactor execution plan and dispatch safety |
+| `b71fd7fd` | test | fix mcp-oauth-smoke missing env vars and serialize crawl DB tests |
+| `25e2287f` | fix(ci) | fix 4 failing CI checks |
+| `05238113` | fix(web) | set TZ=UTC in vitest config and update snapshot timestamps |
+| `9eddd039` | chore(release) | v0.4.0 — full codebase review complete; 40+17 findings fixed; changelog updated |
+| *(this commit)* | feat+chore | v0.4.0; full codebase review — 40 + 17 CR findings fixed; WS OAuth gating; SQL parameterization; Secret<T>; ConfigOverrides; env allowlist hardening |
+| `18c6e6ae` | fix(test) | add #[serial] to extract DB tests to eliminate race condition |
+| `54ced213` | fix(jobs) | fix doctest annotation in status.rs |
+| `79cca7ba` | fix(config) | add Config::test_default() for stable test helpers (CR-Q) |
+| `cf178f6e` | docs,feat | add arch docs (A-H-01, A-M-01, A-M-04, A-M-08) and scrape/evaluate module files |
+| `da712968` | fix(jobs) | H-03 SQL parameterization in ingest/ops.rs |
+| `b6671081` | fix(jobs,mcp,web) | H-03 SQL parameterization (extract/ingest/crawl), spawn_blocking, ANTHROPIC_API_KEY allowlist, sitemap tests |
+| `ee330e95` | fix(jobs,mcp,web) | H-03 SQL params in process.rs, spawn_blocking safety, ? operator cleanup, CLAUDE_* env passthrough |
+| `d95938ce` | fix(web,mcp) | add ANTHROPIC_API_KEY to env allowlist, fix block_in_place panic risk (CR-D, CR-E) |
+| `e3134ef7` | feat(security) | gate /ws with OAuth bearer token; fix cancel mode injection, shell IPv4-mapped loopback, clock sentinel |
+| `61169198` | fix(config) | wire modules, fix Secret timing, align defaults, expand ConfigOverrides, fix Debug (CR-A, CR-G, CR-H, CR-I, CR-L, CR-M) |
+| `57c0250e` | fix(oauth) | fix token rotation race and add pending_state capacity cap (CR-F, CR-K) |
+| `09d15d26` | fix(migrations,docs) | add missing tables/indexes to migration, fix scaling.md network (CR-B, CR-C, CR-N) |
+| `72e7742d` | fix(deps) | bump aws-lc-sys 0.37.1 → 0.38.0 via aws-lc-rs 1.16.1 |
+| `012cdcf4` | fix(ingest) | address 3 code review findings (C-02, M-04, L-06) |
+| `e7238085` | fix | use raw sitemap url count in MapResult and remove shadow test |
+| `4fff3661` | docs | record map command engine unification |
+| `4eea6b93` | test | lock map payload schema after engine unification |
+| `0186de11` | fix(compile) | add missing log crate dependency for web execute module |
+| `b2f4c124` | fix(oauth) | address 8 code review findings (C-01, C-03, H-05, M-02, M-05, M-07, M-09, L-04) |
+| `ddf4e830` | fix(cli) | restore stable JSON schemas for status/cancel/list/errors |
+| `f9c26621` | fix(scrape) | redact headers in debug, fix failure propagation, dedup markdown, CDP timeout, schedule tier |
+| `d2ade357` | fix(omnibox) | exec_id guard, suggestion staleness, useCallback deps, isProcessing sync, empty content |
+| `66fd1ed6` | fix(ssrf) | block IPv6 enum bypass, 0.0.0.0, and redirect SSRF |
+| `f35ce379` | fix(pulse) | auto-scroll MAX_LINES, Enter double-fire, clipboard fallback, empty text guard, unreachable boundary, allowlist expiry |
+| `e63f6473` | fix(web) | api-fetch header merge, token scope, permissionLevel default, CSP, loopback, eviction order |
+| `6f172dbd` | test | add map migration coverage |
+| `3466ddf0` | test | serialize DB-touching integration tests with #[serial] to prevent race conditions |
+| *(this commit v0.3.0)* | feat+chore | v0.3.0; evaluate page; cortex/suggest API; image SHA verification cont-init; CLI help contract test; command docs expansion (20+ files); module consolidation; sidebar simplification; script additions |
+| 7fb1100d | feat(mcp)+chore | MCP HTTP transport + Google OAuth; rmcp 0.17; screenshot CDP→Spider migration; engine sitemap backfill; cleanup |
+| `62bdae5e` | test | add scrape migration contract coverage |
+| `2d004e27` | docs | record screenshot migration to spider api |
+| `426cac65` | test | verify full-page screenshot behavior after migration |
+| `0e45780c` | chore | delete hand-rolled screenshot cdp client |
+| `e6ca9ddf` | feat(screenshot) | replace CDP client with Spider screenshot capture |
+| `22310087` | test(screenshot) | add migration contract tests for CDP→Spider transition |
+| `370ee1af` | docs | record engine-only backfill architecture |
+| `147b9ca5` | chore | remove cli robots backfill loop |
+| `c38dfb5f` | refactor | remove double validate_url + add TODO for http_client singleton |
+| `209b86a1` | feat(crawl) | add engine-level append_sitemap_backfill and wire into sync_crawl |
+| `2862eb9d` | test(crawl) | add failing contract tests for engine-delegated sitemap backfill |
+| `c9ebd58b` | fix | use SSRF-safe build_client + add max_sitemaps TODO in engine sitemap |
+| `817160bd` | test(sitemap) | characterization tests for discover_sitemap_urls_with_robots |
+| `04559aed` | refactor(web)+test | API middleware + server-side extraction; omnibox/pulse module splits; 10 new test suites; utility extractions |
+| `84cd8d2b` | feat(crawl)+refactor | inline Chrome thin-page recovery; CDP render module; custom headers; streaming sources dedup; spider feature flags docs |
+| `129eb1fa` | test(rust)+refactor(web) | integration/proptest test suite; MCP typed schema; ask context heuristics; sidebar cleanup; CI service containers |
+| `9428156c` | fix(ci) | remove invalid cargo-audit --deny flag; add Qdrant keyword indexes on collection init |
+| `fa8ddc29` | revert | remove redundant .cargo/config.toml — sccache already in ~/.cargo/config.toml |
+| `149325f0` | fix | restore sccache config; patch minimatch ReDoS (CVE high x2) |
+| `edaafabf` | fix(web)+test(rust) | suppress raw JSON in CmdK palette; add vector/cancel integration tests; fix include_subdomains default |
+| `959537ac` | refactor(mcp) | deduplicate DB queries in handle_status; fix artifacts action field |
+| `76356b0e` | refactor(mcp+cli) | CLI command handlers, MCP wiring, and web fixes |
+| `186a6936` | refactor(mcp+cli) | MCP as axon mcp subcommand; CLI common.rs JobStatus trait; smart dotenv loading; misc fixes |
+| `d022c6f5` | fix(web) | mobile omnibox sizing — sidebar auto-collapse <768px, textarea ResizeObserver + height:1px fix; CmdK palette; web improvements |
+| `27fc39f6` | feat(web) | xterm.js terminal enhancements — WebGL renderer, search decorations, overview ruler, copy-on-select, visual bell, Ctrl+Shift+C/V; Cortex layout refactor |
+| `72d1f651` | fix(web) | wire AIKit into CopilotKit + address open items |
+| `b2e2d61d` | fix(web) | address code review findings from Plate.js editor enhancements |
+| `405e0945` | feat(web) | Plate.js editor enhancements — slash, DnD, callouts, toggles, TOC, block selection, AI menu, comments, export; ai@5 compat fixes |
+| `f27cc810` | chore(deps) | Plate.js editor plugin expansion + dialog/popover/cursor-overlay UI components |
+| `756a081e` | chore | wire AXON_BIN env var for Cortex routes in Docker — routes now fall back to pre-built release binary via /workspace mount |
+| `f5d14901` | fix(web) | address Cortex dashboard review findings — AbortController, disabled state, binary path, accessibility |
+| `51a2c9c8` | merge | feat/crawl-download-pack → main |
+| `928ce7ba` | feat(web) | Cortex virtual folder in sidebar — status/doctor/sources/domains/stats diagnostic pages with API routes and dashboard components |
 | `e2e5ee6b` | chore + fix | mcporter plate MCP entry; crawl worker output_dir uses worker root not job-serialized path |
 | `5dee20a7` | fix(web) | pulse dual-hydration race + both-collapsed restore guard |
 | `4e4633d9` | fix(web) | pulse workspace quality fixes — collapse guard, editor flex, aria |

@@ -1,5 +1,5 @@
 # axon_cli — Axon CLI (Rust + Spider.rs)
-Last Modified: 2026-02-27
+Last Modified: 2026-03-03
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 
@@ -13,8 +13,8 @@ docker compose up -d
 ./scripts/axon doctor
 ./scripts/axon scrape https://example.com --wait true
 
-# MCP server wrapper (auto-sources .env)
-./scripts/axon-mcp
+# MCP server via CLI subcommand
+./scripts/axon mcp
 
 # Or build and run the binary directly
 cargo build --release --bin axon
@@ -26,13 +26,13 @@ cargo run --bin axon -- scrape https://example.com --wait true
 
 > **Note:** The binary is named `axon`. Build with `cargo build --bin axon`.
 
-## MCP Server (`axon-mcp`)
+## MCP Server (`axon mcp`)
 
-Axon ships an MCP server binary that exposes a single tool (`axon`) with `action`/`subaction` routing for crawl/extract/embed/ingest/RAG/discovery/ops workflows.
+Axon ships an MCP server subcommand that exposes a single tool (`axon`) with `action`/`subaction` routing for crawl/extract/embed/ingest/RAG/discovery/ops workflows.
 
 ```bash
-cargo build --release --bin axon-mcp
-./target/release/axon-mcp
+cargo build --release --bin axon
+./target/release/axon mcp
 ```
 
 MCP docs:
@@ -65,9 +65,11 @@ MCP docs:
 | `status` | Show async job queue status | No |
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
+| `mcp` | Start MCP stdio server | No |
+| `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list) | Yes (default) |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
-### Job Subcommands (for crawl / extract / embed)
+### Job Subcommands (for crawl / extract / embed / refresh)
 
 ```bash
 axon crawl status <job_id>
@@ -100,7 +102,7 @@ All flags are `--global` (usable with any subcommand).
 | `--max-depth <n>` | usize | `5` | Maximum crawl depth from start URL. |
 | `--render-mode <mode>` | enum | `auto-switch` | `http`, `chrome`, or `auto-switch`. Auto-switch tries HTTP first, falls back to Chrome if >60% thin pages. |
 | `--format <fmt>` | enum | `markdown` | Output format: `markdown`, `html`, `rawHtml`, `json`. |
-| `--include-subdomains <bool>` | bool | `true` | Include subdomains during crawl. **Note:** defaults `true` — may crawl more than expected. |
+| `--include-subdomains <bool>` | bool | `false` | Crawl all subdomains of the start URL's parent domain. Disabled by default — enable with `--include-subdomains true`. |
 | `--respect-robots <bool>` | bool | `false` | Respect `robots.txt` directives. **Note:** defaults `false` — legal/ethical implications. |
 | `--discover-sitemaps <bool>` | bool | `true` | Discover and backfill URLs from sitemap.xml after crawl. |
 | `--max-sitemaps <n>` | usize | `512` | Maximum sitemap URLs to backfill per crawl. |
@@ -108,6 +110,7 @@ All flags are `--global` (usable with any subcommand).
 | `--min-markdown-chars <n>` | usize | `200` | Minimum markdown character count; pages below this are flagged as "thin". |
 | `--drop-thin-markdown <bool>` | bool | `true` | Skip thin pages — do not save or embed them. |
 | `--delay-ms <ms>` | u64 | `0` | Delay between requests in milliseconds. Useful for polite crawling. |
+| `--header <HEADER>` | string | — | Custom HTTP header in `Key: Value` format. Repeatable (`--header "Auth: Bearer ..." --header "X-Custom: val"`). Applied to crawl, scrape, extract, and Chrome re-fetch paths. |
 
 #### Output
 
@@ -184,6 +187,9 @@ High-level subsystem map:
   - job states in `crates/jobs/status.rs`
 - Vector + RAG:
   - `crates/vector/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
+- MCP server:
+  - `crates/mcp/` (schema, server routing, handler modules, config)
+  - Single `axon` tool with `action`/`subaction` routing
 - Web runtimes:
   - WebSocket execution bridge: `crates/web.rs`
   - Active UI: `apps/web/` (Next.js — omnibox, Pulse workspace, port 49010)
@@ -280,6 +286,37 @@ AXON_JOB_STALE_TIMEOUT_SECS=300    # seconds before a running job is considered 
 AXON_JOB_STALE_CONFIRM_SECS=60     # additional grace period before stale reclaim
 ```
 
+### Web App Security Env (`apps/web`)
+
+One token covers both surfaces: `AXON_WEB_API_TOKEN` (server) and `NEXT_PUBLIC_AXON_API_TOKEN` (client) must be set to the same value.
+
+- `/api/*` routes — `proxy.ts` validates via `Authorization: Bearer <token>` or `x-api-key` header
+- `/ws` — Rust gate (`crates/web.rs`) validates via `?token=` query param, appended by `hooks/use-axon-ws.ts`
+
+MCP OAuth (`atk_` tokens) is a separate auth system for MCP clients only — it does not touch `/ws` or `/api/*`.
+
+```bash
+# Server-side token — activates both the /api/* proxy gate and the /ws Rust gate
+AXON_WEB_API_TOKEN=CHANGE_ME
+
+# Client-side copy — must equal AXON_WEB_API_TOKEN
+# apiFetch() sends it as x-api-key on /api/*; use-axon-ws.ts sends it as ?token= on /ws
+NEXT_PUBLIC_AXON_API_TOKEN=
+
+AXON_WEB_ALLOWED_ORIGINS=
+AXON_WEB_ALLOW_INSECURE_DEV=false
+
+# Optional shell websocket auth/origin overrides
+AXON_SHELL_WS_TOKEN=
+AXON_SHELL_ALLOWED_ORIGINS=
+
+# Optional client-side shell websocket token
+NEXT_PUBLIC_SHELL_WS_TOKEN=
+
+# Optional allowlist for Pulse chat --betas values
+AXON_ALLOWED_CLAUDE_BETAS=interleaved-thinking
+```
+
 ### Dev vs Container URL Resolution
 
 The CLI auto-detects whether it's running inside Docker:
@@ -319,6 +356,9 @@ On HTTP 429 or 503, `tei_embed()` retries up to 10 times with exponential backof
 ### Thin page filtering
 Pages with fewer than `--min-markdown-chars` (default: 200) are flagged as thin. If `--drop-thin-markdown true` (default), thin pages are skipped — not saved to disk or embedded.
 
+### `readability: false` — do NOT change
+`build_transform_config()` in `crates/core/content.rs` sets `readability: false`. Changing this to `true` causes Mozilla Readability to score VitePress/sidebar doc layouts as low-quality and strip them to just the page title — produces ~97% thin pages on most documentation sites. `main_content: true` handles structural extraction without the scoring penalty. This setting is the result of a confirmed production regression; do not "improve" it.
+
 ### Collection must exist before upsert
 `ensure_collection()` does a GET first; only issues PUT on 404 (collection not found). This means it's safe on existing collections — no 409 Conflict. Safe to call on every embed.
 
@@ -339,8 +379,22 @@ cargo build --release --bin axon
 `Cargo.toml` uses `spider_agent = { path = "../spider/spider_agent", ... }` for local dev with a sibling `spider/` checkout. In CI or any environment without that sibling repo, switch to the registry version:
 
 ```toml
+spider = { version = "2", default-features = false, features = [
+    "basic", "chrome", "regex", "sitemap", "adblock",
+    "chrome_stealth", "chrome_screenshot", "chrome_store_page",
+    "chrome_headless_new", "chrome_simd",
+    "simd", "inline-more", "cache_mem",
+    "ua_generator", "headers", "glob", "time", "control",
+    "firewall",
+] }
 spider_agent = { version = "2.45", default-features = false, features = ["search_tavily", "openai"] }
 ```
+
+### Spider feature flags with observable behavior
+- **`firewall`**: Blocks known-bad domains (malware, phishing, spam) before fetch via `spider_firewall` crate. Some URLs may be rejected that weren't before — this is defense-in-depth on top of `validate_url()`.
+- **`chrome_headless_new`**: Uses `--headless=new` instead of legacy headless. Better DOM fidelity but slightly different rendering behavior on some sites.
+- **`balance`**: NOT enabled — silently throttles concurrency with zero logging. We manage concurrency explicitly via performance profiles.
+- Full flag inventory: [`docs/spider-feature-flags.md`](docs/spider-feature-flags.md)
 
 ### Subprocess stdout vs stderr
 CLI commands output JSON data to stdout and progress/logs to stderr (Spinner via indicatif, tracing via `log_info`/`log_done`). The web UI streams both: stdout as `"type": "output"`, stderr as `"type": "log"`. ANSI codes stripped via `console::strip_ansi_codes()`.

@@ -6,15 +6,15 @@ mod shell;
 
 use crate::crates::core::logging::log_info;
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::error::Error;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
@@ -25,16 +25,37 @@ pub(crate) struct AppState {
     stats_tx: broadcast::Sender<String>,
     /// Registry of completed job IDs → output directories for download routes.
     job_dirs: Arc<DashMap<String, PathBuf>>,
+    /// Static API token for the WS gate. Set from AXON_WEB_API_TOKEN.
+    /// Same token used by the Next.js proxy for /api/* routes.
+    /// None = gate disabled (open WS, trusted-network deployments only).
+    api_token: Option<String>,
 }
+
+/// Query parameters for the `/ws` upgrade request.
+#[derive(Deserialize)]
+struct WsQuery {
+    token: Option<String>,
+}
+
+// ── Server startup ────────────────────────────────────────────────────────────
 
 /// Start the axum server on the given port, running until interrupted.
 pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
     let (stats_tx, _) = broadcast::channel::<String>(64);
     let job_dirs: Arc<DashMap<String, PathBuf>> = Arc::new(DashMap::new());
 
+    let api_token = std::env::var("AXON_WEB_API_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty());
+    match &api_token {
+        Some(_) => log_info("WS gate: active (AXON_WEB_API_TOKEN)"),
+        None => log_info("WS gate: disabled (set AXON_WEB_API_TOKEN to enable)"),
+    }
+
     let state = Arc::new(AppState {
         stats_tx: stats_tx.clone(),
         job_dirs: job_dirs.clone(),
+        api_token,
     });
 
     // Spawn Docker stats poller in background
@@ -64,9 +85,12 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn Error>> {
     log_info(&format!("Axon web UI listening on http://{addr}"));
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }
@@ -138,11 +162,45 @@ async fn serve_output_file(
 
 // ── WebSocket handler ────────────────────────────────────────────────────────
 
-async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
+async fn ws_upgrade(
+    ws: WebSocketUpgrade,
+    Query(params): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    if let Some(ref expected) = state.api_token {
+        let token = params.token.as_deref().unwrap_or("").trim();
+        if token.is_empty() {
+            log::warn!("ws upgrade rejected: no token from {}", addr.ip());
+            return (axum::http::StatusCode::UNAUTHORIZED, "token required").into_response();
+        }
+        if token != expected.as_str() {
+            log::warn!("ws upgrade rejected: invalid token from {}", addr.ip());
+            return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
+        }
+    }
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
-async fn shell_ws_upgrade(ws: WebSocketUpgrade) -> Response {
+async fn shell_ws_upgrade(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    // H-07: also accept IPv4-mapped loopback (::ffff:127.0.0.1) which Rust's
+    // IpAddr::is_loopback() returns false for on some platforms.
+    let is_loopback = match addr.ip() {
+        IpAddr::V4(v4) => v4.is_loopback(),
+        IpAddr::V6(v6) => {
+            v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+        }
+    };
+    if !is_loopback {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            "Shell access is restricted to localhost",
+        )
+            .into_response();
+    }
     ws.on_upgrade(shell::handle_shell_ws)
 }
 
