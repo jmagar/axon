@@ -113,10 +113,9 @@ fn parse_search_time_range(value: Option<&str>) -> Option<TimeRange> {
 mod tests {
     use super::*;
     use crate::crates::core::config::CommandKind;
-    use crate::crates::jobs::common::test_config;
 
     fn make_search_cfg(key: &str, query: &str) -> Config {
-        let mut cfg = test_config("");
+        let mut cfg = Config::test_default();
         cfg.command = CommandKind::Search;
         cfg.positional = vec![query.to_string()];
         cfg.tavily_api_key = key.to_string();
