@@ -12,8 +12,7 @@ use crate::crates::mcp::schema::{
     ArtifactsRequest, ArtifactsSubaction, AxonToolResponse, DoctorRequest, DomainsRequest,
     HelpRequest, ScreenshotRequest, SourcesRequest, StatsRequest,
 };
-use crate::crates::vector::ops::qdrant::{domains_payload, sources_payload};
-use crate::crates::vector::ops::stats_payload;
+use crate::crates::services::system;
 use rmcp::ErrorData;
 use std::fs;
 
@@ -204,23 +203,32 @@ impl AxonMcpServer {
         &self,
         _req: DoctorRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let payload = crate::crates::cli::commands::doctor::build_doctor_report(self.cfg.as_ref())
+        let result = system::doctor(self.cfg.as_ref())
             .await
             .map_err(|e| internal_error(e.to_string()))?;
-
-        Ok(AxonToolResponse::ok("doctor", "doctor", payload))
+        Ok(AxonToolResponse::ok("doctor", "doctor", result.payload))
     }
 
     pub(super) async fn handle_domains(
         &self,
         req: DomainsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit_usize(req.limit, 25, 500);
-        let offset = parse_offset(req.offset);
+        let pagination = crate::crates::services::types::Pagination {
+            limit: req.limit.unwrap_or(25).clamp(1, 500),
+            offset: req.offset.unwrap_or(0),
+        };
         let response_mode = parse_response_mode(req.response_mode);
-        let payload = domains_payload(self.cfg.as_ref(), limit, offset)
+        let result = system::domains(self.cfg.as_ref(), pagination)
             .await
             .map_err(|e| internal_error(e.to_string()))?;
+        let payload = serde_json::json!({
+            "limit": result.limit,
+            "offset": result.offset,
+            "domains": result.domains.iter().map(|d| serde_json::json!({
+                "domain": d.domain,
+                "vectors": d.vectors,
+            })).collect::<Vec<_>>(),
+        });
         respond_with_mode("domains", "domains", response_mode, "domains", payload)
     }
 
@@ -228,12 +236,23 @@ impl AxonMcpServer {
         &self,
         req: SourcesRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit_usize(req.limit, 25, 500);
-        let offset = parse_offset(req.offset);
+        let pagination = crate::crates::services::types::Pagination {
+            limit: req.limit.unwrap_or(25).clamp(1, 500),
+            offset: req.offset.unwrap_or(0),
+        };
         let response_mode = parse_response_mode(req.response_mode);
-        let payload = sources_payload(self.cfg.as_ref(), limit, offset)
+        let result = system::sources(self.cfg.as_ref(), pagination)
             .await
             .map_err(|e| internal_error(e.to_string()))?;
+        let payload = serde_json::json!({
+            "count": result.count,
+            "limit": result.limit,
+            "offset": result.offset,
+            "urls": result.urls.iter().map(|(url, chunks)| serde_json::json!({
+                "url": url,
+                "chunks": chunks,
+            })).collect::<Vec<_>>(),
+        });
         respond_with_mode("sources", "sources", response_mode, "sources", payload)
     }
 
@@ -241,10 +260,9 @@ impl AxonMcpServer {
         &self,
         _req: StatsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let stats = stats_payload(self.cfg.as_ref())
+        let result = system::stats(self.cfg.as_ref())
             .await
             .map_err(|e| internal_error(e.to_string()))?;
-
-        Ok(AxonToolResponse::ok("stats", "stats", stats))
+        Ok(AxonToolResponse::ok("stats", "stats", result.payload))
     }
 }
