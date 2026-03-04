@@ -2,26 +2,14 @@ use bollard::Docker;
 use bollard::container::{ListContainersOptions, StatsOptions};
 use futures_util::StreamExt;
 use serde_json::json;
-use std::collections::HashMap;
-use tokio::sync::broadcast;
+use std::collections::{HashMap, HashSet};
+use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
 const CONTAINER_PREFIX: &str = "axon-";
-const POLL_INTERVAL_MS: u64 = 500;
+const POLL_INTERVAL_MS: u64 = 1000;
 
-/// Previous absolute counters for rate calculations.
-///
-/// Per-container absolute I/O counters from the previous poll cycle, used to
-/// compute byte-per-second rates via `(current - prev) / dt`.
-struct PreviousSnapshot {
-    timestamp: std::time::Instant,
-    net_rx: HashMap<String, u64>,
-    net_tx: HashMap<String, u64>,
-    block_read: HashMap<String, u64>,
-    block_write: HashMap<String, u64>,
-}
-
-/// Computed per-container metrics for a single poll cycle.
+#[derive(Clone)]
 struct ContainerMetrics {
     name: String,
     cpu_percent: f64,
@@ -35,94 +23,121 @@ struct ContainerMetrics {
     status: String,
 }
 
-/// Main stats polling loop — broadcasts to all WS clients via the channel.
 pub(super) async fn run_stats_loop(tx: broadcast::Sender<String>) {
     let docker = match Docker::connect_with_local_defaults() {
         Ok(d) => d,
         Err(e) => {
             warn!("Docker not available for stats: {e} — stats broadcasting disabled");
-            // Don't crash the server — just stop the stats poller
             return;
         }
     };
 
-    let mut prev = PreviousSnapshot {
-        timestamp: std::time::Instant::now(),
-        net_rx: HashMap::new(),
-        net_tx: HashMap::new(),
-        block_read: HashMap::new(),
-        block_write: HashMap::new(),
-    };
+    let (metrics_tx, mut metrics_rx) = mpsc::channel::<ContainerMetrics>(128);
+    let mut streams = HashMap::new();
+    let mut latest_metrics = HashMap::new();
+
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(POLL_INTERVAL_MS));
 
     loop {
-        let metrics = poll_once(&docker, &mut prev).await;
-        let message = build_stats_message(&metrics);
+        tokio::select! {
+            _ = interval.tick() => {
+                let filters: HashMap<String, Vec<String>> = HashMap::from([
+                    ("name".to_string(), vec![CONTAINER_PREFIX.to_string()]),
+                    ("status".to_string(), vec!["running".to_string()]),
+                ]);
 
-        // If nobody is listening, that's fine — just drop the message
-        let _ = tx.send(message);
+                let containers = match docker
+                    .list_containers(Some(ListContainersOptions {
+                        all: false,
+                        filters,
+                        ..Default::default()
+                    }))
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::debug!("Failed to list containers: {e}");
+                        continue;
+                    }
+                };
 
-        tokio::time::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+                let mut current_ids = HashSet::new();
+                let mut current_names = HashSet::new();
+
+                for container in containers {
+                    let id = match container.id {
+                        Some(ref id) => id.clone(),
+                        None => continue,
+                    };
+                    current_ids.insert(id.clone());
+
+                    let name = container
+                        .names
+                        .as_ref()
+                        .and_then(|n| n.first())
+                        .map(|n| n.trim_start_matches('/').to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    current_names.insert(name.clone());
+
+                    streams.entry(id.clone()).or_insert_with(|| {
+                        let docker_clone = docker.clone();
+                        let tx_clone = metrics_tx.clone();
+                        tokio::spawn(stream_container_stats(
+                            docker_clone,
+                            id,
+                            name,
+                            tx_clone,
+                        ))
+                    });
+                }
+
+                streams.retain(|id, handle| {
+                    if !current_ids.contains(id) {
+                        handle.abort();
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                latest_metrics.retain(|name, _| current_names.contains(name));
+
+                if !latest_metrics.is_empty() {
+                    let message = build_stats_message(&latest_metrics);
+                    let _ = tx.send(message);
+                }
+            }
+            Some(metric) = metrics_rx.recv() => {
+                latest_metrics.insert(metric.name.clone(), metric);
+            }
+        }
     }
 }
 
-async fn poll_once(docker: &Docker, prev: &mut PreviousSnapshot) -> Vec<ContainerMetrics> {
-    let now = std::time::Instant::now();
-    let dt = now.duration_since(prev.timestamp).as_secs_f64().max(0.1);
-    prev.timestamp = now;
+async fn stream_container_stats(
+    docker: Docker,
+    id: String,
+    name: String,
+    tx: mpsc::Sender<ContainerMetrics>,
+) {
+    let mut stream = docker.stats(
+        &id,
+        Some(StatsOptions {
+            stream: true,
+            one_shot: false,
+        }),
+    );
+    let mut prev_timestamp = std::time::Instant::now();
+    let mut prev_net_rx = 0u64;
+    let mut prev_net_tx = 0u64;
+    let mut prev_blk_read = 0u64;
+    let mut prev_blk_write = 0u64;
 
-    let filters: HashMap<String, Vec<String>> = HashMap::from([
-        ("name".to_string(), vec![CONTAINER_PREFIX.to_string()]),
-        ("status".to_string(), vec!["running".to_string()]),
-    ]);
-
-    let containers = match docker
-        .list_containers(Some(ListContainersOptions {
-            all: false,
-            filters,
-            ..Default::default()
-        }))
-        .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            warn!("Failed to list containers: {e}");
-            return vec![];
-        }
-    };
-
-    let mut results = Vec::new();
-
-    for container in containers {
-        let name = container
-            .names
-            .as_ref()
-            .and_then(|n| n.first())
-            .map(|n| n.trim_start_matches('/').to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-
-        let id = match &container.id {
-            Some(id) => id.clone(),
-            None => continue,
-        };
-
-        let stats = match docker
-            .stats(
-                &id,
-                Some(StatsOptions {
-                    stream: false,
-                    one_shot: true,
-                }),
-            )
-            .next()
-            .await
-        {
-            Some(Ok(s)) => s,
-            Some(Err(e)) => {
-                tracing::debug!("Stats failed for {name}: {e}");
-                continue;
-            }
-            None => continue,
-        };
+    while let Some(Ok(stats)) = stream.next().await {
+        let now = std::time::Instant::now();
+        let dt = now.duration_since(prev_timestamp).as_secs_f64().max(0.1);
+        prev_timestamp = now;
 
         // CPU %
         let cpu_delta = stats
@@ -187,18 +202,18 @@ async fn poll_once(docker: &Docker, prev: &mut PreviousSnapshot) -> Vec<Containe
             .unwrap_or((0, 0));
 
         // Rate calculations
-        let prev_rx = *prev.net_rx.get(&name).unwrap_or(&net_rx);
-        let prev_tx = *prev.net_tx.get(&name).unwrap_or(&net_tx);
-        let prev_br = *prev.block_read.get(&name).unwrap_or(&blk_read);
-        let prev_bw = *prev.block_write.get(&name).unwrap_or(&blk_write);
+        let net_rx_rate = (net_rx.saturating_sub(prev_net_rx) as f64 / dt).max(0.0);
+        let net_tx_rate = (net_tx.saturating_sub(prev_net_tx) as f64 / dt).max(0.0);
+        let blk_read_rate = (blk_read.saturating_sub(prev_blk_read) as f64 / dt).max(0.0);
+        let blk_write_rate = (blk_write.saturating_sub(prev_blk_write) as f64 / dt).max(0.0);
 
-        let net_rx_rate = (net_rx.saturating_sub(prev_rx) as f64 / dt).max(0.0);
-        let net_tx_rate = (net_tx.saturating_sub(prev_tx) as f64 / dt).max(0.0);
-        let blk_read_rate = (blk_read.saturating_sub(prev_br) as f64 / dt).max(0.0);
-        let blk_write_rate = (blk_write.saturating_sub(prev_bw) as f64 / dt).max(0.0);
+        prev_net_rx = net_rx;
+        prev_net_tx = net_tx;
+        prev_blk_read = blk_read;
+        prev_blk_write = blk_write;
 
-        results.push(ContainerMetrics {
-            name,
+        let metric = ContainerMetrics {
+            name: name.clone(),
             cpu_percent: round2(cpu_percent),
             memory_percent: round2(mem_percent),
             memory_usage_mb: round1(mem_usage_mb),
@@ -208,20 +223,15 @@ async fn poll_once(docker: &Docker, prev: &mut PreviousSnapshot) -> Vec<Containe
             block_read_rate: round1(blk_read_rate),
             block_write_rate: round1(blk_write_rate),
             status: "running".to_string(),
-        });
-        if let Some(m) = results.last() {
-            let key = m.name.clone();
-            prev.net_rx.insert(key.clone(), net_rx);
-            prev.net_tx.insert(key.clone(), net_tx);
-            prev.block_read.insert(key.clone(), blk_read);
-            prev.block_write.insert(key, blk_write);
+        };
+
+        if tx.send(metric).await.is_err() {
+            break;
         }
     }
-
-    results
 }
 
-fn build_stats_message(metrics: &[ContainerMetrics]) -> String {
+fn build_stats_message(metrics: &HashMap<String, ContainerMetrics>) -> String {
     let mut containers = serde_json::Map::new();
     let mut total_cpu = 0.0f64;
     let mut total_mem_pct = 0.0f64;
@@ -230,9 +240,9 @@ fn build_stats_message(metrics: &[ContainerMetrics]) -> String {
     let mut total_blk_read_rate = 0.0f64;
     let mut total_blk_write_rate = 0.0f64;
 
-    for m in metrics {
+    for (name, m) in metrics {
         containers.insert(
-            m.name.clone(),
+            name.clone(),
             json!({
                 "cpu_percent": m.cpu_percent,
                 "memory_percent": m.memory_percent,

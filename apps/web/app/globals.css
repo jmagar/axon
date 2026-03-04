@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+@plugin "tailwind-scrollbar-hide";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -93,8 +95,11 @@
   --axon-border-strong: rgba(255, 135, 175, 0.22);
   --axon-success: #82d9a0;
   --axon-success-bg: rgba(130, 217, 160, 0.14);
+  --axon-success-border: rgba(130, 217, 160, 0.3);
   --axon-warning: #ffc086;
   --axon-warning-bg: rgba(255, 192, 134, 0.14);
+  --axon-error: var(--axon-secondary-strong);
+  --axon-error-bg: rgba(255, 135, 175, 0.12);
   --axon-danger-bg: rgba(255, 135, 175, 0.1);
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -130,10 +135,14 @@
   --axon-secondary: #ff87af;
   --axon-secondary-strong: #ff9ec0;
 
-  /* Surface tiers */
+  /* Surface tiers — dark overlays (back to front) */
   --surface-base: rgba(10, 18, 35, 0.85);
   --surface-elevated: rgba(10, 18, 35, 0.6);
   --surface-float: rgba(10, 18, 35, 0.35);
+
+  /* Cyan-tinted interactive surfaces — for item highlights on dark panels */
+  --surface-primary: rgba(135, 175, 255, 0.08);
+  --surface-primary-active: rgba(175, 215, 255, 0.12);
 
   /* Borders */
   --border-subtle: rgba(135, 175, 255, 0.15);
@@ -460,10 +469,10 @@ h4 {
 @keyframes badge-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(135, 175, 255, 0);
+    filter: drop-shadow(0 0 3px rgba(135, 175, 255, 0.1));
   }
   50% {
-    box-shadow: 0 0 12px 4px rgba(135, 175, 255, 0.25);
+    filter: drop-shadow(0 0 8px rgba(135, 175, 255, 0.3));
   }
 }
 
@@ -538,6 +547,21 @@ h4 {
 @utility animate-slide-down {
   animation: slide-down-reveal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   overflow: hidden;
+}
+
+@keyframes cmdk-palette-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -52%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@utility animate-cmdk-in {
+  animation: cmdk-palette-in 180ms ease-out forwards;
 }
 
 /* ── Plate editor — Axon theme overrides ──────────────────────────────────── */

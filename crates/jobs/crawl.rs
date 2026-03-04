@@ -11,8 +11,8 @@ pub mod worker;
 
 pub use runtime::CrawlJob;
 
-pub async fn doctor(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
-    repo::doctor(cfg).await
+pub async fn doctor(cfg: &Config) -> Result<serde_json::Value, String> {
+    repo::doctor(cfg).await.map_err(|e| e.to_string())
 }
 
 pub async fn start_crawl_job(cfg: &Config, start_url: &str) -> Result<Uuid, Box<dyn Error>> {
@@ -41,8 +41,12 @@ pub async fn get_job(cfg: &Config, id: Uuid) -> Result<Option<CrawlJob>, Box<dyn
     repo::get_job(cfg, id).await
 }
 
-pub async fn list_jobs(cfg: &Config, limit: i64) -> Result<Vec<CrawlJob>, Box<dyn Error>> {
-    repo::list_jobs(cfg, limit).await
+pub async fn list_jobs(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<CrawlJob>, Box<dyn Error>> {
+    repo::list_jobs(cfg, limit, offset).await
 }
 
 pub async fn cancel_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {

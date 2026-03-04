@@ -43,9 +43,9 @@ Axon's visual language is **dark neural-tech** — deep near-black backgrounds, 
 
 | Name | Token | Hex | RGBA background |
 |------|-------|-----|-----------------|
-| Success | `--axon-success` | `#82d9a0` | `--axon-success-bg` = `rgba(130,217,160,0.14)` |
+| Success | `--axon-success` | `#82d9a0` | `--axon-success-bg` = `rgba(130,217,160,0.14)` · `--axon-success-border` = `rgba(130,217,160,0.30)` |
 | Warning | `--axon-warning` | `#ffc086` | `--axon-warning-bg` = `rgba(255,192,134,0.14)` |
-| Danger bg | `--axon-danger-bg` | — | `rgba(175,215,255,0.1)` |
+| Danger bg | `--axon-danger-bg` | — | `rgba(255,135,175,0.1)` |
 
 ---
 
@@ -161,6 +161,8 @@ body default:    1.6   /* Long-form content */
 
 Surfaces are translucent dark-blue overlays that create depth over the background gradient. Use the right tier based on how "elevated" the element is.
 
+### Dark overlay tiers
+
 ```css
 --surface-base:     rgba(10, 18, 35, 0.85)  /* Panels, sidebars, dropdown BGs */
 --surface-elevated: rgba(10, 18, 35, 0.60)  /* Active rows, selected items, cards */
@@ -180,6 +182,32 @@ className="hover:bg-[var(--surface-float)]"
 // Active/selected row
 className="bg-[var(--surface-elevated)]"
 ```
+
+### Cyan-tinted interactive surfaces
+
+Used for item highlights and active states **on dark panels** where the dark `--surface-*` tiers are invisible. These are the primary-accent equivalent of the surface tier system.
+
+```css
+--surface-primary:        rgba(135, 175, 255, 0.08)  /* Item hover, progress track, subdued highlight */
+--surface-primary-active: rgba(175, 215, 255, 0.12)  /* Item selected, mode chip active, strong highlight */
+```
+
+**When to use:**
+- Command palette / list item hover → `--surface-primary`
+- Command palette / list item selected → `--surface-primary-active`
+- Mode chip active background → `--surface-primary-active`
+- Progress bar track → `--surface-primary`
+- Any cyan-tinted hover/active on a near-opaque dark panel
+
+```tsx
+// cmdk item or list row hover
+style={{ background: 'var(--surface-primary)' }}
+
+// cmdk item selected / mode chip active
+style={{ background: 'var(--surface-primary-active)' }}
+```
+
+> **Note:** The dark `--surface-float` / `--surface-elevated` tokens are designed for layering on the semi-transparent body background. On a modal panel with `rgba(10,18,35,0.97)`, they produce no visible contrast — use `--surface-primary` / `--surface-primary-active` instead.
 
 ### Page Backgrounds
 
@@ -514,7 +542,9 @@ The `env(safe-area-inset-bottom)` accounts for iOS home indicator.
 |--------------|---------------------|
 | `color: '#87afff'` (raw hex for brand) | `color: var(--axon-primary)` |
 | `rgba(255,135,175,0.12)` on structural borders | `var(--border-subtle)` |
-| `rgba(175,215,255,0.05)` for hover backgrounds | `var(--surface-float)` |
+| `rgba(175,215,255,0.05)` for hover on dark panels | `var(--surface-primary)` |
+| `rgba(175,215,255,0.12)` for active on dark panels | `var(--surface-primary-active)` |
+| `rgba(130,217,160,0.30)` for success borders | `var(--axon-success-border)` |
 | `--axon-text-primary` / `--axon-text-muted` | `--text-primary` / `--text-muted` |
 | `--axon-accent-pink` / `--axon-accent-blue` | `--axon-primary` / `--axon-secondary` |
 | `--axon-text-tertiary` | `--text-dim` (this token is undefined) |

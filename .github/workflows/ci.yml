@@ -18,6 +18,56 @@ env:
   RUSTC_WRAPPER: ""
 
 jobs:
+  mcp-http-only:
+    name: mcp-http-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce MCP CLI HTTP transport (no stdio regression)
+        run: ./scripts/check_mcp_http_only.sh
+
+  no-mod-rs:
+    name: no-mod-rs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce modern Rust module style (no mod.rs)
+        run: ./scripts/check_no_mod_rs.sh
+
+  no-next-middleware:
+    name: no-next-middleware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce Next.js proxy-only entrypoint (middleware.ts deprecated)
+        run: ./scripts/check_no_next_middleware.sh
+
+  mcp-schema-doc-sync:
+    name: mcp-schema-doc-sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce generated MCP schema docs are in sync
+        run: python3 scripts/generate_mcp_schema_doc.py --check
+
+  mcp-oauth-smoke:
+    name: mcp-oauth-smoke
+    runs-on: ubuntu-latest
+    env:
+      AXON_PG_URL: postgresql://axon:postgres@127.0.0.1:5432/axon
+      AXON_REDIS_URL: redis://127.0.0.1:6379
+      AXON_AMQP_URL: amqp://guest:guest@127.0.0.1:5672/%2f
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Build axon binary
+        run: cargo build --locked --bin axon
+      - name: OAuth protection smoke test (/mcp requires auth)
+        run: ./scripts/test-mcp-oauth-protection.sh
+
   advisory-lock-policy:
     name: advisory-lock-policy
     runs-on: ubuntu-latest
@@ -150,8 +200,28 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:8.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      rabbitmq:
+        image: rabbitmq:4.0-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
     env:
       AXON_TEST_PG_URL: postgresql://axon:postgres@localhost:5432/axon
+      AXON_TEST_REDIS_URL: redis://localhost:6379
+      AXON_TEST_AMQP_URL: amqp://guest:guest@localhost:5672/%2f
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -202,8 +272,8 @@ jobs:
           --health-retries 12
     env:
       AXON_TEST_PG_URL: postgresql://axon:postgres@localhost:5432/axon
-      AXON_REDIS_URL: redis://localhost:6379
-      AXON_AMQP_URL: amqp://guest:guest@localhost:5672/%2f
+      AXON_TEST_REDIS_URL: redis://localhost:6379
+      AXON_TEST_AMQP_URL: amqp://guest:guest@localhost:5672/%2f
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -212,6 +282,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: run ignored infra worker tests
         run: just test-infra
+
+  web-lint-test:
+    name: web-lint-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: biome lint
+        run: pnpm lint
+      - name: vitest
+        run: pnpm test
 
   security:
     name: security
@@ -230,7 +322,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Running cargo audit against Cargo.lock"
-          cargo audit --deny vulnerability
+          cargo audit
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.0 --locked
@@ -266,8 +358,8 @@ jobs:
           path: .cache/huggingface
           key: hf-tei-${{ runner.os }}-BAAI-bge-small-en-v1.5-v1
 
-      - name: Build axon binaries (release)
-        run: cargo build --release --locked --bin axon --bin axon-mcp
+      - name: Build axon binary (release)
+        run: cargo build --release --locked --bin axon
 
       - name: Write CI mcporter config
         run: |
@@ -275,7 +367,8 @@ jobs:
           {
             "mcpServers": {
               "axon": {
-                "command": "${{ github.workspace }}/target/release/axon-mcp"
+                "command": "${{ github.workspace }}/target/release/axon",
+                "args": ["mcp"]
               }
             },
             "imports": []
@@ -298,6 +391,7 @@ jobs:
             echo "AXON_AMQP_URL=amqp://axon:axonrabbit@axon-rabbitmq:5672/%2f"
             echo "QDRANT_URL=http://axon-qdrant:6333"
             echo "TEI_URL=http://localhost:52000"
+            echo "AXON_GIT_SHA=$(git rev-parse HEAD)"
           } > .env
 
       - name: Start Axon infra
