@@ -113,8 +113,10 @@ pub struct MapResult {
     pub summary: CrawlSummary,
     /// All discovered URLs (crawler + sitemap), sorted and deduplicated.
     pub urls: Vec<String>,
-    /// Number of URLs that came exclusively from sitemap discovery
-    /// (i.e. `urls.len().saturating_sub(summary.pages_seen as usize)`).
+    /// Raw number of URLs returned by `discover_sitemap_urls` before any
+    /// deduplication against crawler-discovered URLs.  This is the count of
+    /// `<loc>` entries in the sitemap(s), not the count of net-new URLs that
+    /// were absent from the crawler results.
     pub sitemap_urls: usize,
 }
 
@@ -140,18 +142,21 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
         }
     }
 
-    if cfg.discover_sitemaps {
-        let mut sitemap_urls = discover_sitemap_urls(cfg, start_url).await?.urls;
-        urls.append(&mut sitemap_urls);
+    let raw_sitemap_count = if cfg.discover_sitemaps {
+        let mut sitemap_url_list = discover_sitemap_urls(cfg, start_url).await?.urls;
+        let count = sitemap_url_list.len();
+        urls.append(&mut sitemap_url_list);
         urls.sort();
         urls.dedup();
-    }
+        count
+    } else {
+        0
+    };
 
-    let sitemap_urls = urls.len().saturating_sub(summary.pages_seen as usize);
     Ok(MapResult {
         summary,
         urls,
-        sitemap_urls,
+        sitemap_urls: raw_sitemap_count,
     })
 }
 
