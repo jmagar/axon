@@ -50,14 +50,24 @@ specs/
 # Local container/dev overrides
 container/*.local.yml
 container/*.local.yaml
-.claude/
+
+# Claude Code — track agents/skills/settings but not local overrides or worktrees
+.claude/worktrees/
+.claude/settings.local.json
+.claude/*.bak*
 
 # Runtime cache directories
 /data/
 /http-cacache/
 /storage/
 
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
 # Node artifacts (root-level, not part of the Rust workspace)
 /node_modules/
 /package.json
 /pnpm-lock.yaml
+.mcp.json

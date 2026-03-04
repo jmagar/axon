@@ -1,25 +1,43 @@
-use super::{
-    CrawlSummary, SitemapBackfillStats, canonicalize_url_for_dedupe, is_excluded_url_path,
+use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
+use crate::crates::core::config::Config;
+use crate::crates::core::content::{
+    extract_loc_values, extract_loc_with_lastmod, extract_robots_sitemaps, to_markdown,
+    url_to_filename,
 };
-use crate::axon_cli::crates::core::config::Config;
-use crate::axon_cli::crates::core::content::{
-    extract_loc_values, extract_loc_with_lastmod, to_markdown, url_to_filename,
-};
-use crate::axon_cli::crates::core::http::validate_url;
-use crate::axon_cli::crates::core::logging::log_info;
+use crate::crates::core::http::{build_client, validate_url};
+use crate::crates::core::logging::log_info;
+use crate::crates::crawl::manifest::ManifestEntry;
+use sha2::{Digest, Sha256};
 use spider::tokio;
 use spider::url::Url;
 use std::collections::{HashSet, VecDeque};
 use std::error::Error;
 use std::path::Path;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
+
+/// Result of sitemap discovery including URLs and diagnostic stats.
+#[derive(Debug, Clone, Default)]
+pub struct SitemapDiscovery {
+    /// Sorted, deduplicated URLs discovered from sitemaps.
+    pub urls: Vec<String>,
+    /// Number of sitemaps declared in robots.txt.
+    pub robots_declared_sitemaps: usize,
+    /// Number of default seed sitemaps added to the queue.
+    pub seeded_default_sitemaps: usize,
+    /// Total sitemap documents successfully parsed.
+    pub parsed_sitemap_documents: usize,
+    /// Total page URLs discovered (before dedup).
+    pub discovered_urls: usize,
+    /// Fetches that failed or returned non-success.
+    pub failed_fetches: usize,
+}
 
 fn should_retry_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
-async fn fetch_text_with_retry(
+pub(crate) async fn fetch_text_with_retry(
     client: &reqwest::Client,
     url: &str,
     retries: usize,
@@ -110,12 +128,20 @@ async fn process_sitemap_batch(
     scope: &SitemapScope<'_>,
     output: &mut SitemapBatchOutput<'_>,
 ) -> usize {
+    // In test builds, propagate the thread-local SSRF loopback bypass flag
+    // into spawned tasks so httpmock servers on 127.0.0.1 are reachable.
+    #[cfg(test)]
+    let loopback_flag = crate::crates::core::http::get_allow_loopback();
+
     let mut joins = tokio::task::JoinSet::new();
     for sitemap_url in batch {
         let http = client.clone();
         let retries = cfg.fetch_retries;
         let backoff = cfg.retry_backoff_ms;
         joins.spawn(async move {
+            #[cfg(test)]
+            crate::crates::core::http::set_allow_loopback(loopback_flag);
+
             fetch_text_with_retry(&http, &sitemap_url, retries, backoff)
                 .await
                 .map(|xml| (sitemap_url, xml))
@@ -125,6 +151,7 @@ async fn process_sitemap_batch(
     let mut parsed = 0usize;
     while let Some(joined) = joins.join_next().await {
         let Ok(Some((_sitemap_url, xml))) = joined else {
+            output.failed_fetches += 1;
             continue;
         };
         parsed += 1;
@@ -172,31 +199,69 @@ async fn process_sitemap_batch(
     parsed
 }
 
-pub async fn crawl_sitemap_urls(
+/// Discover sitemap URLs with robots.txt parsing and batched concurrent fetching.
+///
+/// Seeds the queue with 3 default sitemap paths plus any sitemaps declared in
+/// robots.txt. Processes sitemap documents in concurrent batches using JoinSet,
+/// following sitemap index references recursively.
+///
+/// Returns a [`SitemapDiscovery`] with sorted, deduplicated URLs and diagnostic stats.
+pub async fn discover_sitemap_urls(
     cfg: &Config,
     start_url: &str,
-) -> Result<Vec<String>, Box<dyn Error>> {
+) -> Result<SitemapDiscovery, Box<dyn Error>> {
     let parsed = Url::parse(start_url)?;
     let scheme = parsed.scheme().to_string();
-    let host = parsed.host_str().ok_or("missing host")?.to_string();
+    let bare_host = parsed.host_str().ok_or("missing host")?.to_string();
+    // Include port when non-standard — without this, sitemap URLs targeting
+    // hosts on custom ports (e.g. dev servers, test mocks) silently hit 80/443.
+    let host = match parsed.port() {
+        Some(port) => format!("{bare_host}:{port}"),
+        None => bare_host.clone(),
+    };
 
     let mut queue = sitemap_seed_queue(&scheme, &host);
+    let seeded_default_sitemaps = queue.len();
+
+    // Fetch robots.txt and enqueue any declared sitemaps.
+    let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
+    let client = build_client(timeout_secs)?;
+    let mut robots_declared_sitemaps = 0usize;
+    let robots_url = format!("{scheme}://{host}/robots.txt");
+    if let Some(robots_txt) = fetch_text_with_retry(
+        &client,
+        &robots_url,
+        cfg.fetch_retries,
+        cfg.retry_backoff_ms,
+    )
+    .await
+    {
+        let declared = extract_robots_sitemaps(&robots_txt);
+        robots_declared_sitemaps = declared.len();
+        for sitemap in declared {
+            queue.push_back(sitemap);
+        }
+    }
 
     let mut seen_sitemaps = HashSet::new();
     let mut out = HashSet::new();
-    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
-    let client = reqwest::Client::builder().timeout(timeout).build()?;
-    let start_host = host;
     let start_path = parsed.path().trim_end_matches('/').to_string();
     let scoped_to_root = start_path.is_empty();
+    // Use bare hostname for scope checks — host_str() on discovered URLs
+    // never includes port, so scope comparison must use bare host too.
     let scope = SitemapScope {
-        start_host: &start_host,
+        start_host: &bare_host,
         start_path: &start_path,
         scoped_to_root,
     };
-    let worker_limit = cfg.sitemap_concurrency_limit.unwrap_or(64).clamp(1, 1024);
-    let max_sitemaps = cfg.max_sitemaps.max(1);
+    let worker_limit = cfg
+        .backfill_concurrency_limit
+        .unwrap_or(cfg.batch_concurrency)
+        .clamp(1, 1024);
+    // TODO: use cfg.max_sitemaps once the field is added to Config
+    let max_sitemaps = 512usize;
     let mut parsed_sitemaps = 0usize;
+    let mut failed_fetches = 0usize;
 
     while !queue.is_empty() && parsed_sitemaps < max_sitemaps {
         let mut batch = Vec::new();
@@ -216,8 +281,10 @@ pub async fn crawl_sitemap_urls(
             seen_sitemaps: &seen_sitemaps,
             queue: &mut queue,
             out: &mut out,
+            failed_fetches: 0,
         };
         parsed_sitemaps += process_sitemap_batch(cfg, &client, batch, &scope, &mut output).await;
+        failed_fetches += output.failed_fetches;
         if parsed_sitemaps.is_multiple_of(64) {
             log_info(&format!(
                 "command=sitemap parsed={} discovered_urls={} queue={}",
@@ -230,7 +297,15 @@ pub async fn crawl_sitemap_urls(
 
     let mut urls: Vec<String> = out.into_iter().collect();
     urls.sort();
-    Ok(urls)
+    let discovered_urls = urls.len();
+    Ok(SitemapDiscovery {
+        urls,
+        robots_declared_sitemaps,
+        seeded_default_sitemaps,
+        parsed_sitemap_documents: parsed_sitemaps,
+        discovered_urls,
+        failed_fetches,
+    })
 }
 
 struct SitemapScope<'a> {
@@ -243,199 +318,227 @@ struct SitemapBatchOutput<'a> {
     seen_sitemaps: &'a HashSet<String>,
     queue: &'a mut VecDeque<String>,
     out: &'a mut HashSet<String>,
+    failed_fetches: usize,
 }
 
-fn spawn_backfill_task(
-    set: &mut tokio::task::JoinSet<(String, Result<String, String>)>,
-    url: String,
-    client: reqwest::Client,
-    retries: usize,
-    backoff_ms: u64,
-) {
-    set.spawn(async move {
-        let result = fetch_text_with_retry(&client, &url, retries, backoff_ms)
-            .await
-            .ok_or_else(|| format!("fetch failed for {url}"));
-        (url, result)
-    });
+/// Stats returned by [`append_sitemap_backfill`].
+#[derive(Debug, Clone, Default)]
+pub struct BackfillStats {
+    /// Total URLs discovered from sitemaps (before filtering).
+    pub discovered_urls: usize,
+    /// URLs that passed the `seen_urls` + manifest dedup filter.
+    pub candidates: usize,
+    /// URLs fetched successfully (HTTP 2xx).
+    pub fetched_ok: usize,
+    /// Markdown files actually written to disk + manifest.
+    pub written: usize,
+    /// URLs that failed validation, fetch, or I/O.
+    pub failed: usize,
 }
 
-async fn handle_backfill_result(
-    joined: Result<(String, Result<String, String>), tokio::task::JoinError>,
-    markdown_dir: &Path,
-    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
-    cfg: &Config,
-    idx: &mut u32,
-    summary: &mut CrawlSummary,
-) -> Result<(usize, usize, usize), Box<dyn Error>> {
-    let mut fetched_ok = 0usize;
-    let mut written = 0usize;
-    let mut failed = 0usize;
-    match joined {
-        Ok((url, Ok(html))) => {
-            fetched_ok += 1;
-            let md = to_markdown(&html);
-            let chars = md.chars().count();
-            if chars < cfg.min_markdown_chars {
-                summary.thin_pages += 1;
-            }
-            if chars >= cfg.min_markdown_chars || !cfg.drop_thin_markdown {
-                *idx += 1;
-                let file = markdown_dir.join(url_to_filename(&url, *idx));
-                tokio::fs::write(&file, md).await?;
-                let rec = serde_json::json!({"url": url, "file_path": file.to_string_lossy(), "markdown_chars": chars, "source": "sitemap_backfill"});
-                let mut line = rec.to_string();
-                line.push('\n');
-                manifest.write_all(line.as_bytes()).await?;
-                summary.markdown_files += 1;
-                written += 1;
-            }
-        }
-        Ok((url, Err(err))) => {
-            log_info(&format!(
-                "command=sitemap_backfill fetch_failed url={url} err={err}"
-            ));
-            failed += 1;
-        }
-        Err(_) => failed += 1,
-    }
-    Ok((fetched_ok, written, failed))
-}
-
+/// Discover sitemap URLs, fetch new ones, convert to markdown, and append
+/// to the manifest. Updates `summary.markdown_files` and `summary.thin_pages`.
+///
+/// This is the engine-level backfill that replaces the CLI's
+/// `append_robots_backfill`. It reuses `discover_sitemap_urls` for discovery
+/// and `fetch_text_with_retry` for fetching.
 pub async fn append_sitemap_backfill(
     cfg: &Config,
     start_url: &str,
     output_dir: &Path,
     seen_urls: &HashSet<String>,
     summary: &mut CrawlSummary,
-) -> Result<SitemapBackfillStats, Box<dyn Error>> {
-    let sitemap_urls = crawl_sitemap_urls(cfg, start_url).await?;
-    let sitemap_discovered = sitemap_urls.len();
-    log_info(&format!(
-        "command=crawl sitemap_backfill_discovered={} concurrency={}",
-        sitemap_discovered,
-        cfg.backfill_concurrency_limit
-            .unwrap_or(cfg.batch_concurrency)
-            .max(1)
-    ));
-    let candidates_vec: Vec<String> = sitemap_urls
-        .into_iter()
-        .filter(|url| {
-            !seen_urls.contains(url) && !is_excluded_url_path(url, &cfg.exclude_path_prefix)
-        })
+) -> Result<BackfillStats, Box<dyn Error>> {
+    let discovery = discover_sitemap_urls(cfg, start_url).await?;
+    let manifest_path = output_dir.join("manifest.jsonl");
+
+    // Read existing manifest to avoid double-writing URLs already on disk.
+    let previous_manifest =
+        crate::crates::crawl::manifest::read_manifest_data(&manifest_path).await?;
+    let manifest_urls: HashSet<String> = previous_manifest.keys().cloned().collect();
+
+    let candidates: Vec<String> = discovery
+        .urls
+        .iter()
+        .filter(|url| !seen_urls.contains(*url) && !manifest_urls.contains(*url))
+        .cloned()
         .collect();
-    let sitemap_candidates = candidates_vec.len();
+
+    if candidates.is_empty() {
+        return Ok(BackfillStats {
+            discovered_urls: discovery.discovered_urls,
+            ..BackfillStats::default()
+        });
+    }
+
     let markdown_dir = output_dir.join("markdown");
     tokio::fs::create_dir_all(&markdown_dir).await?;
-    let manifest_path = output_dir.join("manifest.jsonl");
-    let manifest_file = tokio::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&manifest_path)
-        .await?;
-    let mut manifest = tokio::io::BufWriter::new(manifest_file);
-    let timeout = Duration::from_millis(cfg.request_timeout_ms.unwrap_or(30_000));
-    let client = reqwest::Client::builder().timeout(timeout).build()?;
-    let initial_idx = summary.markdown_files;
-    let mut worker = BackfillWorker {
-        cfg,
-        client,
-        markdown_dir: &markdown_dir,
-        manifest: &mut manifest,
-        summary,
-        idx: initial_idx,
-        processed: 0,
-        fetched_ok: 0,
-        written: 0,
-        failed_fetches: 0,
+
+    // TODO: migrate to http_client() singleton once discover_sitemap_urls
+    // also switches — keep both paths consistent.
+    let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
+    let client = build_client(timeout_secs)?;
+    let mut manifest = BufWriter::new(
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&manifest_path)
+            .await?,
+    );
+
+    let mut idx = summary.markdown_files;
+    let mut stats = BackfillStats {
+        discovered_urls: discovery.discovered_urls,
+        candidates: candidates.len(),
+        ..BackfillStats::default()
     };
-    let mut pending = tokio::task::JoinSet::new();
-    let mut candidates = candidates_vec.into_iter();
-    let concurrency = cfg
+
+    let backfill_concurrency = cfg
         .backfill_concurrency_limit
         .unwrap_or(cfg.batch_concurrency)
-        .max(1);
-    run_backfill_workers(&mut worker, &mut pending, &mut candidates, concurrency).await?;
-    worker.manifest.flush().await?;
-    let processed = worker.processed;
-    let fetched_ok = worker.fetched_ok;
-    let written = worker.written;
-    let failed_fetches = worker.failed_fetches;
-    drop(worker);
-    log_info(&format!(
-        "command=crawl sitemap_backfill_complete processed={} fetched_ok={} written={} failed={}",
-        processed, fetched_ok, written, failed_fetches
-    ));
-    Ok(SitemapBackfillStats {
-        sitemap_discovered,
-        sitemap_candidates,
-        processed,
-        fetched_ok,
-        written,
-        failed: failed_fetches,
-        filtered: processed.saturating_sub(written),
-    })
-}
+        .clamp(1, 512);
 
-async fn run_backfill_workers(
-    worker: &mut BackfillWorker<'_>,
-    pending: &mut tokio::task::JoinSet<(String, Result<String, String>)>,
-    candidates: &mut std::vec::IntoIter<String>,
-    concurrency: usize,
-) -> Result<(), Box<dyn Error>> {
-    for _ in 0..concurrency {
-        if let Some(url) = candidates.next() {
-            spawn_backfill_task(
-                pending,
-                url,
-                worker.client.clone(),
-                worker.cfg.fetch_retries,
-                worker.cfg.retry_backoff_ms,
-            );
+    // Process backfill candidates concurrently using JoinSet, bounded by
+    // backfill_concurrency. Each task fetches + converts independently;
+    // results are collected and written to the manifest sequentially.
+    for chunk in candidates.chunks(backfill_concurrency) {
+        let mut joins = tokio::task::JoinSet::new();
+        for url in chunk.iter().cloned() {
+            let http = client.clone();
+            let retries = cfg.fetch_retries;
+            let backoff = cfg.retry_backoff_ms;
+            let min_chars = cfg.min_markdown_chars;
+            let drop_thin = cfg.drop_thin_markdown;
+            joins.spawn(async move {
+                let html = fetch_text_with_retry(&http, &url, retries, backoff).await;
+                let Some(html) = html else {
+                    return (url, None);
+                };
+                let md = to_markdown(&html);
+                let trimmed = md.trim().to_string();
+                let markdown_chars = trimmed.len();
+                let is_thin = markdown_chars < min_chars;
+                if is_thin && drop_thin {
+                    return (url, Some((trimmed, markdown_chars, is_thin, true)));
+                }
+                (url, Some((trimmed, markdown_chars, is_thin, false)))
+            });
+        }
+
+        while let Some(joined) = joins.join_next().await {
+            let Ok((url, result)) = joined else {
+                stats.failed += 1;
+                continue;
+            };
+            let Some((trimmed, markdown_chars, is_thin, dropped)) = result else {
+                stats.failed += 1;
+                continue;
+            };
+            stats.fetched_ok += 1;
+            if is_thin {
+                summary.thin_pages += 1;
+            }
+            if dropped {
+                continue;
+            }
+
+            let mut hasher = Sha256::new();
+            hasher.update(trimmed.as_bytes());
+            let content_hash = hex::encode(hasher.finalize());
+
+            idx += 1;
+            let filename = url_to_filename(&url, idx);
+            let file = markdown_dir.join(&filename);
+            tokio::fs::write(&file, trimmed.as_bytes()).await?;
+
+            let entry = ManifestEntry {
+                url: url.clone(),
+                relative_path: format!("markdown/{}", filename),
+                markdown_chars,
+                content_hash: Some(content_hash),
+                changed: true,
+            };
+            let mut line = serde_json::to_string(&entry)?;
+            line.push('\n');
+            manifest.write_all(line.as_bytes()).await?;
+            summary.markdown_files += 1;
+            stats.written += 1;
         }
     }
-    while let Some(joined) = pending.join_next().await {
-        worker.processed += 1;
-        let (ok_inc, written_inc, failed_inc) = handle_backfill_result(
-            joined,
-            worker.markdown_dir,
-            worker.manifest,
-            worker.cfg,
-            &mut worker.idx,
-            worker.summary,
-        )
-        .await?;
-        worker.fetched_ok += ok_inc;
-        worker.written += written_inc;
-        worker.failed_fetches += failed_inc;
-        if worker.processed.is_multiple_of(50) {
-            log_info(&format!(
-                "command=crawl sitemap_backfill_progress processed={} fetched_ok={} written={} failed={}",
-                worker.processed, worker.fetched_ok, worker.written, worker.failed_fetches
-            ));
-        }
-        if let Some(url) = candidates.next() {
-            spawn_backfill_task(
-                pending,
-                url,
-                worker.client.clone(),
-                worker.cfg.fetch_retries,
-                worker.cfg.retry_backoff_ms,
-            );
-        }
-    }
-    Ok(())
+    manifest.flush().await?;
+    Ok(stats)
 }
 
-struct BackfillWorker<'a> {
-    cfg: &'a Config,
-    client: reqwest::Client,
-    markdown_dir: &'a Path,
-    manifest: &'a mut tokio::io::BufWriter<tokio::fs::File>,
-    summary: &'a mut CrawlSummary,
-    idx: u32,
-    processed: usize,
-    fetched_ok: usize,
-    written: usize,
-    failed_fetches: usize,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::config::Config;
+
+    /// Unit test for `sitemap_loc_in_scope` using real domain names.
+    /// The integration test uses a loopback mock server (IP address) where
+    /// IP addresses have no subdomain relationship — this test exercises
+    /// the actual subdomain branching logic directly with real hostnames.
+    #[test]
+    fn sitemap_loc_in_scope_subdomain_branching() {
+        let cfg_no_sub = Config {
+            include_subdomains: false,
+            ..Config::default()
+        };
+        let cfg_with_sub = Config {
+            include_subdomains: true,
+            ..Config::default()
+        };
+
+        // Same host: included regardless of include_subdomains setting.
+        assert!(
+            sitemap_loc_in_scope(
+                &cfg_no_sub,
+                "https://docs.example.com/page",
+                "docs.example.com",
+                "/",
+                true
+            )
+            .is_some(),
+            "same host should always be in scope"
+        );
+
+        // Subdomain with include_subdomains=false: excluded.
+        assert!(
+            sitemap_loc_in_scope(
+                &cfg_no_sub,
+                "https://api.example.com/page",
+                "example.com",
+                "/",
+                true
+            )
+            .is_none(),
+            "subdomain should be excluded when include_subdomains=false"
+        );
+
+        // Subdomain with include_subdomains=true: included.
+        assert!(
+            sitemap_loc_in_scope(
+                &cfg_with_sub,
+                "https://api.example.com/page",
+                "example.com",
+                "/",
+                true
+            )
+            .is_some(),
+            "subdomain should be included when include_subdomains=true"
+        );
+
+        // Completely different domain: excluded with both settings.
+        assert!(
+            sitemap_loc_in_scope(
+                &cfg_with_sub,
+                "https://other.com/page",
+                "example.com",
+                "/",
+                true
+            )
+            .is_none(),
+            "unrelated domain should never be in scope"
+        );
+    }
 }

@@ -15,8 +15,12 @@ pub async fn get_job(cfg: &Config, id: Uuid) -> Result<Option<runtime::CrawlJob>
     runtime::get_job(cfg, id).await
 }
 
-pub async fn list_jobs(cfg: &Config, limit: i64) -> Result<Vec<runtime::CrawlJob>, Box<dyn Error>> {
-    runtime::list_jobs(cfg, limit).await
+pub async fn list_jobs(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<runtime::CrawlJob>, Box<dyn Error>> {
+    runtime::list_jobs(cfg, limit, offset).await
 }
 
 pub async fn cancel_job(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {
