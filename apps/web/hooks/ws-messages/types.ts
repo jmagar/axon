@@ -108,6 +108,8 @@ export interface WsMessagesContextValue {
   workspaceMode: string | null
   workspacePrompt: string | null
   workspacePromptVersion: number
+  workspaceResumeSessionId: string | null
+  workspaceResumeVersion: number
   workspaceContext: WorkspaceContextState | null
   pulseModel: PulseWorkspaceModel
   pulsePermissionLevel: PulseWorkspacePermission
@@ -115,6 +117,8 @@ export interface WsMessagesContextValue {
   setPulsePermissionLevel: (level: PulseWorkspacePermission) => void
   activateWorkspace: (mode: string) => void
   submitWorkspacePrompt: (prompt: string) => void
+  resumeWorkspaceSession: (sessionId: string) => void
+  clearWorkspaceResumeSession: () => void
   deactivateWorkspace: () => void
   updateWorkspaceContext: (context: WorkspaceContextState | null) => void
   startExecution: (mode: string, input?: string, options?: { preserveWorkspace?: boolean }) => void
@@ -144,6 +148,8 @@ export interface WsMessagesWorkspaceState {
   workspaceMode: WsMessagesContextValue['workspaceMode']
   workspacePrompt: WsMessagesContextValue['workspacePrompt']
   workspacePromptVersion: WsMessagesContextValue['workspacePromptVersion']
+  workspaceResumeSessionId: WsMessagesContextValue['workspaceResumeSessionId']
+  workspaceResumeVersion: WsMessagesContextValue['workspaceResumeVersion']
   workspaceContext: WsMessagesContextValue['workspaceContext']
   pulseModel: WsMessagesContextValue['pulseModel']
   pulsePermissionLevel: WsMessagesContextValue['pulsePermissionLevel']
@@ -155,6 +161,8 @@ export interface WsMessagesActions {
   setPulsePermissionLevel: WsMessagesContextValue['setPulsePermissionLevel']
   activateWorkspace: WsMessagesContextValue['activateWorkspace']
   submitWorkspacePrompt: WsMessagesContextValue['submitWorkspacePrompt']
+  resumeWorkspaceSession: WsMessagesContextValue['resumeWorkspaceSession']
+  clearWorkspaceResumeSession: WsMessagesContextValue['clearWorkspaceResumeSession']
   deactivateWorkspace: WsMessagesContextValue['deactivateWorkspace']
   updateWorkspaceContext: WsMessagesContextValue['updateWorkspaceContext']
   startExecution: WsMessagesContextValue['startExecution']

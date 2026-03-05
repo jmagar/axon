@@ -5,9 +5,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns2,
+  FilePenLine,
   FileText,
   FolderOpen,
   Layers,
+  MessageSquare,
   ScrollText,
   TerminalSquare,
 } from 'lucide-react'
@@ -17,6 +19,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useWsExecutionState, useWsMessageActions } from '@/hooks/use-ws-messages'
 import type { CrawlFile } from '@/lib/ws-protocol'
 import { ExtractedSection } from './extracted-section'
+import { SessionsSection } from './sessions-section'
 import type { SidebarSectionId } from './types'
 import { WorkspaceSection } from './workspace-section'
 
@@ -31,10 +34,13 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'extracted', label: 'Extracted', icon: <FileText className="size-4" /> },
+  { id: 'history', label: 'History', icon: <MessageSquare className="size-4" /> },
   { id: 'workspace', label: 'Workspace', icon: <FolderOpen className="size-4" /> },
 ]
 
 const PAGE_LINKS = [
+  { href: '/', label: 'Conversations', icon: <MessageSquare className="size-4" /> },
+  { href: '/editor', label: 'Editor', icon: <FilePenLine className="size-4" /> },
   { href: '/jobs', label: 'Jobs', icon: <Layers className="size-4" /> },
   { href: '/logs', label: 'Logs', icon: <ScrollText className="size-4" /> },
   { href: '/terminal', label: 'Terminal', icon: <TerminalSquare className="size-4" /> },
@@ -67,6 +73,8 @@ function SectionContent({
       )
     case 'workspace':
       return <WorkspaceSection />
+    case 'history':
+      return <SessionsSection />
     default:
       return null
   }
@@ -197,7 +205,9 @@ export function PulseSidebar() {
           const isActive =
             link.href === '/cortex/status'
               ? (pathname?.startsWith('/cortex') ?? false)
-              : pathname === link.href
+              : link.href === '/'
+                ? pathname === '/'
+                : pathname === link.href
           return (
             <Link
               key={link.href}

@@ -16,6 +16,8 @@ import type { ValidationResult } from '@/lib/pulse/doc-ops'
 import type { DocOperation, PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
 import { PULSE_WORKSPACE_STATE_KEY } from '@/lib/pulse/workspace-persistence'
 
+const ACTIVE_SESSION_ID_KEY = 'axon.web.pulse.active-session-id'
+
 /**
  * Encapsulates all behavioral wiring for the Pulse workspace:
  * document state, chat, persistence, autosave, keyboard shortcuts, and layout.
@@ -24,9 +26,20 @@ import { PULSE_WORKSPACE_STATE_KEY } from '@/lib/pulse/workspace-persistence'
  */
 export function usePulseWorkspaceBehavior() {
   const { selectedFile, markdownContent } = useWsExecutionState()
-  const { workspacePrompt, workspacePromptVersion, pulseModel, pulsePermissionLevel } =
-    useWsWorkspaceState()
-  const { updateWorkspaceContext, setPulseModel, setPulsePermissionLevel } = useWsMessageActions()
+  const {
+    workspacePrompt,
+    workspacePromptVersion,
+    workspaceResumeSessionId,
+    workspaceResumeVersion,
+    pulseModel,
+    pulsePermissionLevel,
+  } = useWsWorkspaceState()
+  const {
+    updateWorkspaceContext,
+    setPulseModel,
+    setPulsePermissionLevel,
+    clearWorkspaceResumeSession,
+  } = useWsMessageActions()
   const { subscribe } = useAxonWs()
 
   const [documentMarkdown, setDocumentMarkdown] = useState('')
@@ -121,6 +134,7 @@ export function usePulseWorkspaceBehavior() {
 
   const handleNewSession = useCallback(() => {
     handleCancelPrompt()
+    clearWorkspaceResumeSession()
     setChatHistory([])
     setDocumentMarkdown('')
     setDocumentTitle('Untitled')
@@ -134,12 +148,25 @@ export function usePulseWorkspaceBehavior() {
       // Ignore storage errors.
     }
   }, [
+    clearWorkspaceResumeSession,
     handleCancelPrompt,
     setChatHistory,
     setChatSessionId,
     setIndexedSources,
     setActiveThreadSources,
   ])
+
+  useEffect(() => {
+    try {
+      if (chatSessionId) {
+        window.localStorage.setItem(ACTIVE_SESSION_ID_KEY, chatSessionId)
+      } else {
+        window.localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [chatSessionId])
 
   usePulsePersistence({
     data: {
@@ -231,6 +258,16 @@ export function usePulseWorkspaceBehavior() {
     updateWorkspaceContext,
   ])
 
+  const clearResumeSession = useCallback(() => {
+    clearWorkspaceResumeSession()
+    setChatSessionId(null)
+    try {
+      window.localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [clearWorkspaceResumeSession, setChatSessionId])
+
   // Cleanup workspace context on unmount
   useEffect(() => {
     return () => updateWorkspaceContext(null)
@@ -292,6 +329,11 @@ export function usePulseWorkspaceBehavior() {
     if (workspacePromptVersion <= lastHandledPromptVersionRef.current) return
     lastHandledPromptVersionRef.current = workspacePromptVersion
 
+    // New omnibox prompt should start in conversation-first view.
+    splitPane.setShowChat(true)
+    splitPane.setShowEditor(false)
+    splitPane.setMobilePane('chat')
+
     void handlePromptRef.current(workspacePrompt)
 
     return () => {
@@ -299,7 +341,45 @@ export function usePulseWorkspaceBehavior() {
         lastHandledPromptVersionRef.current = workspacePromptVersion - 1
       }
     }
-  }, [workspacePromptVersion, workspacePrompt])
+  }, [
+    workspacePromptVersion,
+    workspacePrompt,
+    splitPane.setMobilePane,
+    splitPane.setShowChat,
+    splitPane.setShowEditor,
+  ])
+
+  useEffect(() => {
+    if (workspaceResumeVersion === 0) return
+    if (!workspaceResumeSessionId) return
+
+    // Resume should not auto-send a prompt; just arm the chat session id.
+    handleCancelPrompt()
+    setChatSessionId(workspaceResumeSessionId)
+    setChatHistory([])
+    setDocumentMarkdown('')
+    setDocumentTitle('Untitled')
+    setCurrentDocFilename(null)
+    setIndexedSources([])
+    setActiveThreadSources([])
+    setPendingOps(null)
+    setPendingValidation(null)
+
+    splitPane.setShowChat(true)
+    splitPane.setShowEditor(false)
+    splitPane.setMobilePane('chat')
+  }, [
+    workspaceResumeVersion,
+    workspaceResumeSessionId,
+    handleCancelPrompt,
+    setChatSessionId,
+    setChatHistory,
+    setIndexedSources,
+    setActiveThreadSources,
+    splitPane.setShowChat,
+    splitPane.setShowEditor,
+    splitPane.setMobilePane,
+  ])
 
   return {
     // Document state
@@ -329,6 +409,8 @@ export function usePulseWorkspaceBehavior() {
     setActiveThreadSources,
     latestCitationCount,
     handleNewSession,
+    resumeSessionId: workspaceResumeSessionId,
+    clearResumeSession,
 
     // Layout (re-exported from useSplitPane)
     ...splitPane,
