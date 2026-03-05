@@ -1,6 +1,15 @@
 //! Command execution bridge for `axon serve`.
-//! Validates frontend requests, runs `axon` subprocesses or calls services
-//! directly, and streams output over WebSocket.
+//! Validates frontend requests, calls services directly for sync modes, enqueues
+//! async jobs with fire-and-forget semantics, and streams output over WebSocket.
+//!
+//! # Execution paths
+//! - **Async modes** (`crawl`, `extract`, `embed`, `github`, `reddit`, `youtube`):
+//!   `async_mode::handle_async_command` — direct service enqueue, fire-and-forget.
+//! - **Sync direct modes** (scrape, map, query, retrieve, ask, search, research,
+//!   stats, sources, domains, doctor, status):
+//!   `sync_mode::handle_sync_direct` — direct service call, awaited inline.
+//! - **Sync subprocess fallback** (suggest, screenshot, evaluate, sessions,
+//!   dedupe, debug, refresh): spawns the `axon` binary until direct dispatch is wired.
 mod args;
 mod async_mode;
 mod cancel;
@@ -10,7 +19,6 @@ pub(crate) mod events;
 mod exe;
 pub(crate) mod files;
 pub mod overrides;
-mod polling;
 mod sync_mode;
 mod ws_send;
 
@@ -54,6 +62,26 @@ fn async_modes() -> &'static [&'static str] {
     ASYNC_MODES
 }
 
+// Public re-exports for integration tests in tests/web_ws_async_fire_and_forget.rs.
+// These forward to the same internal constants/functions but are exposed via the
+// public `execute` module path so integration tests can import them without
+// reaching into private submodule internals.
+pub fn async_modes_pub() -> &'static [&'static str] {
+    ASYNC_MODES
+}
+
+pub fn direct_sync_modes_pub() -> &'static [&'static str] {
+    sync_mode::DIRECT_SYNC_MODES
+}
+
+pub fn allowed_modes_pub() -> &'static [&'static str] {
+    ALLOWED_MODES
+}
+
+pub fn is_valid_cancel_job_id_pub(job_id: &str) -> bool {
+    cancel::is_valid_cancel_job_id(job_id)
+}
+
 use crate::crates::core::config::Config;
 use std::sync::Arc;
 use std::time::Instant;
@@ -63,7 +91,7 @@ use uuid::Uuid;
 
 #[cfg(test)]
 use constants::ALLOWED_FLAGS;
-use constants::{ALLOWED_MODES, ASYNC_MODES};
+use constants::{ALLOWED_MODES, ASYNC_MODES, ASYNC_SUBPROCESS_MODES};
 use context::ExecCommandContext;
 
 fn resolve_exe() -> Result<std::path::PathBuf, String> {
@@ -89,6 +117,7 @@ async fn send_command_output_line(
     ws_send::send_command_output_line(tx, context, line).await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn send_done_dual(
     tx: &mpsc::Sender<String>,
     context: &events::CommandContext,
@@ -116,8 +145,13 @@ async fn handle_sync_command(
     sync_mode::handle_sync_command(child, context, tx, start).await
 }
 
-pub(super) async fn handle_cancel(mode: &str, job_id: &str, tx: mpsc::Sender<String>) {
-    cancel::handle_cancel(mode, job_id, tx).await
+pub(super) async fn handle_cancel(
+    mode: &str,
+    job_id: &str,
+    tx: mpsc::Sender<String>,
+    cfg: Arc<Config>,
+) {
+    cancel::handle_cancel(mode, job_id, tx, cfg).await
 }
 
 pub(super) async fn handle_command(
@@ -144,56 +178,17 @@ pub(super) async fn handle_command(
         return;
     }
 
-    // Async modes (crawl, extract, embed, github, reddit, youtube) always go
-    // through a subprocess so the worker can manage job lifecycle.
+    // Async modes (crawl, extract, embed) — fire-and-forget direct service dispatch:
+    // enqueue the job and return immediately with the job ID.
+    // No subprocess is spawned; no polling loop is run.
     if ASYNC_MODES.contains(&mode.as_str()) {
-        let exe = match resolve_exe() {
-            Ok(p) => p,
-            Err(e) => {
-                send_error_dual(&tx, &ws_ctx, format!("cannot find axon binary: {e}"), None).await;
-                return;
-            }
-        };
-        let args = args::build_args(&mode, &input, &flags);
-        let start = Instant::now();
         ws_send::send_command_start(&tx, &context).await;
-        let child = Command::new(&exe)
-            .args(&args)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-        let child = match child {
-            Ok(c) => c,
-            Err(e) => {
-                send_error_dual(
-                    &tx,
-                    &ws_ctx,
-                    format!("spawn failed: {e} (exe: {})", exe.display()),
-                    None,
-                )
-                .await;
-                return;
-            }
-        };
-        async_mode::handle_async_command(child, context, &tx, crawl_job_id, start).await;
+        async_mode::handle_async_command(context, tx, crawl_job_id, cfg).await;
         return;
     }
 
-    // Sync modes: try direct service dispatch first.  Modes not yet wired to a
-    // service (suggest, screenshot, evaluate, sessions, dedupe, debug, refresh)
-    // fall through to the subprocess path below.
-    //
-    // `classify_sync_direct` is a plain (non-async) function — it performs all
-    // string → enum classification and parameter extraction synchronously before
-    // any `.await`.  The resulting `DirectParams` value contains only owned
-    // `Send + 'static` data (enum mode, owned strings, owned Config).
-    //
-    // `handle_sync_direct` is then awaited directly in the current task (no
-    // extra `tokio::task::spawn`).  The borrow checker's HRTB `Send` check
-    // for `tokio::spawn` requires `for<'a> &'a str: Send`, which rustc cannot
-    // satisfy for borrows that live inside sub-futures.  Awaiting inline avoids
-    // that spawn boundary entirely; the future runs on the same Tokio worker
-    // that is already executing this `handle_command` invocation.
+    // Sync direct modes (scrape, map, query, retrieve, ask, search, research,
+    // stats, sources, domains, doctor, status) — call services directly.
     if let Some(params) = sync_mode::classify_sync_direct(&mode, &input, &flags, cfg, &ws_ctx) {
         ws_send::send_command_start(&tx, &context).await;
         sync_mode::handle_sync_direct(params, tx, ws_ctx).await;
@@ -202,8 +197,11 @@ pub(super) async fn handle_command(
 
     ws_send::send_command_start(&tx, &context).await;
 
-    // Subprocess fallback for sync modes not yet directly dispatched.
-    // TODO: direct dispatch — suggest, screenshot, evaluate, sessions, dedupe, debug, refresh
+    // Subprocess fallback.  Covers:
+    // - github, reddit, youtube (ingest — !Send service functions, run to completion)
+    // - suggest, screenshot, evaluate, sessions, dedupe, debug, refresh (not yet direct)
+    // TODO: direct dispatch for remaining modes once !Send constraints are resolved
+    let _ = ASYNC_SUBPROCESS_MODES; // used in routing comment above; suppress dead_code lint
     let exe = match resolve_exe() {
         Ok(p) => p,
         Err(e) => {
