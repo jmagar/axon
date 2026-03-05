@@ -98,3 +98,78 @@ async fn tei_embed_splits_batch_on_413() {
         "must return two vectors (one per item after split)"
     );
 }
+
+/// Non-success HTTP responses (not just 429/503) should also retry.
+#[tokio::test]
+async fn tei_embed_retries_on_500() {
+    let server = MockServer::start_async().await;
+    let call_count = Arc::new(Mutex::new(0usize));
+    let cc = Arc::clone(&call_count);
+
+    server
+        .mock_async(|when, then| {
+            when.method(httpmock::Method::POST).path("/embed");
+            then.respond_with(move |_req: &httpmock::HttpMockRequest| {
+                let mut count = cc.lock().unwrap();
+                *count += 1;
+                if *count == 1 {
+                    HttpMockResponse::builder()
+                        .status(500)
+                        .body("temporary failure")
+                        .build()
+                } else {
+                    HttpMockResponse::builder()
+                        .status(200)
+                        .header("content-type", "application/json")
+                        .body("[[0.9,0.8,0.7,0.6]]")
+                        .build()
+                }
+            });
+        })
+        .await;
+
+    let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+    cfg.tei_url = server.base_url();
+
+    let inputs = vec!["retry-on-500".to_string()];
+    let result = tei_embed(&cfg, &inputs)
+        .await
+        .expect("tei_embed must succeed after retry on 500");
+    assert_eq!(result.len(), 1, "must return one embedding vector");
+}
+
+/// Hard client errors should fail fast (no retry storm).
+#[tokio::test]
+async fn tei_embed_fails_fast_on_404() {
+    let server = MockServer::start_async().await;
+    let call_count = Arc::new(Mutex::new(0usize));
+    let cc = Arc::clone(&call_count);
+
+    server
+        .mock_async(|when, then| {
+            when.method(httpmock::Method::POST).path("/embed");
+            then.respond_with(move |_req: &httpmock::HttpMockRequest| {
+                let mut count = cc.lock().unwrap();
+                *count += 1;
+                HttpMockResponse::builder()
+                    .status(404)
+                    .body("not found")
+                    .build()
+            });
+        })
+        .await;
+
+    let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+    cfg.tei_url = server.base_url();
+
+    let inputs = vec!["fail-fast-404".to_string()];
+    let err = tei_embed(&cfg, &inputs)
+        .await
+        .expect_err("tei_embed must fail fast on 404");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("status 404"),
+        "unexpected error message: {msg}"
+    );
+    assert_eq!(*call_count.lock().unwrap(), 1, "404 should not be retried");
+}

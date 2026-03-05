@@ -38,18 +38,7 @@ import { createStreamParserState, parseClaudeStreamLine } from './stream-parser'
 // ── Request preparation (extracted from POST for readability) ────────────────
 
 function buildPromptText(userPrompt: string): string {
-  return [
-    userPrompt,
-    '',
-    'Respond as JSON only with this exact shape:',
-    '{"text":"...","operations":[...]}',
-    'Allowed operation types and their required fields:',
-    '  replace_document: {"type":"replace_document","markdown":"<full doc content>"}',
-    '  append_markdown:  {"type":"append_markdown","markdown":"<content to append>"}',
-    '  insert_section:   {"type":"insert_section","heading":"<title>","markdown":"<content>","position":"top"|"bottom"}',
-    'IMPORTANT: use "markdown" (not "content") for the document text field.',
-    'If no operations are needed, return operations as an empty array.',
-  ].join('\n')
+  return userPrompt
 }
 
 function parseOperations(result: string): {

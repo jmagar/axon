@@ -21,20 +21,12 @@ interface ParsedMessage {
 interface SessionContentResponse {
   project: string
   filename: string
+  sessionId: string
   messages: ParsedMessage[]
 }
 
-const MAX_SESSION_MESSAGES = 50
-
-function buildHandoffPrompt(project: string, messages: ParsedMessage[]): string {
-  const capped = messages.slice(-MAX_SESSION_MESSAGES)
-  const header = `I'm loading a previous Claude Code session from project: **${project}**. Here is the conversation history:`
-  const body = capped.map((m) => `### ${m.role.toUpperCase()}:\n${m.content}`).join('\n\n')
-  return `${header}\n\n${body}`
-}
-
 export function useRecentSessions() {
-  const { submitWorkspacePrompt } = useWsMessageActions()
+  const { resumeWorkspaceSession } = useWsMessageActions()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -61,12 +53,11 @@ export function useRecentSessions() {
       const r = await apiFetch(`/api/sessions/${id}`)
       if (!r.ok) return false
       const data = (await r.json()) as SessionContentResponse
-      if (data.messages.length === 0) return false
-      const prompt = buildHandoffPrompt(data.project, data.messages)
-      submitWorkspacePrompt(prompt)
+      if (!data.sessionId) return false
+      resumeWorkspaceSession(data.sessionId)
       return true
     },
-    [submitWorkspacePrompt],
+    [resumeWorkspaceSession],
   )
 
   return { sessions, isLoading, loadSession }

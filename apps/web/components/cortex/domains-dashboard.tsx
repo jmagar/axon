@@ -16,6 +16,26 @@ function parseCount(v: number | [number, number]): { urls: number; vectors: numb
   return { urls: 0, vectors: v }
 }
 
+function normalizeDomains(
+  data: DomainsResult | null,
+): Array<{ domain: string; urls: number; vectors: number }> {
+  if (!data) return []
+
+  if ('domains' in data && Array.isArray(data.domains)) {
+    return data.domains
+      .map((row) => ({
+        domain: row.domain,
+        urls: Number(row.urls ?? 0) || 0,
+        vectors: Number(row.vectors) || 0,
+      }))
+      .sort((a, b) => b.vectors - a.vectors)
+  }
+
+  return Object.entries(data)
+    .map(([domain, v]) => ({ domain, ...parseCount(v) }))
+    .sort((a, b) => b.vectors - a.vectors)
+}
+
 export function DomainsDashboard() {
   const [data, setData] = useState<DomainsResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -46,10 +66,7 @@ export function DomainsDashboard() {
   }, [])
 
   const rows = useMemo(() => {
-    if (!data) return []
-    return Object.entries(data)
-      .map(([domain, v]) => ({ domain, ...parseCount(v) }))
-      .sort((a, b) => b.vectors - a.vectors)
+    return normalizeDomains(data)
   }, [data])
 
   const maxVectors = rows[0]?.vectors ?? 1
