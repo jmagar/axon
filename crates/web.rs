@@ -328,6 +328,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                     let tx = exec_tx.clone();
                     let job_id_arc = crawl_job_id.clone();
                     let cancel_mode = client_msg.mode.clone();
+                    let cancel_cfg = conn_cfg.clone();
                     tokio::spawn(async move {
                         // Use stored async job ID if available, fall back to client-provided ID
                         let stored = job_id_arc.lock().await.clone();
@@ -339,7 +340,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                             }
                         });
                         if let Some(id) = id {
-                            execute::handle_cancel(&cancel_mode, &id, tx).await;
+                            execute::handle_cancel(&cancel_mode, &id, tx, cancel_cfg).await;
                         }
                     });
                 }

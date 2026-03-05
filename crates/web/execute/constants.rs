@@ -64,8 +64,15 @@ pub(super) const ALLOWED_FLAGS: &[(&str, &str)] = &[
     ("responses_mode", "--responses-mode"),
 ];
 
-pub(super) const ASYNC_MODES: &[&str] =
-    &["crawl", "extract", "embed", "github", "reddit", "youtube"];
+/// Modes that use fire-and-forget direct service enqueue.
+/// These produce job IDs and return immediately without polling.
+/// Note: github/reddit/youtube are NOT here — their ingest functions are !Send
+/// due to `Box<dyn Error>` in sub-futures; they use the subprocess fallback.
+pub(super) const ASYNC_MODES: &[&str] = &["crawl", "extract", "embed"];
+
+/// Modes whose operations produce async job IDs but are handled via subprocess.
+/// These are distinct from ASYNC_MODES because their service functions are !Send.
+pub(super) const ASYNC_SUBPROCESS_MODES: &[&str] = &["github", "reddit", "youtube"];
 
 /// Commands that produce streaming/non-JSON output and must NOT receive --json.
 /// When adding a new command, the default is to receive --json. Add here only if
