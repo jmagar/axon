@@ -81,6 +81,7 @@ export function usePulseChat({
   const messageIdRef = useRef(0)
   const lastCmdModeRef = useRef('')
   const lastCmdInputRef = useRef('')
+  const lastSubmittedPromptRef = useRef<{ text: string; atMs: number } | null>(null)
 
   // Refs for frequently-changing values used inside handlePrompt — avoids
   // recreating the callback on every keystroke or streaming update (CQ-3).
@@ -193,6 +194,17 @@ export function usePulseChat({
     async (prompt: string) => {
       const trimmed = prompt.trim()
       if (!trimmed) return
+      const now = Date.now()
+      const lastSubmitted = lastSubmittedPromptRef.current
+      if (
+        activePromptAbortRef.current &&
+        lastSubmitted &&
+        lastSubmitted.text === trimmed &&
+        now - lastSubmitted.atMs < 1500
+      ) {
+        return
+      }
+      lastSubmittedPromptRef.current = { text: trimmed, atMs: now }
 
       const promptId = inFlightPromptRef.current + 1
       inFlightPromptRef.current = promptId
@@ -203,7 +215,18 @@ export function usePulseChat({
       const controller = new AbortController()
       activePromptAbortRef.current = controller
 
-      setChatHistoryTracked((prev) => [...prev, createMessage({ role: 'user', content: trimmed })])
+      setChatHistoryTracked((prev) => {
+        const last = prev[prev.length - 1]
+        if (
+          last &&
+          last.role === 'user' &&
+          last.content === trimmed &&
+          now - (last.createdAt ?? 0) < 1500
+        ) {
+          return prev
+        }
+        return [...prev, createMessage({ role: 'user', content: trimmed })]
+      })
       setIsChatLoading(true)
       setStreamPhase('started')
       setLiveToolUses([])

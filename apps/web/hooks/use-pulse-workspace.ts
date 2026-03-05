@@ -163,6 +163,11 @@ export function usePulseWorkspaceBehavior() {
       } else {
         window.localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
       }
+      window.dispatchEvent(
+        new CustomEvent('axon:active-session-changed', {
+          detail: { sessionId: chatSessionId },
+        }),
+      )
     } catch {
       // Ignore storage errors.
     }
@@ -335,12 +340,6 @@ export function usePulseWorkspaceBehavior() {
     splitPane.setMobilePane('chat')
 
     void handlePromptRef.current(workspacePrompt)
-
-    return () => {
-      if (lastHandledPromptVersionRef.current === workspacePromptVersion) {
-        lastHandledPromptVersionRef.current = workspacePromptVersion - 1
-      }
-    }
   }, [
     workspacePromptVersion,
     workspacePrompt,

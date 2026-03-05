@@ -242,6 +242,7 @@ export function useOmniboxState() {
     // Workspace
     workspaceMode: execution.workspaceMode,
     workspaceContext: execution.workspaceContext,
+    workspaceResumeSessionId: execution.workspaceResumeSessionId,
     pulseModel: execution.pulseModel,
     pulsePermissionLevel: execution.pulsePermissionLevel,
     currentMode: execution.currentMode,

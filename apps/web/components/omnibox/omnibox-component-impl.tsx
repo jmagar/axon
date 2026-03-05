@@ -39,6 +39,7 @@ export function Omnibox() {
           contextUtilizationPercent={state.contextUtilizationPercent}
           workspaceMode={state.workspaceMode}
           workspaceContext={state.workspaceContext}
+          workspaceResumeSessionId={state.workspaceResumeSessionId}
           pulseModel={state.pulseModel}
           pulsePermissionLevel={state.pulsePermissionLevel}
           currentMode={state.currentMode}

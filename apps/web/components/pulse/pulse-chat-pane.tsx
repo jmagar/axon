@@ -392,13 +392,27 @@ export function PulseChatPane({
                 <MessageCircle className="relative size-10 text-[var(--axon-primary)]" />
               </div>
               <div className="space-y-1.5">
-                <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
-                  Start a conversation
-                </h2>
-                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Ask Claude to write, analyze, or explore. Paste a URL in the omnibox to run a tool
-                  on a webpage.
-                </p>
+                {resumeSessionId ? (
+                  <>
+                    <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                      Session Resumed
+                    </h2>
+                    <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                      Continuing session <code>{resumeSessionId}</code>. Send a message in the
+                      omnibox to continue this thread.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
+                      Start a conversation
+                    </h2>
+                    <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                      Ask Claude to write, analyze, or explore. Paste a URL in the omnibox to run a
+                      tool on a webpage.
+                    </p>
+                  </>
+                )}
               </div>
               <div className="flex flex-wrap justify-center gap-2 pt-1">
                 <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[rgba(135,175,255,0.08)] px-2.5 py-1 text-xs text-[var(--axon-primary)]">
