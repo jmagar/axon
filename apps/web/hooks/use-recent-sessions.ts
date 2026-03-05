@@ -29,24 +29,36 @@ export function useRecentSessions() {
   const { resumeWorkspaceSession } = useWsMessageActions()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    apiFetch('/api/sessions/list')
-      .then((r) => r.json() as Promise<SessionSummary[]>)
-      .then((data) => {
-        if (!cancelled) setSessions(Array.isArray(data) ? data : [])
+  const reload = useCallback(async () => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8_000)
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await apiFetch('/api/sessions/list', {
+        signal: controller.signal,
       })
-      .catch(() => {
-        if (!cancelled) setSessions([])
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-    return () => {
-      cancelled = true
+      if (!response.ok) {
+        setSessions([])
+        setError(`Failed to load sessions (${response.status})`)
+        return
+      }
+      const data = (await response.json()) as SessionSummary[]
+      setSessions(Array.isArray(data) ? data : [])
+    } catch {
+      setSessions([])
+      setError('Failed to load sessions')
+    } finally {
+      clearTimeout(timeout)
+      setIsLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
 
   const loadSession = useCallback(
     async (id: string): Promise<boolean> => {
@@ -60,5 +72,5 @@ export function useRecentSessions() {
     [resumeWorkspaceSession],
   )
 
-  return { sessions, isLoading, loadSession }
+  return { sessions, isLoading, error, loadSession, reload }
 }

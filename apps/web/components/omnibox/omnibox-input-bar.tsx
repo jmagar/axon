@@ -45,6 +45,7 @@ interface OmniboxInputBarProps {
   // Workspace
   workspaceMode: string | null
   workspaceContext: { contextBudgetChars: number; contextCharsTotal: number; turns: number } | null
+  workspaceResumeSessionId: string | null
   pulseModel: PulseWorkspaceModel
   pulsePermissionLevel: PulseWorkspacePermission
   currentMode: string | null
@@ -92,6 +93,7 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
     contextUtilizationPercent,
     workspaceMode,
     workspaceContext,
+    workspaceResumeSessionId,
     pulseModel,
     pulsePermissionLevel,
     currentMode: _currentMode,
@@ -274,6 +276,22 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
             </svg>
           </span>
         </div>
+      )}
+
+      {/* Settings link */}
+      {workspaceMode === 'pulse' && workspaceResumeSessionId && (
+        <>
+          <div className="h-[20px] w-px shrink-0 bg-[var(--border-subtle)]" />
+          <span
+            className="inline-flex items-center gap-1 rounded border border-[rgba(175,215,255,0.32)] bg-[rgba(175,215,255,0.12)] px-2 py-1 font-mono text-[10px] tracking-[0.04em] text-[var(--axon-primary)]"
+            title={`Resuming session ${workspaceResumeSessionId}`}
+          >
+            RESUME
+            <code className="text-[9px] text-[var(--text-muted)]">
+              {workspaceResumeSessionId.slice(0, 8)}
+            </code>
+          </span>
+        </>
       )}
 
       {/* Settings link */}
