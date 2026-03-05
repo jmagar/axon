@@ -8,6 +8,7 @@ import { type LogEntry, LogLine } from './log-line'
 import { LogsToolbar, type ServiceName, TAIL_OPTIONS, type TailLines } from './logs-toolbar'
 
 const MAX_LINES = 2000
+const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
 
 export function LogsViewer() {
   const router = useRouter()
@@ -30,7 +31,12 @@ export function LogsViewer() {
     setLines([])
     setIsConnected(false)
 
-    const es = new EventSource(`/api/logs?service=${encodeURIComponent(service)}&tail=${tailLines}`)
+    const params = new URLSearchParams({
+      service,
+      tail: String(tailLines),
+    })
+    if (API_TOKEN) params.set('token', API_TOKEN)
+    const es = new EventSource(`/api/logs?${params.toString()}`)
 
     es.onopen = () => setIsConnected(true)
     es.onerror = () => setIsConnected(false)

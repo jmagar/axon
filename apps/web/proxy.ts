@@ -103,7 +103,11 @@ function isAllowedOrigin(req: NextRequest): boolean {
     return true
   }
 
-  const requestOrigin = `${req.nextUrl.protocol}//${req.nextUrl.host}`.toLowerCase()
+  const forwardedProto = req.headers.get('x-forwarded-proto')?.trim().toLowerCase()
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim().toLowerCase()
+  const requestOrigin = `${
+    forwardedProto && forwardedHost ? forwardedProto : req.nextUrl.protocol.replace(':', '')
+  }://${forwardedHost || req.nextUrl.host}`.toLowerCase()
   return normalizedOrigin === requestOrigin
 }
 
@@ -114,7 +118,9 @@ function extractToken(req: NextRequest): string {
   }
 
   const key = req.headers.get('x-api-key')
-  return key?.trim() ?? ''
+  if (key?.trim()) return key.trim()
+
+  return req.nextUrl.searchParams.get('token')?.trim() ?? ''
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

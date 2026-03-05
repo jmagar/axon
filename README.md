@@ -654,8 +654,12 @@ When Chrome feature is compiled in, `crawl()` expects a Chrome instance. `crawl_
 ### TEI batch size / 413 handling
 `tei_embed()` in `vector/ops/tei.rs` auto-splits batches on HTTP 413 (Payload Too Large). Set `TEI_MAX_CLIENT_BATCH_SIZE` env var to control default chunk size (default: 64, effective max: 128).
 
-### TEI 429 / rate limiting
-On HTTP 429 or 503, `tei_embed()` retries up to 10 times with exponential backoff starting at 1s (1s, 2s, 4s … 512s) plus jitter. A saturated TEI queue will be retried for up to ~17 minutes before the job fails. No manual intervention needed for transient overload.
+### TEI retries / timeouts
+`tei_embed()` retries transient failures (transport errors, HTTP 429, and HTTP 5xx) with exponential backoff + jitter.
+- `TEI_MAX_RETRIES` controls max attempts per TEI request (default: 10, max: 20).
+- `TEI_REQUEST_TIMEOUT_MS` controls per-attempt request timeout (default: 30000, clamped 100..600000).
+- Hard client errors (HTTP 4xx except 429) fail fast (no retry storm).
+- HTTP 413 still triggers batch-splitting logic before retrying smaller chunks.
 
 ### Locale path prefix matching
 `--exclude-path-prefix` treats both `/` and `-` as word boundaries. Specifying `/ja` blocks both `/ja/docs` and `/ja-jp/docs` (IETF BCP 47 region subtags). Pass `none` to disable all locale filtering.

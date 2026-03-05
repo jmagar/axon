@@ -15,6 +15,18 @@ export interface SessionFile {
 
 /** Patterns that indicate a message is a system/handoff prompt, not real user input. */
 const SKIP_PATTERNS = [/^Respond as JSON/, /^I'm loading a previous/, /^## Context/]
+const PREVIEW_TRUNCATE_PATTERNS = [
+  /\s+Respond as JSON only with this exact shape:.*/i,
+  /\s+Respond as JSON only with this shape:.*/i,
+]
+
+function normalizePreviewText(text: string): string {
+  let out = text.trim().replace(/\n+/g, ' ')
+  for (const pattern of PREVIEW_TRUNCATE_PATTERNS) {
+    out = out.replace(pattern, '').trim()
+  }
+  return out
+}
 
 /**
  * Read up to the first 4KB of a JSONL session file and extract the first
@@ -58,7 +70,7 @@ async function extractPreview(absolutePath: string): Promise<string | undefined>
           }
         }
 
-        text = text.trim().replace(/\n+/g, ' ')
+        text = normalizePreviewText(text)
         if (!text) continue
 
         // Skip system-like / handoff messages.

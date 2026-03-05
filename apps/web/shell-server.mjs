@@ -62,18 +62,28 @@ function isAllowedOrigin(req) {
   const parsedOrigin = parseOrigin(req.headers.origin)
   if (!parsedOrigin) return true
 
-  const normalized = parsedOrigin.origin.toLowerCase()
+  const normalizedOrigin = parsedOrigin.origin.toLowerCase()
   if (ALLOWED_ORIGINS.length > 0) {
-    return ALLOWED_ORIGINS.some((allowed) => allowed.toLowerCase() === normalized)
+    return ALLOWED_ORIGINS.some((allowed) => allowed.toLowerCase() === normalizedOrigin)
   }
 
   if (ALLOW_INSECURE_LOCAL_DEV) {
     return isLoopbackHost(parsedOrigin.hostname)
   }
 
-  const requestHost = String(req.headers.host ?? '')
+  // In token-gated deployments behind reverse proxies, host/origin can be
+  // rewritten internally (e.g. 127.0.0.1:49011). With no explicit allowlist,
+  // rely on token auth as the primary boundary.
+  if (TOKEN) return true
+
+  const forwardedHost = String(req.headers['x-forwarded-host'] ?? '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+  const directHost = String(req.headers.host ?? '')
     .split(':')[0]
     .toLowerCase()
+  const requestHost = forwardedHost || directHost
   return parsedOrigin.hostname.toLowerCase() === requestHost
 }
 
