@@ -109,6 +109,8 @@ export function useWsMessagesProvider() {
   const [workspaceMode, setWorkspaceMode] = useState<string | null>('pulse')
   const [workspacePrompt, setWorkspacePrompt] = useState<string | null>(null)
   const [workspacePromptVersion, setWorkspacePromptVersion] = useState(0)
+  const [workspaceResumeSessionId, setWorkspaceResumeSessionId] = useState<string | null>(null)
+  const [workspaceResumeVersion, setWorkspaceResumeVersion] = useState(0)
   const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContextState | null>(null)
   const [pulseModel, setPulseModel] = useState<PulseWorkspaceModel>('sonnet')
   const [pulsePermissionLevel, setPulsePermissionLevel] =
@@ -368,8 +370,23 @@ export function useWsMessagesProvider() {
   const submitWorkspacePrompt = useCallback((prompt: string) => {
     setWorkspaceMode('pulse')
     setHasResults(true)
+    setWorkspaceResumeSessionId(null)
     setWorkspacePrompt(prompt)
     setWorkspacePromptVersion((prev) => prev + 1)
+  }, [])
+
+  const resumeWorkspaceSession = useCallback((sessionId: string) => {
+    setWorkspaceMode('pulse')
+    setHasResults(true)
+    setWorkspacePrompt(null)
+    setWorkspacePromptVersion(0)
+    setWorkspaceResumeSessionId(sessionId)
+    setWorkspaceResumeVersion((prev) => prev + 1)
+  }, [])
+
+  const clearWorkspaceResumeSession = useCallback(() => {
+    setWorkspaceResumeSessionId(null)
+    setWorkspaceResumeVersion(0)
   }, [])
 
   const deactivateWorkspace = useCallback(() => {
@@ -384,6 +401,8 @@ export function useWsMessagesProvider() {
     }
     setWorkspacePrompt(null)
     setWorkspacePromptVersion(0)
+    setWorkspaceResumeSessionId(null)
+    setWorkspaceResumeVersion(0)
     setWorkspaceContext(null)
   }, [])
 
@@ -437,6 +456,8 @@ export function useWsMessagesProvider() {
       workspaceMode,
       workspacePrompt,
       workspacePromptVersion,
+      workspaceResumeSessionId,
+      workspaceResumeVersion,
       workspaceContext,
       pulseModel,
       pulsePermissionLevel,
@@ -445,6 +466,8 @@ export function useWsMessagesProvider() {
       workspaceMode,
       workspacePrompt,
       workspacePromptVersion,
+      workspaceResumeSessionId,
+      workspaceResumeVersion,
       workspaceContext,
       pulseModel,
       pulsePermissionLevel,
@@ -458,6 +481,8 @@ export function useWsMessagesProvider() {
       setPulsePermissionLevel,
       activateWorkspace,
       submitWorkspacePrompt,
+      resumeWorkspaceSession,
+      clearWorkspaceResumeSession,
       deactivateWorkspace,
       updateWorkspaceContext,
       startExecution,
@@ -466,6 +491,8 @@ export function useWsMessagesProvider() {
       selectFile,
       activateWorkspace,
       submitWorkspacePrompt,
+      resumeWorkspaceSession,
+      clearWorkspaceResumeSession,
       deactivateWorkspace,
       updateWorkspaceContext,
       startExecution,

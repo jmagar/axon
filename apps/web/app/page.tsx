@@ -41,8 +41,14 @@ export default function DashboardPage() {
   const router = useRouter()
   const { subscribe } = useAxonWs()
   const canvasRef = useRef<NeuralCanvasHandle>(null)
-  const { isProcessing, hasResults, currentMode, workspaceMode, workspacePromptVersion } =
-    useWsMessages()
+  const {
+    isProcessing,
+    hasResults,
+    currentMode,
+    workspaceMode,
+    workspacePromptVersion,
+    workspaceResumeVersion,
+  } = useWsMessages()
   const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
@@ -143,7 +149,9 @@ export default function DashboardPage() {
 
   const isInlineMode = INLINE_RESULT_MODES.has(currentMode)
   const isPulseWorkspaceActive =
-    workspaceMode === 'pulse' && hasResults && workspacePromptVersion > 0
+    workspaceMode === 'pulse' &&
+    hasResults &&
+    (workspacePromptVersion > 0 || workspaceResumeVersion > 0)
 
   return (
     <>
@@ -152,10 +160,12 @@ export default function DashboardPage() {
       {isPulseWorkspaceActive ? (
         /* Full-screen workspace — fixed overlay from sidebar right-edge to viewport edge */
         <div
-          className="fixed bottom-0 right-0 top-0 z-[3] overflow-hidden"
+          className="fixed bottom-0 right-0 top-0 z-[3] overflow-hidden pointer-events-none"
           style={{ left: 'var(--sidebar-w, 260px)' }}
         >
-          <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+          <div className="h-full pointer-events-auto">
+            <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
+          </div>
         </div>
       ) : (
         /* Landing / results — centered glass card */

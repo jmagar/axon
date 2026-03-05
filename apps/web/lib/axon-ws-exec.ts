@@ -7,6 +7,21 @@
  */
 
 const WORKERS_WS_URL = process.env.AXON_WORKERS_WS_URL ?? 'ws://axon-workers:49000/ws'
+const WORKERS_WS_TOKEN = process.env.AXON_WEB_API_TOKEN?.trim() ?? ''
+
+function buildWorkersWsUrl(): string {
+  if (!WORKERS_WS_TOKEN) return WORKERS_WS_URL
+  try {
+    const url = new URL(WORKERS_WS_URL)
+    if (!url.searchParams.has('token')) {
+      url.searchParams.set('token', WORKERS_WS_TOKEN)
+    }
+    return url.toString()
+  } catch {
+    // Fallback for malformed env URL values; preserve current behavior.
+    return WORKERS_WS_URL
+  }
+}
 
 interface WsMessageEvent {
   data: unknown
@@ -55,9 +70,10 @@ export async function runAxonCommandWs(
   flags: Record<string, string | boolean> = {},
 ): Promise<unknown> {
   const WebSocketImpl = await resolveWebSocketConstructor()
+  const workersWsUrl = buildWorkersWsUrl()
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocketImpl(WORKERS_WS_URL)
+    const ws = new WebSocketImpl(workersWsUrl)
     let result: unknown
     let settled = false
 
@@ -102,7 +118,7 @@ export async function runAxonCommandWs(
     })
 
     ws.addEventListener('error', () => {
-      finish(new Error(`WebSocket connection error (${WORKERS_WS_URL})`))
+      finish(new Error(`WebSocket connection error (${workersWsUrl})`))
     })
 
     ws.addEventListener('close', (event) => {
