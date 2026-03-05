@@ -134,6 +134,10 @@ pub(super) async fn send_screenshot_files_from_json(
 
 /// Send the crawl manifest file list to the frontend from a job output directory.
 /// When `job_id` is provided, it is included in the `crawl_files` message for download routes.
+// Retained for future use when crawl status polling is wired to the manifest.
+// Previously called from polling.rs (now removed). Will be reactivated when
+// the crawl status command returns manifest info via direct service dispatch.
+#[allow(dead_code)]
 pub(super) async fn send_crawl_manifest(
     job_dir: &Path,
     tx: &mpsc::Sender<String>,

@@ -412,41 +412,8 @@ async fn artifact_list_emits_v2_only_via_screenshot_json_helper() {
     assert!(rx.try_recv().is_err());
 }
 
-#[test]
-fn async_polling_dual_emits_legacy_and_v2_status_progress() {
-    let ctx = sample_ctx();
-    let status_json = json!({
-        "status": "running",
-        "metrics": {
-            "pages_crawled": 3,
-            "pages_discovered": 10,
-            "phase": "fetching"
-        }
-    });
-
-    let messages =
-        super::polling::poll_messages_for_status("crawl", "job-123", "running", &status_json, &ctx);
-    let parsed = messages
-        .iter()
-        .map(|msg| serde_json::from_str::<Value>(msg).expect("valid message json"))
-        .collect::<Vec<_>>();
-
-    assert!(
-        parsed
-            .iter()
-            .any(|m| m.get("type").and_then(Value::as_str) == Some("crawl_progress"))
-    );
-    assert!(
-        parsed
-            .iter()
-            .any(|m| m.get("type").and_then(Value::as_str) == Some("job.status"))
-    );
-    assert!(
-        parsed
-            .iter()
-            .any(|m| m.get("type").and_then(Value::as_str) == Some("job.progress"))
-    );
-}
+// async_polling_dual_emits_legacy_and_v2_status_progress removed:
+// polling module was deleted in the fire-and-forget refactor (Task 5.3).
 
 #[test]
 fn cancel_ok_from_output_accepts_legacy_canceled_field() {
