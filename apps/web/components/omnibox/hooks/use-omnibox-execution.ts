@@ -34,8 +34,13 @@ export function useOmniboxExecution({
 }: UseOmniboxExecutionInput) {
   const { send } = useAxonWs()
   const { currentJobId, currentMode } = useWsExecutionState()
-  const { workspaceMode, workspaceContext, pulseModel, pulsePermissionLevel } =
-    useWsWorkspaceState()
+  const {
+    workspaceMode,
+    workspaceContext,
+    workspaceResumeSessionId,
+    pulseModel,
+    pulsePermissionLevel,
+  } = useWsWorkspaceState()
   const {
     startExecution,
     activateWorkspace,
@@ -151,6 +156,7 @@ export function useOmniboxExecution({
     completionStatus,
     workspaceMode,
     workspaceContext,
+    workspaceResumeSessionId,
     pulseModel,
     pulsePermissionLevel,
     currentMode,
