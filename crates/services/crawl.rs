@@ -26,6 +26,10 @@ pub async fn crawl_start(
     urls: &[String],
     tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<CrawlStartResult, Box<dyn Error>> {
+    if urls.is_empty() {
+        return Err("crawl_start: no URLs provided".into());
+    }
+
     emit(
         &tx,
         ServiceEvent::Log {

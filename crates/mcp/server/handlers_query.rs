@@ -89,7 +89,7 @@ impl AxonMcpServer {
             .url
             .ok_or_else(|| invalid_params("url is required for map"))?;
         let response_mode = parse_response_mode(req.response_mode);
-        let map_opts = to_map_options(req.limit.or(Some(25)), req.offset);
+        let map_opts = to_map_options(req.limit, req.offset);
         let (limit, offset) = (map_opts.limit, map_opts.offset);
         let result = map_svc::discover(self.cfg.as_ref(), &url, map_opts, None)
             .await
@@ -188,7 +188,7 @@ impl AxonMcpServer {
         let response_mode = parse_response_mode(req.response_mode);
         let opts = to_search_options(req.limit, req.offset, req.search_time_range);
 
-        let result = search_svc::research(self.cfg.as_ref(), &query, opts)
+        let result = search_svc::research(self.cfg.as_ref(), &query, opts, None)
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
 
