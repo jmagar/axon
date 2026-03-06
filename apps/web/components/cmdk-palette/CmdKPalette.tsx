@@ -205,9 +205,8 @@ function useCmdKPaletteState() {
           unsubRef.current = null
 
           if (isBackgroundRef.current) {
-            // Error in background: silently dismiss (user can check /jobs)
-            resetOutput()
-            setPhase('idle')
+            // Error in background: surface the error so the user sees it in the palette
+            setPhase('done')
           } else {
             setPhase('done')
           }
