@@ -8,7 +8,7 @@ use crate::crates::core::config::ConfigOverrides;
 use crate::crates::core::config::RenderMode;
 
 /// Valid `render_mode` strings accepted from WS clients.
-const VALID_RENDER_MODES: &[&str] = &["http", "chrome", "auto-switch"];
+const VALID_RENDER_MODES: &[&str] = &["http", "chrome", "auto-switch", "auto_switch"];
 
 /// Valid `response_mode` strings accepted from WS clients.
 const VALID_RESPONSE_MODES: &[&str] = &["inline", "path", "artifact"];
@@ -45,7 +45,7 @@ pub fn ws_request_to_overrides(
         }
         Some("http") => Some(RenderMode::Http),
         Some("chrome") => Some(RenderMode::Chrome),
-        Some("auto-switch") => Some(RenderMode::AutoSwitch),
+        Some("auto-switch") | Some("auto_switch") => Some(RenderMode::AutoSwitch),
         Some(_) => unreachable!("render_mode validated against VALID_RENDER_MODES above"),
     };
 

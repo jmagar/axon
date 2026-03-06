@@ -426,7 +426,7 @@ fn call_research(
     opts: SearchOptions,
 ) -> Pin<Box<dyn Future<Output = Result<ResearchResult, String>> + Send + 'static>> {
     Box::pin(async move {
-        search_svc::research(&cfg, &query, opts)
+        search_svc::research(&cfg, &query, opts, None)
             .await
             .map_err(|e| e.to_string())
     })

@@ -69,13 +69,32 @@ pub async fn search(
 
 /// Run a Tavily AI research query with LLM synthesis and return a typed [`ResearchResult`].
 ///
-/// Delegates to [`research_payload`] from the CLI commands layer.
+/// Delegates to [`research_payload`] from the CLI commands layer. Emits log events
+/// when a `tx` sender is provided.
 pub async fn research(
     cfg: &Config,
     query: &str,
     opts: SearchOptions,
+    tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<ResearchResult, Box<dyn Error>> {
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: "info".to_string(),
+            message: format!("starting research: {query}"),
+        },
+    );
+
     let time_range = opts.time_range.map(to_spider_time_range);
     let payload = research_payload(cfg, query, opts.limit, opts.offset, time_range).await?;
+
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: "info".to_string(),
+            message: "research complete".to_string(),
+        },
+    );
+
     Ok(map_research_payload(payload))
 }
