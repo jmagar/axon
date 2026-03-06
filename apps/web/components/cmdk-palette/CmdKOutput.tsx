@@ -415,10 +415,8 @@ export function CmdKOutput({
         onMinimize={onMinimize}
       />
       {isAsync && progress && <CmdKAsyncProgress progress={progress} />}
-      {/* Log lines — always shown while running; shown above inline result when done */}
-      {(phase === 'running' || !hasInlineResult) && (
-        <CmdKOutputLines lines={lines} scrollRef={scrollRef} />
-      )}
+      {/* Log lines — always shown (above inline result when done) */}
+      <CmdKOutputLines lines={lines} scrollRef={scrollRef} />
       {/* Inline result — shown when done and mode produces rich output */}
       {hasInlineResult && <CmdKInlineResult mode={mode} capturedJson={capturedJson} />}
       {/* Raw JSON count hint — only for non-inline modes */}
