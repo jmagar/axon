@@ -1,7 +1,8 @@
-use crate::crates::cli::commands::screenshot::spider_screenshot_with_options;
-use crate::crates::cli::commands::screenshot::url_to_screenshot_filename;
 use crate::crates::core::config::Config;
 use crate::crates::core::http::{normalize_url, validate_url};
+use crate::crates::crawl::screenshot::{
+    spider_screenshot_with_options, url_to_screenshot_filename,
+};
 use crate::crates::services::types::ScreenshotResult;
 use std::error::Error;
 
