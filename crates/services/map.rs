@@ -1,5 +1,6 @@
-use crate::crates::cli::commands::map::map_payload;
 use crate::crates::core::config::Config;
+use crate::crates::core::http::validate_url;
+use crate::crates::crawl::engine::map_with_sitemap;
 use crate::crates::services::events::{ServiceEvent, emit};
 use crate::crates::services::types::{MapOptions, MapResult};
 use std::error::Error;
@@ -14,15 +15,17 @@ pub fn map_map_payload(payload: serde_json::Value) -> Result<MapResult, Box<dyn 
 
 /// Discover all URLs for a site starting at `url`.
 ///
-/// Delegates to [`map_payload`] from the CLI commands layer and wraps the raw
-/// JSON into the typed [`MapResult`]. Emits log events before and after the call
-/// when a `tx` sender is provided.
+/// Calls [`map_with_sitemap`] from the crawl engine directly, applies
+/// `opts.limit`/`opts.offset` pagination, and wraps the result into a typed
+/// [`MapResult`]. Emits log events when a `tx` sender is provided.
 pub async fn discover(
     cfg: &Config,
     url: &str,
-    _opts: MapOptions,
+    opts: MapOptions,
     tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<MapResult, Box<dyn Error>> {
+    validate_url(url)?;
+
     emit(
         &tx,
         ServiceEvent::Log {
@@ -31,21 +34,39 @@ pub async fn discover(
         },
     );
 
-    let payload = map_payload(cfg, url).await?;
+    let result = map_with_sitemap(cfg, url).await?;
+
+    // Apply pagination: skip `offset` entries, then take up to `limit` (0 = all).
+    let urls: Vec<String> = result
+        .urls
+        .into_iter()
+        .skip(opts.offset)
+        .take(if opts.limit == 0 {
+            usize::MAX
+        } else {
+            opts.limit
+        })
+        .collect();
+
+    let mapped_count = urls.len();
 
     emit(
         &tx,
         ServiceEvent::Log {
             level: "info".to_string(),
-            message: format!(
-                "map complete: {} urls",
-                payload
-                    .get("mapped_urls")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-            ),
+            message: format!("map complete: {mapped_count} urls"),
         },
     );
+
+    let payload = serde_json::json!({
+        "url": url,
+        "mapped_urls": mapped_count,
+        "sitemap_urls": result.sitemap_urls,
+        "pages_seen": result.summary.pages_seen,
+        "thin_pages": result.summary.thin_pages,
+        "elapsed_ms": result.summary.elapsed_ms,
+        "urls": urls,
+    });
 
     map_map_payload(payload)
 }
