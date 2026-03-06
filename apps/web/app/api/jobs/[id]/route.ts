@@ -92,34 +92,41 @@ async function readCrawlManifest(outputDir: string): Promise<CrawlMarkdownFile[]
     return []
   }
 
+  const MAX_MANIFEST_ENTRIES = 10_000
   const files: CrawlMarkdownFile[] = []
   const stream = createReadStream(manifestPath, { encoding: 'utf8' })
   const reader = createInterface({ input: stream, crlfDelay: Infinity })
-  for await (const rawLine of reader) {
-    const line = rawLine.trim()
-    if (!line) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(line)
-    } catch {
-      continue
+  try {
+    for await (const rawLine of reader) {
+      const line = rawLine.trim()
+      if (!line) continue
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (!parsed || typeof parsed !== 'object') continue
+      const obj = parsed as Record<string, unknown>
+      const url = typeof obj.url === 'string' ? obj.url : null
+      const relativePath =
+        typeof obj.relative_path === 'string'
+          ? obj.relative_path
+          : typeof obj.file_path === 'string'
+            ? obj.file_path
+            : null
+      if (!url || !relativePath) continue
+      files.push({
+        url,
+        relativePath,
+        markdownChars: numberOrNull(obj.markdown_chars) ?? 0,
+        changed: boolOrNull(obj.changed),
+      })
+      if (files.length >= MAX_MANIFEST_ENTRIES) break
     }
-    if (!parsed || typeof parsed !== 'object') continue
-    const obj = parsed as Record<string, unknown>
-    const url = typeof obj.url === 'string' ? obj.url : null
-    const relativePath =
-      typeof obj.relative_path === 'string'
-        ? obj.relative_path
-        : typeof obj.file_path === 'string'
-          ? obj.file_path
-          : null
-    if (!url || !relativePath) continue
-    files.push({
-      url,
-      relativePath,
-      markdownChars: numberOrNull(obj.markdown_chars) ?? 0,
-      changed: boolOrNull(obj.changed),
-    })
+  } finally {
+    reader.close()
+    stream.destroy()
   }
 
   return files
@@ -137,7 +144,8 @@ async function findCrawlJob(id: string, includeArtifacts: boolean): Promise<JobD
   const res = (row.result_json ?? {}) as Record<string, unknown>
   const cfg = (row.config_json ?? {}) as Record<string, unknown>
   const outputDir = normalizeOutputDirForWeb((res.output_dir as string) ?? null)
-  const manifestFiles = includeArtifacts && outputDir ? await readCrawlManifest(outputDir) : []
+  const manifestFiles =
+    includeArtifacts && outputDir ? await readCrawlManifest(outputDir).catch(() => []) : []
   const thinUrls = stringArray(res.thin_urls)
   const wafBlockedUrls = stringArray(res.waf_blocked_urls)
   const observedUrlSet = new Set<string>([
@@ -256,7 +264,7 @@ async function findRefreshJob(id: string): Promise<JobDetail | null> {
     notModified: res.not_modified != null ? Number(res.not_modified) : null,
     failedCount: res.failed != null ? Number(res.failed) : null,
     total: res.total != null ? Number(res.total) : null,
-    manifestPath: (res.manifest_path as string) ?? null,
+    manifestPath: normalizeOutputDirForWeb((res.manifest_path as string) ?? null),
     resultJson: res,
     configJson: cfg,
   }

@@ -5,7 +5,14 @@ import { ScrollText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type LogEntry, LogLine } from './log-line'
-import { LogsToolbar, type ServiceName, TAIL_OPTIONS, type TailLines } from './logs-toolbar'
+import {
+  type IndividualService,
+  LogsToolbar,
+  SERVICES,
+  type ServiceName,
+  TAIL_OPTIONS,
+  type TailLines,
+} from './logs-toolbar'
 
 const MAX_LINES = 1200
 const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
@@ -32,8 +39,10 @@ export function LogsViewer() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(LOGS_SERVICE_KEY) as ServiceName | null
-      if (saved) setService(saved)
+      const saved = window.localStorage.getItem(LOGS_SERVICE_KEY)
+      if (saved && (SERVICES.includes(saved as IndividualService) || saved === 'all')) {
+        setService(saved as ServiceName)
+      }
     } catch {
       /* ignore */
     }
@@ -102,7 +111,7 @@ export function LogsViewer() {
   const rowVirtualizer = useVirtualizer({
     count: filteredLines.length,
     getScrollElement: () => scrollAreaRef.current,
-    estimateSize: () => 20,
+    estimateSize: () => (wrapLines ? 36 : 20),
     overscan: 30,
   })
 

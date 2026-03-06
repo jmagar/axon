@@ -19,5 +19,5 @@ function looksLikeModelConfig(option: AcpConfigOption): boolean {
 
 export function getAcpModelConfigOption(options: AcpConfigOption[]): AcpConfigOption | undefined {
   if (options.length === 0) return undefined
-  return options.find(looksLikeModelConfig)
+  return options.find((o) => toLower(o.category) === 'model') ?? options.find(looksLikeModelConfig)
 }
