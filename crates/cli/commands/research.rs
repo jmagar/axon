@@ -197,7 +197,7 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         offset: 0,
         time_range: parse_service_time_range(cfg.search_time_range.as_deref()),
     };
-    let payload = search_service::research(cfg, &query, opts)
+    let payload = search_service::research(cfg, &query, opts, None)
         .await
         .map(|r| r.payload);
     running.store(false, Ordering::Relaxed);
