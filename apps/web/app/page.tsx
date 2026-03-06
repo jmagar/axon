@@ -113,11 +113,11 @@ export default function DashboardPage() {
   useEffect(() => {
     return subscribe((msg: WsServerMsg) => {
       if (msg.type === 'command.output.json') {
-        if (INLINE_RESULT_MODES.has(currentModeRef.current)) {
+        if (INLINE_RESULT_MODES.has(msg.data.ctx.mode)) {
           capturedJsonRef.current = [...capturedJsonRef.current, msg.data.data]
         }
       } else if (msg.type === 'command.done') {
-        const mode = currentModeRef.current
+        const mode = msg.data.ctx.mode
         if (INLINE_RESULT_MODES.has(mode) && capturedJsonRef.current.length > 0) {
           const markdown = resultToMarkdown(mode, capturedJsonRef.current)
           if (markdown) {
