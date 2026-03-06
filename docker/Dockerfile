@@ -155,7 +155,7 @@ RUN set -eux; \
     chmod +x /usr/local/bin/yt-dlp
 
 # Install ACP adapters as standalone binaries (no Node.js runtime required).
-ARG CLAUDE_ACP_VERSION=0.20.2
+ARG CLAUDE_ACP_VERSION=0.19.2
 ARG CODEX_ACP_VERSION=0.9.5
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \

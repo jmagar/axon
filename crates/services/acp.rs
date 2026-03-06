@@ -63,6 +63,11 @@ impl AcpClientScaffold {
         command.env_remove("OPENAI_BASE_URL");
         command.env_remove("OPENAI_API_KEY");
         command.env_remove("OPENAI_MODEL");
+        // Prevent the nested-session guard in the Claude CLI from blocking launch.
+        // When Axon runs inside a Claude Code session (e.g. local dev), the parent sets
+        // CLAUDECODE in the environment. The claude-agent-acp subprocess inherits it and
+        // the CLI refuses to start: "Claude Code cannot be launched inside another session."
+        command.env_remove("CLAUDECODE");
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
@@ -765,18 +770,13 @@ async fn run_prompt_turn(
         (state.assistant_text.clone(), session)
     };
 
-    let result_json = serde_json::json!({
-        "text": assistant_text,
-        "operations": [],
-    });
-
     emit(
         &tx,
         ServiceEvent::AcpBridge {
             event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
                 session_id: settled_session_id,
                 stop_reason: stop_reason_to_string(prompt_response.stop_reason),
-                result: result_json.to_string(),
+                result: assistant_text,
             }),
         },
     );
