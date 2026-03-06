@@ -203,7 +203,11 @@ services:
       - ${HOST_HOME:-${HOME}}/.codex/sessions:/home/axon/.codex/sessions
       - ${HOST_HOME:-${HOME}}/.gemini:/home/axon/.gemini
       # ACP adapter auth/config mounts — required for pulse_chat adapter handshake.
-      - ${HOST_HOME:-${HOME}}/.claude.json:/home/axon/.claude.json
+      # Both files are mounted read-only at staging paths; 17-materialize-claude-credentials
+      # copies them into /home/axon/.claude/ owned by axon so the adapter can read and refresh
+      # tokens without touching the host files' ownership or permissions.
+      - ${HOST_HOME:-${HOME}}/.claude.json:/run/host-claude/claude.json:ro
+      - ${HOST_HOME:-${HOME}}/.claude/.credentials.json:/run/host-claude/.credentials.json:ro
       - ${HOST_HOME:-${HOME}}/.codex/auth.json:/run/host-codex/auth.json:ro
       - ${HOST_HOME:-${HOME}}/.codex/config.toml:/run/host-codex/config.toml:ro
       - ${HOST_HOME:-${HOME}}/.codex/models_cache.json:/run/host-codex/models_cache.json:ro

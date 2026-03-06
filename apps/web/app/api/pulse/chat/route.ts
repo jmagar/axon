@@ -531,12 +531,12 @@ export async function POST(request: Request) {
         })
       },
     })
-
     return new Response(stream, {
       headers: {
         'content-type': 'application/x-ndjson; charset=utf-8',
         'cache-control': 'no-cache, no-transform',
         connection: 'keep-alive',
+        'x-accel-buffering': 'no',
       },
     })
   } catch (error: unknown) {
@@ -548,6 +548,5 @@ export async function POST(request: Request) {
 }
 
 function truncateForLog(input: string, max = 400): string {
-  if (input.length <= max) return input
-  return `${input.slice(0, max)}...`
+  return input.length <= max ? input : `${input.slice(0, max)}...`
 }

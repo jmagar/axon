@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-06 (session: v0.7.1 — address all PR review threads, batches 1-10)
+Last Modified: 2026-03-06 (session: v0.7.2 — fix Pulse Chat local dev: CLAUDECODE env + ACP double-wrap)
 
 ## [Unreleased] — feat/services-layer-refactor
 
 This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
 
 ### Highlights
+
+- **Pulse Chat local dev fixed (v0.7.2)** — two root causes identified and fixed: (1) `CLAUDECODE` env var inherited from parent Claude Code session blocked `claude-agent-acp` from spawning the `claude` CLI ("Claude Code cannot be launched inside another Claude Code session") — fixed by `command.env_remove("CLAUDECODE")` in `spawn_adapter()`; (2) `acp.rs` was double-wrapping `assistant_text` in a JSON object before passing it as `AcpTurnResultEvent.result`, causing `parseClaudeAssistantPayload` to extract raw JSON instead of the assistant's text — fixed by passing `assistant_text` directly; added `17-materialize-claude-credentials` cont-init.d for Docker credential staging; `docker-compose.yaml` mounts host Claude credentials read-only into workers container; `constants.rs` updated with Pulse Chat WS mode constant
 
 - **Services layer refactor complete (v0.5.0)** — `crates/services/` is now the single source of business logic; CLI/MCP/WS are thin transport adapters; `crawl`/`extract`/`embed` modes use fire-and-forget direct service enqueue (no subprocess); `github`/`reddit`/`youtube` remain on subprocess fallback due to `!Send` constraint; `polling.rs` deleted; 971 tests passing
 - **PR review threads fully resolved (v0.7.1)** — all 154 review threads on `feat/services-layer-refactor` addressed across 10 batches; fixes cover security hardening (env mutation serialization, port binding to localhost), stale React ref cleanup (`isBackgroundRef` on background error), `AbortController` dedup via `tabsRef`, trivial wrapper removal (`map_map_payload` inlined), and a range of typed errors, fail-fast mappers, probe uniqueness, MCP error sanitization, and flag validation
