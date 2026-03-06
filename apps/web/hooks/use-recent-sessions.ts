@@ -28,7 +28,7 @@ interface SessionContentResponse {
 function dedupeSessions(list: SessionSummary[]): SessionSummary[] {
   const seen = new Map<string, SessionSummary>()
   for (const session of list) {
-    const key = session.id
+    const key = session.filename
     const existing = seen.get(key)
     if (!existing) {
       seen.set(key, session)
