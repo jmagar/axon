@@ -45,20 +45,36 @@ function EditorPageInner() {
       activateTab(existing.id)
       return
     }
+    const controller = new AbortController()
     void (async () => {
       try {
-        const res = await apiFetch(`/api/pulse/doc?filename=${encodeURIComponent(docParam)}`)
-        if (!res.ok) return
+        const res = await apiFetch(`/api/pulse/doc?filename=${encodeURIComponent(docParam)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          openTab({
+            title: `Error: ${docParam}`,
+            markdown: `> Could not load \`${docParam}\` (server returned ${res.status})`,
+            docFilename: null,
+          })
+          return
+        }
         const data = (await res.json()) as { title?: string; markdown?: string }
         openTab({
           title: data.title ?? 'Untitled',
           markdown: data.markdown ?? '',
           docFilename: docParam,
         })
-      } catch {
-        // ignore — tab simply won't open
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        openTab({
+          title: `Error: ${docParam}`,
+          markdown: `> Could not load \`${docParam}\``,
+          docFilename: null,
+        })
       }
     })()
+    return () => controller.abort()
   }, [hydrated, docParam, tabs, activateTab, openTab])
 
   // Load ?workspace= URL param into a tab
@@ -84,19 +100,22 @@ function EditorPageInner() {
     })()
   }, [hydrated, workspaceParam, openTab])
 
-  // Autosave active tab
-  const { saveStatus, savedFilename } = usePulseAutosave(
+  // Autosave active tab — pass activeTabId so savedTabId tracks which tab was saved
+  const { saveStatus, savedFilename, savedTabId } = usePulseAutosave(
     activeTab?.markdown ?? '',
     activeTab?.title ?? '',
     activeTab?.docFilename,
+    activeTabId,
   )
 
-  // Persist autosave filename back into tab once created
+  // Persist autosave filename back into the tab that triggered the save (not necessarily active)
   useEffect(() => {
-    if (savedFilename && activeTab && !activeTab.docFilename) {
-      updateTab(activeTabId, { docFilename: savedFilename })
+    if (!savedFilename || !savedTabId) return
+    const tab = tabs.find((t) => t.id === savedTabId)
+    if (tab && !tab.docFilename) {
+      updateTab(savedTabId, { docFilename: savedFilename })
     }
-  }, [savedFilename, activeTab, activeTabId, updateTab])
+  }, [savedFilename, savedTabId, tabs, updateTab])
 
   if (!hydrated) {
     return <div className="flex h-screen bg-[var(--surface-base,#030712)]" />

@@ -454,7 +454,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <Stat
               label="Success"
               value={job.success == null ? 'running' : job.success ? 'yes' : 'no'}
-              icon={job.success ? CheckCircle : XCircle}
+              icon={job.success == null ? Clock : job.success ? CheckCircle : XCircle}
             />
           </div>
         )}
