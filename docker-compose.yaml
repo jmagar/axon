@@ -30,7 +30,7 @@ services:
     image: postgres:17-alpine
     container_name: axon-postgres
     ports:
-      - "53432:5432"
+      - "127.0.0.1:53432:5432"
     volumes:
       - ${AXON_DATA_DIR:-./data}/axon/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -50,7 +50,7 @@ services:
     container_name: axon-redis
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     ports:
-      - "53379:6379"
+      - "127.0.0.1:53379:6379"
     volumes:
       - ${AXON_DATA_DIR:-./data}/axon/redis:/data
     healthcheck:
@@ -68,7 +68,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-axon}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-axonrabbit}
     ports:
-      - "45535:5672"
+      - "127.0.0.1:45535:5672"
     volumes:
       - ${AXON_DATA_DIR:-./data}/axon/rabbitmq:/var/lib/rabbitmq
       - ./docker/rabbitmq/20-axon.conf:/etc/rabbitmq/conf.d/20-axon.conf:ro
@@ -84,8 +84,8 @@ services:
     image: qdrant/qdrant:v1.13.1
     container_name: axon-qdrant
     ports:
-      - "53333:6333"
-      - "53334:6334"  # gRPC
+      - "127.0.0.1:53333:6333"
+      - "127.0.0.1:53334:6334"  # gRPC
     volumes:
       - ${AXON_DATA_DIR:-./data}/axon/qdrant:/qdrant/storage
     healthcheck:
@@ -112,9 +112,9 @@ services:
     env_file: []  # no app secrets needed in the browser container
     shm_size: "2gb"
     ports:
-      - "9222:9222"  # CDP proxy
-      - "9223:9223"  # raw Chrome DevTools
-      - "6000:6000"  # management API
+      - "127.0.0.1:9222:9222"  # CDP proxy
+      - "127.0.0.1:9223:9223"  # raw Chrome DevTools
+      - "127.0.0.1:6000:6000"  # management API
     environment:
       # Rewrite the hostname in /json/version WebSocket URLs so that other
       # containers on the axon network receive a resolvable address.

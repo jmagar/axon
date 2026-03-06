@@ -1,7 +1,35 @@
 use crate::crates::jobs::common::test_config;
 use crate::crates::vector::ops::tei::tei_client::tei_embed;
 use httpmock::{HttpMockResponse, MockServer};
+use std::env;
 use std::sync::{Arc, Mutex};
+
+/// Guard that restores (or removes) an env var on drop.
+struct EnvGuard {
+    key: &'static str,
+    original: Option<String>,
+}
+impl EnvGuard {
+    #[allow(unsafe_code)]
+    fn set(key: &'static str, value: &str) -> Self {
+        let original = env::var(key).ok();
+        // SAFETY: single-threaded test; no concurrent env mutation in this scope.
+        unsafe { env::set_var(key, value) };
+        EnvGuard { key, original }
+    }
+}
+impl Drop for EnvGuard {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        // SAFETY: restoring original value; no concurrent env mutation.
+        unsafe {
+            match &self.original {
+                Some(v) => env::set_var(self.key, v),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+}
 
 /// Empty input slice must short-circuit before any HTTP call.
 #[tokio::test]
@@ -130,6 +158,10 @@ async fn tei_embed_retries_on_500() {
 
     let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
     cfg.tei_url = server.base_url();
+
+    // Pin retry-related env vars so ambient overrides can't change test behavior.
+    let _retry_guard = EnvGuard::set("TEI_MAX_RETRIES", "5");
+    let _timeout_guard = EnvGuard::set("TEI_REQUEST_TIMEOUT_MS", "10000");
 
     let inputs = vec!["retry-on-500".to_string()];
     let result = tei_embed(&cfg, &inputs)
