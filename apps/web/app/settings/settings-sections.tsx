@@ -336,6 +336,14 @@ export function SettingsSections({
             </FieldHint>
           </div>
 
+          <ToggleRow
+            id="settings-auto-approve-permissions"
+            label="Auto-approve tool permissions"
+            description="When enabled, ACP permission requests are auto-approved after a brief delay. Disable to manually approve or reject each tool invocation."
+            checked={settings.autoApprovePermissions}
+            onChange={(v) => updateSettings({ autoApprovePermissions: v })}
+          />
+
           <div
             className="flex items-start gap-2.5 rounded-lg border border-[rgba(175,215,255,0.12)] px-3.5 py-3 transition-all duration-200"
             style={{ background: 'rgba(10,18,35,0.58)', backdropFilter: 'blur(8px)' }}

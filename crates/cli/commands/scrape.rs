@@ -1,7 +1,7 @@
 use super::common::parse_urls;
 use crate::crates::core::config::{Config, RenderMode, ScrapeFormat};
 use crate::crates::core::content::{
-    extract_meta_description, find_between, to_markdown, url_to_filename,
+    build_selector_config, extract_meta_description, find_between, to_markdown, url_to_filename,
 };
 use crate::crates::core::http::{normalize_url, ssrf_blacklist_patterns, validate_url};
 use crate::crates::core::logging::log_done;
@@ -291,7 +291,7 @@ fn build_scrape_json(url: &str, html: &str, status_code: u16) -> serde_json::Val
     serde_json::json!({
         "url": url,
         "status_code": status_code,
-        "markdown": to_markdown(html),
+        "markdown": to_markdown(html, None),
         "title": find_between(html, "<title>", "</title>").unwrap_or(""),
         "description": extract_meta_description(html).unwrap_or_default(),
     })
@@ -310,7 +310,7 @@ pub(crate) fn select_output(
     status_code: u16,
 ) -> Result<String, Box<dyn Error>> {
     match format {
-        ScrapeFormat::Markdown => Ok(to_markdown(html)),
+        ScrapeFormat::Markdown => Ok(to_markdown(html, None)),
         ScrapeFormat::Html | ScrapeFormat::RawHtml => Ok(html.to_string()),
         ScrapeFormat::Json => Ok(serde_json::to_string_pretty(&build_scrape_json(
             url,
@@ -426,7 +426,8 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
         return Err(format!("scrape failed: HTTP {} for {}", status_code, normalized).into());
     }
 
-    let markdown = to_markdown(&html);
+    let sel_cfg = build_selector_config(cfg);
+    let markdown = to_markdown(&html, sel_cfg.as_ref());
     let output = select_output(cfg.format, &normalized, &html, status_code)?;
 
     if cfg.json_output {

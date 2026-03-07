@@ -3,6 +3,8 @@ export type WsClientMsg =
   | { type: 'execute'; mode: string; input: string; flags: Record<string, string | boolean> }
   | { type: 'cancel'; id: string; mode?: string; job_id?: string }
   | { type: 'read_file'; path: string }
+  // TODO: Wire permission response to Rust AcpBridgeClient when leaving container mode
+  | { type: 'permission_response'; tool_call_id: string; option_id: string }
 
 // Server → Client
 export type WsServerMsg =

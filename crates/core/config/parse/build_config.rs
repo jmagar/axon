@@ -430,6 +430,8 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
         },
         redirect_policy_strict: global.redirect_policy_strict,
         chrome_wait_for_selector: global.chrome_wait_for_selector,
+        root_selector: global.root_selector,
+        exclude_selector: global.exclude_selector,
         chrome_screenshot: global.chrome_screenshot,
         research_depth: global.research_depth,
         search_time_range: global.search_time_range,

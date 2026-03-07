@@ -47,7 +47,7 @@ export type AcpConfigOption = z.infer<typeof AcpConfigOption>
 
 export const PulseModel = z.string().optional()
 export type PulseModel = z.infer<typeof PulseModel>
-export const PulseAgent = z.enum(['claude', 'codex'])
+export const PulseAgent = z.enum(['claude', 'codex', 'gemini'])
 export type PulseAgent = z.infer<typeof PulseAgent>
 
 export const PulseChatRequestSchema = z.object({
@@ -108,6 +108,16 @@ export const PulseChatRequestSchema = z.object({
 
 export type PulseChatRequest = z.infer<typeof PulseChatRequestSchema>
 
+/** ACP permission request received from the Rust backend during tool execution. */
+export interface AcpPermissionRequest {
+  sessionId: string
+  toolCallId: string
+  /** Available permission option IDs (e.g. 'option-allow-once', 'option-reject-always'). */
+  options: string[]
+  /** Tool name resolved from the most recent tool_use event, if available. */
+  toolName?: string
+}
+
 export interface PulseCitation {
   url: string
   title: string
@@ -119,11 +129,22 @@ export interface PulseCitation {
 export interface PulseToolUse {
   name: string
   input: Record<string, unknown>
+  toolCallId?: string
+  status?: string
+  content?: string
 }
 
 export type PulseMessageBlock =
   | { type: 'text'; content: string }
-  | { type: 'tool_use'; name: string; input: Record<string, unknown>; result?: string }
+  | {
+      type: 'tool_use'
+      name: string
+      input: Record<string, unknown>
+      result?: string
+      toolCallId?: string
+      status?: string
+      content?: string
+    }
   | { type: 'thinking'; content: string }
 
 export interface PulseChatResponse {
