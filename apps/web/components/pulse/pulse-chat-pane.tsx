@@ -63,7 +63,7 @@ export function PulseChatPane({
     new Map(),
   )
   const [sourceListScrollTop, setSourceListScrollTop] = useState(0)
-  const activeSources = useMemo(() => activeThreadSources, [activeThreadSources])
+  const activeSources = activeThreadSources
   const latestAssistantCitations = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const msg = messages[i]
@@ -118,16 +118,20 @@ export function PulseChatPane({
     setShowJumpToLatest(false)
   }
 
+  // Restore scroll position once on mount — after that, the auto-scroll effect takes over.
+  const hasRestoredScrollRef = useRef(false)
   useEffect(() => {
+    if (hasRestoredScrollRef.current) return
     const node = scrollRef.current
-    if (!node) return
+    if (!node || messages.length === 0) return
+    hasRestoredScrollRef.current = true
     try {
       const saved = Number(window.localStorage.getItem(CHAT_SCROLL_STORAGE_KEY) ?? 0)
       if (Number.isFinite(saved) && saved > 0) {
         node.scrollTop = saved
         const nearBottom = node.scrollHeight - (saved + node.clientHeight) < 42
         setIsNearBottom(nearBottom)
-        setShowJumpToLatest(!nearBottom && messages.length > 0)
+        setShowJumpToLatest(!nearBottom)
       }
     } catch {
       // Ignore storage restore failures.
