@@ -5,6 +5,7 @@ import { useAxonWs } from '@/hooks/use-axon-ws'
 import { usePulseAutosave } from '@/hooks/use-pulse-autosave'
 import { usePulseChat } from '@/hooks/use-pulse-chat'
 import { usePulsePersistence } from '@/hooks/use-pulse-persistence'
+import { usePulseSessions } from '@/hooks/use-pulse-sessions'
 import { usePulseSettings } from '@/hooks/use-pulse-settings'
 import { useSplitPane } from '@/hooks/use-split-pane'
 import {
@@ -14,7 +15,7 @@ import {
 } from '@/hooks/use-ws-messages'
 import { getAcpModelConfigOption } from '@/lib/pulse/acp-config'
 import type { ValidationResult } from '@/lib/pulse/doc-ops'
-import type { DocOperation, PulsePermissionLevel } from '@/lib/pulse/types'
+import type { AcpPermissionRequest, DocOperation, PulsePermissionLevel } from '@/lib/pulse/types'
 import { PULSE_WORKSPACE_STATE_KEY } from '@/lib/pulse/workspace-persistence'
 
 const ACTIVE_SESSION_ID_KEY = 'axon.web.pulse.active-session-id'
@@ -45,7 +46,7 @@ export function usePulseWorkspaceBehavior() {
     setAcpConfigOptions,
     clearWorkspaceResumeSession,
   } = useWsMessageActions()
-  const { subscribe } = useAxonWs()
+  const { subscribe, send: wsSend } = useAxonWs()
 
   const [documentMarkdown, setDocumentMarkdown] = useState('')
   const [documentTitle, setDocumentTitle] = useState('Untitled')
@@ -53,6 +54,7 @@ export function usePulseWorkspaceBehavior() {
   const [pendingOps, setPendingOps] = useState<DocOperation[] | null>(null)
   const [pendingValidation, setPendingValidation] = useState<ValidationResult | null>(null)
   const [sourcesExpanded, setSourcesExpanded] = useState(false)
+  const [pendingPermission, setPendingPermission] = useState<AcpPermissionRequest | null>(null)
 
   const agent = pulseAgent
   const model = pulseModel
@@ -96,6 +98,7 @@ export function usePulseWorkspaceBehavior() {
     onPendingOps: setPendingOps,
     onPendingValidation: setPendingValidation,
     onAcpConfigUpdate: setAcpConfigOptions,
+    onPermissionRequest: setPendingPermission,
     effort: pulseSettings.effort,
     maxTurns: pulseSettings.maxTurns,
     maxBudgetUsd: pulseSettings.maxBudgetUsd,
@@ -129,6 +132,19 @@ export function usePulseWorkspaceBehavior() {
     setLastResponseLatencyMs,
     setLastResponseModel,
   } = chat
+
+  const handlePermissionResponse = useCallback(
+    (toolCallId: string, optionId: string) => {
+      // TODO: Wire permission response to Rust AcpBridgeClient when leaving container mode
+      wsSend({ type: 'permission_response', tool_call_id: toolCallId, option_id: optionId })
+      setPendingPermission(null)
+    },
+    [wsSend],
+  )
+
+  const handlePermissionDismiss = useCallback(() => {
+    setPendingPermission(null)
+  }, [])
 
   const latestCitationCount = useMemo(() => {
     for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
@@ -226,6 +242,19 @@ export function usePulseWorkspaceBehavior() {
     documentTitle,
     currentDocFilename,
   )
+
+  const { savedSessions, deleteSavedSession, reloadSavedSessions } = usePulseSessions({
+    chatSessionId,
+    chatHistory,
+    documentMarkdown,
+    documentTitle,
+  })
+
+  // Notify sidebar when saved sessions change so it can refresh its list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: savedSessions is the trigger
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('axon:pulse-sessions-updated'))
+  }, [savedSessions])
 
   // Sync savedFilename back to currentDocFilename after the first save creates the file
   useEffect(() => {
@@ -341,14 +370,6 @@ export function usePulseWorkspaceBehavior() {
   }, [handlePrompt])
 
   useEffect(() => {
-    console.log(
-      '[pulse-ws] prompt effect — version:',
-      workspacePromptVersion,
-      'lastHandled:',
-      lastHandledPromptVersionRef.current,
-      'prompt:',
-      workspacePrompt?.slice(0, 80) ?? null,
-    )
     if (workspacePromptVersion === 0) {
       lastHandledPromptVersionRef.current = 0
       return
@@ -362,7 +383,6 @@ export function usePulseWorkspaceBehavior() {
     splitPane.setShowEditor(false)
     splitPane.setMobilePane('chat')
 
-    console.log('[pulse-ws] dispatching handlePrompt:', workspacePrompt.slice(0, 80))
     void handlePromptRef.current(workspacePrompt)
   }, [
     workspacePromptVersion,
@@ -435,6 +455,18 @@ export function usePulseWorkspaceBehavior() {
     resumeSessionId: workspaceResumeSessionId,
     clearResumeSession,
     acpConfigOptions,
+    chatSessionId,
+    setChatSessionId,
+    setChatHistory,
+    savedSessions,
+    deleteSavedSession,
+    reloadSavedSessions,
+
+    // ACP permission state
+    pendingPermission,
+    handlePermissionResponse,
+    handlePermissionDismiss,
+    autoApprovePermissions: pulseSettings.autoApprovePermissions,
 
     // Layout (re-exported from useSplitPane)
     ...splitPane,

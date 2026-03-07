@@ -359,6 +359,14 @@ pub struct Config {
     /// Spider: `with_wait_for_selector`. Default: None. Flag: `--chrome-wait-for-selector`.
     pub chrome_wait_for_selector: Option<String>,
 
+    /// CSS selector to scope content extraction (e.g. `"article, main, .content"`).
+    /// Spider: `root_selector`. Default: None. Flag: `--root-selector`.
+    pub root_selector: Option<String>,
+
+    /// CSS selector to exclude elements from extraction (e.g. `".sidebar, .ads"`).
+    /// Spider: `exclude_selector`. Default: None. Flag: `--exclude-selector`.
+    pub exclude_selector: Option<String>,
+
     /// Capture full-page PNG screenshots during Chrome crawl.
     /// Spider: `with_screenshot`. Saved to `output_dir`. Default: false. Flag: `--chrome-screenshot`.
     pub chrome_screenshot: bool,

@@ -3,6 +3,7 @@
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { usePulseWorkspaceBehavior } from '@/hooks/use-pulse-workspace'
+import { PermissionModal } from './permission-modal'
 import { PulseChatPane } from './pulse-chat-pane'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import { PulseOpConfirmation } from './pulse-op-confirmation'
@@ -127,6 +128,14 @@ export function PulseWorkspace() {
                       ws.setPendingOps(null)
                       ws.setPendingValidation(null)
                     }}
+                  />
+                )}
+                {ws.pendingPermission && (
+                  <PermissionModal
+                    request={ws.pendingPermission}
+                    autoApprove={ws.autoApprovePermissions}
+                    onRespond={ws.handlePermissionResponse}
+                    onDismiss={ws.handlePermissionDismiss}
                   />
                 )}
                 {ws.isDesktop && (

@@ -455,6 +455,10 @@ fn acp_session_update_maps_to_stream_friendly_output_json_payload() {
             kind: AcpSessionUpdateKind::AssistantDelta,
             text_delta: Some("hello".to_string()),
             tool_call_id: None,
+            tool_name: None,
+            tool_status: None,
+            tool_content: None,
+            tool_input: None,
         },
     ));
 

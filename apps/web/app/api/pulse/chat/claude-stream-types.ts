@@ -166,7 +166,7 @@ export function buildClaudeArgs(
     '--plugin-dir',
     process.env.CLAUDE_PLUGIN_DIR ?? '/home/node/.claude/plugins',
   ]
-  const modelArg = CLAUDE_MODEL_ARG[model] ?? model
+  const modelArg = model ? (CLAUDE_MODEL_ARG[model] ?? model) : undefined
   if (modelArg) {
     args.push('--model', modelArg)
   }
