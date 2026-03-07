@@ -341,6 +341,14 @@ export function usePulseWorkspaceBehavior() {
   }, [handlePrompt])
 
   useEffect(() => {
+    console.log(
+      '[pulse-ws] prompt effect — version:',
+      workspacePromptVersion,
+      'lastHandled:',
+      lastHandledPromptVersionRef.current,
+      'prompt:',
+      workspacePrompt?.slice(0, 80) ?? null,
+    )
     if (workspacePromptVersion === 0) {
       lastHandledPromptVersionRef.current = 0
       return
@@ -354,6 +362,7 @@ export function usePulseWorkspaceBehavior() {
     splitPane.setShowEditor(false)
     splitPane.setMobilePane('chat')
 
+    console.log('[pulse-ws] dispatching handlePrompt:', workspacePrompt.slice(0, 80))
     void handlePromptRef.current(workspacePrompt)
   }, [
     workspacePromptVersion,
