@@ -6,6 +6,7 @@ mod shell;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
+use crate::crates::services::acp::PermissionResponderMap;
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
@@ -231,6 +232,12 @@ struct WsClientMsg {
     id: String,
     #[serde(default)]
     path: String,
+    /// Permission response: the tool_call_id being responded to.
+    #[serde(default)]
+    tool_call_id: String,
+    /// Permission response: the chosen option_id.
+    #[serde(default)]
+    option_id: String,
 }
 
 async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
@@ -244,6 +251,12 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
 
     // Per-connection state: current async job ID for cancel support
     let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    // Per-connection state: permission response channels for active ACP sessions.
+    // Shared between the execute task (which inserts senders) and the WS read
+    // loop (which routes frontend permission_response messages to them).
+    let permission_responders: PermissionResponderMap =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
     // Shared job_dirs registry for registering completed jobs
     let job_dirs = state.job_dirs.clone();
@@ -314,6 +327,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                     let tx = exec_tx.clone();
                     let job_id = crawl_job_id.clone();
                     let cmd_cfg = conn_cfg.clone();
+                    let perm_map = permission_responders.clone();
                     // Move owned Strings into the spawned future.  handle_command
                     // takes owned String/Value so no &str borrow escapes the spawn
                     // boundary, satisfying the `Send + 'static` bound for
@@ -323,7 +337,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                     let exec_flags = client_msg.flags.clone();
                     tokio::spawn(async move {
                         execute::handle_command(
-                            exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg,
+                            exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
                         )
                         .await;
                     });
@@ -347,6 +361,17 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                             execute::handle_cancel(&cancel_mode, &id, tx, cancel_cfg).await;
                         }
                     });
+                }
+                "permission_response" => {
+                    let tool_call_id = client_msg.tool_call_id;
+                    let option_id = client_msg.option_id;
+                    if !tool_call_id.is_empty() && !option_id.is_empty() {
+                        if let Ok(mut map) = permission_responders.lock() {
+                            if let Some(sender) = map.remove(&tool_call_id) {
+                                let _ = sender.send(option_id);
+                            }
+                        }
+                    }
                 }
                 "read_file" => {
                     if !client_msg.path.is_empty() {

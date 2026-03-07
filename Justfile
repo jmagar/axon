@@ -157,6 +157,7 @@ web-format:
 stop:
     -pkill -f 'axon.*(serve|mcp|crawl worker|embed worker|extract worker)' 2>/dev/null || true
     -pkill -f 'next dev' 2>/dev/null || true
+    -pkill -f 'shell-server.mjs' 2>/dev/null || true
     @echo "Stopped running servers and workers"
 
 # Start workers only (crawl, embed, extract)
@@ -176,5 +177,6 @@ dev:
     {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
+    cd apps/web && node shell-server.mjs &
     cd apps/web && pnpm dev &
     wait

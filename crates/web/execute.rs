@@ -161,6 +161,7 @@ pub(super) async fn handle_command(
     tx: mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
     cfg: Arc<Config>,
+    permission_responders: crate::crates::services::acp::PermissionResponderMap,
 ) {
     // All mode/input/flags checks below use `.as_str()` / `.as_ref()` on the
     // owned values.  These borrows live only within their enclosing expressions
@@ -211,7 +212,7 @@ pub(super) async fn handle_command(
     // stats, sources, domains, doctor, status, pulse_chat) — call services directly.
     if let Some(params) = sync_mode::classify_sync_direct(&mode, &input, &flags, cfg, &ws_ctx) {
         ws_send::send_command_start(&tx, &context).await;
-        sync_mode::handle_sync_direct(params, tx, ws_ctx).await;
+        sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders).await;
         return;
     }
 

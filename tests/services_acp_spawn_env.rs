@@ -120,6 +120,62 @@ async fn spawn_adapter_strips_llm_proxy_vars() {
     );
 }
 
+/// Gemini auth vars (GEMINI_API_KEY, GOOGLE_API_KEY) must be passed through to the child,
+/// not stripped. These are needed for Gemini CLI authentication.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn spawn_adapter_passes_through_gemini_auth_vars() {
+    let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
+    const GEMINI_VARS: &[&str] = &["GEMINI_API_KEY", "GOOGLE_API_KEY"];
+    const SENTINEL: &str = "gemini_test_sentinel";
+
+    // SAFETY: ENV_LOCK is held; no concurrent env mutation in this process.
+    unsafe {
+        for v in GEMINI_VARS {
+            std::env::set_var(v, SENTINEL);
+        }
+    }
+
+    // Build a probe that prints the concatenated values of GEMINI_VARS.
+    let args_inner = GEMINI_VARS
+        .iter()
+        .map(|v| format!("\"${v}\""))
+        .collect::<Vec<_>>()
+        .join("");
+    let cmd = format!("printf '%s' {args_inner}");
+
+    let adapter = AcpAdapterCommand {
+        program: "sh".to_string(),
+        args: vec!["-c".to_string(), cmd],
+        cwd: None,
+    };
+    let scaffold = AcpClientScaffold::new(adapter);
+    let child = scaffold
+        .spawn_adapter()
+        .expect("spawn_adapter should succeed");
+    let output = child
+        .wait_with_output()
+        .await
+        .expect("child should complete");
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // SAFETY: ENV_LOCK is held.
+    unsafe {
+        for v in GEMINI_VARS {
+            std::env::remove_var(v);
+        }
+    }
+
+    // Both vars should be present in the child's output (sentinel repeated twice).
+    let expected = SENTINEL.repeat(GEMINI_VARS.len());
+    assert_eq!(
+        stdout, expected,
+        "GEMINI_API_KEY and GOOGLE_API_KEY must be passed through to child env, \
+         but child saw: {stdout:?} (expected: {expected:?})"
+    );
+}
+
 /// All STRIPPED_VARS injected simultaneously — none must leak through.
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]

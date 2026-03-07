@@ -14,6 +14,7 @@ import {
   Network,
   ScrollText,
   Settings2,
+  Sparkles,
   TerminalSquare,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const PAGE_LINKS = [
   { href: '/', label: 'Conversations', icon: <MessageSquare className="size-4" /> },
+  { href: '/reboot', label: 'Reboot', icon: <Sparkles className="size-4" /> },
   { href: '/editor', label: 'Editor', icon: <FilePenLine className="size-4" /> },
   { href: '/jobs', label: 'Jobs', icon: <Layers className="size-4" /> },
   { href: '/logs', label: 'Logs', icon: <ScrollText className="size-4" /> },

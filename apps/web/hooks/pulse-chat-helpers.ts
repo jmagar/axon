@@ -7,7 +7,9 @@ import { validateDocOperations } from '@/lib/pulse/doc-ops'
 import { checkPermission } from '@/lib/pulse/permissions'
 import type {
   AcpConfigOption,
+  AcpPermissionRequest,
   DocOperation,
+  PulseAgent,
   PulseMessageBlock,
   PulseModel,
   PulsePermissionLevel,
@@ -24,7 +26,7 @@ export interface PromptConfig {
   activeThreadSources: string[]
   scrapedContext: { url: string; markdown: string } | null
   permissionLevel: PulsePermissionLevel
-  agent: string
+  agent: PulseAgent
   model: PulseModel
   effort?: string
   maxTurns?: number
@@ -117,6 +119,7 @@ export function makeStreamEventHandler(
   setChatHistoryTracked: (action: React.SetStateAction<ChatMessage[]>) => void,
   updateChatMessage: (messageId: string, transform: (m: ChatMessage) => ChatMessage) => void,
   onAcpConfigUpdate?: (options: AcpConfigOption[]) => void,
+  onPermissionRequest?: (req: AcpPermissionRequest) => void,
 ): { handler: (event: ChatStreamEvent) => void; flush: () => void } {
   let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null
   let pendingDeltaFlush = false
@@ -195,11 +198,12 @@ export function makeStreamEventHandler(
       // Flush any pending text delta before adding tool use
       flush()
       ensureDraftAdded()
-      acc.partialTools.push(event.tool)
+      acc.partialTools.push({ ...event.tool })
       acc.partialBlocks.push({
         type: 'tool_use',
         name: event.tool.name,
         input: event.tool.input,
+        toolCallId: event.tool.toolCallId,
       })
       setLiveToolUses([...acc.partialTools])
       updateChatMessage(assistantDraft.id!, (m) => ({
@@ -207,6 +211,51 @@ export function makeStreamEventHandler(
         toolUses: [...acc.partialTools],
         blocks: [...acc.partialBlocks],
       }))
+      return
+    }
+
+    if (event.type === 'tool_use_update' && event.toolCallId) {
+      ensureDraftAdded()
+      const blockIdx = acc.partialBlocks.findLastIndex(
+        (b) => b.type === 'tool_use' && 'toolCallId' in b && b.toolCallId === event.toolCallId,
+      )
+      if (blockIdx >= 0) {
+        const block = acc.partialBlocks[blockIdx]
+        if (block.type === 'tool_use') {
+          acc.partialBlocks[blockIdx] = {
+            ...block,
+            status: event.status ?? block.status,
+            content: event.content ? (block.content ?? '') + event.content : block.content,
+          }
+        }
+      }
+      const toolIdx = acc.partialTools.findLastIndex((t) => t.toolCallId === event.toolCallId)
+      if (toolIdx >= 0) {
+        const tool = acc.partialTools[toolIdx]
+        acc.partialTools[toolIdx] = {
+          ...tool,
+          status: event.status ?? tool.status,
+          content: event.content ? (tool.content ?? '') + event.content : tool.content,
+        }
+      }
+      setLiveToolUses([...acc.partialTools])
+      updateChatMessage(assistantDraft.id!, (m) => ({
+        ...m,
+        toolUses: [...acc.partialTools],
+        blocks: [...acc.partialBlocks],
+      }))
+      return
+    }
+
+    if (event.type === 'permission_request' && event.toolCallId) {
+      // Resolve tool name from the most recent tool_use in the accumulator
+      const lastTool = acc.partialTools[acc.partialTools.length - 1]
+      onPermissionRequest?.({
+        sessionId: event.sessionId ?? '',
+        toolCallId: event.toolCallId,
+        options: event.permissionOptions ?? [],
+        toolName: lastTool?.name,
+      })
       return
     }
 

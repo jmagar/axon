@@ -1,5 +1,6 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import type React from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
@@ -135,6 +136,7 @@ function validateStoredEnum<T extends string>(
 // ── Provider hook ───────────────────────────────────────────────────────────
 
 export function useWsMessagesProvider() {
+  const pathname = usePathname()
   const { subscribe, send } = useAxonWs()
   const [markdownContent, setMarkdownContent] = useState('')
   const [logLines, setLogLines] = useState<LogLine[]>([])
@@ -290,6 +292,11 @@ export function useWsMessagesProvider() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: pulseModel is read inside but intentionally excluded — re-probing on model change would create an infinite loop since the probe itself can set the model
   useEffect(() => {
+    if (pathname?.startsWith('/reboot')) {
+      setAcpConfigOptions([])
+      return
+    }
+
     let cancelled = false
 
     void probePulseConfigOptions({ agent: pulseAgent })
@@ -313,7 +320,7 @@ export function useWsMessagesProvider() {
     return () => {
       cancelled = true
     }
-  }, [pulseAgent])
+  }, [pathname, pulseAgent])
 
   const setCurrentJobIdTracked = useCallback((jobId: string | null) => {
     currentJobIdRef.current = jobId
