@@ -1,16 +1,16 @@
 use crate::crates::core::config::{Config, ConfigOverrides};
 use crate::crates::services::acp as acp_svc;
-use crate::crates::services::events::ServiceEvent;
+use crate::crates::services::events::{LogLevel, ServiceEvent};
 use crate::crates::services::map as map_svc;
 use crate::crates::services::query as query_svc;
 use crate::crates::services::scrape as scrape_svc;
 use crate::crates::services::search as search_svc;
 use crate::crates::services::system as system_svc;
 use crate::crates::services::types::{
-    AcpAdapterCommand, AcpPromptTurnRequest, AcpSessionProbeRequest, AskResult, DoctorResult,
-    DomainsResult, MapOptions, MapResult, Pagination, QueryResult, ResearchResult, RetrieveOptions,
-    RetrieveResult, ScrapeResult, SearchOptions, SearchResult, SourcesResult, StatsResult,
-    StatusResult,
+    AcpAdapterCommand, AcpMcpServerConfig, AcpPromptTurnRequest, AcpSessionProbeRequest, AskResult,
+    DoctorResult, DomainsResult, MapOptions, MapResult, Pagination, QueryResult, ResearchResult,
+    RetrieveOptions, RetrieveResult, ScrapeResult, SearchOptions, SearchResult, SourcesResult,
+    StatsResult, StatusResult,
 };
 use serde_json::json;
 use std::env;
@@ -81,12 +81,14 @@ pub(super) struct DirectParams {
 enum PulseChatAgent {
     Claude,
     Codex,
+    Gemini,
 }
 
 impl PulseChatAgent {
     fn from_flag(value: Option<&str>) -> Self {
         match value {
             Some(raw) if raw.eq_ignore_ascii_case("codex") => Self::Codex,
+            Some(raw) if raw.eq_ignore_ascii_case("gemini") => Self::Gemini,
             _ => Self::Claude,
         }
     }
@@ -252,7 +254,79 @@ fn resolve_local_executable_path(program: &str, args_value: Option<&str>) -> Opt
             .map(|candidate| candidate.to_string_lossy().into_owned());
     }
 
+    let looks_like_gemini = program.contains("gemini")
+        || args_value
+            .map(|args| args.to_ascii_lowercase().contains("gemini"))
+            .unwrap_or(false);
+
+    if looks_like_gemini {
+        return candidate_local_executable_paths("gemini")
+            .into_iter()
+            .find(|candidate| candidate.exists())
+            .map(|candidate| candidate.to_string_lossy().into_owned());
+    }
+
     None
+}
+
+/// Read MCP server configs from `AXON_DATA_DIR/axon/config.json` (or
+/// `~/.config/axon/config.json` fallback). Returns an empty vec on any error.
+async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AxonConfig {
+        #[serde(default)]
+        mcp_servers: std::collections::HashMap<String, McpServerEntry>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct McpServerEntry {
+        command: Option<String>,
+        args: Option<Vec<String>>,
+        env: Option<std::collections::HashMap<String, String>>,
+        url: Option<String>,
+    }
+
+    let config_path = if let Ok(data_dir) = env::var("AXON_DATA_DIR") {
+        PathBuf::from(data_dir).join("axon/config.json")
+    } else if let Ok(home) = env::var("HOME") {
+        PathBuf::from(home).join(".config/axon/config.json")
+    } else {
+        return vec![];
+    };
+
+    let raw = match tokio::fs::read_to_string(&config_path).await {
+        Ok(raw) => raw,
+        Err(_) => return vec![],
+    };
+
+    let config: AxonConfig = match serde_json::from_str(&raw) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            log::warn!(
+                "[pulse_chat] failed to parse {}: {e}",
+                config_path.display()
+            );
+            return vec![];
+        }
+    };
+
+    config
+        .mcp_servers
+        .into_iter()
+        .map(|(name, entry)| {
+            if let Some(url) = entry.url {
+                AcpMcpServerConfig::Http { name, url }
+            } else {
+                AcpMcpServerConfig::Stdio {
+                    name,
+                    command: entry.command.unwrap_or_default(),
+                    args: entry.args.unwrap_or_default(),
+                    env: entry.env.unwrap_or_default().into_iter().collect(),
+                }
+            }
+        })
+        .collect()
 }
 
 fn resolve_acp_adapter_command(
@@ -265,6 +339,10 @@ fn resolve_acp_adapter_command(
             "AXON_ACP_CLAUDE_ADAPTER_ARGS",
         ),
         PulseChatAgent::Codex => ("AXON_ACP_CODEX_ADAPTER_CMD", "AXON_ACP_CODEX_ADAPTER_ARGS"),
+        PulseChatAgent::Gemini => (
+            "AXON_ACP_GEMINI_ADAPTER_CMD",
+            "AXON_ACP_GEMINI_ADAPTER_ARGS",
+        ),
     };
 
     let cmd_override = env::var(cmd_env_key).ok();
@@ -604,11 +682,13 @@ pub(super) async fn handle_sync_direct(
     params: DirectParams,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
+    permission_responders: acp_svc::PermissionResponderMap,
 ) {
     let start = Instant::now();
 
     // dispatch_service takes full ownership — no borrows cross any .await.
-    let svc_result = dispatch_service(params, tx.clone(), ws_ctx.clone()).await;
+    let svc_result =
+        dispatch_service(params, tx.clone(), ws_ctx.clone(), permission_responders).await;
     let elapsed_ms = Some(start.elapsed().as_millis() as u64);
 
     match svc_result {
@@ -625,11 +705,12 @@ async fn dispatch_acp_event(
 ) {
     match event {
         ServiceEvent::Log { level, message } => {
-            log::warn!(
-                "[pulse_chat] ACP log ({}): {}",
-                level,
-                message.chars().take(200).collect::<String>()
-            );
+            let truncated: String = message.chars().take(200).collect();
+            match level {
+                LogLevel::Info => log::info!("[pulse_chat] {truncated}"),
+                LogLevel::Warn => log::warn!("[pulse_chat] {truncated}"),
+                LogLevel::Error => log::error!("[pulse_chat] {truncated}"),
+            }
             send_json_owned(
                 tx.clone(),
                 ws_ctx.clone(),
@@ -643,25 +724,13 @@ async fn dispatch_acp_event(
                 .get("type")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let preview = match event_type {
-                "assistant_delta" => payload
-                    .get("delta")
-                    .and_then(|v| v.as_str())
-                    .map(|s| format!("delta={}chars", s.len()))
-                    .unwrap_or_default(),
-                "thinking_content" => "thinking".to_string(),
-                "result" => payload
-                    .get("result")
-                    .and_then(|v| v.as_str())
-                    .map(|s| format!("result={}chars", s.len()))
-                    .unwrap_or_else(|| "result=<none>".to_string()),
-                other => other.to_string(),
-            };
-            log::warn!(
-                "[pulse_chat] ACP bridge event: type={} {}",
+            // Only log non-streaming events at debug to avoid flooding.
+            if !matches!(
                 event_type,
-                preview
-            );
+                "assistant_delta" | "thinking_content" | "user_delta"
+            ) {
+                log::info!("[pulse_chat] ACP event: type={event_type}");
+            }
             send_json_owned(tx.clone(), ws_ctx.clone(), payload).await;
         }
     }
@@ -709,6 +778,7 @@ async fn run_acp_event_loop(
 
 /// Handle the `pulse_chat` service mode: start a prompt-turn ACP session and
 /// stream events back over the WS channel.
+#[allow(clippy::too_many_arguments)]
 async fn handle_pulse_chat(
     cfg: Arc<Config>,
     input: String,
@@ -717,8 +787,9 @@ async fn handle_pulse_chat(
     agent: PulseChatAgent,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
+    permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
-    log::warn!(
+    log::info!(
         "[pulse_chat] starting: agent={:?} session_id={:?} model={:?} input_len={}",
         agent,
         session_id,
@@ -727,34 +798,41 @@ async fn handle_pulse_chat(
     );
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let adapter = resolve_acp_adapter_command(&cfg, agent)?;
-    log::warn!(
+    log::info!(
         "[pulse_chat] adapter resolved: program={} args={:?}",
         adapter.program,
         adapter.args
     );
     let scaffold = acp_svc::AcpClientScaffold::new(adapter);
+    let mcp_servers = read_axon_mcp_servers().await;
+    if !mcp_servers.is_empty() {
+        log::info!(
+            "[pulse_chat] passing {} MCP server(s) to ACP session",
+            mcp_servers.len()
+        );
+    }
     let req = AcpPromptTurnRequest {
         session_id,
         prompt: vec![input],
         model,
+        mcp_servers,
     };
     let cwd = env::current_dir().map_err(|e| e.to_string())?;
-    log::warn!("[pulse_chat] cwd={}", cwd.display());
+    log::info!("[pulse_chat] cwd={}", cwd.display());
     let task = tokio::spawn(async move {
         let result = scaffold
-            .start_prompt_turn(&req, cwd, Some(event_tx))
+            .start_prompt_turn(&req, cwd, Some(event_tx), permission_responders)
             .await
             .map_err(|e| e.to_string());
         match &result {
-            Ok(()) => log::warn!("[pulse_chat] prompt turn completed successfully"),
-            Err(e) => log::error!("[pulse_chat] prompt turn failed: {}", e),
+            Ok(()) => log::info!("[pulse_chat] prompt turn completed"),
+            Err(e) => log::error!("[pulse_chat] prompt turn failed: {e}"),
         }
         result
     });
     let loop_result = run_acp_event_loop(task, event_rx, tx, ws_ctx, "pulse_chat").await;
-    match &loop_result {
-        Ok(()) => log::warn!("[pulse_chat] event loop completed successfully"),
-        Err(e) => log::error!("[pulse_chat] event loop failed: {}", e),
+    if let Err(e) = &loop_result {
+        log::error!("[pulse_chat] event loop failed: {e}");
     }
     loop_result
 }
@@ -768,6 +846,7 @@ async fn handle_pulse_chat_probe(
     agent: PulseChatAgent,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
+    permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let adapter = resolve_acp_adapter_command(&cfg, agent)?;
@@ -776,7 +855,7 @@ async fn handle_pulse_chat_probe(
     let cwd = env::current_dir().map_err(|e| e.to_string())?;
     let task = tokio::spawn(async move {
         scaffold
-            .start_session_probe(&req, cwd, Some(event_tx))
+            .start_session_probe(&req, cwd, Some(event_tx), permission_responders)
             .await
             .map_err(|e| e.to_string())
     });
@@ -793,6 +872,7 @@ async fn dispatch_service(
     params: DirectParams,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
+    permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), SvcError> {
     let DirectParams {
         mode,
@@ -888,10 +968,29 @@ async fn dispatch_service(
             send_json_owned(tx, ws_ctx, result.payload).await;
         }
         ServiceMode::PulseChat => {
-            handle_pulse_chat(cfg, input, session_id, model, agent, tx, ws_ctx).await?;
+            handle_pulse_chat(
+                cfg,
+                input,
+                session_id,
+                model,
+                agent,
+                tx,
+                ws_ctx,
+                permission_responders,
+            )
+            .await?;
         }
         ServiceMode::PulseChatProbe => {
-            handle_pulse_chat_probe(cfg, session_id, model, agent, tx, ws_ctx).await?;
+            handle_pulse_chat_probe(
+                cfg,
+                session_id,
+                model,
+                agent,
+                tx,
+                ws_ctx,
+                permission_responders,
+            )
+            .await?;
         }
     }
 
@@ -1153,6 +1252,38 @@ mod tests {
         let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
         assert_eq!(params.agent, PulseChatAgent::Codex);
         assert_eq!(params.model.as_deref(), Some("o3"));
+    }
+
+    #[test]
+    fn extract_params_reads_gemini_agent_for_pulse_chat() {
+        let base = Config::default();
+        let context = ExecCommandContext {
+            exec_id: "test".to_string(),
+            mode: "pulse_chat".to_string(),
+            input: "hello".to_string(),
+            flags: serde_json::Value::Null,
+            cfg: Arc::new(base),
+        };
+        let flags = serde_json::json!({"agent": "gemini"});
+        let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
+        assert_eq!(params.agent, PulseChatAgent::Gemini);
+        assert_eq!(params.model, None);
+    }
+
+    #[test]
+    fn extract_params_reads_gemini_agent_with_model() {
+        let base = Config::default();
+        let context = ExecCommandContext {
+            exec_id: "test".to_string(),
+            mode: "pulse_chat".to_string(),
+            input: "hello".to_string(),
+            flags: serde_json::Value::Null,
+            cfg: Arc::new(base),
+        };
+        let flags = serde_json::json!({"agent": "gemini", "model": "gemini-3-pro-preview"});
+        let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
+        assert_eq!(params.agent, PulseChatAgent::Gemini);
+        assert_eq!(params.model.as_deref(), Some("gemini-3-pro-preview"));
     }
 
     #[test]

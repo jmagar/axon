@@ -86,6 +86,26 @@ pub struct AcpPromptTurnRequest {
     pub prompt: Vec<String>,
     /// Model config option value to set after session setup (if agent supports it).
     pub model: Option<String>,
+    /// MCP servers to pass through to the ACP agent session.
+    pub mcp_servers: Vec<AcpMcpServerConfig>,
+}
+
+/// MCP server configuration passed through to ACP NewSessionRequest.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "transport", rename_all = "snake_case")]
+pub enum AcpMcpServerConfig {
+    Stdio {
+        name: String,
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        env: Vec<(String, String)>,
+    },
+    Http {
+        name: String,
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,7 +149,7 @@ pub enum AcpSessionUpdateKind {
     ThinkingDelta,
     #[serde(rename = "tool_use")]
     ToolCallStarted,
-    #[serde(rename = "tool_use")]
+    #[serde(rename = "tool_use_update")]
     ToolCallUpdated,
     #[serde(rename = "status")]
     Plan,
@@ -150,7 +170,7 @@ impl std::fmt::Display for AcpSessionUpdateKind {
             Self::AssistantDelta => write!(f, "assistant_delta"),
             Self::ThinkingDelta => write!(f, "thinking_content"),
             Self::ToolCallStarted => write!(f, "tool_use"),
-            Self::ToolCallUpdated => write!(f, "tool_use"),
+            Self::ToolCallUpdated => write!(f, "tool_use_update"),
             Self::Plan => write!(f, "status"),
             Self::AvailableCommandsUpdate => write!(f, "status"),
             Self::CurrentModeUpdate => write!(f, "status"),
@@ -169,6 +189,16 @@ pub struct AcpSessionUpdateEvent {
     pub text_delta: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_status: Option<String>,
+    /// Text content produced by the tool call (extracted from ToolCallContent::Content).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_content: Option<String>,
+    /// Raw JSON input to the tool call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_input: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -195,6 +225,49 @@ pub enum AcpBridgeEvent {
     PermissionRequest(AcpPermissionRequestEvent),
     TurnResult(AcpTurnResultEvent),
     ConfigOptionsUpdate(Vec<AcpConfigOption>),
+    PlanUpdate(AcpPlanUpdate),
+    ModeUpdate(AcpModeUpdate),
+    CommandsUpdate(AcpCommandsUpdate),
+}
+
+/// ACP plan forwarded from the agent's Plan session update.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpPlanEntry {
+    pub content: String,
+    pub priority: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpPlanUpdate {
+    pub session_id: String,
+    pub entries: Vec<AcpPlanEntry>,
+}
+
+/// Current mode changed notification from the ACP agent.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpModeUpdate {
+    pub session_id: String,
+    pub current_mode_id: String,
+}
+
+/// Available slash-commands changed notification from the ACP agent.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpAvailableCommand {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpCommandsUpdate {
+    pub session_id: String,
+    pub commands: Vec<AcpAvailableCommand>,
 }
 
 impl serde::Serialize for AcpBridgeEvent {
@@ -217,6 +290,18 @@ impl serde::Serialize for AcpBridgeEvent {
                 map.serialize_entry("session_id", &update.session_id)?;
                 map.serialize_entry("tool_call_id", &update.tool_call_id)?;
                 map.serialize_entry(text_key, &text_val)?;
+                if let Some(ref name) = update.tool_name {
+                    map.serialize_entry("tool_name", name)?;
+                }
+                if let Some(ref status) = update.tool_status {
+                    map.serialize_entry("tool_status", status)?;
+                }
+                if let Some(ref content) = update.tool_content {
+                    map.serialize_entry("tool_content", content)?;
+                }
+                if let Some(ref input) = update.tool_input {
+                    map.serialize_entry("tool_input", input)?;
+                }
                 map.end()
             }
             Self::PermissionRequest(req) => {
@@ -239,6 +324,27 @@ impl serde::Serialize for AcpBridgeEvent {
                 let mut map = serializer.serialize_map(None)?;
                 map.serialize_entry("type", "config_options_update")?;
                 map.serialize_entry("configOptions", options)?;
+                map.end()
+            }
+            Self::PlanUpdate(plan) => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "plan_update")?;
+                map.serialize_entry("session_id", &plan.session_id)?;
+                map.serialize_entry("entries", &plan.entries)?;
+                map.end()
+            }
+            Self::ModeUpdate(mode) => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "mode_update")?;
+                map.serialize_entry("session_id", &mode.session_id)?;
+                map.serialize_entry("currentModeId", &mode.current_mode_id)?;
+                map.end()
+            }
+            Self::CommandsUpdate(cmds) => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "commands_update")?;
+                map.serialize_entry("session_id", &cmds.session_id)?;
+                map.serialize_entry("commands", &cmds.commands)?;
                 map.end()
             }
         }

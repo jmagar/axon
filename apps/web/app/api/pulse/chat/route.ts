@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       conversationHistory: req.conversationHistory,
       permissionLevel: req.permissionLevel,
       agent: req.agent,
-      model: req.model,
+      model: req.model ?? '',
     })
 
     pruneReplayCache(Date.now())
@@ -298,6 +298,19 @@ export async function POST(request: Request) {
               const configOptions = data.configOptions
               if (Array.isArray(configOptions)) {
                 emit({ type: 'config_options_update', configOptions })
+              }
+              return
+            }
+            case 'permission_request': {
+              const toolCallId = typeof data.tool_call_id === 'string' ? data.tool_call_id : ''
+              const options = Array.isArray(data.options) ? (data.options as string[]) : []
+              if (toolCallId && options.length > 0) {
+                emit({
+                  type: 'permission_request',
+                  sessionId: sessionId ?? '',
+                  toolCallId,
+                  options,
+                })
               }
               return
             }

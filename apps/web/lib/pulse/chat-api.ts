@@ -16,12 +16,25 @@ import type {
 } from '@/lib/pulse/types'
 
 export interface ChatStreamEvent {
-  type: 'status' | 'assistant_delta' | 'tool_use' | 'thinking_content' | 'config_options_update'
+  type:
+    | 'status'
+    | 'assistant_delta'
+    | 'tool_use'
+    | 'tool_use_update'
+    | 'thinking_content'
+    | 'config_options_update'
+    | 'permission_request'
   phase?: 'started' | 'thinking' | 'finalizing'
   delta?: string
   tool?: PulseToolUse
   content?: string
   configOptions?: AcpConfigOption[]
+  toolCallId?: string
+  status?: string
+  toolName?: string
+  /** ACP permission request fields */
+  sessionId?: string
+  permissionOptions?: string[]
 }
 
 export interface RunChatPromptOptions {
@@ -90,8 +103,27 @@ async function readNdjsonStream(
         onEvent?.({ type: 'tool_use', tool: event.tool })
         continue
       }
+      if (event.type === 'tool_use_update') {
+        onEvent?.({
+          type: 'tool_use_update',
+          toolCallId: event.toolCallId,
+          status: event.status,
+          content: event.content,
+          toolName: event.toolName,
+        })
+        continue
+      }
       if (event.type === 'config_options_update') {
         onEvent?.({ type: 'config_options_update', configOptions: event.configOptions })
+        continue
+      }
+      if (event.type === 'permission_request') {
+        onEvent?.({
+          type: 'permission_request',
+          sessionId: event.sessionId,
+          toolCallId: event.toolCallId,
+          permissionOptions: event.options,
+        })
         continue
       }
       if (event.type === 'error') {

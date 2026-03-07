@@ -12,8 +12,15 @@ export interface EditorTab {
 const TABS_KEY = 'axon.web.editor.tabs'
 const ACTIVE_KEY = 'axon.web.editor.active-tab'
 
+function createTabId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function newBlankTab(): EditorTab {
-  return { id: crypto.randomUUID(), title: 'Untitled', markdown: '', docFilename: null }
+  return { id: createTabId(), title: 'Untitled', markdown: '', docFilename: null }
 }
 
 function loadPersisted(): { tabs: EditorTab[]; activeTabId: string } {
@@ -75,7 +82,7 @@ export function useTabs() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null
 
   const openTab = useCallback((partial: Omit<EditorTab, 'id'>) => {
-    const tab: EditorTab = { id: crypto.randomUUID(), ...partial }
+    const tab: EditorTab = { id: createTabId(), ...partial }
     setTabs((prev) => [...prev, tab])
     setActiveTabId(tab.id)
     return tab.id

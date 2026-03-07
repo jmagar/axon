@@ -116,6 +116,8 @@ impl Default for Config {
             max_page_bytes: None,
             redirect_policy_strict: false,
             chrome_wait_for_selector: None,
+            root_selector: None,
+            exclude_selector: None,
             chrome_screenshot: false,
             research_depth: None,
             search_time_range: None,
@@ -279,6 +281,8 @@ impl fmt::Debug for Config {
             .field("max_page_bytes", &self.max_page_bytes)
             .field("redirect_policy_strict", &self.redirect_policy_strict)
             .field("chrome_wait_for_selector", &self.chrome_wait_for_selector)
+            .field("root_selector", &self.root_selector)
+            .field("exclude_selector", &self.exclude_selector)
             .field("chrome_screenshot", &self.chrome_screenshot)
             .field("research_depth", &self.research_depth)
             .field("search_time_range", &self.search_time_range)

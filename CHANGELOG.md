@@ -1,11 +1,15 @@
 # Changelog
-Last Modified: 2026-03-06 (session: v0.7.4 — ACP comprehensive review fixes)
+Last Modified: 2026-03-07 (session: v0.8.0 — Zed alignment + ACP permission plumbing)
 
 ## [Unreleased] — feat/services-layer-refactor
 
 This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
 
 ### Highlights
+
+- **Zed alignment + ACP permission plumbing (v0.8.0)** — 5 parallel agents implemented Zed-aligned patterns: session list/resume (`use-pulse-sessions.ts`, `session-store.ts`), tool call terminal rendering (`tool-call-terminal.tsx`), permission modal UI (`permission-modal.tsx`), process exit monitoring, targeted entry updates; `PermissionResponderMap` type wired through WS handler → execute bridge → ACP bridge client using `std::sync::Mutex` + `tokio::sync::oneshot` for cross-runtime communication; `permission_response` WS message type added with `tool_call_id`/`option_id` fields; 60s auto-approve timeout fallback prevents session hangs; `AXON_ACP_AUTO_APPROVE` env var controls behavior (default `true`); 3 pre-existing TS build errors fixed (`route.ts` model type, `claude-stream-types.ts` model lookup, `pulse-chat-helpers.ts` agent type); reboot page scaffolding added; shadcn accordion/collapsible/hover-card/button-group components added
+
+- **CSS selector scoping + markdown cleanup (v0.7.5)** — new `--root-selector` and `--exclude-selector` CLI flags thread `SelectorConfiguration` through all crawl/scrape/embed/sitemap/refresh paths; `build_selector_config()` constructs the config from `Config` fields; `clean_markdown_whitespace()` collapses excessive newlines (3+→2) and horizontal spaces (2+→1) post-transform, applied in collector, cdp_render, thin_refetch, and to_markdown; MCP `ScrapeRequest` gains `root_selector`/`exclude_selector` fields; Pulse debug logging added to omnibox execution, handlePrompt, and workspace prompt dispatch
 
 - **ACP comprehensive review fixes (v0.7.4)** — 30 unique findings fixed across security, performance, and code quality: model argument injection guard (`validate_model_string`), env allowlist in `spawn_adapter` (env_clear + 12 vars), 5-minute adapter lifecycle timeout, `LogLevel` enum replacing raw strings (30+ call sites), `try_send` event loss logging, double mutex → single lock, `std::fs` → `tokio::fs`, dead code removal, duplicate function merge, `Serialize` derives on all ACP types with serde rename, hand-rolled JSON → `serde_json::to_value`, channel capacity 32→256, `toolsRestrict` regex tightened to match backend `TOOL_ENTRY_RE`, `--dangerously-skip-permissions` gated behind `AXON_ALLOW_SKIP_PERMISSIONS`, `response.body!` null guard, localStorage Zod validation, `handlePrompt` split 268→155 lines, dual config state unified, config probe caching (60s TTL), 5 localStorage effects consolidated to 2
 
@@ -86,6 +90,12 @@ This section documents commits on `feat/services-layer-refactor` relative to `ma
 
 | Commit | Type | Message |
 |---|---|---|
+| `pending` | feat | Zed alignment patterns + ACP permission plumbing (v0.8.0) |
+| `24e25081` | feat | add --root-selector/--exclude-selector + clean_markdown_whitespace (v0.7.5) |
+| `9c38b0fa` | refactor | split monolith-violating files (route.ts, use-pulse-chat.ts) |
+| `8d4603b7` | feat | address all ACP review findings (v0.7.4) |
+| `4d3d2a9a` | feat | address all ACP review findings (v0.7.4) |
+| `edabb90a` | test | regression tests for ACP env isolation (v0.7.3) |
 | `7368ddb7` | fix | stage claude/codex credentials into axon-web container |
 | `107d2a6c` | fix | remove pulse_chat direct-dispatch flags from ALLOWED_FLAGS |
 | `a017bb28` | chore | v0.7.1 — address all PR review threads (batches 1-10) |

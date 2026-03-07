@@ -1,8 +1,8 @@
 use agent_client_protocol::{
-    ContentChunk, PermissionOption, PermissionOptionId, PermissionOptionKind,
+    ContentBlock, ContentChunk, PermissionOption, PermissionOptionId, PermissionOptionKind,
     RequestPermissionRequest, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOption, SessionConfigSelectOptions, SessionNotification, SessionUpdate,
-    ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+    ToolCallContent, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
 };
 use axon::crates::services::acp::{
     map_permission_request, map_permission_request_event, map_session_notification,
@@ -149,4 +149,34 @@ fn map_permission_request_event_wraps_bridge_event() {
         }
         other => panic!("unexpected event: {other:?}"),
     }
+}
+
+#[test]
+fn map_session_notification_extracts_tool_content_text() {
+    let update = SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+        ToolCallId::new("tool-content-1"),
+        ToolCallUpdateFields::new()
+            .title("Bash")
+            .content(vec![ToolCallContent::from(ContentBlock::from(
+                "hello world",
+            ))]),
+    ));
+    let notification = SessionNotification::new("session-content", update);
+    let mapped = map_session_notification(&notification);
+    assert_eq!(mapped.tool_call_id.as_deref(), Some("tool-content-1"));
+    assert_eq!(mapped.tool_content.as_deref(), Some("hello world"));
+}
+
+#[test]
+fn map_session_notification_extracts_tool_raw_input() {
+    let input_json = serde_json::json!({"command": "ls -la"});
+    let update = SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+        ToolCallId::new("tool-input-1"),
+        ToolCallUpdateFields::new()
+            .title("Bash")
+            .raw_input(input_json.clone()),
+    ));
+    let notification = SessionNotification::new("session-input", update);
+    let mapped = map_session_notification(&notification);
+    assert_eq!(mapped.tool_input.as_ref(), Some(&input_json));
 }

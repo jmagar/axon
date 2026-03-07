@@ -8,6 +8,7 @@ import type { ValidationResult } from '@/lib/pulse/doc-ops'
 import { detectPulsePromptIntent } from '@/lib/pulse/prompt-intent'
 import type {
   AcpConfigOption,
+  AcpPermissionRequest,
   DocOperation,
   PulseAgent,
   PulseModel,
@@ -36,6 +37,7 @@ interface UsePulseChatInput {
   onPendingOps: (ops: DocOperation[] | null) => void
   onPendingValidation: (v: ValidationResult | null) => void
   onAcpConfigUpdate?: (options: AcpConfigOption[]) => void
+  onPermissionRequest?: (req: AcpPermissionRequest) => void
   effort?: string
   maxTurns?: number
   maxBudgetUsd?: number
@@ -59,6 +61,7 @@ export function usePulseChat({
   onPendingOps,
   onPendingValidation,
   onAcpConfigUpdate,
+  onPermissionRequest,
   effort,
   maxTurns,
   maxBudgetUsd,
@@ -210,7 +213,6 @@ export function usePulseChat({
     async (prompt: string) => {
       const trimmed = prompt.trim()
       if (!trimmed) return
-      console.log('[pulse-chat] handlePrompt called:', trimmed.slice(0, 80))
       const now = Date.now()
       const lastSubmitted = lastSubmittedPromptRef.current
       if (
@@ -298,16 +300,9 @@ export function usePulseChat({
           setChatHistoryTracked,
           updateChatMessage,
           onAcpConfigUpdate,
+          onPermissionRequest,
         )
 
-        console.log(
-          '[pulse-chat] calling runChatPrompt — sessionId:',
-          cfg.chatSessionId,
-          'model:',
-          cfg.model,
-          'agent:',
-          cfg.agent,
-        )
         const data = await runChatPrompt({
           prompt: boundedPrompt,
           conversationHistory,
@@ -378,6 +373,7 @@ export function usePulseChat({
       onApplyOperations,
       onPendingOps,
       onPendingValidation,
+      onPermissionRequest,
       setChatHistoryTracked,
       showRequestNotice,
       updateChatMessage,
