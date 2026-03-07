@@ -89,7 +89,7 @@ function parseHandoffLabel(content: string): string | null {
 
 // ── Message content renderer ───────────────────────────────────────────────────
 
-export function MessageContent({ msg }: { msg: ChatMessage }) {
+export const MessageContent = memo(function MessageContent({ msg }: { msg: ChatMessage }) {
   if (msg.isError) return null
 
   // Compact chip for session handoff messages
@@ -157,7 +157,7 @@ export function MessageContent({ msg }: { msg: ChatMessage }) {
     return <PulseMarkdown content={msg.content} />
   }
   return <p className="ui-copy whitespace-pre-wrap">{msg.content}</p>
-}
+})
 
 // ── Message bubble (full per-message card with header, content, doc-ops) ──────
 

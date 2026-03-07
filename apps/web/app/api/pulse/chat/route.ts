@@ -4,18 +4,10 @@ import {
   encodePulseChatStreamEvent,
   type PulseChatStreamEvent,
 } from '@/lib/pulse/chat-stream'
-import { fallbackAssistantText, parseClaudeAssistantPayload } from '@/lib/pulse/claude-response'
 import { resolveConversationMemoryAnswer } from '@/lib/pulse/conversation-memory'
-import { checkPermission } from '@/lib/pulse/permissions'
 import { buildPulseSystemPrompt, retrieveFromCollections } from '@/lib/pulse/rag'
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
-import {
-  DocOperationSchema,
-  type PulseChatRequest,
-  PulseChatRequestSchema,
-  type PulseChatResponse,
-  type PulseCitation,
-} from '@/lib/pulse/types'
+import { PulseChatRequestSchema } from '@/lib/pulse/types'
 import { apiError, makeErrorId } from '@/lib/server/api-error'
 import {
   CLAUDE_TIMEOUT_MS,
@@ -31,6 +23,15 @@ import {
   replayCache,
   upsertReplayEntry,
 } from './replay-cache'
+import {
+  buildDoneResponse,
+  buildPromptText,
+  patchToolResult,
+  recordAssistantDelta,
+  recordThinking,
+  truncateForLog,
+  upsertToolUse,
+} from './route-helpers'
 import { createStreamParserState, extractToolResultText } from './stream-parser'
 
 const DEFAULT_PULSE_CHAT_TIMEOUT_MS = CLAUDE_TIMEOUT_MS
@@ -41,162 +42,6 @@ function resolvePulseChatTimeoutMs(): number {
   const parsed = Number(raw)
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PULSE_CHAT_TIMEOUT_MS
   return Math.floor(parsed)
-}
-
-function buildPromptText(userPrompt: string): string {
-  return [
-    userPrompt,
-    '',
-    'Respond as JSON only with this exact shape:',
-    '{"text":"...","operations":[...]}',
-    'Allowed operation types and their required fields:',
-    '  replace_document: {"type":"replace_document","markdown":"<full doc content>"}',
-    '  append_markdown:  {"type":"append_markdown","markdown":"<content to append>"}',
-    '  insert_section:   {"type":"insert_section","heading":"<title>","markdown":"<content>","position":"top"|"bottom"}',
-    'IMPORTANT: use "markdown" (not "content") for the document text field.',
-    'If no operations are needed, return operations as an empty array.',
-  ].join('\n')
-}
-
-type ParseOperationsResult = { text: string; operations: PulseChatResponse['operations'] }
-
-function parseOperations(result: string): ParseOperationsResult {
-  const parsedPayload = parseClaudeAssistantPayload(result)
-  if (!parsedPayload) {
-    return { text: fallbackAssistantText(result), operations: [] }
-  }
-
-  const operations: PulseChatResponse['operations'] = []
-  for (const op of parsedPayload.operations) {
-    const parsedOp = DocOperationSchema.safeParse(op)
-    if (parsedOp.success) {
-      operations.push(parsedOp.data)
-    }
-  }
-  return { text: parsedPayload.text, operations }
-}
-
-function buildDoneResponse(
-  req: PulseChatRequest,
-  citations: PulseCitation[],
-  parserState: ReturnType<typeof createStreamParserState>,
-  startedAt: number,
-  contextCharsTotal: number,
-  aborted: boolean,
-): Parameters<typeof createPulseChatStreamEvent>[0] {
-  const elapsed = Date.now() - startedAt
-  const telemetry = {
-    elapsedMs: elapsed,
-    contextCharsTotal,
-    contextBudgetChars: MODEL_CONTEXT_BUDGET_CHARS,
-    first_delta_ms: parserState.firstDeltaMs,
-    time_to_done_ms: elapsed,
-    delta_count: parserState.deltaCount,
-    aborted,
-  }
-
-  if (aborted) {
-    return {
-      type: 'done',
-      response: {
-        text: fallbackAssistantText(parserState.result),
-        sessionId: parserState.sessionId ?? undefined,
-        citations,
-        operations: [],
-        toolUses: parserState.toolUses,
-        blocks: parserState.blocks,
-        metadata: { agent: req.agent, model: req.model, ...telemetry },
-      },
-    }
-  }
-
-  let { text, operations } = parseOperations(parserState.result)
-
-  const permission = checkPermission(req.permissionLevel, operations, {
-    isCurrentDoc: true,
-    currentDocMarkdown: req.documentMarkdown,
-  })
-  if (!permission.allowed) {
-    operations = []
-    text = text || 'Operation blocked by permission policy.'
-  }
-
-  return {
-    type: 'done',
-    response: {
-      text,
-      sessionId: parserState.sessionId ?? undefined,
-      citations,
-      operations,
-      toolUses: parserState.toolUses,
-      blocks: parserState.blocks,
-      metadata: { agent: req.agent, model: req.model, ...telemetry },
-    },
-  }
-}
-
-function recordAssistantDelta(
-  parserState: ReturnType<typeof createStreamParserState>,
-  delta: string,
-  startedAt: number,
-): void {
-  parserState.blocks.push({ type: 'text', content: delta })
-  parserState.deltaCount += 1
-  parserState.firstDeltaMs ??= Date.now() - startedAt
-}
-
-function recordThinking(
-  parserState: ReturnType<typeof createStreamParserState>,
-  content: string,
-): void {
-  const lastBlock = parserState.blocks[parserState.blocks.length - 1]
-  if (lastBlock?.type === 'thinking') {
-    lastBlock.content = content
-    return
-  }
-  parserState.blocks.push({ type: 'thinking', content })
-}
-
-function upsertToolUse(
-  parserState: ReturnType<typeof createStreamParserState>,
-  id: string | undefined,
-  name: string,
-  input: Record<string, unknown>,
-): void {
-  if (id) {
-    const existingIdx = parserState.toolUseIdToIdx.get(id)
-    if (existingIdx !== undefined) {
-      const existingBlock = parserState.blocks[existingIdx]
-      if (existingBlock?.type === 'tool_use') {
-        existingBlock.input = input
-      }
-      const toolIdx = parserState.blocks
-        .slice(0, existingIdx)
-        .filter((b) => b.type === 'tool_use').length
-      const existingTool = parserState.toolUses[toolIdx]
-      if (existingTool) {
-        existingTool.input = input
-      }
-      return
-    }
-  }
-
-  const idx = parserState.blocks.length
-  parserState.blocks.push({ type: 'tool_use', name, input })
-  if (id) parserState.toolUseIdToIdx.set(id, idx)
-  parserState.toolUses.push({ name, input })
-}
-
-function patchToolResult(
-  parserState: ReturnType<typeof createStreamParserState>,
-  toolUseId: string,
-  resultText: string,
-): void {
-  const idx = parserState.toolUseIdToIdx.get(toolUseId)
-  if (idx === undefined) return
-  const block = parserState.blocks[idx]
-  if (block?.type !== 'tool_use') return
-  block.result = resultText.slice(0, 600)
 }
 
 export async function POST(request: Request) {
@@ -579,8 +424,4 @@ export async function POST(request: Request) {
     console.error('[pulse/chat] unhandled error', { errorId, message, error })
     return apiError(500, 'Chat request failed', { code: 'pulse_chat_internal', errorId })
   }
-}
-
-function truncateForLog(input: string, max = 400): string {
-  return input.length <= max ? input : `${input.slice(0, max)}...`
 }
