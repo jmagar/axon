@@ -160,7 +160,12 @@ export function AxonShell() {
   const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
 
   // Load JSONL history for the active session
-  const { messages: historicalMessages } = useAxonSession(activeSessionId)
+  const {
+    messages: historicalMessages,
+    loading: sessionLoading,
+    error: sessionError,
+    reload: reloadSession,
+  } = useAxonSession(activeSessionId)
 
   const onSessionIdChange = useCallback((newId: string) => {
     setActiveSessionId(newId)
@@ -655,6 +660,9 @@ export function AxonShell() {
                     onOpenFile={handleMobileOpenFile}
                     isTyping={isStreaming}
                     variant="mobile"
+                    loading={sessionLoading}
+                    error={sessionError}
+                    onRetry={reloadSession}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
@@ -835,6 +843,9 @@ export function AxonShell() {
                     onOpenFile={openFile}
                     isTyping={isStreaming}
                     variant="desktop"
+                    loading={sessionLoading}
+                    error={sessionError}
+                    onRetry={reloadSession}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
