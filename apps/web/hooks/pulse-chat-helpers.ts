@@ -118,6 +118,7 @@ export function makeStreamEventHandler(
   setLiveToolUses: React.Dispatch<React.SetStateAction<PulseToolUse[]>>,
   setChatHistoryTracked: (action: React.SetStateAction<ChatMessage[]>) => void,
   updateChatMessage: (messageId: string, transform: (m: ChatMessage) => ChatMessage) => void,
+  setChatSessionId: React.Dispatch<React.SetStateAction<string | null>>,
   onAcpConfigUpdate?: (options: AcpConfigOption[]) => void,
   onPermissionRequest?: (req: AcpPermissionRequest) => void,
 ): { handler: (event: ChatStreamEvent) => void; flush: () => void } {
@@ -261,6 +262,12 @@ export function makeStreamEventHandler(
 
     if (event.type === 'config_options_update' && event.configOptions) {
       onAcpConfigUpdate?.(event.configOptions)
+      return
+    }
+
+    if (event.type === 'session_fallback' && event.newSessionId) {
+      setChatSessionId(event.newSessionId)
+      return
     }
   }
 
