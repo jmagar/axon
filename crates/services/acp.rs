@@ -1710,4 +1710,351 @@ mod tests {
         let result = append_codex_model_override(&adapter, Some("gemini-3-pro-preview")).unwrap();
         assert_eq!(result.args, vec!["--experimental-acp"]);
     }
+
+    // ── Group 1: Input validation (pure, no I/O) ──────────────────────────────
+
+    #[test]
+    fn validate_adapter_command_rejects_empty() {
+        let empty = AcpAdapterCommand {
+            program: "".to_string(),
+            args: vec![],
+            cwd: None,
+        };
+        assert!(
+            validate_adapter_command(&empty).is_err(),
+            "empty program must be Err"
+        );
+
+        let blank = AcpAdapterCommand {
+            program: "   ".to_string(),
+            args: vec![],
+            cwd: None,
+        };
+        assert!(
+            validate_adapter_command(&blank).is_err(),
+            "whitespace-only program must be Err"
+        );
+
+        let valid = AcpAdapterCommand {
+            program: "claude".to_string(),
+            args: vec![],
+            cwd: None,
+        };
+        assert!(
+            validate_adapter_command(&valid).is_ok(),
+            "non-empty program must be Ok"
+        );
+    }
+
+    #[test]
+    fn validate_prompt_turn_request_rejects_empty_turns() {
+        // Empty prompt vec → Err
+        let empty_req = AcpPromptTurnRequest {
+            session_id: None,
+            prompt: vec![],
+            model: None,
+            mcp_servers: vec![],
+        };
+        assert!(
+            validate_prompt_turn_request(&empty_req).is_err(),
+            "empty prompt must be Err"
+        );
+
+        // Non-empty prompt + no session_id → Ok
+        let ok_req = AcpPromptTurnRequest {
+            session_id: None,
+            prompt: vec!["hello".to_string()],
+            model: None,
+            mcp_servers: vec![],
+        };
+        assert!(
+            validate_prompt_turn_request(&ok_req).is_ok(),
+            "non-empty prompt with None session_id must be Ok"
+        );
+
+        // Non-empty prompt + whitespace session_id → Err
+        let blank_sid_req = AcpPromptTurnRequest {
+            session_id: Some("  ".to_string()),
+            prompt: vec!["hello".to_string()],
+            model: None,
+            mcp_servers: vec![],
+        };
+        assert!(
+            validate_prompt_turn_request(&blank_sid_req).is_err(),
+            "whitespace-only session_id must be Err"
+        );
+    }
+
+    #[test]
+    fn validate_session_cwd_rejects_relative() {
+        use std::path::Path;
+
+        assert!(
+            validate_session_cwd(Path::new("/tmp/work")).is_ok(),
+            "/tmp/work is absolute, must be Ok"
+        );
+        assert!(
+            validate_session_cwd(Path::new("/")).is_ok(),
+            "/ is absolute, must be Ok"
+        );
+
+        let err = validate_session_cwd(Path::new("relative/path"));
+        assert!(err.is_err(), "relative/path must be Err");
+        let msg = err.unwrap_err().to_string();
+        assert!(
+            msg.contains("absolute"),
+            "error message should mention 'absolute', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_model_string_direct() {
+        // Empty string → Err
+        assert!(
+            validate_model_string("").is_err(),
+            "empty string must be Err"
+        );
+
+        // Valid model names → Ok
+        assert!(
+            validate_model_string("gemini-2.5-pro").is_ok(),
+            "gemini-2.5-pro must be Ok"
+        );
+        assert!(
+            validate_model_string("valid-model-name").is_ok(),
+            "valid-model-name must be Ok"
+        );
+
+        // Shell injection characters → Err
+        assert!(
+            validate_model_string("model;rm -rf /").is_err(),
+            "semicolon must be Err"
+        );
+        assert!(
+            validate_model_string("model$(cmd)").is_err(),
+            "dollar sign must be Err"
+        );
+        assert!(
+            validate_model_string("model\ninjection").is_err(),
+            "newline must be Err"
+        );
+    }
+
+    #[test]
+    fn normalized_requested_model_filters_empties() {
+        // None → None
+        assert_eq!(normalized_requested_model(None), None);
+
+        // Empty string → None
+        assert_eq!(normalized_requested_model(Some("")), None);
+
+        // Whitespace-only → None
+        assert_eq!(normalized_requested_model(Some("  ")), None);
+
+        // Literal "default" → None
+        assert_eq!(normalized_requested_model(Some("default")), None);
+
+        // Real model name → Some unchanged
+        assert_eq!(
+            normalized_requested_model(Some("gemini-2.5-pro")),
+            Some("gemini-2.5-pro".to_string())
+        );
+
+        // Surrounding whitespace → Some(trimmed)
+        assert_eq!(
+            normalized_requested_model(Some("  claude-sonnet  ")),
+            Some("claude-sonnet".to_string())
+        );
+    }
+
+    // ── Group 2: Adapter detection (pure) ─────────────────────────────────────
+
+    #[test]
+    fn is_codex_adapter_detects_codex() {
+        assert!(
+            is_codex_adapter(&make_adapter("codex")),
+            "bare 'codex' must be true"
+        );
+        assert!(
+            is_codex_adapter(&make_adapter("/usr/local/bin/codex")),
+            "full path to codex must be true"
+        );
+        assert!(
+            !is_codex_adapter(&make_adapter("claude")),
+            "'claude' must be false"
+        );
+        assert!(
+            !is_codex_adapter(&make_adapter("gemini")),
+            "'gemini' must be false"
+        );
+    }
+
+    #[test]
+    fn append_codex_model_override_happy_path() {
+        let adapter = make_adapter("codex");
+        let result = append_codex_model_override(&adapter, Some("o3")).unwrap();
+        assert!(
+            result.args.contains(&"-c".to_string()),
+            "args must contain '-c'"
+        );
+        let model_arg = result.args.iter().find(|a| a.contains("model="));
+        assert!(model_arg.is_some(), "args must contain a model= setting");
+        assert!(
+            model_arg.unwrap().contains("o3"),
+            "model= arg must include 'o3', got: {}",
+            model_arg.unwrap()
+        );
+    }
+
+    // ── Group 3: String conversions (pure) ────────────────────────────────────
+
+    #[test]
+    fn stop_reason_to_string_all_variants() {
+        assert_eq!(stop_reason_to_string(StopReason::EndTurn), "end_turn");
+        assert_eq!(stop_reason_to_string(StopReason::MaxTokens), "max_tokens");
+        assert_eq!(
+            stop_reason_to_string(StopReason::MaxTurnRequests),
+            "max_turn_requests"
+        );
+        assert_eq!(stop_reason_to_string(StopReason::Refusal), "refusal");
+        assert_eq!(stop_reason_to_string(StopReason::Cancelled), "cancelled");
+    }
+
+    #[test]
+    fn map_session_update_kind_all_variants() {
+        use agent_client_protocol::{
+            AvailableCommandsUpdate, ConfigOptionUpdate, ContentBlock, ContentChunk,
+            CurrentModeUpdate, Plan, SessionModeId,
+        };
+
+        // Construct a text chunk using the public builder — all these structs are #[non_exhaustive]
+        let chunk = ContentChunk::new(ContentBlock::from("hi"));
+
+        // UserMessageChunk → UserDelta
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::UserMessageChunk(chunk.clone())),
+            AcpSessionUpdateKind::UserDelta
+        );
+
+        // AgentMessageChunk → AssistantDelta
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::AgentMessageChunk(chunk.clone())),
+            AcpSessionUpdateKind::AssistantDelta
+        );
+
+        // AgentThoughtChunk → ThinkingDelta
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::AgentThoughtChunk(chunk)),
+            AcpSessionUpdateKind::ThinkingDelta
+        );
+
+        // Plan → Plan
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::Plan(Plan::new(vec![]))),
+            AcpSessionUpdateKind::Plan
+        );
+
+        // AvailableCommandsUpdate → AvailableCommandsUpdate
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::AvailableCommandsUpdate(
+                AvailableCommandsUpdate::new(vec![])
+            )),
+            AcpSessionUpdateKind::AvailableCommandsUpdate
+        );
+
+        // CurrentModeUpdate → CurrentModeUpdate
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(
+                SessionModeId::new("default")
+            ))),
+            AcpSessionUpdateKind::CurrentModeUpdate
+        );
+
+        // ConfigOptionUpdate → ConfigOptionUpdate
+        assert_eq!(
+            map_session_update_kind(&SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(
+                vec![]
+            ))),
+            AcpSessionUpdateKind::ConfigOptionUpdate
+        );
+    }
+
+    // ── Group 4: Session routing (pure) ───────────────────────────────────────
+
+    #[test]
+    fn build_session_setup_whitespace_session_id_creates_new_session() {
+        // Whitespace-only session_id trims to "" → must fall through to New, not Load.
+        let result = build_session_setup(Some("   "), Path::new("/tmp"), &[]);
+        let setup = result.expect("build_session_setup must succeed for absolute cwd");
+        assert!(
+            matches!(setup, AcpSessionSetupRequest::New(_)),
+            "whitespace-only session_id must create a New session, not Load"
+        );
+    }
+
+    #[test]
+    fn build_session_setup_none_session_id_creates_new_session() {
+        let setup = build_session_setup(None, Path::new("/tmp"), &[])
+            .expect("build_session_setup must succeed");
+        assert!(
+            matches!(setup, AcpSessionSetupRequest::New(_)),
+            "None session_id must create a New session"
+        );
+    }
+
+    #[test]
+    fn build_session_setup_valid_session_id_loads_session() {
+        let setup = build_session_setup(Some("valid-session-id"), Path::new("/tmp"), &[])
+            .expect("build_session_setup must succeed");
+        match setup {
+            AcpSessionSetupRequest::Load(ref req) => {
+                assert_eq!(
+                    req.session_id.0.as_ref(),
+                    "valid-session-id",
+                    "Load request must carry the given session ID"
+                );
+            }
+            AcpSessionSetupRequest::New(_) => {
+                panic!("expected AcpSessionSetupRequest::Load, got New");
+            }
+        }
+    }
+
+    // ── Group 5: resolve_acp_auto_approve (env var) ───────────────────────────
+    // Rust 2024 edition makes set_var/remove_var unsafe. The project-wide
+    // `unsafe_code = "deny"` lint is opted out per-function below.
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(unsafe_code)]
+    fn auto_approve_env_absent_returns_true() {
+        // SAFETY: #[serial] guarantees no other thread touches the env var concurrently.
+        unsafe { std::env::remove_var("AXON_ACP_AUTO_APPROVE") };
+        assert!(
+            resolve_acp_auto_approve(),
+            "absent env var must default to true"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(unsafe_code)]
+    fn auto_approve_env_false_returns_false() {
+        // SAFETY: #[serial] guarantees no other thread touches the env var concurrently.
+        unsafe { std::env::set_var("AXON_ACP_AUTO_APPROVE", "false") };
+        let result = resolve_acp_auto_approve();
+        unsafe { std::env::remove_var("AXON_ACP_AUTO_APPROVE") };
+        assert!(!result, "AXON_ACP_AUTO_APPROVE=false must return false");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(unsafe_code)]
+    fn auto_approve_env_other_value_returns_true() {
+        // SAFETY: #[serial] guarantees no other thread touches the env var concurrently.
+        unsafe { std::env::set_var("AXON_ACP_AUTO_APPROVE", "1") };
+        let result = resolve_acp_auto_approve();
+        unsafe { std::env::remove_var("AXON_ACP_AUTO_APPROVE") };
+        assert!(result, "AXON_ACP_AUTO_APPROVE=1 must return true");
+    }
 }

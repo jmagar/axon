@@ -138,3 +138,94 @@ pub async fn suggest(cfg: &Config, focus: Option<&str>) -> Result<SuggestResult,
     let urls = pairs.into_iter().map(|(url, _reason)| url).collect();
     Ok(SuggestResult { urls })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── map_retrieve_result ───────────────────────────────────────────────────
+
+    #[test]
+    fn map_retrieve_zero_chunks_returns_empty() {
+        let result = map_retrieve_result(0, "some content".to_string());
+        assert!(
+            result.chunks.is_empty(),
+            "chunk_count=0 must produce an empty chunks vec; content is discarded"
+        );
+    }
+
+    #[test]
+    fn map_retrieve_nonzero_chunks() {
+        let result = map_retrieve_result(5, "hello".to_string());
+        assert_eq!(result.chunks.len(), 1);
+        assert_eq!(result.chunks[0]["chunk_count"], 5);
+        assert_eq!(result.chunks[0]["content"], "hello");
+    }
+
+    // ── map_suggest_payload ───────────────────────────────────────────────────
+
+    #[test]
+    fn map_suggest_valid() {
+        let payload = json!({
+            "suggestions": [
+                { "url": "https://example.com/a" },
+                { "url": "https://example.com/b" }
+            ]
+        });
+        let result = map_suggest_payload(&payload).unwrap();
+        assert_eq!(result.urls.len(), 2);
+        assert_eq!(result.urls[0], "https://example.com/a");
+        assert_eq!(result.urls[1], "https://example.com/b");
+    }
+
+    #[test]
+    fn map_suggest_missing_suggestions() {
+        let payload = json!({});
+        let err = map_suggest_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains("suggestions"),
+            "error must mention 'suggestions', got: {err}"
+        );
+    }
+
+    #[test]
+    fn map_suggest_entry_missing_url() {
+        let payload = json!({
+            "suggestions": [{ "reason": "no url key here" }]
+        });
+        let err = map_suggest_payload(&payload).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("suggestions[0]"),
+            "error must reference suggestions[0], got: {msg}"
+        );
+    }
+
+    #[test]
+    fn map_suggest_empty_suggestions() {
+        let payload = json!({ "suggestions": [] });
+        let result = map_suggest_payload(&payload).unwrap();
+        assert!(result.urls.is_empty());
+    }
+
+    // ── map_query_results ─────────────────────────────────────────────────────
+
+    #[test]
+    fn map_query_results_passthrough_empty() {
+        let result = map_query_results(vec![]);
+        assert!(result.results.is_empty());
+    }
+
+    #[test]
+    fn map_query_results_passthrough_nonempty() {
+        let items = vec![
+            json!({ "url": "https://a.com", "score": 0.9 }),
+            json!({ "url": "https://b.com", "score": 0.8 }),
+        ];
+        let result = map_query_results(items.clone());
+        assert_eq!(result.results.len(), 2);
+        assert_eq!(result.results[0], items[0]);
+        assert_eq!(result.results[1], items[1]);
+    }
+}
