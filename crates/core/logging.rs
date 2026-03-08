@@ -208,23 +208,52 @@ pub fn init_tracing() {
     // Try the configured path first; if it fails (e.g. permission denied when
     // running locally against a Docker-owned data dir), fall back to a local
     // `logs/axon.log` relative to CWD before giving up on file logging entirely.
-    let rotating_result = SizeRotatingFile::new(log_path.clone(), max_bytes, max_files_total)
-        .or_else(|primary_err| {
+    enum RotatingOutcome {
+        Ok(SizeRotatingFile),
+        BothFailed {
+            primary_path: PathBuf,
+            primary_err: io::Error,
+            fallback_path: PathBuf,
+            fallback_err: io::Error,
+        },
+        SamePathFailed {
+            path: PathBuf,
+            err: io::Error,
+        },
+    }
+
+    let rotating_outcome = match SizeRotatingFile::new(log_path.clone(), max_bytes, max_files_total)
+    {
+        Ok(r) => RotatingOutcome::Ok(r),
+        Err(primary_err) => {
             let fallback = PathBuf::from("logs/axon.log");
             if fallback == log_path {
-                return Err(primary_err);
+                RotatingOutcome::SamePathFailed {
+                    path: log_path.clone(),
+                    err: primary_err,
+                }
+            } else {
+                eprintln!(
+                    "warning: cannot open log file {}: {} — falling back to {}",
+                    log_path.display(),
+                    primary_err,
+                    fallback.display(),
+                );
+                match SizeRotatingFile::new(fallback.clone(), max_bytes, max_files_total) {
+                    Ok(r) => RotatingOutcome::Ok(r),
+                    Err(fallback_err) => RotatingOutcome::BothFailed {
+                        primary_path: log_path.clone(),
+                        primary_err,
+                        fallback_path: fallback,
+                        fallback_err,
+                    },
+                }
             }
-            eprintln!(
-                "warning: cannot open log file {}: {} — falling back to {}",
-                log_path.display(),
-                primary_err,
-                fallback.display(),
-            );
-            SizeRotatingFile::new(fallback, max_bytes, max_files_total)
-        });
+        }
+    };
 
-    match rotating_result {
-        Ok(rotating) => {
+    match rotating_outcome {
+        RotatingOutcome::Ok(rotating) => {
             let file_writer = SizeRotateMakeWriter {
                 inner: Arc::new(Mutex::new(rotating)),
             };
@@ -238,10 +267,28 @@ pub fn init_tracing() {
                 .with(json_layer)
                 .init();
         }
-        Err(err) => {
+        RotatingOutcome::BothFailed {
+            primary_path,
+            primary_err,
+            fallback_path,
+            fallback_err,
+        } => {
+            eprintln!(
+                "warning: failed to initialize file logging — \
+                 primary path '{}' failed: {}; \
+                 fallback path '{}' also failed: {} \
+                 (continuing with console logs only)",
+                primary_path.display(),
+                primary_err,
+                fallback_path.display(),
+                fallback_err,
+            );
+            tracing_subscriber::registry().with(console_layer).init();
+        }
+        RotatingOutcome::SamePathFailed { path, err } => {
             eprintln!(
                 "warning: failed to initialize file logging at {}: {} (continuing with console logs only)",
-                log_path.display(),
+                path.display(),
                 err
             );
             tracing_subscriber::registry().with(console_layer).init();

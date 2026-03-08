@@ -1,8 +1,8 @@
 use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
 use crate::crates::core::config::Config;
 use crate::crates::core::content::{
-    extract_loc_values, extract_loc_with_lastmod, extract_robots_sitemaps, to_markdown,
-    url_to_filename,
+    build_selector_config, extract_loc_values, extract_loc_with_lastmod, extract_robots_sitemaps,
+    to_markdown, url_to_filename,
 };
 use crate::crates::core::http::{build_client, validate_url};
 use crate::crates::core::logging::log_info;
@@ -409,12 +409,13 @@ pub async fn append_sitemap_backfill(
             let backoff = cfg.retry_backoff_ms;
             let min_chars = cfg.min_markdown_chars;
             let drop_thin = cfg.drop_thin_markdown;
+            let selector_config = build_selector_config(cfg);
             joins.spawn(async move {
                 let html = fetch_text_with_retry(&http, &url, retries, backoff).await;
                 let Some(html) = html else {
                     return (url, None);
                 };
-                let md = to_markdown(&html, None);
+                let md = to_markdown(&html, selector_config.as_ref());
                 let trimmed = md.trim().to_string();
                 let markdown_chars = trimmed.len();
                 let is_thin = markdown_chars < min_chars;

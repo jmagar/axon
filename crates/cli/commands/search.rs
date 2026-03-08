@@ -52,7 +52,7 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let queries: Vec<String> = if let Some(q) = &cfg.query {
         vec![q.clone()]
     } else if !cfg.positional.is_empty() {
-        cfg.positional.clone()
+        vec![cfg.positional.join(" ")]
     } else {
         return Err("search requires a query (positional or --query)".into());
     };

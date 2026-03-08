@@ -41,7 +41,10 @@ export function AxonTerminalPane() {
         onClear={() => terminalRef.current?.clear()}
         onCopy={() => {
           const text = terminalRef.current?.getSelectedText() ?? ''
-          if (text) void navigator.clipboard.writeText(text)
+          if (text)
+            navigator.clipboard.writeText(text).catch((err) => {
+              console.warn('Clipboard write failed:', err)
+            })
         }}
         onCancelCurrent={() => {}}
         searchVisible={searchVisible}
