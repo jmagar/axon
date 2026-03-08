@@ -15,14 +15,65 @@ export interface GitMeta {
 const cache = new Map<string, GitMeta>()
 
 /**
- * Decode ~/.claude/projects/ folder name back to a filesystem path candidate.
+ * Decode ~/.claude/projects/ folder name back to filesystem path candidates.
  * Claude CLI encodes the absolute path by replacing each '/' with '-'.
  * e.g. "-home-jmagar-workspace-axon_rust" → "/home/jmagar/workspace/axon_rust"
- * Note: hyphens in directory names are indistinguishable from path separators.
- * Use findGitRoot() after this to locate the actual git root.
+ *
+ * Because hyphens in directory names are encoded identically to path separators,
+ * a single lossless decode is not possible. This function returns the naively
+ * decoded path (all '-' treated as '/') which works for the common case.
+ * For paths containing real hyphens, callers should iterate over `decodedProjectPathCandidates`
+ * and try each candidate with `findGitRoot` until one resolves.
  */
 export function decodeProjectPath(folderName: string): string {
-  return `/${folderName.slice(1).replace(/-/g, '/')}`
+  // Strip the leading '-' that represents the root '/', then replace remaining
+  // '-' with '/'. This is the naive decode that works when directory names
+  // contain no hyphens.
+  const encoded = folderName.startsWith('-') ? folderName.slice(1) : folderName
+  return `/${encoded.replace(/-/g, '/')}`
+}
+
+/**
+ * Generate path candidates for a Claude projects folder name by trying different
+ * interpretations of '-' as either '/' (path separator) or '-' (literal hyphen).
+ * Returns candidates sorted from most-specific (fewest slashes) to least.
+ * Use with `findGitRoot` to find the actual git root.
+ *
+ * For performance, only generates candidates up to MAX_CANDIDATES to avoid
+ * exponential blowup on paths with many hyphens.
+ */
+const MAX_CANDIDATES = 16
+
+export function decodedProjectPathCandidates(folderName: string): string[] {
+  const encoded = folderName.startsWith('-') ? folderName.slice(1) : folderName
+  const parts = encoded.split('-')
+  const candidates = new Set<string>()
+
+  // Always include the naive full-split (all hyphens are path separators)
+  candidates.add(`/${parts.join('/')}`)
+
+  // Generate variants by merging adjacent parts with a literal '-'
+  // Limit to a reasonable number of candidates to avoid exponential growth
+  const queue: string[][] = [parts]
+  while (queue.length > 0 && candidates.size < MAX_CANDIDATES) {
+    const current = queue.shift()!
+    for (let i = 0; i < current.length - 1; i++) {
+      const merged = [
+        ...current.slice(0, i),
+        `${current[i]}-${current[i + 1]}`,
+        ...current.slice(i + 2),
+      ]
+      const candidate = `/${merged.join('/')}`
+      if (!candidates.has(candidate)) {
+        candidates.add(candidate)
+        if (candidates.size < MAX_CANDIDATES) {
+          queue.push(merged)
+        }
+      }
+    }
+  }
+
+  return Array.from(candidates)
 }
 
 /**
@@ -67,16 +118,44 @@ export function parseRemoteUrl(url: string): string | null {
  * Enrich a session with git metadata derived from its project filesystem path.
  * Results are cached per projectPath for the process lifetime.
  * Never throws — returns {} on any error.
+ *
+ * When `projectPath` does not exist on disk (which can happen when the decoded
+ * path contains hyphenated directory names that were conflated with path
+ * separators), the function falls back to trying alternative path candidates
+ * from `decodedProjectPathCandidates` if a `folderName` is provided.
  */
-export async function enrichWithGit(projectPath: string): Promise<GitMeta> {
+export async function enrichWithGit(projectPath: string, folderName?: string): Promise<GitMeta> {
   if (cache.has(projectPath)) return cache.get(projectPath)!
 
   const meta: GitMeta = {}
 
+  // Try the primary path; if it does not exist, fall back to alternative
+  // candidates derived from the folder name (when provided).  This handles
+  // hyphenated directory names that are otherwise indistinguishable from path
+  // separators in the Claude CLI encoding.
+  let resolvedPath = projectPath
   try {
     await fs.promises.access(projectPath)
+  } catch {
+    if (folderName) {
+      const candidates = decodedProjectPathCandidates(folderName)
+      for (const candidate of candidates) {
+        if (candidate === projectPath) continue
+        try {
+          await fs.promises.access(candidate)
+          resolvedPath = candidate
+          break
+        } catch {
+          /* try next candidate */
+        }
+      }
+    }
+  }
 
-    const gitRoot = await findGitRoot(projectPath)
+  try {
+    await fs.promises.access(resolvedPath)
+
+    const gitRoot = await findGitRoot(resolvedPath)
     if (!gitRoot) {
       cache.set(projectPath, meta)
       return meta
