@@ -199,12 +199,16 @@ export function AxonShell() {
     setLiveMessages(updater)
   }, [])
 
+  const onTurnComplete = useCallback(() => {
+    reloadSessions()
+  }, [reloadSessions])
+
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
     activeSessionId,
     onSessionIdChange,
     onSessionFallback: undefined,
     onMessagesChange,
-    onTurnComplete: reloadSessions,
+    onTurnComplete,
   })
 
   // Derive active session metadata for display
