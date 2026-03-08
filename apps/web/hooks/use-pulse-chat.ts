@@ -299,6 +299,7 @@ export function usePulseChat({
           setLiveToolUses,
           setChatHistoryTracked,
           updateChatMessage,
+          setChatSessionId,
           onAcpConfigUpdate,
           onPermissionRequest,
         )

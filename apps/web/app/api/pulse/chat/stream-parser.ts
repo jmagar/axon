@@ -63,6 +63,7 @@ export type ParsedLineResult =
       >
     }
   | { kind: 'result'; result: string }
+  | { kind: 'session_fallback'; newSessionId: string }
   | { kind: 'tool_result_patch'; toolUseId: string; resultText: string }
   | { kind: 'skip' }
 
@@ -174,6 +175,11 @@ export function parseClaudeStreamLine(
     }
 
     return { kind: 'skip' }
+  }
+
+  if (event.type === 'session_fallback' && event.new_session_id) {
+    state.sessionId = event.new_session_id as string
+    return { kind: 'session_fallback', newSessionId: event.new_session_id as string }
   }
 
   if (event.type === 'result') {

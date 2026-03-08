@@ -24,6 +24,7 @@ export interface ChatStreamEvent {
     | 'thinking_content'
     | 'config_options_update'
     | 'permission_request'
+    | 'session_fallback'
   phase?: 'started' | 'thinking' | 'finalizing'
   delta?: string
   tool?: PulseToolUse
@@ -35,6 +36,8 @@ export interface ChatStreamEvent {
   /** ACP permission request fields */
   sessionId?: string
   permissionOptions?: string[]
+  /** Session fallback fields */
+  newSessionId?: string
 }
 
 export interface RunChatPromptOptions {
@@ -124,6 +127,10 @@ async function readNdjsonStream(
           toolCallId: event.toolCallId,
           permissionOptions: event.options,
         })
+        continue
+      }
+      if (event.type === 'session_fallback') {
+        onEvent?.({ type: 'session_fallback', newSessionId: event.newSessionId })
         continue
       }
       if (event.type === 'error') {
