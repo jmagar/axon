@@ -11,6 +11,8 @@ export interface SessionSummary {
   mtimeMs: number
   sizeBytes: number
   preview?: string
+  repo?: string
+  branch?: string
 }
 
 interface ParsedMessage {
