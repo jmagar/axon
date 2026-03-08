@@ -4,6 +4,10 @@ rust_dev_env := "if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPE
 default:
     @just --list
 
+# Bootstrap a new development environment (checks + installs all dependencies)
+setup *args:
+    ./scripts/dev-setup.sh {{args}}
+
 check:
     {{rust_dev_env}}; cargo check -q --locked
 
