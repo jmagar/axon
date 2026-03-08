@@ -59,21 +59,27 @@ Ensure `.env` is never committed. `.env.example` remains tracked.
 docker compose build
 ```
 
-1. Start infrastructure (workers and web run locally, not in Docker):
+1. Start the stack:
+
+**Full Docker deployment** (includes workers and web UI with published ports):
+
+```bash
+docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome axon-workers axon-web
+```
+
+**Local dev mode** (infra in Docker, workers and web run as local processes):
 
 ```bash
 docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
-```
 
-Then start workers and web locally:
-
-```bash
 # Each in a separate terminal
 cargo run --bin axon -- crawl worker
 cargo run --bin axon -- embed worker
 cargo run --bin axon -- extract worker
 cd apps/web && pnpm dev
 ```
+
+> **Note:** `axon-workers` publishes the MCP HTTP port and WS bridge; `axon-web` publishes the Next.js UI. Omitting them from the Compose command means those ports are never published.
 
 1. Verify health:
 
