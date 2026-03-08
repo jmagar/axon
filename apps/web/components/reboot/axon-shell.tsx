@@ -186,11 +186,6 @@ export function AxonShell() {
   // Load JSONL history for the active session
   const { messages: historicalMessages } = useAxonSession(activeSessionId)
 
-  // Sync JSONL history into live messages when session changes
-  useEffect(() => {
-    setLiveMessages(historicalMessages)
-  }, [historicalMessages])
-
   const onSessionIdChange = useCallback((newId: string) => {
     setActiveSessionId(newId)
   }, [])
@@ -210,6 +205,14 @@ export function AxonShell() {
     onMessagesChange,
     onTurnComplete,
   })
+
+  // Sync JSONL history into live messages when session changes.
+  // Guard against overwriting a partially-streamed assistant message when
+  // session_fallback triggers a new sessionId mid-stream.
+  useEffect(() => {
+    if (isStreaming) return
+    setLiveMessages(historicalMessages)
+  }, [historicalMessages, isStreaming])
 
   // Derive active session metadata for display
   const activeSession = useMemo(

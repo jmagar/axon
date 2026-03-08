@@ -18,6 +18,14 @@ import {
 import { QueueItemAttachment } from '@/components/ai-elements/queue'
 import type { MessageItem } from './axon-mock-data'
 
+/** Accepts a Unix-ms number or an already-formatted string and returns a locale time string. */
+function formatTimestamp(ts: number | string | undefined): string | null {
+  if (ts === undefined || ts === null) return null
+  if (typeof ts === 'number')
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return ts
+}
+
 const AXON_USER_BUBBLE_CLASS =
   'rounded-xl border border-[var(--border-standard)] bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] px-4 py-3 shadow-[var(--shadow-md)] text-[var(--text-primary)] text-sm'
 const AXON_ASSISTANT_BUBBLE_CLASS =
@@ -156,11 +164,12 @@ export const AxonMessageList = memo(function AxonMessageList({
           <div
             className={`mt-1 flex translate-y-1 items-center gap-1 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            {message.timestamp ? (
-              <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">
-                {message.timestamp}
-              </span>
-            ) : null}
+            {(() => {
+              const ts = formatTimestamp(message.timestamp as number | string | undefined)
+              return ts ? (
+                <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">{ts}</span>
+              ) : null
+            })()}
             <MessageActions className="gap-0.5">
               <MessageAction
                 label="Copy message"
