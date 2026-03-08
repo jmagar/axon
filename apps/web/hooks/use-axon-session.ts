@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { apiFetch } from '@/lib/api-fetch'
 
 export interface MessageItem {
   id: string
@@ -50,7 +51,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     setLoading(true)
     setError(null)
 
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+    apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`Failed to load session: ${res.status}`)
         return res.json() as Promise<SessionResponse>
