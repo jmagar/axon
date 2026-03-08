@@ -229,6 +229,27 @@ if [[ -f "$REPO/.env" ]]; then
 else
   cp "$REPO/.env.example" "$REPO/.env"
   ok ".env created from .env.example"
+
+  # Prompt for AXON_DATA_DIR
+  DEFAULT_DATA_DIR="$HOME/.local/share/axon"
+  if [[ -t 0 ]]; then
+    echo ""
+    echo "  AXON_DATA_DIR — root directory for all persistent data (Postgres, Qdrant, etc.)"
+    echo "  Press Enter to accept the default."
+    read -r -p "  AXON_DATA_DIR [${DEFAULT_DATA_DIR}]: " USER_DATA_DIR
+    AXON_DATA_DIR="${USER_DATA_DIR:-$DEFAULT_DATA_DIR}"
+  else
+    AXON_DATA_DIR="$DEFAULT_DATA_DIR"
+    info "Non-interactive mode: AXON_DATA_DIR=${AXON_DATA_DIR}"
+  fi
+
+  # Expand ~ if the user typed it
+  AXON_DATA_DIR="${AXON_DATA_DIR/#\~/$HOME}"
+
+  # Write into .env (replace the placeholder line)
+  sed -i "s|^AXON_DATA_DIR=.*|AXON_DATA_DIR=${AXON_DATA_DIR}|" "$REPO/.env"
+  mkdir -p "$AXON_DATA_DIR"
+  ok "AXON_DATA_DIR=${AXON_DATA_DIR}"
 fi
 
 CHANGE_ME_COUNT="$(grep -c 'CHANGE_ME' "$REPO/.env" || true)"
