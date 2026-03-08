@@ -9,13 +9,16 @@ import type { PromptInputFile, PromptInputMessage } from '@/components/ai-elemen
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { Button } from '@/components/ui/button'
 import type { FileEntry } from '@/components/workspace/file-tree'
+import { useAxonAcp } from '@/hooks/use-axon-acp'
+import type { MessageItem } from '@/hooks/use-axon-session'
+import { useAxonSession } from '@/hooks/use-axon-session'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
+import { useRecentSessions } from '@/hooks/use-recent-sessions'
 import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
 import { getAcpModelConfigOption } from '@/lib/pulse/acp-config'
-import { runChatPrompt } from '@/lib/pulse/chat-api'
 import type { PulseAgent } from '@/lib/pulse/types'
 import { AxonFrame } from './axon-frame'
 import { AxonLogsDialog } from './axon-logs-dialog'
@@ -23,7 +26,6 @@ import { AxonMcpDialog } from './axon-mcp-dialog'
 import { AxonMessageList } from './axon-message-list'
 import {
   type AxonPermissionValue,
-  type MessageItem,
   RAIL_MODES,
   type RailMode,
   type SessionItem,
@@ -129,17 +131,6 @@ function agentDisplayName(agent: string): string {
   return agent.charAt(0).toUpperCase() + agent.slice(1)
 }
 
-function makeDefaultSession(agentLabel = 'claude'): SessionItem {
-  return {
-    id: crypto.randomUUID(),
-    title: 'New chat',
-    repo: 'workspace',
-    branch: 'main',
-    agent: agentDisplayName(agentLabel),
-    lastMessageAt: 'just now',
-  }
-}
-
 export function AxonShell() {
   const pathname = usePathname()
   const { pulseModel, pulsePermissionLevel, acpConfigOptions, pulseAgent } = useWsWorkspaceState()
@@ -148,7 +139,7 @@ export function AxonShell() {
   const mcp = useMcpServers()
   const workspace = useWorkspaceFiles()
 
-  const [sessions, setSessions] = useState<SessionItem[]>(() => [makeDefaultSession()])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [railMode, setRailMode] = useState<RailMode>('sessions')
   const [mobilePane, setMobilePane] = useState<AxonMobilePane>('chat')
   const [railQuery, setRailQuery] = useState('')
@@ -159,27 +150,68 @@ export function AxonShell() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
-  const [activeSessionId, setActiveSessionId] = useState(() => sessions[0]!.id)
   const [sessionKey, setSessionKey] = useState(0)
-  const [messageMap, setMessageMap] = useState<Record<string, MessageItem[]>>({})
+  const [liveMessages, setLiveMessages] = useState<MessageItem[]>([])
   const [activeFile, setActiveFile] = useState('')
   const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
-  const [isTyping, setIsTyping] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH_DEFAULT)
   const [chatFlex, setChatFlex] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [layoutRestored, setLayoutRestored] = useState(false)
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
-  const chatSessionIds = useRef<Record<string, string | null>>({})
-  const abortControllerRef = useRef<AbortController | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
 
+  // Live session list from ~/.claude/projects
+  const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
+
+  // Adapt SessionSummary[] → SessionItem[] for AxonSidebar (Task 9 will update AxonSidebar)
+  const sessions = useMemo<SessionItem[]>(
+    () =>
+      rawSessions.map((s) => ({
+        id: s.id,
+        title: s.preview ?? s.filename,
+        repo: s.project,
+        branch: '',
+        agent: agentDisplayName(pulseAgent ?? 'claude'),
+        lastMessageAt: new Date(s.mtimeMs).toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      })),
+    [rawSessions, pulseAgent],
+  )
+
+  // Load JSONL history for the active session
+  const { messages: historicalMessages } = useAxonSession(activeSessionId)
+
+  // Sync JSONL history into live messages when session changes
+  useEffect(() => {
+    setLiveMessages(historicalMessages)
+  }, [historicalMessages])
+
+  const onSessionIdChange = useCallback((newId: string) => {
+    setActiveSessionId(newId)
+  }, [])
+
+  const onMessagesChange = useCallback((updater: (prev: MessageItem[]) => MessageItem[]) => {
+    setLiveMessages(updater)
+  }, [])
+
+  const { submitPrompt, isStreaming, connected } = useAxonAcp({
+    activeSessionId,
+    onSessionIdChange,
+    onSessionFallback: undefined,
+    onMessagesChange,
+    onTurnComplete: reloadSessions,
+  })
+
+  // Derive active session metadata for display
   const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) ?? sessions[0]!,
+    () => sessions.find((s) => s.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
   )
-  const activeMessages = messageMap[activeSessionId] ?? []
 
   const modelOptions = useMemo(() => {
     const modelOption = getAcpModelConfigOption(acpConfigOptions)
@@ -227,13 +259,6 @@ export function AxonShell() {
   useEffect(() => {
     setRailQuery('')
   }, [railMode])
-
-  useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort()
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
-    }
-  }, [])
 
   useEffect(() => {
     if (!activeFile) return
@@ -458,137 +483,17 @@ export function AxonShell() {
     }
   }, [])
 
-  async function handlePromptSubmit(message: PromptInputMessage) {
-    abortControllerRef.current?.abort()
-    const controller = new AbortController()
-    abortControllerRef.current = controller
-
-    const userMessage: MessageItem = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content:
+  const handlePromptSubmit = useCallback(
+    (message: PromptInputMessage) => {
+      const text =
         message.text ||
-        `Attached ${message.files.length} file${message.files.length === 1 ? '' : 's'}.`,
-      files: message.files.map((f) => f.filename ?? f.url),
-    }
-    const assistantId = crypto.randomUUID()
-    const assistantMessage: MessageItem = { id: assistantId, role: 'assistant', content: '' }
-
-    const history = (messageMap[activeSessionId] ?? []).map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }))
-
-    setMessageMap((cur) => ({
-      ...cur,
-      [activeSessionId]: [...(cur[activeSessionId] ?? []), userMessage, assistantMessage],
-    }))
-    setIsTyping(true)
-    persistEditorOpen(true)
-
-    try {
-      const result = await runChatPrompt({
-        prompt: userMessage.content,
-        conversationHistory: history,
-        signal: controller.signal,
-        chatSessionId: chatSessionIds.current[activeSessionId] ?? null,
-        documentMarkdown: editorMarkdown,
-        activeThreadSources: [],
-        scrapedContext: null,
-        permissionLevel: pulsePermissionLevel,
-        agent: (pulseAgent ?? 'claude') as PulseAgent,
-        model: pulseModel ?? undefined,
-        onEvent: (event) => {
-          if (event.type === 'assistant_delta' && event.delta) {
-            setMessageMap((cur) => {
-              const msgs = cur[activeSessionId] ?? []
-              return {
-                ...cur,
-                [activeSessionId]: msgs.map((m) =>
-                  m.id === assistantId ? { ...m, content: m.content + event.delta! } : m,
-                ),
-              }
-            })
-          }
-        },
-      })
-
-      if (result.sessionId) {
-        chatSessionIds.current[activeSessionId] = result.sessionId
-      }
-
-      // Apply doc operations to editor
-      for (const op of result.operations) {
-        if (op.type === 'replace_document') {
-          setEditorMarkdown(op.markdown)
-        } else if (op.type === 'append_markdown') {
-          setEditorMarkdown((prev) => `${prev}\n\n${op.markdown}`)
-        } else if (op.type === 'insert_section') {
-          const sectionMd = `## ${op.heading}\n\n${op.markdown}`
-          if (op.position === 'top') {
-            setEditorMarkdown((prev) => `${sectionMd}\n\n${prev}`)
-          } else {
-            setEditorMarkdown((prev) => `${prev}\n\n${sectionMd}`)
-          }
-        }
-      }
-
-      // Always replace streaming deltas with the properly parsed result.text
-      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      setMessageMap((cur) => {
-        const msgs = cur[activeSessionId] ?? []
-        return {
-          ...cur,
-          [activeSessionId]: msgs.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  content: result.text ?? m.content,
-                  blocks: result.blocks,
-                  toolUses: result.toolUses,
-                }
-              : m,
-          ),
-        }
-      })
-
-      // Update session metadata
-      const firstUserText = userMessage.content.slice(0, 60)
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? {
-                ...s,
-                lastMessageAt: now,
-                title: s.title === 'New chat' ? firstUserText : s.title,
-                agent: agentDisplayName(pulseAgent ?? 'claude'),
-              }
-            : s,
-        ),
-      )
-    } catch (err) {
-      if (controller.signal.aborted) return
-      const errorText = err instanceof Error ? err.message : 'Chat failed'
-      setMessageMap((cur) => {
-        const msgs = cur[activeSessionId] ?? []
-        return {
-          ...cur,
-          [activeSessionId]: msgs.map((m) =>
-            m.id === assistantId ? { ...m, content: `⚠ ${errorText}` } : m,
-          ),
-        }
-      })
-    } finally {
-      setIsTyping(false)
-    }
-  }
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeSessionId is the intentional trigger; refs and setters are stable
-  useEffect(() => {
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = null
-    setIsTyping(false)
-  }, [activeSessionId])
+        (message.files.length > 0
+          ? `Attached ${message.files.length} file${message.files.length === 1 ? '' : 's'}.`
+          : '')
+      if (text) submitPrompt(text)
+    },
+    [submitPrompt],
+  )
 
   const handleSelectSession = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId)
@@ -596,11 +501,10 @@ export function AxonShell() {
   }, [])
 
   const handleNewSession = useCallback(() => {
-    const newSession = makeDefaultSession(pulseAgent ?? 'claude')
-    setSessions((prev) => [newSession, ...prev])
-    setActiveSessionId(newSession.id)
+    setActiveSessionId(null)
+    setLiveMessages([])
     setSessionKey((k) => k + 1)
-  }, [pulseAgent])
+  }, [])
 
   const handleMobileSelectSession = useCallback(
     (sessionId: string) => {
@@ -629,6 +533,9 @@ export function AxonShell() {
     [openFile, setMobilePaneTracked],
   )
 
+  // AxonSidebar requires activeSessionId: string (not null); fall back to empty string
+  const sidebarActiveSessionId = activeSessionId ?? ''
+
   const sidebarProps = {
     sessions,
     railMode,
@@ -636,8 +543,8 @@ export function AxonShell() {
     railQuery,
     onRailQueryChange: setRailQuery,
     pathname,
-    activeSessionId,
-    activeSessionRepo: activeSession.repo,
+    activeSessionId: sidebarActiveSessionId,
+    activeSessionRepo: activeSession?.repo ?? '',
     fileEntries: workspace.fileEntries,
     fileLoading: workspace.fileLoading,
     selectedFilePath: workspace.selectedFilePath,
@@ -662,8 +569,18 @@ export function AxonShell() {
     },
   } as const
 
+  // Cast liveMessages to the shape AxonMessageList expects.
+  // The types overlap on the fields AxonMessageList actually renders:
+  // id, role, content, files?, blocks?, steps?, reasoning?, timestamp?.
+  // Surplus fields (streaming, chainOfThought) are ignored at render time.
+  const displayMessages = liveMessages as unknown as import('./axon-mock-data').MessageItem[]
+
   const transitionClass =
     isDragging || !layoutRestored ? '' : 'transition-[width,flex] duration-300 ease-out'
+
+  // Title and message count for the chat header
+  const chatTitle = activeSession?.title ?? 'New chat'
+  const agentLabel = agentDisplayName(pulseAgent ?? 'claude')
 
   return (
     <AxonFrame>
@@ -748,13 +665,13 @@ export function AxonShell() {
               <div className="flex h-full min-h-0 flex-col bg-[var(--glass-chat)] backdrop-blur-sm">
                 <Conversation className="w-full flex-1 px-3 py-3">
                   <AxonMessageList
-                    messages={activeMessages}
-                    agentName={agentDisplayName(pulseAgent ?? 'claude')}
+                    messages={displayMessages}
+                    agentName={agentLabel}
                     sessionKey={sessionKey}
                     copiedId={copiedId}
                     copyMessage={copyMessage}
                     onOpenFile={handleMobileOpenFile}
-                    isTyping={isTyping}
+                    isTyping={isStreaming}
                     variant="mobile"
                   />
                   <ConversationScrollButton className="animate-scale-in" />
@@ -851,12 +768,18 @@ export function AxonShell() {
               <div className="flex h-14 items-center justify-between border-b border-[var(--border-subtle)] px-4">
                 <div className="min-w-0">
                   <div className="truncate text-[15px] font-semibold leading-snug tracking-[-0.01em] text-[var(--text-primary)]">
-                    {activeSession.title}
+                    {chatTitle}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-dim)]">
-                    <span>{activeSession.agent}</span>
+                    <span>{agentLabel}</span>
                     <span className="opacity-40">·</span>
-                    <span>{activeMessages.length} msg</span>
+                    <span>{liveMessages.length} msg</span>
+                    {connected ? null : (
+                      <>
+                        <span className="opacity-40">·</span>
+                        <span className="text-[var(--axon-secondary)]">disconnected</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -922,13 +845,13 @@ export function AxonShell() {
               <div className="flex h-[calc(100%-56px)] min-h-0 flex-col">
                 <Conversation className="w-full flex-1 px-4 py-4">
                   <AxonMessageList
-                    messages={activeMessages}
-                    agentName={agentDisplayName(pulseAgent ?? 'claude')}
+                    messages={displayMessages}
+                    agentName={agentLabel}
                     sessionKey={sessionKey}
                     copiedId={copiedId}
                     copyMessage={copyMessage}
                     onOpenFile={openFile}
-                    isTyping={isTyping}
+                    isTyping={isStreaming}
                     variant="desktop"
                   />
                   <ConversationScrollButton className="animate-scale-in" />
