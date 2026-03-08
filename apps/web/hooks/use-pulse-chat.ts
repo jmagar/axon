@@ -264,6 +264,12 @@ export function usePulseChat({
         partialBlocks: [],
       }
 
+      // Hoisted so the catch block can cancel any pending flush timer before
+      // setting error state (prevents the timer from overwriting error content).
+      // Using an object wrapper allows reassignment while keeping the reference
+      // stable across the try/catch boundary (avoids const/let linter conflicts).
+      const flushRef = { fn: () => {} }
+
       try {
         if (intent.kind === 'source') {
           await handleSourceIntent(
@@ -303,6 +309,7 @@ export function usePulseChat({
           onAcpConfigUpdate,
           onPermissionRequest,
         )
+        flushRef.fn = flushStream
 
         const data = await runChatPrompt({
           prompt: boundedPrompt,
@@ -329,7 +336,7 @@ export function usePulseChat({
 
         if (inFlightPromptRef.current !== promptId) return
         // Flush any throttled deltas before finalizing
-        flushStream()
+        flushRef.fn()
         if (!acc.draftAdded) {
           acc.draftAdded = true
           setChatHistoryTracked((prev) => [...prev, assistantDraft])
@@ -350,6 +357,9 @@ export function usePulseChat({
         )
       } catch (err: unknown) {
         if (inFlightPromptRef.current !== promptId) return
+        // Cancel any pending throttled delta flush before setting error state,
+        // so the flush timer cannot overwrite the error content afterward.
+        flushRef.fn()
         handlePromptError(
           err,
           acc,

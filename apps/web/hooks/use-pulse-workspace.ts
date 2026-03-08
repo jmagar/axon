@@ -166,6 +166,8 @@ export function usePulseWorkspaceBehavior() {
     setChatSessionId(null)
     setIndexedSources([])
     setActiveThreadSources([])
+    // Clear any lingering permission prompt from the previous session.
+    setPendingPermission(null)
     try {
       window.localStorage.removeItem(PULSE_WORKSPACE_STATE_KEY)
     } catch {
@@ -407,6 +409,8 @@ export function usePulseWorkspaceBehavior() {
     setActiveThreadSources([])
     setPendingOps(null)
     setPendingValidation(null)
+    // Clear any lingering permission prompt from the previous session.
+    setPendingPermission(null)
 
     splitPane.setShowChat(true)
     splitPane.setShowEditor(false)
