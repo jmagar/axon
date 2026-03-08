@@ -166,7 +166,12 @@ export async function runAxonCommandWsStream(
 
       ws.addEventListener('open', () => {
         opened = true
-        console.log(`[axon-ws] connected to ${WORKERS_WS_URL} for mode=${mode}`)
+        try {
+          const { hostname, pathname } = new URL(workersWsUrl)
+          console.log(`[axon-ws] connected to ${hostname}${pathname} for mode=${mode}`)
+        } catch {
+          console.log(`[axon-ws] connected for mode=${mode}`)
+        }
         ws?.send(JSON.stringify({ type: 'execute', mode, input, flags }))
       })
 

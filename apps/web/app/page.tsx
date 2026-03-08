@@ -158,6 +158,8 @@ export default function DashboardPage() {
 
   // Measure the fixed omnibox dock and set a CSS variable so the workspace
   // overlay stops above it instead of being clipped behind it.
+  // Re-run when isPulseWorkspaceActive changes so the observer attaches after
+  // the omnibox dock mounts (it is only rendered when the workspace is active).
   useEffect(() => {
     const node = omniboxDockRef.current
     if (!node) return
@@ -171,7 +173,7 @@ export default function DashboardPage() {
     })
     ro.observe(node)
     return () => ro.disconnect()
-  }, [])
+  }, [isPulseWorkspaceActive])
 
   return (
     <>

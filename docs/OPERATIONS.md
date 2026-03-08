@@ -138,10 +138,12 @@ If any are unhealthy, inspect logs before restart.
 ./scripts/axon doctor
 ```
 
-3. Restart worker — kill the process and re-run:
+3. Restart all workers — kill each process and re-run (each in its own terminal or tmux pane):
 
 ```bash
 cargo run --bin axon -- crawl worker
+cargo run --bin axon -- embed worker
+cargo run --bin axon -- extract worker
 ```
 
 ### Jobs stuck in `running`

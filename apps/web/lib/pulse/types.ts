@@ -95,10 +95,13 @@ export const PulseChatRequestSchema = z.object({
     .string()
     .regex(/^[a-zA-Z0-9,\-.:]*$/, 'betas contains invalid characters')
     .optional(),
-  /** --tools: restrict which built-in tools are available */
+  /** --tools: restrict which built-in tools are available (comma-separated, e.g. "Bash,Read") */
   toolsRestrict: z
     .string()
-    .regex(/^[a-zA-Z0-9_:*-]+$/, 'toolsRestrict contains invalid characters')
+    .regex(
+      /^[A-Za-z*]([A-Za-z0-9_*]*)(,[A-Za-z*]([A-Za-z0-9_*]*))*$/,
+      'toolsRestrict must be a comma-separated list of tool names (e.g. "Bash,Read,Write")',
+    )
     .optional(),
   /** Stream replay: resume from this event ID. */
   lastEventId: z.string().max(128).optional(),
