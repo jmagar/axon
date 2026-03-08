@@ -171,6 +171,8 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
     if (!projectPath.startsWith(root + path.sep)) continue
     if (!(await isDirEntry(projectPath))) continue
 
+    const decoded = decodeProjectPath(projectName)
+    const git = await enrichWithGit(decoded)
     const fileNames = await readDirEntries(projectPath)
     for (const fileName of fileNames) {
       if (!fileName.endsWith('.jsonl')) continue
@@ -179,8 +181,6 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
       try {
         const stat = await fs.stat(absolutePath)
         if (!stat.isFile()) continue
-        const decoded = decodeProjectPath(projectName)
-        const git = await enrichWithGit(decoded)
         results.push({
           id: sessionId(absolutePath),
           absolutePath,
