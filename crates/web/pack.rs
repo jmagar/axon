@@ -158,4 +158,104 @@ mod tests {
         let xml = build_pack_xml("empty.com", &entries);
         assert!(xml.contains("file_count=\"0\""));
     }
+
+    #[test]
+    fn pack_md_content_without_trailing_newline_no_double_newline() {
+        // Content with no trailing newline — the function adds exactly one '\n'
+        // before the closing fence. The sequence "hello\n````" must appear.
+        // Note: "\n\n````" appears in the output from the blank line before the
+        // OPENING fence (Source: url\n\n````markdown). We only verify that no
+        // blank line is inserted immediately before the CLOSING fence —
+        // i.e. "hello\n\n````" must not appear.
+        let entries = vec![(
+            "https://example.com/x".into(),
+            "x.md".into(),
+            "hello".into(),
+        )];
+        let result = build_pack_md("example.com", &entries);
+        assert!(
+            result.contains("hello\n````"),
+            "expected single newline before closing fence"
+        );
+        assert!(
+            !result.contains("hello\n\n````"),
+            "unexpected blank line immediately before closing fence"
+        );
+    }
+
+    #[test]
+    fn pack_md_content_with_trailing_newline_no_extra_blank() {
+        // Content already ends with '\n' — no second '\n' should be injected.
+        // "hello\n````" must appear; "hello\n\n````" must not.
+        let entries = vec![(
+            "https://example.com/y".into(),
+            "y.md".into(),
+            "hello\n".into(),
+        )];
+        let result = build_pack_md("example.com", &entries);
+        assert!(
+            result.contains("hello\n````"),
+            "expected content+newline then closing fence"
+        );
+        assert!(
+            !result.contains("hello\n\n````"),
+            "unexpected extra blank line before closing fence"
+        );
+    }
+
+    #[test]
+    fn pack_xml_file_count_multiple() {
+        let entries = vec![
+            ("https://a.com/1".into(), "1.md".into(), "c1".into()),
+            ("https://a.com/2".into(), "2.md".into(), "c2".into()),
+            ("https://a.com/3".into(), "3.md".into(), "c3".into()),
+        ];
+        let result = build_pack_xml("a.com", &entries);
+        assert!(result.contains("file_count=\"3\""));
+    }
+
+    #[test]
+    fn pack_xml_single_quote_in_domain() {
+        // Single quotes are NOT in the escape_xml_attr match arms (only &, ", <, >).
+        // They pass through verbatim — this test documents that behaviour.
+        let result = build_pack_xml("it's-weird.com", &[]);
+        // Must not panic; single quote appears verbatim (not escaped to &apos;)
+        assert!(
+            result.contains("it's-weird.com"),
+            "single quote should appear verbatim"
+        );
+    }
+
+    #[test]
+    fn pack_xml_unicode_content() {
+        let entries = vec![(
+            "https://example.com/emoji".into(),
+            "emoji.md".into(),
+            "Hello 🌍".into(),
+        )];
+        let result = build_pack_xml("example.com", &entries);
+        assert!(
+            result.contains("Hello 🌍"),
+            "emoji should appear verbatim in xml output"
+        );
+    }
+
+    #[test]
+    fn pack_md_multiple_entries_all_present() {
+        let entries = vec![
+            (
+                "https://example.com/alpha".into(),
+                "alpha.md".into(),
+                "Alpha content".into(),
+            ),
+            (
+                "https://example.com/beta".into(),
+                "beta.md".into(),
+                "Beta content".into(),
+            ),
+        ];
+        let result = build_pack_md("example.com", &entries);
+        assert!(result.contains("## File: alpha.md"), "alpha header missing");
+        assert!(result.contains("## File: beta.md"), "beta header missing");
+    }
 }
