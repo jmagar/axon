@@ -250,11 +250,46 @@ else
   sed -i "s|^AXON_DATA_DIR=.*|AXON_DATA_DIR=${AXON_DATA_DIR}|" "$REPO/.env"
   mkdir -p "$AXON_DATA_DIR"
   ok "AXON_DATA_DIR=${AXON_DATA_DIR}"
+
+  # ── Generate secrets ─────────────────────────────────────────────────────────
+  info "Generating secrets..."
+  gen_secret() { python3 -c "import secrets; print(secrets.token_urlsafe(32))"; }
+
+  PG_PASS="$(gen_secret)"
+  REDIS_PASS="$(gen_secret)"
+  RABBIT_PASS="$(gen_secret)"
+  WEB_TOKEN="$(gen_secret)"
+
+  set_env() {
+    # set_env KEY VALUE  — replace or append in .env
+    local key="$1" val="$2"
+    if grep -q "^${key}=" "$REPO/.env"; then
+      sed -i "s|^${key}=.*|${key}=${val}|" "$REPO/.env"
+    else
+      echo "${key}=${val}" >> "$REPO/.env"
+    fi
+  }
+
+  # Standalone password vars
+  set_env POSTGRES_PASSWORD   "$PG_PASS"
+  set_env REDIS_PASSWORD      "$REDIS_PASS"
+  set_env RABBITMQ_PASS       "$RABBIT_PASS"
+
+  # Connection URLs — rewrite with the generated passwords
+  set_env AXON_PG_URL    "postgresql://axon:${PG_PASS}@axon-postgres:5432/axon"
+  set_env AXON_REDIS_URL "redis://:${REDIS_PASS}@axon-redis:6379"
+  set_env AXON_AMQP_URL  "amqp://axon:${RABBIT_PASS}@axon-rabbitmq:5672"
+
+  # Web API token — client and server copies must match
+  set_env AXON_WEB_API_TOKEN          "$WEB_TOKEN"
+  set_env NEXT_PUBLIC_AXON_API_TOKEN  "$WEB_TOKEN"
+
+  ok "Secrets generated and written to .env"
 fi
 
 CHANGE_ME_COUNT="$(grep -c 'CHANGE_ME' "$REPO/.env" || true)"
 if (( CHANGE_ME_COUNT > 0 )); then
-  warn "$CHANGE_ME_COUNT value(s) in .env still set to CHANGE_ME — edit before starting services:"
+  warn "$CHANGE_ME_COUNT value(s) in .env still need manual configuration:"
   grep -n 'CHANGE_ME' "$REPO/.env" | sed 's/^/  /' >&2
 fi
 
