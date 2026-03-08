@@ -176,9 +176,9 @@ export function SessionsSection() {
       ? pulseSessions
       : pulseSessions.filter(
           (s) =>
-            s.title.toLowerCase().includes(q) ||
-            s.preview.toLowerCase().includes(q) ||
-            s.documentTitle.toLowerCase().includes(q),
+            s.title?.toLowerCase().includes(q) ||
+            s.preview?.toLowerCase().includes(q) ||
+            s.documentTitle?.toLowerCase().includes(q),
         )
     const sorted = [...filtered]
     if (sortMode === 'oldest') {
