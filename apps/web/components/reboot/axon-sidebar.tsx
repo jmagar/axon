@@ -19,13 +19,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { FileTree } from '@/components/workspace/file-tree'
-import {
-  AGENT_ITEMS,
-  PAGE_ITEMS,
-  RAIL_MODES,
-  type RailMode,
-  SESSION_ITEMS,
-} from './reboot-mock-data'
+import type { SessionSummary } from '@/hooks/use-recent-sessions'
+import { AGENT_ITEMS, PAGE_ITEMS, RAIL_MODES, type RailMode } from './axon-mock-data'
 
 function railItemClass(isActive: boolean) {
   return isActive
@@ -41,6 +36,7 @@ function isPageActive(pathname: string | null, href: string) {
 
 function RailContent({
   mode,
+  sessions,
   pathname,
   activeSessionId,
   onSelectSession,
@@ -51,8 +47,9 @@ function RailContent({
   query,
 }: {
   mode: RailMode
+  sessions: SessionSummary[]
   pathname: string | null
-  activeSessionId: string
+  activeSessionId: string | null
   onSelectSession: (sessionId: string) => void
   fileEntries: FileEntry[]
   fileLoading: boolean
@@ -63,10 +60,11 @@ function RailContent({
   const normalizedQuery = query.trim().toLowerCase()
 
   if (mode === 'sessions') {
-    const filteredSessions = SESSION_ITEMS.filter((session) => {
+    const filteredSessions = sessions.filter((session) => {
       if (!normalizedQuery) return true
-      return [session.title, session.repo, session.branch, session.agent].some((value) =>
-        value.toLowerCase().includes(normalizedQuery),
+      return (
+        session.preview?.toLowerCase().includes(normalizedQuery) ||
+        session.project?.toLowerCase().includes(normalizedQuery)
       )
     })
 
@@ -74,6 +72,8 @@ function RailContent({
       <QueueList className="mt-1 space-y-0.5">
         {filteredSessions.map((session) => {
           const isActive = session.id === activeSessionId
+          const title = session.preview?.slice(0, 60) ?? session.project ?? 'Untitled'
+          const meta = session.project ?? ''
           return (
             <li key={session.id}>
               <button
@@ -84,26 +84,14 @@ function RailContent({
               >
                 <div className="px-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2">
-                      {session.hasUnread ? (
-                        <span
-                          className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--axon-primary)]"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                      <span
-                        className={`text-[13px] ${session.hasUnread ? 'font-semibold text-[var(--text-primary)]' : 'font-medium'}`}
-                      >
-                        {session.title}
-                      </span>
-                    </div>
+                    <span className="text-[13px] font-medium">{title}</span>
                     <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
-                      {session.lastMessageAt}
+                      {formatRelativeTime(session.mtimeMs)}
                     </span>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">
-                    {session.repo} · {session.branch} · {session.agent}
-                  </div>
+                  {meta ? (
+                    <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{meta}</div>
+                  ) : null}
                 </div>
               </button>
             </li>
@@ -225,8 +213,9 @@ function RailContent({
   )
 }
 
-export function RebootSidebar({
+export function AxonSidebar({
   variant,
+  sessions,
   railMode,
   onRailModeChange,
   railQuery,
@@ -240,14 +229,16 @@ export function RebootSidebar({
   selectedFilePath,
   onSelectFile,
   onCollapse,
+  onNewSession,
 }: {
   variant: 'mobile' | 'desktop'
+  sessions: SessionSummary[]
   railMode: RailMode
   onRailModeChange: (mode: RailMode) => void
   railQuery: string
   onRailQueryChange: (query: string) => void
   pathname: string | null
-  activeSessionId: string
+  activeSessionId: string | null
   activeSessionRepo: string
   onSelectSession: (sessionId: string) => void
   fileEntries: FileEntry[]
@@ -255,6 +246,7 @@ export function RebootSidebar({
   selectedFilePath: string | null
   onSelectFile: (entry: FileEntry) => void
   onCollapse?: () => void
+  onNewSession?: () => void
 }) {
   const activeMode = RAIL_MODES.find((mode) => mode.id === railMode) ?? RAIL_MODES[0]!
   const ActiveModeIcon = activeMode.icon
@@ -341,10 +333,11 @@ export function RebootSidebar({
         <div className="flex items-center gap-1">
           <button
             type="button"
+            onClick={onNewSession}
             className={`flex ${isDesktop ? 'size-6' : 'size-8'} items-center justify-center text-[var(--text-dim)] transition-colors hover:text-[var(--text-primary)]`}
           >
             <Plus className="size-3.5" />
-            <span className="sr-only">New item</span>
+            <span className="sr-only">New session</span>
           </button>
         </div>
       </div>
@@ -399,7 +392,7 @@ export function RebootSidebar({
                   : 'Search...'
             }
             aria-label={`Search ${activeMode.label.toLowerCase()}`}
-            className={`${searchH} w-full border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.32)] pl-7 pr-2 text-[var(--text-secondary)] placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.18)] focus:outline-none`}
+            className={`${searchH} w-full rounded-md border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.32)] pl-7 pr-2 font-sans text-[var(--text-secondary)] placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.18)] focus:outline-none`}
           />
         </div>
       </div>
@@ -407,6 +400,7 @@ export function RebootSidebar({
       <ScrollArea className="min-h-0 flex-1 px-2 py-1">
         <RailContent
           mode={railMode}
+          sessions={sessions}
           pathname={pathname}
           activeSessionId={activeSessionId}
           onSelectSession={onSelectSession}
@@ -419,4 +413,12 @@ export function RebootSidebar({
       </ScrollArea>
     </div>
   )
+}
+
+function formatRelativeTime(ms: number): string {
+  const diff = Date.now() - ms
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return new Date(ms).toLocaleDateString()
 }

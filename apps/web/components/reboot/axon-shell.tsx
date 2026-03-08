@@ -24,12 +24,7 @@ import { AxonFrame } from './axon-frame'
 import { AxonLogsDialog } from './axon-logs-dialog'
 import { AxonMcpDialog } from './axon-mcp-dialog'
 import { AxonMessageList } from './axon-message-list'
-import {
-  type AxonPermissionValue,
-  RAIL_MODES,
-  type RailMode,
-  type SessionItem,
-} from './axon-mock-data'
+import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-mock-data'
 import { AxonPaneHandle } from './axon-pane-handle'
 import { AxonPromptComposer } from './axon-prompt-composer'
 import { AxonSidebar } from './axon-sidebar'
@@ -164,25 +159,6 @@ export function AxonShell() {
   // Live session list from ~/.claude/projects
   const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
 
-  // Adapt SessionSummary[] → SessionItem[] for AxonSidebar (Task 9 will update AxonSidebar)
-  const sessions = useMemo<SessionItem[]>(
-    () =>
-      rawSessions.map((s) => ({
-        id: s.id,
-        title: s.preview ?? s.filename,
-        repo: s.project,
-        branch: '',
-        agent: agentDisplayName(pulseAgent ?? 'claude'),
-        lastMessageAt: new Date(s.mtimeMs).toLocaleString([], {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      })),
-    [rawSessions, pulseAgent],
-  )
-
   // Load JSONL history for the active session
   const { messages: historicalMessages } = useAxonSession(activeSessionId)
 
@@ -216,8 +192,8 @@ export function AxonShell() {
 
   // Derive active session metadata for display
   const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) ?? null,
-    [sessions, activeSessionId],
+    () => rawSessions.find((s) => s.id === activeSessionId) ?? null,
+    [rawSessions, activeSessionId],
   )
 
   const modelOptions = useMemo(() => {
@@ -540,18 +516,15 @@ export function AxonShell() {
     [openFile, setMobilePaneTracked],
   )
 
-  // AxonSidebar requires activeSessionId: string (not null); fall back to empty string
-  const sidebarActiveSessionId = activeSessionId ?? ''
-
   const sidebarProps = {
-    sessions,
+    sessions: rawSessions,
     railMode,
     onRailModeChange: setRailModeTracked,
     railQuery,
     onRailQueryChange: setRailQuery,
     pathname,
-    activeSessionId: sidebarActiveSessionId,
-    activeSessionRepo: activeSession?.repo ?? '',
+    activeSessionId,
+    activeSessionRepo: activeSession?.project ?? '',
     fileEntries: workspace.fileEntries,
     fileLoading: workspace.fileLoading,
     selectedFilePath: workspace.selectedFilePath,
@@ -586,7 +559,7 @@ export function AxonShell() {
     isDragging || !layoutRestored ? '' : 'transition-[width,flex] duration-300 ease-out'
 
   // Title and message count for the chat header
-  const chatTitle = activeSession?.title ?? 'New chat'
+  const chatTitle = activeSession?.preview?.slice(0, 60) ?? activeSession?.project ?? 'New chat'
   const agentLabel = agentDisplayName(pulseAgent ?? 'claude')
 
   return (
