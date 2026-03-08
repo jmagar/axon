@@ -131,10 +131,23 @@ cargo_install_if_missing() {
   fi
 }
 
-# Required for Justfile targets
+# Required for Justfile targets.
+# NOTE: if just is not yet installed, run ./scripts/dev-setup.sh directly —
+# `just setup` is a convenience alias for when just is already available.
 if ! command -v just >/dev/null 2>&1; then
   info "Installing just (task runner)..."
-  cargo install --locked just && ok "just installed" || warn "just install failed — install manually: cargo install just"
+  if [[ "$OS" == "macos" ]]; then
+    brew install just && ok "just $(just --version)"
+  else
+    # Prebuilt binary is much faster than cargo install
+    local _just_ver
+    _just_ver="$(curl -fsSL https://api.github.com/repos/casey/just/releases/latest \
+      | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")"
+    curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-x86_64-unknown-linux-musl.tar.gz" \
+      | tar -xz -C "$HOME/.cargo/bin" just \
+      && ok "just ${_just_ver} installed" \
+      || { warn "prebuilt install failed — falling back to cargo install just"; cargo install --locked just && ok "just installed"; }
+  fi
 else
   ok "just $(just --version)"
 fi

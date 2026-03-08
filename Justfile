@@ -4,7 +4,8 @@ rust_dev_env := "if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPE
 default:
     @just --list
 
-# Bootstrap a new development environment (checks + installs all dependencies)
+# Bootstrap a new development environment (checks + installs all dependencies).
+# No just? Run ./scripts/dev-setup.sh directly — it installs just for you.
 setup *args:
     ./scripts/dev-setup.sh {{args}}
 
