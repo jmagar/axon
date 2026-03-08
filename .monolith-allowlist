@@ -41,3 +41,6 @@ apps/web/components/pulse/pulse-editor-pane.tsx  # expires: 2026-03-15
 
 # expires: 2026-03-15 — stream_container_stats grew with multi-stat broadcast; split pending.
 crates/web/docker_stats.rs  # expires: 2026-03-15
+
+# expires: 2026-03-15 — init_tracing() (137L) pre-existing on services-layer-refactor; split pending.
+crates/core/logging.rs  # expires: 2026-03-15

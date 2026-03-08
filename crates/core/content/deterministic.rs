@@ -100,7 +100,10 @@ impl DeterministicParser for JsonLdParser {
         let mut current_json = String::new();
 
         for token in Tokenizer::new(html) {
-            let token = token.unwrap();
+            let token = match token {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
             match token {
                 Token::StartTag(tag) => {
                     if &tag.name[..] == b"script"
@@ -161,7 +164,10 @@ impl DeterministicParser for OpenGraphParser {
         let mut og_fields = serde_json::Map::new();
 
         for token in Tokenizer::new(html) {
-            let token = token.unwrap();
+            let token = match token {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
             if let Token::StartTag(tag) = token
                 && &tag.name[..] == b"meta"
             {
@@ -216,7 +222,10 @@ impl DeterministicParser for HtmlTableParser {
         let mut row_count = 0;
 
         for token in Tokenizer::new(html) {
-            let token = token.unwrap();
+            let token = match token {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
             match token {
                 Token::StartTag(tag) => {
                     if &tag.name[..] == b"table" {

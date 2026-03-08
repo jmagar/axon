@@ -53,6 +53,12 @@ export function AxonLogsDialog({
     }
   }, [])
 
+  // TODO: This SSE streaming + virtualised log rendering block duplicates the
+  // equivalent logic in `components/logs/logs-viewer.tsx` (the canonical
+  // implementation). Both must be kept in sync manually until the shared
+  // behaviour is extracted into a reusable hook (e.g. `hooks/use-log-stream.ts`).
+  // Maintenance drift risk: any bug fix or protocol change applied to one must
+  // also be applied to the other.
   // SSE connection — only when dialog is open
   useEffect(() => {
     if (!open) return

@@ -134,6 +134,14 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
     const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null)
     const searchAddonRef = useRef<import('@xterm/addon-search').SearchAddon | null>(null)
 
+    // Tracks whether the component is still mounted so debounced callbacks
+    // and rAF-scheduled work can bail out after disposal.
+    const mountedRef = useRef(true)
+
+    // Holds the pending rAF handle for the ResizeObserver-triggered fit() call
+    // so it can be cancelled in the cleanup path.
+    const rafRef = useRef<number>(0)
+
     // Expose imperative handle to parent
     useImperativeHandle(ref, () => ({
       write(data: string) {
@@ -234,6 +242,8 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         terminal.onSelectionChange(() => {
           clearTimeout(selectionTimer)
           selectionTimer = window.setTimeout(() => {
+            // Guard against running after component unmount/disposal.
+            if (!mountedRef.current) return
             const sel = terminal!.getSelection()
             if (sel) navigator.clipboard?.writeText(sel).catch(() => {})
           }, 50)
@@ -279,11 +289,11 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
 
         // Refit whenever the container changes size. rAF-debounced so CSS
         // transitions (dialog open/close scale animation) don't flood fit()
-        // with dozens of calls per frame.
-        let rafId = 0
+        // with dozens of calls per frame. The handle is stored in rafRef so
+        // it can be cancelled during component disposal.
         observer = new ResizeObserver(() => {
-          cancelAnimationFrame(rafId)
-          rafId = requestAnimationFrame(() => fitAddon.fit())
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = requestAnimationFrame(() => fitAddon.fit())
         })
         observer.observe(containerRef.current)
       }
@@ -292,6 +302,8 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
 
       return () => {
         disposed = true
+        mountedRef.current = false
+        cancelAnimationFrame(rafRef.current)
         observer?.disconnect()
         observer = null
 
