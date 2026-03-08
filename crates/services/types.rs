@@ -228,6 +228,10 @@ pub enum AcpBridgeEvent {
     PlanUpdate(AcpPlanUpdate),
     ModeUpdate(AcpModeUpdate),
     CommandsUpdate(AcpCommandsUpdate),
+    SessionFallback {
+        old_session_id: String,
+        new_session_id: String,
+    },
 }
 
 /// ACP plan forwarded from the agent's Plan session update.
@@ -345,6 +349,16 @@ impl serde::Serialize for AcpBridgeEvent {
                 map.serialize_entry("type", "commands_update")?;
                 map.serialize_entry("session_id", &cmds.session_id)?;
                 map.serialize_entry("commands", &cmds.commands)?;
+                map.end()
+            }
+            Self::SessionFallback {
+                old_session_id,
+                new_session_id,
+            } => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("type", "session_fallback")?;
+                map.serialize_entry("old_session_id", old_session_id)?;
+                map.serialize_entry("new_session_id", new_session_id)?;
                 map.end()
             }
         }
