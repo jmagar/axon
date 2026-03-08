@@ -457,3 +457,171 @@ pub struct IngestResult {
 pub struct ScreenshotResult {
     pub payload: serde_json::Value,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    // ── AcpBridgeEvent::SessionUpdate (assistant_delta) ───────────────────────
+
+    #[test]
+    fn acpbridgeevent_assistant_delta_wire_shape() {
+        let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
+            session_id: "s1".to_string(),
+            kind: AcpSessionUpdateKind::AssistantDelta,
+            text_delta: Some("hello".to_string()),
+            tool_call_id: None,
+            tool_name: None,
+            tool_status: None,
+            tool_content: None,
+            tool_input: None,
+        });
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "assistant_delta");
+        assert_eq!(v["delta"], "hello");
+        // assistant_delta must NOT use the "content" key for its text
+        assert!(
+            v.get("content").is_none(),
+            "assistant_delta must not have a 'content' key"
+        );
+        assert_eq!(v["session_id"], "s1");
+    }
+
+    // ── AcpBridgeEvent::SessionUpdate (thinking_content) ─────────────────────
+
+    #[test]
+    fn acpbridgeevent_thinking_content_wire_shape() {
+        let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
+            session_id: "s2".to_string(),
+            kind: AcpSessionUpdateKind::ThinkingDelta,
+            text_delta: Some("thought".to_string()),
+            tool_call_id: None,
+            tool_name: None,
+            tool_status: None,
+            tool_content: None,
+            tool_input: None,
+        });
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "thinking_content");
+        // thinking_content uses "content", NOT "delta"
+        assert_eq!(v["content"], "thought");
+        assert!(
+            v.get("delta").is_none(),
+            "thinking_content must not have a 'delta' key"
+        );
+    }
+
+    // ── AcpBridgeEvent::PermissionRequest ─────────────────────────────────────
+
+    #[test]
+    fn acpbridgeevent_permission_request_wire_shape() {
+        let event = AcpBridgeEvent::PermissionRequest(AcpPermissionRequestEvent {
+            session_id: "s3".to_string(),
+            tool_call_id: "tc1".to_string(),
+            option_ids: vec!["allow".to_string(), "deny".to_string()],
+        });
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "permission_request");
+        assert!(v["options"].is_array(), "'options' must be an array");
+        assert_eq!(v["options"].as_array().unwrap().len(), 2);
+    }
+
+    // ── AcpBridgeEvent::TurnResult ────────────────────────────────────────────
+
+    #[test]
+    fn acpbridgeevent_turn_result_wire_shape() {
+        let event = AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
+            session_id: "s4".to_string(),
+            stop_reason: "end_turn".to_string(),
+            result: "done".to_string(),
+        });
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "result");
+        assert!(
+            v.get("stop_reason").is_some(),
+            "'stop_reason' must be present"
+        );
+        assert_eq!(v["stop_reason"], "end_turn");
+    }
+
+    // ── AcpBridgeEvent::ConfigOptionsUpdate ───────────────────────────────────
+
+    #[test]
+    fn acpbridgeevent_config_options_update_wire_shape() {
+        let opt = AcpConfigOption {
+            id: "model".to_string(),
+            name: "Model".to_string(),
+            description: None,
+            category: None,
+            current_value: "claude-3-5-sonnet".to_string(),
+            options: vec![AcpConfigSelectValue {
+                value: "claude-3-5-sonnet".to_string(),
+                name: "Claude 3.5 Sonnet".to_string(),
+                description: None,
+            }],
+        };
+        let event = AcpBridgeEvent::ConfigOptionsUpdate(vec![opt]);
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "config_options_update");
+        // The key must be camelCase "configOptions" per the custom Serialize impl
+        assert!(
+            v.get("configOptions").is_some(),
+            "key must be 'configOptions' (camelCase)"
+        );
+        assert!(v["configOptions"].is_array());
+    }
+
+    // ── AcpBridgeEvent::SessionFallback ───────────────────────────────────────
+
+    #[test]
+    fn acpbridgeevent_session_fallback_wire_shape() {
+        let event = AcpBridgeEvent::SessionFallback {
+            old_session_id: "old-123".to_string(),
+            new_session_id: "new-456".to_string(),
+        };
+        let v: Value = serde_json::to_value(&event).unwrap();
+        assert_eq!(v["type"], "session_fallback");
+        assert_eq!(v["old_session_id"], "old-123");
+        assert_eq!(v["new_session_id"], "new-456");
+    }
+
+    // ── AcpSessionUpdateKind Display: all "status" variants ───────────────────
+
+    #[test]
+    fn acpsessionupdatekind_display_status_variants() {
+        // These five variants all serialize/display as "status"
+        let status_variants = [
+            AcpSessionUpdateKind::Plan,
+            AcpSessionUpdateKind::AvailableCommandsUpdate,
+            AcpSessionUpdateKind::CurrentModeUpdate,
+            AcpSessionUpdateKind::ConfigOptionUpdate,
+            AcpSessionUpdateKind::Unknown,
+        ];
+        for kind in &status_variants {
+            assert_eq!(
+                kind.to_string(),
+                "status",
+                "{kind:?} Display must produce \"status\""
+            );
+        }
+        // Sanity-check the non-status variants
+        assert_eq!(AcpSessionUpdateKind::UserDelta.to_string(), "user_delta");
+        assert_eq!(
+            AcpSessionUpdateKind::AssistantDelta.to_string(),
+            "assistant_delta"
+        );
+        assert_eq!(
+            AcpSessionUpdateKind::ThinkingDelta.to_string(),
+            "thinking_content"
+        );
+        assert_eq!(
+            AcpSessionUpdateKind::ToolCallStarted.to_string(),
+            "tool_use"
+        );
+        assert_eq!(
+            AcpSessionUpdateKind::ToolCallUpdated.to_string(),
+            "tool_use_update"
+        );
+    }
+}

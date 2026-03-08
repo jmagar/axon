@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-08 (session: v0.11.0 — AxonShell real ACP/session wiring + hooks + MCP/services hardening)
+Last Modified: 2026-03-08 (session: v0.11.1 — Expand test coverage across web app and Rust crates (+914 tests))
 
 ## [Unreleased] — feat/services-layer-refactor
 
 This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
 
 ### Highlights
+
+- **Test coverage expansion — web app + Rust crates (v0.11.1)** — 914 new tests across 18 files: 6 new TypeScript test files (`api-fetch`, `api/cortex-routes`, `api/sessions-routes`, `api/workspace-route`, `pulse-chat-api-lib`, `pulse-session-store`) + 5 expanded TS test files; Rust tests added to `crates/web/` (execute/args, execute/cancel, execute/files, execute/overrides, download/archive, docker_stats, pack) and `crates/services/` (acp, events, query, search, system, types); two bugs fixed: `pushCapped` array spreading via `items.concat(item)` → `[...items, item]`, `window.localStorage` SSR guard added via `getLocalStorage()` helper with `typeof window !== 'undefined'` check; zip-slip vulnerability documented in `build_zip` (entry path stored verbatim); `LogLevel` case-sensitivity documented (`"WARN"` → `Info`); XML single-quote escaping gap documented in `pack.rs`
 
 - **AxonShell real ACP/session wiring + UI polish (v0.11.0)** — `useAxonSession` hook added for JSONL session history fetch; `useAxonAcp` hook added for real ACP WebSocket prompt submission with `randomUUID` message IDs; `useAxonSession` behavioral tests added; `AxonShell` wired to real session data and ACP WebSocket; `AxonSidebar` wired to real `SessionSummary` list with repo/branch filter; git enrichment hoisted to outer project loop in sessions ingest; `SessionFallback` event emitted on failed session resume and handled in Pulse stream pipeline; `Reboot*` components renamed to `Axon*`, `REBOOT_` constants renamed to `AXON_`; `onTurnComplete` wrapped in `useCallback`; history sync guarded during streaming; timestamp display fixed; loading/error states added to `AxonMessageList`; `AxonPromptComposer` submit disabled during streaming with spinner; sessions fix: `apiFetch` injects `x-api-key` on session load; biome dep warning suppressed in shell-server.mjs; Rust: services `events.rs`, MCP `config.rs`/`server.rs`, crawl engine, ingest, jobs, vector ops, web crate all hardened/refactored; new `align-kit.tsx` editor plugin; `mcp-config.tsx` component added
 

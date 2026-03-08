@@ -175,3 +175,147 @@ pub async fn dedupe(
     );
     Ok(DedupeResult { completed: true })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── map_sources_payload ───────────────────────────────────────────────────
+
+    #[test]
+    fn map_sources_valid() {
+        let payload = json!({
+            "count": 2,
+            "limit": 10,
+            "offset": 0,
+            "urls": [
+                { "url": "https://example.com/a", "chunks": 3 },
+                { "url": "https://example.com/b", "chunks": 7 }
+            ]
+        });
+        let result = map_sources_payload(&payload).unwrap();
+        assert_eq!(result.count, 2);
+        assert_eq!(result.limit, 10);
+        assert_eq!(result.offset, 0);
+        assert_eq!(result.urls.len(), 2);
+        assert_eq!(result.urls[0], ("https://example.com/a".to_string(), 3));
+        assert_eq!(result.urls[1], ("https://example.com/b".to_string(), 7));
+    }
+
+    #[test]
+    fn map_sources_missing_count() {
+        let payload = json!({ "limit": 10, "offset": 0, "urls": [] });
+        let err = map_sources_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains("count"),
+            "error must mention 'count', got: {err}"
+        );
+    }
+
+    #[test]
+    fn map_sources_missing_urls() {
+        let payload = json!({ "count": 0, "limit": 10, "offset": 0 });
+        let err = map_sources_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains("urls"),
+            "error must mention 'urls', got: {err}"
+        );
+    }
+
+    #[test]
+    fn map_sources_url_entry_missing_url_field() {
+        let payload = json!({
+            "count": 1,
+            "limit": 10,
+            "offset": 0,
+            "urls": [{ "chunks": 5 }]
+        });
+        let err = map_sources_payload(&payload).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("urls[0]"),
+            "error must reference urls[0], got: {msg}"
+        );
+    }
+
+    #[test]
+    fn map_sources_url_entry_missing_chunks_field() {
+        let payload = json!({
+            "count": 1,
+            "limit": 10,
+            "offset": 0,
+            "urls": [{ "url": "https://example.com" }]
+        });
+        let err = map_sources_payload(&payload).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("chunks"),
+            "error must mention 'chunks', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn map_sources_empty_urls_array() {
+        let payload = json!({ "count": 0, "limit": 50, "offset": 0, "urls": [] });
+        let result = map_sources_payload(&payload).unwrap();
+        assert_eq!(result.count, 0);
+        assert!(result.urls.is_empty());
+    }
+
+    // ── map_domains_payload ───────────────────────────────────────────────────
+
+    #[test]
+    fn map_domains_valid() {
+        let payload = json!({
+            "limit": 20,
+            "offset": 5,
+            "domains": [
+                { "domain": "example.com", "vectors": 42 },
+                { "domain": "docs.rs", "vectors": 100 }
+            ]
+        });
+        let result = map_domains_payload(&payload).unwrap();
+        assert_eq!(result.limit, 20);
+        assert_eq!(result.offset, 5);
+        assert_eq!(result.domains.len(), 2);
+        assert_eq!(result.domains[0].domain, "example.com");
+        assert_eq!(result.domains[0].vectors, 42);
+        assert_eq!(result.domains[1].domain, "docs.rs");
+        assert_eq!(result.domains[1].vectors, 100);
+    }
+
+    #[test]
+    fn map_domains_missing_domains_field() {
+        let payload = json!({ "limit": 10, "offset": 0 });
+        let err = map_domains_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains("domains"),
+            "error must mention 'domains', got: {err}"
+        );
+    }
+
+    #[test]
+    fn map_domains_entry_missing_domain_key() {
+        let payload = json!({
+            "limit": 10,
+            "offset": 0,
+            "domains": [{ "vectors": 5 }]
+        });
+        let err = map_domains_payload(&payload).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("domains[0]"),
+            "error must reference domains[0], got: {msg}"
+        );
+    }
+
+    #[test]
+    fn map_domains_empty() {
+        let payload = json!({ "limit": 10, "offset": 0, "domains": [] });
+        let result = map_domains_payload(&payload).unwrap();
+        assert!(result.domains.is_empty());
+        assert_eq!(result.limit, 10);
+        assert_eq!(result.offset, 0);
+    }
+}

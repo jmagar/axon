@@ -142,4 +142,44 @@ mod tests {
         let e = ws_request_to_overrides(None, None, None, Some("stream")).unwrap_err();
         assert!(e.contains("response_mode"));
     }
+
+    // ── auto_switch alias and output struct ───────────────────────────────
+
+    #[test]
+    fn auto_switch_underscore_maps_to_auto_switch_variant() {
+        let r = ws_request_to_overrides(Some("auto_switch"), None, None, None)
+            .expect("auto_switch alias should be accepted");
+        assert_eq!(
+            r.render_mode(),
+            Some(RenderMode::AutoSwitch),
+            "auto_switch should map to RenderMode::AutoSwitch"
+        );
+    }
+
+    #[test]
+    fn max_pages_zero_is_accepted() {
+        let r = ws_request_to_overrides(None, Some(0), None, None);
+        assert!(
+            r.is_ok(),
+            "max_pages=0 (uncapped) should be accepted; got: {r:?}"
+        );
+        assert_eq!(r.unwrap().max_pages(), Some(0));
+    }
+
+    #[test]
+    fn wait_false_is_accepted() {
+        let r = ws_request_to_overrides(None, None, Some(false), None);
+        assert!(r.is_ok(), "wait=false should be accepted; got: {r:?}");
+        assert_eq!(r.unwrap().wait(), Some(false));
+    }
+
+    #[test]
+    fn empty_render_mode_string_returns_error() {
+        let e = ws_request_to_overrides(Some(""), None, None, None)
+            .expect_err("empty render_mode string should return Err");
+        assert!(
+            e.contains("must not be empty"),
+            "error message should contain 'must not be empty'; got: {e:?}"
+        );
+    }
 }
