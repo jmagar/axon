@@ -22,7 +22,7 @@ const cache = new Map<string, GitMeta>()
  * Use findGitRoot() after this to locate the actual git root.
  */
 export function decodeProjectPath(folderName: string): string {
-  return '/' + folderName.slice(1).replace(/-/g, '/')
+  return `/${folderName.slice(1).replace(/-/g, '/')}`
 }
 
 /**
@@ -89,7 +89,7 @@ export async function enrichWithGit(projectPath: string): Promise<GitMeta> {
       const branch = branchOut.trim()
       if (branch && branch !== 'HEAD') {
         meta.branch =
-          branch.length > MAX_BRANCH_LENGTH ? branch.slice(0, MAX_BRANCH_LENGTH - 1) + '…' : branch
+          branch.length > MAX_BRANCH_LENGTH ? `${branch.slice(0, MAX_BRANCH_LENGTH - 1)}…` : branch
       }
     } catch {
       /* detached HEAD or no commits */
