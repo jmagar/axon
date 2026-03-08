@@ -314,6 +314,14 @@ export async function POST(request: Request) {
               }
               return
             }
+            case 'session_fallback': {
+              const newId = typeof data.new_session_id === 'string' ? data.new_session_id : ''
+              if (newId) {
+                parserState.sessionId = newId
+                emit({ type: 'session_fallback', newSessionId: newId })
+              }
+              return
+            }
             case 'result': {
               if (typeof data.result === 'string') {
                 parserState.result = data.result
