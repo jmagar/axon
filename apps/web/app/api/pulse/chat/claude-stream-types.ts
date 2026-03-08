@@ -39,7 +39,8 @@ export interface ClaudeStreamAssistantContent {
 }
 
 export interface ClaudeStreamEvent {
-  type: 'system' | 'assistant' | 'tool_result' | 'result'
+  type: 'system' | 'assistant' | 'tool_result' | 'result' | 'session_fallback'
+  new_session_id?: string
   message?: { content?: ClaudeStreamAssistantContent[] }
   result?: string
   session_id?: string

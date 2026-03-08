@@ -36,8 +36,8 @@ export interface ChatStreamEvent {
   /** ACP permission request fields */
   sessionId?: string
   permissionOptions?: string[]
-  /** Session fallback fields */
-  newSessionId?: string
+  /** Session fallback fields — required when type === 'session_fallback' */
+  newSessionId?: string // Required for 'session_fallback'; optional on all other event types
 }
 
 export interface RunChatPromptOptions {
