@@ -305,8 +305,8 @@ pub async fn embed_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     let pg_ok = make_pool(cfg).await.is_ok();
     let amqp_ok = match open_amqp_connection_and_channel(cfg, &cfg.embed_queue).await {
         Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe").await;
-            let _ = conn.close(200, "probe").await;
+            let _ = ch.close(0, "probe".into()).await;
+            let _ = conn.close(200, "probe".into()).await;
             true
         }
         Err(_) => false,

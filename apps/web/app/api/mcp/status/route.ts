@@ -19,7 +19,7 @@ type McpConfig = {
   mcpServers: Record<string, McpServerConfig>
 }
 
-type ServerStatus = 'online' | 'offline' | 'unknown'
+type ServerStatus = 'online' | 'offline' | 'unknown' | 'auth-required'
 
 const MCP_JSON_PATH = path.join(os.homedir(), '.claude', 'mcp.json')
 
@@ -70,11 +70,33 @@ async function readMcpConfig(): Promise<McpConfig> {
   }
 }
 
-async function checkHttpServer(name: string, url: string): Promise<ServerStatus> {
+// MCP JSON-RPC ping payload — smallest valid request, returns immediately.
+const MCP_PING = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
+
+async function checkHttpServer(
+  name: string,
+  url: string,
+  headers?: Record<string, string>,
+): Promise<ServerStatus> {
+  // POST a JSON-RPC ping with any configured auth headers.
+  // GET opens an SSE stream that hangs; HEAD is not supported by most MCP servers.
+  const reqHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+    ...headers,
+  }
   try {
-    const signal = AbortSignal.timeout(4_000)
-    const res = await fetch(url, { method: 'HEAD', signal })
-    // Any HTTP response (even 404/405) means the server is reachable
+    const signal = AbortSignal.timeout(5_000)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: reqHeaders,
+      body: MCP_PING,
+      signal,
+      redirect: 'manual',
+    })
+    if (res.status === 401 || res.status === 403) return 'auth-required'
+    // 3xx with manual redirect = OAuth gate or login redirect
+    if (res.status >= 300 && res.status < 400) return 'auth-required'
     return res.status < 600 ? 'online' : 'offline'
   } catch (err) {
     console.error(
@@ -126,7 +148,7 @@ export async function GET() {
           if (!validateStatusUrl(cfg.url)) {
             return [name, { status: 'offline', error: 'invalid_url' }]
           }
-          const status = await checkHttpServer(name, cfg.url)
+          const status = await checkHttpServer(name, cfg.url, cfg.headers)
           return [name, { status }]
         }
         if (cfg.command) {

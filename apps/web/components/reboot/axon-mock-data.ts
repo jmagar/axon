@@ -43,6 +43,7 @@ export type MessageItem = {
   timestamp?: string
   blocks?: PulseMessageBlock[]
   toolUses?: PulseToolUse[]
+  streaming?: boolean
 }
 
 export type AxonPermissionValue = (typeof AXON_PERMISSION_OPTIONS)[number]['value']

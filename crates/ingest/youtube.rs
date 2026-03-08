@@ -81,10 +81,9 @@ pub fn extract_video_id(input: &str) -> Option<String> {
                 } else {
                     None
                 }
-            }) {
-                if !id.is_empty() {
-                    return Some(id);
-                }
+            }) && !id.is_empty()
+            {
+                return Some(id);
             }
             return None;
         }

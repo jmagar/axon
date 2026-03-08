@@ -197,7 +197,9 @@ async fn ws_upgrade(
 
 async fn shell_ws_upgrade(
     ws: WebSocketUpgrade,
+    Query(params): Query<WsQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
 ) -> Response {
     // H-07: also accept IPv4-mapped loopback (::ffff:127.0.0.1) which Rust's
     // IpAddr::is_loopback() returns false for on some platforms.
@@ -207,12 +209,38 @@ async fn shell_ws_upgrade(
             v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
         }
     };
+
     if !is_loopback {
-        return (
-            axum::http::StatusCode::FORBIDDEN,
-            "Shell access is restricted to localhost",
-        )
-            .into_response();
+        // Non-loopback: require a valid API token (same credential as /ws).
+        match &state.api_token {
+            Some(expected) => {
+                let token = params.token.as_deref().unwrap_or("").trim();
+                if token.is_empty() {
+                    log::warn!("shell ws upgrade rejected: no token from {}", addr.ip());
+                    return (axum::http::StatusCode::UNAUTHORIZED, "token required")
+                        .into_response();
+                }
+                if token != expected.as_str() {
+                    log::warn!(
+                        "shell ws upgrade rejected: invalid token from {}",
+                        addr.ip()
+                    );
+                    return (axum::http::StatusCode::FORBIDDEN, "invalid token").into_response();
+                }
+            }
+            None => {
+                // No token configured and not loopback — deny for safety.
+                log::warn!(
+                    "shell ws upgrade rejected: remote connection from {} without AXON_WEB_API_TOKEN",
+                    addr.ip()
+                );
+                return (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "Shell access requires AXON_WEB_API_TOKEN for non-loopback connections",
+                )
+                    .into_response();
+            }
+        }
     }
     ws.on_upgrade(shell::handle_shell_ws)
 }
@@ -279,8 +307,8 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
             tokio::select! {
                 Some(msg) = exec_rx.recv() => {
                     // Sniff crawl_files messages to extract output_dir and job_id
-                    if msg.contains("\"crawl_files\"") {
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
+                    if msg.contains("\"crawl_files\"")
+                        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
                             if let Some(dir) = parsed.get("output_dir").and_then(|v| v.as_str()) {
                                 *base_dir_tracker.lock().await = Some(PathBuf::from(dir));
                             }
@@ -292,7 +320,6 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                                 job_dirs_tracker.insert(job_id.to_string(), PathBuf::from(dir));
                             }
                         }
-                    }
                     if ws_tx.send(Message::Text(msg.into())).await.is_err() {
                         break;
                     }
@@ -365,12 +392,12 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                 "permission_response" => {
                     let tool_call_id = client_msg.tool_call_id;
                     let option_id = client_msg.option_id;
-                    if !tool_call_id.is_empty() && !option_id.is_empty() {
-                        if let Ok(mut map) = permission_responders.lock() {
-                            if let Some(sender) = map.remove(&tool_call_id) {
-                                let _ = sender.send(option_id);
-                            }
-                        }
+                    if !tool_call_id.is_empty()
+                        && !option_id.is_empty()
+                        && let Ok(mut map) = permission_responders.lock()
+                        && let Some(sender) = map.remove(&tool_call_id)
+                    {
+                        let _ = sender.send(option_id);
                     }
                 }
                 "read_file" => {

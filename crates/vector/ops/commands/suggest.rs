@@ -32,26 +32,26 @@ fn parse_suggestions_from_llm(content: &str) -> Vec<Suggestion> {
             }
         };
 
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(content) {
-        if let Some(items) = value.get("suggestions").and_then(|v| v.as_array()) {
-            for item in items {
-                if let Some(url) = item
-                    .get("url")
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(content)
+        && let Some(items) = value.get("suggestions").and_then(|v| v.as_array())
+    {
+        for item in items {
+            if let Some(url) = item
+                .get("url")
+                .and_then(|v| v.as_str())
+                .and_then(parse_http_url)
+            {
+                let reason = item
+                    .get("reason")
                     .and_then(|v| v.as_str())
-                    .and_then(parse_http_url)
-                {
-                    let reason = item
-                        .get("reason")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Suggested by model")
-                        .to_string();
-                    push(&mut out, &mut seen, url, reason);
-                } else if let Some(url) = item.as_str().and_then(parse_http_url) {
-                    push(&mut out, &mut seen, url, "Suggested by model".to_string());
-                }
+                    .unwrap_or("Suggested by model")
+                    .to_string();
+                push(&mut out, &mut seen, url, reason);
+            } else if let Some(url) = item.as_str().and_then(parse_http_url) {
+                push(&mut out, &mut seen, url, "Suggested by model".to_string());
             }
-            return out;
         }
+        return out;
     }
 
     for token in content.split_whitespace() {

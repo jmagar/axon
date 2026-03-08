@@ -50,12 +50,11 @@ async fn fetch_text_with_retry(
 ) -> Option<String> {
     for attempt in 0..=retries {
         let response = client.get(url).send().await;
-        if let Ok(resp) = response {
-            if resp.status().is_success() {
-                if let Ok(text) = resp.text().await {
-                    return Some(text);
-                }
-            }
+        if let Ok(resp) = response
+            && resp.status().is_success()
+            && let Ok(text) = resp.text().await
+        {
+            return Some(text);
         }
         if attempt < retries {
             let delay = backoff_ms.saturating_mul((attempt + 1) as u64);

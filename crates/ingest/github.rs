@@ -89,20 +89,20 @@ async fn embed_repo_metadata(
     let owner_name = repo.full_name.as_deref().unwrap_or("");
     let mut parts: Vec<String> = Vec::new();
 
-    if let Some(desc) = &repo.description {
-        if !desc.is_empty() {
-            parts.push(format!("Description: {desc}"));
-        }
+    if let Some(desc) = &repo.description
+        && !desc.is_empty()
+    {
+        parts.push(format!("Description: {desc}"));
     }
-    if let Some(lang) = &repo.language {
-        if let Some(s) = lang.as_str() {
-            parts.push(format!("Language: {s}"));
-        }
+    if let Some(lang) = &repo.language
+        && let Some(s) = lang.as_str()
+    {
+        parts.push(format!("Language: {s}"));
     }
-    if let Some(topics) = &repo.topics {
-        if !topics.is_empty() {
-            parts.push(format!("Topics: {}", topics.join(", ")));
-        }
+    if let Some(topics) = &repo.topics
+        && !topics.is_empty()
+    {
+        parts.push(format!("Topics: {}", topics.join(", ")));
     }
     if let Some(license) = &repo.license {
         parts.push(format!("License: {}", license.name));

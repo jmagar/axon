@@ -91,10 +91,10 @@ pub(crate) async fn load_all_files(
     let mut domain = String::new();
 
     for (url, rel_path, canonical_file) in &resolved_entries {
-        if domain.is_empty() {
-            if let Ok(parsed) = reqwest::Url::parse(url) {
-                domain = parsed.host_str().unwrap_or("unknown").to_string();
-            }
+        if domain.is_empty()
+            && let Ok(parsed) = reqwest::Url::parse(url)
+        {
+            domain = parsed.host_str().unwrap_or("unknown").to_string();
         }
         match tokio::fs::read_to_string(canonical_file).await {
             Ok(content) => loaded.push((url.clone(), rel_path.clone(), content)),

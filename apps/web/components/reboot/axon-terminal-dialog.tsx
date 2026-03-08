@@ -2,9 +2,9 @@
 
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { RebootTerminalPane } from './reboot-terminal-pane'
+import { AxonTerminalPane } from './axon-terminal-pane'
 
-export function RebootTerminalDialog({
+export function AxonTerminalDialog({
   open,
   onOpenChange,
 }: {
@@ -35,12 +35,12 @@ export function RebootTerminalDialog({
         aria-label="Terminal"
         aria-modal={open}
         aria-hidden={!open}
-        className={`fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,960px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[18px] border border-[var(--border-subtle)] bg-[var(--glass-terminal)] shadow-[0_24px_64px_rgba(0,0,0,0.54)] backdrop-blur-xl transition-all duration-200 ${
+        className={`fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,960px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[18px] border border-[var(--border-subtle)] bg-[rgba(3,7,18,0.22)] shadow-[0_24px_64px_rgba(0,0,0,0.54)] backdrop-blur-2xl transition-all duration-200 ${
           open ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'
         }`}
         style={{ height: 'min(72dvh, 640px)' }}
       >
-        <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
+        <div className="flex h-10 shrink-0 items-center justify-between border-b border-[rgba(175,215,255,0.06)] px-3">
           <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-dim)]">
             Terminal
           </span>
@@ -54,7 +54,7 @@ export function RebootTerminalDialog({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1">{everOpened ? <RebootTerminalPane /> : null}</div>
+        <div className="min-h-0 flex-1">{everOpened ? <AxonTerminalPane /> : null}</div>
       </div>
     </>
   )

@@ -21,13 +21,13 @@ const FALLBACK_CONCURRENCY_LIMIT: usize = 4;
 fn parse_custom_headers(raw_headers: &[String]) -> reqwest::header::HeaderMap {
     let mut map = reqwest::header::HeaderMap::new();
     for raw in raw_headers {
-        if let Some((k, v)) = raw.split_once(": ") {
-            if let (Ok(name), Ok(val)) = (
+        if let Some((k, v)) = raw.split_once(": ")
+            && let (Ok(name), Ok(val)) = (
                 reqwest::header::HeaderName::from_bytes(k.as_bytes()),
                 reqwest::header::HeaderValue::from_str(v),
-            ) {
-                map.insert(name, val);
-            }
+            )
+        {
+            map.insert(name, val);
         }
     }
     map

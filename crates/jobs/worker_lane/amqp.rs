@@ -30,8 +30,8 @@ async fn setup_amqp_consumer(
     let tag = format!("{}-{lane}", wc.consumer_tag_prefix);
     let consumer = ch
         .basic_consume(
-            &wc.queue_name,
-            &tag,
+            wc.queue_name.as_str().into(),
+            tag.as_str().into(),
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
@@ -131,8 +131,8 @@ pub(crate) async fn run_amqp_lane(
 
     // Explicitly close channel and connection so RabbitMQ cleans up immediately
     // rather than waiting for the TCP timeout.
-    let _ = ch.close(200, "lane exit").await;
-    let _ = conn.close(200, "lane exit").await;
+    let _ = ch.close(200, "lane exit".into()).await;
+    let _ = conn.close(200, "lane exit".into()).await;
 
     Err(format!(
         "{} worker lane={lane} AMQP consumer stream ended unexpectedly",

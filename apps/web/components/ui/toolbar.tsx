@@ -57,7 +57,7 @@ export function ToolbarSeparator({
 }: React.ComponentProps<typeof ToolbarPrimitive.Separator>) {
   return (
     <ToolbarPrimitive.Separator
-      className={cn('mx-2 my-1 w-px shrink-0 bg-border', className)}
+      className={cn('mx-2 my-1 w-px shrink-0 bg-[var(--border-subtle)]', className)}
       {...props}
     />
   )
@@ -80,7 +80,7 @@ const toolbarButtonVariants = cva(
       variant: {
         default: 'bg-transparent',
         outline:
-          'border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground',
+          'border border-[var(--border-standard)] bg-transparent shadow-xs hover:bg-[var(--surface-primary)] hover:text-[var(--text-primary)]',
       },
     },
   },
@@ -88,7 +88,7 @@ const toolbarButtonVariants = cva(
 
 const dropdownArrowVariants = cva(
   cn(
-    'inline-flex items-center justify-center rounded-r-md font-medium text-foreground text-sm transition-colors disabled:pointer-events-none disabled:opacity-50',
+    'inline-flex items-center justify-center rounded-r-md font-medium text-[var(--text-secondary)] text-sm transition-colors disabled:pointer-events-none disabled:opacity-50',
   ),
   {
     defaultVariants: {
@@ -103,9 +103,9 @@ const dropdownArrowVariants = cva(
       },
       variant: {
         default:
-          'bg-transparent hover:bg-muted hover:text-muted-foreground aria-checked:bg-accent aria-checked:text-accent-foreground',
+          'bg-transparent hover:bg-[var(--surface-primary)] hover:text-[var(--text-dim)] aria-checked:bg-[var(--surface-primary-active)] aria-checked:text-[var(--axon-primary)]',
         outline:
-          'border border-input border-l-0 bg-transparent hover:bg-accent hover:text-accent-foreground',
+          'border border-[var(--border-standard)] border-l-0 bg-transparent hover:bg-[var(--surface-primary)] hover:text-[var(--text-primary)]',
       },
     },
   },
@@ -144,7 +144,7 @@ export const ToolbarButton = withTooltip(function ToolbarButton({
           <>
             <div className="flex flex-1 items-center gap-2 whitespace-nowrap">{children}</div>
             <div>
-              <ChevronDown className="size-3.5 text-muted-foreground" data-icon />
+              <ChevronDown className="size-3.5 text-[var(--text-dim)]" data-icon />
             </div>
           </>
         ) : (
@@ -202,7 +202,7 @@ export function ToolbarSplitButtonPrimary({
           variant,
         }),
         'rounded-r-none',
-        'group-data-[pressed=true]:bg-accent group-data-[pressed=true]:text-accent-foreground',
+        'group-data-[pressed=true]:bg-[var(--surface-primary-active)] group-data-[pressed=true]:text-[var(--axon-primary)]',
         className,
       )}
       {...props}
@@ -225,14 +225,14 @@ export function ToolbarSplitButtonSecondary({
           size,
           variant,
         }),
-        'group-data-[pressed=true]:bg-accent group-data-[pressed=true]:text-accent-foreground',
+        'group-data-[pressed=true]:bg-[var(--surface-primary-active)] group-data-[pressed=true]:text-[var(--axon-primary)]',
         className,
       )}
       onClick={(e) => e.stopPropagation()}
       role="button"
       {...props}
     >
-      <ChevronDown className="size-3.5 text-muted-foreground" data-icon />
+      <ChevronDown className="size-3.5 text-[var(--text-dim)]" data-icon />
     </span>
   )
 }
@@ -314,7 +314,7 @@ function TooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         className={cn(
-          'z-50 w-fit origin-(--radix-tooltip-content-transform-origin) text-balance rounded-md bg-primary px-3 py-1.5 text-primary-foreground text-xs',
+          'z-50 w-fit origin-(--radix-tooltip-content-transform-origin) text-balance rounded-md bg-[rgba(3,7,18,0.92)] border border-[var(--border-subtle)] px-3 py-1.5 text-[var(--text-primary)] text-xs backdrop-blur-md',
           className,
         )}
         data-slot="tooltip-content"
@@ -353,7 +353,7 @@ export function ToolbarMenuGroup({
         )}
       >
         {label && (
-          <DropdownMenuLabel className="select-none font-semibold text-muted-foreground text-xs">
+          <DropdownMenuLabel className="select-none font-semibold text-[var(--text-dim)] text-xs">
             {label}
           </DropdownMenuLabel>
         )}

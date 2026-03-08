@@ -7,6 +7,7 @@ import type { TElement } from 'platejs'
 import { GhostText } from '@/components/ui/ghost-text'
 
 import { AIKit } from './ai-kit'
+import { AlignKit } from './align-kit'
 import { BasicBlocksKit } from './basic-blocks-kit'
 import { BasicMarksKit } from './basic-marks-kit'
 import { CalloutKit } from './callout-kit'
@@ -125,6 +126,7 @@ function parseCopilotNdjsonChunk(
 export const CopilotKit = [
   ...BasicBlocksKit,
   ...BasicMarksKit,
+  ...AlignKit,
   ...MarkdownKit,
   ...ExtendedNodesKit,
   ...AIKit,

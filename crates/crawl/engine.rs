@@ -139,13 +139,13 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
 
     let (mut summary, mut urls) = crawl_and_collect_map(cfg, start_url, initial_mode).await?;
 
-    if matches!(cfg.render_mode, RenderMode::AutoSwitch) && summary.pages_seen == 0 {
-        if let Ok((chrome_summary, chrome_urls)) =
+    if matches!(cfg.render_mode, RenderMode::AutoSwitch)
+        && summary.pages_seen == 0
+        && let Ok((chrome_summary, chrome_urls)) =
             crawl_and_collect_map(cfg, start_url, RenderMode::Chrome).await
-        {
-            summary = chrome_summary;
-            urls = chrome_urls;
-        }
+    {
+        summary = chrome_summary;
+        urls = chrome_urls;
     }
 
     let raw_sitemap_count = if cfg.discover_sitemaps {

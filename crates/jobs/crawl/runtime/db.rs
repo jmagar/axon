@@ -176,13 +176,13 @@ pub async fn start_crawl_jobs_batch(
 
     // 5. Enqueue only newly inserted jobs.
     let new_ids: Vec<Uuid> = new_map.values().copied().collect();
-    if !new_ids.is_empty() {
-        if let Err(err) = batch_enqueue_jobs(cfg, &cfg.crawl_queue, &new_ids).await {
-            log_warn(&format!(
-                "amqp batch enqueue failed; worker fallback polling will pick up {} jobs: {err}",
-                new_ids.len()
-            ));
-        }
+    if !new_ids.is_empty()
+        && let Err(err) = batch_enqueue_jobs(cfg, &cfg.crawl_queue, &new_ids).await
+    {
+        log_warn(&format!(
+            "amqp batch enqueue failed; worker fallback polling will pick up {} jobs: {err}",
+            new_ids.len()
+        ));
     }
 
     Ok(results)

@@ -113,17 +113,16 @@ fn mcp_tool_schema_markdown() -> String {
 #[tool_handler(router = Self::tool_router())]
 impl ServerHandler for AxonMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Use the single axon tool with action/subaction to drive crawl and RAG workflows"
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
-            ..Default::default()
-        }
+        let mut info = ServerInfo::default();
+        info.instructions = Some(
+            "Use the single axon tool with action/subaction to drive crawl and RAG workflows"
+                .into(),
+        );
+        info.capabilities = ServerCapabilities::builder()
+            .enable_tools()
+            .enable_resources()
+            .build();
+        info
     }
 
     async fn list_resources(
@@ -163,14 +162,14 @@ impl ServerHandler for AxonMcpServer {
                 None,
             ));
         }
-        Ok(ReadResourceResult {
-            contents: vec![ResourceContents::TextResourceContents {
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::TextResourceContents {
                 uri: MCP_TOOL_SCHEMA_URI.to_string(),
                 mime_type: Some("text/markdown".to_string()),
                 text: mcp_tool_schema_markdown(),
                 meta: None,
-            }],
-        })
+            },
+        ]))
     }
 }
 

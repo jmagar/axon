@@ -84,6 +84,12 @@ function injectScrollbarStyle(): void {
   const style = document.createElement('style')
   style.id = SCROLLBAR_STYLE_ID
   style.textContent = `
+    .xterm,
+    .xterm-viewport,
+    .xterm-screen,
+    .xterm-screen canvas {
+      background: transparent !important;
+    }
     .xterm-viewport::-webkit-scrollbar {
       width: 2px;
     }
@@ -127,7 +133,6 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
     const termRef = useRef<import('@xterm/xterm').Terminal | null>(null)
     const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null)
     const searchAddonRef = useRef<import('@xterm/addon-search').SearchAddon | null>(null)
-    const webglAddonRef = useRef<import('@xterm/addon-webgl').WebglAddon | null>(null)
 
     // Expose imperative handle to parent
     useImperativeHandle(ref, () => ({
@@ -178,10 +183,14 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
       let terminal: import('@xterm/xterm').Terminal | null = null
 
       async function init() {
-        const { Terminal } = await import('@xterm/xterm')
-        const { FitAddon } = await import('@xterm/addon-fit')
-        const { WebLinksAddon } = await import('@xterm/addon-web-links')
-        const { SearchAddon } = await import('@xterm/addon-search')
+        const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }, { CanvasAddon }] =
+          await Promise.all([
+            import('@xterm/xterm'),
+            import('@xterm/addon-fit'),
+            import('@xterm/addon-web-links'),
+            import('@xterm/addon-search'),
+            import('@xterm/addon-canvas'),
+          ])
 
         // Guard against unmount happening during the async import
         if (disposed || !containerRef.current) return
@@ -198,20 +207,17 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         terminal.loadAddon(searchAddon)
 
         terminal.open(containerRef.current)
-        fitAddon.fit()
 
-        // WebGL renderer — GPU-accelerated; fall back silently if unavailable
-        const { WebglAddon } = await import('@xterm/addon-webgl')
-        const webglAddon = new WebglAddon()
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose()
-        })
+        // Canvas renderer — GPU-accelerated and supports allowTransparency,
+        // unlike WebGL which overwrites the transparent background with a
+        // solid clear-color. Significantly faster than the DOM renderer.
         try {
-          terminal.loadAddon(webglAddon)
-          webglAddonRef.current = webglAddon
+          terminal.loadAddon(new CanvasAddon())
         } catch {
-          webglAddon.dispose()
+          // Falls back to DOM renderer if canvas context is unavailable.
         }
+
+        fitAddon.fit()
 
         // Expose instances via refs for imperative handle
         termRef.current = terminal
@@ -222,10 +228,15 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         // onData prop is always called (avoids stale closure on re-renders).
         terminal.onData((data) => onDataRef.current(data))
 
-        // Copy-on-select: auto-copy whenever the selection changes and is non-empty
+        // Copy-on-select: debounced so mid-drag intermediate selections don't
+        // spam clipboard.writeText (which is rate-limited on some browsers).
+        let selectionTimer = 0
         terminal.onSelectionChange(() => {
-          const sel = terminal!.getSelection()
-          if (sel) navigator.clipboard?.writeText(sel).catch(() => {})
+          clearTimeout(selectionTimer)
+          selectionTimer = window.setTimeout(() => {
+            const sel = terminal!.getSelection()
+            if (sel) navigator.clipboard?.writeText(sel).catch(() => {})
+          }, 50)
         })
 
         // Visual bell via a brief opacity flash on the container
@@ -266,9 +277,13 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
           })
         }
 
-        // Refit whenever the container changes size
+        // Refit whenever the container changes size. rAF-debounced so CSS
+        // transitions (dialog open/close scale animation) don't flood fit()
+        // with dozens of calls per frame.
+        let rafId = 0
         observer = new ResizeObserver(() => {
-          fitAddon.fit()
+          cancelAnimationFrame(rafId)
+          rafId = requestAnimationFrame(() => fitAddon.fit())
         })
         observer.observe(containerRef.current)
       }
@@ -288,7 +303,6 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         termRef.current = null
         fitAddonRef.current = null
         searchAddonRef.current = null
-        webglAddonRef.current = null
       }
       // onData and onResize are intentionally excluded — they are called
       // through the live closure without needing to re-mount the terminal.
