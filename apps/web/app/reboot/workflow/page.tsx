@@ -1,5 +1,5 @@
-import { WorkflowShell } from '@/components/reboot/workflow-shell'
+import { redirect } from 'next/navigation'
 
 export default function RebootWorkflowPage() {
-  return <WorkflowShell />
+  redirect('/reboot')
 }

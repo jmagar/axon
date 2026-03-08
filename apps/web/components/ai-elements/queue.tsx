@@ -72,8 +72,8 @@ export function QueueSectionContent({
 
 export function QueueList({ children, className, ...props }: ComponentProps<typeof ScrollArea>) {
   return (
-    <ScrollArea className={cn('-mb-1 mt-2', className)} {...props}>
-      <div className="max-h-56 pr-4">
+    <ScrollArea className={cn('-mb-1 mt-2 min-h-0 flex-1', className)} {...props}>
+      <div className="pr-4">
         <ul>{children}</ul>
       </div>
     </ScrollArea>

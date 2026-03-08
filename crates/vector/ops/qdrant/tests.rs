@@ -109,7 +109,8 @@ async fn qdrant_url_facets_returns_correct_shape() -> Result<(), Box<dyn Error>>
 }
 
 /// Upsert a point then search with its own vector — top result must match.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "integration test — requires running Qdrant; run with cargo test -- --ignored"]
 async fn upsert_and_search_roundtrip() -> Result<(), Box<dyn Error>> {
     let Some(qdrant_url) = resolve_test_qdrant_url() else {
         return Ok(());

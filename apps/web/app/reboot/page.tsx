@@ -1,5 +1,5 @@
-import { RebootHome } from '@/components/reboot/reboot-home'
+import { RebootShell } from '@/components/reboot/reboot-shell'
 
 export default function RebootPage() {
-  return <RebootHome />
+  return <RebootShell />
 }

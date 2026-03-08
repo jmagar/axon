@@ -157,6 +157,12 @@ export function ExportToolbarButton(props: React.ComponentProps<typeof DropdownM
     await downloadFile(url, 'plate.md')
   }
 
+  const exportToJson = async () => {
+    const json = JSON.stringify(editor.children, null, 2)
+    const url = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`
+    await downloadFile(url, 'document.json')
+  }
+
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false} {...props}>
       <DropdownMenuTrigger asChild>
@@ -178,6 +184,9 @@ export function ExportToolbarButton(props: React.ComponentProps<typeof DropdownM
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void runExport(exportToMarkdown)}>
             Export as Markdown
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void runExport(exportToJson)}>
+            Export as JSON
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

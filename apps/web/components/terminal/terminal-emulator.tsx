@@ -34,12 +34,12 @@ export interface TerminalEmulatorProps {
 const TERMINAL_OPTIONS: ITerminalOptions = {
   allowProposedApi: true,
   theme: {
-    background: '#030712',
+    background: 'rgba(0,0,0,0)',
     foreground: '#e8f4f8',
     cursor: '#87afff',
     cursorAccent: '#030712',
-    black: '#1a2940',
-    brightBlack: '#4d6a8a',
+    black: '#0a1222',
+    brightBlack: '#3d5a7a',
     red: '#ff6b6b',
     brightRed: '#ff87af',
     green: '#82d9a0',
@@ -50,9 +50,11 @@ const TERMINAL_OPTIONS: ITerminalOptions = {
     brightBlue: '#afd7ff',
     magenta: '#ff87af',
     brightMagenta: '#ff9ec0',
+    cyan: '#7ad4e6',
+    brightCyan: '#a0e8f8',
     white: '#b8cfe0',
     brightWhite: '#e8f4f8',
-    selectionBackground: 'rgba(135,175,255,0.25)',
+    selectionBackground: 'rgba(135,175,255,0.3)',
     selectionForeground: '#e8f4f8',
   },
   fontFamily: '"Noto Sans Mono", "JetBrains Mono", "Fira Code", monospace',
@@ -66,7 +68,7 @@ const TERMINAL_OPTIONS: ITerminalOptions = {
   allowTransparency: true,
   convertEol: true,
   rightClickSelectsWord: true,
-  overviewRulerWidth: 8,
+  overviewRuler: { width: 8 },
 }
 
 // ---------------------------------------------------------------------------

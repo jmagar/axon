@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-07 (session: v0.8.0 — Zed alignment + ACP permission plumbing)
+Last Modified: 2026-03-08 (session: v0.9.0 — reboot UI shell + logs SSE fix + infra repairs)
 
 ## [Unreleased] — feat/services-layer-refactor
 
 This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
 
 ### Highlights
+
+- **Reboot UI shell + logs SSE fix + infra repairs (v0.9.0)** — reboot section fully redesigned: deleted legacy `data.ts`, `lobe-shell.tsx`, `reboot-home.tsx`, `reboot-scene.tsx`, `workflow-shell.tsx`; added `reboot-message-list.tsx`, `reboot-prompt-composer.tsx`, `reboot-sidebar.tsx`, `reboot-terminal-pane.tsx`, `reboot-pane-handle.tsx`, `reboot-logs-dialog.tsx`, AI element components (`chain-of-thought.tsx`, `confirmation.tsx`, `prompt-input.tsx`, `tool.tsx`); hooks `use-copy-feedback.ts`, `use-mcp-servers.ts`, `use-workspace-files.ts` added; logs SSE viewer fixed: three bugs eliminated (premature stream close when stopped containers finished, wrong default service `axon-web`→`all`, `EventSource` replaced with `fetch()` + `Authorization: Bearer` to satisfy proxy auth gate); `next.config.ts` gains `allowedDevOrigins: ['axon.tootie.tv']` silencing cross-origin dev warning; `AXON_WEB_ALLOWED_ORIGINS` already included `https://axon.tootie.tv` covering API routes and shell WebSocket; reboot page routes and reboot-frame/reboot-shell/reboot-pane-handle layout wired; Justfile `dev` target updated; Dockerfile updated
 
 - **Zed alignment + ACP permission plumbing (v0.8.0)** — 5 parallel agents implemented Zed-aligned patterns: session list/resume (`use-pulse-sessions.ts`, `session-store.ts`), tool call terminal rendering (`tool-call-terminal.tsx`), permission modal UI (`permission-modal.tsx`), process exit monitoring, targeted entry updates; `PermissionResponderMap` type wired through WS handler → execute bridge → ACP bridge client using `std::sync::Mutex` + `tokio::sync::oneshot` for cross-runtime communication; `permission_response` WS message type added with `tool_call_id`/`option_id` fields; 60s auto-approve timeout fallback prevents session hangs; `AXON_ACP_AUTO_APPROVE` env var controls behavior (default `true`); 3 pre-existing TS build errors fixed (`route.ts` model type, `claude-stream-types.ts` model lookup, `pulse-chat-helpers.ts` agent type); reboot page scaffolding added; shadcn accordion/collapsible/hover-card/button-group components added
 
