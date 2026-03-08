@@ -266,7 +266,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <button
                   type="button"
                   onClick={() => {
-                    onCopyError(msg.content, msg.id ?? '')
+                    onCopyError(msg.content, msg.id ?? `legacy-${index}`)
                     setCopyAnim(true)
                     setTimeout(() => setCopyAnim(false), 1400)
                   }}

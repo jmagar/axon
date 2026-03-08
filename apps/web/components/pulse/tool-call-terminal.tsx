@@ -40,13 +40,18 @@ export function ToolCallTerminal({
   const writtenLenRef = useRef(0)
 
   useEffect(() => {
+    if (!expanded) {
+      // Reset written length so re-expansion replays all content from the start.
+      writtenLenRef.current = 0
+      return
+    }
     if (!content || !termRef.current) return
     const newContent = content.slice(writtenLenRef.current)
     if (newContent) {
       termRef.current.write(newContent)
       writtenLenRef.current = content.length
     }
-  }, [content])
+  }, [content, expanded])
 
   useEffect(() => {
     if (

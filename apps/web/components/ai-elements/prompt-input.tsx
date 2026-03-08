@@ -16,6 +16,7 @@ export type PromptInputFile = PromptInputMessage['files'][number]
 type PromptInputContextValue = {
   text: string
   setText: (value: string) => void
+  hasFiles: boolean
 }
 
 const PromptInputContext = createContext<PromptInputContextValue | null>(null)
@@ -41,13 +42,15 @@ export function PromptInput({
   onFilesChange?: (files: PromptInputFile[]) => void
 }) {
   const [text, setText] = useState('')
+  const hasFiles = (files ?? []).length > 0
 
   const value = useMemo(
     () => ({
       text,
       setText,
+      hasFiles,
     }),
-    [text],
+    [text, hasFiles],
   )
 
   return (
@@ -96,7 +99,7 @@ export function PromptInputTextarea({
 
   useEffect(() => {
     autoResize()
-  }, [autoResize])
+  }, [autoResize, text])
 
   return (
     <textarea
@@ -159,8 +162,8 @@ export function PromptInputSubmit({
   disabled,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { text } = usePromptInputContext()
-  const isEnabled = Boolean(text.trim()) && !(disabled ?? false)
+  const { text, hasFiles } = usePromptInputContext()
+  const isEnabled = (Boolean(text.trim()) || hasFiles) && !(disabled ?? false)
   const [wasDisabled, setWasDisabled] = useState(true)
   const shouldPulse = isEnabled && wasDisabled
 
@@ -179,7 +182,7 @@ export function PromptInputSubmit({
         shouldPulse && 'animate-submit-ready',
         className,
       )}
-      disabled={disabled ?? !text.trim()}
+      disabled={disabled ?? (!text.trim() && !hasFiles)}
       size="icon"
       type="submit"
       {...props}
