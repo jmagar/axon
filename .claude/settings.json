@@ -1,5 +1,8 @@
 {
-  "enabledMcpjsonServers": ["github", "postgres"],
+  "enabledMcpjsonServers": [
+    "github",
+    "postgres"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -67,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/user/axon/scripts/hook_justfile_lefthook_sync.py"
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hook_justfile_lefthook_sync.py\""
           }
         ]
       },
@@ -76,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/user/axon/scripts/hook_deny_audit_sync.py"
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hook_deny_audit_sync.py\""
           }
         ]
       },
