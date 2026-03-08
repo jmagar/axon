@@ -92,20 +92,20 @@ pub(super) fn process_page(
     hasher.update(trimmed.as_bytes());
     let content_hash = hex::encode(hasher.finalize());
 
-    if let Some(prev) = col.previous_manifest.get(url) {
-        if prev.content_hash.as_deref() == Some(&content_hash) {
-            let prev_path = std::path::Path::new(&prev.relative_path);
-            if prev_path.exists() {
-                let filename = url_to_filename(url, next_file_count);
-                let entry = ManifestEntry {
-                    url: url.to_string(),
-                    relative_path: format!("markdown/{filename}"),
-                    markdown_chars: chars,
-                    content_hash: Some(content_hash),
-                    changed: false,
-                };
-                return PageOutcome::Reused { filename, entry };
-            }
+    if let Some(prev) = col.previous_manifest.get(url)
+        && prev.content_hash.as_deref() == Some(&content_hash)
+    {
+        let prev_path = std::path::Path::new(&prev.relative_path);
+        if prev_path.exists() {
+            let filename = url_to_filename(url, next_file_count);
+            let entry = ManifestEntry {
+                url: url.to_string(),
+                relative_path: format!("markdown/{filename}"),
+                markdown_chars: chars,
+                content_hash: Some(content_hash),
+                changed: false,
+            };
+            return PageOutcome::Reused { filename, entry };
         }
     }
 

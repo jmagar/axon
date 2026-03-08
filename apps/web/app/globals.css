@@ -641,6 +641,24 @@ h4 {
   animation: typing-dot 0.8s ease-in-out infinite;
 }
 
+/* ── Reboot UI — typography polish ───────────────────────────────────────── */
+
+/* Mono for all technical labels (file paths, status badges, timestamps) */
+.reboot-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem; /* 11px */
+  letter-spacing: 0.04em;
+}
+
+/* Noto Sans optical sizing — improves rendering at small sizes */
+body {
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 /* ── Plate editor — Axon theme overrides ──────────────────────────────────── */
 
 /* Selection highlight: axon cyan with low opacity */
@@ -670,10 +688,59 @@ h4 {
   color: var(--axon-primary);
 }
 
-/* Bold text */
+/* Bold text: axon pink */
 .axon-editor [data-slate-editor] strong {
+  color: var(--axon-secondary);
+  font-weight: 700;
+}
+
+/* Italic text: soft pink with slight opacity */
+.axon-editor [data-slate-editor] em {
+  color: var(--axon-secondary-strong);
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* H1: axon primary blue, large + tight tracking */
+.axon-editor [data-slate-editor] h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: -0.03em;
+  margin-top: 1.75em;
+  margin-bottom: 0.5em;
+}
+
+/* H2: axon pink */
+.axon-editor [data-slate-editor] h2 {
+  font-size: 1.35rem;
   font-weight: 600;
+  color: var(--axon-secondary);
+  letter-spacing: -0.02em;
+  margin-top: 1.5em;
+  margin-bottom: 0.4em;
+}
+
+/* H3: pink-tinted muted */
+.axon-editor [data-slate-editor] h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--axon-secondary-strong);
+  opacity: 0.75;
+  letter-spacing: -0.01em;
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+}
+
+/* Blockquote: pink left border, glass bg */
+.axon-editor [data-slate-editor] blockquote {
+  border-left: 3px solid var(--axon-secondary);
+  background: rgba(255, 135, 175, 0.04);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 /* Subtle line between editor and toolbar separator */

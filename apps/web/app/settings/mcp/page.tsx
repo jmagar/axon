@@ -32,8 +32,10 @@ function McpPageInner() {
     try {
       const res = await apiFetch('/api/mcp/status', { signal })
       if (!res.ok) return
-      const data = (await res.json()) as { servers: Record<string, McpServerStatus> }
-      setStatusMap(data.servers)
+      const data = (await res.json()) as {
+        servers: Record<string, { status: McpServerStatus; error?: string }>
+      }
+      setStatusMap(Object.fromEntries(Object.entries(data.servers).map(([k, v]) => [k, v.status])))
     } catch (err) {
       // Status check failure is non-critical — don't surface as error.
       // AbortError is expected on cleanup; silently ignore all status errors.

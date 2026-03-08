@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus } from 'lucide-react'
+import { Plus, Settings2 } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 
 interface PulseToolbarProps {
@@ -56,6 +57,15 @@ export function PulseToolbar({
               </button>
             </>
           )}
+          <span className="mx-0.5 h-4 w-px bg-[var(--border-subtle)]" />
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            title="Settings"
+            className="inline-flex size-7 items-center justify-center rounded border border-[var(--border-subtle)] text-[var(--text-dim)] transition-colors hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary)]"
+          >
+            <Settings2 className="size-3.5" />
+          </Link>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 'use client'
 
-import { MessageSquare, PenLine } from 'lucide-react'
+import { MessageSquare, PenLine, Settings2 } from 'lucide-react'
+import Link from 'next/link'
 
 interface PulseMobilePaneSwitcherProps {
   mobilePane: 'chat' | 'editor'
@@ -41,6 +42,14 @@ export function PulseMobilePaneSwitcher({
       >
         <PenLine className="size-3.5" />
       </button>
+      <Link
+        href="/settings"
+        aria-label="Settings"
+        title="Settings"
+        className="inline-flex size-7 items-center justify-center rounded border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] transition-all duration-200 backdrop-blur-sm hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]"
+      >
+        <Settings2 className="size-3.5" />
+      </Link>
     </div>
   )
 }

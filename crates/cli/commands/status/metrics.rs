@@ -206,12 +206,11 @@ pub(super) fn crawl_uuid_from_embed_input(input: &str) -> Option<uuid::Uuid> {
     use std::path::{Component, Path};
 
     for component in Path::new(input).components() {
-        if let Component::Normal(segment) = component {
-            if let Some(s) = segment.to_str() {
-                if let Ok(uid) = s.parse::<uuid::Uuid>() {
-                    return Some(uid);
-                }
-            }
+        if let Component::Normal(segment) = component
+            && let Some(s) = segment.to_str()
+            && let Ok(uid) = s.parse::<uuid::Uuid>()
+        {
+            return Some(uid);
         }
     }
     None

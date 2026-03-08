@@ -56,14 +56,12 @@ async fn newest_md_file(dir: &Path) -> Option<PathBuf> {
     let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path();
-        if path.extension().is_some_and(|e| e == "md") {
-            if let Ok(meta) = entry.metadata().await {
-                if let Ok(modified) = meta.modified() {
-                    if newest.as_ref().is_none_or(|(_, t)| modified > *t) {
-                        newest = Some((path, modified));
-                    }
-                }
-            }
+        if path.extension().is_some_and(|e| e == "md")
+            && let Ok(meta) = entry.metadata().await
+            && let Ok(modified) = meta.modified()
+            && newest.as_ref().is_none_or(|(_, t)| modified > *t)
+        {
+            newest = Some((path, modified));
         }
     }
     newest.map(|(p, _)| p)
@@ -232,18 +230,18 @@ pub(super) async fn send_crawl_manifest(
             send_artifact_list_v2(tx, ctx, artifacts).await;
 
             // Auto-load the first file
-            if let Some(first) = files.first() {
-                if let Some(rel) = first.get("relative_path").and_then(|v| v.as_str()) {
-                    let full = base_dir.join(rel);
-                    if let Ok(content) = tokio::fs::read_to_string(&full).await {
-                        send_artifact_content_dual(
-                            tx,
-                            ctx,
-                            full.to_string_lossy().into_owned(),
-                            content,
-                        )
-                        .await;
-                    }
+            if let Some(first) = files.first()
+                && let Some(rel) = first.get("relative_path").and_then(|v| v.as_str())
+            {
+                let full = base_dir.join(rel);
+                if let Ok(content) = tokio::fs::read_to_string(&full).await {
+                    send_artifact_content_dual(
+                        tx,
+                        ctx,
+                        full.to_string_lossy().into_owned(),
+                        content,
+                    )
+                    .await;
                 }
             }
         }

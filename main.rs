@@ -3,10 +3,10 @@ use std::path::PathBuf;
 fn find_dotenv_from_launch_context() -> Option<PathBuf> {
     let mut roots = Vec::new();
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            roots.push(parent.to_path_buf());
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        roots.push(parent.to_path_buf());
     }
     if let Ok(cwd) = std::env::current_dir() {
         roots.push(cwd);

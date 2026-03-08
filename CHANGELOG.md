@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-08 (session: v0.9.0 — reboot UI shell + logs SSE fix + infra repairs)
+Last Modified: 2026-03-08 (session: v0.11.0 — AxonShell real ACP/session wiring + hooks + MCP/services hardening)
 
 ## [Unreleased] — feat/services-layer-refactor
 
 This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
 
 ### Highlights
+
+- **AxonShell real ACP/session wiring + UI polish (v0.11.0)** — `useAxonSession` hook added for JSONL session history fetch; `useAxonAcp` hook added for real ACP WebSocket prompt submission with `randomUUID` message IDs; `useAxonSession` behavioral tests added; `AxonShell` wired to real session data and ACP WebSocket; `AxonSidebar` wired to real `SessionSummary` list with repo/branch filter; git enrichment hoisted to outer project loop in sessions ingest; `SessionFallback` event emitted on failed session resume and handled in Pulse stream pipeline; `Reboot*` components renamed to `Axon*`, `REBOOT_` constants renamed to `AXON_`; `onTurnComplete` wrapped in `useCallback`; history sync guarded during streaming; timestamp display fixed; loading/error states added to `AxonMessageList`; `AxonPromptComposer` submit disabled during streaming with spinner; sessions fix: `apiFetch` injects `x-api-key` on session load; biome dep warning suppressed in shell-server.mjs; Rust: services `events.rs`, MCP `config.rs`/`server.rs`, crawl engine, ingest, jobs, vector ops, web crate all hardened/refactored; new `align-kit.tsx` editor plugin; `mcp-config.tsx` component added
 
 - **Reboot UI shell + logs SSE fix + infra repairs (v0.9.0)** — reboot section fully redesigned: deleted legacy `data.ts`, `lobe-shell.tsx`, `reboot-home.tsx`, `reboot-scene.tsx`, `workflow-shell.tsx`; added `reboot-message-list.tsx`, `reboot-prompt-composer.tsx`, `reboot-sidebar.tsx`, `reboot-terminal-pane.tsx`, `reboot-pane-handle.tsx`, `reboot-logs-dialog.tsx`, AI element components (`chain-of-thought.tsx`, `confirmation.tsx`, `prompt-input.tsx`, `tool.tsx`); hooks `use-copy-feedback.ts`, `use-mcp-servers.ts`, `use-workspace-files.ts` added; logs SSE viewer fixed: three bugs eliminated (premature stream close when stopped containers finished, wrong default service `axon-web`→`all`, `EventSource` replaced with `fetch()` + `Authorization: Bearer` to satisfy proxy auth gate); `next.config.ts` gains `allowedDevOrigins: ['axon.tootie.tv']` silencing cross-origin dev warning; `AXON_WEB_ALLOWED_ORIGINS` already included `https://axon.tootie.tv` covering API routes and shell WebSocket; reboot page routes and reboot-frame/reboot-shell/reboot-pane-handle layout wired; Justfile `dev` target updated; Dockerfile updated
 

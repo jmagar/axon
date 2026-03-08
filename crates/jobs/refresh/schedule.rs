@@ -51,12 +51,10 @@ pub(crate) async fn start_refresh_job_with_pool(
     .execute(pool)
     .await?;
 
-    if enqueue {
-        if let Err(err) = enqueue_job(cfg, &cfg.refresh_queue, id).await {
-            log_warn(&format!(
-                "refresh enqueue failed for {id}; polling fallback will pick up: {err}"
-            ));
-        }
+    if enqueue && let Err(err) = enqueue_job(cfg, &cfg.refresh_queue, id).await {
+        log_warn(&format!(
+            "refresh enqueue failed for {id}; polling fallback will pick up: {err}"
+        ));
     }
 
     Ok(id)

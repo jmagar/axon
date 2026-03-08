@@ -133,7 +133,24 @@ export const AxonMessageList = memo(function AxonMessageList({
                 {message.role === 'user' ? 'You' : agentName}
               </span>
             </div>
-            <MessageResponse>{message.content}</MessageResponse>
+            {message.streaming && !message.content ? (
+              <div className="flex items-center gap-1.5 py-1">
+                <span
+                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                  style={{ animationDelay: '0ms' }}
+                />
+                <span
+                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                  style={{ animationDelay: '200ms' }}
+                />
+                <span
+                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                  style={{ animationDelay: '400ms' }}
+                />
+              </div>
+            ) : (
+              <MessageResponse>{message.content}</MessageResponse>
+            )}
             {(() => {
               const thinkingBlock = message.blocks?.find((b) => b.type === 'thinking') as
                 | { type: 'thinking'; content: string }
@@ -219,7 +236,7 @@ export const AxonMessageList = memo(function AxonMessageList({
           </div>
         </Message>
       ))}
-      {isTyping ? (
+      {isTyping && !messages.some((m) => m.streaming) ? (
         <Message from="assistant" className={`animate-fade-in-up ${assistantMaxWidth}`}>
           <div className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`}>
             <div className="flex items-center gap-2">

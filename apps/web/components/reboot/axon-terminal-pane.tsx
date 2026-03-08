@@ -6,7 +6,7 @@ import { TerminalEmulatorWrapper } from '@/components/terminal/terminal-emulator
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar'
 import { useShellSession } from '@/hooks/use-shell-session'
 
-export function RebootTerminalPane() {
+export function AxonTerminalPane() {
   const terminalRef = useRef<TerminalHandle | null>(null)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')

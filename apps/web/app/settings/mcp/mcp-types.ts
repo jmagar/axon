@@ -90,4 +90,4 @@ export function configToForm(name: string, cfg: McpServerConfig): FormState {
   }
 }
 
-export type McpServerStatus = 'online' | 'offline' | 'unknown' | 'checking'
+export type McpServerStatus = 'online' | 'offline' | 'unknown' | 'checking' | 'auth-required'

@@ -133,8 +133,8 @@ pub(crate) async fn run_job_worker(
     // Probe AMQP connectivity with a short-lived connection+channel pair.
     let amqp_available = match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
         Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe").await;
-            let _ = conn.close(200, "probe").await;
+            let _ = ch.close(0, "probe".into()).await;
+            let _ = conn.close(200, "probe".into()).await;
             true
         }
         Err(e) => {

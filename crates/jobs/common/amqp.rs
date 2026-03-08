@@ -17,8 +17,6 @@ use anyhow::{Context, Result};
 use lapin::types::FieldTable;
 use lapin::{Channel, Connection, ConnectionProperties};
 use std::time::Duration;
-use tokio_executor_trait::Tokio as TokioExecutor;
-use tokio_reactor_trait::Tokio as TokioReactor;
 use uuid::Uuid;
 
 use super::durable_queue_options;
@@ -42,9 +40,7 @@ pub(crate) async fn open_amqp_connection_and_channel(
     cfg: &Config,
     queue_name: &str,
 ) -> Result<(Connection, Channel)> {
-    let props = ConnectionProperties::default()
-        .with_executor(TokioExecutor::current())
-        .with_reactor(TokioReactor::current());
+    let props = ConnectionProperties::default();
     let conn = tokio::time::timeout(
         Duration::from_secs(5),
         Connection::connect(&cfg.amqp_url, props),
@@ -59,8 +55,12 @@ pub(crate) async fn open_amqp_connection_and_channel(
     .context("amqp connect failed")?;
     let ch = tokio::time::timeout(Duration::from_secs(5), async {
         let ch = conn.create_channel().await?;
-        ch.queue_declare(queue_name, durable_queue_options(), FieldTable::default())
-            .await?;
+        ch.queue_declare(
+            queue_name.into(),
+            durable_queue_options(),
+            FieldTable::default(),
+        )
+        .await?;
         Ok::<Channel, lapin::Error>(ch)
     })
     .await
@@ -99,8 +99,8 @@ pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]
 
     for id in job_ids {
         ch.basic_publish(
-            "",
-            queue_name,
+            "".into(),
+            queue_name.into(),
             BasicPublishOptions::default(),
             id.to_string().as_bytes(),
             BasicProperties::default(),
@@ -113,8 +113,8 @@ pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]
     ch.wait_for_confirms()
         .await
         .context("wait_for_confirms failed")?;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
 
     Ok(())
 }
@@ -128,11 +128,11 @@ pub(crate) async fn purge_queue_safe(cfg: &Config, queue_name: &str) -> Result<(
     use lapin::options::QueuePurgeOptions;
 
     let (conn, ch) = open_amqp_connection_and_channel(cfg, queue_name).await?;
-    ch.queue_purge(queue_name, QueuePurgeOptions::default())
+    ch.queue_purge(queue_name.into(), QueuePurgeOptions::default())
         .await
         .context("queue_purge failed")?;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
     Ok(())
 }
 

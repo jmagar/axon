@@ -26,10 +26,10 @@ async fn open_amqp_channel_connects_and_declares_durable_queue() -> Result<()> {
 
     let (conn, ch) = result.unwrap();
     let _ = ch
-        .queue_delete(&queue_name, QueueDeleteOptions::default())
+        .queue_delete(queue_name.as_str().into(), QueueDeleteOptions::default())
         .await;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
 
     Ok(())
 }
@@ -61,7 +61,7 @@ async fn batch_enqueue_jobs_delivers_messages_to_queue() -> Result<()> {
     let mut received_ids: Vec<String> = Vec::new();
     for i in 0..3 {
         let msg = ch
-            .basic_get(&queue_name, BasicGetOptions::default())
+            .basic_get(queue_name.as_str().into(), BasicGetOptions::default())
             .await?;
         assert!(
             msg.is_some(),
@@ -77,7 +77,7 @@ async fn batch_enqueue_jobs_delivers_messages_to_queue() -> Result<()> {
 
     // 4th basic_get must return None — queue is now empty.
     let empty = ch
-        .basic_get(&queue_name, BasicGetOptions::default())
+        .basic_get(queue_name.as_str().into(), BasicGetOptions::default())
         .await?;
     assert!(
         empty.is_none(),
@@ -99,10 +99,10 @@ async fn batch_enqueue_jobs_delivers_messages_to_queue() -> Result<()> {
     }
 
     let _ = ch
-        .queue_delete(&queue_name, QueueDeleteOptions::default())
+        .queue_delete(queue_name.as_str().into(), QueueDeleteOptions::default())
         .await;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
 
     Ok(())
 }
@@ -132,7 +132,7 @@ async fn purge_queue_safe_removes_enqueued_messages() -> Result<()> {
     // Open yet another connection to verify the queue is empty.
     let (conn, ch) = open_amqp_connection_and_channel(&cfg, &queue_name).await?;
     let msg = ch
-        .basic_get(&queue_name, BasicGetOptions::default())
+        .basic_get(queue_name.as_str().into(), BasicGetOptions::default())
         .await?;
     assert!(
         msg.is_none(),
@@ -140,10 +140,10 @@ async fn purge_queue_safe_removes_enqueued_messages() -> Result<()> {
     );
 
     let _ = ch
-        .queue_delete(&queue_name, QueueDeleteOptions::default())
+        .queue_delete(queue_name.as_str().into(), QueueDeleteOptions::default())
         .await;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
 
     Ok(())
 }
@@ -171,7 +171,7 @@ async fn enqueue_job_publishes_single_message() -> Result<()> {
     // Open a fresh connection to read the message back.
     let (conn, ch) = open_amqp_connection_and_channel(&cfg, &queue_name).await?;
     let msg = ch
-        .basic_get(&queue_name, BasicGetOptions::default())
+        .basic_get(queue_name.as_str().into(), BasicGetOptions::default())
         .await?;
     assert!(
         msg.is_some(),
@@ -190,10 +190,10 @@ async fn enqueue_job_publishes_single_message() -> Result<()> {
     );
 
     let _ = ch
-        .queue_delete(&queue_name, QueueDeleteOptions::default())
+        .queue_delete(queue_name.as_str().into(), QueueDeleteOptions::default())
         .await;
-    let _ = ch.close(0, "").await;
-    let _ = conn.close(200, "").await;
+    let _ = ch.close(0, "".into()).await;
+    let _ = conn.close(200, "".into()).await;
 
     Ok(())
 }

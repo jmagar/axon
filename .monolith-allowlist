@@ -35,3 +35,9 @@ apps/web/components/reboot/workflow-shell.tsx  # expires: 2026-03-14
 
 # expires: 2026-03-15 — shadcn generated sidebar; not hand-written.
 reboot/components/ui/sidebar.tsx  # expires: 2026-03-15
+
+# expires: 2026-03-15 — Pulse editor pane grew with align/copilot kit additions; split pending.
+apps/web/components/pulse/pulse-editor-pane.tsx  # expires: 2026-03-15
+
+# expires: 2026-03-15 — stream_container_stats grew with multi-stat broadcast; split pending.
+crates/web/docker_stats.rs  # expires: 2026-03-15
