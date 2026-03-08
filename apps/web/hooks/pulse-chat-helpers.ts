@@ -249,13 +249,14 @@ export function makeStreamEventHandler(
     }
 
     if (event.type === 'permission_request' && event.toolCallId) {
-      // Resolve tool name from the most recent tool_use in the accumulator
-      const lastTool = acc.partialTools[acc.partialTools.length - 1]
+      // Match the permission request to its tool by toolCallId to avoid
+      // referencing the wrong tool when events interleave.
+      const matchedTool = acc.partialTools.findLast((t) => t.toolCallId === event.toolCallId)
       onPermissionRequest?.({
         sessionId: event.sessionId ?? '',
         toolCallId: event.toolCallId,
         options: event.permissionOptions ?? [],
-        toolName: lastTool?.name,
+        toolName: matchedTool?.name,
       })
       return
     }

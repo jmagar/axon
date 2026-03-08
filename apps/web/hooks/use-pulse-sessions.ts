@@ -51,7 +51,16 @@ export function usePulseSessions({
     }, 3000)
 
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      // Flush immediately on cleanup so the latest changes are not lost when
+      // switching sessions or unmounting before the debounce fires.
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+        const saved = saveSession(chatSessionId, chatHistory, documentMarkdown, documentTitle)
+        if (saved) {
+          setSessions(loadSavedSessions())
+        }
+      }
     }
   }, [chatSessionId, chatHistory, documentMarkdown, documentTitle])
 
