@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, Check, Copy, FileCode2, Pencil, RotateCcw } from 'lucide-react'
+import { AlertCircle, Bot, Check, Copy, FileCode2, Loader2, Pencil, RotateCcw } from 'lucide-react'
 import { memo } from 'react'
 import {
   ChainOfThought,
@@ -42,6 +42,9 @@ export const AxonMessageList = memo(function AxonMessageList({
   onOpenFile,
   isTyping = false,
   variant = 'desktop',
+  loading = false,
+  error = null,
+  onRetry,
 }: {
   messages: MessageItem[]
   agentName: string
@@ -51,6 +54,9 @@ export const AxonMessageList = memo(function AxonMessageList({
   onOpenFile: (path: string) => void
   isTyping?: boolean
   variant?: 'mobile' | 'desktop'
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
 }) {
   const isMobile = variant === 'mobile'
   const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[80%]'
@@ -62,7 +68,25 @@ export const AxonMessageList = memo(function AxonMessageList({
 
   return (
     <ConversationContent key={sessionKey} className="animate-crossfade-in px-0 py-0">
-      {messages.length === 0 ? (
+      {loading && messages.length === 0 ? (
+        <div className="flex h-full items-center justify-center animate-fade-in">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--text-dim)]" />
+        </div>
+      ) : error ? (
+        <div className="flex h-full flex-col items-center justify-center gap-2 animate-fade-in">
+          <AlertCircle className="h-5 w-5 text-destructive opacity-70" />
+          <p className="text-sm text-destructive">{error}</p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-1 rounded px-3 py-1 text-xs text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : messages.length === 0 ? (
         <div
           className={`flex h-full flex-col items-center justify-center gap-3 ${emptyStatePadding} text-center animate-fade-in`}
         >
