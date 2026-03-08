@@ -85,3 +85,80 @@ pub(super) fn build_args(mode: &str, input: &str, flags: &serde_json::Value) -> 
 
     args
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── output-dir traversal guard ──────────────────────────────────────────
+
+    #[test]
+    fn output_dir_traversal_dotdot_is_rejected() {
+        let args = build_args(
+            "scrape",
+            "https://example.com",
+            &serde_json::json!({"output_dir": "../../etc/passwd"}),
+        );
+        assert!(
+            !args.contains(&"--output-dir".to_string()),
+            "expected --output-dir to be blocked for '../../etc/passwd', got: {args:?}"
+        );
+    }
+
+    #[test]
+    fn output_dir_traversal_nested_dotdot_is_rejected() {
+        let args = build_args(
+            "scrape",
+            "https://example.com",
+            &serde_json::json!({"output_dir": "../sibling/dir"}),
+        );
+        assert!(
+            !args.contains(&"--output-dir".to_string()),
+            "expected --output-dir to be blocked for '../sibling/dir', got: {args:?}"
+        );
+    }
+
+    #[test]
+    fn output_dir_valid_path_passes_through() {
+        let args = build_args(
+            "scrape",
+            "https://example.com",
+            &serde_json::json!({"output_dir": "output/subdir"}),
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "--output-dir")
+            .expect("--output-dir should be present for a safe path");
+        assert_eq!(
+            args.get(idx + 1).map(String::as_str),
+            Some("output/subdir"),
+            "expected 'output/subdir' immediately after --output-dir"
+        );
+    }
+
+    #[test]
+    fn unknown_flag_key_is_silently_dropped() {
+        let args = build_args(
+            "query",
+            "test query",
+            &serde_json::json!({"unknown_key": "value"}),
+        );
+        assert!(
+            !args.contains(&"unknown_key".to_string()),
+            "unknown_key should not appear in args"
+        );
+        assert!(
+            !args.contains(&"value".to_string()),
+            "value from unknown_key should not appear in args"
+        );
+    }
+
+    #[test]
+    fn empty_string_value_is_suppressed() {
+        let args = build_args("query", "test query", &serde_json::json!({"limit": ""}));
+        assert!(
+            !args.contains(&"--limit".to_string()),
+            "empty-string value should suppress the flag; got: {args:?}"
+        );
+    }
+}

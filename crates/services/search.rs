@@ -116,3 +116,79 @@ pub async fn research(
 
     Ok(map_research_payload(payload))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── to_spider_time_range ──────────────────────────────────────────────────
+
+    #[test]
+    fn time_range_all_variants_map_correctly() {
+        // TimeRange is already in scope via `use spider_agent::TimeRange` pulled
+        // in through `use super::*`.
+        assert_eq!(to_spider_time_range(ServiceTimeRange::Day), TimeRange::Day);
+        assert_eq!(
+            to_spider_time_range(ServiceTimeRange::Week),
+            TimeRange::Week
+        );
+        assert_eq!(
+            to_spider_time_range(ServiceTimeRange::Month),
+            TimeRange::Month
+        );
+        assert_eq!(
+            to_spider_time_range(ServiceTimeRange::Year),
+            TimeRange::Year
+        );
+    }
+
+    // ── map_search_results ────────────────────────────────────────────────────
+
+    #[test]
+    fn map_search_results_empty_vec() {
+        let result = map_search_results(vec![]);
+        assert!(result.results.is_empty());
+    }
+
+    #[test]
+    fn map_search_results_nonempty() {
+        let item = json!({"title": "Axon docs", "url": "https://example.com"});
+        let result = map_search_results(vec![item.clone()]);
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0], item);
+    }
+
+    // ── map_research_payload ──────────────────────────────────────────────────
+
+    #[test]
+    fn map_research_payload_stores_value() {
+        let value = json!({"answer": "42", "sources": []});
+        let result = map_research_payload(value.clone());
+        assert_eq!(result.payload, value);
+    }
+
+    // ── search_batch (pure path: empty query slice) ───────────────────────────
+    //
+    // With zero queries the loop body never executes and no network call is
+    // made, so this runs without a live Tavily key.  The two emit() calls still
+    // fire but they are no-ops when `tx` is None.
+
+    #[tokio::test]
+    async fn search_batch_empty_queries_returns_empty() {
+        let cfg = Config::default();
+        let result = search_batch(
+            &cfg,
+            &[],
+            SearchOptions {
+                limit: 10,
+                offset: 0,
+                time_range: None,
+            },
+            None,
+        )
+        .await
+        .expect("search_batch with empty queries should not fail");
+        assert!(result.results.is_empty());
+    }
+}

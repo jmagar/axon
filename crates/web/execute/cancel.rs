@@ -160,3 +160,149 @@ pub(super) async fn handle_cancel(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::config::Config;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    // ---- cancel_ok_from_output (pure, no I/O) --------------------------------
+
+    #[test]
+    fn cancel_ok_from_output_ok_true() {
+        let v = serde_json::json!({ "ok": true });
+        assert!(cancel_ok_from_output(Some(&v), false));
+    }
+
+    #[test]
+    fn cancel_ok_from_output_ok_false() {
+        let v = serde_json::json!({ "ok": false });
+        assert!(!cancel_ok_from_output(Some(&v), true));
+    }
+
+    #[test]
+    fn cancel_ok_from_output_canceled_key() {
+        // Falls back to "canceled" bool when "ok" is absent
+        let v = serde_json::json!({ "canceled": true });
+        assert!(cancel_ok_from_output(Some(&v), false));
+    }
+
+    #[test]
+    fn cancel_ok_from_output_falls_back_to_status() {
+        // Neither "ok" nor "canceled" key — uses status_success fallback
+        let v = serde_json::json!({ "something_else": 1 });
+        assert!(cancel_ok_from_output(Some(&v), true));
+        assert!(!cancel_ok_from_output(Some(&v), false));
+    }
+
+    #[test]
+    fn cancel_ok_from_output_none_parsed() {
+        assert!(cancel_ok_from_output(None, true));
+        assert!(!cancel_ok_from_output(None, false));
+    }
+
+    // ---- is_valid_cancel_job_id (pure, no I/O) --------------------------------
+
+    #[test]
+    fn valid_uuid_accepted() {
+        assert!(is_valid_cancel_job_id(
+            "550e8400-e29b-41d4-a716-446655440000"
+        ));
+    }
+
+    #[test]
+    fn invalid_uuid_rejected() {
+        assert!(!is_valid_cancel_job_id("not-a-uuid"));
+        assert!(!is_valid_cancel_job_id(""));
+        assert!(!is_valid_cancel_job_id("12345"));
+    }
+
+    // ---- handle_cancel early-exit paths (no DB needed) -----------------------
+
+    /// Invalid UUID: emits a JobCancelResponse with ok=false before touching the DB.
+    #[tokio::test]
+    async fn cancel_invalid_uuid_emits_error_event() {
+        let (tx, mut rx) = mpsc::channel::<String>(16);
+        let cfg = Arc::new(Config::default());
+
+        handle_cancel("crawl", "not-a-uuid", tx, cfg).await;
+
+        let mut messages = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            messages.push(msg);
+        }
+
+        assert!(!messages.is_empty(), "expected at least one WS event");
+
+        let has_cancel_error = messages.iter().any(|msg| {
+            let v: serde_json::Value = serde_json::from_str(msg).unwrap_or_default();
+            let is_cancel_response = v["type"] == "job.cancel.response";
+            let is_error = v["type"] == "command.error";
+            (is_cancel_response && v["data"]["payload"]["ok"] == false) || is_error
+        });
+        assert!(
+            has_cancel_error,
+            "expected cancel error event, got: {messages:?}"
+        );
+    }
+
+    /// Empty mode falls back to "crawl". UUID validation still fires before DB.
+    #[tokio::test]
+    async fn cancel_empty_mode_falls_back_to_crawl_validates_uuid() {
+        let (tx, mut rx) = mpsc::channel::<String>(16);
+        let cfg = Arc::new(Config::default());
+
+        // Empty mode → treated as "crawl"; still rejects invalid UUID before DB
+        handle_cancel("", "not-a-uuid", tx, cfg).await;
+
+        let mut messages = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            messages.push(msg);
+        }
+
+        assert!(!messages.is_empty(), "expected at least one WS event");
+
+        // The cancel response or error event should reference "crawl" as the mode
+        let references_crawl = messages.iter().any(|msg| msg.contains("crawl"));
+        assert!(
+            references_crawl,
+            "expected mode 'crawl' in output, got: {messages:?}"
+        );
+    }
+
+    /// Unknown mode must emit a command.error immediately without touching the DB.
+    #[tokio::test]
+    async fn cancel_unknown_mode_emits_error() {
+        let (tx, mut rx) = mpsc::channel::<String>(16);
+        let cfg = Arc::new(Config::default());
+
+        // "nonexistent_mode" is not in ALLOWED_MODES
+        handle_cancel(
+            "nonexistent_mode",
+            "550e8400-e29b-41d4-a716-446655440000",
+            tx,
+            cfg,
+        )
+        .await;
+
+        let mut messages = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            messages.push(msg);
+        }
+
+        assert!(!messages.is_empty(), "expected at least one WS event");
+
+        let has_mode_error = messages.iter().any(|msg| {
+            let v: serde_json::Value = serde_json::from_str(msg).unwrap_or_default();
+            v["type"] == "command.error"
+                && msg.contains("unknown mode")
+                && msg.contains("nonexistent_mode")
+        });
+        assert!(
+            has_mode_error,
+            "expected 'unknown mode' error, got: {messages:?}"
+        );
+    }
+}
