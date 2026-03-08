@@ -34,9 +34,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { McpServersState } from '@/hooks/use-mcp-servers'
-import { REBOOT_PERMISSION_OPTIONS, type RebootPermissionValue } from './reboot-mock-data'
+import type { PulseAgent } from '@/lib/pulse/types'
+import { AXON_PERMISSION_OPTIONS, type AxonPermissionValue } from './axon-mock-data'
 
-const REBOOT_COMPOSER_PANEL_CLASS =
+const AGENT_OPTIONS: Array<{ value: PulseAgent; label: string }> = [
+  { value: 'claude', label: 'Claude' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'gemini', label: 'Gemini' },
+]
+
+const AXON_COMPOSER_PANEL_CLASS =
   'border-[rgba(175,215,255,0.14)] bg-[linear-gradient(180deg,rgba(10,18,35,0.92),rgba(5,10,22,0.98))] shadow-[0_14px_40px_rgba(0,0,0,0.34)] backdrop-blur-xl'
 
 function ComposerDropdownTrigger({ children, ...props }: React.ComponentProps<'button'>) {
@@ -64,13 +71,7 @@ function formatToolSelectionLabel(enabledCount: number, totalCount: number) {
   return `Tools \u00b7 ${enabledCount}/${totalCount}`
 }
 
-function RebootAttachmentPill({
-  file,
-  onRemove,
-}: {
-  file: PromptInputFile
-  onRemove?: () => void
-}) {
+function AxonAttachmentPill({ file, onRemove }: { file: PromptInputFile; onRemove?: () => void }) {
   return (
     <span className="inline-flex max-w-full items-center gap-1.5 rounded border border-[rgba(175,215,255,0.16)] bg-[rgba(255,255,255,0.04)] px-2 py-1 text-xs leading-none text-[var(--text-secondary)]">
       <FileCode2 className="size-3.5 shrink-0 text-[var(--axon-primary)]" />
@@ -89,7 +90,7 @@ function RebootAttachmentPill({
   )
 }
 
-export function RebootPromptComposer({
+export function AxonPromptComposer({
   files,
   onFilesChange,
   onSubmit,
@@ -100,6 +101,8 @@ export function RebootPromptComposer({
   onPermissionChange,
   toolsState,
   onToggleMcpServer,
+  pulseAgent,
+  onAgentChange,
   compact = false,
 }: {
   files: PromptInputFile[]
@@ -107,11 +110,13 @@ export function RebootPromptComposer({
   onSubmit: (message: PromptInputMessage) => void | Promise<void>
   modelOptions: Array<{ value: string; label: string }>
   pulseModel: string
-  pulsePermissionLevel: RebootPermissionValue
+  pulsePermissionLevel: AxonPermissionValue
   onModelChange: (value: string) => void
-  onPermissionChange: (value: RebootPermissionValue) => void
+  onPermissionChange: (value: AxonPermissionValue) => void
   toolsState: McpServersState
   onToggleMcpServer: (serverName: string) => void
+  pulseAgent: PulseAgent
+  onAgentChange: (value: PulseAgent) => void
   compact?: boolean
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -140,7 +145,7 @@ export function RebootPromptComposer({
       onSubmit={onSubmit}
       files={files}
       onFilesChange={onFilesChange}
-      className={`w-full rounded-[18px] p-0 ${REBOOT_COMPOSER_PANEL_CLASS}`}
+      className={`w-full rounded-[18px] p-0 ${AXON_COMPOSER_PANEL_CLASS}`}
     >
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilePick} />
       <div className="px-3 pb-3 pt-3">
@@ -148,7 +153,7 @@ export function RebootPromptComposer({
           {files.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {files.map((file, index) => (
-                <RebootAttachmentPill
+                <AxonAttachmentPill
                   key={`${file.url}-${index}`}
                   file={file}
                   onRemove={() =>
@@ -238,6 +243,20 @@ export function RebootPromptComposer({
                   className="w-56 border-[var(--border-subtle)] bg-[var(--glass-overlay)] text-[var(--text-primary)] backdrop-blur-xl"
                 >
                   <DropdownMenuLabel className="px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                    Agent
+                  </DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={pulseAgent}
+                    onValueChange={(v) => onAgentChange(v as PulseAgent)}
+                  >
+                    {AGENT_OPTIONS.map((opt) => (
+                      <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator className="bg-[rgba(175,215,255,0.08)]" />
+                  <DropdownMenuLabel className="px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">
                     Model
                   </DropdownMenuLabel>
                   <DropdownMenuRadioGroup value={pulseModel} onValueChange={onModelChange}>
@@ -254,7 +273,7 @@ export function RebootPromptComposer({
                 <DropdownMenuTrigger asChild>
                   <ComposerDropdownTrigger
                     aria-label={
-                      REBOOT_PERMISSION_OPTIONS.find(
+                      AXON_PERMISSION_OPTIONS.find(
                         (option) => option.value === pulsePermissionLevel,
                       )?.label ?? pulsePermissionLevel
                     }
@@ -271,9 +290,9 @@ export function RebootPromptComposer({
                   </DropdownMenuLabel>
                   <DropdownMenuRadioGroup
                     value={pulsePermissionLevel}
-                    onValueChange={(value) => onPermissionChange(value as RebootPermissionValue)}
+                    onValueChange={(value) => onPermissionChange(value as AxonPermissionValue)}
                   >
-                    {REBOOT_PERMISSION_OPTIONS.map((option) => (
+                    {AXON_PERMISSION_OPTIONS.map((option) => (
                       <DropdownMenuRadioItem key={option.value} value={option.value}>
                         {option.label}
                       </DropdownMenuRadioItem>

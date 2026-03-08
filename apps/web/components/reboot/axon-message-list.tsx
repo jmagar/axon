@@ -16,16 +16,16 @@ import {
   MessageResponse,
 } from '@/components/ai-elements/message'
 import { QueueItemAttachment } from '@/components/ai-elements/queue'
-import type { MessageItem } from './reboot-mock-data'
+import type { MessageItem } from './axon-mock-data'
 
-const REBOOT_USER_BUBBLE_CLASS =
+const AXON_USER_BUBBLE_CLASS =
   'rounded-xl border border-[var(--border-standard)] bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] px-4 py-3 shadow-[var(--shadow-md)] text-[var(--text-primary)] text-sm'
-const REBOOT_ASSISTANT_BUBBLE_CLASS =
+const AXON_ASSISTANT_BUBBLE_CLASS =
   'rounded-xl border border-[rgba(255,135,175,0.18)] bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] px-4 py-3 shadow-[0_6px_18px_rgba(3,7,18,0.3)] text-[var(--text-secondary)] text-sm'
 
-export { REBOOT_ASSISTANT_BUBBLE_CLASS }
+export { AXON_ASSISTANT_BUBBLE_CLASS }
 
-export const RebootMessageList = memo(function RebootMessageList({
+export const AxonMessageList = memo(function AxonMessageList({
   messages,
   agentName,
   sessionKey,
@@ -79,8 +79,8 @@ export const RebootMessageList = memo(function RebootMessageList({
           <div
             className={
               message.role === 'assistant'
-                ? `${REBOOT_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
-                : `${REBOOT_USER_BUBBLE_CLASS} space-y-1.5`
+                ? `${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
+                : `${AXON_USER_BUBBLE_CLASS} space-y-1.5`
             }
           >
             <div className="mb-1.5 flex items-center gap-2">
@@ -102,27 +102,39 @@ export const RebootMessageList = memo(function RebootMessageList({
               </span>
             </div>
             <MessageResponse>{message.content}</MessageResponse>
-            {message.steps?.length || message.reasoning ? (
-              <ChainOfThought
-                className="mt-3 rounded-2xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] p-3"
-                defaultOpen={false}
-              >
-                <ChainOfThoughtHeader>Chain of thought</ChainOfThoughtHeader>
-                <ChainOfThoughtContent>
-                  {message.steps?.map((step, stepIndex) => (
-                    <ChainOfThoughtStep
-                      key={stepIndex}
-                      label={step.label}
-                      description={step.description}
-                      status={step.status}
-                    />
-                  ))}
-                  {message.reasoning ? (
-                    <div className="mt-1 text-xs text-muted-foreground">{message.reasoning}</div>
-                  ) : null}
-                </ChainOfThoughtContent>
-              </ChainOfThought>
-            ) : null}
+            {(() => {
+              const thinkingBlock = message.blocks?.find((b) => b.type === 'thinking') as
+                | { type: 'thinking'; content: string }
+                | undefined
+              const hasChainOfThought = message.steps?.length || message.reasoning || thinkingBlock
+              if (!hasChainOfThought) return null
+              return (
+                <ChainOfThought
+                  className="mt-3 rounded-2xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] p-3"
+                  defaultOpen={false}
+                >
+                  <ChainOfThoughtHeader>Chain of thought</ChainOfThoughtHeader>
+                  <ChainOfThoughtContent>
+                    {message.steps?.map((step, stepIndex) => (
+                      <ChainOfThoughtStep
+                        key={stepIndex}
+                        label={step.label}
+                        description={step.description}
+                        status={step.status}
+                      />
+                    ))}
+                    {message.reasoning ? (
+                      <div className="mt-1 text-xs text-[var(--text-dim)]">{message.reasoning}</div>
+                    ) : null}
+                    {thinkingBlock ? (
+                      <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-dim)]">
+                        {thinkingBlock.content}
+                      </div>
+                    ) : null}
+                  </ChainOfThoughtContent>
+                </ChainOfThought>
+              )
+            })()}
             {message.files?.length ? (
               <QueueItemAttachment className="mt-3 gap-1.5">
                 {message.files.map((file) => (
@@ -132,8 +144,8 @@ export const RebootMessageList = memo(function RebootMessageList({
                     onClick={() => onOpenFile(file)}
                     aria-label={`Open ${file} in editor`}
                   >
-                    <span className="inline-flex items-center gap-1.5 rounded border border-[rgba(135,175,255,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-1 text-xs leading-none text-[var(--text-secondary)]">
-                      <FileCode2 className="size-3.5" />
+                    <span className="inline-flex items-center gap-1.5 rounded border border-[rgba(135,175,255,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-1 font-mono text-xs leading-none text-[var(--text-secondary)]">
+                      <FileCode2 className="size-3.5 shrink-0" />
                       <span className={`${fileTruncate} truncate`}>{file}</span>
                     </span>
                   </button>
@@ -176,7 +188,7 @@ export const RebootMessageList = memo(function RebootMessageList({
       ))}
       {isTyping ? (
         <Message from="assistant" className={`animate-fade-in-up ${assistantMaxWidth}`}>
-          <div className={`${REBOOT_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`}>
+          <div className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`}>
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--axon-secondary-strong)]">
                 <span className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)]" />
