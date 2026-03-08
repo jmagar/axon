@@ -87,8 +87,8 @@ export function useAxonAcp({
     (prompt: string) => {
       if (!connected || isStreaming) return
 
-      const userId = `user-${Date.now()}`
-      const assistantId = `assistant-${Date.now()}`
+      const userId = `user-${crypto.randomUUID()}`
+      const assistantId = `assistant-${crypto.randomUUID()}`
       streamingIdRef.current = assistantId
 
       onMessagesChange((prev) => [
