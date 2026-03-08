@@ -2,6 +2,7 @@
 
 import {
   FileCode2,
+  Loader2,
   Paperclip,
   Shield,
   ShieldCheck,
@@ -104,6 +105,8 @@ export function AxonPromptComposer({
   pulseAgent,
   onAgentChange,
   compact = false,
+  isStreaming = false,
+  connected = false,
 }: {
   files: PromptInputFile[]
   onFilesChange: (files: PromptInputFile[]) => void
@@ -118,6 +121,8 @@ export function AxonPromptComposer({
   pulseAgent: PulseAgent
   onAgentChange: (value: PulseAgent) => void
   compact?: boolean
+  isStreaming?: boolean
+  connected?: boolean
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const PermissionIcon = getPermissionIcon(pulsePermissionLevel)
@@ -311,7 +316,9 @@ export function AxonPromptComposer({
           </PromptInputButton>
 
           <div className="shrink-0">
-            <PromptInputSubmit />
+            <PromptInputSubmit disabled={isStreaming || !connected}>
+              {isStreaming ? <Loader2 className="size-4 animate-spin" /> : undefined}
+            </PromptInputSubmit>
           </div>
         </PromptInputFooter>
       </div>
