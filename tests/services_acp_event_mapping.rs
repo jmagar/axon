@@ -180,3 +180,15 @@ fn map_session_notification_extracts_tool_raw_input() {
     let mapped = map_session_notification(&notification);
     assert_eq!(mapped.tool_input.as_ref(), Some(&input_json));
 }
+
+#[test]
+fn session_fallback_serializes_correctly() {
+    let event = AcpBridgeEvent::SessionFallback {
+        old_session_id: "old-123".to_string(),
+        new_session_id: "new-456".to_string(),
+    };
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(json["type"], "session_fallback");
+    assert_eq!(json["old_session_id"], "old-123");
+    assert_eq!(json["new_session_id"], "new-456");
+}
