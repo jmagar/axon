@@ -104,7 +104,8 @@ mod tests {
     use crate::crates::jobs::common::{resolve_test_qdrant_url, test_config};
     use std::error::Error;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[ignore = "integration test — requires running Qdrant; run with cargo test -- --ignored"]
     async fn ensure_collection_is_idempotent() -> Result<(), Box<dyn Error>> {
         let Some(qdrant_url) = resolve_test_qdrant_url() else {
             return Ok(());

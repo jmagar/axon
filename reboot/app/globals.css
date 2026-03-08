@@ -1,0 +1,271 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Deep navy/dark blue base - matching the screenshot */
+  --background: oklch(0.13 0.03 250);
+  --foreground: oklch(0.95 0.01 220);
+  --card: oklch(0.16 0.035 250);
+  --card-foreground: oklch(0.95 0.01 220);
+  --popover: oklch(0.14 0.03 250);
+  --popover-foreground: oklch(0.95 0.01 220);
+  /* Primary - bright cyan/teal for user messages */
+  --primary: oklch(0.72 0.14 210);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.18 0.03 250);
+  --secondary-foreground: oklch(0.90 0.01 220);
+  --muted: oklch(0.20 0.03 250);
+  --muted-foreground: oklch(0.60 0.03 220);
+  /* Accent - pink/magenta for CORTEX labels */
+  --accent: oklch(0.68 0.20 340);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.04 250);
+  --input: oklch(0.18 0.03 250);
+  --ring: oklch(0.72 0.14 210);
+  --chart-1: oklch(0.72 0.14 210);
+  --chart-2: oklch(0.68 0.20 340);
+  --chart-3: oklch(0.65 0.15 200);
+  --chart-4: oklch(0.70 0.12 280);
+  --chart-5: oklch(0.65 0.15 310);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.11 0.025 250);
+  --sidebar-foreground: oklch(0.95 0.01 220);
+  --sidebar-primary: oklch(0.72 0.14 210);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.18 0.03 250);
+  --sidebar-accent-foreground: oklch(0.95 0.01 220);
+  --sidebar-border: oklch(0.22 0.035 250);
+  --sidebar-ring: oklch(0.72 0.14 210);
+  
+  /* Axon brand colors - exact match to screenshot */
+  --axon-blue: oklch(0.72 0.14 210);
+  --axon-cyan: oklch(0.78 0.12 195);
+  --axon-pink: oklch(0.68 0.20 340);
+  --axon-glow: oklch(0.72 0.14 210 / 0.4);
+  --axon-star: oklch(0.85 0.10 210);
+}
+
+.dark {
+  --background: oklch(0.13 0.03 250);
+  --foreground: oklch(0.95 0.01 220);
+  --card: oklch(0.16 0.035 250);
+  --card-foreground: oklch(0.95 0.01 220);
+  --popover: oklch(0.14 0.03 250);
+  --popover-foreground: oklch(0.95 0.01 220);
+  --primary: oklch(0.72 0.14 210);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.18 0.03 250);
+  --secondary-foreground: oklch(0.90 0.01 220);
+  --muted: oklch(0.20 0.03 250);
+  --muted-foreground: oklch(0.60 0.03 220);
+  --accent: oklch(0.68 0.20 340);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.04 250);
+  --input: oklch(0.18 0.03 250);
+  --ring: oklch(0.72 0.14 210);
+  --chart-1: oklch(0.72 0.14 210);
+  --chart-2: oklch(0.68 0.20 340);
+  --chart-3: oklch(0.65 0.15 200);
+  --chart-4: oklch(0.70 0.12 280);
+  --chart-5: oklch(0.65 0.15 310);
+  --sidebar: oklch(0.11 0.025 250);
+  --sidebar-foreground: oklch(0.95 0.01 220);
+  --sidebar-primary: oklch(0.72 0.14 210);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.18 0.03 250);
+  --sidebar-accent-foreground: oklch(0.95 0.01 220);
+  --sidebar-border: oklch(0.22 0.035 250);
+  --sidebar-ring: oklch(0.72 0.14 210);
+}
+
+@theme inline {
+  --font-sans: 'Noto Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@theme inline {
+  --color-axon-blue: var(--axon-blue);
+  --color-axon-cyan: var(--axon-cyan);
+  --color-axon-pink: var(--axon-pink);
+  --color-axon-glow: var(--axon-glow);
+  --color-axon-star: var(--axon-star);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Axon gradients */
+  .axon-gradient {
+    background: linear-gradient(135deg, oklch(0.72 0.14 210 / 0.15), oklch(0.68 0.20 340 / 0.08));
+  }
+  
+  .axon-border-glow {
+    box-shadow: 0 0 30px oklch(0.72 0.14 210 / 0.25), inset 0 1px 0 oklch(1 0 0 / 0.05);
+  }
+  
+  .neural-bg {
+    background-image: 
+      radial-gradient(circle at 20% 30%, oklch(0.72 0.14 210 / 0.12) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, oklch(0.68 0.20 340 / 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, oklch(0.78 0.12 195 / 0.06) 0%, transparent 70%);
+  }
+  
+  /* Message styles */
+  .user-message-bg {
+    background: linear-gradient(135deg, oklch(0.72 0.14 210 / 0.35), oklch(0.65 0.12 220 / 0.25));
+    border: 1px solid oklch(0.72 0.14 210 / 0.3);
+  }
+  
+  .ai-message-bg {
+    background: oklch(0.16 0.035 250 / 0.6);
+    border: 1px solid oklch(0.25 0.04 250 / 0.5);
+  }
+  
+  /* Glass morphism panels */
+  .glass-panel {
+    background: rgba(12, 18, 35, 0.65);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(100, 130, 200, 0.12);
+  }
+  
+  .glass-panel-light {
+    background: rgba(20, 35, 60, 0.45);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(100, 130, 200, 0.08);
+  }
+  
+  /* Glow effects */
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(100, 210, 255, 0.15);
+  }
+  
+  .glow-pink {
+    box-shadow: 0 0 20px rgba(255, 130, 200, 0.15);
+  }
+  
+  /* Text gradients */
+  .text-gradient-cyan {
+    background: linear-gradient(135deg, rgb(100, 210, 255), rgb(150, 230, 255));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .text-gradient-pink {
+    background: linear-gradient(135deg, rgb(255, 130, 200), rgb(255, 180, 220));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Custom animations */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 10px rgba(100, 210, 255, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 20px rgba(100, 210, 255, 0.4);
+    }
+  }
+  
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  
+  .animate-fade-in-up {
+    animation: fade-in-up 0.4s ease-out forwards;
+  }
+  
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out forwards;
+  }
+  
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  
+  .animate-shimmer {
+    background: linear-gradient(90deg, transparent, rgba(100, 210, 255, 0.1), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+  
+  /* Typography enhancements */
+  .tracking-tight-custom {
+    letter-spacing: -0.025em;
+  }
+  
+  .text-balance {
+    text-wrap: balance;
+  }
+}

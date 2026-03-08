@@ -164,6 +164,17 @@
 
   /* Focus ring */
   --focus-ring-color: rgba(135, 175, 255, 0.5);
+
+  /* Glass surfaces — shell panels */
+  --glass-panel: rgba(6, 12, 26, 0.55);
+  --glass-chat: rgba(8, 14, 28, 0.35);
+  --glass-overlay: rgba(7, 12, 26, 0.92);
+  --glass-editor: rgba(6, 12, 26, 0.5);
+  --glass-terminal: rgba(6, 12, 26, 0.45);
+
+  /* Interactive input surfaces */
+  --surface-input: rgba(10, 18, 35, 0.32);
+  --surface-input-strong: rgba(10, 18, 35, 0.45);
 }
 
 .dark {
@@ -562,6 +573,72 @@ h4 {
 
 @utility animate-cmdk-in {
   animation: cmdk-palette-in 180ms ease-out forwards;
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-slide-up {
+  animation: slide-up-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes submit-ready {
+  0% {
+    box-shadow: 0 0 0 0 rgba(135, 175, 255, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px rgba(135, 175, 255, 0.25);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(135, 175, 255, 0);
+    transform: scale(1);
+  }
+}
+
+@utility animate-submit-ready {
+  animation: submit-ready 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes crossfade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-crossfade-in {
+  animation: crossfade-in 0.25s ease-out forwards;
+}
+
+@keyframes typing-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@utility animate-typing-dot {
+  animation: typing-dot 0.8s ease-in-out infinite;
 }
 
 /* ── Plate editor — Axon theme overrides ──────────────────────────────────── */

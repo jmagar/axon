@@ -4,7 +4,7 @@ use crate::crates::core::logging::log_done;
 #[cfg(test)]
 use crate::crates::core::logging::log_warn;
 use crate::crates::core::ui::{muted, primary, print_phase};
-use crate::crates::services::search as search_service;
+use crate::crates::services::search::search_batch;
 use crate::crates::services::types::SearchOptions as ServiceSearchOptions;
 use spider_agent::{Agent, SearchOptions, TimeRange};
 use std::error::Error;
@@ -48,33 +48,34 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Err("search requires TAVILY_API_KEY — set it in .env".into());
     }
 
-    let query = if let Some(q) = &cfg.query {
-        q.clone()
+    // Multiple positional args → run each as a separate search and merge results.
+    let queries: Vec<String> = if let Some(q) = &cfg.query {
+        vec![q.clone()]
     } else if !cfg.positional.is_empty() {
-        cfg.positional.join(" ")
+        cfg.positional.clone()
     } else {
         return Err("search requires a query (positional or --query)".into());
     };
 
+    let display_query = queries.join(", ");
     if !cfg.json_output {
-        print_phase("◐", "Searching", &query);
+        print_phase("◐", "Searching", &display_query);
     }
 
-    // Route data-fetch through the services layer.
     let opts = ServiceSearchOptions {
         limit: cfg.search_limit,
         offset: 0,
         time_range: parse_service_time_range(cfg.search_time_range.as_deref()),
     };
-    let results = search_service::search(cfg, &query, opts, None)
-        .await?
-        .results;
+
+    let refs: Vec<&str> = queries.iter().map(String::as_str).collect();
+    let results = search_batch(cfg, &refs, opts, None).await?.results;
 
     if cfg.json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "query": query,
+                "query": display_query,
                 "limit": cfg.search_limit,
                 "offset": 0,
                 "search_time_range": cfg.search_time_range.as_deref(),
@@ -85,7 +86,10 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    println!("{}", primary(&format!("Search Results for \"{}\"", query)));
+    println!(
+        "{}",
+        primary(&format!("Search Results for \"{}\"", display_query))
+    );
     println!("{} {}", muted("Found"), results.len());
     println!();
 
@@ -96,8 +100,8 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         let snippet = result["snippet"].as_str();
         println!("{}. {}", position, primary(title));
         println!("   {}", muted(url));
-        if let Some(snippet) = snippet {
-            println!("   {snippet}");
+        if let Some(s) = snippet {
+            println!("   {s}");
         }
         println!();
     }
