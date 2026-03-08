@@ -67,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/jmagar/workspace/axon_rust/scripts/hook_justfile_lefthook_sync.py"
+            "command": "python3 /home/user/axon/scripts/hook_justfile_lefthook_sync.py"
           }
         ]
       },
@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/jmagar/workspace/axon_rust/scripts/hook_deny_audit_sync.py"
+            "command": "python3 /home/user/axon/scripts/hook_deny_audit_sync.py"
           }
         ]
       },
