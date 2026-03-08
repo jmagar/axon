@@ -37,6 +37,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
 
   const reload = useCallback(() => setVersion((v) => v + 1), [])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is an intentional reload trigger
   useEffect(() => {
     if (!sessionId) {
       setMessages([])

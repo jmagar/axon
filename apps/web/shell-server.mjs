@@ -12,8 +12,16 @@
 // Auto-load env vars from .env.local (Next.js convention) and root .env as fallback.
 // process.loadEnvFile() is available since Node 21.7 / 20.12 — safe on Node 24.
 // CWD is apps/web when launched via `just dev`.
-try { process.loadEnvFile('.env.local') } catch { /* file absent — ok */ }
-try { process.loadEnvFile('../../.env') } catch { /* file absent — ok */ }
+try {
+  process.loadEnvFile('.env.local')
+} catch {
+  /* file absent — ok */
+}
+try {
+  process.loadEnvFile('../../.env')
+} catch {
+  /* file absent — ok */
+}
 
 import { createServer } from 'node:http'
 import pty from 'node-pty'
