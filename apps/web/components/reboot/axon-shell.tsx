@@ -547,6 +547,8 @@ export function AxonShell() {
       setPulseAgent(value)
       setPulseModel('default')
     },
+    isStreaming,
+    connected,
   } as const
 
   // Cast liveMessages to the shape AxonMessageList expects.
