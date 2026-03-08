@@ -285,6 +285,17 @@ else
   set_env NEXT_PUBLIC_AXON_API_TOKEN  "$WEB_TOKEN"
 
   ok "Secrets generated and written to .env"
+
+  # ── Create data directories for container volume mounts ──────────────────────
+  info "Creating data directories under ${AXON_DATA_DIR}..."
+  mkdir -p \
+    "${AXON_DATA_DIR}/axon/postgres" \
+    "${AXON_DATA_DIR}/axon/redis" \
+    "${AXON_DATA_DIR}/axon/rabbitmq" \
+    "${AXON_DATA_DIR}/axon/qdrant" \
+    "${AXON_DATA_DIR}/axon/output" \
+    "${AXON_DATA_DIR}/axon/artifacts"
+  ok "Data directories created"
 fi
 
 CHANGE_ME_COUNT="$(grep -c 'CHANGE_ME' "$REPO/.env" || true)"
