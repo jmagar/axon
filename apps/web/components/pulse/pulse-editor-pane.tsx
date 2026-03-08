@@ -5,7 +5,11 @@ import { serializeMd } from '@platejs/markdown'
 import {
   Bold,
   Braces,
+  Check,
   Code2,
+  Copy,
+  FileJson,
+  FileText,
   Heading1,
   Heading2,
   Heading3,
@@ -80,6 +84,7 @@ export function PulseEditorPane({
   const lastAppliedMarkdownRef = useRef<string>(markdown)
   const wordCountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [wordCount, setWordCount] = useState(() => countWords(markdown))
+  const [sourceMode, setSourceMode] = useState<'markdown' | 'json' | null>(null)
 
   useEffect(() => {
     if (markdown === lastAppliedMarkdownRef.current) return
@@ -241,34 +246,66 @@ export function PulseEditorPane({
                 <CommentToolbarButton />
                 <ExportToolbarButton />
               </ToolbarGroup>
+              <ToolbarGroup>
+                <ToolbarButton
+                  size="sm"
+                  tooltip="Markdown source"
+                  pressed={sourceMode === 'markdown'}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setSourceMode((sm) => (sm === 'markdown' ? null : 'markdown'))
+                  }}
+                >
+                  <FileText className="size-3.5" />
+                </ToolbarButton>
+                <ToolbarButton
+                  size="sm"
+                  tooltip="JSON document"
+                  pressed={sourceMode === 'json'}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setSourceMode((sm) => (sm === 'json' ? null : 'json'))
+                  }}
+                >
+                  <FileJson className="size-3.5" />
+                </ToolbarButton>
+              </ToolbarGroup>
             </Toolbar>
           </div>
 
-          <BlockContextMenu>
-            <EditorContainer
-              ref={editorScrollRef}
-              onScroll={() => {
-                if (!editorScrollRef.current) return
-                if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
-                scrollSaveTimerRef.current = setTimeout(() => {
-                  try {
-                    window.localStorage.setItem(
-                      scrollStorageKey,
-                      String(editorScrollRef.current?.scrollTop ?? 0),
-                    )
-                  } catch {
-                    // Ignore storage failures.
-                  }
-                }, 200)
-              }}
-              variant="default"
-              className="min-h-0 flex-1 overscroll-y-contain"
-            >
-              <Editor variant="default" placeholder="Start writing, or ask Cortex to help..." />
-              <FloatingToolbar />
-              <FloatingLink />
-            </EditorContainer>
-          </BlockContextMenu>
+          {sourceMode ? (
+            <SourceViewPanel
+              mode={sourceMode}
+              editor={editor}
+              onClose={() => setSourceMode(null)}
+            />
+          ) : (
+            <BlockContextMenu>
+              <EditorContainer
+                ref={editorScrollRef}
+                onScroll={() => {
+                  if (!editorScrollRef.current) return
+                  if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
+                  scrollSaveTimerRef.current = setTimeout(() => {
+                    try {
+                      window.localStorage.setItem(
+                        scrollStorageKey,
+                        String(editorScrollRef.current?.scrollTop ?? 0),
+                      )
+                    } catch {
+                      // Ignore storage failures.
+                    }
+                  }, 200)
+                }}
+                variant="default"
+                className="min-h-0 flex-1 overscroll-y-contain"
+              >
+                <Editor variant="default" placeholder="Start writing, or ask Cortex to help..." />
+                <FloatingToolbar />
+                <FloatingLink />
+              </EditorContainer>
+            </BlockContextMenu>
+          )}
 
           {/* ── Desktop footer ──────────────────────────────────────────────────── */}
           <div
@@ -391,5 +428,73 @@ function MoreFormattingItems() {
         <Braces className="mr-2 size-4" /> Code block
       </DropdownMenuItem>
     </>
+  )
+}
+
+/** Read-only panel showing the raw Markdown or JSON source of the current document. */
+function SourceViewPanel({
+  mode,
+  editor,
+}: {
+  mode: 'markdown' | 'json'
+  editor: ReturnType<typeof usePlateEditor>
+  onClose: () => void
+}) {
+  const content =
+    editor == null
+      ? ''
+      : mode === 'json'
+        ? JSON.stringify(editor.children, null, 2)
+        : serializeMd(editor)
+
+  const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    },
+    [],
+  )
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopied(true)
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // ignore clipboard errors
+    }
+  }
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* Panel header */}
+      <div
+        className="flex shrink-0 items-center justify-between px-3 py-1.5"
+        style={{ boxShadow: '0 1px 0 rgba(135, 175, 255, 0.07)' }}
+      >
+        <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-dim)]">
+          {mode === 'json' ? 'JSON Document' : 'Markdown Source'}
+        </span>
+        <span className="text-[10px] text-[var(--text-dim)] opacity-50">read-only</span>
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          className="inline-flex h-6 items-center gap-1.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-input)] px-2 text-[10px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-standard)] hover:text-[var(--text-primary)]"
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+
+      {/* Source content */}
+      <div className="min-h-0 flex-1 overflow-auto bg-[rgba(4,8,20,0.55)]">
+        <pre className="p-6 font-mono text-xs leading-[1.7] text-[var(--text-secondary)] whitespace-pre">
+          {content}
+        </pre>
+      </div>
+    </div>
   )
 }

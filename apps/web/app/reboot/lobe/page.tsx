@@ -1,5 +1,5 @@
-import { LobeShell } from '@/components/reboot/lobe-shell'
+import { redirect } from 'next/navigation'
 
 export default function RebootLobePage() {
-  return <LobeShell />
+  redirect('/reboot')
 }

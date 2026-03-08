@@ -186,6 +186,7 @@ describe('reduceRuntimeState', () => {
       md_created: 4,
       thin_md: 1,
       phase: 'crawling',
+      // biome-ignore lint/suspicious/noExplicitAny: intentional test fixture
     } as any)
     expect(next.crawlProgress).toEqual({
       pages_crawled: 5,
@@ -201,12 +202,14 @@ describe('reduceRuntimeState', () => {
     const next = reduceRuntimeState(state, {
       type: 'artifact.content',
       data: { content: '# Hello' },
+      // biome-ignore lint/suspicious/noExplicitAny: intentional test fixture
     } as any)
     expect(next.markdownContent).toBe('# Hello')
   })
 
   it('handles unknown types gracefully', () => {
     const state = makeInitialRuntimeState()
+    // biome-ignore lint/suspicious/noExplicitAny: intentional test fixture
     const next = reduceRuntimeState(state, { type: 'unknown_type' } as any)
     expect(next).toEqual(state)
   })
@@ -216,6 +219,7 @@ describe('reduceRuntimeState', () => {
     const next = reduceRuntimeState(state, {
       type: 'artifact.content',
       data: { content: 'new' },
+      // biome-ignore lint/suspicious/noExplicitAny: intentional test fixture
     } as any)
     expect(state.markdownContent).toBe('')
     expect(next.markdownContent).toBe('new')

@@ -26,6 +26,7 @@ describe('ensureRepoRootEnvLoaded', () => {
     vi.resetModules()
 
     const fsMod = await import('node:fs')
+    // biome-ignore lint/suspicious/noExplicitAny: vi.mock type mismatch
     fs = fsMod.default as any
 
     const mod = await import('@/lib/pulse/server-env')
