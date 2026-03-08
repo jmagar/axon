@@ -8,7 +8,6 @@ export function ImageElement(props: PlateElementProps) {
   return (
     <PlateElement {...props} as="div" className="my-2">
       {url && (
-        // biome-ignore lint/performance/noImgElement: editor images don't need next/image optimization
         <img
           src={url}
           alt={alt ?? ''}

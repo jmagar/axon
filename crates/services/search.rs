@@ -45,26 +45,44 @@ pub async fn search(
     opts: SearchOptions,
     tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<SearchResult, Box<dyn Error>> {
+    search_batch(cfg, &[query], opts, tx).await
+}
+
+/// Run multiple Tavily searches in sequence and return merged results.
+///
+/// Each query is searched independently; results are flattened in order.
+/// Emits log events when a `tx` sender is provided.
+pub async fn search_batch(
+    cfg: &Config,
+    queries: &[&str],
+    opts: SearchOptions,
+    tx: Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<SearchResult, Box<dyn Error>> {
     emit(
         &tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!("starting search: {query}"),
+            message: format!("starting search: {}", queries.join(", ")),
         },
     );
 
     let time_range = opts.time_range.map(to_spider_time_range);
-    let raw = search_results(cfg, query, opts.limit, opts.offset, time_range).await?;
+    let mut all: Vec<serde_json::Value> = Vec::new();
+    for query in queries {
+        let mut raw =
+            search_results(cfg, query, opts.limit, opts.offset, time_range.clone()).await?;
+        all.append(&mut raw);
+    }
 
     emit(
         &tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!("search complete: {} results", raw.len()),
+            message: format!("search complete: {} results", all.len()),
         },
     );
 
-    Ok(map_search_results(raw))
+    Ok(map_search_results(all))
 }
 
 /// Run a Tavily AI research query with LLM synthesis and return a typed [`ResearchResult`].

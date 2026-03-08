@@ -147,7 +147,7 @@ export function PulseSidebar() {
 
   return (
     <div
-      className={`relative z-[2] flex flex-shrink-0 flex-col border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 ${
+      className={`relative z-[2] flex h-screen flex-shrink-0 flex-col overflow-hidden border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 ${
         collapsed ? 'w-12' : 'w-[260px]'
       }`}
     >
@@ -183,7 +183,10 @@ export function PulseSidebar() {
       </div>
 
       {/* Nav — section tabs + page links */}
-      <nav className="flex flex-col items-center gap-0.5 py-2" aria-label="Sidebar navigation">
+      <nav
+        className="max-h-[40vh] flex-shrink-0 overflow-y-auto flex flex-col items-center gap-0.5 py-2"
+        aria-label="Sidebar navigation"
+      >
         {NAV_ITEMS.map((item) => {
           const isActive = item.id === activeSection
           return (

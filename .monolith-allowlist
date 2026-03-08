@@ -32,3 +32,6 @@ apps/web/components/reboot/reboot-shell.tsx  # expires: 2026-03-14
 crates/web.rs  # expires: 2026-03-14
 apps/web/components/reboot/lobe-shell.tsx  # expires: 2026-03-14
 apps/web/components/reboot/workflow-shell.tsx  # expires: 2026-03-14
+
+# expires: 2026-03-15 — shadcn generated sidebar; not hand-written.
+reboot/components/ui/sidebar.tsx  # expires: 2026-03-15

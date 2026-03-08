@@ -155,19 +155,21 @@ web-format:
 
 # Kill any running axon serve, mcp, workers, or Next.js dev processes
 stop:
-    -pkill -f 'axon.*(serve|mcp|crawl worker|embed worker|extract worker)' 2>/dev/null || true
+    -pkill -f 'axon.*(serve|mcp|crawl worker|embed worker|extract worker|ingest worker|refresh worker)' 2>/dev/null || true
     -pkill -f 'next dev' 2>/dev/null || true
     -pkill -f 'shell-server.mjs' 2>/dev/null || true
     @echo "Stopped running servers and workers"
 
-# Start workers only (crawl, embed, extract)
+# Start workers only (crawl, embed, extract, ingest, refresh)
 workers:
     {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
+    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
+    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
     wait
 
-# Start infra, axum server, MCP server, workers, and Next.js dev server (all foreground)
+# Start infra, axum server, MCP server, workers, shell server, and Next.js dev server
 dev:
     just stop
     sleep 1
@@ -177,6 +179,8 @@ dev:
     {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
     {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
+    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
+    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
     cd apps/web && node shell-server.mjs &
     cd apps/web && pnpm dev &
     wait
