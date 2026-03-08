@@ -136,13 +136,13 @@ function McpDialogContent() {
   }, [loadConfig])
 
   async function saveServer(name: string, cfg: McpServerConfig) {
-    let previousConfig: McpConfig = { mcpServers: {} }
-    let mergedConfig: McpConfig = { mcpServers: {} }
-    setConfig((prev) => {
-      previousConfig = prev
-      mergedConfig = { mcpServers: { ...prev.mcpServers, [name]: cfg } }
-      return mergedConfig
-    })
+    // Compute mergedConfig synchronously from current state BEFORE calling
+    // setConfig — the updater callback may be deferred/batched, so using a
+    // variable captured from inside the updater risks sending an empty config
+    // to the API if the state flush hasn't happened yet.
+    const previousConfig: McpConfig = config
+    const mergedConfig: McpConfig = { mcpServers: { ...config.mcpServers, [name]: cfg } }
+    setConfig(mergedConfig)
     setFormOpen(false)
     setEditTarget(null)
     const res = await apiFetch('/api/mcp', {
