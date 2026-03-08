@@ -1,26 +1,55 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+import { renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAxonSession } from '@/hooks/use-axon-session'
 
 describe('useAxonSession', () => {
-  it('exports a function', async () => {
-    const { useAxonSession } = await import('@/hooks/use-axon-session')
-    expect(typeof useAxonSession).toBe('function')
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('module can be imported without errors', async () => {
-    const mod = await import('@/hooks/use-axon-session')
-    expect(mod).toHaveProperty('useAxonSession')
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('exports MessageItem type (via runtime shape check)', async () => {
-    const mod = await import('@/hooks/use-axon-session')
-    // MessageItem is a TypeScript interface — no runtime value, but the hook
-    // that produces MessageItem objects is exported and callable as a function.
-    expect(typeof mod.useAxonSession).toBe('function')
+  it('returns empty messages for null sessionId', () => {
+    const { result } = renderHook(() => useAxonSession(null))
+    expect(result.current.messages).toEqual([])
+    expect(result.current.loading).toBe(false)
   })
 
-  it('hook has the correct function arity', async () => {
-    const { useAxonSession } = await import('@/hooks/use-axon-session')
-    // Takes exactly one parameter: sessionId
-    expect(useAxonSession.length).toBe(1)
+  it('fetches and converts messages for a real sessionId', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        project: 'axon',
+        filename: 'session-abc',
+        sessionId: 'abc-123',
+        messages: [
+          { role: 'user', content: 'hello' },
+          { role: 'assistant', content: 'hi there' },
+        ],
+      }),
+    } as Response)
+
+    const { result } = renderHook(() => useAxonSession('abc-123'))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.messages).toHaveLength(2)
+    expect(result.current.messages[0].role).toBe('user')
+    expect(result.current.messages[0].content).toBe('hello')
+  })
+
+  it('sets error on fetch failure', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    } as Response)
+
+    const { result } = renderHook(() => useAxonSession('bad-id'))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).not.toBeNull()
+    expect(result.current.messages).toEqual([])
   })
 })
