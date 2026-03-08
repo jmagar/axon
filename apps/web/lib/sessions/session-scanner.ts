@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { decodeProjectPath, enrichWithGit } from './git-metadata'
 
 export interface SessionFile {
   id: string
@@ -11,6 +12,8 @@ export interface SessionFile {
   mtimeMs: number
   sizeBytes: number
   preview?: string
+  repo?: string
+  branch?: string
 }
 
 function selectPreferredSession(current: SessionFile, next: SessionFile): SessionFile {
@@ -176,6 +179,8 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
       try {
         const stat = await fs.stat(absolutePath)
         if (!stat.isFile()) continue
+        const decoded = decodeProjectPath(projectName)
+        const git = await enrichWithGit(decoded)
         results.push({
           id: sessionId(absolutePath),
           absolutePath,
@@ -184,6 +189,8 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
           mtimeMs: stat.mtimeMs,
           sizeBytes: stat.size,
           preview: await extractPreview(absolutePath),
+          repo: git.repo,
+          branch: git.branch,
         })
       } catch {
         // skip unreadable files
