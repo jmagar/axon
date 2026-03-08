@@ -10,6 +10,7 @@ use crate::crates::vector::ops::embed_path_native;
 use futures_util::future::join_all;
 use spider::compact_str::CompactString;
 use spider::website::Website;
+use spider_transformations::transformation::content::SelectorConfiguration;
 use std::error::Error;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -287,11 +288,16 @@ async fn fetch_single_page(
 /// Performs markdown conversion, title extraction, and description extraction
 /// in one place. All JSON-producing paths (`scrape_payload`, `scrape_one`'s
 /// `--json` branch, and `select_output`'s `Json` arm) delegate here.
-fn build_scrape_json(url: &str, html: &str, status_code: u16) -> serde_json::Value {
+fn build_scrape_json(
+    url: &str,
+    html: &str,
+    status_code: u16,
+    selector_config: Option<&SelectorConfiguration>,
+) -> serde_json::Value {
     serde_json::json!({
         "url": url,
         "status_code": status_code,
-        "markdown": to_markdown(html, None),
+        "markdown": to_markdown(html, selector_config),
         "title": find_between(html, "<title>", "</title>").unwrap_or(""),
         "description": extract_meta_description(html).unwrap_or_default(),
     })
@@ -308,14 +314,16 @@ pub(crate) fn select_output(
     url: &str,
     html: &str,
     status_code: u16,
+    selector_config: Option<&SelectorConfiguration>,
 ) -> Result<String, Box<dyn Error>> {
     match format {
-        ScrapeFormat::Markdown => Ok(to_markdown(html, None)),
+        ScrapeFormat::Markdown => Ok(to_markdown(html, selector_config)),
         ScrapeFormat::Html | ScrapeFormat::RawHtml => Ok(html.to_string()),
         ScrapeFormat::Json => Ok(serde_json::to_string_pretty(&build_scrape_json(
             url,
             html,
             status_code,
+            selector_config,
         ))?),
     }
 }
@@ -332,7 +340,13 @@ pub async fn scrape_payload(cfg: &Config, url: &str) -> Result<serde_json::Value
         return Err(format!("scrape failed: HTTP {} for {}", status_code, normalized).into());
     }
 
-    Ok(build_scrape_json(&normalized, &html, status_code))
+    let sel_cfg = build_selector_config(cfg);
+    Ok(build_scrape_json(
+        &normalized,
+        &html,
+        status_code,
+        sel_cfg.as_ref(),
+    ))
 }
 
 pub async fn run_scrape(cfg: &Config) -> Result<(), Box<dyn Error>> {
@@ -428,7 +442,13 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
 
     let sel_cfg = build_selector_config(cfg);
     let markdown = to_markdown(&html, sel_cfg.as_ref());
-    let output = select_output(cfg.format, &normalized, &html, status_code)?;
+    let output = select_output(
+        cfg.format,
+        &normalized,
+        &html,
+        status_code,
+        sel_cfg.as_ref(),
+    )?;
 
     if cfg.json_output {
         // Structured JSON output for web UI / machine consumers.
@@ -471,8 +491,14 @@ mod tests {
     #[test]
     fn test_select_output_markdown_returns_markdown() {
         let html = "<html><body><p>Hello world</p></body></html>";
-        let result = select_output(ScrapeFormat::Markdown, "https://example.com", html, 200)
-            .expect("select_output should succeed");
+        let result = select_output(
+            ScrapeFormat::Markdown,
+            "https://example.com",
+            html,
+            200,
+            None,
+        )
+        .expect("select_output should succeed");
         // Must not be the raw HTML (format conversion happened)
         assert!(
             !result.contains("<html>"),
@@ -485,7 +511,7 @@ mod tests {
     #[test]
     fn test_select_output_html_returns_raw_html() {
         let html = "<html><body><p>Hello world</p></body></html>";
-        let result = select_output(ScrapeFormat::Html, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Html, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         assert_eq!(result, html, "Html format should return raw HTML unchanged");
     }
@@ -493,8 +519,14 @@ mod tests {
     #[test]
     fn test_select_output_rawhtml_returns_raw_html() {
         let html = "<html><body><p>Test content</p></body></html>";
-        let result = select_output(ScrapeFormat::RawHtml, "https://example.com", html, 200)
-            .expect("select_output should succeed");
+        let result = select_output(
+            ScrapeFormat::RawHtml,
+            "https://example.com",
+            html,
+            200,
+            None,
+        )
+        .expect("select_output should succeed");
         assert_eq!(
             result, html,
             "RawHtml format should return raw HTML unchanged"
@@ -504,8 +536,14 @@ mod tests {
     #[test]
     fn test_select_output_json_includes_status_code() {
         let html = "<html><head><title>My Page</title></head><body><p>Content</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com/page", html, 200)
-            .expect("select_output should succeed");
+        let result = select_output(
+            ScrapeFormat::Json,
+            "https://example.com/page",
+            html,
+            200,
+            None,
+        )
+        .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
         assert_eq!(
@@ -518,7 +556,7 @@ mod tests {
     fn test_select_output_json_includes_url() {
         let html = "<html><body><p>Test</p></body></html>";
         let url = "https://example.com/docs";
-        let result = select_output(ScrapeFormat::Json, url, html, 200)
+        let result = select_output(ScrapeFormat::Json, url, html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -529,7 +567,7 @@ mod tests {
     fn test_select_output_json_includes_title() {
         let html =
             "<html><head><title>Spider Docs</title></head><body><p>Content</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -542,7 +580,7 @@ mod tests {
     #[test]
     fn test_select_output_json_includes_markdown() {
         let html = "<html><body><p>Hello world</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -560,7 +598,7 @@ mod tests {
     #[test]
     fn test_select_output_json_status_code_non_200() {
         let html = "<html><body>Not Found</body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 404)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 404, None)
             .expect("select_output should succeed even for non-200 (caller decides to error)");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -662,8 +700,14 @@ mod tests {
     fn test_select_output_empty_html_body() {
         // An empty HTML string should not panic; markdown output is just empty.
         let html = "";
-        let result = select_output(ScrapeFormat::Markdown, "https://example.com", html, 200)
-            .expect("select_output must handle empty HTML without error");
+        let result = select_output(
+            ScrapeFormat::Markdown,
+            "https://example.com",
+            html,
+            200,
+            None,
+        )
+        .expect("select_output must handle empty HTML without error");
         // Empty input produces empty (or whitespace-only) markdown.
         assert!(
             result.trim().is_empty(),
@@ -675,7 +719,7 @@ mod tests {
     fn test_select_output_json_missing_title() {
         // HTML with no <title> tag: the title field must be an empty string, not null.
         let html = "<html><body><p>No title here</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -689,7 +733,7 @@ mod tests {
     fn test_select_output_json_missing_description() {
         // HTML with no <meta name="description">: description field must be empty string.
         let html = "<html><head><title>T</title></head><body><p>Content</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -703,7 +747,7 @@ mod tests {
     fn test_select_output_json_includes_description() {
         // Verify description field is populated from <meta name="description">.
         let html = r#"<html><head><title>Page</title><meta name="description" content="A fine page"></head><body><p>Body</p></body></html>"#;
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -717,7 +761,7 @@ mod tests {
     fn test_select_output_json_has_all_five_fields() {
         // Contract: JSON output must contain exactly url, status_code, markdown, title, description.
         let html = r#"<html><head><title>T</title><meta name="description" content="D"></head><body><p>B</p></body></html>"#;
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -1042,7 +1086,7 @@ mod tests {
         // Contract: when HTML has no <title> tag, the JSON title field must be
         // an empty string (not null, not absent).
         let html = "<html><head></head><body><p>No title tag at all</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -1062,7 +1106,7 @@ mod tests {
         // description field must be an empty string (not null, not absent).
         let html =
             "<html><head><title>Has Title</title></head><body><p>No meta desc</p></body></html>";
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -1081,7 +1125,7 @@ mod tests {
         // Contract: JSON output must contain exactly: url, status_code, title,
         // description, markdown — no more, no fewer.
         let html = r#"<html><head><title>T</title><meta name="description" content="D"></head><body><p>B</p></body></html>"#;
-        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         let parsed: serde_json::Value =
             serde_json::from_str(&result).expect("output should be valid JSON");
@@ -1107,8 +1151,14 @@ mod tests {
         // An HTML document with an empty <body> must not panic and should
         // produce empty (or whitespace-only) markdown.
         let html = "<html><head></head><body></body></html>";
-        let result = select_output(ScrapeFormat::Markdown, "https://example.com", html, 200)
-            .expect("select_output must not panic on empty body");
+        let result = select_output(
+            ScrapeFormat::Markdown,
+            "https://example.com",
+            html,
+            200,
+            None,
+        )
+        .expect("select_output must not panic on empty body");
         // Empty body → no text content → trimmed result should be empty.
         assert!(
             result.trim().is_empty(),
@@ -1121,7 +1171,7 @@ mod tests {
         // Html format returns raw HTML unchanged — HTML entities like &amp;
         // must be preserved verbatim (no double-encoding, no decoding).
         let html = "<html><body><p>A &amp; B &lt; C</p></body></html>";
-        let result = select_output(ScrapeFormat::Html, "https://example.com", html, 200)
+        let result = select_output(ScrapeFormat::Html, "https://example.com", html, 200, None)
             .expect("select_output should succeed");
         assert_eq!(
             result, html,

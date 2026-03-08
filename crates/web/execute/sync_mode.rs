@@ -314,16 +314,22 @@ async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
     config
         .mcp_servers
         .into_iter()
-        .map(|(name, entry)| {
-            if let Some(url) = entry.url {
-                AcpMcpServerConfig::Http { name, url }
+        .filter_map(|(name, entry)| {
+            let url = entry.url.filter(|u| !u.is_empty());
+            let command = entry.command.filter(|c| !c.is_empty());
+            if url.is_none() && command.is_none() {
+                // Skip entries that have neither a URL nor a stdio command.
+                return None;
+            }
+            if let Some(url) = url {
+                Some(AcpMcpServerConfig::Http { name, url })
             } else {
-                AcpMcpServerConfig::Stdio {
+                Some(AcpMcpServerConfig::Stdio {
                     name,
-                    command: entry.command.unwrap_or_default(),
+                    command: command.unwrap_or_default(),
                     args: entry.args.unwrap_or_default(),
                     env: entry.env.unwrap_or_default().into_iter().collect(),
-                }
+                })
             }
         })
         .collect()

@@ -1463,13 +1463,15 @@ fn auto_approve_outcome(
         })
         .unwrap_or(RequestPermissionOutcome::Cancelled);
 
-    emit(
-        tx,
-        ServiceEvent::Log {
-            level: LogLevel::Info,
-            message: format!("ACP permission auto-approved for tool_call={tool_call_id}"),
-        },
-    );
+    if matches!(outcome, RequestPermissionOutcome::Selected(_)) {
+        emit(
+            tx,
+            ServiceEvent::Log {
+                level: LogLevel::Info,
+                message: format!("ACP permission auto-approved for tool_call={tool_call_id}"),
+            },
+        );
+    }
 
     outcome
 }

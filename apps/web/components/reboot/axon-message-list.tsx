@@ -72,7 +72,7 @@ export const AxonMessageList = memo(function AxonMessageList({
         <div className="flex h-full items-center justify-center animate-fade-in">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--text-dim)]" />
         </div>
-      ) : error ? (
+      ) : error && messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 animate-fade-in">
           <AlertCircle className="h-5 w-5 text-destructive opacity-70" />
           <p className="text-sm text-destructive">{error}</p>
@@ -224,11 +224,25 @@ export const AxonMessageList = memo(function AxonMessageList({
                 )}
               </MessageAction>
               {message.role === 'user' ? (
-                <MessageAction label="Edit message" tooltip="Edit">
+                <MessageAction
+                  label="Edit message"
+                  tooltip="Edit"
+                  onClick={() => {
+                    /* TODO: implement edit — wire to an onEdit prop callback */
+                    console.log('Edit message:', message.id)
+                  }}
+                >
                   <Pencil className="size-3.5" />
                 </MessageAction>
               ) : (
-                <MessageAction label="Retry" tooltip="Retry">
+                <MessageAction
+                  label="Retry"
+                  tooltip="Retry"
+                  onClick={() => {
+                    /* TODO: implement retry — wire to an onRetryMessage prop callback */
+                    console.log('Retry from message:', message.id)
+                  }}
+                >
                   <RotateCcw className="size-3.5" />
                 </MessageAction>
               )}
