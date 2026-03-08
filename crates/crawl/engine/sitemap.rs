@@ -163,10 +163,10 @@ async fn process_sitemap_batch(
         if !is_index && since_days > 0 {
             // Date-filtered path: use block-level parsing to get <lastmod> per URL.
             for (loc, lastmod) in extract_loc_with_lastmod(&xml) {
-                if let Some(ref lm) = lastmod {
-                    if !lastmod_is_recent(lm, since_days) {
-                        continue;
-                    }
+                if let Some(ref lm) = lastmod
+                    && !lastmod_is_recent(lm, since_days)
+                {
+                    continue;
                 }
                 if let Some(canonical_loc) = sitemap_loc_in_scope(
                     cfg,

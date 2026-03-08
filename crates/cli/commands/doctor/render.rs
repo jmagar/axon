@@ -48,10 +48,10 @@ fn render_optional_status_line(name: &str, configured: bool, ok: bool, detail: &
 }
 
 fn render_tei_info_lines(report: &serde_json::Value) {
-    if let Some(url) = report["services"]["tei"]["url"].as_str() {
-        if !url.is_empty() {
-            println!("    url: {}", muted(url));
-        }
+    if let Some(url) = report["services"]["tei"]["url"].as_str()
+        && !url.is_empty()
+    {
+        println!("    url: {}", muted(url));
     }
     if let Some(model) = report["services"]["tei"]["model"].as_str() {
         println!("    model: {}", muted(model));

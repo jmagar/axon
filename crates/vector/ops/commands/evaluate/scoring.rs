@@ -114,10 +114,10 @@ pub(super) fn build_suggestion_focus(query: &str, analysis: &str) -> String {
     for line in analysis.lines() {
         let rag = parse_first_score(line, "RAG: ");
         let base = parse_first_score(line, "Baseline: ");
-        if let (Some(r), Some(b)) = (rag, base) {
-            if r + 0.001 < b {
-                weak_dimensions.push(line.trim().to_string());
-            }
+        if let (Some(r), Some(b)) = (rag, base)
+            && r + 0.001 < b
+        {
+            weak_dimensions.push(line.trim().to_string());
         }
     }
     if weak_dimensions.is_empty() {

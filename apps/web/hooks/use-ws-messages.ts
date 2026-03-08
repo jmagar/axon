@@ -292,11 +292,6 @@ export function useWsMessagesProvider() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: pulseModel is read inside but intentionally excluded — re-probing on model change would create an infinite loop since the probe itself can set the model
   useEffect(() => {
-    if (pathname?.startsWith('/reboot')) {
-      setAcpConfigOptions([])
-      return
-    }
-
     let cancelled = false
 
     void probePulseConfigOptions({ agent: pulseAgent })

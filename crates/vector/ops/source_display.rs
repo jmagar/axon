@@ -46,12 +46,11 @@ fn manifest_url_for_file(path: &Path, manifest: &Path) -> Option<String> {
         } else {
             continue;
         };
-        if manifest_path == target {
-            if let Some(url) = parsed.get("url").and_then(Value::as_str) {
-                if !url.is_empty() {
-                    return Some(url.to_string());
-                }
-            }
+        if manifest_path == target
+            && let Some(url) = parsed.get("url").and_then(Value::as_str)
+            && !url.is_empty()
+        {
+            return Some(url.to_string());
         }
     }
     None

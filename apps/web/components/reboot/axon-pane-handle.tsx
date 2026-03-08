@@ -8,7 +8,7 @@ const ICONS = {
   Editor: PanelRight,
 } as const
 
-export function RebootPaneHandle({
+export function AxonPaneHandle({
   label,
   side,
   onClick,

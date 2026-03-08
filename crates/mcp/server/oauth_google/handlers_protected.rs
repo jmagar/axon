@@ -313,28 +313,28 @@ pub(crate) async fn require_google_auth(
     {
         let record = state.get_access_token(token).await;
 
-        if let Some(record) = record {
-            if unix_now_secs() <= record.expires_at_unix {
-                let token_scopes = record
-                    .scope
-                    .split_whitespace()
-                    .map(ToString::to_string)
-                    .collect::<std::collections::HashSet<String>>();
-                let needed_scopes = required_scopes(&state);
-                if needed_scopes
-                    .iter()
-                    .all(|scope| token_scopes.contains(scope))
-                {
-                    return next.run(req).await;
-                }
-                return unauthorized_response(
-                    &state,
-                    serde_json::json!({
-                        "error": "insufficient_scope",
-                        "required_scopes": needed_scopes,
-                    }),
-                );
+        if let Some(record) = record
+            && unix_now_secs() <= record.expires_at_unix
+        {
+            let token_scopes = record
+                .scope
+                .split_whitespace()
+                .map(ToString::to_string)
+                .collect::<std::collections::HashSet<String>>();
+            let needed_scopes = required_scopes(&state);
+            if needed_scopes
+                .iter()
+                .all(|scope| token_scopes.contains(scope))
+            {
+                return next.run(req).await;
             }
+            return unauthorized_response(
+                &state,
+                serde_json::json!({
+                    "error": "insufficient_scope",
+                    "required_scopes": needed_scopes,
+                }),
+            );
         }
 
         return unauthorized_response(

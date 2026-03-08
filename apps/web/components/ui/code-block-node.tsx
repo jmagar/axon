@@ -116,7 +116,9 @@ function CodeBlockCombobox() {
                   className="cursor-pointer"
                   value={language.value}
                   onSelect={(value) => {
-                    editor.tf.setNodes<TCodeBlockElement>({ lang: value }, { at: element })
+                    editor.tf.setNodes({ lang: value } as Partial<TCodeBlockElement>, {
+                      at: element,
+                    })
                     setSearchValue(value)
                     setOpen(false)
                   }}
@@ -259,7 +261,7 @@ const languages: { label: string; value: string }[] = [
   { label: 'Reason', value: 'reasonml' },
   { label: 'Ruby', value: 'ruby' },
   { label: 'Rust', value: 'rust' },
-  { label: 'Sass', value: 'scss' },
+  { label: 'Sass', value: 'sass' },
   { label: 'Scala', value: 'scala' },
   { label: 'Scheme', value: 'scheme' },
   { label: 'SCSS', value: 'scss' },
@@ -273,7 +275,7 @@ const languages: { label: string; value: string }[] = [
   { label: 'VB.Net', value: 'vbnet' },
   { label: 'Verilog', value: 'verilog' },
   { label: 'VHDL', value: 'vhdl' },
-  { label: 'Visual Basic', value: 'vbnet' },
+  { label: 'Visual Basic', value: 'vb' },
   { label: 'WebAssembly', value: 'wasm' },
   { label: 'XML', value: 'xml' },
   { label: 'YAML', value: 'yaml' },

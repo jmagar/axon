@@ -1,5 +1,5 @@
 use bollard::Docker;
-use bollard::container::{ListContainersOptions, StatsOptions};
+use bollard::query_parameters::{ListContainersOptions, StatsOptions};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -49,7 +49,7 @@ pub(super) async fn run_stats_loop(tx: broadcast::Sender<String>) {
                 let containers = match docker
                     .list_containers(Some(ListContainersOptions {
                         all: false,
-                        filters,
+                        filters: Some(filters),
                         ..Default::default()
                     }))
                     .await
@@ -142,15 +142,36 @@ async fn stream_container_stats(
         // CPU %
         let cpu_delta = stats
             .cpu_stats
-            .cpu_usage
-            .total_usage
-            .saturating_sub(stats.precpu_stats.cpu_usage.total_usage);
+            .as_ref()
+            .and_then(|c| c.cpu_usage.as_ref())
+            .and_then(|u| u.total_usage)
+            .unwrap_or(0)
+            .saturating_sub(
+                stats
+                    .precpu_stats
+                    .as_ref()
+                    .and_then(|c| c.cpu_usage.as_ref())
+                    .and_then(|u| u.total_usage)
+                    .unwrap_or(0),
+            );
         let system_delta = stats
             .cpu_stats
-            .system_cpu_usage
+            .as_ref()
+            .and_then(|c| c.system_cpu_usage)
             .unwrap_or(0)
-            .saturating_sub(stats.precpu_stats.system_cpu_usage.unwrap_or(0));
-        let online_cpus = stats.cpu_stats.online_cpus.unwrap_or(1).max(1);
+            .saturating_sub(
+                stats
+                    .precpu_stats
+                    .as_ref()
+                    .and_then(|c| c.system_cpu_usage)
+                    .unwrap_or(0),
+            );
+        let online_cpus = stats
+            .cpu_stats
+            .as_ref()
+            .and_then(|c| c.online_cpus)
+            .unwrap_or(1)
+            .max(1);
         let cpu_percent = if system_delta > 0 {
             (cpu_delta as f64 / system_delta as f64) * online_cpus as f64 * 100.0
         } else {
@@ -158,18 +179,21 @@ async fn stream_container_stats(
         };
 
         // Memory
-        let mem_usage = stats.memory_stats.usage.unwrap_or(0);
-        let mem_cache = stats
+        let mem_usage = stats
             .memory_stats
-            .stats
             .as_ref()
-            .map(|s| match s {
-                bollard::container::MemoryStatsStats::V1(v1) => v1.cache,
-                bollard::container::MemoryStatsStats::V2(v2) => v2.inactive_file,
-            })
+            .and_then(|m| m.usage)
             .unwrap_or(0);
+        // In bollard 0.20 the MemoryStatsStats V1/V2 enum is no longer exposed;
+        // skip cache subtraction and use raw usage (conservative, never negative).
+        let mem_cache = 0u64;
         let mem_actual = mem_usage.saturating_sub(mem_cache);
-        let mem_limit = stats.memory_stats.limit.unwrap_or(1).max(1);
+        let mem_limit = stats
+            .memory_stats
+            .as_ref()
+            .and_then(|m| m.limit)
+            .unwrap_or(1)
+            .max(1);
         let mem_usage_mb = mem_actual as f64 / (1024.0 * 1024.0);
         let mem_limit_mb = mem_limit as f64 / (1024.0 * 1024.0);
         let mem_percent = (mem_actual as f64 / mem_limit as f64) * 100.0;
@@ -180,7 +204,10 @@ async fn stream_container_stats(
             .as_ref()
             .map(|nets| {
                 nets.values().fold((0u64, 0u64), |(rx, tx), iface| {
-                    (rx + iface.rx_bytes, tx + iface.tx_bytes)
+                    (
+                        rx + iface.rx_bytes.unwrap_or(0),
+                        tx + iface.tx_bytes.unwrap_or(0),
+                    )
                 })
             })
             .unwrap_or((0, 0));
@@ -188,13 +215,15 @@ async fn stream_container_stats(
         // Block I/O
         let (blk_read, blk_write) = stats
             .blkio_stats
-            .io_service_bytes_recursive
             .as_ref()
+            .and_then(|b| b.io_service_bytes_recursive.as_ref())
             .map(|entries| {
                 entries.iter().fold((0u64, 0u64), |(r, w), e| {
-                    match e.op.to_lowercase().as_str() {
-                        "read" => (r + e.value, w),
-                        "write" => (r, w + e.value),
+                    let op = e.op.as_deref().unwrap_or("").to_lowercase();
+                    let val = e.value.unwrap_or(0);
+                    match op.as_str() {
+                        "read" => (r + val, w),
+                        "write" => (r, w + val),
                         _ => (r, w),
                     }
                 })

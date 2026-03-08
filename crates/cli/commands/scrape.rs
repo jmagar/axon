@@ -52,13 +52,13 @@ fn build_scrape_website(cfg: &Config, url: &str) -> Result<Website, Box<dyn Erro
     if !cfg.custom_headers.is_empty() {
         let mut map = reqwest::header::HeaderMap::new();
         for raw in &cfg.custom_headers {
-            if let Some((k, v)) = raw.split_once(": ") {
-                if let (Ok(name), Ok(val)) = (
+            if let Some((k, v)) = raw.split_once(": ")
+                && let (Ok(name), Ok(val)) = (
                     reqwest::header::HeaderName::from_bytes(k.as_bytes()),
                     reqwest::header::HeaderValue::from_str(v),
-                ) {
-                    map.insert(name, val);
-                }
+                )
+            {
+                map.insert(name, val);
             }
         }
         if !map.is_empty() {
@@ -170,13 +170,13 @@ async fn direct_fetch_requested_page(
     if !cfg.custom_headers.is_empty() {
         let mut map = reqwest::header::HeaderMap::new();
         for raw in &cfg.custom_headers {
-            if let Some((k, v)) = raw.split_once(": ") {
-                if let (Ok(name), Ok(val)) = (
+            if let Some((k, v)) = raw.split_once(": ")
+                && let (Ok(name), Ok(val)) = (
                     reqwest::header::HeaderName::from_bytes(k.as_bytes()),
                     reqwest::header::HeaderValue::from_str(v),
-                ) {
-                    map.insert(name, val);
-                }
+                )
+            {
+                map.insert(name, val);
             }
         }
         if !map.is_empty() {

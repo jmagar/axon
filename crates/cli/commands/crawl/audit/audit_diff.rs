@@ -51,10 +51,10 @@ fn build_snapshot_diff(
         .collect();
     let mut manifest_changed = 0usize;
     for entry in &current.manifest_entries {
-        if let Some(prev_fp) = prev_map.get(entry.url.as_str()) {
-            if *prev_fp != entry.fingerprint.as_str() {
-                manifest_changed += 1;
-            }
+        if let Some(prev_fp) = prev_map.get(entry.url.as_str())
+            && *prev_fp != entry.fingerprint.as_str()
+        {
+            manifest_changed += 1;
         }
     }
 

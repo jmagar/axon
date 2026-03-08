@@ -18,7 +18,7 @@ export function LinkElement(props: PlateElementProps<TLinkElement>) {
       {...props}
       as="a"
       className={cn(
-        'font-medium text-primary underline decoration-primary underline-offset-4',
+        'font-medium text-[var(--axon-secondary)] underline decoration-[var(--axon-secondary)] underline-offset-4 opacity-90 hover:opacity-100 transition-opacity',
         suggestionData?.type === 'remove' && 'bg-red-100 text-red-700',
         suggestionData?.type === 'insert' && 'bg-emerald-100 text-emerald-700',
       )}

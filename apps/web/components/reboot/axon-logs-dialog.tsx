@@ -19,7 +19,7 @@ const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
 const LOGS_SERVICE_KEY = 'axon.web.logs.service'
 const DEFAULT_SERVICE: ServiceName = 'all'
 
-export function RebootLogsDialog({
+export function AxonLogsDialog({
   open,
   onOpenChange,
 }: {

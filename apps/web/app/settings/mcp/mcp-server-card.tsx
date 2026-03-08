@@ -11,6 +11,7 @@ const STATUS_DOT: Record<McpServerStatus, string> = {
   offline: 'bg-red-400',
   unknown: 'bg-[rgba(255,255,255,0.2)]',
   checking: 'bg-[var(--axon-primary)] animate-pulse',
+  'auth-required': 'bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]',
 }
 
 const STATUS_LABEL: Record<McpServerStatus, string> = {
@@ -18,6 +19,7 @@ const STATUS_LABEL: Record<McpServerStatus, string> = {
   offline: 'offline',
   unknown: 'unknown',
   checking: 'checking…',
+  'auth-required': 'auth required',
 }
 
 export function McpServerCard({
@@ -55,7 +57,7 @@ export function McpServerCard({
             {isHttp ? 'http' : 'stdio'}
           </span>
           <span
-            className={`text-[10px] ${status === 'online' ? 'text-green-400' : status === 'offline' ? 'text-red-400' : 'text-[var(--text-dim)]'}`}
+            className={`text-[10px] ${status === 'online' ? 'text-green-400' : status === 'offline' ? 'text-red-400' : status === 'auth-required' ? 'text-yellow-400' : 'text-[var(--text-dim)]'}`}
           >
             {STATUS_LABEL[status]}
           </span>

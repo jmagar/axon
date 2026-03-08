@@ -1,8 +1,12 @@
 'use client'
 
+import { TextAlignPlugin } from '@platejs/basic-styles/react'
 import { useListToolbarButton, useListToolbarButtonState } from '@platejs/list/react'
 import { serializeMd } from '@platejs/markdown'
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Bold,
   Braces,
   Check,
@@ -13,6 +17,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Highlighter,
   Italic,
   Link2,
   List,
@@ -20,12 +25,15 @@ import {
   MoreHorizontal,
   Quote,
   Redo2,
+  Slash,
   Sparkles,
   Strikethrough,
+  Subscript,
+  Superscript,
   Underline,
   Undo2,
 } from 'lucide-react'
-import { Plate, useEditorRef, usePlateEditor } from 'platejs/react'
+import { Plate, useEditorRef, useEditorSelector, usePlateEditor } from 'platejs/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
@@ -243,6 +251,28 @@ export function PulseEditorPane({
                 </LinkToolbarButton>
               </ToolbarGroup>
               <ToolbarGroup>
+                <MarkToolbarButton nodeType="highlight" tooltip="Highlight (Ctrl+Shift+H)">
+                  <Highlighter className="size-3.5" />
+                </MarkToolbarButton>
+                <MarkToolbarButton nodeType="superscript" tooltip="Superscript (Ctrl+.)">
+                  <Superscript className="size-3.5" />
+                </MarkToolbarButton>
+                <MarkToolbarButton nodeType="subscript" tooltip="Subscript (Ctrl+,)">
+                  <Subscript className="size-3.5" />
+                </MarkToolbarButton>
+              </ToolbarGroup>
+              <ToolbarGroup>
+                <AlignButton align="left" tooltip="Align left">
+                  <AlignLeft className="size-3.5" />
+                </AlignButton>
+                <AlignButton align="center" tooltip="Align center">
+                  <AlignCenter className="size-3.5" />
+                </AlignButton>
+                <AlignButton align="right" tooltip="Align right">
+                  <AlignRight className="size-3.5" />
+                </AlignButton>
+              </ToolbarGroup>
+              <ToolbarGroup>
                 <CommentToolbarButton />
                 <ExportToolbarButton />
               </ToolbarGroup>
@@ -317,6 +347,14 @@ export function PulseEditorPane({
               AI copilot active
             </span>
             <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-dim)]">
+              <Slash className="size-2.5" />
+              <kbd className="rounded border border-[var(--border-subtle)] bg-[var(--surface-primary)] px-1 font-mono text-[length:var(--text-2xs)] text-[var(--text-dim)]">
+                /
+              </kbd>{' '}
+              slash menu
+            </span>
+            <span className="text-[10px] text-[var(--text-dim)] opacity-60">·</span>
             <span className="text-[10px] text-[var(--text-dim)]">
               <kbd className="rounded border border-[var(--border-subtle)] bg-[var(--surface-primary)] px-1 font-mono text-[length:var(--text-2xs)] text-[var(--text-dim)]">
                 Ctrl+Space
@@ -357,6 +395,45 @@ export function PulseEditorPane({
         </div>
       </Plate>
     </DndProvider>
+  )
+}
+
+/**
+ * Alignment toolbar button — reads the current block's textAlign via useEditorSelector
+ * so the pressed state reflects the active alignment.
+ */
+function AlignButton({
+  align,
+  tooltip,
+  children,
+}: {
+  align: string
+  tooltip: string
+  children: React.ReactNode
+}) {
+  const editor = useEditorRef()
+  const currentAlign = useEditorSelector((ed) => {
+    const entry = ed.api.block({ highest: true })
+    return (entry?.[0] as { textAlign?: string })?.textAlign ?? 'start'
+  }, [])
+
+  const isPressed =
+    currentAlign === align ||
+    // 'start' and 'left' are equivalent — treat both as the active state for the left button
+    (align === 'left' && (currentAlign === 'start' || currentAlign === 'left'))
+
+  return (
+    <ToolbarButton
+      size="sm"
+      tooltip={tooltip}
+      pressed={isPressed}
+      onMouseDown={(e) => {
+        e.preventDefault()
+        editor.getTransforms(TextAlignPlugin).textAlign.setNodes(align)
+      }}
+    >
+      {children}
+    </ToolbarButton>
   )
 }
 
@@ -419,6 +496,16 @@ function MoreFormattingItems() {
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => decimalListProps.onClick?.()}>
         <ListOrdered className="mr-2 size-4" /> Numbered list
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => toggleMark('highlight')}>
+        <Highlighter className="mr-2 size-4" /> Highlight
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleMark('superscript')}>
+        <Superscript className="mr-2 size-4" /> Superscript
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => toggleMark('subscript')}>
+        <Subscript className="mr-2 size-4" /> Subscript
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => toggleBlock('blockquote')}>
