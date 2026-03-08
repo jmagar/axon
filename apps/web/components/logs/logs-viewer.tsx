@@ -49,7 +49,9 @@ export function LogsViewer() {
   }, [])
 
   // SSE connection via fetch so we can send Authorization header
-  // (EventSource does not support custom headers)
+  // (EventSource does not support custom headers).
+  // Reconnects with exponential backoff (1s → 2s → 4s … max 30s) when the
+  // stream ends unexpectedly. Aborted by the cleanup function.
   useEffect(() => {
     setLines([])
     setIsConnected(false)
@@ -57,63 +59,83 @@ export function LogsViewer() {
     const params = new URLSearchParams({ service, tail: String(tailLines) })
     const abortCtrl = new AbortController()
     let alive = true
+    let backoffMs = 1000
 
     async function connect() {
-      try {
-        const headers: Record<string, string> = { Accept: 'text/event-stream' }
-        if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`
+      while (alive) {
+        try {
+          const headers: Record<string, string> = { Accept: 'text/event-stream' }
+          if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`
 
-        const res = await fetch(`/api/logs?${params.toString()}`, {
-          headers,
-          signal: abortCtrl.signal,
-        })
+          const res = await fetch(`/api/logs?${params.toString()}`, {
+            headers,
+            signal: abortCtrl.signal,
+          })
 
-        if (!res.ok || !res.body) {
-          setIsConnected(false)
-          return
-        }
+          if (!res.ok || !res.body) {
+            setIsConnected(false)
+            // Server error — wait before retrying
+            await new Promise((r) => setTimeout(r, backoffMs))
+            backoffMs = Math.min(backoffMs * 2, 30_000)
+            continue
+          }
 
-        setIsConnected(true)
+          setIsConnected(true)
+          backoffMs = 1000 // reset backoff on successful connection
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ''
 
-        while (alive) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value, { stream: true })
-          const parts = buf.split('\n\n')
-          buf = parts.pop() ?? ''
-          for (const part of parts) {
-            const dataLine = part.split('\n').find((l) => l.startsWith('data: '))
-            if (!dataLine) continue
-            try {
-              const {
-                line,
-                ts,
-                service: svc,
-              } = JSON.parse(dataLine.slice(6)) as {
-                line: string
-                ts: number
-                service?: string
-              }
-              const entry: LogEntry = { text: line, ts, ...(svc ? { service: svc } : {}) }
-              setLines((prev) => {
-                if (prev.length >= MAX_LINES) {
-                  const trimmed = prev.slice(prev.length - MAX_LINES + 1)
-                  trimmed.push(entry)
-                  return trimmed
+          while (alive) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
+            const parts = buf.split('\n\n')
+            buf = parts.pop() ?? ''
+            for (const part of parts) {
+              const dataLine = part.split('\n').find((l) => l.startsWith('data: '))
+              if (!dataLine) continue
+              try {
+                const {
+                  line,
+                  ts,
+                  service: svc,
+                } = JSON.parse(dataLine.slice(6)) as {
+                  line: string
+                  ts: number
+                  service?: string
                 }
-                return [...prev, entry]
-              })
-            } catch {
-              // malformed SSE data — ignore
+                const entry: LogEntry = { text: line, ts, ...(svc ? { service: svc } : {}) }
+                setLines((prev) => {
+                  if (prev.length >= MAX_LINES) {
+                    const trimmed = prev.slice(prev.length - MAX_LINES + 1)
+                    trimmed.push(entry)
+                    return trimmed
+                  }
+                  return [...prev, entry]
+                })
+              } catch {
+                // malformed SSE data — ignore
+              }
             }
           }
+
+          // Stream ended without error — reconnect after backoff
+          if (alive) {
+            setIsConnected(false)
+            await new Promise((r) => setTimeout(r, backoffMs))
+            backoffMs = Math.min(backoffMs * 2, 30_000)
+          }
+        } catch (err) {
+          // AbortError means the cleanup function ran — stop reconnecting
+          if (err instanceof DOMException && err.name === 'AbortError') return
+          if (alive) {
+            setIsConnected(false)
+            await new Promise((r) => setTimeout(r, backoffMs))
+            backoffMs = Math.min(backoffMs * 2, 30_000)
+          }
         }
-      } catch {
-        if (alive) setIsConnected(false)
       }
     }
 
