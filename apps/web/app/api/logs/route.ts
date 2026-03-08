@@ -37,6 +37,7 @@ function attachContainerStream(
   tail: number,
   sendLine: SendLine,
   logStreams: Readable[],
+  onEnd: () => void,
 ): void {
   docker
     .getContainer(svc)
@@ -56,10 +57,15 @@ function attachContainerStream(
       })
       pt.on('error', (err: Error) => {
         sendLine(`[stream error] ${err.message}`, svc)
+        onEnd()
+      })
+      pt.on('end', () => {
+        onEnd()
       })
     })
     .catch((err: unknown) => {
       sendLine(`[stream error] ${err instanceof Error ? err.message : String(err)}`, svc)
+      onEnd()
     })
 }
 
@@ -99,8 +105,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      let activeStreams = targets.length
+      const onStreamEnd = () => {
+        activeStreams -= 1
+        if (activeStreams <= 0) close()
+      }
+
       for (const svc of targets) {
-        attachContainerStream(svc, tail, sendLine, logStreams)
+        attachContainerStream(svc, tail, sendLine, logStreams, onStreamEnd)
       }
 
       req.signal.addEventListener('abort', () => {
