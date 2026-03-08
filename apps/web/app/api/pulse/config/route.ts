@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const req = parsed.data
 
   // Return cached config if still fresh — avoids spawning a full adapter lifecycle.
-  const cacheKey = `${req.agent}:${req.model ?? 'default'}`
+  const cacheKey = `${req.agent}:${req.model ?? 'default'}:${req.sessionId ?? 'default'}`
   const cached = CONFIG_CACHE.get(cacheKey)
   if (cached && cached.expires > Date.now()) {
     return Response.json({ configOptions: cached.options })
@@ -100,7 +100,11 @@ export async function POST(request: Request) {
       })
     }
 
-    CONFIG_CACHE.set(cacheKey, { options: configOptions, expires: Date.now() + CONFIG_CACHE_TTL })
+    const now = Date.now()
+    for (const [key, value] of CONFIG_CACHE) {
+      if (value.expires <= now) CONFIG_CACHE.delete(key)
+    }
+    CONFIG_CACHE.set(cacheKey, { options: configOptions, expires: now + CONFIG_CACHE_TTL })
     return Response.json({ configOptions })
   } catch (error: unknown) {
     const errorId = makeErrorId('pulse-config')
