@@ -131,6 +131,58 @@ impl Write for SizeRotateWriterGuard {
     }
 }
 
+/// Outcome of attempting to open the rotating log file with optional fallback.
+enum RotatingOutcome {
+    Opened(SizeRotatingFile),
+    BothFailed {
+        primary_path: PathBuf,
+        primary_err: io::Error,
+        fallback_path: PathBuf,
+        fallback_err: io::Error,
+    },
+    SamePathFailed {
+        path: PathBuf,
+        err: io::Error,
+    },
+}
+
+/// Try to open `log_path` for rotating writes; fall back to `logs/axon.log`
+/// if that fails with a different path. Reports which errors came from which
+/// paths so both failures are visible when debugging.
+fn open_rotating_file(
+    log_path: &PathBuf,
+    max_bytes: u64,
+    max_files_total: usize,
+) -> RotatingOutcome {
+    match SizeRotatingFile::new(log_path.clone(), max_bytes, max_files_total) {
+        Ok(r) => RotatingOutcome::Opened(r),
+        Err(primary_err) => {
+            let fallback = PathBuf::from("logs/axon.log");
+            if &fallback == log_path {
+                return RotatingOutcome::SamePathFailed {
+                    path: log_path.clone(),
+                    err: primary_err,
+                };
+            }
+            eprintln!(
+                "warning: cannot open log file {}: {} — falling back to {}",
+                log_path.display(),
+                primary_err,
+                fallback.display(),
+            );
+            match SizeRotatingFile::new(fallback.clone(), max_bytes, max_files_total) {
+                Ok(r) => RotatingOutcome::Opened(r),
+                Err(fallback_err) => RotatingOutcome::BothFailed {
+                    primary_path: log_path.clone(),
+                    primary_err,
+                    fallback_path: fallback,
+                    fallback_err,
+                },
+            }
+        }
+    }
+}
+
 pub fn init_tracing() {
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
@@ -205,55 +257,8 @@ pub fn init_tracing() {
         .with_writer(io::stderr)
         .with_filter(console_filter);
 
-    // Try the configured path first; if it fails (e.g. permission denied when
-    // running locally against a Docker-owned data dir), fall back to a local
-    // `logs/axon.log` relative to CWD before giving up on file logging entirely.
-    enum RotatingOutcome {
-        Ok(SizeRotatingFile),
-        BothFailed {
-            primary_path: PathBuf,
-            primary_err: io::Error,
-            fallback_path: PathBuf,
-            fallback_err: io::Error,
-        },
-        SamePathFailed {
-            path: PathBuf,
-            err: io::Error,
-        },
-    }
-
-    let rotating_outcome = match SizeRotatingFile::new(log_path.clone(), max_bytes, max_files_total)
-    {
-        Ok(r) => RotatingOutcome::Ok(r),
-        Err(primary_err) => {
-            let fallback = PathBuf::from("logs/axon.log");
-            if fallback == log_path {
-                RotatingOutcome::SamePathFailed {
-                    path: log_path.clone(),
-                    err: primary_err,
-                }
-            } else {
-                eprintln!(
-                    "warning: cannot open log file {}: {} — falling back to {}",
-                    log_path.display(),
-                    primary_err,
-                    fallback.display(),
-                );
-                match SizeRotatingFile::new(fallback.clone(), max_bytes, max_files_total) {
-                    Ok(r) => RotatingOutcome::Ok(r),
-                    Err(fallback_err) => RotatingOutcome::BothFailed {
-                        primary_path: log_path.clone(),
-                        primary_err,
-                        fallback_path: fallback,
-                        fallback_err,
-                    },
-                }
-            }
-        }
-    };
-
-    match rotating_outcome {
-        RotatingOutcome::Ok(rotating) => {
+    match open_rotating_file(&log_path, max_bytes, max_files_total) {
+        RotatingOutcome::Opened(rotating) => {
             let file_writer = SizeRotateMakeWriter {
                 inner: Arc::new(Mutex::new(rotating)),
             };
