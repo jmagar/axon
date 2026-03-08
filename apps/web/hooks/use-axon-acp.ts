@@ -30,7 +30,7 @@ export function useAxonAcp({
   const connected = status === 'connected'
 
   useEffect(() => {
-    return subscribe((rawMsg) => {
+    const unsubscribe = subscribe((rawMsg) => {
       const msg = rawMsg as unknown as Record<string, unknown>
 
       switch (msg.type) {
@@ -93,6 +93,15 @@ export function useAxonAcp({
         }
       }
     })
+    return () => {
+      // Clear any pending streaming timeout to prevent setState/onMessagesChange
+      // calls after the hook is unmounted.
+      if (streamingTimeoutRef.current) {
+        clearTimeout(streamingTimeoutRef.current)
+        streamingTimeoutRef.current = null
+      }
+      unsubscribe()
+    }
   }, [subscribe, onMessagesChange, onSessionIdChange, onSessionFallback, onTurnComplete])
 
   const submitPrompt = useCallback(

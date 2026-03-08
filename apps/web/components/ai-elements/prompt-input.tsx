@@ -99,7 +99,7 @@ export function PromptInputTextarea({
 
   useEffect(() => {
     autoResize()
-  }, [autoResize, text])
+  }, [autoResize])
 
   return (
     <textarea
@@ -110,6 +110,7 @@ export function PromptInputTextarea({
       )}
       onChange={(event) => {
         setText(event.target.value)
+        autoResize()
         onChange?.(event)
       }}
       onKeyDown={(event) => {
