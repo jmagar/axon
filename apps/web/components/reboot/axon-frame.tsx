@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import NeuralCanvas from '@/components/neural-canvas'
 
-export function RebootFrame({ children }: { children: ReactNode }) {
+export function AxonFrame({ children }: { children: ReactNode }) {
   return (
     <main className="relative min-h-dvh overflow-hidden bg-[#030817] text-[var(--text-primary)]">
       <NeuralCanvas profile="current" />

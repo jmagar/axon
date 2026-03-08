@@ -64,10 +64,10 @@ impl DeterministicExtractionEngine {
             if !items.is_empty() {
                 parser_hits.push(parser.name().to_string());
                 for item in items {
-                    if let Some(item_hash) = hash_json_value(&item) {
-                        if seen_hashes.insert(item_hash) {
-                            all_items.push(item);
-                        }
+                    if let Some(item_hash) = hash_json_value(&item)
+                        && seen_hashes.insert(item_hash)
+                    {
+                        all_items.push(item);
                     }
                 }
             }
@@ -99,16 +99,17 @@ impl DeterministicParser for JsonLdParser {
         let mut in_target_script = false;
         let mut current_json = String::new();
 
-        for token in Tokenizer::new(html).infallible() {
+        for token in Tokenizer::new(html) {
+            let token = token.unwrap();
             match token {
                 Token::StartTag(tag) => {
-                    if &tag.name[..] == b"script" {
-                        if let Some(type_attr) = tag.attributes.get(&b"type"[..]) {
-                            let type_str = String::from_utf8_lossy(type_attr).to_lowercase();
-                            if type_str.contains("application/ld+json") {
-                                in_target_script = true;
-                                current_json.clear();
-                            }
+                    if &tag.name[..] == b"script"
+                        && let Some(type_attr) = tag.attributes.get(&b"type"[..])
+                    {
+                        let type_str = String::from_utf8_lossy(type_attr).to_lowercase();
+                        if type_str.contains("application/ld+json") {
+                            in_target_script = true;
+                            current_json.clear();
                         }
                     }
                 }
@@ -159,25 +160,26 @@ impl DeterministicParser for OpenGraphParser {
     fn parse(&self, page_url: &str, html: &str) -> Vec<serde_json::Value> {
         let mut og_fields = serde_json::Map::new();
 
-        for token in Tokenizer::new(html).infallible() {
-            if let Token::StartTag(tag) = token {
-                if &tag.name[..] == b"meta" {
-                    let mut property = None;
-                    if let Some(prop) = tag.attributes.get(&b"property"[..]) {
-                        property = Some(String::from_utf8_lossy(prop).into_owned());
-                    } else if let Some(name) = tag.attributes.get(&b"name"[..]) {
-                        property = Some(String::from_utf8_lossy(name).into_owned());
-                    }
+        for token in Tokenizer::new(html) {
+            let token = token.unwrap();
+            if let Token::StartTag(tag) = token
+                && &tag.name[..] == b"meta"
+            {
+                let mut property = None;
+                if let Some(prop) = tag.attributes.get(&b"property"[..]) {
+                    property = Some(String::from_utf8_lossy(prop).into_owned());
+                } else if let Some(name) = tag.attributes.get(&b"name"[..]) {
+                    property = Some(String::from_utf8_lossy(name).into_owned());
+                }
 
-                    if let Some(prop) = property {
-                        let prop_lower = prop.to_lowercase();
-                        if prop_lower.starts_with("og:") {
-                            if let Some(content_attr) = tag.attributes.get(&b"content"[..]) {
-                                let content = String::from_utf8_lossy(content_attr).into_owned();
-                                if !content.is_empty() {
-                                    og_fields.insert(prop, serde_json::Value::String(content));
-                                }
-                            }
+                if let Some(prop) = property {
+                    let prop_lower = prop.to_lowercase();
+                    if prop_lower.starts_with("og:")
+                        && let Some(content_attr) = tag.attributes.get(&b"content"[..])
+                    {
+                        let content = String::from_utf8_lossy(content_attr).into_owned();
+                        if !content.is_empty() {
+                            og_fields.insert(prop, serde_json::Value::String(content));
                         }
                     }
                 }
@@ -213,7 +215,8 @@ impl DeterministicParser for HtmlTableParser {
         let mut table_depth = 0;
         let mut row_count = 0;
 
-        for token in Tokenizer::new(html).infallible() {
+        for token in Tokenizer::new(html) {
+            let token = token.unwrap();
             match token {
                 Token::StartTag(tag) => {
                     if &tag.name[..] == b"table" {

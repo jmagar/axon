@@ -157,8 +157,8 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     // Each lane opens its own long-lived connection for its consumer loop.
     let amqp_available = match open_amqp_connection_and_channel(cfg, &cfg.crawl_queue).await {
         Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe").await;
-            let _ = conn.close(200, "probe").await;
+            let _ = ch.close(0, "probe".into()).await;
+            let _ = conn.close(200, "probe".into()).await;
             true
         }
         Err(e) => {

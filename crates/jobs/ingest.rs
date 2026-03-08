@@ -38,7 +38,7 @@ pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     );
     let amqp_ok = match amqp_result {
         Ok(ch) => {
-            let _ = ch.close(0, "probe").await;
+            let _ = ch.close(0, "probe".into()).await;
             true
         }
         Err(_) => false,

@@ -67,10 +67,10 @@ pub(super) async fn ingest_codex_sessions(
                 (path, mtime, size, res)
             }));
 
-            if futures.len() >= 32 {
-                if let Some(res) = futures.next().await {
-                    total += handle_spawn_result(res, state, "Codex").await;
-                }
+            if futures.len() >= 32
+                && let Some(res) = futures.next().await
+            {
+                total += handle_spawn_result(res, state, "Codex").await;
             }
         }
     }

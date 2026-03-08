@@ -15,10 +15,10 @@ struct SizeRotatingFile {
 
 impl SizeRotatingFile {
     fn new(path: PathBuf, max_bytes: u64, max_files_total: usize) -> io::Result<Self> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
         }
         let file = std::fs::OpenOptions::new()
             .create(true)

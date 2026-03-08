@@ -181,6 +181,7 @@ export function AxonShell() {
 
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
     activeSessionId,
+    agent: pulseAgent ?? 'claude',
     onSessionIdChange,
     onSessionFallback: undefined,
     onMessagesChange,
@@ -650,7 +651,7 @@ export function AxonShell() {
               />
             ) : mobilePane === 'chat' ? (
               <div className="flex h-full min-h-0 flex-col bg-[var(--glass-chat)] backdrop-blur-sm">
-                <Conversation className="w-full flex-1 px-3 py-3">
+                <Conversation key={sessionKey} className="w-full flex-1 px-3 py-3">
                   <AxonMessageList
                     messages={displayMessages}
                     agentName={agentLabel}

@@ -1,6 +1,6 @@
 'use client'
 
-import { CodeBlockPlugin, CodeLinePlugin } from '@platejs/code-block/react'
+import { CodeBlockPlugin, CodeLinePlugin, CodeSyntaxPlugin } from '@platejs/code-block/react'
 import { LinkPlugin } from '@platejs/link/react'
 import { ListPlugin } from '@platejs/list/react'
 import { ImagePlugin } from '@platejs/media/react'
@@ -10,9 +10,10 @@ import {
   TablePlugin,
   TableRowPlugin,
 } from '@platejs/table/react'
+import { all, createLowlight } from 'lowlight'
 import { createPlatePlugin } from 'platejs/react'
 
-import { CodeBlockElement, CodeLineElement } from '@/components/ui/code-block-node'
+import { CodeBlockElement, CodeLineElement, CodeSyntaxLeaf } from '@/components/ui/code-block-node'
 import { ImageElement } from '@/components/ui/image-node'
 import { LinkElement } from '@/components/ui/link-node'
 import { ListElement, ListItemContentElement, ListItemElement } from '@/components/ui/list-node'
@@ -22,6 +23,8 @@ import {
   TableElement,
   TableRowElement,
 } from '@/components/ui/table-node'
+
+const lowlight = createLowlight(all)
 
 // Minimal plugins for markdown-deserialized list node types (list/li/lic).
 // @platejs/list uses indent-based approach with different node keys, so we
@@ -42,9 +45,13 @@ const ListItemContentPlugin = createPlatePlugin({
 })
 
 export const ExtendedNodesKit = [
-  // Code blocks (fenced ```)
-  CodeBlockPlugin.withComponent(CodeBlockElement),
+  // Code blocks with lowlight syntax highlighting
+  CodeBlockPlugin.configure({
+    node: { component: CodeBlockElement },
+    options: { lowlight },
+  }),
   CodeLinePlugin.withComponent(CodeLineElement),
+  CodeSyntaxPlugin.withComponent(CodeSyntaxLeaf),
 
   // Lists (indent-based, for toolbar-driven list creation + markdown roundtrip)
   ListPlugin,

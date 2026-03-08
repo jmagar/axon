@@ -257,8 +257,8 @@ pub(super) async fn run_amqp_worker_lane(
     let consumer_tag = format!("axon-rust-crawl-worker-{lane}");
     let mut consumer = ch
         .basic_consume(
-            &cfg.crawl_queue,
-            &consumer_tag,
+            cfg.crawl_queue.as_str().into(),
+            consumer_tag.as_str().into(),
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )

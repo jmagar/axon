@@ -103,10 +103,10 @@ async fn resolve_project_name(
         return mapped.clone();
     }
     let root_file = path.join(".project_root");
-    if let Ok(root_path) = fs::read_to_string(root_file).await {
-        if let Some(mapped) = projects_map.get(root_path.trim()) {
-            return mapped.clone();
-        }
+    if let Ok(root_path) = fs::read_to_string(root_file).await
+        && let Some(mapped) = projects_map.get(root_path.trim())
+    {
+        return mapped.clone();
     }
     dir_name.to_string()
 }
@@ -148,19 +148,19 @@ async fn enqueue_gemini_chat_files(
             (chat_path, mtime, size, res)
         }));
 
-        if futures.len() >= 32 {
-            if let Some(res) = futures.next().await {
-                match res {
-                    Ok((p, m, s, r)) => match r {
-                        Ok(count) => {
-                            *total += count;
-                            state.mark_indexed(&p, m, s).await;
-                        }
-                        Err(e) => log_warn(&format!("Gemini file {}: {e}", p.display())),
-                    },
-                    Err(join_err) => {
-                        log_warn(&format!("Gemini ingest task panicked: {join_err}"));
+        if futures.len() >= 32
+            && let Some(res) = futures.next().await
+        {
+            match res {
+                Ok((p, m, s, r)) => match r {
+                    Ok(count) => {
+                        *total += count;
+                        state.mark_indexed(&p, m, s).await;
                     }
+                    Err(e) => log_warn(&format!("Gemini file {}: {e}", p.display())),
+                },
+                Err(join_err) => {
+                    log_warn(&format!("Gemini ingest task panicked: {join_err}"));
                 }
             }
         }
@@ -171,16 +171,15 @@ async fn enqueue_gemini_chat_files(
 async fn load_gemini_projects(root: &Path) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let projects_file = root.join("projects.json");
-    if let Ok(content) = fs::read_to_string(projects_file).await {
-        if let Ok(val) = serde_json::from_str::<Value>(&content) {
-            if let Some(projects) = val["projects"].as_object() {
-                for (path, name) in projects {
-                    if let Some(n) = name.as_str() {
-                        map.insert(path.clone(), n.to_string());
-                        if let Some(last) = path.split('/').next_back() {
-                            map.insert(last.to_string(), n.to_string());
-                        }
-                    }
+    if let Ok(content) = fs::read_to_string(projects_file).await
+        && let Ok(val) = serde_json::from_str::<Value>(&content)
+        && let Some(projects) = val["projects"].as_object()
+    {
+        for (path, name) in projects {
+            if let Some(n) = name.as_str() {
+                map.insert(path.clone(), n.to_string());
+                if let Some(last) = path.split('/').next_back() {
+                    map.insert(last.to_string(), n.to_string());
                 }
             }
         }

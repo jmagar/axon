@@ -51,10 +51,11 @@ pub async fn retrieve_result(
             }
         }
     }
-    if points.is_empty() && !had_success {
-        if let Some(err) = first_error {
-            return Err(format!("retrieve failed for all URL variants: {err}").into());
-        }
+    if points.is_empty()
+        && !had_success
+        && let Some(err) = first_error
+    {
+        return Err(format!("retrieve failed for all URL variants: {err}").into());
     }
     if points.is_empty() {
         return Ok((0, String::new()));

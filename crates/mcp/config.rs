@@ -63,10 +63,10 @@ pub fn load_mcp_config() -> Config {
             .filter(|s| !s.is_empty())
             .collect();
     }
-    if let Some(v) = env("AXON_ASK_AUTHORITATIVE_BOOST") {
-        if let Ok(f) = v.parse::<f64>() {
-            cfg.ask_authoritative_boost = f.clamp(0.0, 0.5);
-        }
+    if let Some(v) = env("AXON_ASK_AUTHORITATIVE_BOOST")
+        && let Ok(f) = v.parse::<f64>()
+    {
+        cfg.ask_authoritative_boost = f.clamp(0.0, 0.5);
     }
     if let Some(v) = env("AXON_ASK_AUTHORITATIVE_ALLOWLIST") {
         cfg.ask_authoritative_allowlist = v
@@ -75,10 +75,10 @@ pub fn load_mcp_config() -> Config {
             .filter(|s| !s.is_empty())
             .collect();
     }
-    if let Some(v) = env("AXON_ASK_MIN_CITATIONS_NONTRIVIAL") {
-        if let Ok(n) = v.parse::<usize>() {
-            cfg.ask_min_citations_nontrivial = n.clamp(1, 5);
-        }
+    if let Some(v) = env("AXON_ASK_MIN_CITATIONS_NONTRIVIAL")
+        && let Ok(n) = v.parse::<usize>()
+    {
+        cfg.ask_min_citations_nontrivial = n.clamp(1, 5);
     }
 
     if let Some(v) = env("AXON_CHROME_REMOTE_URL") {

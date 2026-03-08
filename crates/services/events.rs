@@ -43,9 +43,9 @@ pub enum ServiceEvent {
 }
 
 pub fn emit(tx: &Option<mpsc::Sender<ServiceEvent>>, event: ServiceEvent) {
-    if let Some(sender) = tx {
-        if sender.try_send(event).is_err() {
-            eprintln!("[acp] event channel full — dropping event");
-        }
+    if let Some(sender) = tx
+        && sender.try_send(event).is_err()
+    {
+        eprintln!("[acp] event channel full — dropping event");
     }
 }

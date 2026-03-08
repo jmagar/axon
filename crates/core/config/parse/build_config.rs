@@ -476,12 +476,12 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
 
     // Derive output_dir from AXON_DATA_DIR when still at the clap default.
     // This unifies local dev and Docker: both write to $AXON_DATA_DIR/axon/output.
-    if cfg.output_dir == std::path::Path::new(".cache/axon-rust/output") {
-        if let Ok(data_dir) = env::var("AXON_DATA_DIR") {
-            let data_dir = data_dir.trim();
-            if !data_dir.is_empty() {
-                cfg.output_dir = std::path::PathBuf::from(data_dir).join("axon/output");
-            }
+    if cfg.output_dir == std::path::Path::new(".cache/axon-rust/output")
+        && let Ok(data_dir) = env::var("AXON_DATA_DIR")
+    {
+        let data_dir = data_dir.trim();
+        if !data_dir.is_empty() {
+            cfg.output_dir = std::path::PathBuf::from(data_dir).join("axon/output");
         }
     }
 
