@@ -16,6 +16,7 @@ type PulseChatStreamEventPayload =
     }
   | { type: 'config_options_update'; configOptions: AcpConfigOption[] }
   | { type: 'permission_request'; sessionId: string; toolCallId: string; options: string[] }
+  | { type: 'session_fallback'; newSessionId: string }
   | { type: 'heartbeat'; elapsed_ms: number }
   | { type: 'done'; response: PulseChatResponse }
   | { type: 'error'; error: string; code?: string }
