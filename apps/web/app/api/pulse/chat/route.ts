@@ -70,12 +70,6 @@ export async function POST(request: Request) {
       return apiError(400, 'Invalid tool restriction pattern', { code: 'invalid_tools_restrict' })
     }
 
-    console.log(
-      '[pulse/chat] request received: agent=%s model=%s prompt_len=%d',
-      req.agent,
-      req.model,
-      req.prompt.length,
-    )
     // last_event_id / lastEventId — now validated through Zod instead of raw body cast
     const lastEventId = req.last_event_id ?? req.lastEventId
 
@@ -303,7 +297,9 @@ export async function POST(request: Request) {
             }
             case 'permission_request': {
               const toolCallId = typeof data.tool_call_id === 'string' ? data.tool_call_id : ''
-              const options = Array.isArray(data.options) ? (data.options as string[]) : []
+              const options = Array.isArray(data.options)
+                ? data.options.filter((o): o is string => typeof o === 'string')
+                : []
               if (toolCallId && options.length > 0) {
                 emit({
                   type: 'permission_request',
@@ -352,17 +348,6 @@ export async function POST(request: Request) {
           flags: wsFlags,
           signal: request.signal,
           onJson: (payload) => {
-            const payloadType =
-              payload && typeof payload === 'object' && !Array.isArray(payload)
-                ? (payload as Record<string, unknown>).type
-                : undefined
-            console.log(
-              '[pulse/chat] onJson event:',
-              payloadType,
-              payload && typeof payload === 'object'
-                ? `keys=${Object.keys(payload as object).join(',')}`
-                : typeof payload,
-            )
             handlePulsePayload(payload)
           },
           onDone: ({ exit_code }) => {
