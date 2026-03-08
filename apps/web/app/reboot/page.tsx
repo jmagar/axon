@@ -1,5 +1,5 @@
 import { AxonShell } from '@/components/reboot/axon-shell'
 
-export default function RebootPage() {
+export default function AxonPage() {
   return <AxonShell />
 }
