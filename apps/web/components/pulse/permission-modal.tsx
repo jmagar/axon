@@ -154,7 +154,8 @@ export function PermissionModal({
                   key={optionId}
                   type="button"
                   onClick={() => handleSelect(optionId)}
-                  className="rounded-md bg-[rgba(175,215,255,0.1)] px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[rgba(175,215,255,0.2)]"
+                  disabled={autoApprove}
+                  className="rounded-md bg-[rgba(175,215,255,0.1)] px-4 py-2 text-left text-sm text-[var(--text-secondary)] transition-colors hover:bg-[rgba(175,215,255,0.2)] disabled:pointer-events-none disabled:opacity-50"
                 >
                   {optionId}
                 </button>

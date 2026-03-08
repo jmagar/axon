@@ -414,7 +414,7 @@ function AlignButton({
   const editor = useEditorRef()
   const currentAlign = useEditorSelector((ed) => {
     const entry = ed.api.block({ highest: true })
-    return (entry?.[0] as { textAlign?: string })?.textAlign ?? 'start'
+    return (entry?.[0] as { align?: string })?.align ?? 'start'
   }, [])
 
   const isPressed =

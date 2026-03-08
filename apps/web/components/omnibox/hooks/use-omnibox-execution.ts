@@ -72,14 +72,9 @@ export function useOmniboxExecution({
       if (!trimmedInput && !NO_INPUT_MODES.has(execMode)) return
       const shouldRunCommand = shouldRunCommandForInput(execMode, trimmedInput)
       if (!shouldRunCommand) {
-        console.log(
-          '[omnibox] pulse path — mode:',
-          execMode,
-          'workspaceMode:',
-          workspaceMode,
-          'input:',
-          trimmedInput.slice(0, 80),
-        )
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[omnibox] pulse path — mode:', execMode, 'workspaceMode:', workspaceMode)
+        }
         if (workspaceMode !== 'pulse') {
           activateWorkspace('pulse')
         }

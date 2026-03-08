@@ -30,9 +30,18 @@ export function Confirmation({ className, children }: HTMLAttributes<HTMLDivElem
   )
 }
 
-export function ConfirmationTrigger(props: ComponentProps<typeof Button>) {
+export function ConfirmationTrigger({ onClick, ...props }: ComponentProps<typeof Button>) {
   const { setOpen } = useConfirmationContext()
-  return <Button type="button" onClick={() => setOpen(true)} {...props} />
+  return (
+    <Button
+      type="button"
+      {...props}
+      onClick={(event) => {
+        onClick?.(event)
+        setOpen(true)
+      }}
+    />
+  )
 }
 
 export function ConfirmationContent({
@@ -101,21 +110,31 @@ export function ConfirmationContent({
   )
 }
 
-export function ConfirmationCancel(props: ComponentProps<typeof Button>) {
-  const { setOpen } = useConfirmationContext()
-  return <Button type="button" variant="ghost" onClick={() => setOpen(false)} {...props} />
-}
-
-export function ConfirmationAction(props: ComponentProps<typeof Button>) {
+export function ConfirmationCancel({ onClick, ...props }: ComponentProps<typeof Button>) {
   const { setOpen } = useConfirmationContext()
   return (
     <Button
       type="button"
+      variant="ghost"
+      {...props}
       onClick={(event) => {
-        props.onClick?.(event)
+        onClick?.(event)
         setOpen(false)
       }}
+    />
+  )
+}
+
+export function ConfirmationAction({ onClick, ...props }: ComponentProps<typeof Button>) {
+  const { setOpen } = useConfirmationContext()
+  return (
+    <Button
+      type="button"
       {...props}
+      onClick={(event) => {
+        onClick?.(event)
+        setOpen(false)
+      }}
     />
   )
 }

@@ -2,6 +2,7 @@
 
 import { ChevronDownIcon, TerminalSquareIcon } from 'lucide-react'
 import type { ComponentProps } from 'react'
+import { useState } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 
@@ -31,6 +32,8 @@ export function ToolHeader({
   title: string
   description?: string
 }) {
+  const [open, setOpen] = useState(true)
+
   return (
     <CollapsibleTrigger asChild>
       <button
@@ -40,6 +43,10 @@ export function ToolHeader({
         )}
         type="button"
         {...props}
+        onClick={(event) => {
+          setOpen((prev) => !prev)
+          props.onClick?.(event)
+        }}
       >
         <div className="flex min-w-0 items-center gap-3">
           <TerminalSquareIcon className="size-4 shrink-0 text-[var(--axon-primary)]" />
@@ -50,7 +57,12 @@ export function ToolHeader({
             ) : null}
           </div>
         </div>
-        <ChevronDownIcon className="size-4 shrink-0 text-[var(--text-dim)] transition-transform data-[state=closed]:-rotate-90" />
+        <ChevronDownIcon
+          className={cn(
+            'size-4 shrink-0 text-[var(--text-dim)] transition-transform',
+            !open && '-rotate-90',
+          )}
+        />
       </button>
     </CollapsibleTrigger>
   )
