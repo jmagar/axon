@@ -64,7 +64,9 @@ function RailContent({
       if (!normalizedQuery) return true
       return (
         session.preview?.toLowerCase().includes(normalizedQuery) ||
-        session.project?.toLowerCase().includes(normalizedQuery)
+        session.project?.toLowerCase().includes(normalizedQuery) ||
+        session.repo?.toLowerCase().includes(normalizedQuery) ||
+        session.branch?.toLowerCase().includes(normalizedQuery)
       )
     })
 
@@ -73,7 +75,7 @@ function RailContent({
         {filteredSessions.map((session) => {
           const isActive = session.id === activeSessionId
           const title = session.preview?.slice(0, 60) ?? session.project ?? 'Untitled'
-          const meta = session.project ?? ''
+          const meta = session.repo ?? session.project ?? ''
           return (
             <li key={session.id}>
               <button
@@ -91,6 +93,9 @@ function RailContent({
                   </div>
                   {meta ? (
                     <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{meta}</div>
+                  ) : null}
+                  {session.branch ? (
+                    <span className="text-xs text-muted-foreground">{session.branch}</span>
                   ) : null}
                 </div>
               </button>
