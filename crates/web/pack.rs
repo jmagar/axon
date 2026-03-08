@@ -66,6 +66,7 @@ fn escape_xml_attr(s: &str) -> String {
         match ch {
             '&' => out.push_str("&amp;"),
             '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             _ => out.push(ch),
@@ -216,13 +217,17 @@ mod tests {
 
     #[test]
     fn pack_xml_single_quote_in_domain() {
-        // Single quotes are NOT in the escape_xml_attr match arms (only &, ", <, >).
-        // They pass through verbatim — this test documents that behaviour.
+        // Single quotes in XML attribute values must be escaped to &apos; so that
+        // an attribute delimited by single quotes cannot be broken by the value.
         let result = build_pack_xml("it's-weird.com", &[]);
-        // Must not panic; single quote appears verbatim (not escaped to &apos;)
+        // Must not panic; single quote must be escaped to &apos;
         assert!(
-            result.contains("it's-weird.com"),
-            "single quote should appear verbatim"
+            result.contains("it&apos;s-weird.com"),
+            "single quote must be escaped to &apos;, got: {result}"
+        );
+        assert!(
+            !result.contains("it's-weird.com"),
+            "raw single quote must not appear in XML attribute"
         );
     }
 

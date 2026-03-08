@@ -1,6 +1,28 @@
 //! ZIP archive creation for download routes.
 
 use std::io::Write;
+use std::path::{Component, Path};
+
+/// Sanitize a relative path for use as a zip entry name.
+///
+/// Strips all `..`, `.`, and absolute-path components, keeping only
+/// `Normal` components. Returns `None` if the result is empty (so the
+/// caller can skip the entry entirely).
+fn sanitize_zip_entry_path(rel_path: &str) -> Option<String> {
+    let sanitized: std::path::PathBuf = Path::new(rel_path)
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    let s = sanitized.to_string_lossy();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.into_owned())
+    }
+}
 
 /// Build a ZIP archive from entries. Runs in a blocking context.
 pub(crate) fn build_zip(
@@ -15,7 +37,10 @@ pub(crate) fn build_zip(
         .compression_method(zip::CompressionMethod::Deflated);
 
     for (_, rel_path, content) in entries {
-        zip.start_file(rel_path, options)?;
+        let Some(safe_path) = sanitize_zip_entry_path(rel_path) else {
+            continue;
+        };
+        zip.start_file(safe_path, options)?;
         zip.write_all(content.as_bytes())?;
     }
 
@@ -51,10 +76,11 @@ mod tests {
 
     #[test]
     fn zip_slip_dotdot_entry_name() {
-        // `build_zip` passes the caller-supplied rel_path directly to the zip writer.
-        // This test documents the current behaviour: the zip crate v8 stores the name
-        // verbatim and does NOT normalise `../` components. Any zip-slip defence must
-        // therefore be enforced by the caller before invoking `build_zip`.
+        // `build_zip` sanitises rel_path before handing it to the zip writer.
+        // `../../../etc/passwd` is sanitised by stripping all `..` (ParentDir)
+        // components, keeping only Normal components: the stored entry name
+        // becomes "etc/passwd" — safe and contained within any extraction root.
+        // Crucially, no `..` traversal components survive into the archive.
         let entries = vec![(
             "https://example.com".to_string(),
             "../../../etc/passwd".to_string(),
@@ -63,22 +89,26 @@ mod tests {
         let bytes = build_zip("example.com", &entries).expect("zip should build");
         assert_eq!(&bytes[0..2], b"PK", "result must still be a valid ZIP");
 
-        // Read back the archive and inspect all entry names.
+        // Read back the archive and verify no traversal components survived.
         let cursor = std::io::Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor).expect("should parse as ZIP");
         let entry_names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().to_string())
             .collect();
 
-        // Document: the zip crate stores the path verbatim — it contains `..`.
-        // A consumer that naively extracts to a directory is vulnerable to zip-slip.
-        // Callers MUST sanitise rel_path before passing it to build_zip.
+        // No entry may start with or contain `..` path components.
         let has_traversal = entry_names
             .iter()
-            .any(|n| n.starts_with("..") || n.contains("../"));
+            .any(|n| n.starts_with("..") || n.contains("../") || n.contains("/.."));
         assert!(
-            has_traversal,
-            "zip crate v8 stores '../' verbatim — caller must sanitise: {entry_names:?}"
+            !has_traversal,
+            "no entry may contain '..' components: {entry_names:?}"
+        );
+        // The surviving entry must be the sanitised name with no leading `..`.
+        assert_eq!(
+            entry_names,
+            vec!["etc/passwd".to_string()],
+            "sanitised path should strip leading '..' components"
         );
     }
 

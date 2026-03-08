@@ -22,7 +22,7 @@ impl std::fmt::Display for LogLevel {
 
 impl From<&str> for LogLevel {
     fn from(s: &str) -> Self {
-        match s {
+        match s.to_ascii_lowercase().as_str() {
             "warn" | "warning" => Self::Warn,
             "error" => Self::Error,
             _ => Self::Info,
@@ -72,14 +72,17 @@ mod tests {
         assert_eq!(LogLevel::from("info"), LogLevel::Info);
     }
 
-    /// Anything not explicitly matched ("debug", "trace", uppercase) falls
-    /// through to the `_` arm which returns `Info` — the default variant.
+    /// Anything not explicitly matched ("debug", "trace") falls through to the
+    /// `_` arm which returns `Info` — the default variant.
+    /// Matching is case-insensitive, so uppercase variants are now handled.
     #[test]
     fn log_level_from_str_unknown_defaults_to_info() {
         assert_eq!(LogLevel::from("debug"), LogLevel::Info);
         assert_eq!(LogLevel::from("trace"), LogLevel::Info);
-        // Case-sensitive: "WARN" does not match the "warn" arm.
-        assert_eq!(LogLevel::from("WARN"), LogLevel::Info);
+        // Case-insensitive: "WARN" now maps to Warn, not Info.
+        assert_eq!(LogLevel::from("WARN"), LogLevel::Warn);
+        assert_eq!(LogLevel::from("ERROR"), LogLevel::Error);
+        assert_eq!(LogLevel::from("WARNING"), LogLevel::Warn);
     }
 
     #[test]
