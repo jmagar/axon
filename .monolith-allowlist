@@ -28,7 +28,7 @@ apps/web/hooks/use-ws-messages.ts  # expires: 2026-03-12
 apps/web/components/pulse/pulse-chat-pane.tsx  # expires: 2026-03-12
 
 # expires: 2026-03-14 — Zed alignment: reboot shell + WS handler; split pending.
-apps/web/components/reboot/reboot-shell.tsx  # expires: 2026-03-14
+apps/web/components/reboot/axon-shell.tsx  # expires: 2026-03-14
 crates/web.rs  # expires: 2026-03-14
 apps/web/components/reboot/lobe-shell.tsx  # expires: 2026-03-14
 apps/web/components/reboot/workflow-shell.tsx  # expires: 2026-03-14
