@@ -309,6 +309,10 @@ fn append_codex_model_override(
     if !is_codex_adapter(adapter) {
         return Ok(adapter.clone());
     }
+    // Skip Gemini model names forwarded to a Codex adapter (stale model from agent switch).
+    if model.to_ascii_lowercase().starts_with("gemini") {
+        return Ok(adapter.clone());
+    }
     validate_model_string(&model)?;
     let mut next = adapter.clone();
     next.args.push("-c".to_string());
@@ -324,6 +328,13 @@ fn append_gemini_model_override(
         return Ok(adapter.clone());
     };
     if !is_gemini_adapter(adapter) {
+        return Ok(adapter.clone());
+    }
+    // Only forward model names that look like Gemini models.
+    // Claude/Codex model names (e.g. "sonnet", "opus", "o3") must not be
+    // forwarded to the Gemini adapter — the Google API returns
+    // "Requested entity was not found." for unknown model identifiers.
+    if !model.to_ascii_lowercase().starts_with("gemini") {
         return Ok(adapter.clone());
     }
     validate_model_string(&model)?;
@@ -927,6 +938,15 @@ async fn run_prompt_turn(
                         .new_session(NewSessionRequest::new(fallback_cwd))
                         .await
                         .map_err(|e| e.to_string())?;
+                    emit(
+                        &tx,
+                        ServiceEvent::AcpBridge {
+                            event: AcpBridgeEvent::SessionFallback {
+                                old_session_id: requested_session_id.0.to_string(),
+                                new_session_id: response.session_id.0.to_string(),
+                            },
+                        },
+                    );
                     (response.session_id, response.config_options)
                 }
             }
@@ -955,16 +975,15 @@ async fn run_prompt_turn(
                 },
             );
         }
-    } else if gemini_adapter {
-        if let Some(fallback_options) = read_gemini_cached_model_options(req.model.as_deref()).await
-        {
-            emit(
-                &tx,
-                ServiceEvent::AcpBridge {
-                    event: AcpBridgeEvent::ConfigOptionsUpdate(fallback_options),
-                },
-            );
-        }
+    } else if gemini_adapter
+        && let Some(fallback_options) = read_gemini_cached_model_options(req.model.as_deref()).await
+    {
+        emit(
+            &tx,
+            ServiceEvent::AcpBridge {
+                event: AcpBridgeEvent::ConfigOptionsUpdate(fallback_options),
+            },
+        );
     }
 
     // If the caller requested a specific model and the agent advertises a model config option,
@@ -1301,6 +1320,15 @@ async fn run_session_probe(
                             .new_session(NewSessionRequest::new(fallback_cwd))
                             .await
                             .map_err(|e| e.to_string())?;
+                        emit(
+                            &tx,
+                            ServiceEvent::AcpBridge {
+                                event: AcpBridgeEvent::SessionFallback {
+                                    old_session_id: requested_session_id.0.to_string(),
+                                    new_session_id: response.session_id.0.to_string(),
+                                },
+                            },
+                        );
                         (response.session_id, response.config_options)
                     }
                 }
@@ -1330,17 +1358,16 @@ async fn run_session_probe(
                     },
                 );
             }
-        } else if gemini_adapter {
-            if let Some(fallback_options) =
+        } else if gemini_adapter
+            && let Some(fallback_options) =
                 read_gemini_cached_model_options(req.model.as_deref()).await
-            {
-                emit(
-                    &tx,
-                    ServiceEvent::AcpBridge {
-                        event: AcpBridgeEvent::ConfigOptionsUpdate(fallback_options),
-                    },
-                );
-            }
+        {
+            emit(
+                &tx,
+                ServiceEvent::AcpBridge {
+                    event: AcpBridgeEvent::ConfigOptionsUpdate(fallback_options),
+                },
+            );
         }
 
         if let Some(requested_model) = normalized_requested_model(req.model.as_deref())
@@ -1657,8 +1684,28 @@ mod tests {
 
     #[test]
     fn append_gemini_model_override_rejects_invalid_chars() {
+        // Must use a "gemini-" prefixed name so it passes the adapter guard,
+        // then hits validate_model_string for the shell-injection check.
         let adapter = make_adapter("gemini");
-        let result = append_gemini_model_override(&adapter, Some("model;rm -rf"));
+        let result = append_gemini_model_override(&adapter, Some("gemini-3;rm -rf"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn append_gemini_model_override_skips_claude_model_name() {
+        // "sonnet" / "opus" / "haiku" are Claude model names — must not be forwarded to Gemini.
+        let adapter = make_adapter("gemini");
+        let result = append_gemini_model_override(&adapter, Some("sonnet")).unwrap();
+        assert_eq!(result.args, vec!["--experimental-acp"]);
+        let result = append_gemini_model_override(&adapter, Some("opus")).unwrap();
+        assert_eq!(result.args, vec!["--experimental-acp"]);
+    }
+
+    #[test]
+    fn append_codex_model_override_skips_gemini_model_name() {
+        // Gemini model names must not be forwarded to the Codex adapter.
+        let adapter = make_adapter("codex");
+        let result = append_codex_model_override(&adapter, Some("gemini-3-pro-preview")).unwrap();
+        assert_eq!(result.args, vec!["--experimental-acp"]);
     }
 }
