@@ -59,10 +59,16 @@ export function useShellSession({ onOutput }: UseShellSessionOptions): UseShellS
     const loc = globalThis.location
     const proto = loc?.protocol === 'https:' ? 'wss:' : 'ws:'
     const envUrl = process.env.NEXT_PUBLIC_AXON_WS_URL
+    const isDev =
+      process.env.NODE_ENV === 'development' ||
+      process.env.NEXT_PUBLIC_AXON_WEB_ALLOW_INSECURE_DEV === 'true'
     let base: string
     if (envUrl) {
       base = envUrl.replace(/\/ws$/, '')
-    } else if (loc?.port === '49010') {
+    } else if (isDev && loc?.port === '49010') {
+      // In dev, Next.js Turbopack does not forward WebSocket upgrades via
+      // rewrites() for /ws/shell, so bypass the proxy and connect directly
+      // to the Rust serve on port 49000 which has a native /ws/shell handler.
       base = `${proto}//${loc.hostname}:49000`
     } else {
       base = `${proto}//${loc?.host ?? 'localhost'}`
