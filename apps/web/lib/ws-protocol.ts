@@ -37,6 +37,11 @@ export type WsServerMsg =
   | WsV2ArtifactListMsg
   | WsV2ArtifactContentMsg
   | WsV2JobCancelResponseMsg
+  | { type: 'assistant_delta'; session_id?: string; delta: string; tool_call_id?: string | null }
+  | { type: 'thinking_content'; session_id?: string; content: string; tool_call_id?: string | null }
+  | { type: 'session_fallback'; old_session_id: string; new_session_id: string }
+  | { type: 'result'; session_id?: string; result?: string; [key: string]: unknown }
+  | { type: 'error'; message?: string; [key: string]: unknown }
 
 export interface WsV2CommandContext {
   exec_id: string
