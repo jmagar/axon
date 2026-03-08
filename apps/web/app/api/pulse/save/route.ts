@@ -123,8 +123,12 @@ export async function POST(request: Request) {
     const { filename } = meta
 
     if (embed) {
+      const isLocalDev =
+        process.env.NODE_ENV === 'development' || process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
       const teiUrl = process.env.TEI_URL
-      const qdrantUrl = resolveLocalUrl(process.env.QDRANT_URL)
+      const qdrantUrl = isLocalDev
+        ? resolveLocalUrl(process.env.QDRANT_URL)
+        : process.env.QDRANT_URL
       const collection = collections?.[0] ?? process.env.AXON_COLLECTION ?? 'cortex'
 
       if (teiUrl && qdrantUrl && markdown.trim()) {
