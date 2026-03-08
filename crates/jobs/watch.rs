@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::common::make_pool;
+use crate::crates::jobs::common::{begin_schema_migration_tx, make_pool};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
@@ -7,6 +7,7 @@ use std::error::Error;
 use uuid::Uuid;
 
 static SCHEMA_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+const WATCH_SCHEMA_LOCK_KEY: i64 = 0x7761_7463_6800_0000_i64;
 const WATCH_CLAIM_LEASE_SECS: i64 = 300;
 pub const WATCH_RUN_STATUS_RUNNING: &str = "running";
 pub const WATCH_RUN_STATUS_COMPLETED: &str = "completed";
@@ -60,6 +61,8 @@ pub(crate) async fn ensure_schema_once(pool: &PgPool) -> Result<(), sqlx::Error>
 }
 
 async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let mut tx = begin_schema_migration_tx(pool, WATCH_SCHEMA_LOCK_KEY).await?;
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS axon_watch_defs (
@@ -77,13 +80,13 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_axon_watch_defs_due ON axon_watch_defs(next_run_at ASC) WHERE enabled = TRUE",
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
@@ -102,13 +105,13 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_axon_watch_runs_watch_id ON axon_watch_runs(watch_id, created_at DESC)",
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query(
@@ -123,9 +126,10 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
