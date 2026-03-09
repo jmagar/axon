@@ -1,21 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MessageItem } from './use-axon-session'
+import type { AxonMessage } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
 
-const STREAMING_TIMEOUT_MS = 60_000
-// How long to wait for session_persisted before falling back to the session_id
-// from the result event. Must be > the backend's 5s polling window.
-const SESSION_PERSIST_FALLBACK_MS = 6_000
+const STREAMING_TIMEOUT_MS = 300_000
 
 interface UseAxonAcpOptions {
   activeSessionId: string | null
   agent?: string
   onSessionIdChange: (newId: string) => void
   onSessionFallback?: (oldId: string, newId: string) => void
-  onMessagesChange: (updater: (prev: MessageItem[]) => MessageItem[]) => void
+  onMessagesChange: (updater: (prev: AxonMessage[]) => AxonMessage[]) => void
   onTurnComplete?: () => void
+  onEditorUpdate?: (content: string, operation: 'replace' | 'append') => void
 }
 
 export function useAxonAcp({
@@ -25,14 +23,11 @@ export function useAxonAcp({
   onSessionFallback,
   onMessagesChange,
   onTurnComplete,
+  onEditorUpdate,
 }: UseAxonAcpOptions) {
   const [isStreaming, setIsStreaming] = useState(false)
   const streamingIdRef = useRef<string | null>(null)
   const streamingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Holds the session_id from the result event until session_persisted confirms
-  // the file is on disk (or the fallback timer fires).
-  const pendingSessionIdRef = useRef<string | null>(null)
-  const persistFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { send, subscribe, status } = useAxonWs()
   const connected = status === 'connected'
 
@@ -84,40 +79,21 @@ export function useAxonAcp({
         }
 
         case 'result': {
+          // Check BEFORE clearing — if already null the turn timed out; skip
+          // onTurnComplete/onSessionIdChange to prevent a late result from a
+          // slow agent (e.g. Gemini) polluting the next turn's session state.
+          const wasActiveTurn = streamingIdRef.current !== null
           const newSessionId = msg.session_id as string | undefined
           if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
           setIsStreaming(false)
           streamingIdRef.current = null
-          onTurnComplete?.()
-          if (newSessionId) {
-            // Hold the session_id — wait for session_persisted to confirm the
-            // file is on disk before triggering the session fetch.
-            pendingSessionIdRef.current = newSessionId
-            if (persistFallbackRef.current) clearTimeout(persistFallbackRef.current)
-            persistFallbackRef.current = setTimeout(() => {
-              persistFallbackRef.current = null
-              const sid = pendingSessionIdRef.current
-              if (sid) {
-                pendingSessionIdRef.current = null
-                console.debug('[acp] session_persisted fallback fired for', sid)
-                onSessionIdChange(sid)
-              }
-            }, SESSION_PERSIST_FALLBACK_MS)
-          }
-          break
-        }
-
-        case 'session_persisted': {
-          // Backend confirmed the .jsonl file is on disk — safe to fetch now.
-          const sid = (msg.session_id as string) ?? ''
-          if (sid) {
-            if (persistFallbackRef.current) {
-              clearTimeout(persistFallbackRef.current)
-              persistFallbackRef.current = null
+          if (wasActiveTurn) {
+            onTurnComplete?.()
+            // With the persistent adapter, session data is written incrementally —
+            // trigger session fetch immediately without waiting for a polling event.
+            if (newSessionId) {
+              onSessionIdChange(newSessionId)
             }
-            pendingSessionIdRef.current = null
-            console.debug('[acp] session_persisted confirmed on disk:', sid)
-            onSessionIdChange(sid)
           }
           break
         }
@@ -137,22 +113,33 @@ export function useAxonAcp({
           }
           break
         }
+
+        case 'editor_update': {
+          const content = (msg.content as string) ?? ''
+          const raw = msg.operation as string | undefined
+          const operation: 'replace' | 'append' = raw === 'append' ? 'append' : 'replace'
+          onEditorUpdate?.(content, operation)
+          break
+        }
       }
     })
     return () => {
-      // Clear all pending timeouts to prevent setState/onMessagesChange calls
+      // Clear pending timeout to prevent setState/onMessagesChange calls
       // after the hook is unmounted.
       if (streamingTimeoutRef.current) {
         clearTimeout(streamingTimeoutRef.current)
         streamingTimeoutRef.current = null
       }
-      if (persistFallbackRef.current) {
-        clearTimeout(persistFallbackRef.current)
-        persistFallbackRef.current = null
-      }
       unsubscribe()
     }
-  }, [subscribe, onMessagesChange, onSessionIdChange, onSessionFallback, onTurnComplete])
+  }, [
+    subscribe,
+    onMessagesChange,
+    onSessionIdChange,
+    onSessionFallback,
+    onTurnComplete,
+    onEditorUpdate,
+  ])
 
   const submitPrompt = useCallback(
     (prompt: string) => {

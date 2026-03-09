@@ -10,7 +10,7 @@ import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-sw
 import { Button } from '@/components/ui/button'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
-import type { MessageItem } from '@/hooks/use-axon-session'
+import type { AxonMessage } from '@/hooks/use-axon-session'
 import { useAxonSession } from '@/hooks/use-axon-session'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
@@ -24,11 +24,11 @@ import { AxonFrame } from './axon-frame'
 import { AxonLogsDialog } from './axon-logs-dialog'
 import { AxonMcpDialog } from './axon-mcp-dialog'
 import { AxonMessageList } from './axon-message-list'
-import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-mock-data'
 import { AxonPaneHandle } from './axon-pane-handle'
 import { AxonPromptComposer } from './axon-prompt-composer'
 import { AxonSidebar } from './axon-sidebar'
 import { AxonTerminalDialog } from './axon-terminal-dialog'
+import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-ui-config'
 import { McpIcon } from './mcp-config'
 
 const PulseEditorPane = dynamic(
@@ -146,7 +146,7 @@ export function AxonShell() {
   const [logsOpen, setLogsOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
   const [sessionKey, setSessionKey] = useState(0)
-  const [liveMessages, setLiveMessages] = useState<MessageItem[]>([])
+  const [liveMessages, setLiveMessages] = useState<AxonMessage[]>([])
   const [activeFile, setActiveFile] = useState('')
   const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
@@ -162,22 +162,41 @@ export function AxonShell() {
   // Load JSONL history for the active session
   const {
     messages: historicalMessages,
-    loading: sessionLoading,
+    loading: sessionLoadingBase,
     error: sessionError,
     reload: reloadSession,
   } = useAxonSession(activeSessionId)
+
+  // Treat as loading for the one-render window between activeSessionId changing and
+  // useAxonSession's effect setting loading=true.  Without this, the sync effect below
+  // fires with sessionLoading=false + historicalMessages=[] and clears live messages.
+  const sessionLoading =
+    sessionLoadingBase ||
+    (activeSessionId !== null && historicalMessages.length === 0 && !sessionError)
 
   const onSessionIdChange = useCallback((newId: string) => {
     setActiveSessionId(newId)
   }, [])
 
-  const onMessagesChange = useCallback((updater: (prev: MessageItem[]) => MessageItem[]) => {
+  const onMessagesChange = useCallback((updater: (prev: AxonMessage[]) => AxonMessage[]) => {
     setLiveMessages(updater)
   }, [])
 
   const onTurnComplete = useCallback(() => {
     reloadSessions()
-  }, [reloadSessions])
+    reloadSession()
+  }, [reloadSessions, reloadSession])
+
+  const onEditorUpdate = useCallback((content: string, operation: 'replace' | 'append') => {
+    setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
+    // Ensure the editor pane is visible when the agent writes to it.
+    setEditorOpen(true)
+    try {
+      window.localStorage.setItem(EDITOR_OPEN_STORAGE_KEY, 'true')
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
     activeSessionId,
@@ -186,15 +205,27 @@ export function AxonShell() {
     onSessionFallback: undefined,
     onMessagesChange,
     onTurnComplete,
+    onEditorUpdate,
   })
 
-  // Sync JSONL history into live messages when session changes.
-  // Guard against overwriting a partially-streamed assistant message when
-  // session_fallback triggers a new sessionId mid-stream.
+  // Ref-based streaming guard: lets the sync effect read streaming state without
+  // being in its dependency array. Without this, the effect fires when isStreaming
+  // goes false → overwrites live messages with stale historicalMessages.
+  const isStreamingRef = useRef(false)
   useEffect(() => {
-    if (isStreaming) return
+    isStreamingRef.current = isStreaming
+  }, [isStreaming])
+
+  // Sync JSONL history into live messages when session changes or reloads.
+  // Guard against overwriting live messages mid-stream or during load.
+  // isStreaming intentionally excluded from deps — use isStreamingRef so this
+  // effect only re-runs when historicalMessages/sessionLoading/sessionError change.
+  useEffect(() => {
+    if (isStreamingRef.current) return
+    if (sessionLoading) return
+    if (sessionError) return
     setLiveMessages(historicalMessages)
-  }, [historicalMessages, isStreaming])
+  }, [historicalMessages, sessionLoading, sessionError])
 
   // Derive active session metadata for display
   const activeSession = useMemo(
@@ -557,11 +588,7 @@ export function AxonShell() {
     connected,
   } as const
 
-  // Cast liveMessages to the shape AxonMessageList expects.
-  // The types overlap on the fields AxonMessageList actually renders:
-  // id, role, content, files?, blocks?, steps?, reasoning?, timestamp?.
-  // Surplus fields (streaming, chainOfThought) are ignored at render time.
-  const displayMessages = liveMessages as unknown as import('./axon-mock-data').MessageItem[]
+  const displayMessages = liveMessages
 
   const transitionClass =
     isDragging || !layoutRestored ? '' : 'transition-[width,flex] duration-300 ease-out'

@@ -16,7 +16,47 @@ import {
   MessageResponse,
 } from '@/components/ai-elements/message'
 import { QueueItemAttachment } from '@/components/ai-elements/queue'
-import type { MessageItem } from './axon-mock-data'
+import type { AxonMessage } from '@/hooks/use-axon-session'
+
+// ── <axon:editor> block parsing ───────────────────────────────────────────────
+
+interface EditorBlock {
+  content: string
+  operation: 'replace' | 'append'
+}
+
+const EDITOR_BLOCK_RE = /<axon:editor(?:\s[^>]*)?>[\s\S]*?<\/axon:editor>/g
+
+function parseEditorBlocks(content: string): { displayText: string; blocks: EditorBlock[] } {
+  const blocks: EditorBlock[] = []
+  const displayText = content.replace(EDITOR_BLOCK_RE, (match) => {
+    const opMatch = match.match(/op="(replace|append)"/)
+    const operation: 'replace' | 'append' = opMatch?.[1] === 'append' ? 'append' : 'replace'
+    const contentMatch = match.match(/<axon:editor[^>]*>([\s\S]*?)<\/axon:editor>/)
+    const blockContent = contentMatch?.[1]?.trim() ?? ''
+    if (blockContent) blocks.push({ content: blockContent, operation })
+    return ''
+  })
+  return { displayText: displayText.trim(), blocks }
+}
+
+function EditorWriteCard({ content, operation }: EditorBlock) {
+  const lines = content.split('\n')
+  const preview = lines.slice(0, 3).join('\n')
+  const hasMore = lines.length > 3
+  return (
+    <div className="mt-2 rounded-lg border border-[rgba(130,200,130,0.2)] bg-[rgba(10,30,10,0.5)] px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[rgba(120,210,120,0.85)]">
+        <Pencil className="size-3 shrink-0" />
+        <span>Editor · {operation}</span>
+      </div>
+      <pre className="mt-1.5 max-h-14 overflow-hidden whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[var(--text-dim)]">
+        {preview}
+        {hasMore ? '\n…' : ''}
+      </pre>
+    </div>
+  )
+}
 
 /** Accepts a Unix-ms number or an already-formatted string and returns a locale time string. */
 function formatTimestamp(ts: number | string | undefined): string | null {
@@ -46,7 +86,7 @@ export const AxonMessageList = memo(function AxonMessageList({
   error = null,
   onRetry,
 }: {
-  messages: MessageItem[]
+  messages: AxonMessage[]
   agentName: string
   sessionKey: number
   copiedId: string | null
@@ -149,13 +189,28 @@ export const AxonMessageList = memo(function AxonMessageList({
                 />
               </div>
             ) : (
-              <MessageResponse>{message.content}</MessageResponse>
+              (() => {
+                const { displayText, blocks } = parseEditorBlocks(message.content)
+                return (
+                  <>
+                    {displayText ? <MessageResponse>{displayText}</MessageResponse> : null}
+                    {blocks.map((block, i) => (
+                      <EditorWriteCard
+                        key={i}
+                        content={block.content}
+                        operation={block.operation}
+                      />
+                    ))}
+                  </>
+                )
+              })()
             )}
             {(() => {
               const thinkingBlock = message.blocks?.find((b) => b.type === 'thinking') as
                 | { type: 'thinking'; content: string }
                 | undefined
-              const hasChainOfThought = message.steps?.length || message.reasoning || thinkingBlock
+              const hasChainOfThought =
+                message.steps?.length || message.chainOfThought?.length || thinkingBlock
               if (!hasChainOfThought) return null
               return (
                 <ChainOfThought
@@ -172,8 +227,10 @@ export const AxonMessageList = memo(function AxonMessageList({
                         status={step.status}
                       />
                     ))}
-                    {message.reasoning ? (
-                      <div className="mt-1 text-xs text-[var(--text-dim)]">{message.reasoning}</div>
+                    {message.chainOfThought?.length ? (
+                      <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-dim)]">
+                        {message.chainOfThought.join('')}
+                      </div>
                     ) : null}
                     {thinkingBlock ? (
                       <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-dim)]">
