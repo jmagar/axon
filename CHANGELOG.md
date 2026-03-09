@@ -1,11 +1,15 @@
 # Changelog
-Last Modified: 2026-03-08 (session: v0.11.1 — Expand test coverage across web app and Rust crates (+914 tests))
+Last Modified: 2026-03-09 (session: v0.11.2 — ACP performance/scalability fixes + modern Rust idioms)
 
-## [Unreleased] — feat/services-layer-refactor
+## [Unreleased] — refactor/acp-performance-modern-rust
 
-This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
+This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **ACP performance + scalability fixes + modern Rust (v0.11.2)** — all 19 findings from the ACP performance/scalability analysis addressed: `crates/services/acp.rs` split from 2060-line monolith into a proper module (`acp/bridge.rs`, `acp/adapters.rs`, `acp/config.rs`, `acp/mapping.rs`, `acp/runtime.rs`, `acp/session.rs`); `Arc<Mutex<AcpRuntimeState>>` replaced with `OnceLock` + `RefCell` (no lock on streaming token hot path); `Arc<Mutex<HashMap>>` permission map replaced with `DashMap`; double `serde_json::to_value`+`to_string` on every streaming token replaced with direct `to_string` + string-concat envelope (FINDING-5); `tokio::runtime::Builder` with configurable `max_blocking_threads` replaces `#[tokio::main]` default (FINDING-6); `AdapterGuard` RAII kills subprocess on drop covering all error paths; `select! { biased; }` drains events before checking process exit; MCP server config TTL cache added; ACP session concurrency semaphore (`AXON_ACP_MAX_CONCURRENT_SESSIONS`, default 8); FINDING-14 fully fixed: exit watcher `drop(exit_tx)` on clean exit instead of `send(String::new())` — receiver `Err` = clean shutdown, `Ok(msg)` = crash; `mod.rs` → `.rs` files (`acp/mod.rs` → `acp.rs`, `types/mod.rs` → `types.rs`) per Rust 2018 module conventions; all clippy warnings resolved with `#[expect]` (not `#[allow]`)
+
+- **dev-setup bootstrap script (v0.11.1)** — `scripts/dev-setup.sh` auto-detects arch, installs `just` prebuilt, auto-generates secrets on first `.env` creation, prompts for `AXON_DATA_DIR`, pre-creates container data directories, starts test infra and populates test env URLs; `Justfile` gains `test-infra-up`/`test-infra-down` recipes; hook script paths made portable via `git rev-parse`
 
 - **Test coverage expansion — web app + Rust crates (v0.11.1)** — 914 new tests across 18 files: 6 new TypeScript test files (`api-fetch`, `api/cortex-routes`, `api/sessions-routes`, `api/workspace-route`, `pulse-chat-api-lib`, `pulse-session-store`) + 5 expanded TS test files; Rust tests added to `crates/web/` (execute/args, execute/cancel, execute/files, execute/overrides, download/archive, docker_stats, pack) and `crates/services/` (acp, events, query, search, system, types); two bugs fixed: `pushCapped` array spreading via `items.concat(item)` → `[...items, item]`, `window.localStorage` SSR guard added via `getLocalStorage()` helper with `typeof window !== 'undefined'` check; zip-slip vulnerability documented in `build_zip` (entry path stored verbatim); `LogLevel` case-sensitivity documented (`"WARN"` → `Info`); XML single-quote escaping gap documented in `pack.rs`
 
