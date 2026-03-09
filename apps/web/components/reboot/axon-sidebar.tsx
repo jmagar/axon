@@ -38,6 +38,12 @@ import { FileTree } from '@/components/workspace/file-tree'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
 import { RAIL_MODES, type RailMode } from './axon-ui-config'
 
+const AGENT_BADGE: Record<string, { label: string; colorClass: string }> = {
+  claude: { label: 'C', colorClass: 'text-[#afd7ff]' },
+  codex: { label: 'Cx', colorClass: 'text-[#7dda7d]' },
+  gemini: { label: 'G', colorClass: 'text-[#7db8f7]' },
+}
+
 const PAGE_ITEMS = [
   { href: '/', label: 'Conversations', icon: MessageSquareText, group: 'primary' },
   { href: '/reboot', label: 'Axon', icon: Sparkles, group: 'primary' },
@@ -124,9 +130,18 @@ function RailContent({
                 <div className="px-3">
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-[13px] font-medium">{title}</span>
-                    <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
-                      {formatRelativeTime(session.mtimeMs)}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {session.agent && session.agent !== 'claude' ? (
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent]?.colorClass ?? ''}`}
+                        >
+                          {AGENT_BADGE[session.agent]?.label}
+                        </span>
+                      ) : null}
+                      <span className="text-[11px] text-[var(--text-dim)]">
+                        {formatRelativeTime(session.mtimeMs)}
+                      </span>
+                    </div>
                   </div>
                   {meta ? (
                     <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{meta}</div>

@@ -2,11 +2,19 @@ import { NextRequest } from 'next/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
-// Mock @/lib/sessions/session-scanner
+// Mock @/lib/sessions/session-scanner and the agent-specific scanners
 // ---------------------------------------------------------------------------
 const scanSessionsMock = vi.fn()
 vi.mock('@/lib/sessions/session-scanner', () => ({
   scanSessions: scanSessionsMock,
+}))
+
+vi.mock('@/lib/sessions/codex-scanner', () => ({
+  scanCodexSessions: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/lib/sessions/gemini-scanner', () => ({
+  scanGeminiSessions: vi.fn().mockResolvedValue([]),
 }))
 
 // ---------------------------------------------------------------------------
@@ -113,12 +121,12 @@ describe('GET /api/sessions/list', () => {
     expect('branch' in item).toBe(false)
   })
 
-  it('passes limit=20 to scanSessions', async () => {
+  it('passes perAgentLimit to scanSessions for claude sessions', async () => {
     scanSessionsMock.mockResolvedValueOnce([])
     const { GET } = await import('@/app/api/sessions/list/route')
 
     await GET()
-    expect(scanSessionsMock).toHaveBeenCalledWith(20)
+    expect(scanSessionsMock).toHaveBeenCalledWith(30, 30)
   })
 })
 

@@ -16,7 +16,7 @@ use agent_client_protocol::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
+use crate::crates::services::events::{EditorOperation, LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{
     AcpAdapterCommand, AcpBridgeEvent, AcpPromptTurnRequest, AcpTurnResultEvent,
 };
@@ -266,7 +266,12 @@ async fn run_turn_on_conn(
 
             // Emit editor write events before TurnResult so the editor updates
             // arrive before the turn-complete signal resets the streaming state.
-            for (content, operation) in parse_editor_blocks(&text) {
+            for (content, op_str) in parse_editor_blocks(&text) {
+                let operation = if op_str == "append" {
+                    EditorOperation::Append
+                } else {
+                    EditorOperation::Replace
+                };
                 emit(
                     &service_tx,
                     ServiceEvent::EditorWrite { content, operation },

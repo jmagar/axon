@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-09 (session: v0.12.0 — unified axon ingest + gh_*/reddit_* structured metadata)
+Last Modified: 2026-03-09 (session: v0.13.0 — multi-agent sessions sidebar: Claude + Codex + Gemini)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Multi-agent sessions sidebar (v0.13.0)** — `/reboot` sessions sidebar now surfaces Claude, Codex, and Gemini sessions with colored agent badge pills (CX green, G blue); `codex-scanner.ts` walks `~/.codex/sessions/{year}/{month}/{day}/*.jsonl`, `gemini-scanner.ts` walks `~/.gemini/tmp/{hash}/chats/session-*.json`; `session-utils.ts` extracted to break circular Turbopack module dependency; `codex-jsonl-parser.ts` + `gemini-json-parser.ts` parse history for the detail view; `[id]/route.ts` branches on `session.agent` to select the correct parser; per-agent representation guarantee (≥3 from each agent type) in the list route prevents all-Claude results when Claude sessions are most recent; `axon-shell.tsx` auto-switches agent selector to Codex/Gemini when a non-Claude session is clicked
 
 - **Unified `axon ingest` + structured metadata (v0.12.0)** — replaced three separate ingest commands (`axon github`, `axon reddit`, `axon youtube`) with a single `axon ingest <target>` that auto-detects source from input (GitHub slug/URL, YouTube URL/@handle/bare ID, Reddit r/name or URL); `crates/ingest/classify.rs` added with 17 tests; `gh_*` structured metadata added to all GitHub Qdrant chunks (repo, issue, PR) via new `crates/ingest/github/meta.rs`; `reddit_*` metadata added to all Reddit chunks (both subreddit listing and thread URL paths) via new `crates/ingest/reddit/meta.rs`; `regex` crate moved from `[dev-dependencies]` to `[dependencies]` (was breaking MCP compilation); `AntiBotTech.as_ref()` removed in collector.rs (spider updated enum from `Option<AntiBotTech>` to `AntiBotTech`)
 

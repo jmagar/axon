@@ -1,8 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
 import type { AxonMessage } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
+
+// Zod schema for the editor_update wire message.  Any change to this shape
+// requires updating both this schema and the Rust EditorOperation enum in
+// crates/services/events.rs — they are the single canonical definition.
+const EditorUpdateSchema = z.object({
+  type: z.literal('editor_update'),
+  content: z.string(),
+  operation: z.enum(['replace', 'append']).default('replace'),
+})
 
 const STREAMING_TIMEOUT_MS = 300_000
 
@@ -114,11 +124,66 @@ export function useAxonAcp({
           break
         }
 
+        case 'tool_use': {
+          const toolCallId = (msg.tool_call_id as string) ?? ''
+          const toolName = (msg.tool_name as string) ?? 'unknown'
+          const toolInput = (msg.tool_input as Record<string, unknown>) ?? {}
+          const sid = streamingIdRef.current
+          if (!sid) return
+          onMessagesChange((prev) =>
+            prev.map((m) =>
+              m.id === sid
+                ? {
+                    ...m,
+                    toolUses: [
+                      ...(m.toolUses ?? []),
+                      { name: toolName, input: toolInput, toolCallId, status: 'running' },
+                    ],
+                  }
+                : m,
+            ),
+          )
+          break
+        }
+
+        case 'tool_use_update': {
+          const toolCallId = (msg.tool_call_id as string) ?? ''
+          const toolStatus = (msg.tool_status as string) ?? ''
+          const toolContent = (msg.tool_content as string) ?? ''
+          const sid = streamingIdRef.current
+          if (!sid) return
+          onMessagesChange((prev) =>
+            prev.map((m) =>
+              m.id === sid
+                ? {
+                    ...m,
+                    toolUses: (m.toolUses ?? []).map((tu) =>
+                      tu.toolCallId === toolCallId
+                        ? {
+                            ...tu,
+                            status: toolStatus || tu.status,
+                            content: toolContent
+                              ? tu.content
+                                ? `${tu.content}${toolContent}`
+                                : toolContent
+                              : tu.content,
+                          }
+                        : tu,
+                    ),
+                  }
+                : m,
+            ),
+          )
+          break
+        }
+
         case 'editor_update': {
-          const content = (msg.content as string) ?? ''
-          const raw = msg.operation as string | undefined
-          const operation: 'replace' | 'append' = raw === 'append' ? 'append' : 'replace'
-          onEditorUpdate?.(content, operation)
+          const result = EditorUpdateSchema.safeParse(msg)
+          if (!result.success) {
+            console.warn('[acp] editor_update validation failed:', result.error.issues)
+            break
+          }
+          onEditorUpdate?.(result.data.content, result.data.operation)
           break
         }
       }

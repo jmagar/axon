@@ -102,9 +102,20 @@ export function PulseEditorPane({
       return
     }
     isApplyingExternalUpdateRef.current = true
-    // biome-ignore lint/suspicious/noExplicitAny: Plate editor value assignment is not strongly typed
-    ;(editor as any).children = markdownToPlateNodes(markdown) as any
-    ;(editor as unknown as { onChange: () => void }).onChange()
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: Plate editor value assignment is not strongly typed
+      ;(editor as any).children = markdownToPlateNodes(markdown) as any
+      // Null the selection before onChange so Plate's normalization doesn't try to
+      // resolve a cursor path that no longer exists in the new node tree (scraped
+      // content can have a very different structure from what was there before).
+      // biome-ignore lint/suspicious/noExplicitAny: Plate selection reset
+      ;(editor as any).selection = null
+      ;(editor as unknown as { onChange: () => void }).onChange()
+    } catch {
+      // onChange threw (e.g. a plugin normalizer failed on complex scraped content).
+      // The children were already replaced — just skip the onChange so React stays
+      // in sync on the next render cycle.
+    }
     isApplyingExternalUpdateRef.current = false
     lastAppliedMarkdownRef.current = markdown
     setWordCount(countWords(markdown))

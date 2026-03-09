@@ -43,6 +43,15 @@ interface UseAxonSessionResult {
   reload: () => void
 }
 
+// The Rust ACP adapter prepends a system context preamble to the first user message
+// in a new session so the LLM knows about editor integration. Strip it before display.
+const EDITOR_PREAMBLE_MARKER = '[User message]\n'
+
+function stripEditorPreamble(content: string): string {
+  const idx = content.indexOf(EDITOR_PREAMBLE_MARKER)
+  return idx !== -1 ? content.slice(idx + EDITOR_PREAMBLE_MARKER.length) : content
+}
+
 // Retry delays in ms for 404 responses — the session file may not be on disk yet.
 const RETRY_DELAYS_MS = [200, 400, 800, 1600, 3200, 5000]
 
@@ -92,7 +101,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
           data.messages.map((msg, i) => ({
             id: `${sessionId}-${i}`,
             role: msg.role,
-            content: msg.content,
+            content: msg.role === 'user' ? stripEditorPreamble(msg.content) : msg.content,
             timestamp: Date.now(),
           })),
         )

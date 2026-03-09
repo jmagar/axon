@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useWsMessageActions } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
+import type { AgentKind } from '@/lib/sessions/session-scanner'
 
 export interface SessionSummary {
   id: string
@@ -13,6 +14,7 @@ export interface SessionSummary {
   preview?: string
   repo?: string
   branch?: string
+  agent?: AgentKind
 }
 
 interface ParsedMessage {
