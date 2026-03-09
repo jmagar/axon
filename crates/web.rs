@@ -21,6 +21,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
 
+/// Global semaphore limiting concurrent ACP sessions (pulse_chat + pulse_chat_probe).
+/// Prevents unbounded `spawn_blocking` thread consumption — each ACP session holds a
+/// thread for up to 300 seconds.  Read from `AXON_ACP_MAX_CONCURRENT_SESSIONS` env var;
+/// default 5.  (SEC-8 / PERF-1 / PERF-10)
+pub(crate) static ACP_SESSION_SEMAPHORE: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| {
+        let max = std::env::var("AXON_ACP_MAX_CONCURRENT_SESSIONS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(5);
+        tokio::sync::Semaphore::new(max)
+    });
+
 /// Shared state across all WS connections.
 pub(crate) struct AppState {
     /// Docker stats broadcast — poller sends, every WS client subscribes.
@@ -266,6 +279,10 @@ struct WsClientMsg {
     /// Permission response: the chosen option_id.
     #[serde(default)]
     option_id: String,
+    /// Session ID context for permission_response validation (SEC-7).
+    /// Optional/backward-compatible — clients that omit it get an empty string.
+    #[serde(default)]
+    session_id: String,
 }
 
 async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
@@ -283,8 +300,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     // Per-connection state: permission response channels for active ACP sessions.
     // Shared between the execute task (which inserts senders) and the WS read
     // loop (which routes frontend permission_response messages to them).
-    let permission_responders: PermissionResponderMap =
-        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let permission_responders: PermissionResponderMap = Arc::new(DashMap::new());
 
     // Shared job_dirs registry for registering completed jobs
     let job_dirs = state.job_dirs.clone();
@@ -392,12 +408,29 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
                 "permission_response" => {
                     let tool_call_id = client_msg.tool_call_id;
                     let option_id = client_msg.option_id;
-                    if !tool_call_id.is_empty()
-                        && !option_id.is_empty()
-                        && let Ok(mut map) = permission_responders.lock()
-                        && let Some(sender) = map.remove(&tool_call_id)
-                    {
-                        let _ = sender.send(option_id);
+                    let req_session_id = client_msg.session_id;
+                    if tool_call_id.is_empty() || option_id.is_empty() {
+                        log::warn!(
+                            "permission_response with empty tool_call_id or option_id — ignoring"
+                        );
+                    } else {
+                        // SEC-7: validate the tool_call_id is known before routing.
+                        // session_id is included in the wire message for context
+                        // logging and future cross-session collision enforcement.
+                        // DashMap: remove returns Option<(K, V)> — no separate lock needed.
+                        if !req_session_id.is_empty() {
+                            log::debug!(
+                                "permission_response: tool_call_id={tool_call_id} session_id={req_session_id}"
+                            );
+                        }
+                        if let Some((_, sender)) = permission_responders.remove(&tool_call_id) {
+                            let _ = sender.send(option_id);
+                        } else {
+                            log::warn!(
+                                "permission_response for unknown tool_call_id: {tool_call_id} \
+                                 session_id={req_session_id} (already responded or wrong session)"
+                            );
+                        }
                     }
                 }
                 "read_file" => {

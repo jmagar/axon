@@ -163,40 +163,55 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
     return []
   }
 
-  const results: SessionFile[] = []
   const projectNames = await readDirEntries(root)
 
-  for (const projectName of projectNames) {
-    const projectPath = path.join(root, projectName)
-    if (!projectPath.startsWith(root + path.sep)) continue
-    if (!(await isDirEntry(projectPath))) continue
+  // Process all projects in parallel — each calls enrichWithGit (git subprocesses)
+  // and reads all session files concurrently instead of serially.
+  const perProjectResults = await Promise.all(
+    projectNames.map(async (projectName) => {
+      const projectPath = path.join(root, projectName)
+      if (!projectPath.startsWith(root + path.sep)) return []
+      if (!(await isDirEntry(projectPath))) return []
 
-    const decoded = decodeProjectPath(projectName)
-    const git = await enrichWithGit(decoded)
-    const fileNames = await readDirEntries(projectPath)
-    for (const fileName of fileNames) {
-      if (!fileName.endsWith('.jsonl')) continue
-      const absolutePath = path.join(projectPath, fileName)
-      if (!absolutePath.startsWith(root + path.sep)) continue
-      try {
-        const stat = await fs.stat(absolutePath)
-        if (!stat.isFile()) continue
-        results.push({
-          id: sessionId(absolutePath),
-          absolutePath,
-          project: cleanProjectName(projectName),
-          filename: fileName.slice(0, -'.jsonl'.length),
-          mtimeMs: stat.mtimeMs,
-          sizeBytes: stat.size,
-          preview: await extractPreview(absolutePath),
-          repo: git.repo,
-          branch: git.branch,
-        })
-      } catch {
-        // skip unreadable files
-      }
-    }
-  }
+      const decoded = decodeProjectPath(projectName)
+      const [git, fileNames] = await Promise.all([
+        enrichWithGit(decoded),
+        readDirEntries(projectPath),
+      ])
+
+      const fileResults = await Promise.all(
+        fileNames
+          .filter((f) => f.endsWith('.jsonl'))
+          .map(async (fileName) => {
+            const absolutePath = path.join(projectPath, fileName)
+            if (!absolutePath.startsWith(root + path.sep)) return null
+            try {
+              const [stat, preview] = await Promise.all([
+                fs.stat(absolutePath),
+                extractPreview(absolutePath),
+              ])
+              if (!stat.isFile()) return null
+              return {
+                id: sessionId(absolutePath),
+                absolutePath,
+                project: cleanProjectName(projectName),
+                filename: fileName.slice(0, -'.jsonl'.length),
+                mtimeMs: stat.mtimeMs,
+                sizeBytes: stat.size,
+                preview,
+                repo: git.repo,
+                branch: git.branch,
+              } satisfies SessionFile
+            } catch {
+              return null
+            }
+          }),
+      )
+      return fileResults.filter((f): f is SessionFile => f !== null)
+    }),
+  )
+
+  const results = perProjectResults.flat()
 
   const deduped = new Map<string, SessionFile>()
   for (const session of results) {

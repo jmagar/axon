@@ -210,9 +210,31 @@ pub(super) async fn handle_command(
 
     // Sync direct modes (scrape, map, query, retrieve, ask, search, research,
     // stats, sources, domains, doctor, status, pulse_chat) — call services directly.
-    if let Some(params) = sync_mode::classify_sync_direct(&mode, &input, &flags, cfg, &ws_ctx) {
+    if let Some(params) = sync_mode::classify_sync_direct(&context) {
+        // SEC-8 / PERF-1 / PERF-10: acquire ACP session permit for pulse_chat and
+        // pulse_chat_probe to bound concurrent spawn_blocking threads.  try_acquire
+        // returns immediately with an error when the limit is reached, giving the
+        // client instant feedback instead of blocking.
+        let _acp_permit = if matches!(mode.as_str(), "pulse_chat" | "pulse_chat_probe") {
+            match crate::crates::web::ACP_SESSION_SEMAPHORE.try_acquire() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    send_error_dual(
+                        &tx,
+                        &ws_ctx,
+                        "too many concurrent ACP sessions — try again shortly".to_string(),
+                        None,
+                    )
+                    .await;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         ws_send::send_command_start(&tx, &context).await;
         sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders).await;
+        drop(_acp_permit); // explicit drop for clarity — permit held for full command duration
         return;
     }
 
