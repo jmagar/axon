@@ -1,3 +1,5 @@
+#[path = "server/artifacts.rs"]
+pub(super) mod artifacts;
 #[path = "server/common.rs"]
 pub mod common;
 #[path = "server/handlers_crawl_extract.rs"]

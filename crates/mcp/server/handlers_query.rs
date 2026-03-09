@@ -41,6 +41,7 @@ impl AxonMcpServer {
                 "results": result.results,
             }),
         )
+        .await
     }
 
     pub(super) async fn handle_retrieve(
@@ -82,6 +83,7 @@ impl AxonMcpServer {
                 "content": content,
             }),
         )
+        .await
     }
 
     pub(super) async fn handle_map(&self, req: MapRequest) -> Result<AxonToolResponse, ErrorData> {
@@ -119,6 +121,7 @@ impl AxonMcpServer {
                 "urls": paged_urls,
             }),
         )
+        .await
     }
 
     pub(super) async fn handle_search(
@@ -149,6 +152,7 @@ impl AxonMcpServer {
                 "results": result.results,
             }),
         )
+        .await
     }
 
     pub(super) async fn handle_scrape(
@@ -168,6 +172,7 @@ impl AxonMcpServer {
             &format!("scrape-{}", slugify(&url, 56)),
             result.payload,
         )
+        .await
     }
 
     pub(super) async fn handle_research(
@@ -199,6 +204,7 @@ impl AxonMcpServer {
             &format!("research-{}", slugify(&query, 56)),
             result.payload,
         )
+        .await
     }
 
     pub(super) async fn handle_ask(&self, req: AskRequest) -> Result<AxonToolResponse, ErrorData> {
@@ -218,5 +224,6 @@ impl AxonMcpServer {
             &format!("ask-{}", slugify(&query, 56)),
             result.payload,
         )
+        .await
     }
 }

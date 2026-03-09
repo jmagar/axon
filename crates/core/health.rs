@@ -13,7 +13,9 @@ pub struct BrowserDiagnosticsPattern {
 }
 
 pub async fn redis_healthy(redis_url: &str) -> bool {
-    let client = match redis::Client::open(redis_url) {
+    let url =
+        crate::crates::core::config::parse::normalize_local_service_url(redis_url.to_string());
+    let client = match redis::Client::open(url.as_str()) {
         Ok(client) => client,
         Err(_) => return false,
     };

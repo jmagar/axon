@@ -1,0 +1,190 @@
+use std::env;
+use std::path::{Path, PathBuf};
+
+use crate::crates::core::config::Config;
+use crate::crates::services::types::AcpAdapterCommand;
+
+use super::types::PulseChatAgent;
+
+/// Delimiter for `AXON_ACP_ADAPTER_ARGS`.
+///
+/// The env var is parsed as a pipe-delimited list (e.g. `--flag|value|--stdio`).
+/// Empty segments are ignored.
+const ACP_ADAPTER_ARGS_DELIMITER: char = '|';
+
+/// Parse pipe-delimited adapter args from `AXON_ACP_ADAPTER_ARGS`.
+fn parse_acp_adapter_args(raw: &str) -> Vec<String> {
+    raw.split(ACP_ADAPTER_ARGS_DELIMITER)
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn resolve_acp_adapter_command_from_values(
+    cmd_value: Option<&str>,
+    args_value: Option<&str>,
+) -> Result<AcpAdapterCommand, String> {
+    let program = cmd_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            "missing required env var AXON_ACP_ADAPTER_CMD for pulse_chat".to_string()
+        })?;
+
+    let program =
+        resolve_local_executable_path(program, args_value).unwrap_or_else(|| program.to_string());
+    let args = args_value.map(parse_acp_adapter_args).unwrap_or_default();
+
+    Ok(AcpAdapterCommand {
+        program,
+        args,
+        cwd: None,
+    })
+}
+
+/// Resolve ACP adapter command and args for `pulse_chat`.
+///
+/// Values are parsed from `Config` fields sourced from environment parsing:
+/// - `Config::acp_adapter_cmd` from `AXON_ACP_ADAPTER_CMD` (required)
+/// - `Config::acp_adapter_args` from `AXON_ACP_ADAPTER_ARGS` (optional)
+fn candidate_local_executable_paths(program: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if program.contains(std::path::MAIN_SEPARATOR)
+        || (cfg!(windows) && program.contains('/'))
+        || Path::new(program).is_absolute()
+    {
+        candidates.push(PathBuf::from(program));
+        return candidates;
+    }
+
+    if let Some(path_var) = env::var_os("PATH") {
+        candidates.extend(env::split_paths(&path_var).map(|dir| dir.join(program)));
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".local/bin").join(program));
+        candidates.push(home.join(".cargo/bin").join(program));
+    }
+
+    candidates.push(PathBuf::from("/usr/local/bin").join(program));
+    candidates.push(PathBuf::from("/usr/bin").join(program));
+    candidates
+}
+
+fn resolve_local_executable_path(program: &str, args_value: Option<&str>) -> Option<String> {
+    let path = Path::new(program);
+    if path.is_absolute() && path.exists() {
+        return Some(program.to_string());
+    }
+
+    if let Some(found) = candidate_local_executable_paths(program)
+        .into_iter()
+        .find(|candidate| candidate.exists())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+    {
+        return Some(found);
+    }
+
+    let looks_like_codex = program.contains("codex")
+        || args_value
+            .map(|args| args.to_ascii_lowercase().contains("codex"))
+            .unwrap_or(false);
+
+    if looks_like_codex {
+        return candidate_local_executable_paths("codex")
+            .into_iter()
+            .find(|candidate| candidate.exists())
+            .map(|candidate| candidate.to_string_lossy().into_owned());
+    }
+
+    let looks_like_gemini = program.contains("gemini")
+        || args_value
+            .map(|args| args.to_ascii_lowercase().contains("gemini"))
+            .unwrap_or(false);
+
+    if looks_like_gemini {
+        return candidate_local_executable_paths("gemini")
+            .into_iter()
+            .find(|candidate| candidate.exists())
+            .map(|candidate| candidate.to_string_lossy().into_owned());
+    }
+
+    None
+}
+
+pub(super) fn resolve_acp_adapter_command(
+    cfg: &Config,
+    agent: PulseChatAgent,
+) -> Result<AcpAdapterCommand, String> {
+    let (cmd_env_key, args_env_key) = match agent {
+        PulseChatAgent::Claude => (
+            "AXON_ACP_CLAUDE_ADAPTER_CMD",
+            "AXON_ACP_CLAUDE_ADAPTER_ARGS",
+        ),
+        PulseChatAgent::Codex => ("AXON_ACP_CODEX_ADAPTER_CMD", "AXON_ACP_CODEX_ADAPTER_ARGS"),
+        PulseChatAgent::Gemini => (
+            "AXON_ACP_GEMINI_ADAPTER_CMD",
+            "AXON_ACP_GEMINI_ADAPTER_ARGS",
+        ),
+    };
+
+    let cmd_override = env::var(cmd_env_key).ok();
+    let args_override = env::var(args_env_key).ok();
+
+    resolve_acp_adapter_command_from_values(
+        cmd_override.as_deref().or(cfg.acp_adapter_cmd.as_deref()),
+        args_override.as_deref().or(cfg.acp_adapter_args.as_deref()),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_acp_adapter_args_uses_pipe_delimiter_and_trims_segments() {
+        let parsed = parse_acp_adapter_args(" --stdio | --model | gemini-3-flash-preview |  ");
+        assert_eq!(parsed, vec!["--stdio", "--model", "gemini-3-flash-preview"]);
+    }
+
+    #[test]
+    fn parse_acp_adapter_args_returns_empty_for_blank_input() {
+        let parsed = parse_acp_adapter_args("   |   || ");
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn resolve_acp_adapter_command_reads_required_cmd_and_optional_args() {
+        let cmd = resolve_acp_adapter_command_from_values(
+            Some("/usr/local/bin/acp-adapter-test"),
+            Some("--stdio|--model|gpt-5-mini"),
+        )
+        .expect("env values should resolve");
+        assert_eq!(cmd.program, "/usr/local/bin/acp-adapter-test");
+        assert_eq!(cmd.args, vec!["--stdio", "--model", "gpt-5-mini"]);
+        assert_eq!(cmd.cwd, None);
+    }
+
+    #[test]
+    fn resolve_acp_adapter_command_requires_non_empty_cmd() {
+        let err = resolve_acp_adapter_command_from_values(Some("   "), None)
+            .expect_err("blank cmd should fail");
+        assert!(
+            err.contains("AXON_ACP_ADAPTER_CMD"),
+            "error should mention missing/invalid env var: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_acp_adapter_command_requires_cmd_env_var() {
+        let err = resolve_acp_adapter_command_from_values(None, None)
+            .expect_err("missing cmd should fail");
+        assert!(
+            err.contains("AXON_ACP_ADAPTER_CMD"),
+            "error should mention missing/invalid env var: {err}"
+        );
+    }
+}

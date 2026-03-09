@@ -18,20 +18,24 @@ use rmcp::ErrorData;
 impl AxonMcpServer {
     pub(super) async fn handle_status(
         &self,
-        _req: StatusRequest,
+        req: StatusRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
+        let response_mode = parse_response_mode(req.response_mode);
         let (json, text) = crate::crates::cli::commands::status::status_full(self.cfg.as_ref())
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
 
-        Ok(AxonToolResponse::ok(
+        respond_with_mode(
             "status",
+            "status",
+            response_mode,
             "status",
             serde_json::json!({
                 "text": text,
                 "json": json,
             }),
-        ))
+        )
+        .await
     }
 
     pub(super) async fn handle_refresh(
@@ -69,6 +73,7 @@ impl AxonMcpServer {
                     &format!("refresh-status-{id}"),
                     serde_json::json!({ "job": job }),
                 )
+                .await
             }
             RefreshSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
@@ -94,6 +99,7 @@ impl AxonMcpServer {
                     "refresh-list",
                     serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
                 )
+                .await
             }
             RefreshSubaction::Cleanup => {
                 let deleted = cleanup_refresh_jobs(self.cfg.as_ref())
@@ -148,6 +154,7 @@ impl AxonMcpServer {
                     "refresh-schedules",
                     serde_json::json!({ "schedules": schedules }),
                 )
+                .await
             }
             "create" => {
                 let name = req.schedule_name.ok_or_else(|| {

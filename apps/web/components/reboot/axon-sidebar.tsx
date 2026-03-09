@@ -1,6 +1,22 @@
 'use client'
 
-import { ChevronDown, PanelLeft, Plus, Search } from 'lucide-react'
+import {
+  Bot,
+  Brain,
+  ChevronDown,
+  Columns2,
+  FilePenLine,
+  Layers,
+  MessageSquareText,
+  Network,
+  PanelLeft,
+  Plus,
+  ScrollText,
+  Search,
+  Settings2,
+  Sparkles,
+  TerminalSquare,
+} from 'lucide-react'
 import Link from 'next/link'
 import {
   Queue,
@@ -20,7 +36,28 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { FileTree } from '@/components/workspace/file-tree'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
-import { AGENT_ITEMS, PAGE_ITEMS, RAIL_MODES, type RailMode } from './axon-mock-data'
+import { RAIL_MODES, type RailMode } from './axon-ui-config'
+
+const PAGE_ITEMS = [
+  { href: '/', label: 'Conversations', icon: MessageSquareText, group: 'primary' },
+  { href: '/reboot', label: 'Axon', icon: Sparkles, group: 'primary' },
+  { href: '/editor', label: 'Editor', icon: FilePenLine, group: 'primary' },
+  { href: '/jobs', label: 'Jobs', icon: Layers, group: 'primary' },
+  { href: '/logs', label: 'Logs', icon: ScrollText, group: 'primary' },
+  { href: '/terminal', label: 'Terminal', icon: TerminalSquare, group: 'primary' },
+  { href: '/evaluate', label: 'Evaluate', icon: Columns2, group: 'primary' },
+  { href: '/cortex/status', label: 'Cortex', icon: Brain, group: 'primary' },
+  { href: '/settings/mcp', label: 'MCP Servers', icon: Network, group: 'primary' },
+  { href: '/agents', label: 'Agents', icon: Bot, group: 'footer' },
+  { href: '/settings', label: 'Settings', icon: Settings2, group: 'footer' },
+] as const
+
+const AGENT_ITEMS = [
+  { name: 'Cortex', detail: 'Primary workflow assistant', status: 'active' },
+  { name: 'Codex', detail: 'Implementation and review lane', status: 'ready' },
+  { name: 'Claude', detail: 'Planning and synthesis lane', status: 'ready' },
+  { name: 'Gemini', detail: 'Research and cross-check lane', status: 'ready' },
+] as const
 
 function railItemClass(isActive: boolean) {
   return isActive

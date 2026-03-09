@@ -1,5 +1,5 @@
 # axon_cli — Axon CLI (Rust + Spider.rs)
-Last Modified: 2026-03-06
+Last Modified: 2026-03-09
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 
@@ -67,7 +67,7 @@ MCP docs:
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
 | `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
 | `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
-| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `youtube <url\|playlist\|channel>` | Ingest YouTube video, playlist, or entire channel (transcripts + metadata) into Qdrant | Yes (default) |
 | `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
@@ -531,3 +531,24 @@ All tables share: `created_at`, `updated_at`, `started_at`, `finished_at` (TIMES
 - Errors bubble via `Box<dyn Error>` at command boundaries; internal helpers return typed errors
 - Structured log output via `log_info` / `log_warn` (not `println!` in library code)
 - `--json` flag enables machine-readable output on all commands that print results
+
+### Module Layout — Modern Rust Convention (ENFORCED)
+
+**Never use `mod.rs`.** Use the Rust 2018+ file-per-module layout:
+
+```
+# WRONG — do not do this
+foo/
+└── mod.rs      ← forbidden
+
+# CORRECT
+foo.rs          ← module root lives here
+foo/
+├── bar.rs      ← submodule
+└── baz.rs      ← submodule
+```
+
+- Module root always lives in `foo.rs`, never `foo/mod.rs`
+- Submodules live in `foo/bar.rs`, declared with `mod bar;` inside `foo.rs`
+- When splitting an existing `foo/mod.rs`: copy it to `foo.rs`, delete `foo/mod.rs` — the submodule files stay in `foo/` unchanged
+- This applies everywhere: `crates/`, `crates/*/`, nested modules — no exceptions

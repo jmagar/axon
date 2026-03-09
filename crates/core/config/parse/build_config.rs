@@ -126,26 +126,8 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
         CliCommand::Status => (CommandKind::Status, Vec::new()),
         CliCommand::Dedupe => (CommandKind::Dedupe, Vec::new()),
-        CliCommand::Github(args) => {
+        CliCommand::Ingest(args) => {
             github_include_source = args.include_source;
-            (
-                CommandKind::Github,
-                if let Some(job) = args.job {
-                    positional_from_job(job)
-                } else {
-                    args.repo.into_iter().collect()
-                },
-            )
-        }
-        CliCommand::Ingest(args) => (
-            CommandKind::Ingest,
-            if let Some(job) = args.job {
-                positional_from_job(job)
-            } else {
-                Vec::new()
-            },
-        ),
-        CliCommand::Reddit(args) => {
             reddit_sort = args.sort;
             reddit_time = args.time;
             reddit_max_posts = args.max_posts;
@@ -153,7 +135,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             reddit_depth = args.depth;
             reddit_scrape_links = args.scrape_links;
             (
-                CommandKind::Reddit,
+                CommandKind::Ingest,
                 if let Some(job) = args.job {
                     positional_from_job(job)
                 } else {
@@ -161,14 +143,6 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
                 },
             )
         }
-        CliCommand::Youtube(args) => (
-            CommandKind::Youtube,
-            if let Some(job) = args.job {
-                positional_from_job(job)
-            } else {
-                args.url.into_iter().collect()
-            },
-        ),
         CliCommand::Sessions(args) => {
             sessions_claude = args.claude;
             sessions_codex = args.codex;

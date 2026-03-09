@@ -1,11 +1,12 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::vector::ops::embed_text_with_extra_payload;
 use octocrab::Octocrab;
 use std::error::Error;
 
 mod files;
 mod issues;
+pub(super) mod meta;
 mod wiki;
 
 // ── Pure helper functions (re-exported for tests and cli command) ──────────────
@@ -117,7 +118,8 @@ async fn embed_repo_metadata(
 
     let content = format!("# {owner_name}\n\n{}", parts.join("\n"));
     let url = format!("https://github.com/{owner_name}");
-    embed_text_with_metadata(cfg, &content, &url, "github", Some(owner_name)).await
+    let extra = meta::build_github_repo_extra_payload(repo);
+    embed_text_with_extra_payload(cfg, &content, &url, "github", Some(owner_name), &extra).await
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────────

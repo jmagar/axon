@@ -96,6 +96,7 @@ impl AxonMcpServer {
                     &format!("embed-status-{id}"),
                     serde_json::json!({ "job": job }),
                 )
+                .await
             }
             EmbedSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
@@ -121,6 +122,7 @@ impl AxonMcpServer {
                     "embed-list",
                     serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
                 )
+                .await
             }
             EmbedSubaction::Cleanup => {
                 let deleted = cleanup_embed_jobs(self.cfg.as_ref())
@@ -184,6 +186,7 @@ impl AxonMcpServer {
                     &format!("ingest-status-{id}"),
                     serde_json::json!({ "job": job }),
                 )
+                .await
             }
             IngestSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
@@ -209,6 +212,7 @@ impl AxonMcpServer {
                     "ingest-list",
                     serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
                 )
+                .await
             }
             IngestSubaction::Cleanup => {
                 let deleted = cleanup_ingest_jobs(self.cfg.as_ref())
