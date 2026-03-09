@@ -26,7 +26,7 @@ done
 # ── Helpers ────────────────────────────────────────────────────────────────────
 info()  { echo "[dev-setup] $*"; }
 warn()  { echo "[dev-setup] WARN: $*" >&2; }
-die()   { echo "[dev-setup] ERROR: $*" >&2; exit 1; }
+die()   { printf "[dev-setup] ERROR: %b\n" "$*" >&2; exit 1; }
 ok()    { echo "[dev-setup] OK: $*"; }
 sep()   { echo "[dev-setup] ────────────────────────────────────────"; }
 
@@ -39,6 +39,13 @@ case "$(uname -s)" in
   *)       die "Unsupported OS: $(uname -s). Only Linux and macOS are supported." ;;
 esac
 ok "OS: $OS"
+
+# Portable in-place sed: macOS requires -i '' whereas GNU sed uses -i alone.
+if [[ "$OS" == "macos" ]]; then
+  sed_i() { sed -i '' "$@"; }
+else
+  sed_i() { sed -i "$@"; }
+fi
 
 pkg_install() {
   # pkg_install <pkg...>
@@ -246,7 +253,7 @@ else
   AXON_DATA_DIR="${AXON_DATA_DIR/#\~/$HOME}"
 
   # Write into .env (replace the placeholder line)
-  sed -i "s|^AXON_DATA_DIR=.*|AXON_DATA_DIR=${AXON_DATA_DIR}|" "$REPO/.env"
+  sed_i "s|^AXON_DATA_DIR=.*|AXON_DATA_DIR=${AXON_DATA_DIR}|" "$REPO/.env"
   mkdir -p "$AXON_DATA_DIR"
   ok "AXON_DATA_DIR=${AXON_DATA_DIR}"
 
@@ -263,7 +270,7 @@ else
     # set_env KEY VALUE  — replace or append in .env
     local key="$1" val="$2"
     if grep -q "^${key}=" "$REPO/.env"; then
-      sed -i "s|^${key}=.*|${key}=${val}|" "$REPO/.env"
+      sed_i "s|^${key}=.*|${key}=${val}|" "$REPO/.env"
     else
       echo "${key}=${val}" >> "$REPO/.env"
     fi
