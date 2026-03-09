@@ -140,7 +140,6 @@ if ! command -v just >/dev/null 2>&1; then
     brew install just && ok "just $(just --version)"
   else
     # Prebuilt binary is much faster than cargo install
-    local _just_ver
     _just_ver="$(curl -fsSL https://api.github.com/repos/casey/just/releases/latest \
       | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")"
     curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-x86_64-unknown-linux-musl.tar.gz" \
@@ -319,11 +318,7 @@ if [[ "$NO_DOCKER" == "false" ]]; then
     axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome)
 
   info "Starting test infrastructure..."
-  if command -v just >/dev/null 2>&1; then
-    (cd "$REPO" && just test-infra-up)
-  else
-    (cd "$REPO" && docker compose -f docker-compose.test.yaml up -d)
-  fi
+  (cd "$REPO" && just test-infra-up)
 
   # Wait for Postgres to be ready
   info "Waiting for Postgres..."
