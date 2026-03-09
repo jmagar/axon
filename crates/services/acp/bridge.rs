@@ -26,6 +26,10 @@ use super::mapping::{
 pub struct AcpRuntimeState {
     pub(super) session_id: std::sync::OnceLock<String>,
     pub(super) assistant_text: std::cell::RefCell<String>,
+    /// Current turn's service event sender — updated per-turn by `run_turn_on_conn`
+    /// so bridge callbacks (session_notification, request_permission) always route
+    /// to the active turn's channel, not the stale first-turn channel.
+    pub(super) service_tx: std::cell::RefCell<Option<mpsc::Sender<ServiceEvent>>>,
 }
 
 // ── Auto-approve helpers ────────────────────────────────────────────────────
@@ -193,7 +197,6 @@ pub(super) async fn handle_interactive_permission(
 /// within the single-threaded current_thread + LocalSet runtime.
 #[derive(Clone)]
 pub struct AcpBridgeClient {
-    pub(super) tx: Option<mpsc::Sender<ServiceEvent>>,
     pub(super) runtime_state: Arc<AcpRuntimeState>,
     /// When true, permissions are auto-approved without waiting for frontend.
     pub(super) auto_approve: bool,
@@ -207,14 +210,16 @@ impl Client for AcpBridgeClient {
         &self,
         args: RequestPermissionRequest,
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-        emit(&self.tx, map_permission_request_event(&args));
+        // Use the current turn's service_tx. Clone to release borrow before awaits.
+        let service_tx = self.runtime_state.service_tx.borrow().clone();
+        emit(&service_tx, map_permission_request_event(&args));
 
         let tool_call_id = args.tool_call.tool_call_id.0.to_string();
 
         if self.auto_approve {
             return Ok(RequestPermissionResponse::new(auto_approve_outcome(
                 &args,
-                &self.tx,
+                &service_tx,
                 &tool_call_id,
             )));
         }
@@ -229,7 +234,7 @@ impl Client for AcpBridgeClient {
             .unwrap_or("");
         let outcome = handle_interactive_permission(
             &args,
-            &self.tx,
+            &service_tx,
             &self.permission_responders,
             session_id,
             &tool_call_id,
@@ -266,7 +271,10 @@ impl Client for AcpBridgeClient {
                 .get_or_init(|| args.session_id.0.to_string());
         }
 
-        emit(&self.tx, map_session_notification_event(&args));
+        // Use the current turn's service_tx (updated per-turn by run_turn_on_conn).
+        // Clone immediately to release the borrow before the emit call.
+        let service_tx = self.runtime_state.service_tx.borrow().clone();
+        emit(&service_tx, map_session_notification_event(&args));
         Ok(())
     }
 }

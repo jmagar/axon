@@ -38,11 +38,8 @@ cli/
     ├── screenshot/
     │   ├── spider_capture.rs     # Spider-based screenshot capture (replaced raw CDP client)
     │   └── util.rs               # Filename generation, require_chrome(), JSON formatting
-    ├── github.rs                 # Ingest GitHub repos (code, issues, PRs, wiki)
-    ├── reddit.rs                 # Ingest subreddit posts/comments
-    ├── youtube.rs                # Ingest YouTube video transcripts via yt-dlp
     ├── sessions.rs               # Ingest AI session exports (Claude/Codex/Gemini)
-    ├── ingest.rs                 # Ingest entry point: dispatches github/reddit/youtube
+    ├── ingest.rs                 # Unified ingest: classify_target → enqueue or run_ingest_sync
     ├── status/
     │   ├── metrics.rs            # Postgres metrics: job counts, rates, stale jobs
     │   └── presentation.rs       # Status output rendering (JSON + human text)

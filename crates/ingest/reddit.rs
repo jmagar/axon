@@ -1,5 +1,6 @@
 mod client;
 mod comments;
+mod meta;
 mod types;
 
 pub use client::get_access_token;
@@ -7,7 +8,7 @@ pub use types::{RedditTarget, classify_target};
 
 use crate::crates::core::config::{Config, RedditSort};
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::vector::ops::embed_text_with_extra_payload;
 use std::error::Error;
 use std::time::Duration;
 
@@ -95,8 +96,16 @@ async fn ingest_subreddit(cfg: &Config, token: &str, name: &str) -> Result<usize
                         return;
                     }
 
-                    match embed_text_with_metadata(cfg, &content, &post_url, "reddit", Some(title))
-                        .await
+                    let extra = meta::build_reddit_post_extra_payload(data);
+                    match embed_text_with_extra_payload(
+                        cfg,
+                        &content,
+                        &post_url,
+                        "reddit",
+                        Some(title),
+                        &extra,
+                    )
+                    .await
                     {
                         Ok(n) => {
                             count_ref.fetch_add(n, Ordering::SeqCst);
@@ -166,7 +175,17 @@ async fn ingest_thread(cfg: &Config, token: &str, url: &str) -> Result<usize, Bo
         format_comments_into(&mut content, title, &comments);
     }
 
-    match embed_text_with_metadata(cfg, &content, &canonical_url, "reddit", Some(title)).await {
+    let extra = meta::build_reddit_post_extra_payload(post_data);
+    match embed_text_with_extra_payload(
+        cfg,
+        &content,
+        &canonical_url,
+        "reddit",
+        Some(title),
+        &extra,
+    )
+    .await
+    {
         Ok(n) => Ok(n),
         Err(e) => {
             log_warn(&format!(
@@ -192,7 +211,7 @@ fn format_comments_into(content: &mut String, title: &str, comments: &[CommentWi
 /// Ingest Reddit content:
 /// - For a subreddit: fetches posts (configurable sort/limit/score/depth) + recursive comments
 /// - For a thread URL: fetches that thread + full recursive comment tree
-/// - Embeds all content into Qdrant via embed_text_with_metadata
+/// - Embeds all content into Qdrant via embed_text_with_extra_payload with reddit_* metadata
 pub async fn ingest_reddit(cfg: &Config, target: &str) -> Result<usize, Box<dyn Error>> {
     let client_id = cfg
         .reddit_client_id

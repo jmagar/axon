@@ -1,5 +1,5 @@
 # Axon MCP Server Guide
-Last Modified: 2026-03-03
+Last Modified: 2026-03-09
 
 ## Purpose
 `axon mcp` exposes Axon through one MCP tool named `axon`.
@@ -133,7 +133,7 @@ Use CLI-identical action names:
 - `query`, `retrieve`
 - `doctor`, `domains`, `sources`, `stats`
 - `search`, `map`
-- `artifacts` (with subactions `head|grep|wc|read`)
+- `artifacts` (with subactions `head|grep|wc|read|list|delete|clean|search`)
 - `scrape`, `research`, `ask`, `screenshot`, `help`, `status`
 
 Examples:
@@ -205,4 +205,43 @@ mcporter call axon.axon action:crawl subaction:list limit:5 offset:0
 mcporter call axon.axon action:refresh subaction:list limit:5 offset:0
 mcporter call axon.axon action:refresh subaction:schedule schedule_subaction:list
 mcporter call axon.axon action:artifacts subaction:head path:.cache/axon-mcp/help-actions.json limit:20
+mcporter call axon.axon action:artifacts subaction:list
+mcporter call axon.axon action:artifacts subaction:search pattern:failed limit:25
 ```
+
+## Artifact Inspection Workflow
+
+Artifact responses written in path mode are pretty-printed JSON. The preferred inspection order (least to most expensive):
+
+1. **Shape summary** — path-mode responses include a `shape` field that summarises key/value types without reading the file. Often sufficient.
+2. `artifacts head` — first N lines (default 25). Quick orientation for any artifact.
+3. `artifacts grep pattern="..." context_lines=N` — regex search with context. Targeted lookup.
+4. `artifacts search pattern="..."` — cross-artifact regex search. Find which files contain a term.
+5. `artifacts read pattern="..."` — filtered line dump. Reads whole file but returns only matching lines.
+6. `artifacts read full=true` — full paginated dump. Last resort; explicit opt-in required.
+
+### Artifact Lifecycle
+
+- `artifacts list` — all files in artifact dir, sorted newest first (name, bytes, age).
+- `artifacts delete path=<path>` — delete a single file. Path is validated to be within artifact root.
+- `artifacts clean max_age_hours=N` — bulk cleanup. `dry_run` defaults to `true` (preview only).
+  - `max_age_hours` is **required** — there is no default. Caller must declare intent explicitly.
+  - Never deletes files inside `screenshots/` — those are user assets, not ephemeral artifacts.
+  - Set `dry_run=false` to execute the deletion after reviewing the preview.
+
+### `response_mode` on All Actions
+
+`doctor`, `stats`, and `status` now support `response_mode`. Default is `path`, writing the payload to an artifact and returning a compact shape summary. Use `response_mode=inline` to get the payload directly in the response.
+
+### Auto-inline for Small Payloads
+
+Regardless of the requested `response_mode`, any payload serializing to ≤ `AXON_INLINE_BYTES_THRESHOLD` bytes (default 8 192) is returned inline without requiring an `artifacts.read` follow-up call. The response includes `"response_mode": "auto-inline"`, the full `data` object, and an `artifact` pointer for persistence. Set `AXON_INLINE_BYTES_THRESHOLD=0` to disable auto-inline and always use explicit `response_mode` selection.
+
+### Shape Preview Improvements
+
+Path-mode responses include a `shape` field summarizing the payload structure:
+- **Strings ≤ 100 chars**: returned verbatim so Claude reads real values without a follow-up read.
+- **Strings > 100 chars**: summarized as `"<string N>"`.
+- **Arrays of objects with a `status`, `phase`, or `state` field**: summarized as `{"total": N, "by_status": {"completed": N, "running": N, ...}}`. Claude can answer status questions from the shape alone — no follow-up read needed.
+- **Other arrays**: `"<array[N]>"`.
+- **Primitives**: verbatim.

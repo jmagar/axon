@@ -16,7 +16,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `screenshot`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
+- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `ingest`, `sessions`, `screenshot`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
 - Async queue-backed jobs for `crawl`/`extract`/`embed`/`refresh`/ingest
 - **Surgical Incremental Crawling**: SHA-256 content hashing, Reflink/Hardlink storage reuse, and smart embedding skips for unchanged pages.
 - TEI embeddings + Qdrant vector storage
@@ -288,10 +288,7 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + LLM judge (accuracy · relevance · completeness · verdict) | No |
 | `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
-| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
-| `ingest <subcommand>` | Shared ingest worker/job control (`worker`, `status`, `list`, etc.) | No |
-| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
-| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `ingest <target>` | Ingest GitHub, Reddit, or YouTube — source type auto-detected from target (slug, URL, @handle, r/name) | Yes (default) |
 | `sessions [--claude] [--codex] [--gemini] [--project <name>]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `screenshot <url>...` | Capture page screenshot(s) via Chrome | No |
 | `sources` | List all indexed URLs + chunk counts | No |
@@ -369,9 +366,7 @@ axon watch history <watch_id> [--limit <n>]
 
 Current dispatch support in the worker loop is `task_type=refresh` (payload shape: `{"urls":["https://..."]}`).
 
-### Job Subcommands (for github / reddit / youtube)
-
-The ingest commands share the same subcommand routing:
+### Job Subcommands (for ingest)
 
 ```bash
 axon ingest status <job_id>
@@ -380,21 +375,9 @@ axon ingest errors <job_id>
 axon ingest list
 axon ingest cleanup
 axon ingest clear
-axon ingest recover
-axon ingest worker
-
-# source-specific aliases (equivalent worker path):
-axon github status <job_id>
-axon github cancel <job_id>
-axon github errors <job_id>
-axon github list
-axon github cleanup
-axon github clear
-axon github recover    # reclaim stale/interrupted jobs
-axon github worker     # run an ingest worker inline
+axon ingest recover    # reclaim stale/interrupted jobs
+axon ingest worker     # run an ingest worker inline
 ```
-
-The same subcommands work with `axon reddit ...` and `axon youtube ...`.
 
 ### Global Flags Reference
 
@@ -645,7 +628,7 @@ Differs from the other three tables: uses `source_type` + `target` instead of `u
 ## Gotchas
 
 ### `--wait false` (default) = fire-and-forget
-By default, `crawl`, `refresh`, `extract`, `embed`, and ingest commands (`github`, `reddit`, `youtube`) enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
+By default, `crawl`, `refresh`, `extract`, `embed`, and `ingest` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
 
 ### Armory Structure: Domain-Grouped
 Axon now organizes its spoils by domain to make the armory more browseable.

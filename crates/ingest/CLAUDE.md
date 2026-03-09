@@ -1,5 +1,5 @@
 # crates/ingest — Source Ingestion Handlers
-Last Modified: 2026-02-25
+Last Modified: 2026-03-09
 
 Ingests external sources (GitHub, Reddit, YouTube, AI sessions) into Qdrant.
 
@@ -7,14 +7,25 @@ Ingests external sources (GitHub, Reddit, YouTube, AI sessions) into Qdrant.
 
 ```
 ingest/
-├── github/      # GitHub repo ingestion (code, issues, PRs, wiki)
-│   ├── files.rs # file tree fetch + raw content via reqwest
-│   ├── issues.rs# octocrab paginated issues + PRs
-│   └── wiki.rs  # git clone --depth=1 subprocess; no wiki = Ok(0)
-├── github.rs    # module root + orchestration; delegates to github/files.rs, github/issues.rs, github/wiki.rs
-├── reddit.rs    # Subreddit post/comment ingestion via Reddit OAuth2 API
-├── youtube.rs   # YouTube transcript ingestion via yt-dlp subprocess
-└── sessions/    # AI session export parsers
+├── classify.rs    # classify_target(): auto-detect IngestSource from raw user input
+├── github/        # GitHub repo ingestion (code, issues, PRs, wiki)
+│   ├── files.rs   # file tree fetch + raw content via reqwest
+│   ├── issues.rs  # octocrab paginated issues + PRs
+│   ├── meta.rs    # GithubRepoMeta/IssueMeta/PrMeta payload builders (gh_* fields)
+│   └── wiki.rs    # git clone --depth=1 subprocess; no wiki = Ok(0)
+├── github.rs      # module root + orchestration
+├── reddit.rs      # module root — ingest_reddit, ingest_subreddit, ingest_thread
+├── reddit/        # Reddit ingest submodules
+│   ├── client.rs  # OAuth2 access token + JSON fetch helper
+│   ├── comments.rs # recursive comment traversal + CommentWithContext
+│   ├── meta.rs    # build_reddit_post_extra_payload (reddit_* fields)
+│   └── types.rs   # RedditTarget enum, classify_target, validate_subreddit
+├── youtube/       # YouTube ingest submodules
+│   ├── meta.rs    # YoutubeVideoMeta struct, parse_youtube_info_json, build_youtube_extra_payload
+│   └── vtt.rs     # parse_vtt_to_text + VTT tests
+├── youtube.rs     # module root — extract_video_id, is_playlist_or_channel_url,
+│                  #   enumerate_playlist_videos, ingest_youtube
+└── sessions/      # AI session export parsers
     ├── claude.rs
     ├── codex.rs
     └── gemini.rs
@@ -28,17 +39,24 @@ ingest/
 - Ingests: repo code files, issues (open+closed), PRs, wiki pages
 - Files are fetched tree-first (one API call), then content per file concurrently via `buffer_unordered(16)` — can be slow without token on large repos
 - `wiki.rs` runs `git clone --depth=1` as a subprocess — requires `git` in PATH/container. Non-zero exit = no wiki = `Ok(0)` (not an error)
+- **Metadata**: `github/meta.rs` builds `gh_*` fields for repo chunks (stars, forks, language, topics, created_at, is_fork, is_archived) and issue/PR chunks (number, state, author, labels, comment_count, merged_at, is_draft) via `embed_text_with_extra_payload`
 
-### Reddit (`reddit.rs`)
+### Reddit (`reddit.rs` + `reddit/`)
 - Reddit OAuth2 **client credentials** flow (app-only, no user login)
 - **Both** `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` are **required** — command fails immediately if either is missing
-- Fetches subreddit posts + top-level comments; depth is fixed (not configurable per-run)
+- Fetches subreddit posts + recursive comments; depth configurable via `--depth`
 - Rate limit: 100 req/min authenticated; uses `reqwest` directly (not spider)
+- **Metadata**: `reddit/meta.rs` builds `reddit_*` fields (author, score, num_comments, upvote_ratio, subreddit, domain, is_video, distinguished, gilded, flair) merged into every post's Qdrant payload via `embed_text_with_extra_payload`
 
-### YouTube (`youtube.rs`)
+### YouTube (`youtube.rs` + `youtube/`)
 - Invokes `yt-dlp` as a **subprocess** (not a library) — `yt-dlp` must be installed and on `$PATH`
-- Downloads auto-generated or manual VTT subtitle file, then calls `parse_vtt_to_text()` to strip timing tags
-- `extract_video_id()` handles full URLs, short URLs (`youtu.be/`), and bare IDs
+- **Single video** (`ingest_youtube`): downloads `.vtt` + `.info.json` → `parse_vtt_to_text()` → embed transcript + description with full metadata payload
+- **Playlist / channel** (`ingest_youtube_playlist`): `--flat-playlist` enumeration → N=5 concurrent via `FuturesUnordered` → per-video `ingest_youtube` calls → progress + `completed_urls` persisted to DB on each completion
+- `is_playlist_or_channel_url()` detects `@handle`, `/c/`, `/channel/`, `/user/`, `?list=` — routes to playlist pipeline automatically
+- `extract_video_id()` handles full URLs, short URLs (`youtu.be/`), path patterns, and bare IDs
+- **Resume**: `completed_urls` in `result_json` JSONB lets a restarted job skip already-done videos
+- **429 retry**: 3 attempts with 10s → 20s → 40s backoff per video; non-429 errors skip the video
+- **Metadata**: `YoutubeVideoMeta` (in `youtube/meta.rs`) captures title, channel, channel_url, uploader_id, upload_date, duration, view_count, like_count, tags, categories — merged into every chunk's Qdrant payload via `embed_text_with_extra_payload`
 - No API key needed; yt-dlp handles auth for publicly accessible videos
 
 ### Sessions (`sessions/`)
@@ -49,11 +67,11 @@ ingest/
 ## Testing
 
 ```bash
-cargo test ingest         # all ingest unit tests (31 pure logic tests)
+cargo test ingest         # all ingest unit tests
+cargo test classify       # classify_target() auto-detection (17 tests)
 cargo test parse_vtt      # VTT subtitle parsing
 cargo test extract_video  # YouTube video ID extraction
 cargo test parse_github   # GitHub repo name/URL parsing
-cargo test classify       # ingest source classifier
 cargo test session        # session export format parsers
 cargo test -- --nocapture # show parsed output
 ```
@@ -61,11 +79,14 @@ cargo test -- --nocapture # show parsed output
 All ingest unit tests run without live services (pure logic: parsing, classification, ID extraction). Tests for `ingest_github`, `ingest_reddit`, `ingest_youtube` that hit real APIs require credentials set in env.
 
 ## Embedding Pattern
-All ingest handlers call `embed_text_with_metadata()` from `crates/vector/ops/tei.rs` (re-exported from `vector/ops.rs`). This function:
-1. Chunks the text
-2. Attaches source metadata (URL/source_type, title, etc.)
-3. Calls `tei_embed()` with auto-split on 413
-4. Upserts to Qdrant
+All ingest handlers call `embed_text_with_metadata()` or `embed_text_with_extra_payload()` from `crates/vector/ops/tei.rs` (re-exported from `vector/ops.rs`). Both functions:
+1. **Pre-delete** all existing Qdrant points for the source URL (`qdrant_delete_by_url_filter`) — prevents stale orphan chunks on re-ingest
+2. Chunk the text
+3. Attach source metadata (URL/source_type, title, etc.) plus any extra payload fields (YouTube uses `embed_text_with_extra_payload` to merge channel/date/tags into every chunk)
+4. Call `tei_embed()` with auto-split on 413
+5. Upsert to Qdrant
+
+Use `embed_text_with_extra_payload` when the source has structured metadata to store per-chunk (YouTube). Use `embed_text_with_metadata` for plain text sources (GitHub, Reddit, sessions).
 
 ## ingest_jobs Schema
 `axon_ingest_jobs` differs from other job tables:
@@ -78,7 +99,8 @@ All ingest handlers call `embed_text_with_metadata()` from `crates/vector/ops/te
 | Gap | Status |
 |-----|--------|
 | `axon ingest errors <uuid>` | Silently unhandled — `maybe_handle_ingest_subcommand` doesn't match `"errors"`, falls through to "requires subcommand" error. Fix: add `"errors"` arm to the match in `ingest_jobs.rs`. |
-| YouTube age-restricted / private videos | `yt-dlp` will fail with a non-zero exit code; error propagates as `Box<dyn Error>`. No retry or friendly message. |
+| YouTube age-restricted / private videos | `yt-dlp` exits non-zero; error is a per-video skip warning in playlist mode, job failure in single-video mode. No friendly message. |
+| YouTube manual captions | Only `--write-auto-sub` is passed; `--write-subs` (manual captions) is not requested. Videos with manual but no auto-generated captions will fail. |
 | Reddit comment depth | Fixed at top-level only — no recursive comment thread fetching. |
 
 ## yt-dlp Requirement

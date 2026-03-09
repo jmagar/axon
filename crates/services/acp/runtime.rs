@@ -67,7 +67,7 @@ pub struct EstablishedSession {
 ///
 /// FIX H-1: Single entry point for both prompt-turn and probe flows.
 /// Sub-functions are in `session.rs` to respect the 500-line file limit.
-async fn establish_acp_session(
+pub(super) async fn establish_acp_session(
     adapter: AcpAdapterCommand,
     initialize: InitializeRequest,
     session_setup: AcpSessionSetupRequest,
@@ -113,6 +113,74 @@ async fn establish_acp_session(
     })
 }
 
+// ── wait_for_adapter_exit ────────────────────────────────────────────────────
+
+/// Close the ACP connection and wait up to 10 s for the adapter to flush its
+/// session file and exit cleanly.
+///
+/// Called after a successful prompt turn to avoid SIGKILLing the adapter before
+/// it writes the `.jsonl` session file.  See the `kill_on_drop` note in
+/// `run_prompt_turn`.
+async fn wait_for_adapter_exit(
+    conn: ClientSideConnection,
+    runtime_state: Arc<AcpRuntimeState>,
+    exit_rx: tokio::sync::oneshot::Receiver<String>,
+    session_id_str: &str,
+    tx: &Option<mpsc::Sender<ServiceEvent>>,
+) {
+    // Drop connection handles → EOF on adapter stdin → adapter flushes + exits.
+    drop(conn);
+    drop(runtime_state);
+
+    emit(
+        tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!(
+                "ACP runtime: connection closed; waiting up to 10 s for adapter to exit \
+                 and write session file (session_id={session_id_str})"
+            ),
+        },
+    );
+
+    match tokio::time::timeout(std::time::Duration::from_secs(10), exit_rx).await {
+        Ok(Ok(crash_msg)) => {
+            emit(
+                tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!("ACP adapter exited with error after turn: {crash_msg}"),
+                },
+            );
+        }
+        Ok(Err(_)) => {
+            // oneshot sender dropped = process exited with status 0
+            emit(
+                tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Info,
+                    message: format!(
+                        "ACP adapter exited cleanly; session file should be on disk \
+                         (session_id={session_id_str})"
+                    ),
+                },
+            );
+        }
+        Err(_) => {
+            emit(
+                tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "ACP adapter did not exit within 10 s after connection close \
+                         (session_id={session_id_str}); forcing kill via kill_on_drop"
+                    ),
+                },
+            );
+        }
+    }
+}
+
 // ── run_prompt_turn ──────────────────────────────────────────────────────────
 
 pub(super) async fn run_prompt_turn(
@@ -139,21 +207,34 @@ pub(super) async fn run_prompt_turn(
     .await?;
 
     // OnceLock: set once. If bridge already set it during session setup, this is a no-op.
+    let session_id_str = session_id.0.to_string();
     runtime_state
         .session_id
-        .get_or_init(|| session_id.0.to_string());
+        .get_or_init(|| session_id_str.clone());
 
-    let prompt_blocks: Vec<ContentBlock> = req.prompt.into_iter().map(ContentBlock::from).collect();
     emit(
         &tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: "ACP runtime: sending prompt turn".to_string(),
+            message: format!(
+                "ACP runtime: session ready (session_id={session_id_str}); sending prompt turn"
+            ),
         },
     );
 
-    // Race the prompt against process exit.
-    tokio::select! {
+    let prompt_blocks: Vec<ContentBlock> = req.prompt.into_iter().map(ContentBlock::from).collect();
+
+    // SIGKILL-FIX: Use `&mut exit_rx` so the select! borrows rather than consumes
+    // the receiver.  After the prompt branch completes we explicitly drop `conn`
+    // (closes stdin/stdout → signals the adapter to write its session file and
+    // exit), then await `exit_rx` with a 10 s timeout.  Awaiting *inside*
+    // `run_prompt_turn` keeps the LocalSet alive so its `spawn_local` tasks
+    // (including the exit-watcher that holds the child handle) continue running.
+    // Without this wait the LocalSet would tear down on `run_prompt_turn` return,
+    // the child handle would be dropped, and `kill_on_drop(true)` would SIGKILL
+    // the adapter before it could flush the session file.
+    let mut exit_rx = exit_rx;
+    let prompt_fired = tokio::select! {
         prompt_result = conn.prompt(PromptRequest::new(session_id.clone(), prompt_blocks)) => {
             let prompt_response = prompt_result.map_err(|err| err.to_string())?;
             let stop_reason = prompt_response.stop_reason;
@@ -166,7 +247,7 @@ pub(super) async fn run_prompt_turn(
             emit(&tx, ServiceEvent::Log {
                 level: log_level,
                 message: format!(
-                    "ACP runtime: prompt turn completed (stop_reason={stop_reason_str})"
+                    "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
                 ),
             });
 
@@ -180,28 +261,41 @@ pub(super) async fn run_prompt_turn(
 
             emit(&tx, ServiceEvent::AcpBridge {
                 event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
-                    session_id: session,
+                    session_id: session.clone(),
                     stop_reason: stop_reason_str.to_string(),
                     result: text,
                 }),
             });
+            emit(&tx, ServiceEvent::Log {
+                level: LogLevel::Info,
+                message: format!(
+                    "ACP runtime: TurnResult emitted (session_id={session})"
+                ),
+            });
+            true
         }
         // FINDING-14: Sender is dropped on clean exit (code 0), so the receiver
         // sees Err(RecvError) — treat that as a clean shutdown, not a crash.
         // Only return an error when the adapter sent an explicit crash message.
-        exit_msg = exit_rx => {
+        exit_msg = &mut exit_rx => {
             if let Ok(msg) = exit_msg {
                 return Err(format!("ACP adapter crashed mid-session: {msg}"));
             }
             // Err variant: channel was dropped → clean exit, nothing to do.
+            false
         }
-    }
+    };
 
     // NOTE: do NOT call permission_responders.clear() here — the map is shared
     // across all concurrent ACP sessions on the same WS connection.  Clearing it
     // drops pending oneshot senders that belong to other in-flight sessions,
     // causing their permission waits to cancel unexpectedly.  Per-session entries
     // are removed by the bridge timeout handler (60 s) or on WS connection drop.
+
+    if prompt_fired {
+        // Close connection + wait for adapter to flush session file.
+        wait_for_adapter_exit(conn, runtime_state, exit_rx, &session_id_str, &tx).await;
+    }
 
     Ok(())
 }

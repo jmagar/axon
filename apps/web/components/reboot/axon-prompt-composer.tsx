@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { McpServersState } from '@/hooks/use-mcp-servers'
 import type { PulseAgent } from '@/lib/pulse/types'
-import { AXON_PERMISSION_OPTIONS, type AxonPermissionValue } from './axon-mock-data'
+import { AXON_PERMISSION_OPTIONS, type AxonPermissionValue } from './axon-ui-config'
 
 const AGENT_OPTIONS: Array<{ value: PulseAgent; label: string }> = [
   { value: 'claude', label: 'Claude' },
