@@ -31,7 +31,17 @@ export function useAxonAcp({
 
   useEffect(() => {
     const unsubscribe = subscribe((rawMsg) => {
-      const msg = rawMsg as unknown as Record<string, unknown>
+      let msg = rawMsg as unknown as Record<string, unknown>
+
+      // Rust backend wraps all ACP events in command.output.json.
+      // Unwrap the inner payload so the switch below can match ACP event types.
+      if (msg.type === 'command.output.json' && msg.data !== null && typeof msg.data === 'object') {
+        const outer = msg.data as Record<string, unknown>
+        const ctx = outer.ctx as Record<string, unknown> | undefined
+        if (ctx?.mode === 'pulse_chat' && outer.data !== null && typeof outer.data === 'object') {
+          msg = outer.data as Record<string, unknown>
+        }
+      }
 
       switch (msg.type) {
         case 'assistant_delta': {

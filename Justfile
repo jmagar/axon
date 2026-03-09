@@ -173,25 +173,40 @@ stop:
 
 # Start workers only (crawl, embed, extract, ingest, refresh)
 workers:
-    {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
+    if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    PIDS=()
+    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
+    trap cleanup INT TERM EXIT
+    cargo run --bin axon -- crawl worker & PIDS+=($!)
+    cargo run --bin axon -- embed worker & PIDS+=($!)
+    cargo run --bin axon -- extract worker & PIDS+=($!)
+    cargo run --bin axon -- ingest worker & PIDS+=($!)
+    cargo run --bin axon -- refresh worker & PIDS+=($!)
     wait
 
 # Start infra, axum server, MCP server, workers, shell server, and Next.js dev server
+# Ctrl+C cleanly stops all spawned processes via the EXIT trap.
 dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just stop
     sleep 1
     docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
-    {{rust_dev_env}}; AXON_SERVE_HOST=0.0.0.0 cargo run --locked --bin axon -- serve --port 49000 &
-    {{rust_dev_env}}; AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
-    cd apps/web && node shell-server.mjs &
-    cd apps/web && pnpm dev &
+    if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
+    if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    PIDS=()
+    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; just stop; }
+    trap cleanup INT TERM EXIT
+    AXON_SERVE_HOST=0.0.0.0 cargo run --bin axon -- serve --port 49000 & PIDS+=($!)
+    AXON_MCP_HTTP_PORT=8001 cargo run --bin axon -- mcp & PIDS+=($!)
+    cargo run --bin axon -- crawl worker & PIDS+=($!)
+    cargo run --bin axon -- embed worker & PIDS+=($!)
+    cargo run --bin axon -- extract worker & PIDS+=($!)
+    cargo run --bin axon -- ingest worker & PIDS+=($!)
+    cargo run --bin axon -- refresh worker & PIDS+=($!)
+    node apps/web/shell-server.mjs & PIDS+=($!)
+    (cd apps/web && pnpm dev) & PIDS+=($!)
     wait

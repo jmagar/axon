@@ -57,8 +57,32 @@ fn load_dotenv() {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ACP sessions consume one spawn_blocking thread each for up to 300s (ACP_ADAPTER_TIMEOUT).
+    // max_blocking_threads caps the pool to prevent silent exhaustion that would starve
+    // DB queries and file I/O. At 64 threads: ~0.2 new ACP sessions/second sustained
+    // (64 concurrent sessions max). Override with AXON_MAX_BLOCKING_THREADS env var.
+    // See: docs/reports/acp-performance-scalability-analysis-2026-03-08.md FINDING-6
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(acp_blocking_thread_limit())
+        .build()
+        .expect("failed to build tokio runtime");
+    rt.block_on(async_main())
+}
+
+fn acp_blocking_thread_limit() -> usize {
+    // Default: 64 blocking threads dedicated to ACP + other blocking work.
+    // At 300s max session time, this supports ~0.2 new sessions/second sustained,
+    // or ~64 concurrent sessions. For homelab single-user use, 16–32 is sufficient.
+    // Override with AXON_MAX_BLOCKING_THREADS env var.
+    std::env::var("AXON_MAX_BLOCKING_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64)
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Install aws-lc-rs as the process-level rustls crypto provider before any
     // TLS connections are made. Both ring (via lapin) and aws-lc-rs (via octocrab /
     // spider / reqwest 0.12) are compiled into the same binary, so rustls 0.23

@@ -23,13 +23,30 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 
 use super::context::ExecCommandContext;
-use super::events::{CommandContext, WsEventV2, serialize_v2_event};
+use super::events::{
+    CommandContext, WsEventV2, acp_bridge_event_json, serialize_raw_output_event,
+    serialize_v2_event,
+};
 use super::exe::strip_ansi;
 use super::files;
 use super::ws_send::{send_command_output_line, send_done_dual, send_error_dual};
 
 /// Typed error alias for service call wrappers — erased to `String` only at the WS boundary.
 type SvcError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+// FINDING-19: global semaphore to cap concurrent ACP sessions and prevent
+// resource exhaustion from unbounded parallel Claude/Codex/Gemini processes.
+static ACP_SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+
+fn acp_semaphore() -> &'static tokio::sync::Semaphore {
+    ACP_SEMAPHORE.get_or_init(|| {
+        let limit = env::var("AXON_ACP_MAX_CONCURRENT_SESSIONS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(8);
+        tokio::sync::Semaphore::new(limit)
+    })
+}
 
 /// Modes dispatched directly through service functions (no subprocess).
 ///
@@ -269,9 +286,51 @@ fn resolve_local_executable_path(program: &str, args_value: Option<&str>) -> Opt
     None
 }
 
+// FINDING-11: 30-second TTL cache for MCP server config — avoids a disk read
+// on every ACP session start when config rarely changes.
+struct McpServerCache {
+    servers: Vec<AcpMcpServerConfig>,
+    fetched_at: Instant,
+}
+
+static MCP_SERVER_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<McpServerCache>>> =
+    std::sync::OnceLock::new();
+
 /// Read MCP server configs from `AXON_DATA_DIR/axon/config.json` (or
 /// `~/.config/axon/config.json` fallback). Returns an empty vec on any error.
+/// Results are cached for 30 seconds to avoid repeated disk I/O per session.
 async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
+    const TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let cache_lock = MCP_SERVER_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+
+    // Check cache under a short lock scope — drop the guard before any await.
+    {
+        let guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref cached) = *guard
+            && cached.fetched_at.elapsed() < TTL
+        {
+            return cached.servers.clone();
+        }
+    }
+
+    // Cache miss — fetch from disk.
+    let servers = fetch_axon_mcp_servers_from_disk().await;
+
+    // Update cache.
+    {
+        let mut guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(McpServerCache {
+            servers: servers.clone(),
+            fetched_at: Instant::now(),
+        });
+    }
+
+    servers
+}
+
+/// Read and parse MCP server configs from disk. Called only on cache miss.
+async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct AxonConfig {
@@ -324,15 +383,63 @@ async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
             if let Some(url) = url {
                 Some(AcpMcpServerConfig::Http { name, url })
             } else {
+                let cmd = command.unwrap_or_default();
+                // SEC-2: validate command before spawning a child process.
+                if !is_safe_mcp_command(&cmd) {
+                    log::warn!(
+                        "[pulse_chat] skipping MCP server '{}': command '{}' failed safety check",
+                        name,
+                        cmd
+                    );
+                    return None;
+                }
                 Some(AcpMcpServerConfig::Stdio {
                     name,
-                    command: command.unwrap_or_default(),
+                    command: cmd,
                     args: entry.args.unwrap_or_default(),
                     env: entry.env.unwrap_or_default().into_iter().collect(),
                 })
             }
         })
         .collect()
+}
+
+/// Validate that an MCP server command is not a shell interpreter and, if it
+/// looks like a path, is absolute.  This blocks trivial command-injection via
+/// `config.json` entries like `{"command": "bash", "args": ["-c", "evil"]}`.
+fn is_safe_mcp_command(cmd: &str) -> bool {
+    if cmd.is_empty() {
+        return false;
+    }
+    // Reject known shell interpreters by basename.
+    let basename = Path::new(cmd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(cmd);
+    let shell_names = [
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "dash",
+        "ksh",
+        "csh",
+        "tcsh",
+        "cmd",
+        "cmd.exe",
+        "powershell",
+        "powershell.exe",
+        "pwsh",
+    ];
+    if shell_names.contains(&basename.to_ascii_lowercase().as_str()) {
+        return false;
+    }
+    // If the command contains a path separator it must be absolute — reject
+    // relative paths like `./evil` or `../evil`.
+    if cmd.contains('/') && !Path::new(cmd).is_absolute() {
+        return false;
+    }
+    true
 }
 
 fn resolve_acp_adapter_command(
@@ -657,25 +764,10 @@ fn call_status(
 /// positives when spawning with `tokio::task::spawn`.
 ///
 /// Returns `None` when the mode is not a recognised `DIRECT_SYNC_MODES` entry.
-pub(super) fn classify_sync_direct(
-    mode: &str,
-    input: &str,
-    flags: &serde_json::Value,
-    cfg: Arc<Config>,
-    ws_ctx: &CommandContext,
-) -> Option<DirectParams> {
-    // Classify synchronously — borrow of `mode` is dropped after this call.
-    ServiceMode::from_str(mode)?;
-
-    // Build a synthetic context just to drive extract_params.
-    let context = ExecCommandContext {
-        exec_id: ws_ctx.exec_id.clone(),
-        mode: mode.to_string(),
-        input: input.to_string(),
-        flags: flags.clone(),
-        cfg,
-    };
-    extract_params(&context, flags)
+pub(super) fn classify_sync_direct(context: &ExecCommandContext) -> Option<DirectParams> {
+    // L-7: Accept full context directly — no synthetic rebuild needed.
+    ServiceMode::from_str(&context.mode)?;
+    extract_params(context, &context.flags)
 }
 
 /// Execute a pre-classified direct-dispatch request.
@@ -725,19 +817,38 @@ async fn dispatch_acp_event(
             .await;
         }
         ServiceEvent::AcpBridge { event } => {
-            let payload = super::events::acp_bridge_event_payload(&event);
-            let event_type = payload
-                .get("type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            // Only log non-streaming events at debug to avoid flooding.
+            // PERF-4: serialize AcpBridgeEvent once to a String, then wrap it
+            // in a RawValue so `serialize_v2_event(CommandOutputRaw { .. })`
+            // embeds it verbatim — one serialization pass, not two.
+            let raw_json = acp_bridge_event_json(&event);
+            // Determine event type for logging from the raw JSON prefix; this
+            // avoids deserializing back to a Value just to read the "type" field.
+            let event_type_end = raw_json
+                .find('"')
+                .and_then(|s| raw_json[s + 1..].find('"').map(|e| (s + 1, s + 1 + e)))
+                .and_then(|(s, e)| {
+                    if raw_json[..s].contains("\"type\"") || raw_json.starts_with(r#"{"type":""#) {
+                        Some(&raw_json[s..e])
+                    } else {
+                        None
+                    }
+                });
+            // Only log non-streaming events to avoid flooding at token rate.
             if !matches!(
-                event_type,
-                "assistant_delta" | "thinking_content" | "user_delta"
+                event_type_end,
+                Some("assistant_delta") | Some("thinking_content") | Some("user_delta")
             ) {
-                log::info!("[pulse_chat] ACP event: type={event_type}");
+                log::info!(
+                    "[pulse_chat] ACP event: type={}",
+                    event_type_end.unwrap_or("unknown")
+                );
             }
-            send_json_owned(tx.clone(), ws_ctx.clone(), payload).await;
+            // PERF-4: wrap in a `command.output.json` envelope via string
+            // concatenation — one serialization pass for the AcpBridgeEvent
+            // (already done above) plus one for the CommandContext.
+            if let Some(envelope) = serialize_raw_output_event(ws_ctx, &raw_json) {
+                let _ = tx.send(envelope).await;
+            }
         }
     }
 }
@@ -755,16 +866,10 @@ async fn run_acp_event_loop(
     task_name: &'static str,
 ) -> Result<(), String> {
     loop {
+        // FINDING-8: biased select — drain events before checking task completion
+        // so streaming tokens are forwarded promptly during active generation.
         tokio::select! {
-            join_result = &mut task => {
-                let run_result = join_result
-                    .map_err(|e| format!("failed to join {task_name} task: {e}"))?;
-                run_result?;
-                while let Ok(event) = event_rx.try_recv() {
-                    dispatch_acp_event(event, &tx, &ws_ctx).await;
-                }
-                break;
-            }
+            biased;
             maybe_event = event_rx.recv() => {
                 match maybe_event {
                     Some(event) => dispatch_acp_event(event, &tx, &ws_ctx).await,
@@ -776,6 +881,15 @@ async fn run_acp_event_loop(
                         break;
                     }
                 }
+            }
+            join_result = &mut task => {
+                let run_result = join_result
+                    .map_err(|e| format!("failed to join {task_name} task: {e}"))?;
+                run_result?;
+                while let Ok(event) = event_rx.try_recv() {
+                    dispatch_acp_event(event, &tx, &ws_ctx).await;
+                }
+                break;
             }
         }
     }
@@ -795,6 +909,11 @@ async fn handle_pulse_chat(
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
+    // FINDING-19: non-blocking backpressure — reject immediately when at capacity.
+    let _permit = acp_semaphore()
+        .try_acquire()
+        .map_err(|_| "ACP session limit reached — try again shortly".to_string())?;
+
     log::info!(
         "[pulse_chat] starting: agent={:?} session_id={:?} model={:?} input_len={}",
         agent,
@@ -826,7 +945,7 @@ async fn handle_pulse_chat(
     let cwd = env::current_dir().map_err(|e| e.to_string())?;
     log::info!("[pulse_chat] cwd={}", cwd.display());
     let task = tokio::spawn(async move {
-        let result = scaffold
+        let result: Result<(), String> = scaffold
             .start_prompt_turn(&req, cwd, Some(event_tx), permission_responders)
             .await
             .map_err(|e| e.to_string());
@@ -854,6 +973,11 @@ async fn handle_pulse_chat_probe(
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
+    // FINDING-19: non-blocking backpressure — reject immediately when at capacity.
+    let _permit = acp_semaphore()
+        .try_acquire()
+        .map_err(|_| "ACP session limit reached — try again shortly".to_string())?;
+
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let adapter = resolve_acp_adapter_command(&cfg, agent)?;
     let scaffold = acp_svc::AcpClientScaffold::new(adapter);
@@ -1036,10 +1160,16 @@ pub(super) async fn handle_sync_command(
             if clean.trim().is_empty() {
                 continue;
             }
-            if !stdout_accum.is_empty() {
-                stdout_accum.push('\n');
+            // FINDING-12: only accumulate before we've seen the first JSON line —
+            // after that, stdout_accum is only used in the fallback path below which
+            // is skipped when saw_json_line is true, so continued accumulation wastes
+            // memory for long streaming outputs.
+            if !saw_json_line {
+                if !stdout_accum.is_empty() {
+                    stdout_accum.push('\n');
+                }
+                stdout_accum.push_str(&clean);
             }
-            stdout_accum.push_str(&clean);
             match serde_json::from_str::<serde_json::Value>(&clean) {
                 Ok(parsed) if parsed.is_object() || parsed.is_array() => {
                     saw_json_line = true;
