@@ -194,7 +194,7 @@ dev:
     set -euo pipefail
     just stop
     sleep 1
-    docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
+    docker compose up -d --wait axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
     PIDS=()

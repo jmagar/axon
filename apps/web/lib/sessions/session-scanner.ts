@@ -1,8 +1,13 @@
-import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { decodeProjectPath, enrichWithGit } from './git-metadata'
+import { cleanProjectName, mapWithConcurrency, SKIP_PATTERNS, sessionId } from './session-utils'
+
+export type AgentKind = 'claude' | 'codex' | 'gemini'
+
+// Re-export shared helpers so existing imports still work
+export { cleanProjectName, mapWithConcurrency, sessionId, SKIP_PATTERNS }
 
 export interface SessionFile {
   id: string
@@ -14,6 +19,7 @@ export interface SessionFile {
   preview?: string
   repo?: string
   branch?: string
+  agent: AgentKind
 }
 
 function selectPreferredSession(current: SessionFile, next: SessionFile): SessionFile {
@@ -28,8 +34,6 @@ function selectPreferredSession(current: SessionFile, next: SessionFile): Sessio
   return current
 }
 
-/** Patterns that indicate a message is a system/handoff prompt, not real user input. */
-const SKIP_PATTERNS = [/^Respond as JSON/, /^I'm loading a previous/, /^## Context/]
 const PREVIEW_TRUNCATE_PATTERNS = [
   /\s+Respond as JSON only with this exact shape:.*/i,
   /\s+Respond as JSON only with this shape:.*/i,
@@ -107,53 +111,6 @@ async function extractPreview(absolutePath: string): Promise<string | undefined>
   }
 }
 
-/**
- * Port of clean_claude_project_name from crates/ingest/sessions/claude.rs.
- * Converts a directory name like "-home-jmagar-workspace-axon-rust" to
- * a human-readable project name like "axon-rust".
- */
-// Words that indicate a suffix rather than the project name itself.
-const SUFFIX_WORDS = new Set(['rust', 'rs', 'git', 'main', 'master', 'src'])
-
-export function cleanProjectName(dirName: string): string {
-  if (!dirName.includes('-')) return dirName
-  const parts = dirName.replace(/^-+/, '').split('-').filter(Boolean)
-  if (parts.length === 0) return dirName
-  if (parts.length === 1) return parts[0] ?? dirName
-
-  const last = parts[parts.length - 1] ?? ''
-  const prev = parts[parts.length - 2] ?? ''
-
-  // If the last segment is a known suffix, drop it and return just prev.
-  // Otherwise show the last two path segments for context (e.g., "my-project").
-  return SUFFIX_WORDS.has(last) ? prev : `${prev}-${last}`
-}
-
-function sessionId(absolutePath: string): string {
-  return crypto.createHash('sha256').update(absolutePath).digest('hex').slice(0, 12)
-}
-
-/**
- * Run `fn` over each item with at most `concurrency` tasks in flight at once.
- * Preserves order of results relative to the input array.
- */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  fn: (item: T) => Promise<R>,
-  concurrency: number,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let next = 0
-  async function worker() {
-    while (next < items.length) {
-      const i = next++
-      results[i] = await fn(items[i]!)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
-  return results
-}
-
 async function readDirEntries(dirPath: string): Promise<string[]> {
   try {
     return await fs.readdir(dirPath)
@@ -172,10 +129,12 @@ async function isDirEntry(entryPath: string): Promise<boolean> {
 }
 
 /**
- * Scan ~/.claude/projects/**\/*.jsonl, return metadata sorted by mtime desc.
+ * Scan all agent session stores (Claude + Codex + Gemini), return up to `limit` sessions
+ * sorted by mtime desc. Guarantees representation from each agent by pre-sampling up to
+ * `perAgentLimit` sessions per agent before the global merge+sort.
  * Never throws — returns [] on any filesystem error.
  */
-export async function scanSessions(limit = 20): Promise<SessionFile[]> {
+export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<SessionFile[]> {
   const root = path.join(os.homedir(), '.claude', 'projects')
 
   try {
@@ -224,6 +183,7 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
               preview,
               repo: git.repo,
               branch: git.branch,
+              agent: 'claude' as AgentKind,
             } satisfies SessionFile
           } catch (err) {
             console.warn('[session-scanner] Failed to read session file', {
@@ -241,16 +201,53 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
     8, // max 8 concurrent project scans (each may spawn a git subprocess)
   )
 
-  const results = perProjectResults.flat()
+  // Take top perAgentLimit Claude sessions by mtime before merging
+  const claudeResults = perProjectResults
+    .flat()
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, perAgentLimit)
+
+  // Fetch Codex and Gemini scanners in parallel via dynamic import to bypass
+  // static module resolution cache (avoids Turbopack negative-cache stale state)
+  const [{ scanCodexSessions }, { scanGeminiSessions }] = await Promise.all([
+    import('./codex-scanner'),
+    import('./gemini-scanner'),
+  ])
+  const [codexAll, geminiAll] = await Promise.all([scanCodexSessions(), scanGeminiSessions()])
+  const codexResults = codexAll.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, perAgentLimit)
+  const geminiResults = geminiAll.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, perAgentLimit)
+
+  const results = [...claudeResults, ...codexResults, ...geminiResults]
 
   const deduped = new Map<string, SessionFile>()
   for (const session of results) {
-    const key = session.filename
+    const key = `${session.agent}:${session.filename}`
     const existing = deduped.get(key)
     deduped.set(key, existing ? selectPreferredSession(existing, session) : session)
   }
 
-  return Array.from(deduped.values())
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .slice(0, limit)
+  // Sort all deduplicated sessions by mtime desc
+  const allSorted = Array.from(deduped.values()).sort((a, b) => b.mtimeMs - a.mtimeMs)
+
+  // Guarantee at least `minPerAgent` sessions from each agent that has results,
+  // picking the most recent of each. Remaining slots filled by global recency.
+  const minPerAgent = 3
+  const agentCounts = new Map<AgentKind, number>()
+  const guaranteed: SessionFile[] = []
+  const guaranteedKeys = new Set<string>()
+
+  for (const s of allSorted) {
+    const count = agentCounts.get(s.agent) ?? 0
+    if (count < minPerAgent) {
+      agentCounts.set(s.agent, count + 1)
+      guaranteed.push(s)
+      guaranteedKeys.add(`${s.agent}:${s.filename}`)
+    }
+  }
+
+  // Fill remaining slots with the most recent not already guaranteed, then sort.
+  const filler = allSorted
+    .filter((s) => !guaranteedKeys.has(`${s.agent}:${s.filename}`))
+    .slice(0, limit - guaranteed.length)
+  return [...guaranteed, ...filler].sort((a, b) => b.mtimeMs - a.mtimeMs)
 }

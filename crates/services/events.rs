@@ -2,6 +2,27 @@ use crate::crates::services::types::AcpBridgeEvent;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
+/// The write operation for an `EditorWrite` event.
+///
+/// Serializes to `"replace"` or `"append"` on the wire, matching the
+/// TypeScript `'replace' | 'append'` union and the Zod schema in
+/// `use-axon-acp.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorOperation {
+    Replace,
+    Append,
+}
+
+impl std::fmt::Display for EditorOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Replace => write!(f, "replace"),
+            Self::Append => write!(f, "append"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -49,7 +70,7 @@ pub enum ServiceEvent {
     /// one or more `<axon:editor>` blocks.  Each block becomes one event.
     EditorWrite {
         content: String,
-        operation: String,
+        operation: EditorOperation,
     },
 }
 

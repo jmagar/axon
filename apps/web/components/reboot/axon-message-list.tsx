@@ -9,52 +9,117 @@ import {
   ChainOfThoughtStep,
 } from '@/components/ai-elements/chain-of-thought'
 import { ConversationContent } from '@/components/ai-elements/conversation'
-import {
-  Message,
-  MessageAction,
-  MessageActions,
-  MessageResponse,
-} from '@/components/ai-elements/message'
+import { Message, MessageAction, MessageActions } from '@/components/ai-elements/message'
 import { QueueItemAttachment } from '@/components/ai-elements/queue'
+import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
+import { AssistantMessageBody } from '@/components/reboot/axon-editor-artifact'
 import type { AxonMessage } from '@/hooks/use-axon-session'
+import type { PulseToolUse } from '@/lib/pulse/types'
 
-// ── <axon:editor> block parsing ───────────────────────────────────────────────
-
-interface EditorBlock {
-  content: string
-  operation: 'replace' | 'append'
+function toolStatusText(status?: string): string {
+  if (status === 'completed' || status === 'success') return 'Completed'
+  if (status === 'failed' || status === 'error') return 'Error'
+  return 'Running'
 }
 
-const EDITOR_BLOCK_RE = /<axon:editor(?:\s[^>]*)?>[\s\S]*?<\/axon:editor>/g
+function ToolCallCard({ tool }: { tool: PulseToolUse }) {
+  const isDone = tool.status === 'completed' || tool.status === 'success'
 
-function parseEditorBlocks(content: string): { displayText: string; blocks: EditorBlock[] } {
-  const blocks: EditorBlock[] = []
-  const displayText = content.replace(EDITOR_BLOCK_RE, (match) => {
-    const opMatch = match.match(/op="(replace|append)"/)
-    const operation: 'replace' | 'append' = opMatch?.[1] === 'append' ? 'append' : 'replace'
-    const contentMatch = match.match(/<axon:editor[^>]*>([\s\S]*?)<\/axon:editor>/)
-    const blockContent = contentMatch?.[1]?.trim() ?? ''
-    if (blockContent) blocks.push({ content: blockContent, operation })
-    return ''
-  })
-  return { displayText: displayText.trim(), blocks }
-}
-
-function EditorWriteCard({ content, operation }: EditorBlock) {
-  const lines = content.split('\n')
-  const preview = lines.slice(0, 3).join('\n')
-  const hasMore = lines.length > 3
   return (
-    <div className="mt-2 rounded-lg border border-[rgba(130,200,130,0.2)] bg-[rgba(10,30,10,0.5)] px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[rgba(120,210,120,0.85)]">
-        <Pencil className="size-3 shrink-0" />
-        <span>Editor · {operation}</span>
-      </div>
-      <pre className="mt-1.5 max-h-14 overflow-hidden whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-[var(--text-dim)]">
-        {preview}
-        {hasMore ? '\n…' : ''}
-      </pre>
-    </div>
+    <Tool defaultOpen={!isDone} className="mt-2">
+      <ToolHeader title={tool.name} description={toolStatusText(tool.status)} />
+      <ToolContent>
+        <div className="space-y-2 px-4 py-3">
+          {tool.input && Object.keys(tool.input).length > 0 ? (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
+                Parameters
+              </p>
+              <pre className="overflow-x-auto rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">
+                {JSON.stringify(tool.input, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+          {tool.content ? (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
+                Output
+              </p>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">
+                {tool.content}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      </ToolContent>
+    </Tool>
+  )
+}
+
+/** Splits a thinking chunk into label + optional description for use in ChainOfThoughtStep. */
+function splitThinkingChunk(chunk: string): { label: string; description?: string } {
+  const nl = chunk.indexOf('\n')
+  if (nl > 0 && nl < chunk.length - 1) {
+    return { label: chunk.slice(0, nl).trim(), description: chunk.slice(nl + 1).trim() }
+  }
+  return { label: chunk.trim() }
+}
+
+function ThinkingSection({ message }: { message: AxonMessage }) {
+  const thinkingBlock = message.blocks?.find((b) => b.type === 'thinking') as
+    | { type: 'thinking'; content: string }
+    | undefined
+  const hasChainOfThought = message.steps?.length || message.chainOfThought?.length || thinkingBlock
+  if (!hasChainOfThought) return null
+  return (
+    <ChainOfThought
+      className="mt-3 rounded-2xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] p-3"
+      defaultOpen={false}
+    >
+      <ChainOfThoughtHeader>Chain of thought</ChainOfThoughtHeader>
+      <ChainOfThoughtContent>
+        {message.steps?.map((step, i) => (
+          <ChainOfThoughtStep
+            key={i}
+            label={step.label}
+            description={step.description}
+            status={step.status}
+          />
+        ))}
+        {message.chainOfThought?.flatMap((chunk, chunkIdx) =>
+          chunk
+            .split('\n\n')
+            .filter(Boolean)
+            .map((para, paraIdx) => {
+              const { label, description } = splitThinkingChunk(para)
+              return (
+                <ChainOfThoughtStep
+                  key={`cot-${chunkIdx}-${paraIdx}`}
+                  label={label}
+                  description={description}
+                  status="complete"
+                />
+              )
+            }),
+        )}
+        {thinkingBlock
+          ? thinkingBlock.content
+              .split('\n\n')
+              .filter(Boolean)
+              .map((para, i) => {
+                const { label, description } = splitThinkingChunk(para)
+                return (
+                  <ChainOfThoughtStep
+                    key={`tb-${i}`}
+                    label={label}
+                    description={description}
+                    status="complete"
+                  />
+                )
+              })
+          : null}
+      </ChainOfThoughtContent>
+    </ChainOfThought>
   )
 }
 
@@ -85,6 +150,7 @@ export const AxonMessageList = memo(function AxonMessageList({
   loading = false,
   error = null,
   onRetry,
+  onEditorContent,
 }: {
   messages: AxonMessage[]
   agentName: string
@@ -97,6 +163,7 @@ export const AxonMessageList = memo(function AxonMessageList({
   loading?: boolean
   error?: string | null
   onRetry?: () => void
+  onEditorContent?: (content: string, operation: 'replace' | 'append') => void
 }) {
   const isMobile = variant === 'mobile'
   const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[80%]'
@@ -189,58 +256,20 @@ export const AxonMessageList = memo(function AxonMessageList({
                 />
               </div>
             ) : (
-              (() => {
-                const { displayText, blocks } = parseEditorBlocks(message.content)
-                return (
-                  <>
-                    {displayText ? <MessageResponse>{displayText}</MessageResponse> : null}
-                    {blocks.map((block, i) => (
-                      <EditorWriteCard
-                        key={i}
-                        content={block.content}
-                        operation={block.operation}
-                      />
-                    ))}
-                  </>
-                )
-              })()
+              <AssistantMessageBody
+                content={message.content}
+                onEditorContent={onEditorContent}
+                variant={variant}
+              />
             )}
-            {(() => {
-              const thinkingBlock = message.blocks?.find((b) => b.type === 'thinking') as
-                | { type: 'thinking'; content: string }
-                | undefined
-              const hasChainOfThought =
-                message.steps?.length || message.chainOfThought?.length || thinkingBlock
-              if (!hasChainOfThought) return null
-              return (
-                <ChainOfThought
-                  className="mt-3 rounded-2xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] p-3"
-                  defaultOpen={false}
-                >
-                  <ChainOfThoughtHeader>Chain of thought</ChainOfThoughtHeader>
-                  <ChainOfThoughtContent>
-                    {message.steps?.map((step, stepIndex) => (
-                      <ChainOfThoughtStep
-                        key={stepIndex}
-                        label={step.label}
-                        description={step.description}
-                        status={step.status}
-                      />
-                    ))}
-                    {message.chainOfThought?.length ? (
-                      <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-dim)]">
-                        {message.chainOfThought.join('')}
-                      </div>
-                    ) : null}
-                    {thinkingBlock ? (
-                      <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--text-dim)]">
-                        {thinkingBlock.content}
-                      </div>
-                    ) : null}
-                  </ChainOfThoughtContent>
-                </ChainOfThought>
-              )
-            })()}
+            {message.toolUses?.length ? (
+              <div className="space-y-2">
+                {message.toolUses.map((tool, i) => (
+                  <ToolCallCard key={tool.toolCallId ?? i} tool={tool} />
+                ))}
+              </div>
+            ) : null}
+            <ThinkingSection message={message} />
             {message.files?.length ? (
               <QueueItemAttachment className="mt-3 gap-1.5">
                 {message.files.map((file) => (
@@ -262,12 +291,11 @@ export const AxonMessageList = memo(function AxonMessageList({
           <div
             className={`mt-1 flex translate-y-1 items-center gap-1 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            {(() => {
-              const ts = formatTimestamp(message.timestamp as number | string | undefined)
-              return ts ? (
-                <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">{ts}</span>
-              ) : null
-            })()}
+            {formatTimestamp(message.timestamp as number | string | undefined) ? (
+              <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">
+                {formatTimestamp(message.timestamp as number | string | undefined)}
+              </span>
+            ) : null}
             <MessageActions className="gap-0.5">
               <MessageAction
                 label="Copy message"

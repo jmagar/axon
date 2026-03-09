@@ -1,10 +1,10 @@
 # GitHub Ingest
-Last Modified: 2026-03-03
+Last Modified: 2026-03-09
 
 Version: 1.0.0
 Last Updated: 01:26:53 | 02/25/2026 EST
 
-> CLI reference (flags, subcommands, examples): [`docs/commands/github.md`](../commands/github.md)
+> CLI reference (flags, subcommands, examples): [`docs/commands/ingest.md`](../commands/ingest.md)
 
 Ingests a GitHub repository — source code, documentation, issues, pull requests, and wiki pages — into Qdrant via a hybrid approach: raw reqwest for file content, octocrab for metadata/issues/PRs, and `git clone` for wiki pages.
 
@@ -52,6 +52,52 @@ The argument accepts:
 4. Fetches file contents in parallel via `GET /repos/{owner}/{repo}/contents/{path}`
 5. Fetches issues (all states) and PRs (all states) via octocrab with automatic pagination; embeds repo metadata (description, language, topics, license) from the `GET /repos/{owner}/{repo}` response; clones the wiki via `git clone --depth=1` and walks `.md`/`.rst`/`.txt` files
 6. All content embedded via `embed_text_with_metadata()` → TEI → Qdrant with the GitHub URL as source metadata
+
+## Qdrant Metadata Fields
+
+All GitHub chunks carry structured `gh_*` payload fields built in `crates/ingest/github/meta.rs`. The fields present depend on chunk type.
+
+### Repository chunks (`gh_is_pr: false`, file and wiki chunks)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gh_owner` | `string` | Repository owner (extracted from `full_name`) |
+| `gh_stars` | `integer` | Stargazer count at index time |
+| `gh_forks` | `integer` | Fork count at index time |
+| `gh_open_issues` | `integer` | Open issue count at index time |
+| `gh_language` | `string \| null` | Primary language as reported by GitHub |
+| `gh_topics` | `string[]` | Repository topics array |
+| `gh_created_at` | `string \| null` | Repository creation timestamp (RFC 3339) |
+| `gh_pushed_at` | `string \| null` | Last push timestamp (RFC 3339) |
+| `gh_is_fork` | `boolean` | Whether the repository is a fork |
+| `gh_is_archived` | `boolean` | Whether the repository is archived |
+
+### Issue chunks
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gh_issue_number` | `integer` | GitHub issue number |
+| `gh_state` | `string` | `"open"`, `"closed"`, or `"unknown"` |
+| `gh_author` | `string` | Login of the issue author |
+| `gh_created_at` | `string` | Issue creation timestamp (RFC 3339) |
+| `gh_updated_at` | `string` | Issue last-updated timestamp (RFC 3339) |
+| `gh_comment_count` | `integer` | Number of comments on the issue |
+| `gh_labels` | `string[]` | Label names applied to the issue |
+| `gh_is_pr` | `boolean` | Always `false` for issues |
+
+### Pull request chunks
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gh_issue_number` | `integer` | GitHub PR number |
+| `gh_state` | `string` | `"open"`, `"closed"`, or `"unknown"` |
+| `gh_author` | `string` | Login of the PR author (`""` if not available) |
+| `gh_created_at` | `string \| null` | PR creation timestamp (RFC 3339) |
+| `gh_updated_at` | `string \| null` | PR last-updated timestamp (RFC 3339) |
+| `gh_labels` | `string[]` | Label names applied to the PR |
+| `gh_is_pr` | `boolean` | Always `true` for pull requests |
+| `gh_merged_at` | `string \| null` | Merge timestamp (RFC 3339); `null` if not merged |
+| `gh_is_draft` | `boolean` | Whether the PR was a draft at index time |
 
 ## Known Limitations
 
