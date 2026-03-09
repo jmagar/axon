@@ -155,13 +155,28 @@ if ! command -v just >/dev/null 2>&1; then
   if [[ "$OS" == "macos" ]]; then
     brew install just && ok "just $(just --version)"
   else
-    # Prebuilt binary is much faster than cargo install
-    _just_ver="$(curl -fsSL https://api.github.com/repos/casey/just/releases/latest \
-      | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")"
-    curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-x86_64-unknown-linux-musl.tar.gz" \
-      | tar -xz -C "$HOME/.cargo/bin" just \
-      && ok "just ${_just_ver} installed" \
-      || { warn "prebuilt install failed — falling back to cargo install just"; cargo install --locked just && ok "just installed"; }
+    # Prebuilt binary is much faster than cargo install, but must be resilient to failures.
+    _just_ver=""
+    if command -v python3 >/dev/null 2>&1; then
+      if ! _just_ver="$(curl -fsSL https://api.github.com/repos/casey/just/releases/latest \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null)"; then
+        _just_ver=""
+      fi
+    fi
+
+    if [[ -n "${_just_ver:-}" ]]; then
+      mkdir -p "$HOME/.cargo/bin"
+      if curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-x86_64-unknown-linux-musl.tar.gz" \
+        | tar -xz -C "$HOME/.cargo/bin" just; then
+        ok "just ${_just_ver} installed"
+      else
+        warn "prebuilt install failed — falling back to cargo install just"
+        cargo install --locked just && ok "just installed"
+      fi
+    else
+      warn "failed to detect latest just release — falling back to cargo install just"
+      cargo install --locked just && ok "just installed"
+    fi
   fi
 else
   ok "just $(just --version)"
