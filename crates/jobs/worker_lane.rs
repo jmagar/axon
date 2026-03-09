@@ -5,7 +5,8 @@ mod poll;
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::jobs::common::{
-    JobTable, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
+    JobTable, batch_enqueue_jobs, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
+    resume_interrupted_jobs,
 };
 use sqlx::PgPool;
 use std::future::Future;
@@ -126,7 +127,30 @@ pub(crate) async fn run_job_worker(
         return Err(format!("{} worker: lane_count must be >= 1", wc.job_kind).into());
     }
 
-    sweep_stale_jobs(cfg, &pool, wc, "startup", 0).await;
+    // Resume any jobs left in 'running' state from a previous process.
+    // At startup no worker is active, so all running jobs are orphans.
+    match resume_interrupted_jobs(&pool, wc.table).await {
+        Ok(ids) if !ids.is_empty() => {
+            log_info(&format!(
+                "{} startup: resumed {} interrupted job(s)",
+                wc.job_kind,
+                ids.len()
+            ));
+            if let Err(err) = batch_enqueue_jobs(cfg, &wc.queue_name, &ids).await {
+                log_warn(&format!(
+                    "{} startup: AMQP re-enqueue failed for {} resumed job(s); \
+                     polling fallback will pick them up: {err}",
+                    wc.job_kind,
+                    ids.len()
+                ));
+            }
+        }
+        Ok(_) => {}
+        Err(err) => log_warn(&format!(
+            "{} startup: resume interrupted jobs failed: {err}",
+            wc.job_kind
+        )),
+    }
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(wc.lane_count));
 

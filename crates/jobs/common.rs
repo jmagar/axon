@@ -39,7 +39,7 @@ pub use amqp::{batch_enqueue_jobs, enqueue_job, open_amqp_channel};
 pub(crate) use amqp::{open_amqp_connection_and_channel, purge_queue_safe};
 pub use job_ops::{
     cancel_pending_or_running_job, claim_next_pending, claim_pending_by_id, mark_job_completed,
-    mark_job_failed, spawn_heartbeat_task, touch_running_job,
+    mark_job_failed, resume_interrupted_jobs, spawn_heartbeat_task, touch_running_job,
 };
 pub use pool::make_pool;
 pub(crate) use schema::begin_schema_migration_tx;

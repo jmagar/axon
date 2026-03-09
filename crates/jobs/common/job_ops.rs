@@ -175,6 +175,39 @@ pub async fn touch_running_job(pool: &PgPool, table: JobTable, id: Uuid) -> Resu
     Ok(())
 }
 
+/// Reset all `running` jobs back to `pending` at worker startup.
+///
+/// At startup, no worker is actively processing jobs — any job left in `running`
+/// state is an orphan from a previous process that exited mid-flight (crash,
+/// restart, deploy). This function atomically resets them to `pending` so the
+/// normal claim loop picks them up again.
+///
+/// Unlike the periodic watchdog sweep (which uses a two-pass confirmation model
+/// to avoid killing active jobs), this is safe to do unconditionally at startup
+/// because there are no active workers yet.
+///
+/// Returns the list of job IDs that were resumed.
+pub async fn resume_interrupted_jobs(pool: &PgPool, table: JobTable) -> Result<Vec<Uuid>> {
+    let table_name = table.as_str();
+    let query = format!(
+        "UPDATE {table_name} \
+         SET status='{pending}', updated_at=NOW(), started_at=NULL, error_text=NULL, \
+             result_json = CASE \
+                 WHEN result_json IS NOT NULL THEN result_json - '_watchdog' \
+                 ELSE result_json \
+             END \
+         WHERE status='{running}' \
+         RETURNING id",
+        pending = JobStatus::Pending.as_str(),
+        running = JobStatus::Running.as_str(),
+    );
+    let rows = sqlx::query_as::<_, (Uuid,)>(&query)
+        .fetch_all(pool)
+        .await
+        .with_context(|| format!("resume_interrupted_jobs in {table_name}"))?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// Spawn a background heartbeat task that calls [`touch_running_job`] on `interval_secs`
 /// cadence until the returned sender signals stop.
 ///

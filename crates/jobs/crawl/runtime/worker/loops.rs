@@ -12,7 +12,8 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::jobs::common::{
-    claim_next_pending, make_pool, mark_job_failed, open_amqp_connection_and_channel,
+    batch_enqueue_jobs, claim_next_pending, make_pool, mark_job_failed,
+    open_amqp_connection_and_channel, resume_interrupted_jobs,
 };
 use crate::crates::jobs::worker_lane::validate_worker_env_vars;
 use sqlx::PgPool;
@@ -21,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::super::{STALE_SWEEP_INTERVAL_SECS, TABLE, WORKER_CONCURRENCY, ensure_schema};
-use super::amqp_consumer::{reclaim_stale_running_jobs, run_amqp_worker_lane, run_watchdog_sweep};
+use super::amqp_consumer::{run_amqp_worker_lane, run_watchdog_sweep};
 use super::process::process_job;
 
 async fn run_worker_polling_loop(cfg: &Config, pool: &PgPool) -> Result<(), Box<dyn Error>> {
@@ -133,23 +134,27 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
-    match reclaim_stale_running_jobs(
-        &pool,
-        0,
-        cfg.watchdog_stale_timeout_secs,
-        cfg.watchdog_confirm_secs,
-    )
-    .await
-    {
-        Ok(stats) => {
-            if stats.stale_candidates > 0 || stats.reclaimed_jobs > 0 {
-                log_info(&format!(
-                    "watchdog crawl startup sweep candidates={} marked={} reclaimed={}",
-                    stats.stale_candidates, stats.marked_candidates, stats.reclaimed_jobs
+    // Resume any crawl jobs left in 'running' state from a previous process.
+    // At startup no worker is active, so all running jobs are orphans — safe to
+    // reset unconditionally without the two-pass watchdog confirmation.
+    match resume_interrupted_jobs(&pool, TABLE).await {
+        Ok(ids) if !ids.is_empty() => {
+            log_info(&format!(
+                "crawl startup: resumed {} interrupted job(s)",
+                ids.len()
+            ));
+            // Re-enqueue to AMQP so the consumer loop picks them up immediately
+            // instead of waiting for the polling fallback.
+            if let Err(err) = batch_enqueue_jobs(cfg, &cfg.crawl_queue, &ids).await {
+                log_warn(&format!(
+                    "crawl startup: AMQP re-enqueue failed for {} resumed job(s); \
+                     polling fallback will pick them up: {err}",
+                    ids.len()
                 ));
             }
         }
-        Err(err) => log_warn(&format!("watchdog crawl startup sweep failed: {err}")),
+        Ok(_) => {} // no interrupted jobs
+        Err(err) => log_warn(&format!("crawl startup: resume interrupted jobs failed: {err}")),
     }
 
     // Probe AMQP connectivity with a short-lived connection+channel pair.
