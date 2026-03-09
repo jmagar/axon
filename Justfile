@@ -180,11 +180,11 @@ workers:
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
     trap cleanup INT TERM EXIT
-    cargo run --bin axon -- crawl worker & PIDS+=($!)
-    cargo run --bin axon -- embed worker & PIDS+=($!)
-    cargo run --bin axon -- extract worker & PIDS+=($!)
-    cargo run --bin axon -- ingest worker & PIDS+=($!)
-    cargo run --bin axon -- refresh worker & PIDS+=($!)
+    cargo run --locked --bin axon -- crawl worker & PIDS+=($!)
+    cargo run --locked --bin axon -- embed worker & PIDS+=($!)
+    cargo run --locked --bin axon -- extract worker & PIDS+=($!)
+    cargo run --locked --bin axon -- ingest worker & PIDS+=($!)
+    cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
     wait
 
 # Start infra, axum server, MCP server, workers, shell server, and Next.js dev server
@@ -200,13 +200,13 @@ dev:
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; just stop; }
     trap cleanup INT TERM EXIT
-    AXON_SERVE_HOST=0.0.0.0 cargo run --bin axon -- serve --port 49000 & PIDS+=($!)
-    AXON_MCP_HTTP_PORT=8001 cargo run --bin axon -- mcp & PIDS+=($!)
-    cargo run --bin axon -- crawl worker & PIDS+=($!)
-    cargo run --bin axon -- embed worker & PIDS+=($!)
-    cargo run --bin axon -- extract worker & PIDS+=($!)
-    cargo run --bin axon -- ingest worker & PIDS+=($!)
-    cargo run --bin axon -- refresh worker & PIDS+=($!)
-    node apps/web/shell-server.mjs & PIDS+=($!)
+    AXON_SERVE_HOST=0.0.0.0 cargo run --locked --bin axon -- serve --port 49000 & PIDS+=($!)
+    AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp & PIDS+=($!)
+    cargo run --locked --bin axon -- crawl worker & PIDS+=($!)
+    cargo run --locked --bin axon -- embed worker & PIDS+=($!)
+    cargo run --locked --bin axon -- extract worker & PIDS+=($!)
+    cargo run --locked --bin axon -- ingest worker & PIDS+=($!)
+    cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
+    (cd apps/web && node shell-server.mjs) & PIDS+=($!)
     (cd apps/web && pnpm dev) & PIDS+=($!)
     wait

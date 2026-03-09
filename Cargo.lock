@@ -611,7 +611,6 @@ dependencies = [
  "spider_transformations",
  "sqlx",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tokio-executor-trait 3.1.0",
  "tokio-reactor-trait",

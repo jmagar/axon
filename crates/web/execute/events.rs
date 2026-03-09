@@ -143,7 +143,10 @@ pub(super) fn acp_bridge_event_payload(event: &AcpBridgeEvent) -> Value {
 pub(super) fn acp_bridge_event_json(event: &AcpBridgeEvent) -> String {
     serde_json::to_string(event).unwrap_or_else(|e| {
         log::error!("failed to serialize ACP bridge event: {e}");
-        format!(r#"{{"type":"error","message":"serialization failed: {e}"}}"#)
+        // Use serde_json to properly escape the error message — a raw format!()
+        // produces invalid JSON if the error contains quotes, backslashes, or newlines.
+        serde_json::json!({"type": "error", "message": format!("serialization failed: {e}")})
+            .to_string()
     })
 }
 
