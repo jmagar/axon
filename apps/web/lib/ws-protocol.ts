@@ -42,6 +42,7 @@ export type WsServerMsg =
   | { type: 'session_fallback'; old_session_id: string; new_session_id: string }
   | { type: 'result'; session_id?: string; result?: string; [key: string]: unknown }
   | { type: 'error'; message?: string; [key: string]: unknown }
+  | { type: 'editor_update'; content: string; operation: 'replace' | 'append' }
 
 export interface WsV2CommandContext {
   exec_id: string
