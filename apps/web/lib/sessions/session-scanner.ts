@@ -133,6 +133,27 @@ function sessionId(absolutePath: string): string {
   return crypto.createHash('sha256').update(absolutePath).digest('hex').slice(0, 12)
 }
 
+/**
+ * Run `fn` over each item with at most `concurrency` tasks in flight at once.
+ * Preserves order of results relative to the input array.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  async function worker() {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
+  return results
+}
+
 async function readDirEntries(dirPath: string): Promise<string[]> {
   try {
     return await fs.readdir(dirPath)
@@ -165,10 +186,12 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
 
   const projectNames = await readDirEntries(root)
 
-  // Process all projects in parallel — each calls enrichWithGit (git subprocesses)
-  // and reads all session files concurrently instead of serially.
-  const perProjectResults = await Promise.all(
-    projectNames.map(async (projectName) => {
+  // Process projects with bounded parallelism — each spawns git subprocesses and
+  // opens file descriptors.  Unbounded Promise.all over large project lists can
+  // exhaust subprocess / FD limits and silently drop sessions under load.
+  const perProjectResults = await mapWithConcurrency(
+    projectNames,
+    async (projectName) => {
       const projectPath = path.join(root, projectName)
       if (!projectPath.startsWith(root + path.sep)) return []
       if (!(await isDirEntry(projectPath))) return []
@@ -179,36 +202,43 @@ export async function scanSessions(limit = 20): Promise<SessionFile[]> {
         readDirEntries(projectPath),
       ])
 
-      const fileResults = await Promise.all(
-        fileNames
-          .filter((f) => f.endsWith('.jsonl'))
-          .map(async (fileName) => {
-            const absolutePath = path.join(projectPath, fileName)
-            if (!absolutePath.startsWith(root + path.sep)) return null
-            try {
-              const [stat, preview] = await Promise.all([
-                fs.stat(absolutePath),
-                extractPreview(absolutePath),
-              ])
-              if (!stat.isFile()) return null
-              return {
-                id: sessionId(absolutePath),
-                absolutePath,
-                project: cleanProjectName(projectName),
-                filename: fileName.slice(0, -'.jsonl'.length),
-                mtimeMs: stat.mtimeMs,
-                sizeBytes: stat.size,
-                preview,
-                repo: git.repo,
-                branch: git.branch,
-              } satisfies SessionFile
-            } catch {
-              return null
-            }
-          }),
+      const jsonlFiles = fileNames.filter((f) => f.endsWith('.jsonl'))
+      const fileResults = await mapWithConcurrency(
+        jsonlFiles,
+        async (fileName) => {
+          const absolutePath = path.join(projectPath, fileName)
+          if (!absolutePath.startsWith(root + path.sep)) return null
+          try {
+            const [stat, preview] = await Promise.all([
+              fs.stat(absolutePath),
+              extractPreview(absolutePath),
+            ])
+            if (!stat.isFile()) return null
+            return {
+              id: sessionId(absolutePath),
+              absolutePath,
+              project: cleanProjectName(projectName),
+              filename: fileName.slice(0, -'.jsonl'.length),
+              mtimeMs: stat.mtimeMs,
+              sizeBytes: stat.size,
+              preview,
+              repo: git.repo,
+              branch: git.branch,
+            } satisfies SessionFile
+          } catch (err) {
+            console.warn('[session-scanner] Failed to read session file', {
+              absolutePath,
+              sessionFilename: fileName,
+              error: err instanceof Error ? err.message : String(err),
+            })
+            return null
+          }
+        },
+        16, // max 16 concurrent file reads per project
       )
       return fileResults.filter((f): f is SessionFile => f !== null)
-    }),
+    },
+    8, // max 8 concurrent project scans (each may spawn a git subprocess)
   )
 
   const results = perProjectResults.flat()

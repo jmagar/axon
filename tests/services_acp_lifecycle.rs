@@ -152,16 +152,21 @@ fn prepare_initialize_rejects_empty_adapter_program() {
 
 #[test]
 fn prepare_session_setup_rejects_empty_adapter_program() {
+    // Adapter validation is enforced by prepare_initialize, which always
+    // precedes prepare_session_setup in the real flow.  Verify that calling
+    // prepare_initialize on a whitespace-only program triggers that rejection.
     let scaffold = AcpClientScaffold::new(AcpAdapterCommand {
         program: "  ".to_string(),
         args: vec!["--stdio".to_string()],
         cwd: None,
     });
-    // prepare_session_setup itself does not call validate_adapter directly,
-    // but prepare_initialize (which precedes it in the real flow) does.
-    // Verify that the scaffold at least constructs and the adapter accessor
-    // returns the whitespace program (validation is a separate step).
-    assert_eq!(scaffold.adapter().program, "  ");
+    let err = scaffold
+        .prepare_initialize()
+        .expect_err("whitespace-only adapter program should fail at prepare_initialize");
+    assert!(
+        err.to_string().contains("cannot be empty"),
+        "error should mention empty program: {err}"
+    );
 }
 
 #[test]

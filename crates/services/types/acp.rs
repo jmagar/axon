@@ -221,7 +221,12 @@ pub enum AcpBridgeEvent {
     SessionUpdate(AcpSessionUpdateEvent),
     PermissionRequest(AcpPermissionRequestEvent),
     TurnResult(AcpTurnResultEvent),
-    ConfigOptionsUpdate(Vec<AcpConfigOption>),
+    /// Config options changed. Carries the session that received the update
+    /// so the frontend can correlate it with the correct agent panel.
+    ConfigOptionsUpdate {
+        session_id: String,
+        config_options: Vec<AcpConfigOption>,
+    },
     PlanUpdate(AcpPlanUpdate),
     ModeUpdate(AcpModeUpdate),
     CommandsUpdate(AcpCommandsUpdate),
@@ -231,277 +236,154 @@ pub enum AcpBridgeEvent {
     },
 }
 
+// ── Per-variant serialization helpers ────────────────────────────────────────
+
+fn serialize_session_update<S: serde::Serializer>(
+    update: &AcpSessionUpdateEvent,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    if update.kind == AcpSessionUpdateKind::Unknown {
+        log::warn!(
+            "received unknown ACP session update kind, forwarding as 'unknown': {:?}",
+            update
+        );
+    }
+    let event_type = update.kind.to_string();
+    let text_key = if event_type == "thinking_content" {
+        "content"
+    } else {
+        "delta"
+    };
+    let text_val = update.text_delta.clone().unwrap_or_default();
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", &event_type)?;
+    map.serialize_entry("session_id", &update.session_id)?;
+    map.serialize_entry("tool_call_id", &update.tool_call_id)?;
+    map.serialize_entry(text_key, &text_val)?;
+    if let Some(ref name) = update.tool_name {
+        map.serialize_entry("tool_name", name)?;
+    }
+    if let Some(ref status) = update.tool_status {
+        map.serialize_entry("tool_status", status)?;
+    }
+    if let Some(ref content) = update.tool_content {
+        map.serialize_entry("tool_content", content)?;
+    }
+    if let Some(ref input) = update.tool_input {
+        map.serialize_entry("tool_input", input)?;
+    }
+    map.end()
+}
+
+fn serialize_permission_request<S: serde::Serializer>(
+    req: &AcpPermissionRequestEvent,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "permission_request")?;
+    map.serialize_entry("session_id", &req.session_id)?;
+    map.serialize_entry("tool_call_id", &req.tool_call_id)?;
+    map.serialize_entry("options", &req.option_ids)?;
+    map.end()
+}
+
+fn serialize_turn_result<S: serde::Serializer>(
+    result: &AcpTurnResultEvent,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "result")?;
+    map.serialize_entry("session_id", &result.session_id)?;
+    map.serialize_entry("stop_reason", &result.stop_reason)?;
+    map.serialize_entry("result", &result.result)?;
+    map.end()
+}
+
+fn serialize_config_options_update<S: serde::Serializer>(
+    session_id: &str,
+    options: &[AcpConfigOption],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "config_options_update")?;
+    map.serialize_entry("session_id", session_id)?;
+    map.serialize_entry("configOptions", options)?;
+    map.end()
+}
+
+fn serialize_plan_update<S: serde::Serializer>(
+    plan: &AcpPlanUpdate,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "plan_update")?;
+    map.serialize_entry("session_id", &plan.session_id)?;
+    map.serialize_entry("entries", &plan.entries)?;
+    map.end()
+}
+
+fn serialize_mode_update<S: serde::Serializer>(
+    mode: &AcpModeUpdate,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "mode_update")?;
+    map.serialize_entry("session_id", &mode.session_id)?;
+    map.serialize_entry("currentModeId", &mode.current_mode_id)?;
+    map.end()
+}
+
+fn serialize_commands_update<S: serde::Serializer>(
+    cmds: &AcpCommandsUpdate,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "commands_update")?;
+    map.serialize_entry("session_id", &cmds.session_id)?;
+    map.serialize_entry("commands", &cmds.commands)?;
+    map.end()
+}
+
+fn serialize_session_fallback<S: serde::Serializer>(
+    old_session_id: &str,
+    new_session_id: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(None)?;
+    map.serialize_entry("type", "session_fallback")?;
+    map.serialize_entry("old_session_id", old_session_id)?;
+    map.serialize_entry("new_session_id", new_session_id)?;
+    map.end()
+}
+
 impl serde::Serialize for AcpBridgeEvent {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
         match self {
-            Self::SessionUpdate(update) => {
-                // SEC-6: Log unknown ACP session update events so they don't silently vanish.
-                if update.kind == AcpSessionUpdateKind::Unknown {
-                    log::warn!(
-                        "received unknown ACP session update kind, forwarding as 'unknown': {:?}",
-                        update
-                    );
-                }
-                // The wire type is derived from `kind` (e.g. "assistant_delta", "thinking_content").
-                let event_type = update.kind.to_string();
-                // "thinking_content" uses `content` as the text key; everything else uses `delta`.
-                let text_key = if event_type == "thinking_content" {
-                    "content"
-                } else {
-                    "delta"
-                };
-                let text_val = update.text_delta.clone().unwrap_or_default();
-
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", &event_type)?;
-                map.serialize_entry("session_id", &update.session_id)?;
-                map.serialize_entry("tool_call_id", &update.tool_call_id)?;
-                map.serialize_entry(text_key, &text_val)?;
-                if let Some(ref name) = update.tool_name {
-                    map.serialize_entry("tool_name", name)?;
-                }
-                if let Some(ref status) = update.tool_status {
-                    map.serialize_entry("tool_status", status)?;
-                }
-                if let Some(ref content) = update.tool_content {
-                    map.serialize_entry("tool_content", content)?;
-                }
-                if let Some(ref input) = update.tool_input {
-                    map.serialize_entry("tool_input", input)?;
-                }
-                map.end()
-            }
-            Self::PermissionRequest(req) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "permission_request")?;
-                map.serialize_entry("session_id", &req.session_id)?;
-                map.serialize_entry("tool_call_id", &req.tool_call_id)?;
-                map.serialize_entry("options", &req.option_ids)?;
-                map.end()
-            }
-            Self::TurnResult(result) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "result")?;
-                map.serialize_entry("session_id", &result.session_id)?;
-                map.serialize_entry("stop_reason", &result.stop_reason)?;
-                map.serialize_entry("result", &result.result)?;
-                map.end()
-            }
-            Self::ConfigOptionsUpdate(options) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "config_options_update")?;
-                map.serialize_entry("configOptions", options)?;
-                map.end()
-            }
-            Self::PlanUpdate(plan) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "plan_update")?;
-                map.serialize_entry("session_id", &plan.session_id)?;
-                map.serialize_entry("entries", &plan.entries)?;
-                map.end()
-            }
-            Self::ModeUpdate(mode) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "mode_update")?;
-                map.serialize_entry("session_id", &mode.session_id)?;
-                map.serialize_entry("currentModeId", &mode.current_mode_id)?;
-                map.end()
-            }
-            Self::CommandsUpdate(cmds) => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "commands_update")?;
-                map.serialize_entry("session_id", &cmds.session_id)?;
-                map.serialize_entry("commands", &cmds.commands)?;
-                map.end()
-            }
+            Self::SessionUpdate(update) => serialize_session_update(update, serializer),
+            Self::PermissionRequest(req) => serialize_permission_request(req, serializer),
+            Self::TurnResult(result) => serialize_turn_result(result, serializer),
+            Self::ConfigOptionsUpdate {
+                session_id,
+                config_options,
+            } => serialize_config_options_update(session_id, config_options, serializer),
+            Self::PlanUpdate(plan) => serialize_plan_update(plan, serializer),
+            Self::ModeUpdate(mode) => serialize_mode_update(mode, serializer),
+            Self::CommandsUpdate(cmds) => serialize_commands_update(cmds, serializer),
             Self::SessionFallback {
                 old_session_id,
                 new_session_id,
-            } => {
-                let mut map = serializer.serialize_map(None)?;
-                map.serialize_entry("type", "session_fallback")?;
-                map.serialize_entry("old_session_id", old_session_id)?;
-                map.serialize_entry("new_session_id", new_session_id)?;
-                map.end()
-            }
+            } => serialize_session_fallback(old_session_id, new_session_id, serializer),
         }
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::Value;
-
-    // ── AcpBridgeEvent::SessionUpdate (assistant_delta) ───────────────────────
-
-    #[test]
-    fn acpbridgeevent_assistant_delta_wire_shape() {
-        let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
-            session_id: "s1".to_string(),
-            kind: AcpSessionUpdateKind::AssistantDelta,
-            text_delta: Some("hello".to_string()),
-            tool_call_id: None,
-            tool_name: None,
-            tool_status: None,
-            tool_content: None,
-            tool_input: None,
-        });
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "assistant_delta");
-        assert_eq!(v["delta"], "hello");
-        // assistant_delta must NOT use the "content" key for its text
-        assert!(
-            v.get("content").is_none(),
-            "assistant_delta must not have a 'content' key"
-        );
-        assert_eq!(v["session_id"], "s1");
-    }
-
-    // ── AcpBridgeEvent::SessionUpdate (thinking_content) ─────────────────────
-
-    #[test]
-    fn acpbridgeevent_thinking_content_wire_shape() {
-        let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
-            session_id: "s2".to_string(),
-            kind: AcpSessionUpdateKind::ThinkingDelta,
-            text_delta: Some("thought".to_string()),
-            tool_call_id: None,
-            tool_name: None,
-            tool_status: None,
-            tool_content: None,
-            tool_input: None,
-        });
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "thinking_content");
-        // thinking_content uses "content", NOT "delta"
-        assert_eq!(v["content"], "thought");
-        assert!(
-            v.get("delta").is_none(),
-            "thinking_content must not have a 'delta' key"
-        );
-    }
-
-    // ── AcpBridgeEvent::PermissionRequest ─────────────────────────────────────
-
-    #[test]
-    fn acpbridgeevent_permission_request_wire_shape() {
-        let event = AcpBridgeEvent::PermissionRequest(AcpPermissionRequestEvent {
-            session_id: "s3".to_string(),
-            tool_call_id: "tc1".to_string(),
-            option_ids: vec!["allow".to_string(), "deny".to_string()],
-        });
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "permission_request");
-        assert!(v["options"].is_array(), "'options' must be an array");
-        assert_eq!(v["options"].as_array().unwrap().len(), 2);
-    }
-
-    // ── AcpBridgeEvent::TurnResult ────────────────────────────────────────────
-
-    #[test]
-    fn acpbridgeevent_turn_result_wire_shape() {
-        let event = AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
-            session_id: "s4".to_string(),
-            stop_reason: "end_turn".to_string(),
-            result: "done".to_string(),
-        });
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "result");
-        assert!(
-            v.get("stop_reason").is_some(),
-            "'stop_reason' must be present"
-        );
-        assert_eq!(v["stop_reason"], "end_turn");
-    }
-
-    // ── AcpBridgeEvent::ConfigOptionsUpdate ───────────────────────────────────
-
-    #[test]
-    fn acpbridgeevent_config_options_update_wire_shape() {
-        let opt = AcpConfigOption {
-            id: "model".to_string(),
-            name: "Model".to_string(),
-            description: None,
-            category: None,
-            current_value: "claude-3-5-sonnet".to_string(),
-            options: vec![AcpConfigSelectValue {
-                value: "claude-3-5-sonnet".to_string(),
-                name: "Claude 3.5 Sonnet".to_string(),
-                description: None,
-            }],
-        };
-        let event = AcpBridgeEvent::ConfigOptionsUpdate(vec![opt]);
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "config_options_update");
-        // The key must be camelCase "configOptions" per the custom Serialize impl
-        assert!(
-            v.get("configOptions").is_some(),
-            "key must be 'configOptions' (camelCase)"
-        );
-        assert!(v["configOptions"].is_array());
-    }
-
-    // ── AcpBridgeEvent::SessionFallback ───────────────────────────────────────
-
-    #[test]
-    fn acpbridgeevent_session_fallback_wire_shape() {
-        let event = AcpBridgeEvent::SessionFallback {
-            old_session_id: "old-123".to_string(),
-            new_session_id: "new-456".to_string(),
-        };
-        let v: Value = serde_json::to_value(&event).unwrap();
-        assert_eq!(v["type"], "session_fallback");
-        assert_eq!(v["old_session_id"], "old-123");
-        assert_eq!(v["new_session_id"], "new-456");
-    }
-
-    // ── AcpSessionUpdateKind Display ─────────────────────────────────────────
-
-    #[test]
-    fn acpsessionupdatekind_display_status_variants() {
-        // These four variants display as "status" (they are intercepted by the
-        // custom AcpBridgeEvent Serialize impl and never reach the wire via the
-        // SessionUpdate path in practice).
-        let status_variants = [
-            AcpSessionUpdateKind::Plan,
-            AcpSessionUpdateKind::AvailableCommandsUpdate,
-            AcpSessionUpdateKind::CurrentModeUpdate,
-            AcpSessionUpdateKind::ConfigOptionUpdate,
-        ];
-        for kind in &status_variants {
-            assert_eq!(
-                kind.to_string(),
-                "status",
-                "{kind:?} Display must produce \"status\""
-            );
-        }
-        // Unknown now displays as "unknown" (H-3/A-4 fix: disambiguated from "status")
-        assert_eq!(
-            AcpSessionUpdateKind::Unknown.to_string(),
-            "unknown",
-            "Unknown Display must produce \"unknown\""
-        );
-        // Sanity-check the non-status variants
-        assert_eq!(AcpSessionUpdateKind::UserDelta.to_string(), "user_delta");
-        assert_eq!(
-            AcpSessionUpdateKind::AssistantDelta.to_string(),
-            "assistant_delta"
-        );
-        assert_eq!(
-            AcpSessionUpdateKind::ThinkingDelta.to_string(),
-            "thinking_content"
-        );
-        assert_eq!(
-            AcpSessionUpdateKind::ToolCallStarted.to_string(),
-            "tool_use"
-        );
-        assert_eq!(
-            AcpSessionUpdateKind::ToolCallUpdated.to_string(),
-            "tool_use_update"
-        );
-    }
-}
+// Wire-shape tests moved to tests/services_acp_bridge_event_serialize.rs
+// to keep this file within the 500-line monolith policy limit.

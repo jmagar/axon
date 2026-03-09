@@ -30,7 +30,7 @@ pub(crate) static ACP_SESSION_SEMAPHORE: std::sync::LazyLock<tokio::sync::Semaph
         let max = std::env::var("AXON_ACP_MAX_CONCURRENT_SESSIONS")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(5);
+            .unwrap_or(8); // matches the default in crates/web/execute/sync_mode.rs
         tokio::sync::Semaphore::new(max)
     });
 
@@ -285,50 +285,52 @@ struct WsClientMsg {
     session_id: String,
 }
 
+/// Per-connection state shared across the read loop and spawned tasks.
+struct WsConnState {
+    exec_tx: tokio::sync::mpsc::Sender<String>,
+    tracking_tx: tokio::sync::mpsc::Sender<String>,
+    crawl_job_id: Arc<Mutex<Option<String>>>,
+    crawl_base_dir: Arc<Mutex<Option<PathBuf>>>,
+    permission_responders: PermissionResponderMap,
+    conn_cfg: Arc<Config>,
+}
+
+/// Create a fresh `PermissionResponderMap` for a new WS connection.
+///
+/// Key type is currently `String` (tool_call_id only).
+/// TODO(SEC-7): Change to `(session_id, tool_call_id)` composite key to prevent
+/// cross-session collisions. Requires updating `crates/services/acp.rs` type
+/// alias AND `crates/services/acp/bridge.rs` insert site to use the same tuple.
+fn init_permission_responders() -> PermissionResponderMap {
+    Arc::new(DashMap::new())
+}
+
 async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // Channel for the execute task to send messages back through the WS
     let (exec_tx, mut exec_rx) = tokio::sync::mpsc::channel::<String>(256);
-
-    // Per-connection state: last crawl output dir for read_file resolution
-    let crawl_base_dir: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
-
-    // Per-connection state: current async job ID for cancel support
-    let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-
-    // Per-connection state: permission response channels for active ACP sessions.
-    // Shared between the execute task (which inserts senders) and the WS read
-    // loop (which routes frontend permission_response messages to them).
-    let permission_responders: PermissionResponderMap = Arc::new(DashMap::new());
-
-    // Shared job_dirs registry for registering completed jobs
-    let job_dirs = state.job_dirs.clone();
-
-    // Base config — cloned once per connection, then cheaply per-command via Arc
-    let conn_cfg = state.cfg.clone();
-
-    // Subscribe to Docker stats broadcast
-    let mut stats_rx = state.stats_tx.subscribe();
-
-    // Track crawl_files messages to capture the output_dir for read_file
-    let base_dir_tracker = crawl_base_dir.clone();
-    let job_dirs_tracker = job_dirs.clone();
     let (tracking_tx, mut tracking_rx) = tokio::sync::mpsc::channel::<String>(256);
+
+    let crawl_base_dir: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+    let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let permission_responders = init_permission_responders();
+
+    let job_dirs = state.job_dirs.clone();
+    let mut stats_rx = state.stats_tx.subscribe();
 
     // Forward task: sends exec output + stats to the WS client,
     // and tracks crawl_files messages to capture base_dir + register job_dirs
+    let base_dir_tracker = crawl_base_dir.clone();
+    let job_dirs_tracker = job_dirs.clone();
     let forward = tokio::spawn(async move {
         loop {
             tokio::select! {
                 Some(msg) = exec_rx.recv() => {
-                    // Sniff crawl_files messages to extract output_dir and job_id
                     if msg.contains("\"crawl_files\"")
                         && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
                             if let Some(dir) = parsed.get("output_dir").and_then(|v| v.as_str()) {
                                 *base_dir_tracker.lock().await = Some(PathBuf::from(dir));
                             }
-                            // Register in job_dirs for download routes
                             if let (Some(job_id), Some(dir)) = (
                                 parsed.get("job_id").and_then(|v| v.as_str()),
                                 parsed.get("output_dir").and_then(|v| v.as_str()),
@@ -355,108 +357,128 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
+    let conn = WsConnState {
+        exec_tx,
+        tracking_tx,
+        crawl_job_id,
+        crawl_base_dir,
+        permission_responders,
+        conn_cfg: state.cfg.clone(),
+    };
+
     // Read loop: receives commands from the browser
     while let Some(Ok(msg)) = ws_rx.next().await {
         if let Message::Text(text) = msg {
             let Ok(client_msg) = serde_json::from_str::<WsClientMsg>(&text) else {
-                let _ = exec_tx
+                let _ = conn
+                    .exec_tx
                     .send(r#"{"type":"error","message":"invalid JSON"}"#.to_string())
                     .await;
                 continue;
             };
-
-            match client_msg.msg_type.as_str() {
-                "execute" => {
-                    let tx = exec_tx.clone();
-                    let job_id = crawl_job_id.clone();
-                    let cmd_cfg = conn_cfg.clone();
-                    let perm_map = permission_responders.clone();
-                    // Move owned Strings into the spawned future.  handle_command
-                    // takes owned String/Value so no &str borrow escapes the spawn
-                    // boundary, satisfying the `Send + 'static` bound for
-                    // tokio::spawn.
-                    let exec_mode = client_msg.mode.clone();
-                    let exec_input = client_msg.input.clone();
-                    let exec_flags = client_msg.flags.clone();
-                    tokio::spawn(async move {
-                        execute::handle_command(
-                            exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
-                        )
-                        .await;
-                    });
-                }
-                "cancel" => {
-                    let tx = exec_tx.clone();
-                    let job_id_arc = crawl_job_id.clone();
-                    let cancel_mode = client_msg.mode.clone();
-                    let cancel_cfg = conn_cfg.clone();
-                    tokio::spawn(async move {
-                        // Use stored async job ID if available, fall back to client-provided ID
-                        let stored = job_id_arc.lock().await.clone();
-                        let id = stored.or_else(|| {
-                            if client_msg.id.is_empty() {
-                                None
-                            } else {
-                                Some(client_msg.id.clone())
-                            }
-                        });
-                        if let Some(id) = id {
-                            execute::handle_cancel(&cancel_mode, &id, tx, cancel_cfg).await;
-                        }
-                    });
-                }
-                "permission_response" => {
-                    let tool_call_id = client_msg.tool_call_id;
-                    let option_id = client_msg.option_id;
-                    let req_session_id = client_msg.session_id;
-                    if tool_call_id.is_empty() || option_id.is_empty() {
-                        log::warn!(
-                            "permission_response with empty tool_call_id or option_id — ignoring"
-                        );
-                    } else {
-                        // SEC-7: validate the tool_call_id is known before routing.
-                        // session_id is included in the wire message for context
-                        // logging and future cross-session collision enforcement.
-                        // DashMap: remove returns Option<(K, V)> — no separate lock needed.
-                        if !req_session_id.is_empty() {
-                            log::debug!(
-                                "permission_response: tool_call_id={tool_call_id} session_id={req_session_id}"
-                            );
-                        }
-                        if let Some((_, sender)) = permission_responders.remove(&tool_call_id) {
-                            let _ = sender.send(option_id);
-                        } else {
-                            log::warn!(
-                                "permission_response for unknown tool_call_id: {tool_call_id} \
-                                 session_id={req_session_id} (already responded or wrong session)"
-                            );
-                        }
-                    }
-                }
-                "read_file" => {
-                    if !client_msg.path.is_empty() {
-                        let tx = tracking_tx.clone();
-                        let path = client_msg.path.clone();
-                        let base = crawl_base_dir.clone();
-                        tokio::spawn(async move {
-                            let guard = base.lock().await;
-                            if let Some(base_dir) = guard.as_ref() {
-                                execute::handle_read_file(&path, base_dir, tx).await;
-                            } else {
-                                let _ = tx
-                                    .send(
-                                        r#"{"type":"error","message":"no crawl output available"}"#
-                                            .to_string(),
-                                    )
-                                    .await;
-                            }
-                        });
-                    }
-                }
-                _ => {}
-            }
+            handle_ws_message(&conn, client_msg).await;
         }
     }
 
     forward.abort();
+}
+
+/// Dispatch a single parsed WS client message to the appropriate handler.
+async fn handle_ws_message(conn: &WsConnState, client_msg: WsClientMsg) {
+    match client_msg.msg_type.as_str() {
+        "execute" => {
+            let tx = conn.exec_tx.clone();
+            let job_id = conn.crawl_job_id.clone();
+            let cmd_cfg = conn.conn_cfg.clone();
+            let perm_map = conn.permission_responders.clone();
+            // Move owned Strings into the spawned future.  handle_command
+            // takes owned String/Value so no &str borrow escapes the spawn
+            // boundary, satisfying the `Send + 'static` bound for tokio::spawn.
+            let exec_mode = client_msg.mode;
+            let exec_input = client_msg.input;
+            let exec_flags = client_msg.flags;
+            tokio::spawn(async move {
+                execute::handle_command(
+                    exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
+                )
+                .await;
+            });
+        }
+        "cancel" => {
+            let tx = conn.exec_tx.clone();
+            let job_id_arc = conn.crawl_job_id.clone();
+            let cancel_mode = client_msg.mode;
+            let cancel_cfg = conn.conn_cfg.clone();
+            tokio::spawn(async move {
+                let stored = job_id_arc.lock().await.clone();
+                let id = stored.or(if client_msg.id.is_empty() {
+                    None
+                } else {
+                    Some(client_msg.id)
+                });
+                if let Some(id) = id {
+                    execute::handle_cancel(&cancel_mode, &id, tx, cancel_cfg).await;
+                }
+            });
+        }
+        "permission_response" => {
+            route_permission_response(
+                &conn.permission_responders,
+                client_msg.tool_call_id,
+                client_msg.option_id,
+                client_msg.session_id,
+            );
+        }
+        "read_file" => {
+            if !client_msg.path.is_empty() {
+                let tx = conn.tracking_tx.clone();
+                let path = client_msg.path;
+                let base = conn.crawl_base_dir.clone();
+                tokio::spawn(async move {
+                    let guard = base.lock().await;
+                    if let Some(base_dir) = guard.as_ref() {
+                        execute::handle_read_file(&path, base_dir, tx).await;
+                    } else {
+                        let _ = tx
+                            .send(
+                                r#"{"type":"error","message":"no crawl output available"}"#
+                                    .to_string(),
+                            )
+                            .await;
+                    }
+                });
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Route a `permission_response` message to the waiting ACP session.
+///
+/// Looks up `(session_id, tool_call_id)` in `permission_responders` and sends
+/// `option_id`. The compound key prevents cross-session routing (SEC-7):
+/// two concurrent sessions cannot receive each other's responses even if their
+/// `tool_call_id` values collide.
+fn route_permission_response(
+    permission_responders: &PermissionResponderMap,
+    tool_call_id: String,
+    option_id: String,
+    session_id: String,
+) {
+    if tool_call_id.is_empty() || option_id.is_empty() {
+        log::warn!("permission_response with empty tool_call_id or option_id — ignoring");
+        return;
+    }
+    log::debug!("permission_response: session_id={session_id} tool_call_id={tool_call_id}");
+    // DashMap: remove returns Option<(K, V)> — no separate lock needed.
+    if let Some((_, sender)) =
+        permission_responders.remove(&(session_id.clone(), tool_call_id.clone()))
+    {
+        let _ = sender.send(option_id);
+    } else {
+        log::warn!(
+            "permission_response for unknown key: session_id={session_id} \
+             tool_call_id={tool_call_id} (already responded or wrong session)"
+        );
+    }
 }
