@@ -254,14 +254,38 @@ ok "apps/web dependencies installed"
 # ── Environment File ───────────────────────────────────────────────────────────
 sep
 info "Checking .env..."
+
+# Helpers — defined here so they're available for both fresh installs and reruns.
+gen_secret() { python3 -c "import secrets; print(secrets.token_urlsafe(32))"; }
+
+set_env() {
+  # Replace existing key or append — always writes the supplied value.
+  local key="$1" val="$2"
+  if grep -q "^${key}=" "$REPO/.env"; then
+    sed_i "s|^${key}=.*|${key}=${val}|" "$REPO/.env"
+  else
+    echo "${key}=${val}" >> "$REPO/.env"
+  fi
+}
+
+set_env_if_missing() {
+  # Only write if the key is absent or has an empty value.
+  local key="$1" val="$2"
+  grep -q "^${key}=." "$REPO/.env" 2>/dev/null || set_env "$key" "$val"
+}
+
 if [[ -f "$REPO/.env" ]]; then
-  ok ".env already exists — skipping copy"
+  ok ".env already exists — backfilling any missing entries"
 else
   cp "$REPO/.env.example" "$REPO/.env"
   ok ".env created from .env.example"
+fi
 
-  # Prompt for AXON_DATA_DIR
-  DEFAULT_DATA_DIR="$HOME/.local/share/axon"
+# ── AXON_DATA_DIR — always resolve and ensure directories exist ────────────────
+DEFAULT_DATA_DIR="$HOME/.local/share/axon"
+# Read the current value from .env (empty string if absent or placeholder).
+AXON_DATA_DIR="$(grep '^AXON_DATA_DIR=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr -d "'\"")"
+if [[ -z "$AXON_DATA_DIR" || "$AXON_DATA_DIR" == *CHANGE_ME* ]]; then
   if [[ -t 0 ]]; then
     echo ""
     echo "  AXON_DATA_DIR — root directory for all persistent data (Postgres, Qdrant, etc.)"
@@ -272,68 +296,60 @@ else
     AXON_DATA_DIR="$DEFAULT_DATA_DIR"
     info "Non-interactive mode: AXON_DATA_DIR=${AXON_DATA_DIR}"
   fi
-
-  # Expand ~ if the user typed it
-  AXON_DATA_DIR="${AXON_DATA_DIR/#\~/$HOME}"
-
-  # Write into .env (replace the placeholder line)
-  sed_i "s|^AXON_DATA_DIR=.*|AXON_DATA_DIR=${AXON_DATA_DIR}|" "$REPO/.env"
-  mkdir -p "$AXON_DATA_DIR"
-  ok "AXON_DATA_DIR=${AXON_DATA_DIR}"
-
-  # ── Generate secrets ─────────────────────────────────────────────────────────
-  info "Generating secrets..."
-  gen_secret() { python3 -c "import secrets; print(secrets.token_urlsafe(32))"; }
-
-  PG_PASS="$(gen_secret)"
-  REDIS_PASS="$(gen_secret)"
-  RABBIT_PASS="$(gen_secret)"
-  WEB_TOKEN="$(gen_secret)"
-
-  set_env() {
-    # set_env KEY VALUE  — replace or append in .env
-    local key="$1" val="$2"
-    if grep -q "^${key}=" "$REPO/.env"; then
-      sed_i "s|^${key}=.*|${key}=${val}|" "$REPO/.env"
-    else
-      echo "${key}=${val}" >> "$REPO/.env"
-    fi
-  }
-
-  # Standalone password vars
-  set_env POSTGRES_PASSWORD   "$PG_PASS"
-  set_env REDIS_PASSWORD      "$REDIS_PASS"
-  set_env RABBITMQ_PASS       "$RABBIT_PASS"
-
-  # Connection URLs — rewrite with the generated passwords
-  set_env AXON_PG_URL    "postgresql://axon:${PG_PASS}@axon-postgres:5432/axon"
-  set_env AXON_REDIS_URL "redis://:${REDIS_PASS}@axon-redis:6379"
-  set_env AXON_AMQP_URL  "amqp://axon:${RABBIT_PASS}@axon-rabbitmq:5672"
-
-  # Web API token — client and server copies must match
-  set_env AXON_WEB_API_TOKEN          "$WEB_TOKEN"
-  set_env NEXT_PUBLIC_AXON_API_TOKEN  "$WEB_TOKEN"
-
-  ok "Secrets generated and written to .env"
-
-  # ── Test infrastructure URLs (static — matches docker-compose.test.yaml) ──────
-  set_env AXON_TEST_PG_URL   "postgresql://axon:axontest@127.0.0.1:53434/axon_test"
-  set_env AXON_TEST_AMQP_URL "amqp://axon:axontest@127.0.0.1:45536/%2f"
-  set_env AXON_TEST_REDIS_URL  "redis://127.0.0.1:53380"
-  set_env AXON_TEST_QDRANT_URL "http://127.0.0.1:53335"
-  ok "Test service URLs written to .env"
-
-  # ── Create data directories for container volume mounts ──────────────────────
-  info "Creating data directories under ${AXON_DATA_DIR}..."
-  mkdir -p \
-    "${AXON_DATA_DIR}/axon/postgres" \
-    "${AXON_DATA_DIR}/axon/redis" \
-    "${AXON_DATA_DIR}/axon/rabbitmq" \
-    "${AXON_DATA_DIR}/axon/qdrant" \
-    "${AXON_DATA_DIR}/axon/output" \
-    "${AXON_DATA_DIR}/axon/artifacts"
-  ok "Data directories created"
 fi
+# Expand ~ if the user typed it
+AXON_DATA_DIR="${AXON_DATA_DIR/#\~/$HOME}"
+set_env AXON_DATA_DIR "$AXON_DATA_DIR"
+ok "AXON_DATA_DIR=${AXON_DATA_DIR}"
+
+# Always ensure volume-mount directories exist (idempotent).
+info "Ensuring data directories under ${AXON_DATA_DIR}..."
+mkdir -p \
+  "${AXON_DATA_DIR}/axon/postgres" \
+  "${AXON_DATA_DIR}/axon/redis" \
+  "${AXON_DATA_DIR}/axon/rabbitmq" \
+  "${AXON_DATA_DIR}/axon/qdrant" \
+  "${AXON_DATA_DIR}/axon/output" \
+  "${AXON_DATA_DIR}/axon/artifacts"
+ok "Data directories ready"
+
+# ── Secrets — backfill only; never overwrite existing values ──────────────────
+info "Checking secrets..."
+PG_PASS="$(grep '^POSTGRES_PASSWORD=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)"
+if [[ -z "$PG_PASS" ]]; then
+  PG_PASS="$(gen_secret)"
+  set_env POSTGRES_PASSWORD "$PG_PASS"
+  set_env_if_missing AXON_PG_URL "postgresql://axon:${PG_PASS}@axon-postgres:5432/axon"
+fi
+
+REDIS_PASS="$(grep '^REDIS_PASSWORD=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)"
+if [[ -z "$REDIS_PASS" ]]; then
+  REDIS_PASS="$(gen_secret)"
+  set_env REDIS_PASSWORD "$REDIS_PASS"
+  set_env_if_missing AXON_REDIS_URL "redis://:${REDIS_PASS}@axon-redis:6379"
+fi
+
+RABBIT_PASS="$(grep '^RABBITMQ_PASS=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)"
+if [[ -z "$RABBIT_PASS" ]]; then
+  RABBIT_PASS="$(gen_secret)"
+  set_env RABBITMQ_PASS "$RABBIT_PASS"
+  set_env_if_missing AXON_AMQP_URL "amqp://axon:${RABBIT_PASS}@axon-rabbitmq:5672"
+fi
+
+WEB_TOKEN="$(grep '^AXON_WEB_API_TOKEN=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)"
+if [[ -z "$WEB_TOKEN" ]]; then
+  WEB_TOKEN="$(gen_secret)"
+  set_env AXON_WEB_API_TOKEN         "$WEB_TOKEN"
+  set_env NEXT_PUBLIC_AXON_API_TOKEN "$WEB_TOKEN"
+fi
+ok "Secrets verified"
+
+# ── Test infrastructure URLs — static values, backfill if absent ──────────────
+set_env_if_missing AXON_TEST_PG_URL    "postgresql://axon:axontest@127.0.0.1:53434/axon_test"
+set_env_if_missing AXON_TEST_AMQP_URL  "amqp://axon:axontest@127.0.0.1:45536/%2f"
+set_env_if_missing AXON_TEST_REDIS_URL  "redis://127.0.0.1:53380"
+set_env_if_missing AXON_TEST_QDRANT_URL "http://127.0.0.1:53335"
+ok "Test service URLs verified"
 
 CHANGE_ME_COUNT="$(grep -c 'CHANGE_ME' "$REPO/.env" || true)"
 if (( CHANGE_ME_COUNT > 0 )); then
