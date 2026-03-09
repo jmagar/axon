@@ -288,13 +288,17 @@ pub(super) async fn apply_config_and_model(
     let mapped = initial_config_options
         .as_ref()
         .map(|o| map_config_options(o));
+    let sid = session_id.0.to_string();
     if let Some(ref opts) = mapped
         && !opts.is_empty()
     {
         emit(
             tx,
             ServiceEvent::AcpBridge {
-                event: AcpBridgeEvent::ConfigOptionsUpdate(opts.clone()),
+                event: AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id: sid.clone(),
+                    config_options: opts.clone(),
+                },
             },
         );
     } else if codex_adapter {
@@ -302,7 +306,10 @@ pub(super) async fn apply_config_and_model(
             emit(
                 tx,
                 ServiceEvent::AcpBridge {
-                    event: AcpBridgeEvent::ConfigOptionsUpdate(fb),
+                    event: AcpBridgeEvent::ConfigOptionsUpdate {
+                        session_id: sid.clone(),
+                        config_options: fb,
+                    },
                 },
             );
         }
@@ -310,7 +317,10 @@ pub(super) async fn apply_config_and_model(
         emit(
             tx,
             ServiceEvent::AcpBridge {
-                event: AcpBridgeEvent::ConfigOptionsUpdate(fb),
+                event: AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id: sid.clone(),
+                    config_options: fb,
+                },
             },
         );
     }
@@ -370,7 +380,10 @@ async fn apply_model_config(
             emit(
                 tx,
                 ServiceEvent::AcpBridge {
-                    event: AcpBridgeEvent::ConfigOptionsUpdate(updated),
+                    event: AcpBridgeEvent::ConfigOptionsUpdate {
+                        session_id: session_id.0.to_string(),
+                        config_options: updated,
+                    },
                 },
             );
         }

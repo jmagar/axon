@@ -4,7 +4,8 @@
 //!   - AcpSessionUpdateKind::Unknown serializes as "unknown" (not "status")
 //!   - AcpSessionUpdateKind serde variants are collision-free
 //!   - validate_adapter_command rejects empty/whitespace programs
-//!   - validate_adapter_command accepts bare adapter names
+//!   - validate_adapter_command accepts bare adapter names (non-shell)
+//!   - validate_adapter_command rejects bare shell names (sh, bash, etc.)
 //!   - spawn_adapter env allowlist: proxy vars are NOT passed through
 //!   - spawn_adapter env allowlist: Gemini auth vars ARE passed through
 #![allow(unsafe_code)]
@@ -143,6 +144,25 @@ fn validate_adapter_accepts_bare_adapter_name() {
 }
 
 #[test]
+fn validate_adapter_rejects_bare_shell_name() {
+    // Bare names that are known shells must be rejected unconditionally —
+    // not just when the program contains a path separator.
+    for shell in &["sh", "bash", "zsh", "fish", "dash", "powershell", "pwsh"] {
+        let adapter = AcpAdapterCommand {
+            program: shell.to_string(),
+            args: vec![],
+            cwd: None,
+        };
+        let err = validate_adapter_command(&adapter)
+            .expect_err(&format!("bare shell '{shell}' should be rejected"));
+        assert!(
+            err.to_string().contains("shell interpreter"),
+            "error for '{shell}' should mention shell interpreter: {err}"
+        );
+    }
+}
+
+#[test]
 fn validate_adapter_accepts_absolute_path() {
     // Absolute paths pass validation regardless of whether the file exists.
     let adapter = AcpAdapterCommand {
@@ -196,9 +216,11 @@ async fn spawn_adapter_does_not_pass_proxy_vars() {
         cwd: None,
     };
     let scaffold = AcpClientScaffold::new(adapter);
+    // Use skip_validation variant: "sh" is a blocked shell in production but is
+    // needed here to probe env var inheritance inside the env_clear allowlist.
     let child = scaffold
-        .spawn_adapter()
-        .expect("spawn_adapter should succeed");
+        .spawn_adapter_skip_validation()
+        .expect("spawn_adapter_skip_validation should succeed");
     let output = child
         .wait_with_output()
         .await
@@ -238,9 +260,11 @@ async fn spawn_adapter_does_not_pass_claudecode() {
         cwd: None,
     };
     let scaffold = AcpClientScaffold::new(adapter);
+    // Use skip_validation variant: "sh" is a blocked shell in production but is
+    // needed here to probe env var inheritance inside the env_clear allowlist.
     let child = scaffold
-        .spawn_adapter()
-        .expect("spawn_adapter should succeed");
+        .spawn_adapter_skip_validation()
+        .expect("spawn_adapter_skip_validation should succeed");
     let output = child
         .wait_with_output()
         .await
@@ -270,9 +294,11 @@ async fn spawn_adapter_passes_through_path() {
         cwd: None,
     };
     let scaffold = AcpClientScaffold::new(adapter);
+    // Use skip_validation variant: "sh" is a blocked shell in production but is
+    // needed here to probe env var inheritance inside the env_clear allowlist.
     let child = scaffold
-        .spawn_adapter()
-        .expect("spawn_adapter should succeed");
+        .spawn_adapter_skip_validation()
+        .expect("spawn_adapter_skip_validation should succeed");
     let output = child
         .wait_with_output()
         .await
