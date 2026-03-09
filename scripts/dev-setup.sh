@@ -165,12 +165,30 @@ if ! command -v just >/dev/null 2>&1; then
     fi
 
     if [[ -n "${_just_ver:-}" ]]; then
-      mkdir -p "$HOME/.cargo/bin"
-      if curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-x86_64-unknown-linux-musl.tar.gz" \
-        | tar -xz -C "$HOME/.cargo/bin" just; then
-        ok "just ${_just_ver} installed"
+      _arch="$(uname -m)"
+      _just_triple=""
+      case "$_arch" in
+        x86_64)  _just_triple="x86_64-unknown-linux-musl" ;;
+        aarch64) _just_triple="aarch64-unknown-linux-musl" ;;
+      esac
+
+      _installed_prebuilt=false
+      if [[ -n "$_just_triple" ]]; then
+        mkdir -p "$HOME/.cargo/bin"
+        if curl -fsSL "https://github.com/casey/just/releases/download/${_just_ver}/just-${_just_ver}-${_just_triple}.tar.gz" \
+          | tar -xz -C "$HOME/.cargo/bin" just 2>/dev/null \
+          && "$HOME/.cargo/bin/just" --version >/dev/null 2>&1; then
+          ok "just ${_just_ver} installed"
+          _installed_prebuilt=true
+        else
+          warn "prebuilt install failed or binary did not run — removing and falling back to cargo install"
+          rm -f "$HOME/.cargo/bin/just"
+        fi
       else
-        warn "prebuilt install failed — falling back to cargo install just"
+        warn "no prebuilt just artifact for arch '${_arch}' — falling back to cargo install"
+      fi
+
+      if [[ "$_installed_prebuilt" == false ]]; then
         cargo install --locked just && ok "just installed"
       fi
     else
