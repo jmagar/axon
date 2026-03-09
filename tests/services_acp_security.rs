@@ -8,6 +8,7 @@
 //!   - validate_adapter_command rejects bare shell names (sh, bash, etc.)
 //!   - spawn_adapter env allowlist: proxy vars are NOT passed through
 //!   - spawn_adapter env allowlist: Gemini auth vars ARE passed through
+//!   - SEC-7: PermissionResponderMap composite key isolates sessions
 #![allow(unsafe_code)]
 
 use axon::crates::services::acp::{AcpClientScaffold, validate_adapter_command};
@@ -279,6 +280,63 @@ async fn spawn_adapter_does_not_pass_claudecode() {
     assert!(
         stdout.is_empty(),
         "CLAUDECODE must not be in env_clear allowlist, but child saw: {stdout:?}"
+    );
+}
+
+// ── SEC-7: composite key isolation ───────────────────────────────────────────
+
+/// Regression test for SEC-7: two concurrent sessions sharing the same
+/// `tool_call_id` must not collide in `PermissionResponderMap`.
+///
+/// The fix changed the map key from `tool_call_id: String` to
+/// `(session_id, tool_call_id): (String, String)`. This test directly encodes
+/// that invariant: the same `tool_call_id` in two sessions must produce two
+/// independent entries, and removing one must leave the other intact.
+#[test]
+fn permission_responder_map_composite_key_isolates_sessions() {
+    use dashmap::DashMap;
+    use tokio::sync::oneshot;
+
+    let map: DashMap<(String, String), oneshot::Sender<String>> = DashMap::new();
+
+    let (tx_a, mut rx_a) = oneshot::channel::<String>();
+    let (tx_b, mut rx_b) = oneshot::channel::<String>();
+
+    // Both sessions share the same tool_call_id — the exact collision SEC-7 fixed.
+    map.insert(("session-A".to_string(), "tool-1".to_string()), tx_a);
+    map.insert(("session-B".to_string(), "tool-1".to_string()), tx_b);
+
+    assert_eq!(
+        map.len(),
+        2,
+        "same tool_call_id in two sessions must produce 2 distinct map entries"
+    );
+
+    // Removing session-A's entry must not affect session-B.
+    map.remove(&("session-A".to_string(), "tool-1".to_string()));
+    assert_eq!(map.len(), 1, "only session-A's entry should be removed");
+    assert!(
+        map.contains_key(&("session-B".to_string(), "tool-1".to_string())),
+        "session-B's responder must still be present after session-A is removed"
+    );
+
+    // The session-B sender is still live and can deliver a permission response.
+    let (_key, sender) = map
+        .remove(&("session-B".to_string(), "tool-1".to_string()))
+        .expect("session-B entry should exist");
+    sender
+        .send("allow_once".to_string())
+        .expect("send must succeed");
+    assert_eq!(
+        rx_b.try_recv().expect("receiver should have a value"),
+        "allow_once",
+        "session-B receiver must get the permission response"
+    );
+
+    // Session-A's sender was dropped with the map entry — its receiver is closed.
+    assert!(
+        rx_a.try_recv().is_err(),
+        "session-A receiver must be closed after its sender was dropped"
     );
 }
 

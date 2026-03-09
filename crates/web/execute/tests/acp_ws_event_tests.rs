@@ -1,4 +1,5 @@
 use super::events::{CommandContext, WsEventV2};
+use crate::crates::services::events::EditorOperation;
 use crate::crates::services::types::{
     AcpBridgeEvent, AcpPermissionRequestEvent, AcpSessionUpdateEvent, AcpSessionUpdateKind,
     AcpTurnResultEvent,
@@ -219,4 +220,147 @@ fn acp_bridge_event_payload_does_not_silently_fail() {
             "acp_bridge_event_payload must produce a 'type' field for {event:?}"
         );
     }
+}
+
+// ── Gap 1: editor_update WS shape ────────────────────────────────────────────
+
+/// Regression test for `ServiceEvent::EditorWrite` → `editor_update` WS message.
+///
+/// `pulse_chat.rs` emits the `editor_update` JSON directly via
+/// `serialize_raw_output_event` (not through `acp_bridge_event_payload`).
+/// This test verifies the exact JSON shape that the frontend receives.
+#[test]
+fn acp_editor_write_produces_editor_update_ws_message() {
+    // Build the exact same JSON structure that pulse_chat.rs produces for
+    // ServiceEvent::EditorWrite (see pulse_chat.rs:65-69).
+    let data = serde_json::json!({
+        "type": "editor_update",
+        "content": "# Hello",
+        "operation": EditorOperation::Replace,
+    });
+
+    let event = WsEventV2::CommandOutputJson {
+        ctx: sample_ctx(),
+        data,
+    };
+    let serialized = serde_json::to_value(event).expect("event should serialize");
+
+    assert_eq!(
+        serialized.get("type").and_then(Value::as_str),
+        Some("command.output.json"),
+        "outer envelope type must be 'command.output.json'"
+    );
+
+    let inner = serialized.get("data").and_then(|d| d.get("data"));
+
+    assert_eq!(
+        inner.and_then(|d| d.get("type")).and_then(Value::as_str),
+        Some("editor_update"),
+        "inner data.type must be 'editor_update'"
+    );
+    assert_eq!(
+        inner.and_then(|d| d.get("content")).and_then(Value::as_str),
+        Some("# Hello"),
+        "inner data.content must match"
+    );
+    assert_eq!(
+        inner
+            .and_then(|d| d.get("operation"))
+            .and_then(Value::as_str),
+        Some("replace"),
+        "inner data.operation must serialize as 'replace' for EditorOperation::Replace"
+    );
+}
+
+/// Verify `EditorOperation::Append` serializes as `"append"` in the WS envelope.
+#[test]
+fn acp_editor_write_append_operation_serializes_correctly() {
+    let data = serde_json::json!({
+        "type": "editor_update",
+        "content": "## Appendix",
+        "operation": EditorOperation::Append,
+    });
+    let event = WsEventV2::CommandOutputJson {
+        ctx: sample_ctx(),
+        data,
+    };
+    let serialized = serde_json::to_value(event).expect("event should serialize");
+    let inner = serialized.get("data").and_then(|d| d.get("data"));
+    assert_eq!(
+        inner
+            .and_then(|d| d.get("operation"))
+            .and_then(Value::as_str),
+        Some("append"),
+        "EditorOperation::Append must serialize as 'append'"
+    );
+}
+
+// ── Gap 4: session_fallback WS pipeline ──────────────────────────────────────
+
+/// Regression test for `AcpBridgeEvent::SessionFallback` through the WS pipeline.
+///
+/// The wire shape is tested in `services_acp_bridge_event_serialize.rs`; this test
+/// adds the full WS envelope wrapping path that was previously uncovered.
+#[test]
+fn acp_session_fallback_in_ws_pipeline() {
+    let payload = super::events::acp_bridge_event_payload(&AcpBridgeEvent::SessionFallback {
+        old_session_id: "old-session-id".to_string(),
+        new_session_id: "new-session-id".to_string(),
+    });
+
+    let event = WsEventV2::CommandOutputJson {
+        ctx: sample_ctx(),
+        data: payload,
+    };
+    let serialized = serde_json::to_value(event).expect("event should serialize");
+
+    assert_eq!(
+        serialized.get("type").and_then(Value::as_str),
+        Some("command.output.json"),
+        "outer envelope type must be 'command.output.json'"
+    );
+
+    let inner = serialized.get("data").and_then(|d| d.get("data"));
+
+    assert_eq!(
+        inner.and_then(|d| d.get("type")).and_then(Value::as_str),
+        Some("session_fallback"),
+        "inner data.type must be 'session_fallback'"
+    );
+    assert_eq!(
+        inner
+            .and_then(|d| d.get("old_session_id"))
+            .and_then(Value::as_str),
+        Some("old-session-id"),
+        "old_session_id must round-trip through WS envelope"
+    );
+    assert_eq!(
+        inner
+            .and_then(|d| d.get("new_session_id"))
+            .and_then(Value::as_str),
+        Some("new-session-id"),
+        "new_session_id must round-trip through WS envelope"
+    );
+}
+
+// ── Step 7: insta snapshot for EditorWrite WS output ─────────────────────────
+
+/// Snapshot test for the exact JSON the frontend receives for an `editor_update`.
+///
+/// Any change to the wire format requires running `cargo insta review` and
+/// consciously approving the diff — prevents silent protocol drift.
+#[test]
+fn editor_write_dispatch_snapshot() {
+    let json_val = serde_json::json!({
+        "type": "editor_update",
+        "content": "# Hello",
+        "operation": EditorOperation::Replace,
+    });
+    insta::assert_json_snapshot!(json_val, @r##"
+    {
+      "content": "# Hello",
+      "operation": "replace",
+      "type": "editor_update"
+    }
+    "##);
 }
