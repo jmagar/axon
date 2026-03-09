@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import { NextResponse } from 'next/server'
+import { makeErrorId } from '@/lib/server/api-error'
 import { parseClaudeJsonl } from '@/lib/sessions/claude-jsonl-parser'
 import { scanSessions } from '@/lib/sessions/session-scanner'
 
@@ -9,7 +10,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // Match by hash-based id (from list endpoint) or by filename (Claude ACP session UUID)
   const session = sessions.find((s) => s.id === id || s.filename === id)
   if (!session) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 })
+    return NextResponse.json(
+      {
+        error: 'not found',
+        code: 'SESSION_NOT_FOUND',
+        errorId: makeErrorId('session'),
+        detail: 'Session with provided id was not found',
+      },
+      { status: 404, headers: { 'X-Retry-After': '1' } },
+    )
   }
 
   try {

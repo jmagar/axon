@@ -9,14 +9,20 @@ use super::adapters::{CodexCachedModel, CodexModelsCache, normalized_requested_m
 
 pub(super) fn codex_config_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
+        .filter(|v| !v.is_empty()) // ignore HOME="" — would resolve config relative to cwd
         .map(PathBuf::from)
         .map(|home| home.join(".codex"))
 }
 
 pub(super) fn gemini_config_dir() -> Option<PathBuf> {
     std::env::var_os("GEMINI_CLI_HOME")
+        .filter(|v| !v.is_empty()) // ignore empty GEMINI_CLI_HOME — same cwd hazard
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".gemini")))
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|h| PathBuf::from(h).join(".gemini"))
+        })
 }
 
 // ── Default model readers ───────────────────────────────────────────────────
@@ -29,7 +35,11 @@ pub(super) async fn read_codex_default_model() -> Option<String> {
     let config_path = codex_config_dir()?.join("config.toml");
     let content = tokio::fs::read_to_string(config_path).await.ok()?;
     let value: toml::Value = content.parse().ok()?;
-    value.get("model")?.as_str().map(String::from)
+    value
+        .get("model")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(String::from)
 }
 
 pub(super) async fn read_gemini_default_model() -> Option<String> {
@@ -49,9 +59,13 @@ pub(super) async fn read_gemini_default_model() -> Option<String> {
 pub(super) async fn read_gemini_cached_model_options(
     current_model: Option<&str>,
 ) -> Option<Vec<AcpConfigOption>> {
-    let model = current_model
-        .and_then(|v| normalized_requested_model(Some(v)))
-        .or(read_gemini_default_model().await)?;
+    // Use if-let rather than `.or()` to avoid eagerly awaiting the fallback
+    // when the normalized model is already known.
+    let model = if let Some(m) = current_model.and_then(|v| normalized_requested_model(Some(v))) {
+        m
+    } else {
+        read_gemini_default_model().await?
+    };
     Some(vec![AcpConfigOption {
         id: "model".to_string(),
         name: "Model".to_string(),
@@ -84,10 +98,16 @@ pub(super) async fn read_codex_cached_model_options(
             description: model.description,
         })
         .collect::<Vec<_>>();
-    let selected = current_model
-        .and_then(|value| normalized_requested_model(Some(value)))
-        .or(read_codex_default_model().await)
-        .or_else(|| options.first().map(|option| option.value.clone()))?;
+    // Use if-let rather than `.or()` to avoid eagerly awaiting the fallback
+    // when the normalized model is already known.
+    let selected = if let Some(m) = current_model.and_then(|v| normalized_requested_model(Some(v)))
+    {
+        m
+    } else if let Some(m) = read_codex_default_model().await {
+        m
+    } else {
+        options.first().map(|option| option.value.clone())?
+    };
     Some(vec![AcpConfigOption {
         id: "model".to_string(),
         name: "Model".to_string(),

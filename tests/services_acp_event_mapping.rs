@@ -111,8 +111,13 @@ fn map_session_notification_event_emits_config_options_update_for_config_changes
     let event = map_session_notification_event(&notification);
     match event {
         ServiceEvent::AcpBridge {
-            event: AcpBridgeEvent::ConfigOptionsUpdate(options),
+            event:
+                AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id,
+                    config_options: options,
+                },
         } => {
+            assert_eq!(session_id, "session-config");
             assert_eq!(options.len(), 1);
             assert_eq!(options[0].id, "choice");
             assert_eq!(options[0].category.as_deref(), Some("model"));

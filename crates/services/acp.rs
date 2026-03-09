@@ -56,8 +56,11 @@ pub use mapping::{
 /// When a permission request arrives from the ACP agent, the bridge inserts a
 /// oneshot sender here. The WS handler (or auto-approve logic) sends the chosen
 /// `option_id` through it.
+/// Key is `(session_id, tool_call_id)` to prevent cross-session collisions
+/// (SEC-7): two concurrent sessions cannot accidentally receive each other's
+/// permission responses even if their `tool_call_id` values happen to collide.
 pub type PermissionResponderMap =
-    Arc<dashmap::DashMap<String, tokio::sync::oneshot::Sender<String>>>;
+    Arc<dashmap::DashMap<(String, String), tokio::sync::oneshot::Sender<String>>>;
 
 // ── AcpSessionSetupRequest ───────────────────────────────────────────────────
 
@@ -146,6 +149,66 @@ impl AcpClientScaffold {
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
+        // Ensure the child is killed if its handle is dropped without explicit
+        // cleanup — covers timeout paths where the outer future is cancelled.
+        command.kill_on_drop(true);
+        let child = command.spawn()?;
+        Ok(child)
+    }
+
+    /// Test-only variant of `spawn_adapter` that skips `validate_adapter_command`.
+    ///
+    /// Used by env-isolation tests that need to spawn a real shell (`sh`) to probe
+    /// which env vars are passed through, without being blocked by the shell-name
+    /// validator added to production code.
+    /// Test-only helper: spawns the adapter without running `validate_adapter_command`.
+    /// Used by env-isolation integration tests that need to spawn a real shell (e.g. `sh`)
+    /// without being blocked by the shell-name validator.
+    #[doc(hidden)]
+    pub fn spawn_adapter_skip_validation(
+        &self,
+    ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
+        let mut command = tokio::process::Command::new(&self.adapter.program);
+        command.args(&self.adapter.args);
+        if let Some(cwd) = &self.adapter.cwd {
+            command.current_dir(cwd);
+        }
+        command.env_clear();
+        for key in &[
+            "PATH",
+            "HOME",
+            "USER",
+            "SHELL",
+            "TERM",
+            "LANG",
+            "LC_ALL",
+            "TZ",
+            "TMPDIR",
+            "XDG_RUNTIME_DIR",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GOOGLE_CLOUD_PROJECT",
+            "GOOGLE_CLOUD_LOCATION",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "GEMINI_CLI_HOME",
+            "GEMINI_FORCE_FILE_STORAGE",
+        ] {
+            if let Ok(val) = std::env::var(key) {
+                command.env(key, val);
+            }
+        }
+        command.stdin(std::process::Stdio::piped());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+        command.kill_on_drop(true);
         let child = command.spawn()?;
         Ok(child)
     }

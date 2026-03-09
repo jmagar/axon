@@ -59,9 +59,12 @@ fn load_dotenv() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ACP sessions consume one spawn_blocking thread each for up to 300s (ACP_ADAPTER_TIMEOUT).
-    // max_blocking_threads caps the pool to prevent silent exhaustion that would starve
-    // DB queries and file I/O. At 64 threads: ~0.2 new ACP sessions/second sustained
-    // (64 concurrent sessions max). Override with AXON_MAX_BLOCKING_THREADS env var.
+    // max_blocking_threads caps the blocking thread pool to prevent silent exhaustion that
+    // would starve DB queries and file I/O. Logical ACP session concurrency is controlled
+    // separately by AXON_ACP_MAX_CONCURRENT_SESSIONS (default 8) — tune that env var to
+    // limit simultaneous ACP sessions. AXON_MAX_BLOCKING_THREADS only caps the Tokio
+    // blocking thread pool capacity; set it high enough to serve blocking-thread consumers
+    // (ACP sessions, file I/O, DB) without exhaustion.
     // See: docs/reports/acp-performance-scalability-analysis-2026-03-08.md FINDING-6
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -72,13 +75,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn acp_blocking_thread_limit() -> usize {
-    // Default: 64 blocking threads dedicated to ACP + other blocking work.
-    // At 300s max session time, this supports ~0.2 new sessions/second sustained,
-    // or ~64 concurrent sessions. For homelab single-user use, 16–32 is sufficient.
-    // Override with AXON_MAX_BLOCKING_THREADS env var.
+    // Default: 64 blocking threads for ACP + other blocking work (file I/O, DB).
+    // This caps Tokio's blocking thread pool — NOT the logical ACP session limit.
+    // Tune AXON_ACP_MAX_CONCURRENT_SESSIONS (default 8) to control how many ACP
+    // sessions run simultaneously. Tune AXON_MAX_BLOCKING_THREADS to size the
+    // blocking thread pool for all blocking consumers. For homelab single-user use,
+    // 16–32 blocking threads is typically sufficient.
     std::env::var("AXON_MAX_BLOCKING_THREADS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&v| v > 0) // reject 0 — tokio::Builder::max_blocking_threads panics on 0
         .unwrap_or(64)
 }
 

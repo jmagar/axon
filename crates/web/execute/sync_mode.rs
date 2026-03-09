@@ -7,7 +7,7 @@ use crate::crates::services::scrape as scrape_svc;
 use crate::crates::services::search as search_svc;
 use crate::crates::services::system as system_svc;
 use crate::crates::services::types::{
-    AcpAdapterCommand, AcpMcpServerConfig, AcpPromptTurnRequest, AcpSessionProbeRequest, AskResult,
+    AcpAdapterCommand, AcpBridgeEvent, AcpPromptTurnRequest, AcpSessionProbeRequest, AskResult,
     DoctorResult, DomainsResult, MapOptions, MapResult, Pagination, QueryResult, ResearchResult,
     RetrieveOptions, RetrieveResult, ScrapeResult, SearchOptions, SearchResult, SourcesResult,
     StatsResult, StatusResult,
@@ -277,163 +277,9 @@ fn resolve_local_executable_path(program: &str, args_value: Option<&str>) -> Opt
     None
 }
 
-// FINDING-11: 30-second TTL cache for MCP server config — avoids a disk read
-// on every ACP session start when config rarely changes.
-struct McpServerCache {
-    servers: Vec<AcpMcpServerConfig>,
-    fetched_at: Instant,
-}
-
-static MCP_SERVER_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<McpServerCache>>> =
-    std::sync::OnceLock::new();
-
-/// Read MCP server configs from `AXON_DATA_DIR/axon/config.json` (or
-/// `~/.config/axon/config.json` fallback). Returns an empty vec on any error.
-/// Results are cached for 30 seconds to avoid repeated disk I/O per session.
-async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
-    const TTL: std::time::Duration = std::time::Duration::from_secs(30);
-
-    let cache_lock = MCP_SERVER_CACHE.get_or_init(|| std::sync::Mutex::new(None));
-
-    // Check cache under a short lock scope — drop the guard before any await.
-    {
-        let guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref cached) = *guard
-            && cached.fetched_at.elapsed() < TTL
-        {
-            return cached.servers.clone();
-        }
-    }
-
-    // Cache miss — fetch from disk.
-    let servers = fetch_axon_mcp_servers_from_disk().await;
-
-    // Update cache.
-    {
-        let mut guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(McpServerCache {
-            servers: servers.clone(),
-            fetched_at: Instant::now(),
-        });
-    }
-
-    servers
-}
-
-/// Read and parse MCP server configs from disk. Called only on cache miss.
-async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct AxonConfig {
-        #[serde(default)]
-        mcp_servers: std::collections::HashMap<String, McpServerEntry>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct McpServerEntry {
-        command: Option<String>,
-        args: Option<Vec<String>>,
-        env: Option<std::collections::HashMap<String, String>>,
-        url: Option<String>,
-    }
-
-    let config_path = if let Ok(data_dir) = env::var("AXON_DATA_DIR") {
-        PathBuf::from(data_dir).join("axon/config.json")
-    } else if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".config/axon/config.json")
-    } else {
-        return vec![];
-    };
-
-    let raw = match tokio::fs::read_to_string(&config_path).await {
-        Ok(raw) => raw,
-        Err(_) => return vec![],
-    };
-
-    let config: AxonConfig = match serde_json::from_str(&raw) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            log::warn!(
-                "[pulse_chat] failed to parse {}: {e}",
-                config_path.display()
-            );
-            return vec![];
-        }
-    };
-
-    config
-        .mcp_servers
-        .into_iter()
-        .filter_map(|(name, entry)| {
-            let url = entry.url.filter(|u| !u.is_empty());
-            let command = entry.command.filter(|c| !c.is_empty());
-            if url.is_none() && command.is_none() {
-                // Skip entries that have neither a URL nor a stdio command.
-                return None;
-            }
-            if let Some(url) = url {
-                Some(AcpMcpServerConfig::Http { name, url })
-            } else {
-                let cmd = command.unwrap_or_default();
-                // SEC-2: validate command before spawning a child process.
-                if !is_safe_mcp_command(&cmd) {
-                    log::warn!(
-                        "[pulse_chat] skipping MCP server '{}': command '{}' failed safety check",
-                        name,
-                        cmd
-                    );
-                    return None;
-                }
-                Some(AcpMcpServerConfig::Stdio {
-                    name,
-                    command: cmd,
-                    args: entry.args.unwrap_or_default(),
-                    env: entry.env.unwrap_or_default().into_iter().collect(),
-                })
-            }
-        })
-        .collect()
-}
-
-/// Validate that an MCP server command is not a shell interpreter and, if it
-/// looks like a path, is absolute.  This blocks trivial command-injection via
-/// `config.json` entries like `{"command": "bash", "args": ["-c", "evil"]}`.
-fn is_safe_mcp_command(cmd: &str) -> bool {
-    // Reject empty or whitespace-only commands.
-    if cmd.trim().is_empty() {
-        return false;
-    }
-    // Reject known shell interpreters by basename.
-    let basename = Path::new(cmd)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(cmd);
-    let shell_names = [
-        "sh",
-        "bash",
-        "zsh",
-        "fish",
-        "dash",
-        "ksh",
-        "csh",
-        "tcsh",
-        "cmd",
-        "cmd.exe",
-        "powershell",
-        "powershell.exe",
-        "pwsh",
-    ];
-    if shell_names.contains(&basename.to_ascii_lowercase().as_str()) {
-        return false;
-    }
-    // If the command contains a path separator (/ or \) it must be absolute —
-    // reject relative paths like `./evil`, `../evil`, or `..\evil`.
-    let has_separator = cmd.contains('/') || cmd.contains('\\');
-    if has_separator && !Path::new(cmd).is_absolute() {
-        return false;
-    }
-    true
-}
+// MCP server config cache helpers are in the sibling `mcp_config` module —
+// extracted to keep sync_mode.rs under the monolith file-size limit.
+use super::mcp_config::read_axon_mcp_servers;
 
 fn resolve_acp_adapter_command(
     cfg: &Config,
@@ -852,7 +698,8 @@ async fn run_acp_event_loop(
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
     task_name: &'static str,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
+    let mut captured_session_id: Option<String> = None;
     loop {
         // FINDING-8: biased select — drain events before checking task completion
         // so streaming tokens are forwarded promptly during active generation.
@@ -860,7 +707,17 @@ async fn run_acp_event_loop(
             biased;
             maybe_event = event_rx.recv() => {
                 match maybe_event {
-                    Some(event) => dispatch_acp_event(event, &tx, &ws_ctx).await,
+                    Some(event) => {
+                        // Capture session_id from TurnResult so handle_pulse_chat
+                        // can poll for the session file after the loop completes.
+                        if let ServiceEvent::AcpBridge {
+                            event: AcpBridgeEvent::TurnResult(ref r),
+                        } = event
+                        {
+                            captured_session_id = Some(r.session_id.clone());
+                        }
+                        dispatch_acp_event(event, &tx, &ws_ctx).await;
+                    }
                     None => {
                         let run_result = (&mut task)
                             .await
@@ -875,13 +732,19 @@ async fn run_acp_event_loop(
                     .map_err(|e| format!("failed to join {task_name} task: {e}"))?;
                 run_result?;
                 while let Ok(event) = event_rx.try_recv() {
+                    if let ServiceEvent::AcpBridge {
+                        event: AcpBridgeEvent::TurnResult(ref r),
+                    } = event
+                    {
+                        captured_session_id = Some(r.session_id.clone());
+                    }
                     dispatch_acp_event(event, &tx, &ws_ctx).await;
                 }
                 break;
             }
         }
     }
-    Ok(())
+    Ok(captured_session_id)
 }
 
 /// Handle the `pulse_chat` service mode: start a prompt-turn ACP session and
@@ -939,11 +802,41 @@ async fn handle_pulse_chat(
         }
         result
     });
+    // Clone before moving into the event loop — needed to emit session_persisted
+    // after the loop completes.
+    let tx_persist = tx.clone();
+    let ws_ctx_persist = ws_ctx.clone();
     let loop_result = run_acp_event_loop(task, event_rx, tx, ws_ctx, "pulse_chat").await;
     if let Err(e) = &loop_result {
         log::error!("[pulse_chat] event loop failed: {e}");
     }
-    loop_result
+    // Poll for the session file and emit session_persisted when confirmed.
+    // This ensures the frontend only fetches the session after the .jsonl file
+    // is on disk, eliminating the timing-race 404.
+    if let Ok(Some(ref sid)) = loop_result {
+        log::info!("[pulse_chat] polling for session file: session_id={sid}");
+        match super::session_guard::poll_session_file(sid).await {
+            Some(path) => {
+                // Escape the path for inline JSON — replace backslashes and quotes.
+                let path_str = path
+                    .display()
+                    .to_string()
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"");
+                let event_json = format!(
+                    r#"{{"type":"session_persisted","session_id":"{sid}","path":"{path_str}"}}"#
+                );
+                if let Some(envelope) = serialize_raw_output_event(&ws_ctx_persist, &event_json) {
+                    let _ = tx_persist.send(envelope).await;
+                    log::info!("[pulse_chat] session_persisted emitted for session_id={sid}");
+                }
+            }
+            None => {
+                log::warn!("[pulse_chat] session file not confirmed after 5s; session_id={sid}");
+            }
+        }
+    }
+    loop_result.map(|_| ())
 }
 
 /// Handle the `pulse_chat_probe` service mode: probe an existing session and
@@ -969,7 +862,9 @@ async fn handle_pulse_chat_probe(
             .await
             .map_err(|e| e.to_string())
     });
-    run_acp_event_loop(task, event_rx, tx, ws_ctx, "pulse_chat_probe").await
+    run_acp_event_loop(task, event_rx, tx, ws_ctx, "pulse_chat_probe")
+        .await
+        .map(|_| ())
 }
 
 /// Inner dispatch — routes a pre-classified `ServiceMode` to the appropriate
