@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-09 (session: v0.11.2 — ACP performance/scalability fixes + modern Rust idioms)
+Last Modified: 2026-03-09 (session: v0.12.0 — unified axon ingest + gh_*/reddit_* structured metadata)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Unified `axon ingest` + structured metadata (v0.12.0)** — replaced three separate ingest commands (`axon github`, `axon reddit`, `axon youtube`) with a single `axon ingest <target>` that auto-detects source from input (GitHub slug/URL, YouTube URL/@handle/bare ID, Reddit r/name or URL); `crates/ingest/classify.rs` added with 17 tests; `gh_*` structured metadata added to all GitHub Qdrant chunks (repo, issue, PR) via new `crates/ingest/github/meta.rs`; `reddit_*` metadata added to all Reddit chunks (both subreddit listing and thread URL paths) via new `crates/ingest/reddit/meta.rs`; `regex` crate moved from `[dev-dependencies]` to `[dependencies]` (was breaking MCP compilation); `AntiBotTech.as_ref()` removed in collector.rs (spider updated enum from `Option<AntiBotTech>` to `AntiBotTech`)
 
 - **ACP performance + scalability fixes + modern Rust (v0.11.2)** — all 19 findings from the ACP performance/scalability analysis addressed: `crates/services/acp.rs` split from 2060-line monolith into a proper module (`acp/bridge.rs`, `acp/adapters.rs`, `acp/config.rs`, `acp/mapping.rs`, `acp/runtime.rs`, `acp/session.rs`); `Arc<Mutex<AcpRuntimeState>>` replaced with `OnceLock` + `RefCell` (no lock on streaming token hot path); `Arc<Mutex<HashMap>>` permission map replaced with `DashMap`; double `serde_json::to_value`+`to_string` on every streaming token replaced with direct `to_string` + string-concat envelope (FINDING-5); `tokio::runtime::Builder` with configurable `max_blocking_threads` replaces `#[tokio::main]` default (FINDING-6); `AdapterGuard` RAII kills subprocess on drop covering all error paths; `select! { biased; }` drains events before checking process exit; MCP server config TTL cache added; ACP session concurrency semaphore (`AXON_ACP_MAX_CONCURRENT_SESSIONS`, default 8); FINDING-14 fully fixed: exit watcher `drop(exit_tx)` on clean exit instead of `send(String::new())` — receiver `Err` = clean shutdown, `Ok(msg)` = crash; `mod.rs` → `.rs` files (`acp/mod.rs` → `acp.rs`, `types/mod.rs` → `types.rs`) per Rust 2018 module conventions; all clippy warnings resolved with `#[expect]` (not `#[allow]`)
 
@@ -100,7 +102,31 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | feat | Zed alignment patterns + ACP permission plumbing (v0.8.0) |
+| `pending` | feat | unified ingest + structured metadata + MCP artifacts (v0.12.0) |
+| `a4ceffd7` | feat(acp) | wire `<axon:editor>` XML blocks to PlateJS editor |
+| `cbaa1eab` | feat(web) | add editor_update WS message type to protocol |
+| `175b0454` | fix(acp) | address all PR review comments + implement SEC-7 session-scoped permission routing |
+| `f6d9bace` | fix | address Codex + Copilot PR review comments |
+| `5279f7ad` | refactor(acp) | performance/scalability fixes + modern Rust idioms (v0.11.2) |
+| `e2a503c7` | chore | merge dev-setup script PR (#9) (arch-aware just install, secret gen, data dirs, test infra) |
+| `5fcbad02` | fix | patch zip-slip, LogLevel case-sensitivity, XML single-quote escaping |
+| `e012ce34` | test | expand coverage across web app + Rust crates (+914 tests, 18 files) |
+| `470ad642` | fix(ci) | resolve mcp-smoke and test job failures |
+| `47e62592` | fix | address misc/infra PR review comments (threads 1,3,4,5,7,11,34,36,37,40,41,43,51) |
+| `05152d9d` | fix | address Rust backend PR review comments (threads 10,17,19,22,26,27,31,47) |
+| `b5690063` | fix | address reboot + terminal component PR review comments (threads 42,44,46,49,50,52,53) |
+| `bbf962b3` | fix | address AI elements component PR review comments (threads 23,28,29,32,33,35,45) |
+| `197f4975` | fix | address Pulse component PR review comments (threads 9,13,15,24,25,54,55) |
+| `59df81cb` | fix | address API route PR review comments (threads 2,6,12,14,20,39) |
+| `7b0af2fe` | feat(reboot) | wire AxonShell to real ACP/session data, add hooks + UI polish (v0.11.0) |
+| `31cf6299` | fix(sessions) | use apiFetch to inject x-api-key on session load |
+| `45a19e59` | feat(hooks) | add useAxonSession for JSONL session history |
+| `9bb93bce` | feat(hooks) | add useAxonAcp for real ACP WebSocket prompt submission |
+| `9726772f` | feat(acp) | emit SessionFallback event on failed session resume |
+| `02e26020` | refactor(sessions) | hoist git enrichment to outer project loop |
+| `489c5435` | feat(sessions) | enrich session list with git repo/branch metadata |
+| `85518db6` | feat | reboot UI shell + logs SSE fix + CORS config + biome cleanup (v0.9.0) |
+| `e596f3e6` | feat | Zed alignment patterns + ACP permission plumbing (v0.8.0) |
 | `24e25081` | feat | add --root-selector/--exclude-selector + clean_markdown_whitespace (v0.7.5) |
 | `9c38b0fa` | refactor | split monolith-violating files (route.ts, use-pulse-chat.ts) |
 | `8d4603b7` | feat | address all ACP review findings (v0.7.4) |

@@ -1,6 +1,6 @@
 [package]
 name = "axon"
-version = "0.11.2"
+version = "0.12.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Web crawl, scrape, embed, and query CLI backed by a self-hosted RAG stack"
@@ -62,6 +62,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
+regex = "1"
 sha2 = "0.10"
 hex = "0.4"
 reflink-copy = "0.1"
@@ -82,7 +83,6 @@ opt-level = 2
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "net", "process", "signal", "sync", "time"] }
 criterion = "0.8"
-regex = "1"
 # httpmock enables mock HTTP servers in unit tests, unlocking coverage for
 # tei_embed 413-retry logic, ensure_collection idempotency, and API clients
 # without requiring live services.

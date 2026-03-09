@@ -73,14 +73,12 @@ WS protocol types: `lib/ws-protocol.ts` — all message shapes for client↔serv
 
 ### Pulse Chat
 
-`/api/pulse/chat/route.ts` spawns `claude` CLI as subprocess via `child_process.spawn`.
+`/api/pulse/chat/route.ts` sends prompt turns via WebSocket to the Rust ACP bridge (`runAxonCommandWsStream`). The Rust server manages a persistent ACP adapter process (claude/codex/gemini) via `crates/services/acp/`.
 
-- Args built in `app/api/pulse/chat/claude-stream-types.ts:buildClaudeArgs()`
-- Output: NDJSON stream, parsed by `stream-parser.ts`
-- MCP config: `/home/node/.claude/mcp.json` (`--strict-mcp-config` — ignores `~/.claude.json`)
+- ACP events (`assistant_delta`, `thinking_content`, `tool_use`, etc.) stream through the bridge callbacks
 - Timeout: 300s (`CLAUDE_TIMEOUT_MS`)
 - Context budget: 800k chars (~200k tokens)
-- `--dangerously-skip-permissions` on by default (no TTY in container); disable with `PULSE_SKIP_PERMISSIONS=false`
+- Helper state: `stream-parser.ts` exports `StreamParserState`, `createStreamParserState`, `extractToolResultText` — used by route-helpers.ts for ACP event processing
 
 ### API Contracts
 
@@ -179,9 +177,6 @@ AXON_ALLOWED_CLAUDE_BETAS=interleaved-thinking
 
 # Qdrant collection (used in Pulse doc defaults)
 AXON_COLLECTION=cortex                    # default
-
-# Claude CLI permissions (disable for interactive dev)
-PULSE_SKIP_PERMISSIONS=true               # default
 
 # Plate.js AI (required for editor AI features)
 OPENAI_BASE_URL=http://YOUR_LLM_HOST/v1

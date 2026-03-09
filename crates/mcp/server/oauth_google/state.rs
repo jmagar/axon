@@ -15,6 +15,7 @@ use super::types::{
     GoogleTokenResponse, OAUTH_SESSION_TTL_SECS, OAuthError, PendingStateRecord, RateLimitRecord,
     RefreshTokenRecord, RegisteredClient,
 };
+use crate::crates::core::config::parse::normalize_local_service_url;
 
 /// Maximum number of entries allowed in each in-memory OAuth state map.
 /// If a map reaches this size, a cleanup is triggered; if it is still over
@@ -28,7 +29,14 @@ impl GoogleOAuthState {
         let redis_client = std::env::var("GOOGLE_OAUTH_REDIS_URL")
             .ok()
             .or_else(|| std::env::var("AXON_REDIS_URL").ok())
-            .and_then(|url| redis::Client::open(url).ok());
+            .and_then(|url| redis::Client::open(normalize_local_service_url(url)).ok());
+
+        if redis_client.is_none() {
+            warn!(
+                target: "axon.mcp.oauth",
+                "no redis client configured for oauth state — tokens will not survive restarts"
+            );
+        }
 
         let state = Self {
             inner: std::sync::Arc::new(GoogleOAuthInner {

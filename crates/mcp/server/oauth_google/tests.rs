@@ -58,3 +58,40 @@ fn redirect_policy_any_allows_non_loopback() {
         RedirectPolicy::Any
     ));
 }
+
+/// Verifies that Docker-internal Redis hostnames are rewritten to localhost
+/// before being passed to the Redis client, so `axon mcp` (running as a local
+/// process outside Docker) can actually reach the Redis container.
+///
+/// Without this normalization, `redis::Client::open("redis://axon-redis:6379")`
+/// succeeds (it is lazy), but every subsequent connection attempt silently fails
+/// because `axon-redis` does not resolve outside the Docker network — causing
+/// all OAuth state to fall back to in-memory and be lost on restart.
+#[test]
+fn oauth_redis_url_docker_hostname_is_normalized_to_localhost() {
+    if std::path::Path::new("/.dockerenv").exists() {
+        return; // inside Docker: axon-redis resolves, normalization is a no-op
+    }
+    use crate::crates::core::config::parse::normalize_local_service_url;
+    use spider::url::Url;
+
+    let raw = "redis://:secret@axon-redis:6379".to_string();
+    let normalized = normalize_local_service_url(raw);
+    let parsed = Url::parse(&normalized).expect("normalized url must be valid");
+
+    assert_eq!(
+        parsed.host_str(),
+        Some("127.0.0.1"),
+        "axon-redis should be rewritten to 127.0.0.1 outside Docker"
+    );
+    assert_eq!(
+        parsed.port(),
+        Some(53379),
+        "axon-redis:6379 should be rewritten to the host-mapped port 53379"
+    );
+    assert_eq!(
+        parsed.password(),
+        Some("secret"),
+        "credentials must be preserved after rewrite"
+    );
+}

@@ -14,5 +14,5 @@ pub use stats::run_stats_native;
 pub use stats::stats_payload;
 pub use tei::{
     EmbedProgress, EmbedSummary, embed_path_native, embed_path_native_with_progress,
-    embed_text_with_metadata,
+    embed_text_with_extra_payload, embed_text_with_metadata,
 };

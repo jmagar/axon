@@ -12,4 +12,6 @@ Use `mcp__axon__axon` directly:
 
 Optional: `max_points` (int), `response_mode`.
 
+**NEVER include `collection` — it is not a valid field for `retrieve` and will cause an `invalid request` error.**
+
 Present reconstructed content, chunk count, and source metadata. If no chunks found, suggest scraping or crawling the URL first.

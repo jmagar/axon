@@ -11,6 +11,7 @@ use crate::crates::jobs::ingest::{
     get_ingest_job, list_ingest_jobs, recover_stale_ingest_jobs, run_ingest_worker,
     start_ingest_job,
 };
+use crate::crates::services::ingest as ingest_service;
 use std::error::Error;
 use uuid::Uuid;
 
@@ -91,6 +92,19 @@ pub fn parse_ingest_job_id(
     Ok(Uuid::parse_str(id)?)
 }
 
+/// Extract `"N / M videos, K chunks"` progress string from a playlist job's `result_json`,
+/// or `None` if the fields aren't present (single-video or not yet started).
+fn playlist_progress(result_json: &Option<serde_json::Value>) -> Option<String> {
+    let r = result_json.as_ref()?;
+    let done = r.get("videos_done")?.as_u64()?;
+    let total = r.get("videos_total")?.as_u64()?;
+    let chunks = r
+        .get("chunks_embedded")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    Some(format!("{done} / {total} videos, {chunks} chunks embedded"))
+}
+
 async fn handle_ingest_status(
     cfg: &Config,
     job: Option<IngestJob>,
@@ -119,6 +133,9 @@ async fn handle_ingest_status(
             );
             println!("  {} {}", muted("Created:"), job.created_at);
             println!("  {} {}", muted("Updated:"), job.updated_at);
+            if let Some(progress) = playlist_progress(&job.result_json) {
+                println!("  {} {}", muted("Progress:"), progress);
+            }
             if let Some(err) = job.error_text.as_deref() {
                 println!("  {} {}", muted("Error:"), err);
             }
@@ -138,11 +155,13 @@ async fn handle_ingest_list(cfg: &Config, jobs: Vec<IngestJob>) -> Result<(), Bo
             println!("  {}", muted("No ingest jobs found."));
         } else {
             for job in jobs {
+                let progress = playlist_progress(&job.result_json)
+                    .map(|p| format!(" [{p}]"))
+                    .unwrap_or_default();
                 println!(
-                    "  {} {} {} {}/{}",
+                    "  {} {} {}/{}{progress}",
                     symbol_for_status(&job.status),
                     accent(&job.id().to_string()),
-                    status_text(&job.status),
                     job.source_type,
                     job.target
                 );
@@ -186,4 +205,45 @@ pub fn print_ingest_sync_result(cfg: &Config, cmd_name: &str, chunks: usize, tar
             muted(target)
         );
     }
+}
+
+/// Run an ingest job synchronously (blocking until complete).
+///
+/// Dispatches to the appropriate service function based on the `IngestSource` variant
+/// and prints a completion summary. Called by `run_ingest` when `--wait true` is set.
+pub async fn run_ingest_sync(cfg: &Config, source: IngestSource) -> Result<(), Box<dyn Error>> {
+    let (chunks, source_label, target_label) = match &source {
+        IngestSource::Youtube { target } => {
+            let result = ingest_service::ingest_youtube(cfg, target, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "youtube", target.clone())
+        }
+        IngestSource::Github { repo, .. } => {
+            let (owner, repo_name) = repo
+                .split_once('/')
+                .ok_or_else(|| format!("ingest: GitHub repo must be 'owner/repo', got '{repo}'"))?;
+            let result = ingest_service::ingest_github(cfg, owner, repo_name, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "github", repo.clone())
+        }
+        IngestSource::Reddit { target } => {
+            let result = ingest_service::ingest_reddit(cfg, target, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "reddit", target.clone())
+        }
+        IngestSource::Sessions { .. } => {
+            return Err("sessions ingest is handled by the sessions command, not ingest".into());
+        }
+    };
+    print_ingest_sync_result(cfg, source_label, chunks, &target_label);
+    Ok(())
 }

@@ -81,6 +81,7 @@ impl AxonMcpServer {
                     "crawl-list",
                     serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
                 )
+                .await
             }
             CrawlSubaction::Cleanup => {
                 let deleted = cleanup_jobs(&cfg)
@@ -152,6 +153,7 @@ impl AxonMcpServer {
                     &format!("extract-status-{id}"),
                     serde_json::json!({ "job": job }),
                 )
+                .await
             }
             ExtractSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
@@ -177,6 +179,7 @@ impl AxonMcpServer {
                     "extract-list",
                     serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
                 )
+                .await
             }
             ExtractSubaction::Cleanup => {
                 let deleted = cleanup_extract_jobs(self.cfg.as_ref())
