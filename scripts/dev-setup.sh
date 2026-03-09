@@ -86,19 +86,24 @@ need python3
 need jq
 
 # ── Docker ─────────────────────────────────────────────────────────────────────
-sep
-info "Checking Docker..."
-if ! command -v docker >/dev/null 2>&1; then
-  die "Docker is not installed. Install Docker Desktop (https://docs.docker.com/get-docker/) then re-run."
+if [[ "$NO_DOCKER" == true ]]; then
+  sep
+  info "Skipping Docker checks (--no-docker set)"
+else
+  sep
+  info "Checking Docker..."
+  if ! command -v docker >/dev/null 2>&1; then
+    die "Docker is not installed. Install Docker Desktop (https://docs.docker.com/get-docker/) then re-run."
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    die "Docker daemon is not running (or WSL integration is not enabled).\nStart Docker Desktop and ensure WSL integration is on, then re-run."
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    die "docker compose (v2 plugin) not found. Update Docker Desktop or install the compose plugin."
+  fi
+  ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+  ok "Docker Compose $(docker compose version --short)"
 fi
-if ! docker info >/dev/null 2>&1; then
-  die "Docker daemon is not running (or WSL integration is not enabled).\nStart Docker Desktop and ensure WSL integration is on, then re-run."
-fi
-if ! docker compose version >/dev/null 2>&1; then
-  die "docker compose (v2 plugin) not found. Update Docker Desktop or install the compose plugin."
-fi
-ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
-ok "Docker Compose $(docker compose version --short)"
 
 # ── Rust Toolchain ─────────────────────────────────────────────────────────────
 sep
