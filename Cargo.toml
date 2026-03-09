@@ -54,7 +54,6 @@ spider_transformations = "2"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "net", "process", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
-thiserror = "1"
 toml = "0.8"
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-executor-trait = "3"
