@@ -319,7 +319,11 @@ if [[ "$NO_DOCKER" == "false" ]]; then
     axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome)
 
   info "Starting test infrastructure..."
-  (cd "$REPO" && docker compose -f docker-compose.test.yaml up -d)
+  if command -v just >/dev/null 2>&1; then
+    (cd "$REPO" && just test-infra-up)
+  else
+    (cd "$REPO" && docker compose -f docker-compose.test.yaml up -d)
+  fi
 
   # Wait for Postgres to be ready
   info "Waiting for Postgres..."
@@ -399,4 +403,6 @@ echo "     Or full dev stack:  just dev"
 echo ""
 echo "  4. Verify services:  ./scripts/axon doctor"
 echo "  5. Run checks:       just verify"
+echo "  6. Test infra:       just test-infra-up   # start"
+echo "                       just test-infra-down  # stop + wipe data"
 echo ""
