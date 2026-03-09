@@ -197,8 +197,11 @@ pub(super) async fn run_prompt_turn(
         }
     }
 
-    // FIX PERF-9: Drain permission responders on exit. DashMap: no lock needed.
-    permission_responders.clear();
+    // NOTE: do NOT call permission_responders.clear() here — the map is shared
+    // across all concurrent ACP sessions on the same WS connection.  Clearing it
+    // drops pending oneshot senders that belong to other in-flight sessions,
+    // causing their permission waits to cancel unexpectedly.  Per-session entries
+    // are removed by the bridge timeout handler (60 s) or on WS connection drop.
 
     Ok(())
 }
@@ -226,8 +229,7 @@ pub(super) async fn run_session_probe(
     // Probe is fire-and-forget: session is set up, we just confirm it worked.
     drop(exit_rx);
 
-    // FIX PERF-9: Drain permission responders on exit. DashMap: no lock needed.
-    permission_responders.clear();
+    // NOTE: do NOT clear permission_responders — shared across concurrent sessions.
 
     Ok(())
 }

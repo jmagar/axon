@@ -34,19 +34,10 @@ use super::ws_send::{send_command_output_line, send_done_dual, send_error_dual};
 /// Typed error alias for service call wrappers — erased to `String` only at the WS boundary.
 type SvcError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-// FINDING-19: global semaphore to cap concurrent ACP sessions and prevent
-// resource exhaustion from unbounded parallel Claude/Codex/Gemini processes.
-static ACP_SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-
-fn acp_semaphore() -> &'static tokio::sync::Semaphore {
-    ACP_SEMAPHORE.get_or_init(|| {
-        let limit = env::var("AXON_ACP_MAX_CONCURRENT_SESSIONS")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(8);
-        tokio::sync::Semaphore::new(limit)
-    })
-}
+// ACP session concurrency is enforced by crate::crates::web::ACP_SESSION_SEMAPHORE
+// (acquired in execute.rs before calling handle_sync_direct).  Do NOT add a second
+// semaphore here — dual acquisition cuts effective capacity and creates two
+// inconsistent sources of truth for the AXON_ACP_MAX_CONCURRENT_SESSIONS limit.
 
 /// Modes dispatched directly through service functions (no subprocess).
 ///
@@ -408,7 +399,8 @@ async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig> {
 /// looks like a path, is absolute.  This blocks trivial command-injection via
 /// `config.json` entries like `{"command": "bash", "args": ["-c", "evil"]}`.
 fn is_safe_mcp_command(cmd: &str) -> bool {
-    if cmd.is_empty() {
+    // Reject empty or whitespace-only commands.
+    if cmd.trim().is_empty() {
         return false;
     }
     // Reject known shell interpreters by basename.
@@ -434,9 +426,10 @@ fn is_safe_mcp_command(cmd: &str) -> bool {
     if shell_names.contains(&basename.to_ascii_lowercase().as_str()) {
         return false;
     }
-    // If the command contains a path separator it must be absolute — reject
-    // relative paths like `./evil` or `../evil`.
-    if cmd.contains('/') && !Path::new(cmd).is_absolute() {
+    // If the command contains a path separator (/ or \) it must be absolute —
+    // reject relative paths like `./evil`, `../evil`, or `..\evil`.
+    let has_separator = cmd.contains('/') || cmd.contains('\\');
+    if has_separator && !Path::new(cmd).is_absolute() {
         return false;
     }
     true
@@ -823,24 +816,19 @@ async fn dispatch_acp_event(
             let raw_json = acp_bridge_event_json(&event);
             // Determine event type for logging from the raw JSON prefix; this
             // avoids deserializing back to a Value just to read the "type" field.
-            let event_type_end = raw_json
-                .find('"')
-                .and_then(|s| raw_json[s + 1..].find('"').map(|e| (s + 1, s + 1 + e)))
-                .and_then(|(s, e)| {
-                    if raw_json[..s].contains("\"type\"") || raw_json.starts_with(r#"{"type":""#) {
-                        Some(&raw_json[s..e])
-                    } else {
-                        None
-                    }
-                });
+            // AcpBridgeEvent always serializes as {"type":"<value>",...}.
+            // Strip the 9-byte prefix {"type":" and read up to the closing quote.
+            let event_type = raw_json
+                .strip_prefix(r#"{"type":""#)
+                .and_then(|rest| rest.find('"').map(|e| &rest[..e]));
             // Only log non-streaming events to avoid flooding at token rate.
             if !matches!(
-                event_type_end,
+                event_type,
                 Some("assistant_delta") | Some("thinking_content") | Some("user_delta")
             ) {
                 log::info!(
                     "[pulse_chat] ACP event: type={}",
-                    event_type_end.unwrap_or("unknown")
+                    event_type.unwrap_or("unknown")
                 );
             }
             // PERF-4: wrap in a `command.output.json` envelope via string
@@ -909,11 +897,7 @@ async fn handle_pulse_chat(
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
-    // FINDING-19: non-blocking backpressure — reject immediately when at capacity.
-    let _permit = acp_semaphore()
-        .try_acquire()
-        .map_err(|_| "ACP session limit reached — try again shortly".to_string())?;
-
+    // Session concurrency is already capped by ACP_SESSION_SEMAPHORE in execute.rs.
     log::info!(
         "[pulse_chat] starting: agent={:?} session_id={:?} model={:?} input_len={}",
         agent,
@@ -973,11 +957,7 @@ async fn handle_pulse_chat_probe(
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
 ) -> Result<(), String> {
-    // FINDING-19: non-blocking backpressure — reject immediately when at capacity.
-    let _permit = acp_semaphore()
-        .try_acquire()
-        .map_err(|_| "ACP session limit reached — try again shortly".to_string())?;
-
+    // Session concurrency is already capped by ACP_SESSION_SEMAPHORE in execute.rs.
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let adapter = resolve_acp_adapter_command(&cfg, agent)?;
     let scaffold = acp_svc::AcpClientScaffold::new(adapter);
