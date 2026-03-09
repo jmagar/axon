@@ -105,6 +105,12 @@ up:
 down:
     docker compose down
 
+test-infra-up:
+    docker compose -f docker-compose.test.yaml up -d
+
+test-infra-down:
+    docker compose -f docker-compose.test.yaml down -v
+
 docker-up:
     ./scripts/rebuild-fresh.sh
 
