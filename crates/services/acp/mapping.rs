@@ -304,17 +304,28 @@ pub fn validate_adapter_command(
         "powershell",
         "pwsh",
     ];
-    #[expect(clippy::collapsible_if)]
     if program.contains('/') || program.contains('\\') {
+        // Check the original basename first.
         if let Some(basename) = path.file_name().and_then(|n| n.to_str()) {
-            let basename_lower = basename.to_ascii_lowercase();
-            // Strip .exe suffix for Windows compatibility.
-            let stem = basename_lower
-                .strip_suffix(".exe")
-                .unwrap_or(&basename_lower);
+            let lower = basename.to_ascii_lowercase();
+            let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
             if BLOCKED_SHELLS.contains(&stem) {
                 return Err(format!(
                     "ACP adapter command must not be a shell interpreter: {basename}"
+                )
+                .into());
+            }
+        }
+        // Also check the resolved canonical path to catch symlinks like
+        // /tmp/safe_name -> /bin/bash, which would pass the basename check above.
+        if let Ok(canonical) = std::fs::canonicalize(path)
+            && let Some(canon_name) = canonical.file_name().and_then(|n| n.to_str())
+        {
+            let lower = canon_name.to_ascii_lowercase();
+            let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+            if BLOCKED_SHELLS.contains(&stem) {
+                return Err(format!(
+                    "ACP adapter command resolves to a shell interpreter: {canon_name}"
                 )
                 .into());
             }
