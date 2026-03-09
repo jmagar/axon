@@ -286,6 +286,13 @@ else
 
   ok "Secrets generated and written to .env"
 
+  # ── Test infrastructure URLs (static — matches docker-compose.test.yaml) ──────
+  set_env AXON_TEST_PG_URL   "postgresql://axon:axontest@127.0.0.1:53434/axon_test"
+  set_env AXON_TEST_AMQP_URL "amqp://axon:axontest@127.0.0.1:45536/%2f"
+  set_env AXON_TEST_REDIS_URL  "redis://127.0.0.1:53380"
+  set_env AXON_TEST_QDRANT_URL "http://127.0.0.1:53335"
+  ok "Test service URLs written to .env"
+
   # ── Create data directories for container volume mounts ──────────────────────
   info "Creating data directories under ${AXON_DATA_DIR}..."
   mkdir -p \
@@ -311,6 +318,9 @@ if [[ "$NO_DOCKER" == "false" ]]; then
   (cd "$REPO" && docker compose up -d \
     axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome)
 
+  info "Starting test infrastructure..."
+  (cd "$REPO" && docker compose -f docker-compose.test.yaml up -d)
+
   # Wait for Postgres to be ready
   info "Waiting for Postgres..."
   for i in $(seq 1 30); do
@@ -325,10 +335,27 @@ if [[ "$NO_DOCKER" == "false" ]]; then
     sleep 1
   done
 
+  info "Waiting for test Postgres..."
+  for i in $(seq 1 30); do
+    if (cd "$REPO" && docker compose -f docker-compose.test.yaml exec -T axon-postgres-test \
+        pg_isready -U axon >/dev/null 2>&1); then
+      ok "Test Postgres is ready"
+      break
+    fi
+    if (( i == 30 )); then
+      warn "Test Postgres did not become ready after 30s — check: docker compose -f docker-compose.test.yaml logs axon-postgres-test"
+    fi
+    sleep 1
+  done
+
   ok "Infrastructure containers:"
   (cd "$REPO" && docker compose ps --format "  {{.Name}}: {{.Status}}" \
     axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome 2>/dev/null \
     || docker compose ps axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome)
+
+  ok "Test infrastructure containers:"
+  (cd "$REPO" && docker compose -f docker-compose.test.yaml ps --format "  {{.Name}}: {{.Status}}" 2>/dev/null \
+    || docker compose -f docker-compose.test.yaml ps)
 fi
 
 # ── Git Hooks ──────────────────────────────────────────────────────────────────
@@ -358,7 +385,6 @@ echo "       TEI_URL           — text embedding service"
 echo "       OPENAI_BASE_URL   — LLM endpoint (for ask/extract)"
 echo "       OPENAI_API_KEY    — LLM API key"
 echo "       OPENAI_MODEL      — LLM model name"
-echo "       AXON_WEB_API_TOKEN + NEXT_PUBLIC_AXON_API_TOKEN (must match)"
 echo "       TAVILY_API_KEY    — for search/research commands"
 echo ""
 echo "  2. Run workers (each in its own terminal):"
