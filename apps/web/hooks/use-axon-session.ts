@@ -30,6 +30,27 @@ interface UseAxonSessionResult {
   reload: () => void
 }
 
+// Retry delays in ms for 404 responses — the session file may not be on disk yet.
+const RETRY_DELAYS_MS = [200, 400, 800, 1600, 3200, 5000]
+
+async function fetchSessionWithRetry(
+  sessionId: string,
+  isCancelled: () => boolean,
+): Promise<SessionResponse> {
+  for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
+    if (isCancelled()) throw new Error('cancelled')
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+    if (res.ok) return res.json() as Promise<SessionResponse>
+    if (res.status !== 404 || i === RETRY_DELAYS_MS.length) {
+      throw new Error(`Failed to load session: ${res.status}`)
+    }
+    const delay = RETRY_DELAYS_MS[i] ?? 5000
+    console.debug(`[session] 404 for ${sessionId}, retry ${i + 1} in ${delay}ms`)
+    await new Promise<void>((resolve) => setTimeout(resolve, delay))
+  }
+  throw new Error('Session not found after retries')
+}
+
 export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
   const [messages, setMessages] = useState<MessageItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -51,11 +72,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     setLoading(true)
     setError(null)
 
-    apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to load session: ${res.status}`)
-        return res.json() as Promise<SessionResponse>
-      })
+    fetchSessionWithRetry(sessionId, () => cancelled)
       .then((data) => {
         if (cancelled) return
         setMessages(
@@ -69,7 +86,9 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to load session')
+        const msg = err instanceof Error ? err.message : 'Failed to load session'
+        if (msg === 'cancelled') return
+        setError(msg)
         setMessages([])
       })
       .finally(() => {

@@ -88,6 +88,103 @@ pub(super) fn stop_reason_to_str(reason: StopReason) -> &'static str {
     }
 }
 
+// ── Interactive permission helper ───────────────────────────────────────────
+
+/// Wait for the frontend to respond to a permission request.
+///
+/// Inserts the oneshot sender into `permission_responders`, logs that we are
+/// waiting, then races the channel receive against a 60-second timeout.
+/// On timeout the map entry is cleaned up before returning `Cancelled`.
+pub(super) async fn handle_interactive_permission(
+    args: &RequestPermissionRequest,
+    tx: &Option<mpsc::Sender<ServiceEvent>>,
+    permission_responders: &PermissionResponderMap,
+    session_id: &str,
+    tool_call_id: &str,
+) -> RequestPermissionOutcome {
+    let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
+    // Key is (session_id, tool_call_id) — SEC-7: prevents cross-session routing.
+    permission_responders.insert((session_id.to_string(), tool_call_id.to_string()), resp_tx);
+
+    emit(
+        tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!(
+                "ACP permission awaiting frontend response for tool_call={tool_call_id}"
+            ),
+        },
+    );
+
+    // Wait up to 60s for a response from the frontend.
+    match tokio::time::timeout(std::time::Duration::from_secs(60), resp_rx).await {
+        Ok(Ok(option_id)) => {
+            // Validate that the chosen option_id exists in the request.
+            let matched = args
+                .options
+                .iter()
+                .find(|opt| *opt.option_id.0 == *option_id);
+            match matched {
+                Some(opt) => {
+                    emit(
+                        tx,
+                        ServiceEvent::Log {
+                            level: LogLevel::Info,
+                            message: format!(
+                                "ACP permission resolved by frontend for tool_call={tool_call_id}: {option_id}"
+                            ),
+                        },
+                    );
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        opt.option_id.clone(),
+                    ))
+                }
+                None => {
+                    emit(
+                        tx,
+                        ServiceEvent::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "ACP permission: frontend sent unknown option_id={option_id} for tool_call={tool_call_id}, cancelling"
+                            ),
+                        },
+                    );
+                    RequestPermissionOutcome::Cancelled
+                }
+            }
+        }
+        // Disconnect path: the frontend dropped the responder channel.
+        Ok(Err(_)) => {
+            emit(
+                tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "ACP permission: responder dropped for tool_call={tool_call_id}"
+                    ),
+                },
+            );
+            RequestPermissionOutcome::Cancelled
+        }
+        // Timeout path: no frontend response within 60s.
+        Err(_) => {
+            log::warn!("ACP permission request timed out after 60s");
+            emit(
+                tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "ACP permission: timeout waiting for frontend response for tool_call={tool_call_id}"
+                    ),
+                },
+            );
+            // Clean up the map entry. DashMap: no lock needed.
+            permission_responders.remove(&(session_id.to_string(), tool_call_id.to_string()));
+            RequestPermissionOutcome::Cancelled
+        }
+    }
+}
+
 // ── Bridge client ───────────────────────────────────────────────────────────
 
 /// FINDING-2: `Arc<AcpRuntimeState>` — no Mutex wrapper needed because
@@ -122,100 +219,22 @@ impl Client for AcpBridgeClient {
             )));
         }
 
-        // Interactive mode: wait for the frontend to send a permission response.
-        let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
-        {
-            // DashMap: no lock needed — insert is atomic.
-            self.permission_responders
-                .insert(tool_call_id.clone(), resp_tx);
-        }
-
-        emit(
+        // Interactive mode: delegate to helper which manages oneshot registration,
+        // timeout, and map cleanup.
+        let session_id = self
+            .runtime_state
+            .session_id
+            .get()
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let outcome = handle_interactive_permission(
+            &args,
             &self.tx,
-            ServiceEvent::Log {
-                level: LogLevel::Info,
-                message: format!(
-                    "ACP permission awaiting frontend response for tool_call={tool_call_id}"
-                ),
-            },
-        );
-
-        // Wait up to 60s for a response from the frontend.
-        let outcome = match tokio::time::timeout(std::time::Duration::from_secs(60), resp_rx).await
-        {
-            Ok(Ok(option_id)) => {
-                // Validate that the chosen option_id exists in the request.
-                let matched = args
-                    .options
-                    .iter()
-                    .find(|opt| *opt.option_id.0 == *option_id);
-                match matched {
-                    Some(opt) => {
-                        emit(
-                            &self.tx,
-                            ServiceEvent::Log {
-                                level: LogLevel::Info,
-                                message: format!(
-                                    "ACP permission resolved by frontend for tool_call={tool_call_id}: {option_id}"
-                                ),
-                            },
-                        );
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                            opt.option_id.clone(),
-                        ))
-                    }
-                    None => {
-                        emit(
-                            &self.tx,
-                            ServiceEvent::Log {
-                                level: LogLevel::Warn,
-                                message: format!(
-                                    "ACP permission: frontend sent unknown option_id={option_id} for tool_call={tool_call_id}, cancelling"
-                                ),
-                            },
-                        );
-                        RequestPermissionOutcome::Cancelled
-                    }
-                }
-            }
-            // FIX SEC-1: Disconnect path -- only auto-approve if configured.
-            Ok(Err(_)) => {
-                emit(
-                    &self.tx,
-                    ServiceEvent::Log {
-                        level: LogLevel::Warn,
-                        message: format!(
-                            "ACP permission: responder dropped for tool_call={tool_call_id}"
-                        ),
-                    },
-                );
-                if self.auto_approve {
-                    auto_approve_outcome(&args, &self.tx, &tool_call_id)
-                } else {
-                    RequestPermissionOutcome::Cancelled
-                }
-            }
-            // FIX SEC-1: Timeout path -- only auto-approve if configured.
-            Err(_) => {
-                log::warn!("ACP permission request timed out after 60s");
-                emit(
-                    &self.tx,
-                    ServiceEvent::Log {
-                        level: LogLevel::Warn,
-                        message: format!(
-                            "ACP permission: timeout waiting for frontend response for tool_call={tool_call_id}"
-                        ),
-                    },
-                );
-                // Clean up the map entry. DashMap: no lock needed.
-                self.permission_responders.remove(&tool_call_id);
-                if self.auto_approve {
-                    auto_approve_outcome(&args, &self.tx, &tool_call_id)
-                } else {
-                    RequestPermissionOutcome::Cancelled
-                }
-            }
-        };
+            &self.permission_responders,
+            session_id,
+            &tool_call_id,
+        )
+        .await;
 
         Ok(RequestPermissionResponse::new(outcome))
     }

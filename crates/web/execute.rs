@@ -20,13 +20,19 @@ mod context;
 pub(crate) mod events;
 mod exe;
 pub(crate) mod files;
+pub(crate) mod mcp_config;
 pub mod overrides;
+mod session_guard;
 mod sync_mode;
 mod ws_send;
 
 #[cfg(test)]
 #[path = "execute/tests/ws_event_v2_tests.rs"]
 mod ws_event_v2_tests;
+
+#[cfg(test)]
+#[path = "execute/tests/acp_ws_event_tests.rs"]
+mod acp_ws_event_tests;
 
 #[cfg(test)]
 #[path = "execute/tests/ws_protocol_tests.rs"]
@@ -212,25 +218,11 @@ pub(super) async fn handle_command(
     // stats, sources, domains, doctor, status, pulse_chat) — call services directly.
     if let Some(params) = sync_mode::classify_sync_direct(&context) {
         // SEC-8 / PERF-1 / PERF-10: acquire ACP session permit for pulse_chat and
-        // pulse_chat_probe to bound concurrent spawn_blocking threads.  try_acquire
-        // returns immediately with an error when the limit is reached, giving the
-        // client instant feedback instead of blocking.
-        let _acp_permit = if matches!(mode.as_str(), "pulse_chat" | "pulse_chat_probe") {
-            match crate::crates::web::ACP_SESSION_SEMAPHORE.try_acquire() {
-                Ok(permit) => Some(permit),
-                Err(_) => {
-                    send_error_dual(
-                        &tx,
-                        &ws_ctx,
-                        "too many concurrent ACP sessions — try again shortly".to_string(),
-                        None,
-                    )
-                    .await;
-                    return;
-                }
-            }
-        } else {
-            None
+        // pulse_chat_probe to bound concurrent spawn_blocking threads.
+        let permit_result = acquire_acp_permit(&mode, &tx, &ws_ctx).await;
+        let _acp_permit = match permit_result {
+            Ok(p) => p,
+            Err(()) => return, // error already sent to client
         };
         ws_send::send_command_start(&tx, &context).await;
         sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders).await;
@@ -239,11 +231,51 @@ pub(super) async fn handle_command(
     }
 
     ws_send::send_command_start(&tx, &context).await;
+    dispatch_subprocess_fallback(context, &mode, &input, &flags, tx, ws_ctx).await;
+}
 
-    // Subprocess fallback.  Covers:
-    // - github, reddit, youtube (ingest — !Send service functions, run to completion)
-    // - suggest, screenshot, evaluate, sessions, dedupe, debug, refresh (not yet direct)
-    // TODO: direct dispatch for remaining modes once !Send constraints are resolved
+/// Acquire a semaphore permit for ACP sessions (`pulse_chat` / `pulse_chat_probe`).
+///
+/// Returns `Ok(Some(permit))` when a permit is available, `Ok(None)` for non-ACP
+/// modes, and `Err(())` when the semaphore is exhausted — in that case an error
+/// event has already been sent to the client.
+async fn acquire_acp_permit(
+    mode: &str,
+    tx: &mpsc::Sender<String>,
+    ws_ctx: &events::CommandContext,
+) -> Result<Option<tokio::sync::SemaphorePermit<'static>>, ()> {
+    if matches!(mode, "pulse_chat" | "pulse_chat_probe") {
+        match crate::crates::web::ACP_SESSION_SEMAPHORE.try_acquire() {
+            Ok(permit) => Ok(Some(permit)),
+            Err(_) => {
+                send_error_dual(
+                    tx,
+                    ws_ctx,
+                    "too many concurrent ACP sessions — try again shortly".to_string(),
+                    None,
+                )
+                .await;
+                Err(())
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+/// Subprocess fallback for modes not yet wired to direct dispatch.
+///
+/// Covers github, reddit, youtube (ingest — `!Send` service functions) and
+/// suggest, screenshot, evaluate, sessions, dedupe, debug, refresh.
+/// TODO: direct dispatch for remaining modes once `!Send` constraints are resolved.
+async fn dispatch_subprocess_fallback(
+    context: ExecCommandContext,
+    mode: &str,
+    input: &str,
+    flags: &serde_json::Value,
+    tx: mpsc::Sender<String>,
+    ws_ctx: events::CommandContext,
+) {
     let _ = ASYNC_SUBPROCESS_MODES; // used in routing comment above; suppress dead_code lint
     let exe = match resolve_exe() {
         Ok(p) => p,
@@ -252,7 +284,7 @@ pub(super) async fn handle_command(
             return;
         }
     };
-    let args = args::build_args(&mode, &input, &flags);
+    let args = args::build_args(mode, input, flags);
     let start = Instant::now();
     let child = Command::new(&exe)
         .args(&args)

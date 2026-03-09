@@ -57,9 +57,11 @@ async fn run_env_probe() -> String {
         cwd: None,
     };
     let scaffold = AcpClientScaffold::new(adapter);
+    // Use skip_validation variant: "sh" is a blocked shell in production but is
+    // needed here to probe env var inheritance inside the env_clear allowlist.
     let child = scaffold
-        .spawn_adapter()
-        .expect("spawn_adapter should succeed");
+        .spawn_adapter_skip_validation()
+        .expect("spawn_adapter_skip_validation should succeed");
     let output = child
         .wait_with_output()
         .await
@@ -151,9 +153,11 @@ async fn spawn_adapter_passes_through_gemini_auth_vars() {
         cwd: None,
     };
     let scaffold = AcpClientScaffold::new(adapter);
+    // Use skip_validation variant: "sh" is a blocked shell in production but is
+    // needed here to probe env var inheritance inside the env_clear allowlist.
     let child = scaffold
-        .spawn_adapter()
-        .expect("spawn_adapter should succeed");
+        .spawn_adapter_skip_validation()
+        .expect("spawn_adapter_skip_validation should succeed");
     let output = child
         .wait_with_output()
         .await

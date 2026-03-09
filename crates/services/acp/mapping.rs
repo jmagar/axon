@@ -145,7 +145,10 @@ pub fn map_session_notification_event(notification: &SessionNotification) -> Ser
     let sid = notification.session_id.0.to_string();
     match &notification.update {
         SessionUpdate::ConfigOptionUpdate(update) => ServiceEvent::AcpBridge {
-            event: AcpBridgeEvent::ConfigOptionsUpdate(map_config_options(&update.config_options)),
+            event: AcpBridgeEvent::ConfigOptionsUpdate {
+                session_id: sid,
+                config_options: map_config_options(&update.config_options),
+            },
         },
         SessionUpdate::Plan(plan) => ServiceEvent::AcpBridge {
             event: AcpBridgeEvent::PlanUpdate(AcpPlanUpdate {
@@ -288,9 +291,8 @@ pub fn validate_adapter_command(
     }
 
     // Reject known shell interpreters by basename to prevent command injection.
-    // Only checked when the program is a path (contains `/` or `\`). Bare names
-    // like "sh" are allowed for testing harnesses; production adapter configs
-    // always use full paths or well-known adapter names like "claude".
+    // The check is unconditional — bare names like "sh" or "bash" must be
+    // blocked just as firmly as full paths like "/bin/sh".
     const BLOCKED_SHELLS: &[&str] = &[
         "sh",
         "bash",
@@ -304,31 +306,35 @@ pub fn validate_adapter_command(
         "powershell",
         "pwsh",
     ];
-    if program.contains('/') || program.contains('\\') {
-        // Check the original basename first.
-        if let Some(basename) = path.file_name().and_then(|n| n.to_str()) {
-            let lower = basename.to_ascii_lowercase();
-            let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
-            if BLOCKED_SHELLS.contains(&stem) {
-                return Err(format!(
-                    "ACP adapter command must not be a shell interpreter: {basename}"
-                )
-                .into());
-            }
-        }
-        // Also check the resolved canonical path to catch symlinks like
-        // /tmp/safe_name -> /bin/bash, which would pass the basename check above.
-        if let Ok(canonical) = std::fs::canonicalize(path)
-            && let Some(canon_name) = canonical.file_name().and_then(|n| n.to_str())
-        {
-            let lower = canon_name.to_ascii_lowercase();
-            let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
-            if BLOCKED_SHELLS.contains(&stem) {
-                return Err(format!(
-                    "ACP adapter command resolves to a shell interpreter: {canon_name}"
-                )
-                .into());
-            }
+
+    // Derive the basename from the program string (handles both bare names and paths).
+    let basename = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program);
+    let basename_lower = basename.to_ascii_lowercase();
+    let stem = basename_lower
+        .strip_suffix(".exe")
+        .unwrap_or(&basename_lower);
+    if BLOCKED_SHELLS.contains(&stem) {
+        return Err(
+            format!("ACP adapter command must not be a shell interpreter: {basename}").into(),
+        );
+    }
+
+    // For path-style programs also check the resolved canonical path to catch
+    // symlinks like /tmp/safe_name -> /bin/bash.
+    if (program.contains('/') || program.contains('\\'))
+        && let Ok(canonical) = std::fs::canonicalize(path)
+        && let Some(canon_name) = canonical.file_name().and_then(|n| n.to_str())
+    {
+        let lower = canon_name.to_ascii_lowercase();
+        let canon_stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+        if BLOCKED_SHELLS.contains(&canon_stem) {
+            return Err(format!(
+                "ACP adapter command resolves to a shell interpreter: {canon_name}"
+            )
+            .into());
         }
     }
 

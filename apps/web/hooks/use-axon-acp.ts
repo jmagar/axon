@@ -5,6 +5,9 @@ import type { MessageItem } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
 
 const STREAMING_TIMEOUT_MS = 60_000
+// How long to wait for session_persisted before falling back to the session_id
+// from the result event. Must be > the backend's 5s polling window.
+const SESSION_PERSIST_FALLBACK_MS = 6_000
 
 interface UseAxonAcpOptions {
   activeSessionId: string | null
@@ -26,6 +29,10 @@ export function useAxonAcp({
   const [isStreaming, setIsStreaming] = useState(false)
   const streamingIdRef = useRef<string | null>(null)
   const streamingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Holds the session_id from the result event until session_persisted confirms
+  // the file is on disk (or the fallback timer fires).
+  const pendingSessionIdRef = useRef<string | null>(null)
+  const persistFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { send, subscribe, status } = useAxonWs()
   const connected = status === 'connected'
 
@@ -78,11 +85,40 @@ export function useAxonAcp({
 
         case 'result': {
           const newSessionId = msg.session_id as string | undefined
-          if (newSessionId) onSessionIdChange(newSessionId)
           if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
           setIsStreaming(false)
           streamingIdRef.current = null
           onTurnComplete?.()
+          if (newSessionId) {
+            // Hold the session_id — wait for session_persisted to confirm the
+            // file is on disk before triggering the session fetch.
+            pendingSessionIdRef.current = newSessionId
+            if (persistFallbackRef.current) clearTimeout(persistFallbackRef.current)
+            persistFallbackRef.current = setTimeout(() => {
+              persistFallbackRef.current = null
+              const sid = pendingSessionIdRef.current
+              if (sid) {
+                pendingSessionIdRef.current = null
+                console.debug('[acp] session_persisted fallback fired for', sid)
+                onSessionIdChange(sid)
+              }
+            }, SESSION_PERSIST_FALLBACK_MS)
+          }
+          break
+        }
+
+        case 'session_persisted': {
+          // Backend confirmed the .jsonl file is on disk — safe to fetch now.
+          const sid = (msg.session_id as string) ?? ''
+          if (sid) {
+            if (persistFallbackRef.current) {
+              clearTimeout(persistFallbackRef.current)
+              persistFallbackRef.current = null
+            }
+            pendingSessionIdRef.current = null
+            console.debug('[acp] session_persisted confirmed on disk:', sid)
+            onSessionIdChange(sid)
+          }
           break
         }
 
@@ -104,11 +140,15 @@ export function useAxonAcp({
       }
     })
     return () => {
-      // Clear any pending streaming timeout to prevent setState/onMessagesChange
-      // calls after the hook is unmounted.
+      // Clear all pending timeouts to prevent setState/onMessagesChange calls
+      // after the hook is unmounted.
       if (streamingTimeoutRef.current) {
         clearTimeout(streamingTimeoutRef.current)
         streamingTimeoutRef.current = null
+      }
+      if (persistFallbackRef.current) {
+        clearTimeout(persistFallbackRef.current)
+        persistFallbackRef.current = null
       }
       unsubscribe()
     }
