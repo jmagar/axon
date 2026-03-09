@@ -17,6 +17,7 @@ pub mod adapters;
 pub(super) mod bridge;
 pub(super) mod config;
 pub mod mapping;
+pub(super) mod persistent_conn;
 pub(super) mod runtime;
 pub(super) mod session;
 
@@ -44,6 +45,7 @@ pub use mapping::{
     validate_adapter_command, validate_probe_request, validate_prompt_turn_request,
     validate_session_cwd,
 };
+pub use persistent_conn::{AcpConnectionHandle, TurnRequest};
 
 // ── PermissionResponderMap ───────────────────────────────────────────────────
 

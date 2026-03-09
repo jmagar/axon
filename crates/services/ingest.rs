@@ -86,9 +86,10 @@ pub async fn ingest_reddit(
     Ok(map_ingest_result(payload))
 }
 
-/// Ingest a YouTube video transcript into the vector store.
+/// Ingest YouTube content into the vector store.
 ///
-/// `url` may be a full YouTube URL or a bare video ID.
+/// `url` may be a single video URL, a bare video ID, a playlist URL
+/// (`youtube.com/playlist?list=...`), or a channel URL (`/@handle`, `/c/`, `/channel/`).
 pub async fn ingest_youtube(
     cfg: &Config,
     url: &str,

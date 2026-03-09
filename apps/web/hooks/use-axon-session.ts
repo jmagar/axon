@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-fetch'
+import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
 
-export interface MessageItem {
+export type ReasoningStep = {
+  label: string
+  description?: string
+  status?: 'complete' | 'active' | 'pending'
+}
+
+export interface AxonMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -9,7 +16,13 @@ export interface MessageItem {
   chainOfThought?: string[]
   files?: string[]
   streaming?: boolean
+  blocks?: PulseMessageBlock[]
+  toolUses?: PulseToolUse[]
+  steps?: ReasoningStep[]
 }
+
+/** @deprecated Use AxonMessage */
+export type MessageItem = AxonMessage
 
 interface ParsedMessage {
   role: 'user' | 'assistant'
@@ -24,7 +37,7 @@ interface SessionResponse {
 }
 
 interface UseAxonSessionResult {
-  messages: MessageItem[]
+  messages: AxonMessage[]
   loading: boolean
   error: string | null
   reload: () => void
@@ -52,7 +65,7 @@ async function fetchSessionWithRetry(
 }
 
 export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
-  const [messages, setMessages] = useState<MessageItem[]>([])
+  const [messages, setMessages] = useState<AxonMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)

@@ -1,64 +1,14 @@
+mod meta;
+mod vtt;
+
+pub use vtt::parse_vtt_to_text;
+
 use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::vector::ops::{embed_text_with_extra_payload, embed_text_with_metadata};
 use spider::url::Url;
 use std::error::Error;
-
-/// Parse a WebVTT transcript string into clean plain text.
-///
-/// Strips the WEBVTT header, timestamp lines, position cues, and deduplicates
-/// consecutive identical lines that arise from overlapping subtitle windows.
-pub fn parse_vtt_to_text(vtt: &str) -> String {
-    let mut result: Vec<String> = Vec::new();
-    let mut last: Option<String> = None;
-
-    for line in vtt.lines() {
-        // Strip the WEBVTT header line
-        if line.trim() == "WEBVTT" {
-            continue;
-        }
-        // Strip blank lines
-        if line.trim().is_empty() {
-            continue;
-        }
-        // Strip timestamp lines — any line containing "-->"
-        if line.contains("-->") {
-            continue;
-        }
-        // Strip numeric-only cue identifiers (VTT sequence numbers like "1", "2", etc.)
-        if line.trim().chars().all(|c| c.is_ascii_digit()) && !line.trim().is_empty() {
-            continue;
-        }
-
-        // Strip HTML tags from content lines
-        let mut clean = String::new();
-        let mut inside_tag = false;
-        for ch in line.chars() {
-            match ch {
-                '<' => inside_tag = true,
-                '>' => inside_tag = false,
-                _ if !inside_tag => clean.push(ch),
-                _ => {}
-            }
-        }
-        let clean = clean.trim().to_string();
-
-        if clean.is_empty() {
-            continue;
-        }
-
-        // Deduplicate consecutive identical lines
-        if last.as_deref() == Some(&clean) {
-            continue;
-        }
-
-        last = Some(clean.clone());
-        result.push(clean);
-    }
-
-    result.join("\n")
-}
 
 /// Extract a YouTube video ID from a URL or return the string as-is if already an ID.
 pub fn extract_video_id(input: &str) -> Option<String> {
@@ -113,10 +63,111 @@ pub fn extract_video_id(input: &str) -> Option<String> {
     None
 }
 
+/// Returns `true` if `url` is a YouTube playlist or channel URL rather than a single video.
+///
+/// Handles:
+/// - `youtube.com/playlist?list=...` (without a `?v=` param)
+/// - `youtube.com/@handle`
+/// - `youtube.com/c/ChannelName`
+/// - `youtube.com/channel/UCxxx`
+/// - `youtube.com/user/username`
+pub fn is_playlist_or_channel_url(url: &str) -> bool {
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    let host = parsed.host_str().unwrap_or("");
+    if !matches!(host, "www.youtube.com" | "youtube.com" | "m.youtube.com") {
+        return false;
+    }
+    // playlist?list=... without a ?v= single-video param
+    if parsed.query_pairs().any(|(k, _)| k == "list")
+        && !parsed.query_pairs().any(|(k, _)| k == "v")
+    {
+        return true;
+    }
+    // Channel paths: /c/, /channel/, /user/, /@handle
+    if let Some(first_seg) = parsed.path_segments().and_then(|mut s| s.next()) {
+        if matches!(first_seg, "c" | "channel" | "user") {
+            return true;
+        }
+        if first_seg.starts_with('@') {
+            return true;
+        }
+    }
+    false
+}
+
+/// Run `yt-dlp --flat-playlist` to enumerate all individual video URLs in a playlist or channel.
+pub async fn enumerate_playlist_videos(url: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let output = tokio::process::Command::new("yt-dlp")
+        .args([
+            "--flat-playlist",
+            "--print",
+            "%(url)s",
+            "--no-exec",
+            "--",
+            url,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("yt-dlp not found or failed to start: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp --flat-playlist exited non-zero: {stderr}").into());
+    }
+
+    let urls: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect();
+
+    Ok(urls)
+}
+
+/// Invoke `yt-dlp` to download English VTT subtitles + `.info.json` for `safe_url` into
+/// `tmp_path`. The URL must already be sanitized (validated video ID form) — `"--"` prevents
+/// further argument injection. Returns `Err` if yt-dlp is missing or exits non-zero.
+async fn run_ytdlp(safe_url: &str, tmp_path: &str) -> Result<(), Box<dyn Error>> {
+    // --write-info-json writes <id>.info.json (title, channel, tags, description, etc.)
+    // --no-exec prevents execution of post-processing commands.
+    // "--" separates flags from the URL argument to prevent argument injection.
+    let output = tokio::process::Command::new("yt-dlp")
+        .args([
+            "--write-auto-sub",
+            "--write-info-json",
+            "--skip-download",
+            "--sub-format",
+            "vtt",
+            "--convert-subs",
+            "vtt",
+            "--sub-langs",
+            "en",
+            "--no-exec",
+            "--no-warnings",
+            "--sleep-requests",
+            "1",
+            "-o",
+            &format!("{tmp_path}/%(id)s"),
+            "--",
+            safe_url,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("yt-dlp not found or failed to start: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp exited non-zero: {stderr}").into());
+    }
+    Ok(())
+}
+
 /// Ingest a YouTube video URL (or bare video ID) by:
 /// 1. Running yt-dlp to download VTT subtitle files into a temp directory
 /// 2. Parsing each VTT file into clean text via parse_vtt_to_text
-/// 3. Embedding each transcript into Qdrant via embed_text_with_metadata
+/// 3. Embedding each transcript into Qdrant via embed_text_with_extra_payload
 ///
 /// Requires `yt-dlp` to be installed and on PATH.
 pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Error>> {
@@ -131,41 +182,18 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
     let tmp = tempfile::tempdir()?;
     let tmp_path = tmp.path().to_string_lossy().to_string();
 
-    // Run yt-dlp: download English auto-generated subtitles only, skip video download
-    // --no-exec prevents execution of post-processing commands
-    // "--" separates flags from the URL argument to prevent argument injection
-    let output = tokio::process::Command::new("yt-dlp")
-        .args([
-            "--write-auto-sub",
-            "--skip-download",
-            "--sub-format",
-            "vtt",
-            "--convert-subs",
-            "vtt",
-            "--sub-langs",
-            "en",
-            "--no-exec",
-            "-o",
-            &format!("{tmp_path}/%(id)s"),
-            "--",
-            &safe_url,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("yt-dlp not found or failed to start: {e}"))?;
+    run_ytdlp(&safe_url, &tmp_path).await?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp exited non-zero: {stderr}").into());
-    }
-
-    // Collect all .vtt files produced by yt-dlp
+    // Collect .vtt and .info.json files produced by yt-dlp
     let mut vtt_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut info_json: Option<std::path::PathBuf> = None;
     let mut dir = tokio::fs::read_dir(&tmp_path).await?;
     while let Some(entry) = dir.next_entry().await? {
         let path: std::path::PathBuf = entry.path();
-        if path.extension().is_some_and(|e| e == "vtt") {
-            vtt_files.push(path);
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("vtt") => vtt_files.push(path),
+            Some("json") => info_json = Some(path),
+            _ => {}
         }
     }
 
@@ -177,17 +205,26 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
         );
     }
 
+    // Parse video metadata from info.json if available
+    let video_meta = match info_json {
+        Some(ref p) => meta::parse_youtube_info_json(p).await,
+        None => None,
+    };
+
+    // Build source-specific extra payload once; merged into every chunk's Qdrant point
+    let extra = video_meta.as_ref().map(meta::build_youtube_extra_payload);
+
     let mut count = 0usize;
 
     /// Maximum VTT file size accepted before reading into memory (50 MiB).
     const MAX_VTT_BYTES: u64 = 50 * 1024 * 1024;
 
     for vtt_path in &vtt_files {
-        let meta = tokio::fs::metadata(vtt_path).await?;
-        if meta.len() > MAX_VTT_BYTES {
+        let file_meta = tokio::fs::metadata(vtt_path).await?;
+        if file_meta.len() > MAX_VTT_BYTES {
             log_warn(&format!(
                 "skipping oversized VTT file ({} bytes > {} limit): {}",
-                meta.len(),
+                file_meta.len(),
                 MAX_VTT_BYTES,
                 vtt_path.display()
             ));
@@ -195,7 +232,6 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
         }
         let vtt_text = tokio::fs::read_to_string(vtt_path).await?;
         let text = parse_vtt_to_text(&vtt_text);
-
         if text.trim().is_empty() {
             continue;
         }
@@ -205,16 +241,56 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        let video_id = stem.split('.').next().unwrap_or(stem);
+        let vid_id = stem.split('.').next().unwrap_or(stem);
+        let source_url = format!("https://www.youtube.com/watch?v={vid_id}");
+        let title = video_meta
+            .as_ref()
+            .map(|m| m.title.as_str())
+            .unwrap_or(vid_id);
 
-        let source_url = format!("https://www.youtube.com/watch?v={video_id}");
-        let title = format!("YouTube: {video_id}");
-
-        match embed_text_with_metadata(cfg, &text, &source_url, "youtube", Some(&title)).await {
+        // .map_err to String immediately — keeps the async state machine Send-safe
+        // across the subsequent description embed await point.
+        let transcript_result = match &extra {
+            Some(e) => {
+                embed_text_with_extra_payload(cfg, &text, &source_url, "youtube", Some(title), e)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            None => embed_text_with_metadata(cfg, &text, &source_url, "youtube", Some(title))
+                .await
+                .map_err(|e| e.to_string()),
+        };
+        match transcript_result {
             Ok(n) => count += n,
             Err(e) => log_warn(&format!(
-                "command=ingest_youtube embed_failed video_id={video_id} err={e}"
+                "command=ingest_youtube embed_failed video_id={vid_id} err={e}"
             )),
+        }
+
+        // Embed description as a separate document (often contains commands, links, timestamps)
+        if let Some(m) = &video_meta
+            && !m.description.trim().is_empty()
+        {
+            let desc_url = format!("{source_url}?section=description");
+            let desc_title = format!("{} — description", m.title);
+            if let Some(e) = &extra {
+                match embed_text_with_extra_payload(
+                    cfg,
+                    &m.description,
+                    &desc_url,
+                    "youtube",
+                    Some(&desc_title),
+                    e,
+                )
+                .await
+                .map_err(|e| e.to_string())
+                {
+                    Ok(n) => count += n,
+                    Err(e) => log_warn(&format!(
+                        "command=ingest_youtube desc_embed_failed video_id={vid_id} err={e}"
+                    )),
+                }
+            }
         }
     }
 
@@ -224,41 +300,6 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_vtt_strips_header_and_timestamps() {
-        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n\n00:00:02.000 --> 00:00:04.000\nThis is a test\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "Hello world\nThis is a test");
-    }
-
-    #[test]
-    fn parse_vtt_deduplicates_overlapping_lines() {
-        // VTT often repeats the same line as the window shifts
-        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world\n\n00:00:01.000 --> 00:00:03.000\nHello world\n\n00:00:03.000 --> 00:00:05.000\nNext sentence\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "Hello world\nNext sentence");
-    }
-
-    #[test]
-    fn parse_vtt_handles_empty_input() {
-        assert_eq!(parse_vtt_to_text("WEBVTT\n\n"), "");
-    }
-
-    #[test]
-    fn parse_vtt_handles_position_cues() {
-        // VTT cues with position/alignment metadata
-        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000 align:start position:0%\nPositioned line\n\n00:00:02.000 --> 00:00:04.000\nNormal line\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "Positioned line\nNormal line");
-    }
-
-    #[test]
-    fn parse_vtt_strips_html_tags() {
-        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<c>Tagged</c> text\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "Tagged text");
-    }
 
     #[test]
     fn extract_video_id_from_watch_url() {
@@ -309,17 +350,44 @@ mod tests {
     }
 
     #[test]
-    fn parse_vtt_strips_numeric_cue_ids() {
-        let vtt = "WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello world\n\n2\n00:00:02.000 --> 00:00:04.000\nSecond line\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "Hello world\nSecond line");
+    fn is_playlist_url_detects_list_param() {
+        assert!(is_playlist_or_channel_url(
+            "https://www.youtube.com/playlist?list=UUZDfnUn74N0WeAPvMqTOrtA"
+        ));
     }
 
     #[test]
-    fn parse_vtt_keeps_lines_with_digits_and_text() {
-        // A legitimate line containing digits mixed with text should NOT be stripped
-        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n3 blind mice\n";
-        let text = parse_vtt_to_text(vtt);
-        assert_eq!(text, "3 blind mice");
+    fn is_playlist_url_false_for_single_video() {
+        assert!(!is_playlist_or_channel_url(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ));
+    }
+
+    #[test]
+    fn is_playlist_url_detects_at_handle() {
+        assert!(is_playlist_or_channel_url(
+            "https://www.youtube.com/@SpaceinvaderOne"
+        ));
+    }
+
+    #[test]
+    fn is_playlist_url_detects_channel_path() {
+        assert!(is_playlist_or_channel_url(
+            "https://www.youtube.com/channel/UCZDfnUn74N0WeAPvMqTOrtA"
+        ));
+    }
+
+    #[test]
+    fn is_playlist_url_detects_c_path() {
+        assert!(is_playlist_or_channel_url(
+            "https://www.youtube.com/c/SpaceinvaderOne"
+        ));
+    }
+
+    #[test]
+    fn is_playlist_url_false_for_non_youtube() {
+        assert!(!is_playlist_or_channel_url(
+            "https://vimeo.com/playlist/123"
+        ));
     }
 }

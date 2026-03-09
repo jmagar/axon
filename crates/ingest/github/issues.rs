@@ -1,9 +1,11 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::vector::ops::embed_text_with_extra_payload;
 use octocrab::Octocrab;
 use octocrab::{models, params};
 use std::error::Error;
+
+use super::meta::{build_github_issue_extra_payload, build_github_pr_extra_payload};
 
 /// Ingest all issues (open + closed) from a repository.
 ///
@@ -45,8 +47,11 @@ pub async fn ingest_issues(
             );
             let url = format!("https://github.com/{owner}/{name}/issues/{}", issue.number);
             let title = format!("Issue #{}: {}", issue.number, issue.title);
+            let extra = build_github_issue_extra_payload(issue);
 
-            match embed_text_with_metadata(cfg, &content, &url, "github", Some(&title)).await {
+            match embed_text_with_extra_payload(cfg, &content, &url, "github", Some(&title), &extra)
+                .await
+            {
                 Ok(n) => total += n,
                 Err(e) => log_warn(&format!(
                     "command=ingest_github embed_issue_failed number={} err={e}",
@@ -87,8 +92,17 @@ pub async fn ingest_pull_requests(
             let content = format!("# PR #{}: {}\n\n{}", pr.number, title, body);
             let url = format!("https://github.com/{owner}/{name}/pull/{}", pr.number);
             let embed_title = format!("PR #{}: {}", pr.number, title);
+            let extra = build_github_pr_extra_payload(pr);
 
-            match embed_text_with_metadata(cfg, &content, &url, "github", Some(&embed_title)).await
+            match embed_text_with_extra_payload(
+                cfg,
+                &content,
+                &url,
+                "github",
+                Some(&embed_title),
+                &extra,
+            )
+            .await
             {
                 Ok(n) => total += n,
                 Err(e) => log_warn(&format!(

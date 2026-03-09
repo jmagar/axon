@@ -137,7 +137,6 @@ pub(super) async fn initialize_connection(
     let runtime_state = Arc::new(AcpRuntimeState::default());
     let auto_approve = resolve_acp_auto_approve();
     let bridge = AcpBridgeClient {
-        tx: tx.clone(),
         runtime_state: runtime_state.clone(),
         auto_approve,
         permission_responders: permission_responders.clone(),

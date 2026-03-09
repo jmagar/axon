@@ -38,10 +38,7 @@ pub(super) enum CliCommand {
     Stats,
     Status,
     Dedupe,
-    Github(GithubArgs),
     Ingest(IngestArgs),
-    Reddit(RedditArgs),
-    Youtube(YoutubeArgs),
     Sessions(SessionsArgs),
     Screenshot(ScrapeArgs),
     Mcp,
@@ -233,31 +230,19 @@ pub(super) struct EmbedArgs {
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
-pub(super) struct GithubArgs {
-    #[command(subcommand)]
-    pub(super) job: Option<JobSubcommand>,
-    /// GitHub repository in "owner/repo" format
-    #[arg(value_name = "REPO")]
-    pub(super) repo: Option<String>,
-    /// Also index source code files (in addition to markdown, issues, and PRs)
-    #[arg(long, action = ArgAction::Set, default_value_t = false)]
-    pub(super) include_source: bool,
-}
-
-#[derive(Debug, Args)]
 pub(super) struct IngestArgs {
     #[command(subcommand)]
     pub(super) job: Option<JobSubcommand>,
-}
 
-#[derive(Debug, Args)]
-#[command(args_conflicts_with_subcommands = true)]
-pub(super) struct RedditArgs {
-    #[command(subcommand)]
-    pub(super) job: Option<JobSubcommand>,
-    /// Subreddit name (e.g. "rust") or full thread URL
+    /// Ingest target: GitHub slug (owner/repo), YouTube URL/@handle, or Reddit subreddit (r/name)
     #[arg(value_name = "TARGET")]
     pub(super) target: Option<String>,
+
+    /// (GitHub only) Also index source code files in addition to markdown, issues, and PRs
+    #[arg(long, action = ArgAction::Set, default_value_t = false)]
+    pub(super) include_source: bool,
+
+    // ── Reddit-specific filters (ignored for GitHub / YouTube) ────────────
     /// Subreddit sorting (hot, top, new, rising)
     #[arg(long, value_enum, default_value_t = RedditSort::Hot)]
     pub(super) sort: RedditSort,
@@ -276,16 +261,6 @@ pub(super) struct RedditArgs {
     /// Scrape content of linked URLs in link posts
     #[arg(long, action = ArgAction::Set, default_value_t = false)]
     pub(super) scrape_links: bool,
-}
-
-#[derive(Debug, Args)]
-#[command(args_conflicts_with_subcommands = true)]
-pub(super) struct YoutubeArgs {
-    #[command(subcommand)]
-    pub(super) job: Option<JobSubcommand>,
-    /// YouTube video URL or bare video ID
-    #[arg(value_name = "URL")]
-    pub(super) url: Option<String>,
 }
 
 #[derive(Debug, Args)]

@@ -6,7 +6,7 @@ mod shell;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
-use crate::crates::services::acp::PermissionResponderMap;
+use crate::crates::services::acp::{AcpConnectionHandle, PermissionResponderMap};
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
@@ -286,6 +286,10 @@ struct WsClientMsg {
 }
 
 /// Per-connection state shared across the read loop and spawned tasks.
+#[expect(
+    clippy::type_complexity,
+    reason = "type alias lives in sync_mode, not accessible here"
+)]
 struct WsConnState {
     exec_tx: tokio::sync::mpsc::Sender<String>,
     tracking_tx: tokio::sync::mpsc::Sender<String>,
@@ -293,6 +297,10 @@ struct WsConnState {
     crawl_base_dir: Arc<Mutex<Option<PathBuf>>>,
     permission_responders: PermissionResponderMap,
     conn_cfg: Arc<Config>,
+    /// Persistent ACP adapter for Pulse chat — created on first pulse_chat message,
+    /// reused for all subsequent turns. Tuple stores the agent key so a different
+    /// agent triggers a fresh adapter spawn. Dropping kills the old process.
+    acp_connection: Arc<Mutex<Option<(String, Arc<AcpConnectionHandle>)>>>,
 }
 
 /// Create a fresh `PermissionResponderMap` for a new WS connection.
@@ -364,6 +372,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
         crawl_base_dir,
         permission_responders,
         conn_cfg: state.cfg.clone(),
+        acp_connection: Arc::new(Mutex::new(None)),
     };
 
     // Read loop: receives commands from the browser
@@ -391,6 +400,7 @@ async fn handle_ws_message(conn: &WsConnState, client_msg: WsClientMsg) {
             let job_id = conn.crawl_job_id.clone();
             let cmd_cfg = conn.conn_cfg.clone();
             let perm_map = conn.permission_responders.clone();
+            let acp_conn = conn.acp_connection.clone();
             // Move owned Strings into the spawned future.  handle_command
             // takes owned String/Value so no &str borrow escapes the spawn
             // boundary, satisfying the `Send + 'static` bound for tokio::spawn.
@@ -399,7 +409,7 @@ async fn handle_ws_message(conn: &WsConnState, client_msg: WsClientMsg) {
             let exec_flags = client_msg.flags;
             tokio::spawn(async move {
                 execute::handle_command(
-                    exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
+                    exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map, acp_conn,
                 )
                 .await;
             });
