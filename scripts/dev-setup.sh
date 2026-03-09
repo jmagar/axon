@@ -4,7 +4,11 @@
 # Usage: ./scripts/dev-setup.sh [--build] [--no-docker]
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath "${BASH_SOURCE[0]}")")" && pwd -P)"
+if command -v realpath >/dev/null 2>&1; then
+  SCRIPT_DIR="$(cd -- "$(dirname -- "$(realpath "${BASH_SOURCE[0]}")")" && pwd -P)"
+else
+  SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+fi
 REPO="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 
 # ── Flags ──────────────────────────────────────────────────────────────────────
