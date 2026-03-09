@@ -1,10 +1,10 @@
 # Reddit Ingest
-Last Modified: 2026-03-03
+Last Modified: 2026-03-09
 
 Version: 1.0.0
 Last Updated: 01:26:53 | 02/25/2026 EST
 
-> CLI reference (flags, subcommands, examples): [`docs/commands/reddit.md`](../commands/reddit.md)
+> CLI reference (flags, subcommands, examples): [`docs/commands/ingest.md`](../commands/ingest.md)
 
 Ingests subreddit posts and comment threads into Qdrant via the Reddit OAuth2 API (client credentials flow — no user login required).
 
@@ -43,6 +43,24 @@ REDDIT_CLIENT_SECRET=your_client_secret
 ## Rate Limits
 
 Reddit OAuth2 script apps are allowed 100 requests/minute. On 429 responses, the ingest worker currently retries with fixed exponential backoff (2s, 4s, 8s; max 3 retries). `Retry-After` headers are not currently parsed.
+
+## Qdrant Metadata Fields
+
+All Reddit post chunks carry structured `reddit_*` payload fields built in `crates/ingest/reddit/meta.rs`. Fields are sourced from the `post["data"]` object in the Reddit API JSON response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reddit_author` | `string` | Post author username; `"[deleted]"` if account removed |
+| `reddit_created_utc` | `integer` | Post creation time as a Unix timestamp (UTC) |
+| `reddit_score` | `integer` | Net upvote score at index time |
+| `reddit_num_comments` | `integer` | Total comment count at index time |
+| `reddit_upvote_ratio` | `float` | Upvote ratio (0.0–1.0) at index time |
+| `reddit_subreddit` | `string` | Subreddit name (without `r/` prefix) |
+| `reddit_domain` | `string` | Link domain for link posts; `"self.<subreddit>"` for text posts |
+| `reddit_is_video` | `boolean` | Whether the post is a native Reddit video |
+| `reddit_distinguished` | `string \| null` | Distinguishment status (`"moderator"`, `"admin"`, or `null`) |
+| `reddit_gilded` | `integer` | Number of times the post has been gilded |
+| `reddit_flair` | `string \| null` | Post flair text; `null` if no flair set |
 
 ## Known Limitations
 

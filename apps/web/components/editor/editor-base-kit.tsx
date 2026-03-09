@@ -6,6 +6,8 @@ import { BaseCodeBlockKit } from './plugins/code-block-base-kit'
 import { BaseColumnKit } from './plugins/column-base-kit'
 import { BaseCommentKit } from './plugins/comment-base-kit'
 import { BaseDateKit } from './plugins/date-base-kit'
+import { BaseDiffKit } from './plugins/diff-base-kit'
+import { BaseFindReplaceKit } from './plugins/find-replace-base-kit'
 import { BaseFontKit } from './plugins/font-base-kit'
 import { BaseLineHeightKit } from './plugins/line-height-base-kit'
 import { BaseLinkKit } from './plugins/link-base-kit'
@@ -40,4 +42,6 @@ export const BaseEditorKit = [
   ...BaseCommentKit,
   ...BaseSuggestionKit,
   ...MarkdownKit,
+  ...BaseFindReplaceKit,
+  ...BaseDiffKit,
 ]

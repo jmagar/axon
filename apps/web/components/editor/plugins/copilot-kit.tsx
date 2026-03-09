@@ -12,9 +12,11 @@ import { BasicBlocksKit } from './basic-blocks-kit'
 import { BasicMarksKit } from './basic-marks-kit'
 import { CalloutKit } from './callout-kit'
 import { CommentKit } from './comment-kit'
+import { DiffKit } from './diff-kit'
 import { DiscussionKit } from './discussion-kit'
 import { DndKit } from './dnd-kit'
 import { ExtendedNodesKit } from './extended-nodes-kit'
+import { FindReplaceKit } from './find-replace-kit'
 import { MarkdownKit } from './markdown-kit'
 import { SelectionKit } from './selection-kit'
 import { SlashKit } from './slash-kit'
@@ -139,6 +141,8 @@ export const CopilotKit = [
   ...DiscussionKit,
   ...CommentKit,
   ...SuggestionKit,
+  ...FindReplaceKit,
+  ...DiffKit,
   CopilotPlugin.configure(({ api }) => ({
     options: {
       completeOptions: {

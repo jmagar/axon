@@ -515,10 +515,18 @@ export function AxonShell() {
     [submitPrompt],
   )
 
-  const handleSelectSession = useCallback((sessionId: string) => {
-    setActiveSessionId(sessionId)
-    setSessionKey((k) => k + 1)
-  }, [])
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      setActiveSessionId(sessionId)
+      setSessionKey((k) => k + 1)
+      const session = rawSessions.find((s) => s.id === sessionId)
+      if (session?.agent && session.agent !== (pulseAgent ?? 'claude')) {
+        setPulseAgent(session.agent as PulseAgent)
+        setPulseModel('default')
+      }
+    },
+    [rawSessions, pulseAgent, setPulseAgent, setPulseModel],
+  )
 
   const handleNewSession = useCallback(() => {
     setActiveSessionId(null)
@@ -691,6 +699,7 @@ export function AxonShell() {
                     loading={sessionLoading}
                     error={sessionError}
                     onRetry={reloadSession}
+                    onEditorContent={onEditorUpdate}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
@@ -874,6 +883,7 @@ export function AxonShell() {
                     loading={sessionLoading}
                     error={sessionError}
                     onRetry={reloadSession}
+                    onEditorContent={onEditorUpdate}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>

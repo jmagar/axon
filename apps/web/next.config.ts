@@ -34,6 +34,8 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['axon.tootie.tv'],
   transpilePackages: [
     '@platejs/ai',
+    '@platejs/diff',
+    '@platejs/find-replace',
     '@platejs/basic-nodes',
     '@platejs/code-block',
     '@platejs/link',
