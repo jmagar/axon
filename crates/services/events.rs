@@ -38,8 +38,19 @@ impl From<String> for LogLevel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceEvent {
-    Log { level: LogLevel, message: String },
-    AcpBridge { event: AcpBridgeEvent },
+    Log {
+        level: LogLevel,
+        message: String,
+    },
+    AcpBridge {
+        event: AcpBridgeEvent,
+    },
+    /// Emitted after a turn completes when the agent's response contained
+    /// one or more `<axon:editor>` blocks.  Each block becomes one event.
+    EditorWrite {
+        content: String,
+        operation: String,
+    },
 }
 
 pub fn emit(tx: &Option<mpsc::Sender<ServiceEvent>>, event: ServiceEvent) {
