@@ -414,7 +414,7 @@ mod tests {
     fn check_ssh_headers_returns_err_if_headers_absent() {
         let store = make_store();
         let keys_path = std::path::PathBuf::from("/tmp/axon-test-no-such-keys");
-        let headers = axum::http::HeaderMap::new();
+        let headers = HeaderMap::new();
         let result = check_ssh_headers(&headers, &store, &keys_path);
         assert!(
             matches!(result, Err(SshAuthError::HeaderMissing(_))),
@@ -490,7 +490,7 @@ mod tests {
         let sig_b64 = base64_encode(&sig_raw);
 
         // Build headers
-        let mut headers = axum::http::HeaderMap::new();
+        let mut headers = HeaderMap::new();
         headers.insert(HEADER_SSH_NONCE, nonce.parse().unwrap());
         headers.insert(HEADER_SSH_PUBKEY, pubkey.parse().unwrap());
         headers.insert(HEADER_SSH_SIGNATURE, sig_b64.parse().unwrap());
@@ -501,29 +501,29 @@ mod tests {
             "real ssh-keygen verification failed: {result:?}"
         );
     }
-}
 
-/// Base64 encoder (test helper only).
-#[cfg(test)]
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as usize;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
-        out.push(TABLE[b0 >> 2] as char);
-        out.push(TABLE[((b0 & 3) << 4) | (b1 >> 4)] as char);
-        if chunk.len() > 1 {
-            out.push(TABLE[((b1 & 0xf) << 2) | (b2 >> 6)] as char);
-        } else {
-            out.push('=');
+    /// Base64 encoder (test helper only).
+    fn base64_encode(input: &[u8]) -> String {
+        const TABLE: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for chunk in input.chunks(3) {
+            let b0 = chunk[0] as usize;
+            let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+            let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+            out.push(TABLE[b0 >> 2] as char);
+            out.push(TABLE[((b0 & 3) << 4) | (b1 >> 4)] as char);
+            if chunk.len() > 1 {
+                out.push(TABLE[((b1 & 0xf) << 2) | (b2 >> 6)] as char);
+            } else {
+                out.push('=');
+            }
+            if chunk.len() > 2 {
+                out.push(TABLE[b2 & 0x3f] as char);
+            } else {
+                out.push('=');
+            }
         }
-        if chunk.len() > 2 {
-            out.push(TABLE[b2 & 0x3f] as char);
-        } else {
-            out.push('=');
-        }
+        out
     }
-    out
 }
