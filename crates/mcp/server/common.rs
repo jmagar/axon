@@ -1,5 +1,5 @@
 use crate::crates::core::config::{Config, RenderMode};
-use crate::crates::mcp::schema::{CrawlRequest, McpRenderMode, ResponseMode, SearchTimeRange};
+use crate::crates::mcp::schema::{CrawlRequest, McpRenderMode, SearchTimeRange};
 use crate::crates::services::types::{
     MapOptions, Pagination, RetrieveOptions, SearchOptions, ServiceTimeRange,
 };
@@ -45,10 +45,6 @@ pub(super) fn parse_limit_usize(limit: Option<usize>, default: usize, max: usize
 
 pub(super) fn parse_offset(offset: Option<usize>) -> usize {
     offset.unwrap_or(0)
-}
-
-pub(super) fn parse_response_mode(mode: Option<ResponseMode>) -> ResponseMode {
-    mode.unwrap_or(ResponseMode::Path)
 }
 
 pub(super) fn paginate_vec<T: Clone>(items: &[T], offset: usize, limit: usize) -> Vec<T> {

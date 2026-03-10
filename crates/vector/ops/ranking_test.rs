@@ -276,6 +276,39 @@ fn get_meaningful_snippet_with_query_tokens_returns_relevant_content() {
     );
 }
 
+#[test]
+fn get_meaningful_snippet_skips_multi_link_nav_clusters() {
+    let text = "[Documentation](/docs)[Extensions](/extensions)[Specification](/specification)\
+        [Registry](/registry)[Community](/community)\n\
+        MCP is an open protocol that enables secure connections between AI tools and external systems.";
+    let tokens = tokenize_query("protocol external systems");
+    let result = get_meaningful_snippet(text, &tokens);
+    assert!(
+        !result.contains("Documentation Extensions Specification Registry Community"),
+        "multi-link nav cluster should be excluded from snippet; got: {result:?}"
+    );
+    assert!(
+        result.contains("open protocol") || result.contains("external systems"),
+        "body prose should survive nav stripping; got: {result:?}"
+    );
+}
+
+#[test]
+fn get_meaningful_snippet_skips_title_like_header_lines() {
+    let text = "Specification - Model Context Protocol\n\
+        MCP defines a standard way for models to communicate with tools and resources.";
+    let tokens = tokenize_query("models tools resources");
+    let result = get_meaningful_snippet(text, &tokens);
+    assert!(
+        !result.contains("Specification - Model Context Protocol"),
+        "page-title boilerplate should be excluded from snippet; got: {result:?}"
+    );
+    assert!(
+        result.contains("communicate with tools") || result.contains("resources"),
+        "body sentence should remain after title stripping; got: {result:?}"
+    );
+}
+
 // ── select_diverse_candidates ─────────────────────────────────────────────────
 
 #[test]

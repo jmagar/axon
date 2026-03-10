@@ -222,7 +222,7 @@ pub async fn embed_files(
     common: &GitHubCommonFields,
     include_source: bool,
     token: Option<&str>,
-    progress_tx: Option<&tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
+    progress_tx: Option<&tokio::sync::mpsc::Sender<serde_json::Value>>,
 ) -> Result<usize, Box<dyn Error>> {
     // Clone the entire repo in one shot — orders of magnitude faster than per-file API fetches
     let tmp = clone_repo(common, &common.default_branch, token).await?;
@@ -266,7 +266,7 @@ pub async fn embed_files(
             Err(_) => failed += 1,
         }
         if let Some(tx) = progress_tx {
-            let _ = tx.send(serde_json::json!({
+            let _ = tx.try_send(serde_json::json!({
                 "files_done": files_done,
                 "files_total": files_total,
                 "chunks_embedded": chunks_embedded,

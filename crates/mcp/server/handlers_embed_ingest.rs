@@ -1,7 +1,6 @@
 use super::AxonMcpServer;
 use super::common::{
-    internal_error, invalid_params, parse_job_id, parse_limit, parse_offset, parse_response_mode,
-    respond_with_mode,
+    internal_error, invalid_params, parse_job_id, parse_limit, parse_offset, respond_with_mode,
 };
 use crate::crates::jobs::embed::{
     cancel_embed_job, cleanup_embed_jobs, clear_embed_jobs, get_embed_job, list_embed_jobs,
@@ -69,7 +68,7 @@ impl AxonMcpServer {
         &self,
         req: EmbedRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             EmbedSubaction::Start => {
                 let input = req
@@ -161,7 +160,7 @@ impl AxonMcpServer {
         &self,
         mut req: IngestRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             IngestSubaction::Start => {
                 let source = parse_ingest_source(&mut req)?;

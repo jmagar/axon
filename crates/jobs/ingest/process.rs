@@ -287,7 +287,7 @@ pub(crate) async fn process_ingest_job(cfg: Config, pool: PgPool, id: Uuid) {
             include_source,
         } => {
             let (progress_tx, mut progress_rx) =
-                tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
+                tokio::sync::mpsc::channel::<serde_json::Value>(256);
             let progress_pool = pool.clone();
             let progress_id = id;
             let progress_task = tokio::spawn(async move {

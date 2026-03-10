@@ -17,6 +17,34 @@ use spider_transformations::transformation::content::{
 };
 use std::sync::LazyLock;
 
+pub const BOILERPLATE_SELECTORS: &[&str] = &[
+    "[role=\"navigation\"]",
+    "[role=\"banner\"]",
+    "[role=\"contentinfo\"]",
+    "[role=\"complementary\"]",
+    "[role=\"search\"]",
+    "[role=\"dialog\"]",
+    "[role=\"alertdialog\"]",
+    "[role=\"form\"]",
+    "[aria-hidden=\"true\"]",
+    "noscript",
+    "iframe",
+    "[hidden]",
+    "[data-nosnippet]",
+    "a[href=\"#content-area\"]",
+    "#navbar",
+    "#sidebar",
+    "#footer",
+    "#table-of-contents",
+    "#search-bar-entry",
+    "#search-bar-entry-mobile",
+    "#page-context-menu",
+    "#pagination",
+    "#feedback-thumbs-up",
+    "#feedback-thumbs-down",
+    ".feedback-toolbar",
+];
+
 static TRANSFORM_CONFIG: LazyLock<TransformConfig> = LazyLock::new(|| TransformConfig {
     return_format: ReturnFormat::Markdown,
     // Readability (Mozilla-style article scoring) discards documentation pages
@@ -70,7 +98,7 @@ pub fn to_markdown(html: &str, selector_config: Option<&SelectorConfiguration>) 
         screenshot_bytes: None,
         encoding: None,
         selector_config,
-        ignore_tags: None,
+        ignore_tags: Some(BOILERPLATE_SELECTORS),
     };
     let raw = transform_content_input(input, &TRANSFORM_CONFIG);
     clean_markdown_whitespace(raw.trim())

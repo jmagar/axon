@@ -180,7 +180,7 @@ mod tests {
             output_dir,
             Path::new(".cache/axon-rust/output")
                 .join("domains")
-                .join("__1__8080")
+                .join("__1")
                 .join("job-456")
         );
     }

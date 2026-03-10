@@ -174,7 +174,7 @@ pub async fn ingest_github(
     cfg: &Config,
     repo: &str,
     include_source: bool,
-    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
 ) -> Result<usize, Box<dyn Error>> {
     log_info(&format!("command=ingest source=github repo={repo}"));
     let (owner, name) =
@@ -202,7 +202,7 @@ pub async fn ingest_github(
 
     // Send initial progress so status shows activity immediately
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send(serde_json::json!({
+        let _ = tx.try_send(serde_json::json!({
             "phase": "ingesting",
             "tasks_total": 5,
             "tasks_done": 0,
@@ -250,7 +250,7 @@ pub async fn ingest_github(
 
     // Send final progress so completed state shows accurate task counts
     if let Some(ref tx) = progress_tx {
-        let _ = tx.send(serde_json::json!({
+        let _ = tx.try_send(serde_json::json!({
             "tasks_done": 5,
             "tasks_total": 5,
             "chunks_embedded": total,

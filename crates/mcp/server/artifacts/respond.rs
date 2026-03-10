@@ -35,40 +35,51 @@ pub async fn write_json_artifact(
     }))
 }
 
+/// Respond with the appropriate mode, respecting the caller's explicit choice.
+///
+/// When `mode` is `None` (caller didn't specify), small payloads are auto-inlined
+/// to avoid unnecessary disk writes. When the caller explicitly requests a mode
+/// (`Some(Path)`, `Some(Inline)`, `Some(Both)`), that choice is honored regardless
+/// of payload size.
 pub async fn respond_with_mode(
     action: &str,
     subaction: &str,
-    mode: ResponseMode,
+    mode: Option<ResponseMode>,
     artifact_stem: &str,
     payload: serde_json::Value,
 ) -> Result<AxonToolResponse, ErrorData> {
-    // Auto-inline: if payload serializes small, skip the artifact disk write entirely.
-    // Claude can read it directly without a follow-up artifacts.read call.
-    // Threshold configurable via AXON_INLINE_BYTES_THRESHOLD (default: 8192).
-    // Set to 0 to disable auto-inline and force path mode for all payloads.
-    let payload_bytes = serde_json::to_string(&payload)
-        .map(|s| s.len())
-        .unwrap_or(usize::MAX);
-    let threshold = std::env::var("AXON_INLINE_BYTES_THRESHOLD")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(8_192);
-    if threshold > 0 && payload_bytes <= threshold {
-        return Ok(AxonToolResponse::ok(
-            action,
-            subaction,
-            serde_json::json!({
-                "response_mode": "auto-inline",
-                "data": payload,
-            }),
-        ));
-    }
+    // Resolve the effective mode. Auto-inline only applies when the caller
+    // hasn't explicitly requested a specific response mode.
+    let effective_mode = match mode {
+        Some(explicit) => explicit,
+        None => {
+            // Auto-inline: if payload serializes small, skip the artifact disk write.
+            // Threshold configurable via AXON_INLINE_BYTES_THRESHOLD (default: 8192).
+            // Set to 0 to disable auto-inline and force path mode for all payloads.
+            let payload_bytes = serde_json::to_string(&payload)
+                .map(|s| s.len())
+                .unwrap_or(usize::MAX);
+            let threshold = inline_bytes_threshold();
+            if threshold > 0 && payload_bytes <= threshold {
+                return Ok(AxonToolResponse::ok(
+                    action,
+                    subaction,
+                    serde_json::json!({
+                        "response_mode": "auto-inline",
+                        "data": payload,
+                    }),
+                ));
+            }
+            // Large payload with no explicit mode — fall back to path.
+            ResponseMode::Path
+        }
+    };
 
-    // Payload is large — write artifact to disk and respond according to the requested mode.
+    // Write artifact to disk and respond according to the effective mode.
     let artifact = write_json_artifact(artifact_stem, &payload).await?;
 
     let shape = json_shape_preview(&payload);
-    match mode {
+    match effective_mode {
         ResponseMode::Path => Ok(AxonToolResponse::ok(
             action,
             subaction,
@@ -105,5 +116,90 @@ pub async fn respond_with_mode(
                 }),
             ))
         }
+    }
+}
+
+fn inline_bytes_threshold() -> usize {
+    std::env::var("AXON_INLINE_BYTES_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(8_192)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Small payload with no explicit mode should auto-inline.
+    #[tokio::test]
+    async fn auto_inline_when_mode_is_none_and_payload_small() {
+        let payload = serde_json::json!({"key": "value"});
+        let resp = respond_with_mode("test", "sub", None, "test-artifact", payload.clone())
+            .await
+            .unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.data["response_mode"], "auto-inline");
+        assert_eq!(resp.data["data"], payload);
+    }
+
+    /// Explicit Path mode on a small payload should NOT auto-inline — it should
+    /// write to disk and return a path response.
+    #[tokio::test]
+    async fn explicit_path_mode_respected_even_for_small_payload() {
+        let payload = serde_json::json!({"key": "value"});
+        let resp = respond_with_mode(
+            "test",
+            "sub",
+            Some(ResponseMode::Path),
+            "test-path-mode",
+            payload,
+        )
+        .await
+        .unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.data["response_mode"], "path");
+        assert!(resp.data["artifact"].is_object());
+        assert!(resp.data["shape"].is_object());
+    }
+
+    /// Explicit Inline mode should return inline data with the artifact on disk.
+    #[tokio::test]
+    async fn explicit_inline_mode_returns_inline_data() {
+        let payload = serde_json::json!({"items": [1, 2, 3]});
+        let resp = respond_with_mode(
+            "test",
+            "sub",
+            Some(ResponseMode::Inline),
+            "test-inline-mode",
+            payload,
+        )
+        .await
+        .unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.data["response_mode"], "inline");
+        assert!(resp.data["inline"].is_object() || resp.data["inline"].is_array());
+        assert!(resp.data.get("truncated").is_some());
+        assert!(resp.data["artifact"].is_object());
+    }
+
+    /// Both mode should return inline data, shape preview, and the artifact.
+    #[tokio::test]
+    async fn both_mode_returns_inline_and_shape_and_artifact() {
+        let payload = serde_json::json!({"name": "axon", "count": 42});
+        let resp = respond_with_mode(
+            "test",
+            "sub",
+            Some(ResponseMode::Both),
+            "test-both-mode",
+            payload,
+        )
+        .await
+        .unwrap();
+        assert!(resp.ok);
+        assert_eq!(resp.data["response_mode"], "both");
+        assert!(resp.data["inline"].is_object() || resp.data["inline"].is_array());
+        assert!(resp.data.get("truncated").is_some());
+        assert!(resp.data["shape"].is_object());
+        assert!(resp.data["artifact"].is_object());
     }
 }

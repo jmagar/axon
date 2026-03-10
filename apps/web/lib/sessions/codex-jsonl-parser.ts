@@ -35,6 +35,7 @@ export function parseCodexJsonl(raw: string): ParsedMessage[] {
 
     let text = ''
     for (const block of contentBlocks) {
+      if (!block || typeof block !== 'object') continue
       const b = block as Record<string, unknown>
       if (b.type === 'input_text' || b.type === 'text') {
         if (typeof b.text === 'string') text += `${b.text}\n`
