@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::vector::ops::embed_text_with_extra_payload;
 use octocrab::Octocrab;
 use std::error::Error;
@@ -137,6 +137,7 @@ pub async fn ingest_github(
     repo: &str,
     include_source: bool,
 ) -> Result<usize, Box<dyn Error>> {
+    log_info(&format!("command=ingest source=github repo={repo}"));
     let (owner, name) =
         parse_github_repo(repo).ok_or_else(|| format!("invalid GitHub repo: {repo}"))?;
 
@@ -166,6 +167,8 @@ pub async fn ingest_github(
     );
 
     let mut total = 0usize;
+    let mut issues_count = 0usize;
+    let mut prs_count = 0usize;
     for (label, result) in [
         ("files", files_result),
         ("metadata", metadata_result),
@@ -174,13 +177,26 @@ pub async fn ingest_github(
         ("wiki", wiki_result),
     ] {
         match result {
-            Ok(n) => total += n,
+            Ok(n) => {
+                if label == "issues" {
+                    issues_count = n;
+                } else if label == "prs" {
+                    prs_count = n;
+                }
+                total += n;
+            }
             Err(e) => log_warn(&format!(
                 "command=ingest_github {label}_failed repo={repo} err={e}"
             )),
         }
     }
 
+    log_info(&format!(
+        "github issues_fetched={issues_count} prs_fetched={prs_count}"
+    ));
+    log_done(&format!(
+        "command=ingest source=github repo={repo} chunk_count={total}"
+    ));
     Ok(total)
 }
 

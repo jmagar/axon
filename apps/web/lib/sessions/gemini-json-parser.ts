@@ -24,7 +24,8 @@ export function parseGeminiJson(raw: string): ParsedMessage[] {
   for (const msg of data.messages ?? []) {
     const role = (msg.type ?? msg.role ?? '') as string
     if (role !== 'user' && role !== 'assistant') continue
-    const content = (msg.content ?? '').trim()
+    if (typeof msg.content !== 'string') continue
+    const content = msg.content.trim()
     if (content) {
       messages.push({ role: role as 'user' | 'assistant', content })
     }

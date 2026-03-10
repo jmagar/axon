@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
-// Mirror the production implementation from axon-message-list.tsx.
-// The regex and function are reproduced here so changes to the source are
-// immediately visible as test failures — no import needed.
-const EDITOR_BLOCK_RE = /<axon:editor(?:\s[^>]*)?>[\s\S]*?<\/axon:editor>/g
-
-function stripEditorBlocks(content: string): string {
-  return content.replace(EDITOR_BLOCK_RE, '').trim()
-}
+import { stripEditorBlocks } from '@/components/reboot/axon-editor-artifact'
 
 describe('stripEditorBlocks', () => {
   it('strips a basic editor block leaving an empty string', () => {

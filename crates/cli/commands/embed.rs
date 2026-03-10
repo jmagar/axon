@@ -3,7 +3,7 @@ use crate::crates::cli::commands::status::metrics::{
     job_runtime_text,
 };
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_done;
+use crate::crates::core::logging::{log_done, log_info};
 use crate::crates::core::ui::{
     accent, confirm_destructive, error, muted, primary, status_label, status_text, subtle,
     symbol_for_status,
@@ -23,13 +23,27 @@ pub async fn run_embed(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    log_info(&format!(
+        "command=embed collection={} wait={}",
+        cfg.collection, cfg.wait
+    ));
+    let embed_start = std::time::Instant::now();
     let input = resolve_embed_input(cfg);
     if !cfg.wait {
-        return enqueue_embed_job(cfg, &input).await;
+        let result = enqueue_embed_job(cfg, &input).await;
+        log_info(&format!(
+            "job_enqueued command=embed queue={}",
+            cfg.embed_queue
+        ));
+        return result;
     }
 
     embed_path_native(cfg, &input).await?;
-    log_done("command=embed complete");
+    log_done(&format!(
+        "command=embed complete collection={} duration_ms={}",
+        cfg.collection,
+        embed_start.elapsed().as_millis()
+    ));
     Ok(())
 }
 

@@ -1,4 +1,5 @@
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_info;
 use crate::crates::core::ui::primary;
 use std::error::Error;
 use std::io::Write;
@@ -27,6 +28,11 @@ fn ask_query(cfg: &Config) -> Result<String, Box<dyn Error>> {
 pub async fn ask_payload(cfg: &Config, query: &str) -> Result<serde_json::Value, String> {
     let ask_started = std::time::Instant::now();
 
+    log_info(&format!(
+        "ask query_len={} collection={}",
+        query.len(),
+        cfg.collection
+    ));
     validate_ask_llm_config(cfg)?;
 
     let ctx = build_ask_context(cfg, query)
@@ -70,6 +76,11 @@ pub async fn ask_payload(cfg: &Config, query: &str) -> Result<serde_json::Value,
 pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let ask_started = std::time::Instant::now();
     let query = ask_query(cfg)?;
+    log_info(&format!(
+        "command=ask query_len={} collection={}",
+        query.len(),
+        cfg.collection
+    ));
 
     validate_ask_llm_config(cfg).map_err(|e| -> Box<dyn Error> { e.into() })?;
 

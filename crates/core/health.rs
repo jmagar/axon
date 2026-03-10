@@ -1,5 +1,7 @@
+use crate::crates::core::logging::log_info;
 use std::env;
 use std::time::Duration;
+use std::time::Instant;
 use tokio;
 
 const DIAGNOSTICS_DIR_DEFAULT: &str = ".cache/chrome-diagnostics";
@@ -13,11 +15,18 @@ pub struct BrowserDiagnosticsPattern {
 }
 
 pub async fn redis_healthy(redis_url: &str) -> bool {
+    let _probe_start = Instant::now();
     let url =
         crate::crates::core::config::parse::normalize_local_service_url(redis_url.to_string());
     let client = match redis::Client::open(url.as_str()) {
         Ok(client) => client,
-        Err(_) => return false,
+        Err(_) => {
+            log_info(&format!(
+                "health_probe service=redis url={url} result=false duration_ms={}",
+                _probe_start.elapsed().as_millis()
+            ));
+            return false;
+        }
     };
 
     let ping = async {
@@ -28,10 +37,15 @@ pub async fn redis_healthy(redis_url: &str) -> bool {
             .map(|_| ())
     };
 
-    matches!(
+    let result = matches!(
         tokio::time::timeout(Duration::from_secs(5), ping).await,
         Ok(Ok(()))
-    )
+    );
+    log_info(&format!(
+        "health_probe service=redis url={url} result={result} duration_ms={}",
+        _probe_start.elapsed().as_millis()
+    ));
+    result
 }
 
 pub fn browser_diagnostics_pattern() -> BrowserDiagnosticsPattern {

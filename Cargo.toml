@@ -1,6 +1,6 @@
 [package]
 name = "axon"
-version = "0.13.1"
+version = "0.13.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Web crawl, scrape, embed, and query CLI backed by a self-hosted RAG stack"
@@ -54,7 +54,7 @@ spider_transformations = "2"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "net", "process", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
-toml = "0.8"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-executor-trait = "3"
 tokio-reactor-trait = "4"

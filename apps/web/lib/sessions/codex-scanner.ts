@@ -52,9 +52,10 @@ async function extractCodexPreview(absolutePath: string): Promise<string | undef
 
 /**
  * Scan ~/.codex/sessions/{year}/{month}/{day}/*.jsonl and return SessionFile[] with agent:'codex'.
+ * Pass `limit` to cap the number of results returned (default: unlimited).
  * Never throws — returns [] on any filesystem error.
  */
-export async function scanCodexSessions(): Promise<SessionFile[]> {
+export async function scanCodexSessions(limit = Number.MAX_SAFE_INTEGER): Promise<SessionFile[]> {
   const root = path.join(os.homedir(), '.codex', 'sessions')
   try {
     await fs.access(root)
@@ -67,14 +68,17 @@ export async function scanCodexSessions(): Promise<SessionFile[]> {
   // Walk 3-level depth: year → month → day
   const years = await safeReaddir(root)
   for (const year of years) {
+    if (results.length >= limit) break
     const yearPath = path.join(root, year)
     if (!(await isDir(yearPath))) continue
     const months = await safeReaddir(yearPath)
     for (const month of months) {
+      if (results.length >= limit) break
       const monthPath = path.join(yearPath, month)
       if (!(await isDir(monthPath))) continue
       const days = await safeReaddir(monthPath)
       for (const day of days) {
+        if (results.length >= limit) break
         const dayPath = path.join(monthPath, day)
         if (!(await isDir(dayPath))) continue
         const files = (await safeReaddir(dayPath)).filter((f) => f.endsWith('.jsonl'))
@@ -123,7 +127,10 @@ export async function scanCodexSessions(): Promise<SessionFile[]> {
           8,
         )
         for (const r of dayResults) {
-          if (r !== null) results.push(r)
+          if (r !== null) {
+            results.push(r)
+            if (results.length >= limit) break
+          }
         }
       }
     }

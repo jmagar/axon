@@ -10,7 +10,7 @@
 //! semantics while keeping the non-Send future alive on the same thread.
 
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::{
     claim_next_pending, make_pool, mark_job_failed, open_amqp_connection_and_channel,
 };
@@ -131,6 +131,11 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Err(msg.into());
     }
 
+    log_info(&format!(
+        "worker_start worker=crawl queue={} render_mode={:?} max_pages={}",
+        cfg.crawl_queue, cfg.render_mode, cfg.max_pages
+    ));
+
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
     match reclaim_stale_running_jobs(
@@ -157,8 +162,18 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     // Each lane opens its own long-lived connection for its consumer loop.
     let amqp_available = match open_amqp_connection_and_channel(cfg, &cfg.crawl_queue).await {
         Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe".into()).await;
-            let _ = conn.close(200, "probe".into()).await;
+            if let Err(e) = ch.close(0, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp ch_close failed queue={} error={e}",
+                    cfg.crawl_queue
+                ));
+            }
+            if let Err(e) = conn.close(200, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp conn_close failed queue={} error={e}",
+                    cfg.crawl_queue
+                ));
+            }
             true
         }
         Err(e) => {

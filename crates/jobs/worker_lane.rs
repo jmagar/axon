@@ -3,7 +3,7 @@ mod delivery;
 mod poll;
 
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::{
     JobTable, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
 };
@@ -99,6 +99,17 @@ pub(crate) async fn sweep_stale_jobs(
                     stats.marked_candidates,
                     stats.reclaimed_jobs
                 ));
+                for id in &stats.reclaimed_ids {
+                    log_warn(&format!(
+                        "watchdog stale_{}_job job_id={id} reclaimed=true",
+                        wc.job_kind
+                    ));
+                }
+            } else {
+                log_debug(&format!(
+                    "watchdog poll_clean worker={} lane={lane}",
+                    wc.job_kind
+                ));
             }
         }
         Err(e) => {
@@ -133,8 +144,18 @@ pub(crate) async fn run_job_worker(
     // Probe AMQP connectivity with a short-lived connection+channel pair.
     let amqp_available = match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
         Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe".into()).await;
-            let _ = conn.close(200, "probe".into()).await;
+            if let Err(e) = ch.close(0, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp ch_close failed queue={} error={e}",
+                    wc.queue_name
+                ));
+            }
+            if let Err(e) = conn.close(200, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp conn_close failed queue={} error={e}",
+                    wc.queue_name
+                ));
+            }
             true
         }
         Err(e) => {

@@ -39,6 +39,10 @@ interface SessionResponse {
 interface UseAxonSessionResult {
   messages: AxonMessage[]
   loading: boolean
+  /** `true` once the fetch has completed at least once (successfully or with an error).
+   * Unlike `loading`, this flag never reverts to `false` on re-fetch — use it to
+   * distinguish a legitimately empty session from one that has not yet loaded. */
+  loaded: boolean
   error: string | null
   reload: () => void
 }
@@ -53,9 +57,14 @@ function stripEditorPreamble(content: string): string {
 }
 
 // Retry delays in ms for 404 responses — the session file may not be on disk yet.
-const RETRY_DELAYS_MS = [200, 400, 800, 1600, 3200, 5000]
+export const RETRY_DELAYS_MS = [200, 400, 800, 1600, 3200, 5000]
 
-async function fetchSessionWithRetry(
+/**
+ * Fetch a session by ID, retrying on 404 (session file may not be on disk yet).
+ * Exported so tests can use the production implementation directly instead of
+ * maintaining a mirrored copy that can drift from the real logic.
+ */
+export async function fetchSessionWithRetry(
   sessionId: string,
   isCancelled: () => boolean,
 ): Promise<SessionResponse> {
@@ -76,6 +85,11 @@ async function fetchSessionWithRetry(
 export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
   const [messages, setMessages] = useState<AxonMessage[]>([])
   const [loading, setLoading] = useState(false)
+  // `loaded` is set to true once any fetch completes (success or error), and reset
+  // to false only when the sessionId changes to a new value. This lets callers
+  // distinguish a legitimately empty session from one that has not yet loaded,
+  // avoiding derived loading flags that use `messages.length === 0` as a proxy.
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
 
@@ -86,12 +100,14 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     if (!sessionId) {
       setMessages([])
       setLoading(false)
+      setLoaded(false)
       setError(null)
       return
     }
 
     let cancelled = false
     setLoading(true)
+    setLoaded(false)
     setError(null)
 
     fetchSessionWithRetry(sessionId, () => cancelled)
@@ -114,7 +130,10 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
         setMessages([])
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setLoaded(true)
+        }
       })
 
     return () => {
@@ -122,5 +141,5 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     }
   }, [sessionId, version])
 
-  return { messages, loading, error, reload }
+  return { messages, loading, loaded, error, reload }
 }

@@ -9,6 +9,11 @@ use std::error::Error;
 use std::sync::Arc;
 
 pub async fn run_refresh_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    log_info(&format!(
+        "worker_start worker=refresh queue={}",
+        cfg.refresh_queue
+    ));
+
     let pool = make_pool(cfg).await?;
     ensure_schema_once(&pool).await?;
 

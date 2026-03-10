@@ -1,4 +1,5 @@
 # Axon Shell — UI Design Language
+
 Last updated: 2026-03-09
 
 Canonical source of truth for the Axon Shell's visual design language, component patterns, and layout architecture. The Axon Shell is a three-pane IDE-like conversation workspace built on the Axon design system (`docs/UI-DESIGN-SYSTEM.md`). This document extends that foundation with shell-specific conventions.

@@ -1,5 +1,6 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
+use crate::crates::core::logging::{log_debug, log_info};
 use crate::crates::vector::ops::qdrant::{env_usize_clamped, qdrant_base};
 use reqwest::StatusCode;
 use std::collections::HashSet;
@@ -56,6 +57,10 @@ pub(super) async fn ensure_collection(cfg: &Config, dim: usize) -> Result<(), Bo
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
         if existing_dim == dim {
+            log_debug(&format!(
+                "qdrant collection_exists collection={}",
+                cfg.collection
+            ));
             ensure_payload_indexes(cfg).await?;
             return Ok(());
         }
@@ -69,6 +74,10 @@ pub(super) async fn ensure_collection(cfg: &Config, dim: usize) -> Result<(), Bo
         resp.error_for_status()?;
     }
 
+    log_info(&format!(
+        "qdrant collection_created collection={}",
+        cfg.collection
+    ));
     ensure_payload_indexes(cfg).await?;
     Ok(())
 }
@@ -87,6 +96,11 @@ pub(super) async fn qdrant_upsert(
         qdrant_base(cfg),
         cfg.collection
     );
+    log_debug(&format!(
+        "qdrant upsert_start point_count={} collection={}",
+        points.len(),
+        cfg.collection
+    ));
     for batch in points.chunks(upsert_batch_size) {
         client
             .put(&url)

@@ -1,5 +1,6 @@
 //! Job lifecycle operations: claim, complete, fail, cancel, heartbeat.
 
+use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::jobs::status::JobStatus;
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -35,7 +36,12 @@ pub async fn claim_next_pending(pool: &PgPool, table: JobTable) -> Result<Option
     let row = sqlx::query_as::<_, (Uuid,)>(&query)
         .fetch_optional(pool)
         .await?;
-    Ok(row.map(|(id,)| id))
+    if let Some((id,)) = row {
+        log_info(&format!("job_started job_id={id} table={table}"));
+        Ok(Some(id))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Claim a specific pending job by ID.
@@ -51,6 +57,9 @@ pub async fn claim_pending_by_id(pool: &PgPool, table: JobTable, id: Uuid) -> Re
         .execute(pool)
         .await?
         .rows_affected();
+    if updated > 0 {
+        log_info(&format!("job_started job_id={id} table={table}"));
+    }
     Ok(updated > 0)
 }
 
@@ -79,6 +88,9 @@ pub async fn mark_job_failed(
         .execute(pool)
         .await
         .with_context(|| format!("mark_job_failed for job {id} in {table_name}"))?;
+    log_warn(&format!(
+        "job_failed job_id={id} table={table_name} reason={error_text}"
+    ));
     Ok(())
 }
 
@@ -113,6 +125,9 @@ pub async fn mark_job_completed(
         .await
         .with_context(|| format!("mark_job_completed for job {id} in {table_name}"))?
         .rows_affected();
+    if rows > 0 {
+        log_info(&format!("job_completed job_id={id} table={table_name}"));
+    }
     Ok(rows > 0)
 }
 
@@ -145,6 +160,9 @@ pub async fn cancel_pending_or_running_job(
         .await
         .with_context(|| format!("cancel_pending_or_running_job for job {id} in {table_name}"))?
         .rows_affected();
+    if rows > 0 {
+        log_info(&format!("job_canceled job_id={id} table={table_name}"));
+    }
     Ok(rows > 0)
 }
 

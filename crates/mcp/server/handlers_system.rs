@@ -139,21 +139,39 @@ impl AxonMcpServer {
         viewport: Option<&str>,
         fallback_w: u32,
         fallback_h: u32,
-    ) -> (u32, u32) {
+    ) -> Result<(u32, u32), ErrorData> {
         let Some(v) = viewport else {
-            return (fallback_w, fallback_h);
+            return Ok((fallback_w, fallback_h));
         };
         let mut parts = v.split('x');
-        let Some(w) = parts.next().and_then(|n| n.parse::<u32>().ok()) else {
-            return (fallback_w, fallback_h);
-        };
-        let Some(h) = parts.next().and_then(|n| n.parse::<u32>().ok()) else {
-            return (fallback_w, fallback_h);
-        };
+        let w = parts
+            .next()
+            .and_then(|n| n.parse::<u32>().ok())
+            .ok_or_else(|| {
+                invalid_params(format!(
+                    "invalid viewport '{v}': expected WxH format (e.g. 1280x720)"
+                ))
+            })?;
+        let h = parts
+            .next()
+            .and_then(|n| n.parse::<u32>().ok())
+            .ok_or_else(|| {
+                invalid_params(format!(
+                    "invalid viewport '{v}': expected WxH format (e.g. 1280x720)"
+                ))
+            })?;
         if w == 0 || h == 0 {
-            return (fallback_w, fallback_h);
+            return Err(invalid_params(format!(
+                "invalid viewport '{v}': width and height must be greater than zero"
+            )));
         }
-        (w, h)
+        // Reject unreasonably large dimensions to prevent resource exhaustion.
+        if w > 7680 || h > 4320 {
+            return Err(invalid_params(format!(
+                "invalid viewport '{v}': dimensions exceed maximum allowed (7680x4320)"
+            )));
+        }
+        Ok((w, h))
     }
 
     pub(super) async fn handle_screenshot(
@@ -163,7 +181,7 @@ impl AxonMcpServer {
         let url = req
             .url
             .ok_or_else(|| invalid_params("url is required for screenshot"))?;
-        let _response_mode = parse_response_mode(req.response_mode);
+        let response_mode = parse_response_mode(req.response_mode);
         let normalized = normalize_url(&url);
         validate_url(&normalized).map_err(|e| invalid_params(e.to_string()))?;
 
@@ -171,7 +189,7 @@ impl AxonMcpServer {
             req.viewport.as_deref(),
             self.cfg.viewport_width,
             self.cfg.viewport_height,
-        );
+        )?;
         let full_page = req.full_page.unwrap_or(self.cfg.screenshot_full_page);
 
         let bytes =
@@ -196,17 +214,21 @@ impl AxonMcpServer {
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
 
-        Ok(AxonToolResponse::ok(
+        let payload = serde_json::json!({
+            "url": normalized,
+            "path": path,
+            "size_bytes": bytes.len(),
+            "full_page": full_page,
+            "viewport": format!("{}x{}", width, height),
+        });
+        respond_with_mode(
             "screenshot",
             "screenshot",
-            serde_json::json!({
-                "url": normalized,
-                "path": path,
-                "size_bytes": bytes.len(),
-                "full_page": full_page,
-                "viewport": format!("{}x{}", width, height),
-            }),
-        ))
+            response_mode,
+            "screenshot",
+            payload,
+        )
+        .await
     }
 
     pub(super) async fn handle_artifacts(

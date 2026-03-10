@@ -467,6 +467,10 @@ pub async fn append_sitemap_backfill(
         }
     }
     manifest.flush().await?;
+    log_info(&format!(
+        "sitemap backfill_complete urls_added={}",
+        stats.written
+    ));
     Ok(stats)
 }
 

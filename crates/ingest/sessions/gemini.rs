@@ -240,8 +240,11 @@ async fn process_gemini_file(
         };
         if attempt < 3 {
             attempt += 1;
-            tokio::time::sleep(Duration::from_millis(attempt * 500)).await;
-            log_warn(&format!("retry {} for {}: {}", attempt, url, err_msg));
+            let backoff_ms = attempt * 500;
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            log_warn(&format!(
+                "retry attempt={attempt}/max=3 backoff_ms={backoff_ms} url={url} error={err_msg}"
+            ));
         } else {
             return Err(anyhow::anyhow!(err_msg));
         }

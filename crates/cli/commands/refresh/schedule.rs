@@ -1,7 +1,7 @@
 use super::resolve::resolve_schedule_urls;
 use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::core::ui::{accent, muted, status_text, symbol_for_status};
 use crate::crates::jobs::common::make_pool;
 use crate::crates::jobs::refresh::ensure_schema_once;
@@ -384,6 +384,15 @@ async fn run_refresh_schedule_due_sweep(
     let mut failed = 0usize;
     let mut jobs = Vec::new();
 
+    if claimed.is_empty() {
+        log_debug("refresh poll_idle");
+    } else {
+        log_info(&format!(
+            "refresh schedules_claimed count={}",
+            claimed.len()
+        ));
+    }
+
     for schedule in &claimed {
         let urls = resolve_schedule_urls(cfg, schedule).await?;
         if urls.is_empty() {
@@ -410,6 +419,9 @@ async fn run_refresh_schedule_due_sweep(
                         "refresh schedule mark_ran failed for schedule={} id={}: {err}",
                         schedule.name, schedule.id
                     ));
+                }
+                for url in &urls {
+                    log_info(&format!("refresh url_queued url={url}"));
                 }
                 dispatched += 1;
                 jobs.push(serde_json::json!({

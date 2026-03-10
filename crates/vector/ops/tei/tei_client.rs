@@ -1,6 +1,6 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::vector::ops::qdrant::env_usize_clamped;
 use rand::RngExt as _;
 use reqwest::StatusCode;
@@ -145,6 +145,13 @@ pub(crate) async fn tei_embed(
     let max_attempts = env_usize_clamped("TEI_MAX_RETRIES", TEI_MAX_RETRIES_DEFAULT, 1, 20);
     let request_timeout_ms = request_timeout_ms_from_env();
 
+    log_info(&format!(
+        "tei_embed start chunk_count={} url={}",
+        inputs.len(),
+        embed_url
+    ));
+    let _tei_start = std::time::Instant::now();
+
     let mut stack: Vec<&[String]> = inputs.chunks(batch_size).collect();
     stack.reverse();
 
@@ -154,6 +161,11 @@ pub(crate) async fn tei_embed(
         {
             ChunkOutcome::Vectors(mut batch) => vectors.append(&mut batch),
             ChunkOutcome::Split => {
+                log_warn(&format!(
+                    "tei_embed 413_split chunk_len={} splitting_at={}",
+                    chunk.len(),
+                    chunk.len() / 2
+                ));
                 let mid = chunk.len() / 2;
                 let (left, right) = chunk.split_at(mid);
                 stack.push(right);
@@ -161,6 +173,12 @@ pub(crate) async fn tei_embed(
             }
         }
     }
+
+    log_debug(&format!(
+        "tei_embed done vectors={} duration_ms={}",
+        vectors.len(),
+        _tei_start.elapsed().as_millis()
+    ));
 
     Ok(vectors)
 }

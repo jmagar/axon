@@ -151,6 +151,7 @@ async fn execute_extract_runs(
                 custom_headers: custom_headers.clone(),
             };
             async move {
+                log_debug(&format!("extract llm_call url={url}"));
                 let run = run_extract_with_engine(wcfg, engine).await;
                 (url, run)
             }
@@ -162,8 +163,18 @@ async fn execute_extract_runs(
     let mut agg = ExtractAggregation::new();
     for (url, run_result) in results {
         match run_result {
-            Ok(run) => append_extract_success(&mut agg, run),
-            Err(err) => append_extract_error(&mut agg, url, err.to_string()),
+            Ok(run) => {
+                log_debug(&format!(
+                    "extract llm_ok url={} fields_extracted={}",
+                    run.start_url,
+                    run.results.len()
+                ));
+                append_extract_success(&mut agg, run);
+            }
+            Err(err) => {
+                log_warn(&format!("extract llm_failed url={url} error={err}"));
+                append_extract_error(&mut agg, url, err.to_string());
+            }
         }
     }
     agg
@@ -194,6 +205,7 @@ fn extract_result_json(
 }
 
 async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dyn Error>> {
+    let job_start = std::time::Instant::now();
     let run_result = async {
         let Some((urls, job_cfg)) = load_extract_job_inputs(pool, id).await? else {
             return Ok::<Option<serde_json::Value>, Box<dyn Error>>(None);
@@ -211,6 +223,11 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
         if mark_extract_canceled(&mut redis_conn, pool, id).await? {
             return Ok(None);
         }
+
+        log_info(&format!(
+            "extract start job_id={id} url_count={}",
+            urls.len()
+        ));
 
         let prompt = job_cfg
             .prompt
@@ -273,7 +290,11 @@ async fn process_extract_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<()
             if let Some(e) = last_err {
                 return Err(e.into());
             }
-            log_done(&format!("worker completed extract job {id}"));
+            let urls_count = result_json["runs"].as_array().map(|a| a.len()).unwrap_or(0);
+            log_done(&format!(
+                "worker completed extract job {id} urls_count={urls_count} duration_ms={}",
+                job_start.elapsed().as_millis()
+            ));
         }
         Ok(None) => {}
         Err(error_text) => {
@@ -300,6 +321,11 @@ pub async fn run_extract_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if let Err(msg) = crate::crates::jobs::worker_lane::validate_worker_env_vars() {
         return Err(msg.into());
     }
+
+    log_info(&format!(
+        "worker_start worker=extract queue={}",
+        cfg.extract_queue
+    ));
 
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;

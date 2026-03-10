@@ -22,6 +22,7 @@ mod exe;
 pub(crate) mod files;
 pub(crate) mod mcp_config;
 pub mod overrides;
+pub(crate) mod session_guard;
 mod sync_mode;
 mod ws_send;
 

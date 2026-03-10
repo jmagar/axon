@@ -155,6 +155,18 @@ pub(super) fn acp_bridge_event_json(event: &AcpBridgeEvent) -> String {
 /// (PERF-4): the `data_json` string is embedded verbatim into the envelope
 /// rather than being parsed into `Value` and re-serialized.
 ///
+/// # Wire type: `"command.output.json"`
+///
+/// This function intentionally uses `"command.output.json"` rather than the
+/// basic `"output"` type from the legacy 5-type WS contract.  The legacy table
+/// (`output`, `log`, `done`, `error`, `stats`) covers subprocess-backed modes;
+/// direct-dispatch (ACP/pulse_chat) uses the richer `WsEventV2` protocol which
+/// adds `"command.output.json"` for structured JSON payloads with execution
+/// context.  Both names remain in use — `"output"` for raw subprocess lines,
+/// `"command.output.json"` for typed service-layer results.
+///
+/// See `WsEventV2::CommandOutputJson` for the canonical definition.
+///
 /// The output matches the wire format of `WsEventV2::CommandOutputJson`:
 /// ```json
 /// {"type":"command.output.json","data":{"ctx":{...},"data":<data_json>}}

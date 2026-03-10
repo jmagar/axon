@@ -95,7 +95,7 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 For scheduled refreshes: `{ "action": "refresh", "subaction": "schedule", "schedule_subaction": "list|create|delete|enable|disable", "schedule_name": "..." }`
 
 ## Lifecycle Action Families
-- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- requires `path`; `pattern` for grep
+- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- `path` required for `head|grep|wc|read|delete|search`; not required for `list|clean`; `pattern` required for `grep`; `max_age_hours` required for `clean`
 - `crawl`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
 - `embed`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `input` (string)
 - `extract`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
@@ -125,14 +125,17 @@ When `source_type` is `sessions`, the optional `sessions` object accepts:
 Subactions: `head|grep|wc|read|list|delete|clean|search`
 
 `artifacts` fields:
-- `path` (required)
+- `path` (required for `head|grep|wc|read|delete|search`; not required for `list|clean`)
 - `pattern` (required for `grep`)
+- `max_age_hours` (required for `clean` — no default; caller must declare intent explicitly)
 - `limit` and `offset` for paginated inspection
 
 ## Enum Values
 
 ### `ResponseMode`
-Values: `path|inline|both`
+Values: `path|inline|both|auto-inline`
+
+> `auto-inline` is system-assigned (not caller-specified). It appears in responses when the serialized payload is ≤ `AXON_INLINE_BYTES_THRESHOLD` bytes (default 8 192), regardless of the requested `response_mode`. Callers should handle it the same way as `inline`.
 
 ### `McpRenderMode`
 Values: `http|chrome|auto_switch`

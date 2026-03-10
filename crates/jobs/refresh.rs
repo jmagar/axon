@@ -27,6 +27,7 @@ mod state;
 pub(crate) mod url_processor;
 mod worker;
 
+use crate::crates::core::logging::log_warn;
 use crate::crates::jobs::common::{
     JobTable, cancel_pending_or_running_job, make_pool, purge_queue_safe,
 };
@@ -283,7 +284,12 @@ pub async fn clear_refresh_jobs(
         .execute(&pool)
         .await?
         .rows_affected();
-    let _ = purge_queue_safe(cfg, &cfg.refresh_queue).await;
+    if let Err(e) = purge_queue_safe(cfg, &cfg.refresh_queue).await {
+        log_warn(&format!(
+            "queue_purge_failed queue={} error={e}",
+            cfg.refresh_queue
+        ));
+    }
     Ok(rows)
 }
 

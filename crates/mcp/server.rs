@@ -68,8 +68,21 @@ impl AxonMcpServer {
         &'a self,
         Parameters(raw): Parameters<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<String, ErrorData> {
-        let request: AxonRequest =
-            parse_axon_request(raw).map_err(|e| invalid_params(format!("invalid request: {e}")))?;
+        let action = raw
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_owned();
+        let subaction = raw
+            .get("subaction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        tracing::info!(action = %action, subaction = %subaction, "mcp request");
+        let request: AxonRequest = parse_axon_request(raw).map_err(|e| {
+            tracing::warn!(action = %action, subaction = %subaction, error = %e, "mcp error");
+            invalid_params(format!("invalid request: {e}"))
+        })?;
         let response = match request {
             AxonRequest::Status(req) => self.handle_status(req).await?,
             AxonRequest::Crawl(req) => self.handle_crawl(req).await?,

@@ -11,7 +11,7 @@ mod sync_backfill_migration_tests;
 use super::common::parse_urls;
 use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_option, print_phase};
 use crate::crates::jobs::crawl::start_crawl_jobs_batch;
 use spider::url::Url;
@@ -30,13 +30,23 @@ pub async fn run_crawl(cfg: &Config) -> Result<(), Box<dyn Error>> {
         validate_url(url)?;
         warn_if_url_looks_like_local_file(url);
     }
+    let start_url = urls.first().map(String::as_str).unwrap_or("");
+    log_info(&format!(
+        "command=crawl url={start_url} wait={} render_mode={:?} max_pages={} depth={}",
+        cfg.wait, cfg.render_mode, cfg.max_pages, cfg.max_depth
+    ));
     if cfg.wait {
         for url in &urls {
             sync_crawl::run_sync_crawl(cfg, url).await?;
         }
         Ok(())
     } else {
-        run_async_enqueue_multi(cfg, &urls).await
+        let result = run_async_enqueue_multi(cfg, &urls).await;
+        log_info(&format!(
+            "job_enqueued command=crawl queue={}",
+            cfg.crawl_queue
+        ));
+        result
     }
 }
 

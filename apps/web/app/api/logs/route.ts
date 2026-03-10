@@ -41,7 +41,7 @@ function attachContainerStream(
 ): void {
   docker
     .getContainer(svc)
-    .logs({ follow: true, stdout: true, stderr: true, tail })
+    .logs({ follow: false, stdout: true, stderr: true, tail })
     .then((raw) => {
       const logStream = raw as Readable
       logStreams.push(logStream)

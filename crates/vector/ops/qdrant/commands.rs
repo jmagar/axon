@@ -227,9 +227,10 @@ async fn try_fast_domains(cfg: &Config) -> Result<bool, Box<dyn Error>> {
             Ok(true)
         }
         Err(err) => {
-            eprintln!(
-                "warning: fast domain facet query failed ({err}); falling back to detailed scan"
-            );
+            log_warn(&format!(
+                "sources_facet_fallback qdrant={} error={err}",
+                cfg.qdrant_url
+            ));
             Ok(false)
         }
     }

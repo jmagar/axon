@@ -1,6 +1,6 @@
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::content::url_to_domain;
-use crate::crates::core::logging::log_done;
+use crate::crates::core::logging::{log_done, log_warn};
 use crate::crates::core::ui::{Spinner, accent, muted};
 use crate::crates::crawl::engine::{
     CrawlSummary, chrome_refetch_thin_pages, run_crawl_once, run_sitemap_only,
@@ -73,11 +73,20 @@ async fn maybe_chrome_fallback(
         return (http_summary, http_seen_urls);
     }
 
+    let thin_ratio = if http_summary.pages_seen == 0 {
+        1.0f64
+    } else {
+        http_summary.thin_pages as f64 / http_summary.pages_seen as f64
+    };
+    log_warn(&format!(
+        "crawl auto_switch_to_chrome url={start_url} thin_ratio={thin_ratio:.2}"
+    ));
+
     // WAF-blocked pages: retry with stealth Chrome before falling back to thin-page logic.
     // Feed WAF-blocked URLs into thin_urls so chrome_refetch_thin_pages re-fetches them.
     if http_summary.waf_blocked_pages > 0 && !http_summary.waf_blocked_urls.is_empty() {
         let blocked_count = http_summary.waf_blocked_pages;
-        crate::crates::core::logging::log_warn(&format!(
+        log_warn(&format!(
             "waf: {blocked_count} page(s) blocked — retrying with stealth Chrome"
         ));
         let mut waf_summary = http_summary.clone();
