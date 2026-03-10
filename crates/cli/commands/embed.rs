@@ -1,7 +1,12 @@
+use crate::crates::cli::commands::status::metrics::{
+    collection_from_config, display_embed_input, embed_metrics_suffix, format_error,
+    job_runtime_text,
+};
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::{
-    accent, confirm_destructive, muted, primary, status_text, symbol_for_status,
+    accent, confirm_destructive, error, muted, primary, status_label, status_text, subtle,
+    symbol_for_status,
 };
 use crate::crates::jobs::embed::{
     cancel_embed_job, cleanup_embed_jobs, clear_embed_jobs, get_embed_job, list_embed_jobs,
@@ -166,13 +171,42 @@ async fn handle_embed_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    for job in jobs {
-        println!(
-            "  {} {} {}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status)
+    // Empty map: URLs and paths display as-is; UUID-based paths show parent/markdown.
+    let empty_crawl_map = std::collections::HashMap::new();
+    for job in &jobs {
+        let target = display_embed_input(&job.input_text, &empty_crawl_map);
+        let metrics = embed_metrics_suffix(&job.status, job.result_json.as_ref());
+        let collection = collection_from_config(&job.config_json);
+        let age = job_runtime_text(
+            &job.status,
+            job.started_at.as_ref(),
+            job.finished_at.as_ref(),
+            &job.updated_at,
         );
+        let collection_str = collection
+            .map(|c| format!("{}{}", subtle(" | "), accent(c)))
+            .unwrap_or_default();
+        let label = status_label(&job.status);
+        let prefix = if label.is_empty() {
+            format!("  {} ", symbol_for_status(&job.status))
+        } else {
+            format!("  {} {} ", symbol_for_status(&job.status), label)
+        };
+        let age_str = format!("{}{}", subtle(" | "), accent(&age));
+        println!(
+            "{}{}{}{}{} {} {}",
+            prefix,
+            primary(&target),
+            metrics,
+            collection_str,
+            age_str,
+            subtle("|"),
+            muted(&job.id.to_string()),
+        );
+        if let Some(err) = format_error(job.error_text.as_deref()) {
+            let err_line = error(&format!("↳ {err}"));
+            println!("       {err_line}");
+        }
     }
     Ok(())
 }

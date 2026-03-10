@@ -1,4 +1,4 @@
-mod metrics;
+pub(crate) mod metrics;
 mod presentation;
 
 use crate::crates::core::config::Config;

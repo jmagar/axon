@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-09 (session: v0.13.0 — multi-agent sessions sidebar: Claude + Codex + Gemini)
+Last Modified: 2026-03-09 (session: v0.13.1 — ingest progress display + embed list polish + crawl batch resilience)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Ingest progress display + embed list polish + crawl batch resilience (v0.13.1)** — `axon status` now shows live YouTube ingest progress (`videos_done/total`, `enumerating…` placeholder) via `result_json` COALESCE merge on completion; `axon embed list` displays rich per-job rows (target, metrics, collection, age, error) reusing `status/metrics` helpers (made `pub(crate)`); `crawl_batch` downgrades excluded-URL errors to warnings and only hard-fails if all URLs are excluded; `find_excluded_prefix` replaces `is_excluded_url_path` with clearer error message; `YoutubeVideoMeta` gains `video_id` + `thumbnail` fields stored as `yt_video_id`/`yt_thumbnail` Qdrant payload
 
 - **Multi-agent sessions sidebar (v0.13.0)** — `/reboot` sessions sidebar now surfaces Claude, Codex, and Gemini sessions with colored agent badge pills (CX green, G blue); `codex-scanner.ts` walks `~/.codex/sessions/{year}/{month}/{day}/*.jsonl`, `gemini-scanner.ts` walks `~/.gemini/tmp/{hash}/chats/session-*.json`; `session-utils.ts` extracted to break circular Turbopack module dependency; `codex-jsonl-parser.ts` + `gemini-json-parser.ts` parse history for the detail view; `[id]/route.ts` branches on `session.agent` to select the correct parser; per-agent representation guarantee (≥3 from each agent type) in the list route prevents all-Claude results when Claude sessions are most recent; `axon-shell.tsx` auto-switches agent selector to Codex/Gemini when a non-Claude session is clicked
 
@@ -104,7 +106,9 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | feat | unified ingest + structured metadata + MCP artifacts (v0.12.0) |
+| `pending` | fix | ingest progress display + embed list polish + crawl batch resilience (v0.13.1) |
+| `2cf2a067` | feat(web) | multi-agent sessions sidebar — Claude + Codex + Gemini (v0.13.0) |
+| `031af077` | feat(ingest) | unified axon ingest + structured metadata + MCP artifacts (v0.12.0) |
 | `a4ceffd7` | feat(acp) | wire `<axon:editor>` XML blocks to PlateJS editor |
 | `cbaa1eab` | feat(web) | add editor_update WS message type to protocol |
 | `175b0454` | fix(acp) | address all PR review comments + implement SEC-7 session-scoped permission routing |
