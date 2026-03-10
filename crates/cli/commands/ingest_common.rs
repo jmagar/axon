@@ -92,17 +92,40 @@ pub fn parse_ingest_job_id(
     Ok(Uuid::parse_str(id)?)
 }
 
-/// Extract `"N / M videos, K chunks"` progress string from a playlist job's `result_json`,
-/// or `None` if the fields aren't present (single-video or not yet started).
-fn playlist_progress(result_json: &Option<serde_json::Value>) -> Option<String> {
+/// Extract a progress string from an ingest job's `result_json`.
+///
+/// Handles YouTube playlists (`videos_done/videos_total`) and GitHub repos
+/// (`files_done/files_total`). Returns `None` for single-video YouTube,
+/// Reddit, or jobs that haven't started producing progress yet.
+fn ingest_progress(result_json: &Option<serde_json::Value>) -> Option<String> {
     let r = result_json.as_ref()?;
-    let done = r.get("videos_done")?.as_u64()?;
-    let total = r.get("videos_total")?.as_u64()?;
     let chunks = r
         .get("chunks_embedded")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    Some(format!("{done} / {total} videos, {chunks} chunks embedded"))
+
+    // YouTube playlist progress
+    if let (Some(done), Some(total)) = (
+        r.get("videos_done").and_then(|v| v.as_u64()),
+        r.get("videos_total").and_then(|v| v.as_u64()),
+    ) {
+        return Some(format!("{done} / {total} videos, {chunks} chunks embedded"));
+    }
+
+    // GitHub file-level progress
+    if let (Some(done), Some(total)) = (
+        r.get("files_done").and_then(|v| v.as_u64()),
+        r.get("files_total").and_then(|v| v.as_u64()),
+    ) {
+        return Some(format!("{done} / {total} files, {chunks} chunks embedded"));
+    }
+
+    // Generic chunks-only (e.g. GitHub before files start, or single YouTube video)
+    if chunks > 0 {
+        return Some(format!("{chunks} chunks embedded"));
+    }
+
+    None
 }
 
 async fn handle_ingest_status(
@@ -133,7 +156,7 @@ async fn handle_ingest_status(
             );
             println!("  {} {}", muted("Created:"), job.created_at);
             println!("  {} {}", muted("Updated:"), job.updated_at);
-            if let Some(progress) = playlist_progress(&job.result_json) {
+            if let Some(progress) = ingest_progress(&job.result_json) {
                 println!("  {} {}", muted("Progress:"), progress);
             }
             if let Some(err) = job.error_text.as_deref() {
@@ -155,7 +178,7 @@ async fn handle_ingest_list(cfg: &Config, jobs: Vec<IngestJob>) -> Result<(), Bo
             println!("  {}", muted("No ingest jobs found."));
         } else {
             for job in jobs {
-                let progress = playlist_progress(&job.result_json)
+                let progress = ingest_progress(&job.result_json)
                     .map(|p| format!(" [{p}]"))
                     .unwrap_or_default();
                 println!(

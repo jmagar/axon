@@ -166,10 +166,15 @@ async fn embed_repo_metadata(
 ///
 /// Each sub-task is run concurrently via `tokio::join!`. Individual failures
 /// are logged and counted as zero rather than aborting the whole run.
+///
+/// If `progress_tx` is provided, sends live progress updates as files are
+/// embedded and sub-tasks complete. The worker uses this to persist progress
+/// to `result_json` so `axon ingest list` and `axon status` show live data.
 pub async fn ingest_github(
     cfg: &Config,
     repo: &str,
     include_source: bool,
+    progress_tx: Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
 ) -> Result<usize, Box<dyn Error>> {
     log_info(&format!("command=ingest source=github repo={repo}"));
     let (owner, name) =
@@ -195,8 +200,23 @@ pub async fn ingest_github(
         is_private: repo_info.private,
     };
 
+    // Send initial progress so status shows activity immediately
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send(serde_json::json!({
+            "phase": "ingesting",
+            "tasks_total": 5,
+            "tasks_done": 0,
+        }));
+    }
+
     let (files_result, metadata_result, issues_result, prs_result, wiki_result) = tokio::join!(
-        files::embed_files(cfg, &common, include_source, cfg.github_token.as_deref()),
+        files::embed_files(
+            cfg,
+            &common,
+            include_source,
+            cfg.github_token.as_deref(),
+            progress_tx.as_ref(),
+        ),
         embed_repo_metadata(cfg, &repo_info, &common),
         issues::ingest_issues(cfg, &octo, &common),
         issues::ingest_pull_requests(cfg, &octo, &common),

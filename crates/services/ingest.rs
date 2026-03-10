@@ -34,7 +34,8 @@ pub async fn ingest_github(
         },
     );
 
-    let chunks = ingest::github::ingest_github(cfg, &repo_slug, cfg.github_include_source).await?;
+    let chunks =
+        ingest::github::ingest_github(cfg, &repo_slug, cfg.github_include_source, None).await?;
 
     emit(
         &tx,
