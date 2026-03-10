@@ -1,7 +1,7 @@
 use super::AxonMcpServer;
 use super::common::{
     apply_crawl_overrides, invalid_params, logged_internal_error, parse_job_id, parse_limit,
-    parse_offset, parse_response_mode, respond_with_mode,
+    parse_offset, respond_with_mode,
 };
 use crate::crates::core::http::validate_url;
 use crate::crates::jobs::crawl::{
@@ -23,7 +23,7 @@ impl AxonMcpServer {
         req: CrawlRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let cfg = apply_crawl_overrides(self.cfg.as_ref(), &req);
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             CrawlSubaction::Start => {
                 let urls = req
@@ -38,11 +38,29 @@ impl AxonMcpServer {
                 let result = crawl_svc::crawl_start(&cfg, &urls, None)
                     .await
                     .map_err(|e| logged_internal_error("operation", e))?;
+                let job_ids = result.job_ids;
+                let output_dir = result.output_dir;
+                let predicted_paths = result.predicted_paths;
+                let jobs = result
+                    .jobs
+                    .into_iter()
+                    .map(|job| {
+                        serde_json::json!({
+                            "job_id": job.job_id,
+                            "url": job.url,
+                            "output_dir": job.output_dir,
+                            "predicted_paths": job.predicted_paths,
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 Ok(AxonToolResponse::ok(
                     "crawl",
                     "start",
                     serde_json::json!({
-                        "job_ids": result.job_ids
+                        "job_ids": job_ids,
+                        "output_dir": output_dir,
+                        "predicted_paths": predicted_paths,
+                        "jobs": jobs
                     }),
                 ))
             }
@@ -120,7 +138,7 @@ impl AxonMcpServer {
         &self,
         req: ExtractRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             ExtractSubaction::Start => {
                 let urls = req

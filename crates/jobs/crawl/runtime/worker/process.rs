@@ -213,6 +213,7 @@ async fn maybe_complete_cache_hit(
         "crawl_stream_pages": 0,
         "elapsed_ms": 0,
         "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
+        "output_files": [report_path.to_string_lossy().to_string()],
         "audit_diff": diff_report,
         "audit_report_path": report_path.to_string_lossy(),
     });

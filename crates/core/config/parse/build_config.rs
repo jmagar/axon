@@ -9,7 +9,16 @@ use super::helpers::{
     positional_from_watch_subcommand,
 };
 use super::performance;
+use clap::ValueEnum;
 use std::env;
+
+fn parse_origin_allowlist(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
 
 pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let global = cli.global;
@@ -164,6 +173,16 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             )
         }
         CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
+        CliCommand::Completions(args) => (
+            CommandKind::Completions,
+            vec![
+                args.shell
+                    .to_possible_value()
+                    .expect("shell value")
+                    .get_name()
+                    .to_string(),
+            ],
+        ),
         CliCommand::Mcp(args) => {
             mcp_transport = args.transport;
             (CommandKind::Mcp, Vec::new())
@@ -173,6 +192,14 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             (CommandKind::Serve, Vec::new())
         }
     };
+
+    if matches!(command, CommandKind::Completions) {
+        return Ok(Config {
+            command,
+            positional,
+            ..Config::default()
+        });
+    }
 
     let pg_url = normalize_local_service_url(
         global
@@ -332,6 +359,14 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty()),
         tavily_api_key: env::var("TAVILY_API_KEY").ok().unwrap_or_default(),
+        web_allowed_origins: env::var("AXON_WEB_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| parse_origin_allowlist(&raw))
+            .unwrap_or_default(),
+        shell_allowed_origins: env::var("AXON_SHELL_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| parse_origin_allowlist(&raw))
+            .unwrap_or_default(),
         ask_diagnostics,
         evaluate_responses_mode,
         ask_max_context_chars: performance::env_usize_clamped(
@@ -507,4 +542,57 @@ fn resolve_mcp_transport(
 fn parse_mcp_http_port(raw: &str) -> Result<u16, String> {
     raw.parse::<u16>()
         .map_err(|e| format!("invalid AXON_MCP_HTTP_PORT '{raw}': {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::config::cli::Cli;
+    use clap::Parser;
+    use std::env;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn into_config_parses_web_origin_allowlists_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        const WEB: &str = "AXON_WEB_ALLOWED_ORIGINS";
+        const SHELL: &str = "AXON_SHELL_ALLOWED_ORIGINS";
+
+        unsafe {
+            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
+            env::set_var(REDIS, "redis://127.0.0.1:53379");
+            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
+            env::set_var(WEB, " https://axon.example.com , http://localhost:49010 ");
+            env::set_var(SHELL, " http://localhost:49011 ");
+        }
+
+        let cli = Cli::parse_from(["axon", "status"]);
+        let cfg = into_config(cli).expect("status config should parse");
+
+        assert_eq!(
+            cfg.web_allowed_origins,
+            vec![
+                "https://axon.example.com".to_string(),
+                "http://localhost:49010".to_string(),
+            ]
+        );
+        assert_eq!(
+            cfg.shell_allowed_origins,
+            vec!["http://localhost:49011".to_string()]
+        );
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+            env::remove_var(WEB);
+            env::remove_var(SHELL);
+        }
+    }
 }

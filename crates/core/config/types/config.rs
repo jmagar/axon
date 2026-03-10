@@ -237,6 +237,14 @@ pub struct Config {
     /// Tavily search API key. Env: `TAVILY_API_KEY`. **Secret.**
     pub tavily_api_key: String,
 
+    /// Allowed cross-origin browser origins for web and MCP HTTP surfaces.
+    /// Env: `AXON_WEB_ALLOWED_ORIGINS` (comma-separated).
+    pub web_allowed_origins: Vec<String>,
+
+    /// Shell WebSocket-specific allowed origins.
+    /// Env: `AXON_SHELL_ALLOWED_ORIGINS` (comma-separated).
+    pub shell_allowed_origins: Vec<String>,
+
     /// Print verbose RAG diagnostics (retrieved chunks, scores) during `ask`/`evaluate`. Flag: `--diagnostics`.
     pub ask_diagnostics: bool,
 

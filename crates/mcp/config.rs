@@ -5,6 +5,14 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.trim().is_empty())
 }
 
+fn parse_origin_allowlist(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 pub fn load_mcp_config() -> Config {
     let mut cfg = Config::default();
 
@@ -34,6 +42,12 @@ pub fn load_mcp_config() -> Config {
     }
     if let Some(v) = env("TAVILY_API_KEY") {
         cfg.tavily_api_key = v;
+    }
+    if let Some(v) = env("AXON_WEB_ALLOWED_ORIGINS") {
+        cfg.web_allowed_origins = parse_origin_allowlist(&v);
+    }
+    if let Some(v) = env("AXON_SHELL_ALLOWED_ORIGINS") {
+        cfg.shell_allowed_origins = parse_origin_allowlist(&v);
     }
 
     if let Some(v) = env("AXON_COLLECTION") {
@@ -114,4 +128,45 @@ pub fn load_mcp_config() -> Config {
     cfg.json_output = true;
     cfg.wait = false;
     cfg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn load_mcp_config_reads_origin_allowlists() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const WEB: &str = "AXON_WEB_ALLOWED_ORIGINS";
+        const SHELL: &str = "AXON_SHELL_ALLOWED_ORIGINS";
+
+        unsafe {
+            env::set_var(WEB, "https://axon.example.com,http://localhost:49010");
+            env::set_var(SHELL, "http://localhost:49011");
+        }
+
+        let cfg = load_mcp_config();
+
+        assert_eq!(
+            cfg.web_allowed_origins,
+            vec![
+                "https://axon.example.com".to_string(),
+                "http://localhost:49010".to_string(),
+            ]
+        );
+        assert_eq!(
+            cfg.shell_allowed_origins,
+            vec!["http://localhost:49011".to_string()]
+        );
+
+        unsafe {
+            env::remove_var(WEB);
+            env::remove_var(SHELL);
+        }
+    }
 }
