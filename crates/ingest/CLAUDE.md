@@ -86,7 +86,7 @@ All ingest handlers call `embed_text_with_metadata()` or `embed_text_with_extra_
 4. Call `tei_embed()` with auto-split on 413
 5. Upsert to Qdrant
 
-Use `embed_text_with_extra_payload` when the source has structured metadata to store per-chunk (YouTube). Use `embed_text_with_metadata` for plain text sources (GitHub, Reddit, sessions).
+Use `embed_text_with_extra_payload` when the source has structured metadata to store per-chunk (GitHub, Reddit, YouTube). Use `embed_text_with_metadata` for plain text sources (sessions).
 
 ## ingest_jobs Schema
 `axon_ingest_jobs` differs from other job tables:
@@ -101,7 +101,6 @@ Use `embed_text_with_extra_payload` when the source has structured metadata to s
 | `axon ingest errors <uuid>` | Silently unhandled — `maybe_handle_ingest_subcommand` doesn't match `"errors"`, falls through to "requires subcommand" error. Fix: add `"errors"` arm to the match in `ingest_jobs.rs`. |
 | YouTube age-restricted / private videos | `yt-dlp` exits non-zero; error is a per-video skip warning in playlist mode, job failure in single-video mode. No friendly message. |
 | YouTube manual captions | Only `--write-auto-sub` is passed; `--write-subs` (manual captions) is not requested. Videos with manual but no auto-generated captions will fail. |
-| Reddit comment depth | Fixed at top-level only — no recursive comment thread fetching. |
 
 ## yt-dlp Requirement
 

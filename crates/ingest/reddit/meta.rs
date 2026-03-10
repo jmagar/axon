@@ -10,7 +10,9 @@ use serde_json::{Value, json};
 pub fn build_reddit_post_extra_payload(data: &Value) -> Value {
     json!({
         "reddit_author": data["author"].as_str().unwrap_or("[deleted]"),
-        "reddit_created_utc": data["created_utc"].as_u64().unwrap_or(0),
+        // Reddit API returns `created_utc` as a float (e.g. 1710000000.0).
+        // `as_u64()` returns `None` for JSON floats, so parse as f64 then cast.
+        "reddit_created_utc": data["created_utc"].as_f64().map(|f| f as u64).unwrap_or(0),
         "reddit_score": data["score"].as_i64().unwrap_or(0),
         "reddit_num_comments": data["num_comments"].as_u64().unwrap_or(0),
         "reddit_upvote_ratio": data["upvote_ratio"].as_f64().unwrap_or(0.0),

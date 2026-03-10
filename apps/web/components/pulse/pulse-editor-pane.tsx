@@ -111,10 +111,16 @@ export function PulseEditorPane({
       // biome-ignore lint/suspicious/noExplicitAny: Plate selection reset
       ;(editor as any).selection = null
       ;(editor as unknown as { onChange: () => void }).onChange()
-    } catch {
+    } catch (err) {
       // onChange threw (e.g. a plugin normalizer failed on complex scraped content).
-      // The children were already replaced — just skip the onChange so React stays
-      // in sync on the next render cycle.
+      // Reset the guard flag and bail out WITHOUT marking the update as applied —
+      // leaving lastAppliedMarkdownRef unchanged means the effect will retry on the
+      // next render, rather than silently desyncing editor content from props.
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[PulseEditorPane] external update failed, will retry:', err)
+      }
+      isApplyingExternalUpdateRef.current = false
+      return
     }
     isApplyingExternalUpdateRef.current = false
     lastAppliedMarkdownRef.current = markdown

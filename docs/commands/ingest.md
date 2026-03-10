@@ -3,8 +3,9 @@ Last Modified: 2026-03-09
 
 Ingest external sources (GitHub, Reddit, YouTube) into Qdrant. Source type is auto-detected from the target — no need to choose the right command.
 
-> For implementation details, pipeline internals, and troubleshooting see the per-source ingest docs:
-> [`docs/ingest/github.md`](../ingest/github.md) · [`docs/ingest/reddit.md`](../ingest/reddit.md) · [`docs/ingest/youtube.md`](../ingest/youtube.md)
+> For implementation details and troubleshooting see [`docs/ingest/ingest.md`](../ingest/ingest.md).
+>
+> Per-source deep-dives: [`docs/ingest/github.md`](../ingest/github.md) · [`docs/ingest/reddit.md`](../ingest/reddit.md) · [`docs/ingest/youtube.md`](../ingest/youtube.md)
 
 ## Synopsis
 
@@ -39,6 +40,16 @@ The source type is inferred from `<TARGET>` in this order:
 | `GITHUB_TOKEN` | GitHub (optional) | Raises API rate limit from 60 to 5000 req/hr |
 | `REDDIT_CLIENT_ID` | Reddit | OAuth2 app credentials |
 | `REDDIT_CLIENT_SECRET` | Reddit | OAuth2 app credentials |
+
+## Prerequisites
+
+### External dependencies
+
+| Dependency | Required for | Install |
+|-----------|-------------|---------|
+| `yt-dlp` | YouTube targets | `pip install yt-dlp` or `brew install yt-dlp` or `pipx install yt-dlp` |
+
+`yt-dlp` must be on `PATH` before running any `axon ingest` command with a YouTube target. All other targets have no external binary requirements.
 
 ## Flags
 
@@ -119,5 +130,4 @@ axon ingest clear --yes
 
 - Reddit-specific flags (`--sort`, `--time`, etc.) are silently ignored for GitHub and YouTube targets.
 - `--include-source` is silently ignored for Reddit and YouTube targets.
-- Job records are stored in `axon_ingest_jobs` with a `source_type` field (`github`/`reddit`/`youtube`).
 - `axon sessions` is not routed through `axon ingest` — sessions take no URL/target and have format-specific flags.

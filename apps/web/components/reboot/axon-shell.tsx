@@ -163,16 +163,16 @@ export function AxonShell() {
   const {
     messages: historicalMessages,
     loading: sessionLoadingBase,
+    loaded: sessionLoaded,
     error: sessionError,
     reload: reloadSession,
   } = useAxonSession(activeSessionId)
 
-  // Treat as loading for the one-render window between activeSessionId changing and
-  // useAxonSession's effect setting loading=true.  Without this, the sync effect below
-  // fires with sessionLoading=false + historicalMessages=[] and clears live messages.
-  const sessionLoading =
-    sessionLoadingBase ||
-    (activeSessionId !== null && historicalMessages.length === 0 && !sessionError)
+  // Treat as loading while the hook has not yet completed its first fetch.
+  // `loaded` becomes true in `.finally()` regardless of whether messages were
+  // returned, so a legitimately empty session (`messages.length === 0`) no
+  // longer keeps the UI in a permanent loading state.
+  const sessionLoading = sessionLoadingBase || (activeSessionId !== null && !sessionLoaded)
 
   const onSessionIdChange = useCallback((newId: string) => {
     setActiveSessionId(newId)
@@ -189,10 +189,18 @@ export function AxonShell() {
 
   const onEditorUpdate = useCallback((content: string, operation: 'replace' | 'append') => {
     setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
-    // Ensure the editor pane is visible when the agent writes to it.
+    // Ensure the editor pane is visible on desktop when the agent writes to it.
     setEditorOpen(true)
     try {
       window.localStorage.setItem(EDITOR_OPEN_STORAGE_KEY, 'true')
+    } catch {
+      /* ignore */
+    }
+    // On mobile, switch to the editor pane so the content is actually visible.
+    // Persist alongside so the stored value stays in sync (same logic as setMobilePaneTracked).
+    setMobilePane('editor')
+    try {
+      window.localStorage.setItem(AXON_MOBILE_PANE_STORAGE_KEY, 'editor')
     } catch {
       /* ignore */
     }

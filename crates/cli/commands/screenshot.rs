@@ -65,8 +65,14 @@ async fn screenshot_one(cfg: &Config, url: &str, idx: usize) -> Result<(), Box<d
             "{}",
             format_screenshot_json(&normalized, &path.to_string_lossy(), size)
         );
+        log_done(&format!(
+            "command=screenshot url={normalized} bytes={size} format=png"
+        ));
     } else {
-        log_done(&format!("saved: {} ({} bytes)", path.display(), size));
+        log_done(&format!(
+            "saved: {} ({size} bytes) url={normalized} format=png",
+            path.display()
+        ));
     }
 
     Ok(())

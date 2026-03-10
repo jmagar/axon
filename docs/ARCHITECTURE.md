@@ -284,7 +284,7 @@ Detection order: Reddit → YouTube → GitHub (first match wins).
 
 ### Ingest Submodule Layout
 
-```
+```text
 crates/ingest/
 ├── classify.rs          # auto-detection: classify_target()
 ├── github.rs            # module root

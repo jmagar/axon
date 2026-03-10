@@ -58,7 +58,7 @@ pub fn build_github_issue_extra_payload(issue: &models::issues::Issue) -> Value 
 /// Build Qdrant extra payload fields for a GitHub pull request chunk.
 ///
 /// Fields: `gh_issue_number`, `gh_state`, `gh_author`, `gh_created_at`,
-/// `gh_updated_at`, `gh_labels`, `gh_is_pr`, `gh_merged_at`, `gh_is_draft`.
+/// `gh_updated_at`, `gh_comment_count`, `gh_labels`, `gh_is_pr`, `gh_merged_at`, `gh_is_draft`.
 pub fn build_github_pr_extra_payload(pr: &models::pulls::PullRequest) -> Value {
     let author = pr.user.as_ref().map(|u| u.login.as_str()).unwrap_or("");
     let labels: Vec<&str> = pr
@@ -79,6 +79,7 @@ pub fn build_github_pr_extra_payload(pr: &models::pulls::PullRequest) -> Value {
         "gh_author": author,
         "gh_created_at": pr.created_at.map(|dt| dt.to_rfc3339()),
         "gh_updated_at": pr.updated_at.map(|dt| dt.to_rfc3339()),
+        "gh_comment_count": pr.comments.unwrap_or(0),
         "gh_labels": labels,
         "gh_is_pr": true,
         "gh_merged_at": pr.merged_at.map(|dt| dt.to_rfc3339()),

@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::open_amqp_connection_and_channel;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
@@ -131,8 +131,18 @@ pub(crate) async fn run_amqp_lane(
 
     // Explicitly close channel and connection so RabbitMQ cleans up immediately
     // rather than waiting for the TCP timeout.
-    let _ = ch.close(200, "lane exit".into()).await;
-    let _ = conn.close(200, "lane exit".into()).await;
+    if let Err(e) = ch.close(200, "lane exit".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={} error={e}",
+            wc.queue_name
+        ));
+    }
+    if let Err(e) = conn.close(200, "lane exit".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={} error={e}",
+            wc.queue_name
+        ));
+    }
 
     Err(format!(
         "{} worker lane={lane} AMQP consumer stream ended unexpectedly",

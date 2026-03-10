@@ -204,7 +204,29 @@ pub(super) async fn initialize_connection(
 
 // ── setup_session ────────────────────────────────────────────────────────────
 
+/// Validate that a session CWD exists and is a directory.
+///
+/// Called at the `setup_session` boundary before forwarding the request to the
+/// ACP adapter.  Catching an invalid CWD here produces a clear error; the
+/// adapter would otherwise fail with an opaque protocol error or silently use
+/// its default working directory.
+fn validate_cwd_usable(cwd: &std::path::Path) -> Result<(), String> {
+    if !cwd.exists() {
+        return Err(format!("ACP session cwd does not exist: {}", cwd.display()));
+    }
+    if !cwd.is_dir() {
+        return Err(format!(
+            "ACP session cwd is not a directory: {}",
+            cwd.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Dispatch the session setup request (new or load-with-fallback).
+///
+/// Validates that the CWD embedded in the setup request exists and is a
+/// directory before forwarding to the adapter.
 pub(super) async fn setup_session(
     conn: &ClientSideConnection,
     session_setup: AcpSessionSetupRequest,
@@ -218,6 +240,7 @@ pub(super) async fn setup_session(
 > {
     match session_setup {
         AcpSessionSetupRequest::New(new_session) => {
+            validate_cwd_usable(&new_session.cwd)?;
             emit(
                 tx,
                 ServiceEvent::Log {
@@ -232,6 +255,7 @@ pub(super) async fn setup_session(
             Ok((r.session_id, r.config_options))
         }
         AcpSessionSetupRequest::Load(load_session) => {
+            validate_cwd_usable(&load_session.cwd)?;
             emit(
                 tx,
                 ServiceEvent::Log {
@@ -327,7 +351,7 @@ pub(super) async fn apply_config_and_model(
     if let Some(req_model) = normalized_requested_model(model)
         && let Some(ref opts) = initial_config_options
     {
-        apply_model_config(conn, session_id, opts, req_model, model, tx).await?;
+        apply_model_config(conn, session_id, opts, req_model, tx).await?;
     }
 
     Ok(())
@@ -339,7 +363,6 @@ async fn apply_model_config(
     session_id: &SessionId,
     config_options: &[agent_client_protocol::SessionConfigOption],
     requested_model: String,
-    model: Option<&str>,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<(), String> {
     let model_config = config_options.iter().find(|opt| {
@@ -387,13 +410,14 @@ async fn apply_model_config(
             );
         }
     } else {
+        // Use the already-computed `requested_model` rather than recomputing
+        // `normalized_requested_model(model)` — they produce the same value.
         emit(
             tx,
             ServiceEvent::Log {
                 level: LogLevel::Warn,
                 message: format!(
-                    "ACP runtime: skipping unsupported model value '{}'",
-                    normalized_requested_model(model).unwrap_or_default()
+                    "ACP runtime: skipping unsupported model value '{requested_model}'"
                 ),
             },
         );

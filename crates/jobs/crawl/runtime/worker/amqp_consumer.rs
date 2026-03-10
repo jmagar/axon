@@ -5,7 +5,7 @@
 //! with tick-keeping, and watchdog sweep orchestration.
 
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::{
     WatchdogSweepStats, claim_pending_by_id, mark_job_failed, open_amqp_connection_and_channel,
     reclaim_stale_running_jobs as generic_reclaim,
@@ -112,6 +112,14 @@ pub(super) async fn run_watchdog_sweep(
                     "watchdog crawl sweep lane={} candidates={} marked={} reclaimed={}",
                     lane, stats.stale_candidates, stats.marked_candidates, stats.reclaimed_jobs
                 ));
+                for id in &stats.reclaimed_ids {
+                    log_warn(&format!(
+                        "watchdog stale_job_detected job_id={id} status=running"
+                    ));
+                    log_warn(&format!("watchdog job_reclaimed job_id={id}"));
+                }
+            } else {
+                log_debug("watchdog poll_clean");
             }
             if !stats.reclaimed_ids.is_empty() {
                 signal_reclaimed_cancel_keys(redis_url, &stats.reclaimed_ids).await;

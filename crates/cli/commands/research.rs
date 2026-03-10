@@ -1,6 +1,6 @@
 use crate::crates::cli::commands::common::parse_service_time_range;
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_done, log_warn};
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_phase};
 use crate::crates::services::search as search_service;
 use crate::crates::services::types::SearchOptions as ServiceSearchOptions;
@@ -164,6 +164,7 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Err("research requires a query (positional or --query)".into());
     };
 
+    log_info(&format!("command=research query_len={}", query.len()));
     if !cfg.json_output {
         print_phase("◐", "Researching", &query);
         println!("  {} {}", muted("provider=tavily model="), cfg.openai_model);
@@ -181,11 +182,10 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 if !running_tick.load(Ordering::Relaxed) {
                     break;
                 }
-                eprintln!(
-                    "  {} research in progress... {}ms",
-                    muted("progress"),
+                log_info(&format!(
+                    "research status=in_progress elapsed_ms={}",
                     tick_started.elapsed().as_millis()
-                );
+                ));
             }
         }))
     } else {

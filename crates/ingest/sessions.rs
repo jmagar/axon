@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::jobs::common::make_pool;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::{PgPool, Row};
@@ -107,6 +107,7 @@ impl SessionStateTracker {
 }
 
 pub async fn ingest_sessions(cfg: &Config) -> Result<usize, Box<dyn Error>> {
+    log_info("command=ingest source=sessions");
     let state = SessionStateTracker::new(cfg).await;
     let multi = MultiProgress::new();
     let main_pb = multi.add(ProgressBar::new_spinner());
@@ -122,24 +123,33 @@ pub async fn ingest_sessions(cfg: &Config) -> Result<usize, Box<dyn Error>> {
     let all_platforms = !cfg.sessions_claude && !cfg.sessions_codex && !cfg.sessions_gemini;
 
     if cfg.sessions_claude || all_platforms {
-        total_chunks += claude::ingest_claude_sessions(cfg, &state, &multi)
+        let count = claude::ingest_claude_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
+        log_info(&format!("sessions platform=claude files={count}"));
+        total_chunks += count;
     }
     if cfg.sessions_codex || all_platforms {
-        total_chunks += codex::ingest_codex_sessions(cfg, &state, &multi)
+        let count = codex::ingest_codex_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
+        log_info(&format!("sessions platform=codex files={count}"));
+        total_chunks += count;
     }
     if cfg.sessions_gemini || all_platforms {
-        total_chunks += gemini::ingest_gemini_sessions(cfg, &state, &multi)
+        let count = gemini::ingest_gemini_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
+        log_info(&format!("sessions platform=gemini files={count}"));
+        total_chunks += count;
     }
 
     main_pb.finish_with_message(format!(
         "Ingestion complete: {} chunks embedded",
         total_chunks
+    ));
+    log_done(&format!(
+        "command=ingest source=sessions total_chunk_count={total_chunks}"
     ));
     Ok(total_chunks)
 }

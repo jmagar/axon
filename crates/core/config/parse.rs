@@ -7,6 +7,7 @@ mod performance;
 use super::cli::Cli;
 use super::help::maybe_print_top_level_help_and_exit;
 use super::types::Config;
+use crate::crates::core::ui::report_error;
 use clap::Parser;
 
 pub(crate) use docker::{is_docker_service_host, normalize_local_service_url};
@@ -17,7 +18,7 @@ pub fn parse_args() -> Config {
     match build_config::into_config(cli) {
         Ok(cfg) => cfg,
         Err(msg) => {
-            eprintln!("error: {msg}");
+            report_error(&msg);
             std::process::exit(1);
         }
     }

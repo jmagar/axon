@@ -41,7 +41,7 @@ App-level navigation buttons (`/mcp`, `/agents`, `/settings`) are hosted in `App
 
 | Route | Purpose |
 |-------|---------|
-| `/api/pulse/chat` | Stream Claude CLI subprocess output (NDJSON) |
+| `/api/pulse/chat` | Stream chat turns via WebSocket to the Rust ACP bridge (`runAxonCommandWsStream`) |
 | `/api/pulse/source` | Fetch and sanitize remote source text (SSRF-guarded) |
 | `/api/pulse/save` | Create/update Pulse docs (`.cache/pulse/*.md`) |
 | `/api/pulse/doc` | Load a Pulse doc by filename |

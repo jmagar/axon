@@ -1,28 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-
-// Test the handler logic in isolation — the actual hook uses useEffect/useState
-// so we test the core switch-case logic as a pure function mirror.
-function handleEditorMsg(
-  msg: Record<string, unknown>,
-  opts: { onEditorUpdate?: (content: string, op: 'replace' | 'append') => void },
-) {
-  switch (msg.type) {
-    case 'editor_update': {
-      const content = (msg.content as string) ?? ''
-      const raw = msg.operation as string | undefined
-      const operation: 'replace' | 'append' = raw === 'append' ? 'append' : 'replace'
-      opts.onEditorUpdate?.(content, operation)
-      break
-    }
-  }
-}
+import { handleEditorMsg } from '@/hooks/use-axon-acp'
 
 describe('useAxonAcp editor_update handling', () => {
   it('calls onEditorUpdate with content and replace operation', () => {
     const onEditorUpdate = vi.fn()
     handleEditorMsg(
       { type: 'editor_update', content: '# README', operation: 'replace' },
-      { onEditorUpdate },
+      onEditorUpdate,
+      undefined,
     )
     expect(onEditorUpdate).toHaveBeenCalledWith('# README', 'replace')
     expect(onEditorUpdate).toHaveBeenCalledTimes(1)
@@ -32,14 +17,15 @@ describe('useAxonAcp editor_update handling', () => {
     const onEditorUpdate = vi.fn()
     handleEditorMsg(
       { type: 'editor_update', content: '## New', operation: 'append' },
-      { onEditorUpdate },
+      onEditorUpdate,
+      undefined,
     )
     expect(onEditorUpdate).toHaveBeenCalledWith('## New', 'append')
   })
 
   it('defaults operation to replace when missing', () => {
     const onEditorUpdate = vi.fn()
-    handleEditorMsg({ type: 'editor_update', content: '# Hello' }, { onEditorUpdate })
+    handleEditorMsg({ type: 'editor_update', content: '# Hello' }, onEditorUpdate, undefined)
     expect(onEditorUpdate).toHaveBeenCalledWith('# Hello', 'replace')
   })
 
@@ -47,21 +33,45 @@ describe('useAxonAcp editor_update handling', () => {
     const onEditorUpdate = vi.fn()
     handleEditorMsg(
       { type: 'editor_update', content: 'x', operation: 'invalid' },
-      { onEditorUpdate },
+      onEditorUpdate,
+      undefined,
     )
-    expect(onEditorUpdate).toHaveBeenCalledWith('x', 'replace')
+    // Zod rejects 'invalid' — safeParse fails, so onEditorUpdate is not called.
+    expect(onEditorUpdate).not.toHaveBeenCalled()
   })
 
   it('does nothing when onEditorUpdate is not provided', () => {
     // Should not throw
     expect(() =>
-      handleEditorMsg({ type: 'editor_update', content: '# x', operation: 'replace' }, {}),
+      handleEditorMsg(
+        { type: 'editor_update', content: '# x', operation: 'replace' },
+        undefined,
+        undefined,
+      ),
     ).not.toThrow()
   })
 
   it('ignores non-editor_update messages', () => {
     const onEditorUpdate = vi.fn()
-    handleEditorMsg({ type: 'assistant_delta', delta: 'hello' }, { onEditorUpdate })
+    handleEditorMsg({ type: 'assistant_delta', delta: 'hello' }, onEditorUpdate, undefined)
+    // Zod validation fails for non-editor_update type — onEditorUpdate not called.
     expect(onEditorUpdate).not.toHaveBeenCalled()
+  })
+
+  it('calls onShowEditor when an editor_update is received', () => {
+    const onEditorUpdate = vi.fn()
+    const onShowEditor = vi.fn()
+    handleEditorMsg(
+      { type: 'editor_update', content: '# Doc', operation: 'replace' },
+      onEditorUpdate,
+      onShowEditor,
+    )
+    expect(onShowEditor).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onShowEditor when validation fails', () => {
+    const onShowEditor = vi.fn()
+    handleEditorMsg({ type: 'other_type' }, undefined, onShowEditor)
+    expect(onShowEditor).not.toHaveBeenCalled()
   })
 })

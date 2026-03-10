@@ -98,6 +98,16 @@ pub fn error(text: &str) -> String {
     Style::new().red().apply_to(text).to_string()
 }
 
+/// "error: <msg>" in red/bold on stderr — for CLI user-facing errors.
+pub fn report_error(msg: &str) {
+    eprintln!("{} {}", Style::new().red().bold().apply_to("error:"), msg);
+}
+
+/// "hint: <msg>" in cyan/dim on stderr — companion to report_error.
+pub fn report_hint(msg: &str) {
+    eprintln!("{} {}", Style::new().cyan().dim().apply_to("hint:"), msg);
+}
+
 pub fn print_phase(symbol: &str, action: &str, subject: &str) {
     println!("  {} {} {}", primary(symbol), action, muted(subject));
 }

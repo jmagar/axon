@@ -158,6 +158,10 @@ async fn adapter_loop(
         .session_id
         .get_or_init(|| session_id.0.to_string());
 
+    // Record the model that was applied at session establishment time.
+    // Subsequent turns compare against this to detect mid-session model changes.
+    *runtime_state.established_model.borrow_mut() = model.map(str::to_owned);
+
     // Run the first turn on the established connection.
     run_turn_on_conn(&mut conn, &session_id, &runtime_state, first_turn).await;
 
@@ -200,6 +204,12 @@ async fn run_turn_on_conn(
     runtime_state: &Arc<AcpRuntimeState>,
     turn: TurnRequest,
 ) {
+    // Increment the turn counter BEFORE touching service_tx or sending the prompt.
+    // `session_notification` compares against this value to reject late deltas from
+    // a previous timed-out turn.
+    let new_turn_id = runtime_state.current_turn_id.get().wrapping_add(1);
+    runtime_state.current_turn_id.set(new_turn_id);
+
     // Clear previous turn's accumulated text before sending prompt.
     *runtime_state.assistant_text.borrow_mut() = String::new();
 
@@ -208,6 +218,35 @@ async fn run_turn_on_conn(
         service_tx,
         result_tx,
     } = turn;
+
+    // Detect mid-session model changes.  The ACP session was established with a
+    // specific model; changing it after the session is open has no effect because
+    // `set_session_config_option` is only called during `establish_acp_session`.
+    // Warn explicitly so the caller knows the change was ignored rather than applied.
+    {
+        let established = runtime_state.established_model.borrow();
+        let requested = req.model.as_deref();
+        let mismatch = match (established.as_deref(), requested) {
+            (Some(e), Some(r)) => e != r,
+            (None, Some(_)) => false, // No model was set at session time; ignore new request.
+            _ => false,
+        };
+        if mismatch {
+            emit(
+                &service_tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Warn,
+                    message: format!(
+                        "ACP runtime: model change ignored mid-session \
+                         (established={}, requested={}) — \
+                         model changes take effect on the next new session",
+                        established.as_deref().unwrap_or("<none>"),
+                        requested.unwrap_or("<none>"),
+                    ),
+                },
+            );
+        }
+    }
 
     // Route the bridge's session_notification / request_permission callbacks to
     // THIS turn's service_tx. Without this, the bridge uses the stale first-turn

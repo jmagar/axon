@@ -4,7 +4,7 @@ use crate::crates::core::content::{
     build_selector_config, extract_meta_description, find_between, to_markdown, url_to_filename,
 };
 use crate::crates::core::http::{normalize_url, ssrf_blacklist_patterns, validate_url};
-use crate::crates::core::logging::log_done;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_option, print_phase};
 use crate::crates::vector::ops::embed_path_native;
 use futures_util::future::join_all;
@@ -360,6 +360,12 @@ pub async fn run_scrape(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 .into(),
         );
     }
+    log_info(&format!(
+        "command=scrape urls={} format={:?} wait={}",
+        urls.len(),
+        cfg.format,
+        cfg.wait
+    ));
 
     // Phase 1: scrape all URLs concurrently — each prints its result as it lands.
     let tasks: Vec<_> = urls.iter().map(|url| scrape_one(cfg, url)).collect();
@@ -370,7 +376,7 @@ pub async fn run_scrape(cfg: &Config) -> Result<(), Box<dyn Error>> {
             Ok(Some(pair)) => to_embed.push(pair),
             Ok(None) => {}
             Err(e) => {
-                eprintln!("scrape error: {e}");
+                log_warn(&format!("scrape error={e}"));
                 errors.push(e.to_string());
             }
         }
@@ -450,6 +456,7 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
         sel_cfg.as_ref(),
     )?;
 
+    let bytes = output.len();
     if cfg.json_output {
         // Structured JSON output for web UI / machine consumers.
         // The markdown field lets the frontend display content directly
@@ -464,13 +471,25 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
             "description": extract_meta_description(&html).unwrap_or_default(),
         });
         println!("{json}");
+        log_done(&format!(
+            "command=scrape url={normalized} bytes={bytes} format={:?}",
+            cfg.format
+        ));
     } else if let Some(path) = &cfg.output_path {
         tokio::fs::write(path, &output).await?;
-        log_done(&format!("wrote output: {}", path.to_string_lossy()));
+        log_done(&format!(
+            "wrote output: {} url={normalized} bytes={bytes} format={:?}",
+            path.to_string_lossy(),
+            cfg.format
+        ));
     } else {
         println!("{} {}", primary("Scrape Results for"), normalized);
         println!("{}\n", muted("As of: now"));
         println!("{output}");
+        log_done(&format!(
+            "command=scrape url={normalized} bytes={bytes} format={:?}",
+            cfg.format
+        ));
     }
 
     if cfg.embed {

@@ -6,7 +6,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::content::{
     DeterministicExtractionEngine, ExtractWebConfig, run_extract_with_engine,
 };
-use crate::crates::core::logging::log_done;
+use crate::crates::core::logging::{log_done, log_info};
 use crate::crates::core::ui::{accent, confirm_destructive, muted, primary, symbol_for_status};
 use crate::crates::jobs::extract::{
     cancel_extract_job, cleanup_extract_jobs, clear_extract_jobs, get_extract_job,
@@ -29,10 +29,20 @@ pub async fn run_extract(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if urls.is_empty() {
         return Err("extract requires at least one URL (positional or --urls)".into());
     }
+    log_info(&format!(
+        "command=extract urls={} wait={}",
+        urls.len(),
+        cfg.wait
+    ));
     let prompt = require_extract_prompt(cfg)?;
 
     if !cfg.wait {
-        return enqueue_extract_job(cfg, &urls, prompt).await;
+        let result = enqueue_extract_job(cfg, &urls, prompt).await;
+        log_info(&format!(
+            "job_enqueued command=extract queue={}",
+            cfg.extract_queue
+        ));
+        return result;
     }
 
     run_extract_sync(cfg, urls, &prompt).await
@@ -151,6 +161,7 @@ async fn run_extract_sync(
     urls: Vec<String>,
     prompt: &str,
 ) -> Result<(), Box<dyn Error>> {
+    let extract_start = std::time::Instant::now();
     let items_path = cfg.output_dir.join("extract-items.ndjson");
     if let Some(parent) = items_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -162,7 +173,11 @@ async fn run_extract_sync(
     let summary_path = write_extract_summary(cfg, &summary).await?;
 
     emit_extract_output(cfg, &summary, &summary_path, &items_path)?;
-    log_done("command=extract complete");
+    log_done(&format!(
+        "command=extract complete items={} duration_ms={}",
+        aggregated.total_items,
+        extract_start.elapsed().as_millis()
+    ));
     Ok(())
 }
 

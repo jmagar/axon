@@ -123,9 +123,21 @@ fn is_async_enqueue_mode(cfg: &Config) -> bool {
 
 pub async fn run() -> Result<(), Box<dyn Error>> {
     init_tracing();
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        pid = std::process::id(),
+        "startup"
+    );
     let cfg = parse_args();
 
     let start_url = start_url_from_cfg(&cfg);
+
+    let _span = tracing::info_span!(
+        "command",
+        command = cfg.command.as_str(),
+        collection = %cfg.collection
+    )
+    .entered();
 
     log_info(&format!(
         "command={} start_url={} render_mode={:?} embed={} collection={} profile={:?}",

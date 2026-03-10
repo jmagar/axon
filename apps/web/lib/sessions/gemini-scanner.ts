@@ -40,9 +40,10 @@ async function buildGeminiProjectMap(): Promise<Map<string, string>> {
 
 /**
  * Scan ~/.gemini/tmp/{hash}/chats/session-*.json and return SessionFile[] with agent:'gemini'.
+ * Pass `limit` to cap the number of results returned (default: unlimited).
  * Never throws — returns [] on any filesystem error.
  */
-export async function scanGeminiSessions(): Promise<SessionFile[]> {
+export async function scanGeminiSessions(limit = Number.MAX_SAFE_INTEGER): Promise<SessionFile[]> {
   const tmpRoot = path.join(os.homedir(), '.gemini', 'tmp')
   try {
     await fs.access(tmpRoot)
@@ -84,7 +85,9 @@ export async function scanGeminiSessions(): Promise<SessionFile[]> {
           let preview: string | undefined
           for (const msg of data.messages ?? []) {
             if (msg.type !== 'user') continue
-            const text = (msg.content ?? '').trim().replace(/\n+/g, ' ')
+            // Guard against malformed message objects where content is not a string
+            if (typeof msg.content !== 'string') continue
+            const text = msg.content.trim().replace(/\n+/g, ' ')
             if (!text) continue
             if (SKIP_PATTERNS.some((re) => re.test(text))) continue
             if (text.length > 500 && !/[.?!]/.test(text.slice(0, 200))) continue
@@ -92,16 +95,18 @@ export async function scanGeminiSessions(): Promise<SessionFile[]> {
             break
           }
 
-          allResults.push({
-            id: sessionId(absolutePath),
-            absolutePath,
-            project: projectName,
-            filename: sessionFileId,
-            mtimeMs,
-            sizeBytes: stat.size,
-            preview,
-            agent: 'gemini',
-          } satisfies SessionFile)
+          if (allResults.length < limit) {
+            allResults.push({
+              id: sessionId(absolutePath),
+              absolutePath,
+              project: projectName,
+              filename: sessionFileId,
+              mtimeMs,
+              sizeBytes: stat.size,
+              preview,
+              agent: 'gemini',
+            } satisfies SessionFile)
+          }
         } catch {
           /* skip unreadable files */
         }
