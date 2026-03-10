@@ -105,6 +105,17 @@ async fn ingest_youtube_playlist(
     // Resume: load prior progress (completed_urls enables skipping on restart)
     let (mut chunks_embedded, mut completed_urls) = load_playlist_progress(pool, job_id).await;
 
+    // Write enumerating placeholder so `axon status` shows activity while yt-dlp lists the channel.
+    // Only written on a fresh start — resumed jobs already have result_json with video counts.
+    if completed_urls.is_empty() {
+        let _ =
+            sqlx::query("UPDATE axon_ingest_jobs SET result_json=$1, updated_at=NOW() WHERE id=$2")
+                .bind(serde_json::json!({"enumerating": true}))
+                .bind(job_id)
+                .execute(pool)
+                .await;
+    }
+
     // Enumerate all videos via single yt-dlp --flat-playlist call
     let video_urls = ingest::youtube::enumerate_playlist_videos(url).await?;
     if video_urls.is_empty() {
