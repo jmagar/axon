@@ -1,5 +1,5 @@
-use crate::crates::core::config::Config;
 use crate::crates::core::config::parse::normalize_local_service_url;
+use crate::crates::core::config::{Config, McpTransport};
 
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.trim().is_empty())
@@ -83,6 +83,22 @@ pub fn load_mcp_config() -> Config {
 
     if let Some(v) = env("AXON_CHROME_REMOTE_URL") {
         cfg.chrome_remote_url = Some(normalize_local_service_url(v));
+    }
+
+    if let Some(v) = env("AXON_MCP_HTTP_HOST") {
+        cfg.mcp_http_host = v;
+    }
+    if let Some(v) = env("AXON_MCP_HTTP_PORT")
+        && let Ok(port) = v.parse::<u16>()
+    {
+        cfg.mcp_http_port = port;
+    }
+    if let Some(v) = env("AXON_MCP_TRANSPORT") {
+        cfg.mcp_transport = match v.as_str() {
+            "stdio" => McpTransport::Stdio,
+            "both" => McpTransport::Both,
+            _ => McpTransport::Http,
+        };
     }
 
     if let Some(v) = env("GITHUB_TOKEN") {
