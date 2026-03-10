@@ -184,7 +184,7 @@ Only these flags can be passed from the UI (whitelist in `execute/constants.rs`)
 | `max_posts` | `--max-posts` |
 | `min_score` | `--min-score` |
 | `scrape_links` | `--scrape-links` |
-| `include_source` | `--include-source` |
+| `no_source` | `--no-source` |
 | `claude` | `--claude` |
 | `codex` | `--codex` |
 | `gemini` | `--gemini` |

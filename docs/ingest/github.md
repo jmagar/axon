@@ -1,8 +1,5 @@
 # GitHub Ingest
-Last Modified: 2026-03-09
-
-Version: 1.0.0
-Last Updated: 01:26:53 | 02/25/2026 EST
+Last Modified: 2026-03-10
 
 > CLI reference (flags, subcommands, examples): [`docs/commands/ingest.md`](../commands/ingest.md)
 
@@ -12,13 +9,43 @@ Ingests a GitHub repository — source code, documentation, issues, pull request
 
 | Content | Condition |
 |---------|-----------|
+| Source code files | **By default**: `.rs`, `.py`, `.go`, `.ts`, `.js`, `.tsx`, `.jsx`, `.toml`, `.c`, `.cpp`, `.h`, `.hpp`, `.java`, `.kt`, `.rb`, `.php`, `.sh`, `.yaml`, `.yml`, `.json`, `.swift`, `.cs`. Disable with `--no-source`. |
 | Documentation files | Always: `.md`, `.mdx`, `.rst`, `.txt` |
-| Source code files | When `--include-source` flag is set: `.rs`, `.py`, `.go`, `.ts`, `.js`, `.tsx`, `.jsx`, `.toml`, `.c`, `.cpp`, `.h`, `.hpp`, `.java`, `.kt`, `.rb`, `.php`, `.sh`, `.yaml`, `.yml`, `.json`, `.swift`, `.cs` |
 | Issues | Open and closed, title + body |
 | Pull requests | Open and closed, title + body |
 | Wiki pages | When the repo has a public wiki |
 
-**Excluded** regardless of flag: `target/`, `node_modules/`, `dist/`, `__pycache__/`, `.lock` files, `-lock.json` files. See `is_indexable_source_path()` in `crates/ingest/github.rs` for the full list.
+**Excluded** regardless of flags: `target/`, `node_modules/`, `dist/`, `__pycache__/`, `.lock` files, `-lock.json` files. See `is_indexable_source_path()` in `crates/ingest/github.rs` for the full list.
+
+### Code Chunking (tree-sitter AST)
+
+Source code files are chunked via **tree-sitter AST-aware splitting** when a grammar is available. This produces chunks aligned to function, struct, class, and method boundaries (500–2000 chars) instead of arbitrary character splits.
+
+| Language | Grammar crate |
+|----------|--------------|
+| Rust | `tree-sitter-rust` |
+| Python | `tree-sitter-python` |
+| JavaScript | `tree-sitter-javascript` |
+| TypeScript / TSX | `tree-sitter-typescript` |
+| Go | `tree-sitter-go` |
+| Bash / shell | `tree-sitter-bash` |
+
+Files in unsupported languages fall back to standard 2000-char prose chunking with 200-char overlap.
+
+Implementation: `chunk_code()` in `crates/vector/ops/input/code.rs`, called via `embed_code_with_metadata()` in `crates/vector/ops/tei.rs`.
+
+### File Classification
+
+Each file is classified by `classify_file_type()` in `crates/vector/ops/input/classify.rs`:
+
+| Type | Detection |
+|------|-----------|
+| `test` | Path contains `test/`, `tests/`, `__tests__/`, or filename matches `*_test.*`, `*_spec.*`, `test_*.*` |
+| `config` | Known config filenames: `Cargo.toml`, `package.json`, `tsconfig.json`, `.eslintrc.*`, etc. |
+| `doc` | Extensions: `.md`, `.mdx`, `.rst`, `.txt` |
+| `source` | Everything else |
+
+Classification is stored in the `gh_file_type` metadata field on each chunk.
 
 ## Prerequisites
 
@@ -47,21 +74,27 @@ The argument accepts:
 ## How It Works
 
 1. Validates and normalizes `owner/repo` from the input
-2. Fetches the full file tree via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
-3. Filters files through `is_indexable_doc_path()` (always) and `is_indexable_source_path()` (if `--include-source`)
-4. Fetches file contents in parallel via `GET /repos/{owner}/{repo}/contents/{path}`
-5. Fetches issues (all states) and PRs (all states) via octocrab with automatic pagination; embeds repo metadata (description, language, topics, license) from the `GET /repos/{owner}/{repo}` response; clones the wiki via `git clone --depth=1` and walks `.md`/`.rst`/`.txt` files
-6. All content embedded via `embed_text_with_metadata()` → TEI → Qdrant with the GitHub URL as source metadata
+2. Fetches repo metadata via `GET /repos/{owner}/{repo}` — builds `GitHubCommonFields` (owner, name, description, default branch, pushed_at, is_private)
+3. Fetches the full file tree via `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1`
+4. Filters files through `is_indexable_doc_path()` (always) and `is_indexable_source_path()` (unless `--no-source`)
+5. Fetches file contents in parallel via `GET /repos/{owner}/{repo}/contents/{path}`
+6. Code files are chunked via `embed_code_with_metadata()` (tree-sitter AST when available, prose fallback); doc files use standard `embed_text_with_extra_payload()`
+7. Fetches issues (all states) and PRs (all states) via octocrab with automatic pagination
+8. Clones the wiki via `git clone --depth=1` and walks `.md`/`.rst`/`.txt` files
+9. All chunk types carry unified `gh_*` metadata payload via `build_github_payload()` in `crates/ingest/github/meta.rs`
 
 ## Qdrant Metadata Fields
 
-All GitHub chunks carry structured `gh_*` payload fields built in `crates/ingest/github/meta.rs`. The fields present depend on chunk type.
+All GitHub chunks carry a **unified** set of 31 `gh_*` payload fields built by `build_github_payload()` in `crates/ingest/github/meta.rs` via the `GitHubPayloadParams` struct. Every chunk type gets the same field schema — unused fields are set to `null`/`""` /`[]`/`0`/`false`.
 
-### Repository, file, and wiki chunks
+### Repository-level fields (all chunk types)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `gh_owner` | `string` | Repository owner (extracted from `full_name`) |
+| `gh_owner` | `string` | Repository owner |
+| `gh_repo` | `string` | Repository name |
+| `gh_repo_slug` | `string` | `owner/repo` canonical form |
+| `gh_default_branch` | `string` | Default branch name |
 | `gh_stars` | `integer` | Stargazer count at index time |
 | `gh_forks` | `integer` | Fork count at index time |
 | `gh_open_issues` | `integer` | Open issue count at index time |
@@ -71,32 +104,32 @@ All GitHub chunks carry structured `gh_*` payload fields built in `crates/ingest
 | `gh_pushed_at` | `string \| null` | Last push timestamp (RFC 3339) |
 | `gh_is_fork` | `boolean` | Whether the repository is a fork |
 | `gh_is_archived` | `boolean` | Whether the repository is archived |
+| `gh_is_private` | `boolean` | Whether the repository is private |
+| `gh_description` | `string` | Repository description |
 
-### Issue chunks
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `gh_issue_number` | `integer` | GitHub issue number |
-| `gh_state` | `string` | `"open"`, `"closed"`, or `"unknown"` |
-| `gh_author` | `string` | Login of the issue author |
-| `gh_created_at` | `string` | Issue creation timestamp (RFC 3339) |
-| `gh_updated_at` | `string` | Issue last-updated timestamp (RFC 3339) |
-| `gh_comment_count` | `integer` | Number of comments on the issue |
-| `gh_labels` | `string[]` | Label names applied to the issue |
-| `gh_is_pr` | `boolean` | Always `false` for issues |
-
-### Pull request chunks
+### File-specific fields (code, doc, wiki chunks)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `gh_issue_number` | `integer` | GitHub PR number |
+| `gh_file_path` | `string` | Relative file path within the repo |
+| `gh_file_language` | `string` | Human-readable language name (from extension) |
+| `gh_file_type` | `string` | `"test"`, `"config"`, `"doc"`, or `"source"` (from `classify_file_type()`) |
+| `gh_is_test` | `boolean` | Whether the file is a test file |
+| `gh_file_size_bytes` | `integer` | File size in bytes |
+| `gh_chunking_method` | `string` | `"tree-sitter"` or `"prose"` — how the file was chunked |
+
+### Issue/PR fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gh_issue_number` | `integer` | GitHub issue/PR number |
 | `gh_state` | `string` | `"open"`, `"closed"`, or `"unknown"` |
-| `gh_author` | `string` | Login of the PR author (`""` if not available) |
-| `gh_created_at` | `string \| null` | PR creation timestamp (RFC 3339) |
-| `gh_updated_at` | `string \| null` | PR last-updated timestamp (RFC 3339) |
-| `gh_labels` | `string[]` | Label names applied to the PR |
-| `gh_is_pr` | `boolean` | Always `true` for pull requests |
-| `gh_merged_at` | `string \| null` | Merge timestamp (RFC 3339); `null` if not merged |
+| `gh_author` | `string` | Login of the author |
+| `gh_updated_at` | `string \| null` | Last-updated timestamp (RFC 3339) |
+| `gh_comment_count` | `integer` | Number of comments |
+| `gh_labels` | `string[]` | Label names |
+| `gh_is_pr` | `boolean` | `true` for pull requests, `false` for issues |
+| `gh_merged_at` | `string \| null` | Merge timestamp; `null` if not merged or if issue |
 | `gh_is_draft` | `boolean` | Whether the PR was a draft at index time |
 
 ## Known Limitations
@@ -108,6 +141,7 @@ All GitHub chunks carry structured `gh_*` payload fields built in `crates/ingest
 | **Very large repos** | Tree-first + per-file fetching is O(file count). Large repos (thousands of files) take minutes even with a token. |
 | **Binary files** | Excluded by extension list. The list is hardcoded; PRs welcome for additions. |
 | **Forked repos** | Ingests the fork only, not upstream. |
+| **AST chunking coverage** | Only Rust, Python, JavaScript, TypeScript, Go, and Bash have tree-sitter grammars. Other languages fall back to prose chunking. |
 
 ## Troubleshooting
 
@@ -121,4 +155,4 @@ Repo is private or doesn't exist. Check the owner/repo spelling and token permis
 
 **Slow ingestion on large repos**
 
-Expected — tree walk + per-file API calls for thousands of files is inherently sequential-ish (parallelism is bounded by GitHub's rate limit). Consider indexing only docs (`--include-source` off) or using a token to maximize rate allowance.
+Expected — tree walk + per-file API calls for thousands of files is inherently sequential-ish (parallelism is bounded by GitHub's rate limit). Consider skipping source code (`--no-source`) or using a token to maximize rate allowance.
