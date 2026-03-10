@@ -201,6 +201,8 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 
 ### Web App Security (`apps/web`)
 
+Full auth documentation (Tailscale serve, API token, SSH key, shell token, MCP OAuth): **[`docs/auth/`](docs/auth/README.md)**
+
 Auth is enforced by `apps/web/proxy.ts` on all `/api/*` routes. Token required in `Authorization: Bearer <token>` or `x-api-key` header.
 
 | Variable | Description |

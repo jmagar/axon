@@ -57,6 +57,11 @@ export const KEYBOARD_SHORTCUTS = [
   { keys: ['Alt', 'Shift', '1'], desc: 'Plan permission mode' },
   { keys: ['Alt', 'Shift', '2'], desc: 'Accept Edits mode' },
   { keys: ['Alt', 'Shift', '3'], desc: 'Bypass Permissions mode' },
+  { keys: ['⌘', '⇧', 'E'], desc: 'Toggle editor panel' },
+  { keys: ['⌘', '⇧', 'T'], desc: 'Toggle terminal panel' },
+  { keys: ['⌘', '⇧', 'L'], desc: 'Toggle logs panel' },
+  { keys: ['⌘', '⇧', 'M'], desc: 'Toggle MCP servers panel' },
+  { keys: ['⌘', '⇧', 'S'], desc: 'Toggle settings panel' },
 ]
 
 export const NAV_SECTIONS = [

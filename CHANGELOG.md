@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-09 (session: v0.13.2 — sync dispatch refactor + session guard scaffold + dead code fix)
+Last Modified: 2026-03-10 (session: v0.14.0 — web auth hardening + Pulse workspace improvements + CLI cleanup)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0)** — SSH key auth (`crates/web/ssh_auth.rs`) validates SSH public keys from `~/.ssh/authorized_keys` or `AXON_SSH_AUTHORIZED_KEYS`; dual-auth mode (`AXON_REQUIRE_DUAL_AUTH`) requires both Tailscale identity AND API token; Tailscale auth module hardened with configurable allowed users/networks; Pulse workspace gains dedicated logs/MCP/terminal panes (`pulse-logs-pane.tsx`, `pulse-mcp-pane.tsx`, `pulse-terminal-pane.tsx`); mobile pane switcher improved; `use-split-pane` rewritten for new pane layout; proxy middleware updated; `axon.subdomain.conf` deleted (superseded by Tailscale auth); CLI: `spider_capture.rs` dead code deleted; `map.rs`/`scrape.rs`/`screenshot.rs` cleaned up; crawl runtime DB helpers expanded; AMQP channel improvements; `suggest.rs` simplified; `vector/ops/input` split into module; web download handler hardened; new `.env.example` entries for auth settings; `auth/` docs added
 
 - **Sync dispatch refactor + session guard scaffold (v0.13.2)** — `dispatch_service` split into focused per-mode helpers (`dispatch_query_modes`, `dispatch_acp_modes`, etc.) to keep the top-level router concise; `session_guard.rs` added as `pub(crate)` module under `crates/web/execute/` — polls `~/.claude/projects/` for `{session_id}.jsonl` after a Pulse turn completes (100ms × 50 retries); `#![allow(dead_code)]` suppresses warnings while the call site is wired; `AcpConn` type alias simplifies signatures in `acp_adapter.rs`; `subprocess.rs` restructured for cleaner fallback path; `pulse_chat.rs` session-file integration points added; ACP WS event tests updated to cover new event shapes
 
@@ -109,7 +111,12 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | fix | ingest progress display + embed list polish + crawl batch resilience (v0.13.1) |
+| `pending` | feat(web) | web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0) |
+| `0401eaa0` | feat(deps) | add text-splitter + tree-sitter grammar crates |
+| `717d37cc` | fix(review) | address 114 CodeRabbit threads + remove dead run_*_native functions (v0.13.3) |
+| `2f53720f` | fix(review) | address 14 CodeRabbit/cubic-dev-ai PR comments |
+| `b0f9ad34` | refactor(web) | sync dispatch helpers + session guard scaffold (v0.13.2) |
+| `775111dc` | fix(ingest) | progress display + embed list polish + crawl batch resilience (v0.13.1) |
 | `2cf2a067` | feat(web) | multi-agent sessions sidebar — Claude + Codex + Gemini (v0.13.0) |
 | `031af077` | feat(ingest) | unified axon ingest + structured metadata + MCP artifacts (v0.12.0) |
 | `a4ceffd7` | feat(acp) | wire `<axon:editor>` XML blocks to PlateJS editor |
