@@ -1,5 +1,6 @@
 pub mod ask;
 pub mod common;
+pub mod completions;
 pub mod crawl;
 pub mod debug;
 pub mod dedupe;
@@ -31,6 +32,7 @@ pub mod watch;
 
 pub use ask::run_ask;
 pub use common::start_url_from_cfg;
+pub use completions::run_completions;
 pub use crawl::run_crawl;
 pub use debug::run_debug;
 pub use dedupe::run_dedupe;

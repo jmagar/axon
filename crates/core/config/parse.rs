@@ -8,9 +8,13 @@ use super::cli::Cli;
 use super::help::maybe_print_top_level_help_and_exit;
 use super::types::Config;
 use crate::crates::core::ui::report_error;
-use clap::Parser;
+use clap::{Command, CommandFactory, Parser};
 
 pub(crate) use docker::{is_docker_service_host, normalize_local_service_url};
+
+pub fn build_cli_command() -> Command {
+    Cli::command()
+}
 
 pub fn parse_args() -> Config {
     maybe_print_top_level_help_and_exit();
@@ -324,6 +328,36 @@ mod tests {
             env::remove_var(REDIS);
             env::remove_var(AMQP);
         }
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_completions_bash_does_not_require_service_envs() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+        }
+
+        let cli = super::Cli::parse_from(["axon", "completions", "bash"]);
+        let cfg = super::build_config::into_config(cli)
+            .expect("completions should parse without service env vars");
+        assert!(matches!(cfg.command, CommandKind::Completions));
+        assert_eq!(cfg.positional, vec!["bash".to_string()]);
+    }
+
+    #[test]
+    fn parse_completion_alias_routes_to_completions_command() {
+        let cli = super::Cli::parse_from(["axon", "completion", "zsh"]);
+        let cfg = super::build_config::into_config(cli)
+            .expect("completion alias should route to completions");
+        assert!(matches!(cfg.command, CommandKind::Completions));
+        assert_eq!(cfg.positional, vec!["zsh".to_string()]);
     }
 
     // --- is_docker_service_host tests ---

@@ -1,7 +1,7 @@
 mod global_args;
 
 use super::types::{EvaluateResponsesMode, McpTransport, RedditSort, RedditTime};
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 
 pub(super) use global_args::GlobalArgs;
 
@@ -41,8 +41,23 @@ pub(super) enum CliCommand {
     Ingest(IngestArgs),
     Sessions(SessionsArgs),
     Screenshot(ScrapeArgs),
+    #[command(alias = "completion")]
+    Completions(CompletionArgs),
     Mcp(McpArgs),
     Serve(ServeArgs),
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(super) enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct CompletionArgs {
+    #[arg(value_enum)]
+    pub(super) shell: CompletionShell,
 }
 
 #[derive(Debug, Args)]

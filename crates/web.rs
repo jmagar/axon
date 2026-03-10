@@ -10,9 +10,11 @@ use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
 use crate::crates::services::acp::{AcpConnectionHandle, PermissionResponderMap};
 use axum::Router;
+use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode, Uri, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use dashmap::DashMap;
@@ -75,6 +77,11 @@ pub(crate) struct DownloadAuthState {
 struct WsQuery {
     token: Option<String>,
 }
+
+const DEFAULT_CORS_ALLOW_HEADERS: &str = "authorization, content-type, x-api-key";
+const DEFAULT_CORS_ALLOW_METHODS: &str = "GET, POST, OPTIONS";
+const CORS_VARY_VALUE: &str =
+    "Origin, Access-Control-Request-Method, Access-Control-Request-Headers";
 
 // ── Server startup ────────────────────────────────────────────────────────────
 
@@ -154,7 +161,7 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
         ts_auth: ts_auth.clone(),
         ssh_challenges: ssh_challenges.clone(),
         ssh_authorized_keys: ssh_authorized_keys.clone(),
-        cfg,
+        cfg: cfg.clone(),
     });
 
     // Spawn Docker stats poller in background
@@ -181,7 +188,11 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
         .route("/output/{*path}", get(serve_output_file))
         .route("/auth/ssh-challenge", get(ssh_challenge))
         .with_state(state)
-        .merge(download_routes);
+        .merge(download_routes)
+        .layer(middleware::from_fn_with_state(
+            cfg.clone(),
+            web_cors_middleware,
+        ));
 
     let host = std::env::var("AXON_SERVE_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     log_info(&format!(
@@ -345,6 +356,10 @@ async fn ws_upgrade(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
+    if !websocket_origin_is_allowed(&headers, &state.cfg.web_allowed_origins) {
+        return (StatusCode::FORBIDDEN, "forbidden: origin not allowed").into_response();
+    }
+
     let outcome = http_auth(
         &headers,
         params.token.as_deref(),
@@ -376,7 +391,7 @@ async fn ws_upgrade(
             }
             _ => "unauthorized",
         };
-        return (axum::http::StatusCode::UNAUTHORIZED, body).into_response();
+        return (StatusCode::UNAUTHORIZED, body).into_response();
     }
 
     ws.on_upgrade(move |socket| handle_ws(socket, state))
@@ -389,6 +404,14 @@ async fn shell_ws_upgrade(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
+    let allowed_origins = effective_shell_allowed_origins(
+        &state.cfg.shell_allowed_origins,
+        &state.cfg.web_allowed_origins,
+    );
+    if !websocket_origin_is_allowed(&headers, allowed_origins) {
+        return (StatusCode::FORBIDDEN, "forbidden: shell origin not allowed").into_response();
+    }
+
     // H-07: also accept IPv4-mapped loopback (::ffff:127.0.0.1) which Rust's
     // IpAddr::is_loopback() returns false for on some platforms.
     let is_loopback = match addr.ip() {
@@ -420,7 +443,7 @@ async fn shell_ws_upgrade(
         }
         if matches!(outcome, AuthOutcome::Denied(_)) {
             return (
-                axum::http::StatusCode::FORBIDDEN,
+                StatusCode::FORBIDDEN,
                 "shell access denied — use tailscale serve or set AXON_WEB_API_TOKEN",
             )
                 .into_response();
@@ -428,6 +451,140 @@ async fn shell_ws_upgrade(
     }
 
     ws.on_upgrade(shell::handle_shell_ws)
+}
+
+pub(crate) async fn web_cors_middleware(
+    State(cfg): State<Arc<Config>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    cors_middleware(request, next, &cfg.web_allowed_origins).await
+}
+
+pub(crate) async fn cors_middleware(
+    request: Request<Body>,
+    next: Next,
+    allowed_origins: &[String],
+) -> Response {
+    let origin = request.headers().get(header::ORIGIN).cloned();
+    let host = request.headers().get(header::HOST).cloned();
+    let allow_origin = origin
+        .as_ref()
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            cors_origin_header_value(
+                value,
+                host.as_ref().and_then(|header| header.to_str().ok()),
+                allowed_origins,
+            )
+        });
+
+    if request.method() == Method::OPTIONS && origin.is_some() {
+        return match allow_origin {
+            Some(allow_origin) => preflight_cors_response(&request, allow_origin),
+            None => (StatusCode::FORBIDDEN, "forbidden: origin not allowed").into_response(),
+        };
+    }
+
+    if origin.is_some() && allow_origin.is_none() {
+        return (StatusCode::FORBIDDEN, "forbidden: origin not allowed").into_response();
+    }
+
+    let mut response = next.run(request).await;
+    if let Some(allow_origin) = allow_origin {
+        set_cors_response_headers(response.headers_mut(), allow_origin);
+    }
+    response
+}
+
+fn preflight_cors_response(request: &Request<Body>, allow_origin: HeaderValue) -> Response {
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::NO_CONTENT;
+    set_cors_response_headers(response.headers_mut(), allow_origin);
+
+    let requested_headers = request
+        .headers()
+        .get(header::ACCESS_CONTROL_REQUEST_HEADERS)
+        .cloned()
+        .unwrap_or_else(|| HeaderValue::from_static(DEFAULT_CORS_ALLOW_HEADERS));
+    response
+        .headers_mut()
+        .insert(header::ACCESS_CONTROL_ALLOW_HEADERS, requested_headers);
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static(DEFAULT_CORS_ALLOW_METHODS),
+    );
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("600"),
+    );
+    response
+}
+
+fn set_cors_response_headers(headers: &mut HeaderMap, allow_origin: HeaderValue) {
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, allow_origin);
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+        HeaderValue::from_static("true"),
+    );
+    headers.insert(header::VARY, HeaderValue::from_static(CORS_VARY_VALUE));
+}
+
+pub(crate) fn effective_shell_allowed_origins<'a>(
+    shell_allowed_origins: &'a [String],
+    web_allowed_origins: &'a [String],
+) -> &'a [String] {
+    if shell_allowed_origins.is_empty() {
+        web_allowed_origins
+    } else {
+        shell_allowed_origins
+    }
+}
+
+fn websocket_origin_is_allowed(headers: &HeaderMap, allowed_origins: &[String]) -> bool {
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return true;
+    };
+    cors_origin_header_value(
+        origin,
+        headers
+            .get(header::HOST)
+            .and_then(|value| value.to_str().ok()),
+        allowed_origins,
+    )
+    .is_some()
+}
+
+pub(crate) fn cors_origin_header_value(
+    origin: &str,
+    request_host: Option<&str>,
+    allowed_origins: &[String],
+) -> Option<HeaderValue> {
+    let is_allowed = if allowed_origins.is_empty() {
+        origin_matches_host(origin, request_host?)
+    } else {
+        allowed_origins.iter().any(|allowed| allowed == origin)
+    };
+
+    is_allowed
+        .then(|| HeaderValue::from_str(origin).ok())
+        .flatten()
+}
+
+fn origin_matches_host(origin: &str, request_host: &str) -> bool {
+    parse_origin_authority(origin)
+        .map(|origin_host| origin_host.eq_ignore_ascii_case(request_host.trim()))
+        .unwrap_or(false)
+}
+
+fn parse_origin_authority(origin: &str) -> Option<String> {
+    origin
+        .parse::<Uri>()
+        .ok()
+        .and_then(|uri| uri.authority().map(|authority| authority.to_string()))
 }
 
 /// Incoming WS message from the browser.
@@ -661,6 +818,56 @@ fn route_permission_response(
         log::warn!(
             "permission_response for unknown key: session_id={session_id} \
              tool_call_id={tool_call_id} (already responded or wrong session)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cors_origin_header_value, effective_shell_allowed_origins};
+
+    #[test]
+    fn cors_allows_explicit_origin() {
+        let allowed = vec!["https://axon.example.com".to_string()];
+        let value = cors_origin_header_value(
+            "https://axon.example.com",
+            Some("127.0.0.1:49000"),
+            &allowed,
+        );
+
+        assert_eq!(
+            value.as_ref().and_then(|header| header.to_str().ok()),
+            Some("https://axon.example.com")
+        );
+    }
+
+    #[test]
+    fn cors_allows_same_host_when_allowlist_is_empty() {
+        let value =
+            cors_origin_header_value("http://localhost:49000", Some("localhost:49000"), &[]);
+
+        assert_eq!(
+            value.as_ref().and_then(|header| header.to_str().ok()),
+            Some("http://localhost:49000")
+        );
+    }
+
+    #[test]
+    fn cors_rejects_cross_origin_when_allowlist_is_empty() {
+        let value =
+            cors_origin_header_value("https://axon.example.com", Some("localhost:49000"), &[]);
+
+        assert!(value.is_none());
+    }
+
+    #[test]
+    fn shell_origin_allowlist_falls_back_to_web_allowlist() {
+        let web_allowed = vec!["https://axon.example.com".to_string()];
+        let shell_allowed: Vec<String> = Vec::new();
+
+        assert_eq!(
+            effective_shell_allowed_origins(&shell_allowed, &web_allowed),
+            web_allowed.as_slice()
         );
     }
 }

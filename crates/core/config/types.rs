@@ -31,6 +31,11 @@ mod tests {
     }
 
     #[test]
+    fn test_command_kind_completions_as_str() {
+        assert_eq!(CommandKind::Completions.as_str(), "completions");
+    }
+
+    #[test]
     fn config_default_screenshot_settings() {
         let cfg = Config::default();
         assert!(cfg.screenshot_full_page);

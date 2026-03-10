@@ -85,6 +85,8 @@ impl Default for Config {
             acp_adapter_cmd: None,
             acp_adapter_args: None,
             tavily_api_key: String::new(),
+            web_allowed_origins: vec![],
+            shell_allowed_origins: vec![],
             ask_diagnostics: false,
             evaluate_responses_mode: EvaluateResponsesMode::Inline,
             ask_max_context_chars: 120_000,
@@ -235,6 +237,8 @@ impl fmt::Debug for Config {
             .field("acp_adapter_cmd", &self.acp_adapter_cmd)
             .field("acp_adapter_args", &self.acp_adapter_args)
             .field("tavily_api_key", &"[REDACTED]")
+            .field("web_allowed_origins", &self.web_allowed_origins)
+            .field("shell_allowed_origins", &self.shell_allowed_origins)
             .field("ask_diagnostics", &self.ask_diagnostics)
             .field("evaluate_responses_mode", &self.evaluate_responses_mode)
             .field("ask_max_context_chars", &self.ask_max_context_chars)
