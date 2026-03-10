@@ -1,3 +1,4 @@
+mod github;
 mod resolve;
 mod schedule;
 
@@ -382,6 +383,8 @@ mod tests {
                 every_seconds: 300,
                 enabled: true,
                 next_run_at: Utc::now() - Duration::minutes(1),
+                source_type: None,
+                target: None,
             },
         )
         .await?;
