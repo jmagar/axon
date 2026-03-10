@@ -1,30 +1,32 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { RightPanelId } from '@/lib/pulse/types'
 
 const DESKTOP_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.desktop'
 const MOBILE_SPLIT_STORAGE_KEY = 'axon.web.pulse.editor-split.mobile'
 const SHOW_CHAT_STORAGE_KEY = 'axon.web.pulse.show-chat'
-const SHOW_EDITOR_STORAGE_KEY = 'axon.web.pulse.show-editor'
+const RIGHT_PANEL_STORAGE_KEY = 'axon.web.pulse.right-panel'
 export const MOBILE_PANE_STORAGE_KEY = 'axon.web.pulse.mobile-pane'
+
+const VALID_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings']
+export type MobilePane = 'chat' | RightPanelId
 
 export function useSplitPane() {
   const [desktopSplitPercent, setDesktopSplitPercent] = useState(50)
   const [mobileSplitPercent, setMobileSplitPercent] = useState(56)
   const [isDesktop, setIsDesktop] = useState(false)
-  const [mobilePane, setMobilePane] = useState<'chat' | 'editor' | 'settings'>('chat')
+  const [mobilePane, setMobilePane] = useState<MobilePane>('chat')
   const [showChat, setShowChat] = useState(true)
-  const [showEditor, setShowEditor] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
+  const [rightPanel, setRightPanelState] = useState<RightPanelId | null>(null)
 
   const desktopSplitPercentRef = useRef(50)
   const mobileSplitPercentRef = useRef(56)
   const dragStartRef = useRef<{ pointerX: number; startPercent: number } | null>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const splitHandleRef = useRef<HTMLDivElement>(null)
-  const showEditorRef = useRef(false)
+  const rightPanelRef = useRef<RightPanelId | null>(null)
   const showChatRef = useRef(true)
-  const showSettingsRef = useRef(false)
 
   const setDesktopSplitPercentTracked = useCallback((val: number) => {
     desktopSplitPercentRef.current = val
@@ -36,19 +38,39 @@ export function useSplitPane() {
     setMobileSplitPercent(val)
   }, [])
 
-  const setShowEditorTracked = useCallback((val: boolean) => {
-    showEditorRef.current = val
-    setShowEditor(val)
-  }, [])
-
   const setShowChatTracked = useCallback((val: boolean) => {
     showChatRef.current = val
     setShowChat(val)
   }, [])
 
-  const setShowSettingsTracked = useCallback((val: boolean) => {
-    showSettingsRef.current = val
-    setShowSettings(val)
+  const setRightPanel = useCallback((next: RightPanelId | null) => {
+    rightPanelRef.current = next
+    setRightPanelState(next)
+    try {
+      if (next) {
+        window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, next)
+      } else {
+        window.localStorage.removeItem(RIGHT_PANEL_STORAGE_KEY)
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const toggleRightPanel = useCallback((id: RightPanelId) => {
+    const next = rightPanelRef.current === id ? null : id
+    if (!next && !showChatRef.current) return
+    rightPanelRef.current = next
+    setRightPanelState(next)
+    try {
+      if (next) {
+        window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, next)
+      } else {
+        window.localStorage.removeItem(RIGHT_PANEL_STORAGE_KEY)
+      }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   // Storage restore effect
@@ -65,7 +87,14 @@ export function useSplitPane() {
         setMobileSplitPercent(parsedMobile)
       }
       const pane = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
-      if (pane === 'chat' || pane === 'editor' || pane === 'settings') setMobilePane(pane)
+      if (pane === 'chat' || VALID_PANELS.includes(pane ?? '')) {
+        setMobilePane((pane as MobilePane) ?? 'chat')
+      }
+      const panel = window.localStorage.getItem(RIGHT_PANEL_STORAGE_KEY)
+      if (panel && VALID_PANELS.includes(panel)) {
+        rightPanelRef.current = panel as RightPanelId
+        setRightPanelState(panel as RightPanelId)
+      }
     } catch {
       // Ignore storage errors.
     }
@@ -102,12 +131,17 @@ export function useSplitPane() {
       dragStartRef.current = null
       splitHandleRef.current?.classList.remove('bg-[rgba(175,215,255,0.15)]')
       if (totalMovement < 4) {
-        // Click — toggle the editor panel; block collapse if chat is already collapsed
-        const next = !showEditorRef.current
+        // Click — toggle editor panel
+        const next = rightPanelRef.current === 'editor' ? null : 'editor'
         if (!next && !showChatRef.current) return
-        setShowEditorTracked(next)
+        rightPanelRef.current = next
+        setRightPanelState(next)
         try {
-          window.localStorage.setItem(SHOW_EDITOR_STORAGE_KEY, String(next))
+          if (next) {
+            window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, next)
+          } else {
+            window.localStorage.removeItem(RIGHT_PANEL_STORAGE_KEY)
+          }
         } catch {
           /* ignore */
         }
@@ -132,7 +166,7 @@ export function useSplitPane() {
     }
   }, [])
 
-  const persistMobilePane = useCallback((pane: 'chat' | 'editor' | 'settings') => {
+  const persistMobilePane = useCallback((pane: MobilePane) => {
     setMobilePane(pane)
     try {
       window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
@@ -144,7 +178,7 @@ export function useSplitPane() {
   const toggleChat = useCallback((next?: boolean) => {
     setShowChat((prev) => {
       const value = next ?? !prev
-      if (!value && !showEditorRef.current) return prev
+      if (!value && !rightPanelRef.current) return prev
       showChatRef.current = value
       try {
         window.localStorage.setItem(SHOW_CHAT_STORAGE_KEY, String(value))
@@ -153,37 +187,6 @@ export function useSplitPane() {
       }
       return value
     })
-  }, [])
-
-  const toggleEditor = useCallback((next?: boolean) => {
-    setShowEditor((prev) => {
-      const value = next ?? !prev
-      if (!value && !showChatRef.current) return prev
-      showEditorRef.current = value
-      // Mutually exclusive with settings panel
-      if (value) {
-        showSettingsRef.current = false
-        setShowSettings(false)
-      }
-      try {
-        window.localStorage.setItem(SHOW_EDITOR_STORAGE_KEY, String(value))
-      } catch {
-        /* ignore */
-      }
-      return value
-    })
-  }, [])
-
-  const toggleSettings = useCallback((next?: boolean) => {
-    const value = next ?? !showSettingsRef.current
-    if (!value && !showChatRef.current) return
-    showSettingsRef.current = value
-    setShowSettings(value)
-    // Mutually exclusive with editor panel
-    if (value) {
-      showEditorRef.current = false
-      setShowEditor(false)
-    }
   }, [])
 
   return {
@@ -197,12 +200,9 @@ export function useSplitPane() {
     showChat,
     setShowChat: setShowChatTracked,
     toggleChat,
-    showEditor,
-    setShowEditor: setShowEditorTracked,
-    toggleEditor,
-    showSettings,
-    setShowSettings: setShowSettingsTracked,
-    toggleSettings,
+    rightPanel,
+    setRightPanel,
+    toggleRightPanel,
     splitContainerRef,
     splitHandleRef,
     dragStartRef,

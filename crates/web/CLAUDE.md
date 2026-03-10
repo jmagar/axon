@@ -22,6 +22,8 @@ For branding, theme, layout, and frontend UX decisions: `apps/web`.
 - `crates/web/docker_stats.rs`: container stats streaming
 - `crates/web/download.rs`: HTTP endpoints for crawl artifact downloads (individual files + zip archives)
 - `crates/web/pack.rs`: output packaging helpers — assembles crawl results into downloadable bundles
+- `crates/web/ssh_auth.rs`: SSH key challenge-response authentication layer (nonce store, `ssh-keygen -Y verify` subprocess)
+- `crates/web/tailscale_auth.rs`: Tailscale identity auth + dual-auth mode + `check_auth()` entry point
 - `crates/web/logs/`: log streaming support
 - `crates/web/snapshots/`: insta snapshot files for integration tests (committed; update with `cargo insta review`)
 
@@ -48,6 +50,32 @@ ANSI codes are stripped from log output via `console::strip_ansi_codes()`.
 - **`ALLOWED_FLAGS`**: set of permitted CLI flags — rejects unknown flags
 
 Unknown modes or flags return an error WS event without spawning a process. Do not bypass these whitelists when adding new execute routes.
+
+### Auth Stack (`web.rs` + `tailscale_auth.rs` + `ssh_auth.rs`)
+
+Three auth layers, evaluated in priority order:
+
+| Layer | Env var | Default | Notes |
+|-------|---------|---------|-------|
+| **Dual-auth** | `AXON_REQUIRE_DUAL_AUTH` | `true` | Requires BOTH Tailscale identity AND API token. Either alone is rejected. |
+| **Tailscale strict** | `AXON_TAILSCALE_STRICT` | `false` | Only Tailscale Serve connections accepted (no token fallback). |
+| **Tailscale + allowlist** | `AXON_TAILSCALE_ALLOWED_USERS` | empty (any) | Tailscale user must be in comma-separated email allowlist. |
+| **API token** | `AXON_WEB_API_TOKEN` | — | Bearer / x-api-key / `?token=` query param. |
+| **SSH key** | `AXON_SSH_AUTHORIZED_KEYS` | `~/.ssh/authorized_keys` | Challenge-response via `X-SSH-Nonce` / `X-SSH-Pubkey` / `X-SSH-Signature` headers. |
+
+### SSH Challenge-Response Flow (`ssh_auth.rs`)
+
+1. Client `GET /auth/ssh-challenge` → `{ "nonce": "<64-hex>", "expires_secs": 30 }`
+2. Client signs nonce: `echo -n "<nonce>" | ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n axon-auth -`
+3. Client sends request with headers: `X-SSH-Nonce`, `X-SSH-Pubkey`, `X-SSH-Signature`
+4. Server verifies via `ssh-keygen -Y verify` subprocess; nonce is single-use (consumed on first valid use)
+
+**Key types:** `SshChallengeStore` (DashMap nonce store, shared via `Arc`), `SshKeyIdentity { fingerprint }` (exported to `tailscale_auth.rs` for `AuthOutcome::SshKey`).
+**Security:** pubkey and signature are written to tempfiles — never passed via shell args to prevent injection.
+
+### `DownloadAuthState`
+
+Download routes use a lighter state struct (`DownloadAuthState`) that carries `job_dirs`, `api_token`, `ts_auth`, `ssh_challenges`, and `ssh_authorized_keys` — same auth fields as `AppState` but without WS/stats overhead.
 
 ## Docker Stats Caveat
 

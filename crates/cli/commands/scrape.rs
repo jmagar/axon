@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod scrape_migration_tests;
+
 use super::common::parse_urls;
 use crate::crates::core::config::Config;
 use crate::crates::core::content::{

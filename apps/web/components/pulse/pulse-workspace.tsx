@@ -2,12 +2,17 @@
 
 import { BookOpen, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import { useEffect, useState } from 'react'
 import { usePulseWorkspaceBehavior } from '@/hooks/use-pulse-workspace'
+import type { RightPanelId } from '@/lib/pulse/types'
 import { PermissionModal } from './permission-modal'
 import { PulseChatPane } from './pulse-chat-pane'
+import { PulseLogsPane } from './pulse-logs-pane'
+import { PulseMcpPane } from './pulse-mcp-pane'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import { PulseOpConfirmation } from './pulse-op-confirmation'
 import { PulseSettingsPane } from './pulse-settings-pane'
+import { PulseTerminalPane } from './pulse-terminal-pane'
 import { PulseToolbar } from './pulse-toolbar'
 
 const PulseEditorPane = dynamic(
@@ -25,11 +30,28 @@ const PulseEditorPane = dynamic(
 export function PulseWorkspace() {
   const ws = usePulseWorkspaceBehavior()
 
+  // Lazy-mount: track which panels have been opened at least once.
+  // Each panel is mounted on first open and kept mounted (CSS-hidden) to preserve state.
+  const [openedPanels, setOpenedPanels] = useState<Set<RightPanelId>>(new Set())
+
+  useEffect(() => {
+    if (ws.rightPanel) {
+      setOpenedPanels((prev) => {
+        if (prev.has(ws.rightPanel!)) return prev
+        const next = new Set(prev)
+        next.add(ws.rightPanel!)
+        return next
+      })
+    }
+  }, [ws.rightPanel])
+
+  const hasRightPanel = ws.rightPanel !== null
+
   return (
     <div className={`flex h-full min-h-0 flex-col${!ws.isDesktop ? ' pt-11' : ''}`}>
       {/* Fixed mobile header — title + SRC + pane switcher */}
       {!ws.isDesktop && ws.chatHistory.length > 0 && (
-        <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[rgba(3,7,18,0.45)] pl-3 pr-28 backdrop-blur-lg lg:hidden">
+        <div className="fixed left-0 right-0 top-0 z-[9] flex h-11 items-center gap-2 border-b border-[var(--border-subtle)] bg-[rgba(3,7,18,0.45)] pl-3 pr-4 backdrop-blur-lg lg:hidden">
           <div className="w-14 shrink-0" />
           <div className="flex-1" />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -63,8 +85,8 @@ export function PulseWorkspace() {
           onTitleChange={ws.setDocumentTitle}
           isDesktop={ws.isDesktop}
           onNewSession={ws.handleNewSession}
-          showSettings={ws.showSettings}
-          onToggleSettings={ws.toggleSettings}
+          rightPanel={ws.rightPanel}
+          onTogglePanel={ws.toggleRightPanel}
         />
       )}
 
@@ -156,20 +178,20 @@ export function PulseWorkspace() {
             )}
           </div>
 
-          {/* Drag handle (desktop, both panels open, not in settings mode) */}
+          {/* Drag handle (desktop, when a right panel is open) */}
           {ws.isDesktop && (
             <div
               ref={ws.splitHandleRef}
               role="separator"
-              aria-label="Resize chat/editor — drag or click to toggle editor"
+              aria-label="Resize panels — drag or click to toggle editor"
               title="Drag to resize · Click to toggle editor [⌘⇧E]"
               aria-orientation="vertical"
               aria-valuenow={Math.round(ws.desktopSplitPercent)}
               aria-valuemin={20}
               aria-valuemax={80}
-              aria-valuetext={`Chat: ${Math.round(ws.desktopSplitPercent)}%, Editor: ${Math.round(100 - ws.desktopSplitPercent)}%`}
+              aria-valuetext={`Chat: ${Math.round(ws.desktopSplitPercent)}%, Panel: ${Math.round(100 - ws.desktopSplitPercent)}%`}
               className={`group mx-0.5 hidden w-2 cursor-col-resize items-center justify-center rounded-sm transition-colors hover:bg-[var(--border-subtle)] ${
-                ws.showChat && ws.showEditor && !ws.showSettings ? 'lg:flex' : 'lg:hidden'
+                ws.showChat && hasRightPanel ? 'lg:flex' : 'lg:hidden'
               }`}
               onPointerDown={(event) => {
                 ws.dragStartRef.current = {
@@ -187,53 +209,33 @@ export function PulseWorkspace() {
             </div>
           )}
 
-          {/* Editor panel — hidden on desktop when settings is active */}
+          {/* Right panel — all panels lazy-mounted, CSS-toggled to preserve state */}
           <div
-            className={`group/editor relative flex h-full flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] transition-[flex-basis,width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`relative flex h-full flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] transition-[flex-basis,width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               ws.isDesktop
-                ? ws.showSettings
-                  ? 'hidden'
-                  : ws.showEditor
-                    ? ws.showChat
-                      ? 'lg:flex-none'
-                      : 'lg:flex-1'
-                    : 'lg:w-7 lg:flex-none'
-                : ws.mobilePane === 'editor'
+                ? hasRightPanel
+                  ? ws.showChat
+                    ? 'lg:flex-none'
+                    : 'lg:flex-1'
+                  : 'hidden'
+                : ws.mobilePane !== 'chat'
                   ? 'flex'
                   : 'hidden'
             }`}
             style={
-              ws.isDesktop && ws.showEditor && !ws.showSettings && ws.showChat
+              ws.isDesktop && hasRightPanel && ws.showChat
                 ? { flexBasis: `${100 - ws.desktopSplitPercent}%` }
                 : undefined
             }
           >
-            {ws.isDesktop && !ws.showEditor ? (
-              <button
-                type="button"
-                onClick={() => ws.toggleEditor(true)}
-                aria-label="Expand editor"
-                title="Expand editor [⌘⇧E]"
-                className="flex h-full w-7 lg:w-8 flex-col items-center justify-center gap-2 border-r border-[rgba(135,175,255,0.15)] text-[var(--text-dim)] transition-colors hover:text-[var(--axon-primary)]"
+            {openedPanels.has('editor') && (
+              <div
+                className={
+                  ws.rightPanel === 'editor' || ws.mobilePane === 'editor'
+                    ? 'flex h-full flex-col'
+                    : 'hidden'
+                }
               >
-                <ChevronLeft className="size-4" />
-                <span className="[writing-mode:vertical-rl] rotate-180 text-[length:var(--text-2xs)] tracking-widest uppercase">
-                  EDIT
-                </span>
-              </button>
-            ) : (
-              <>
-                {ws.isDesktop && (
-                  <button
-                    type="button"
-                    onClick={() => ws.toggleEditor(false)}
-                    aria-label="Collapse editor"
-                    title="Collapse editor [⌘⇧E]"
-                    className="absolute left-0 top-1/2 z-10 flex h-10 w-4 -translate-y-1/2 items-center justify-center rounded-r border border-l-0 border-[var(--border-subtle)] bg-[rgba(10,18,35,0.72)] text-[var(--text-dim)] opacity-0 transition-opacity hover:text-[var(--axon-primary)] group-hover/editor:opacity-100"
-                  >
-                    <ChevronRight className="size-3" />
-                  </button>
-                )}
                 <PulseEditorPane
                   markdown={ws.documentMarkdown}
                   onMarkdownChange={ws.setDocumentMarkdown}
@@ -243,30 +245,52 @@ export function PulseWorkspace() {
                       : 'axon.web.pulse.editor-scroll'
                   }
                 />
-              </>
+              </div>
             )}
-          </div>
-
-          {/* Settings panel */}
-          <div
-            className={`relative flex h-full flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] transition-[flex-basis,width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-              ws.isDesktop
-                ? ws.showSettings
-                  ? ws.showChat
-                    ? 'lg:flex-none'
-                    : 'lg:flex-1'
-                  : 'hidden'
-                : ws.mobilePane === 'settings'
-                  ? 'flex'
-                  : 'hidden'
-            }`}
-            style={
-              ws.isDesktop && ws.showSettings && ws.showChat
-                ? { flexBasis: `${100 - ws.desktopSplitPercent}%` }
-                : undefined
-            }
-          >
-            <PulseSettingsPane />
+            {openedPanels.has('terminal') && (
+              <div
+                className={
+                  ws.rightPanel === 'terminal' || ws.mobilePane === 'terminal'
+                    ? 'flex h-full flex-col'
+                    : 'hidden'
+                }
+              >
+                <PulseTerminalPane />
+              </div>
+            )}
+            {openedPanels.has('logs') && (
+              <div
+                className={
+                  ws.rightPanel === 'logs' || ws.mobilePane === 'logs'
+                    ? 'flex h-full flex-col'
+                    : 'hidden'
+                }
+              >
+                <PulseLogsPane />
+              </div>
+            )}
+            {openedPanels.has('mcp') && (
+              <div
+                className={
+                  ws.rightPanel === 'mcp' || ws.mobilePane === 'mcp'
+                    ? 'flex h-full flex-col'
+                    : 'hidden'
+                }
+              >
+                <PulseMcpPane />
+              </div>
+            )}
+            {openedPanels.has('settings') && (
+              <div
+                className={
+                  ws.rightPanel === 'settings' || ws.mobilePane === 'settings'
+                    ? 'flex h-full flex-col'
+                    : 'hidden'
+                }
+              >
+                <PulseSettingsPane />
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,24 +1,37 @@
 'use client'
 
-import { Plus, Settings2 } from 'lucide-react'
+import { Network, PenLine, Plus, ScrollText, Settings2, TerminalSquare } from 'lucide-react'
 import { useState } from 'react'
+import type { RightPanelId } from '@/lib/pulse/types'
 
 interface PulseToolbarProps {
   title: string
   onTitleChange: (title: string) => void
   isDesktop?: boolean
   onNewSession?: () => void
-  showSettings?: boolean
-  onToggleSettings?: () => void
+  rightPanel?: RightPanelId | null
+  onTogglePanel?: (id: RightPanelId) => void
 }
+
+const PANEL_BUTTONS: {
+  id: RightPanelId
+  Icon: React.ComponentType<{ className?: string }>
+  label: string
+}[] = [
+  { id: 'editor', Icon: PenLine, label: 'Editor [⌘⇧E]' },
+  { id: 'terminal', Icon: TerminalSquare, label: 'Terminal [⌘⇧T]' },
+  { id: 'logs', Icon: ScrollText, label: 'Logs [⌘⇧L]' },
+  { id: 'mcp', Icon: Network, label: 'MCP Servers [⌘⇧M]' },
+  { id: 'settings', Icon: Settings2, label: 'Settings [⌘⇧S]' },
+]
 
 export function PulseToolbar({
   title,
   onTitleChange,
   isDesktop = false,
   onNewSession,
-  showSettings = false,
-  onToggleSettings,
+  rightPanel = null,
+  onTogglePanel,
 }: PulseToolbarProps) {
   const [isDirty, setIsDirty] = useState(false)
   return (
@@ -45,20 +58,25 @@ export function PulseToolbar({
 
       {isDesktop && (
         <div className="ml-auto flex items-center gap-1">
-          {onToggleSettings && (
-            <button
-              type="button"
-              onClick={onToggleSettings}
-              title="Toggle settings panel [⌘⇧S]"
-              className={`ui-chip inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors ${
-                showSettings
-                  ? 'border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary-strong)]'
-                  : 'border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.35)] hover:text-[var(--text-secondary)]'
-              }`}
-            >
-              <Settings2 className="size-3" />
-              <span className="text-[10px] font-medium leading-none">Settings</span>
-            </button>
+          {onTogglePanel && (
+            <div className="flex items-center gap-0.5">
+              {PANEL_BUTTONS.map(({ id, Icon, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onTogglePanel(id)}
+                  title={label}
+                  aria-pressed={rightPanel === id}
+                  className={`inline-flex size-7 items-center justify-center rounded border transition-all duration-150 ${
+                    rightPanel === id
+                      ? 'border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary-strong)]'
+                      : 'border-transparent text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.2)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  <Icon className="size-3.5" />
+                </button>
+              ))}
+            </div>
           )}
           {onNewSession && (
             <>

@@ -43,7 +43,8 @@ pub fn primary(text: &str) -> String {
 }
 
 pub fn accent(text: &str) -> String {
-    Style::new().color256(153).apply_to(text).to_string()
+    // #87afff — web UI primary blue
+    Style::new().color256(111).apply_to(text).to_string()
 }
 
 pub fn muted(text: &str) -> String {
@@ -52,7 +53,8 @@ pub fn muted(text: &str) -> String {
 
 /// Soft blue for secondary info (UUIDs, ages, separators) — visible but not dominant.
 pub fn subtle(text: &str) -> String {
-    Style::new().color256(103).apply_to(text).to_string()
+    // #87afd7 — muted blue, more vibrant than the prior grayish periwinkle
+    Style::new().color256(110).apply_to(text).to_string()
 }
 
 pub fn symbol_for_status(status: &str) -> String {

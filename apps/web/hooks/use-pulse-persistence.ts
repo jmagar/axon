@@ -2,7 +2,7 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
-import type { PulseAgent, PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
+import type { PulseAgent, PulseModel, PulsePermissionLevel, RightPanelId } from '@/lib/pulse/types'
 import type { ChatMessage } from '@/lib/pulse/workspace-persistence'
 import {
   buildPersistedPayload,
@@ -26,7 +26,7 @@ interface PersistenceData {
   lastResponseLatencyMs: number | null
   lastResponseModel: PulseModel | null
   showChat: boolean
-  showEditor: boolean
+  rightPanel: RightPanelId | null
 }
 
 interface PersistenceSetters {
@@ -45,7 +45,7 @@ interface PersistenceSetters {
   setLastResponseLatencyMs: (v: number | null) => void
   setLastResponseModel: (v: PulseModel | null) => void
   setShowChat: (v: boolean) => void
-  setShowEditor: (v: boolean) => void
+  setRightPanel: (v: RightPanelId | null) => void
 }
 
 interface UsePulsePersistenceInput {
@@ -71,7 +71,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
     lastResponseLatencyMs,
     lastResponseModel,
     showChat,
-    showEditor,
+    rightPanel,
   } = data
   const {
     setDocumentMarkdown,
@@ -86,7 +86,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
     setLastResponseLatencyMs,
     setLastResponseModel,
     setShowChat,
-    setShowEditor,
+    setRightPanel,
   } = setters
   const hasHydratedRef = useRef(false)
   const persistFnRef = useRef<(() => void) | null>(null)
@@ -117,7 +117,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
       setLastResponseLatencyMs(restored.lastResponseLatencyMs)
       setLastResponseModel(restored.lastResponseModel)
       setShowChat(restored.showChat)
-      setShowEditor(restored.showEditor)
+      setRightPanel(restored.rightPanel)
       messageIdRef.current = restored.chatHistory.length
     } catch {
       // Ignore persistence restore failures.
@@ -133,7 +133,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
     setDesktopSplitPercent,
     setDocumentMarkdown,
     setShowChat,
-    setShowEditor,
+    setRightPanel,
     setDocumentTitle,
     setIndexedSources,
     setLastResponseLatencyMs,
@@ -160,7 +160,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
         lastResponseLatencyMs,
         lastResponseModel,
         showChat,
-        showEditor,
+        rightPanel,
       })
       window.localStorage.setItem(PULSE_WORKSPACE_STATE_KEY, JSON.stringify(payload))
     } catch {
@@ -174,7 +174,7 @@ export function usePulsePersistence({ data, setters, messageIdRef }: UsePulsePer
     desktopSplitPercent,
     documentMarkdown,
     showChat,
-    showEditor,
+    rightPanel,
     documentTitle,
     indexedSources,
     lastResponseLatencyMs,

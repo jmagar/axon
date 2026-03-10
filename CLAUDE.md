@@ -325,6 +325,14 @@ NEXT_PUBLIC_AXON_API_TOKEN=
 AXON_WEB_ALLOWED_ORIGINS=
 AXON_WEB_ALLOW_INSECURE_DEV=false
 
+# Dual-auth mode: require BOTH Tailscale identity AND API token (default: true)
+# Set to false to allow either factor alone (single-factor auth)
+AXON_REQUIRE_DUAL_AUTH=true
+
+# SSH key auth: path to authorized_keys file
+# Defaults to ~/.ssh/authorized_keys if it exists; set empty to disable SSH key auth
+AXON_SSH_AUTHORIZED_KEYS=
+
 # Optional shell websocket auth/origin overrides
 AXON_SHELL_WS_TOKEN=
 AXON_SHELL_ALLOWED_ORIGINS=

@@ -22,6 +22,24 @@ const PulseSettingsPane = dynamic(
   { ssr: false },
 )
 
+const PulseTerminalPane = dynamic(
+  () =>
+    import('@/components/pulse/pulse-terminal-pane').then((m) => ({
+      default: m.PulseTerminalPane,
+    })),
+  { ssr: false },
+)
+
+const PulseLogsPane = dynamic(
+  () => import('@/components/pulse/pulse-logs-pane').then((m) => ({ default: m.PulseLogsPane })),
+  { ssr: false },
+)
+
+const PulseMcpPane = dynamic(
+  () => import('@/components/pulse/pulse-mcp-pane').then((m) => ({ default: m.PulseMcpPane })),
+  { ssr: false },
+)
+
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { ResultsPanel } from '@/components/results-panel'
 import { WsIndicator } from '@/components/ws-indicator'
@@ -61,7 +79,9 @@ export default function DashboardPage() {
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
   const omniboxDockRef = useRef<HTMLDivElement>(null)
-  const [landingMobilePane, setLandingMobilePane] = useState<'chat' | 'editor' | 'settings'>('chat')
+  const [landingMobilePane, setLandingMobilePane] = useState<
+    'chat' | 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings'
+  >('chat')
   const [landingEditorMarkdown, setLandingEditorMarkdown] = useState('')
 
   // Persist landing editor content across tab switches / page unloads
@@ -85,13 +105,21 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const saved = getStorageItem(MOBILE_PANE_STORAGE_KEY)
-    if (saved === 'chat' || saved === 'editor' || saved === 'settings') setLandingMobilePane(saved)
+    if (
+      saved === 'chat' ||
+      ['editor', 'terminal', 'logs', 'mcp', 'settings'].includes(saved ?? '')
+    ) {
+      setLandingMobilePane(saved as 'chat' | 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings')
+    }
   }, [])
 
-  const handleLandingMobilePaneChange = useCallback((pane: 'chat' | 'editor' | 'settings') => {
-    setLandingMobilePane(pane)
-    setStorageItem(MOBILE_PANE_STORAGE_KEY, pane)
-  }, [])
+  const handleLandingMobilePaneChange = useCallback(
+    (pane: 'chat' | 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings') => {
+      setLandingMobilePane(pane)
+      setStorageItem(MOBILE_PANE_STORAGE_KEY, pane)
+    },
+    [],
+  )
 
   // Canvas intensity: full on execute start, pulse on command done/error.
   useEffect(() => {
@@ -204,7 +232,7 @@ export default function DashboardPage() {
           className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
             hasResults
               ? 'px-2.5 pb-5 pt-12 sm:px-3.5 sm:pb-8'
-              : landingMobilePane === 'editor' || landingMobilePane === 'settings'
+              : landingMobilePane !== 'chat'
                 ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
                 : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
           }`}
@@ -223,7 +251,7 @@ export default function DashboardPage() {
           >
             <div className="flex flex-col gap-2">
               <div
-                className={`order-1 scale-100 ${landingMobilePane === 'editor' || landingMobilePane === 'settings' ? 'hidden lg:block' : 'block'}`}
+                className={`order-1 scale-100 ${landingMobilePane !== 'chat' ? 'hidden lg:block' : 'block'}`}
               >
                 <Omnibox />
                 {!hasResults && <LandingCards />}
@@ -243,13 +271,25 @@ export default function DashboardPage() {
                     <PulseSettingsPane />
                   </div>
                 )}
+                {landingMobilePane === 'terminal' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseTerminalPane />
+                  </div>
+                )}
+                {landingMobilePane === 'logs' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseLogsPane />
+                  </div>
+                )}
+                {landingMobilePane === 'mcp' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseMcpPane />
+                  </div>
+                )}
                 {!isInlineMode && (
                   <div
                     className={
-                      (landingMobilePane === 'editor' || landingMobilePane === 'settings') &&
-                      !hasResults
-                        ? 'hidden lg:block'
-                        : undefined
+                      landingMobilePane !== 'chat' && !hasResults ? 'hidden lg:block' : undefined
                     }
                   >
                     <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />
