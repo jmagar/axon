@@ -1,6 +1,8 @@
 /// Metadata parsed from a yt-dlp `.info.json` file.
 pub(super) struct YoutubeVideoMeta {
     pub(super) title: String,
+    pub(super) video_id: String,
+    pub(super) thumbnail: String,
     pub(super) channel: String,
     pub(super) channel_url: String,
     pub(super) uploader_id: String,
@@ -29,6 +31,8 @@ pub(super) async fn parse_youtube_info_json(path: &std::path::Path) -> Option<Yo
     };
     Some(YoutubeVideoMeta {
         title: s("title"),
+        video_id: s("id"),
+        thumbnail: s("thumbnail"),
         channel: s("channel"),
         channel_url: s("channel_url"),
         uploader_id: s("uploader_id"),
@@ -45,6 +49,8 @@ pub(super) async fn parse_youtube_info_json(path: &std::path::Path) -> Option<Yo
 /// Build the YouTube-specific Qdrant payload fields from parsed metadata.
 pub(super) fn build_youtube_extra_payload(m: &YoutubeVideoMeta) -> serde_json::Value {
     serde_json::json!({
+        "yt_video_id": m.video_id,
+        "yt_thumbnail": m.thumbnail,
         "yt_channel": m.channel,
         "yt_channel_url": m.channel_url,
         "yt_uploader_id": m.uploader_id,
