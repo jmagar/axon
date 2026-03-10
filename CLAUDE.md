@@ -286,7 +286,7 @@ AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
 # Search and research (required for search/research commands)
 TAVILY_API_KEY=your-tavily-api-key
 
-# Ingest credentials (required for axon ingest <github|reddit|youtube> targets)
+# Ingest credentials (Reddit required; GitHub optional for higher rate limits)
 GITHUB_TOKEN=                       # optional — raises GitHub rate limits
 REDDIT_CLIENT_ID=                   # required for Reddit ingest targets
 REDDIT_CLIENT_SECRET=               # required for Reddit ingest targets

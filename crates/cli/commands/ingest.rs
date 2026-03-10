@@ -20,10 +20,12 @@ pub async fn run_ingest(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
     if !cfg.wait {
         let result = ingest_common::enqueue_ingest_job(cfg, source).await;
-        log_info(&format!(
-            "job_enqueued command=ingest queue={}",
-            cfg.ingest_queue
-        ));
+        if result.is_ok() {
+            log_info(&format!(
+                "job_enqueued command=ingest queue={}",
+                cfg.ingest_queue
+            ));
+        }
         return result;
     }
 

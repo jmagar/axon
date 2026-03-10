@@ -196,14 +196,18 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
         return String::new();
     }
     let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
+    let videos_done = r.get("videos_done").and_then(|v| v.as_u64());
     match videos_total {
-        Some(total) => format!(
-            "{sep}{}{}{} videos{sep}{}",
-            accent(&total.to_string()),
-            subtle("/"),
-            accent(&total.to_string()),
-            metric(chunks, "chunks"),
-        ),
+        Some(total) => {
+            let numerator = videos_done.unwrap_or(total);
+            format!(
+                "{sep}{}{}{} videos{sep}{}",
+                accent(&numerator.to_string()),
+                subtle("/"),
+                accent(&total.to_string()),
+                metric(chunks, "chunks"),
+            )
+        }
         None => format!("{sep}{}", metric(chunks, "chunks")),
     }
 }
