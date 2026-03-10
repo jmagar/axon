@@ -74,7 +74,7 @@ impl Default for IngestConfig {
     fn default() -> Self {
         Self {
             github_token: None,
-            github_include_source: false,
+            github_include_source: true,
             reddit_client_id: None,
             reddit_client_secret: None,
             // These defaults must stay in sync with Config::default() in config_impls.rs.
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(c.reddit_min_score, 0);
         assert_eq!(c.reddit_depth, 2);
         assert!(!c.reddit_scrape_links);
-        assert!(!c.github_include_source);
+        assert!(c.github_include_source);
     }
 
     #[test]

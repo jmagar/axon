@@ -68,7 +68,7 @@ impl Default for Config {
             sessions_gemini: false,
             sessions_project: None,
             github_token: None,
-            github_include_source: false,
+            github_include_source: true,
             reddit_client_id: None,
             reddit_client_secret: None,
             reddit_sort: RedditSort::Hot,
