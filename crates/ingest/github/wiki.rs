@@ -1,8 +1,11 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::vector::ops::embed_text_with_extra_payload;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+
+use super::GitHubCommonFields;
+use super::meta::{GitHubPayloadParams, build_github_payload};
 
 /// Recursively walk a directory and collect all file paths.
 async fn walk_dir_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
@@ -34,8 +37,7 @@ async fn walk_dir_recursive(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> 
 /// Requires `git` to be installed and on PATH.
 pub async fn ingest_wiki(
     cfg: &Config,
-    owner: &str,
-    name: &str,
+    common: &GitHubCommonFields,
     token: Option<&str>,
 ) -> Result<usize, Box<dyn Error>> {
     // Create a temp directory; cleaned up automatically when `_tmp` is dropped
@@ -43,7 +45,10 @@ pub async fn ingest_wiki(
     let tmp_path = _tmp.path().to_string_lossy().to_string();
 
     // Plain HTTPS clone URL — token is passed via git config env vars, not the URL
-    let clone_url = format!("https://github.com/{owner}/{name}.wiki.git");
+    let clone_url = format!(
+        "https://github.com/{}/{}.wiki.git",
+        common.owner, common.name
+    );
 
     // "--" separates flags from the URL argument to prevent argument injection
     let mut cmd = tokio::process::Command::new("git");
@@ -107,10 +112,33 @@ pub async fn ingest_wiki(
 
         // Derive a canonical GitHub wiki URL from the file stem
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Home");
-        let wiki_url = format!("https://github.com/{owner}/{name}/wiki/{stem}");
+        let wiki_url = format!(
+            "https://github.com/{}/{}/wiki/{stem}",
+            common.owner, common.name
+        );
         let title = stem.replace(['-', '_'], " ");
 
-        match embed_text_with_metadata(cfg, &content, &wiki_url, "github", Some(&title)).await {
+        let extra = build_github_payload(&GitHubPayloadParams {
+            repo: common.name.clone(),
+            owner: common.owner.clone(),
+            content_kind: "wiki".into(),
+            default_branch: Some(common.default_branch.clone()),
+            repo_description: common.repo_description.clone(),
+            pushed_at: common.pushed_at.clone(),
+            is_private: common.is_private,
+            ..Default::default()
+        });
+
+        match embed_text_with_extra_payload(
+            cfg,
+            &content,
+            &wiki_url,
+            "github",
+            Some(&title),
+            &extra,
+        )
+        .await
+        {
             Ok(n) => total += n,
             Err(e) => log_warn(&format!(
                 "command=ingest_github wiki_embed_failed page={stem} err={e}"
