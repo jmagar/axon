@@ -179,6 +179,8 @@ impl AxonMcpServer {
                         every_seconds: 3600,
                         enabled: true,
                         next_run_at: chrono::Utc::now(),
+                        source_type: None,
+                        target: None,
                     },
                 )
                 .await
