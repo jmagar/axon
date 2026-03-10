@@ -18,12 +18,12 @@ env:
   RUSTC_WRAPPER: ""
 
 jobs:
-  mcp-http-only:
-    name: mcp-http-only
+  mcp-transport-modes:
+    name: mcp-transport-modes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce MCP CLI HTTP transport (no stdio regression)
+      - name: Enforce MCP CLI transport mode support
         run: ./scripts/check_mcp_http_only.sh
 
   no-mod-rs:

@@ -157,6 +157,28 @@ pub enum PerformanceProfile {
     Max,
 }
 
+#[derive(
+    Debug, Clone, Copy, Default, ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpTransport {
+    Stdio,
+    #[default]
+    Http,
+    Both,
+}
+
+impl fmt::Display for McpTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Self::Stdio => "stdio",
+            Self::Http => "http",
+            Self::Both => "both",
+        };
+        f.write_str(value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum EvaluateResponsesMode {

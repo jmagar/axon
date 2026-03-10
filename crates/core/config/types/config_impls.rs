@@ -1,7 +1,7 @@
 use super::config::Config;
 use super::enums::{
-    CommandKind, EvaluateResponsesMode, PerformanceProfile, RedditSort, RedditTime, RenderMode,
-    ScrapeFormat,
+    CommandKind, EvaluateResponsesMode, McpTransport, PerformanceProfile, RedditSort, RedditTime,
+    RenderMode, ScrapeFormat,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -127,6 +127,9 @@ impl Default for Config {
             viewport_width: 1920,
             viewport_height: 1080,
             serve_port: 49000,
+            mcp_transport: McpTransport::Http,
+            mcp_http_host: "0.0.0.0".to_string(),
+            mcp_http_port: 8001,
             custom_headers: vec![],
         }
     }
@@ -292,6 +295,9 @@ impl fmt::Debug for Config {
             .field("viewport_width", &self.viewport_width)
             .field("viewport_height", &self.viewport_height)
             .field("serve_port", &self.serve_port)
+            .field("mcp_transport", &self.mcp_transport)
+            .field("mcp_http_host", &self.mcp_http_host)
+            .field("mcp_http_port", &self.mcp_http_port)
             .field(
                 "custom_headers",
                 &self

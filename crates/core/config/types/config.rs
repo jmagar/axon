@@ -1,6 +1,6 @@
 use super::enums::{
-    CommandKind, EvaluateResponsesMode, PerformanceProfile, RedditSort, RedditTime, RenderMode,
-    ScrapeFormat,
+    CommandKind, EvaluateResponsesMode, McpTransport, PerformanceProfile, RedditSort, RedditTime,
+    RenderMode, ScrapeFormat,
 };
 use std::path::PathBuf;
 
@@ -401,6 +401,15 @@ pub struct Config {
 
     /// Port for the `serve` web UI server. Flag: `--port`, env: `AXON_SERVE_PORT`. Default: 49000.
     pub serve_port: u16,
+
+    /// MCP transport mode. Env: `AXON_MCP_TRANSPORT`. Flag: `axon mcp --transport`.
+    pub mcp_transport: McpTransport,
+
+    /// Host interface for MCP HTTP transport. Env: `AXON_MCP_HTTP_HOST`. Default: `0.0.0.0`.
+    pub mcp_http_host: String,
+
+    /// Port for MCP HTTP transport. Env: `AXON_MCP_HTTP_PORT`. Default: `8001`.
+    pub mcp_http_port: u16,
 
     /// Custom HTTP request headers in `"Key: Value"` format (repeatable). Flag: `--header`.
     pub custom_headers: Vec<String>,

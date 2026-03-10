@@ -1,10 +1,10 @@
 # Axon MCP Server Guide
-Last Modified: 2026-03-09
+Last Modified: 2026-03-10
 
 ## Purpose
 `axon mcp` exposes Axon through one MCP tool named `axon`.
 
-- Transport: RMCP streamable HTTP (`/mcp`, stateful sessions)
+- Transport: RMCP `stdio`, streamable HTTP (`/mcp`), or both simultaneously
 - Tool count: 1
 - Tool name: `axon`
 - Routing fields: `action` + `subaction` for lifecycle families
@@ -33,6 +33,7 @@ Core stack env vars are reused:
 - `TAVILY_API_KEY`
 
 MCP transport env vars:
+- `AXON_MCP_TRANSPORT` (`http` default; `stdio|http|both`)
 - `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
 - `AXON_MCP_HTTP_PORT` (default `8001`)
 
@@ -61,9 +62,44 @@ Optional OAuth overrides:
 If OAuth is not configured, requests to `/mcp` return unauthorized.
 
 ## Transport Notes
-`axon mcp` starts the HTTP server (`run_http_server`) and serves `/mcp`.
+`axon mcp` supports three transport modes:
 
-There is also an internal stdio server implementation (`run_stdio_server`) in code, but it is not what the `axon mcp` command launches.
+- `axon mcp`
+  Starts HTTP transport only. This remains the default for backward compatibility.
+- `axon mcp --transport stdio`
+  Starts stdio transport only. Use this for local MCP clients such as Claude Desktop.
+- `axon mcp --transport both`
+  Starts stdio and HTTP concurrently.
+
+Equivalent env override:
+
+```bash
+AXON_MCP_TRANSPORT=stdio   # or http / both
+```
+
+HTTP transport uses:
+- `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
+- `AXON_MCP_HTTP_PORT` (default `8001`)
+
+### Claude Desktop Example
+
+```json
+{
+  "mcpServers": {
+    "axon": {
+      "command": "axon",
+      "args": ["mcp", "--transport", "stdio"],
+      "env": {
+        "AXON_PG_URL": "postgresql://axon:postgres@127.0.0.1:53432/axon",
+        "AXON_REDIS_URL": "redis://127.0.0.1:53379",
+        "AXON_AMQP_URL": "amqp://axon:axonrabbit@127.0.0.1:45535/%2f",
+        "QDRANT_URL": "http://127.0.0.1:53333",
+        "TEI_URL": "http://YOUR_TEI_HOST:52000"
+      }
+    }
+  }
+}
+```
 
 ## OAuth Endpoints and Flow
 Implemented endpoints:
