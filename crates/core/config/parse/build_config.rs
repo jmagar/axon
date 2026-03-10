@@ -1,5 +1,7 @@
 use super::super::cli::{Cli, CliCommand, RefreshScheduleSubcommand, RefreshSubcommand};
-use super::super::types::{CommandKind, Config, EvaluateResponsesMode, RedditSort, RedditTime};
+use super::super::types::{
+    CommandKind, Config, EvaluateResponsesMode, McpTransport, RedditSort, RedditTime,
+};
 use super::docker::normalize_local_service_url;
 use super::excludes;
 use super::helpers::{
@@ -28,6 +30,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let mut sessions_gemini = false;
     let mut sessions_project = None;
     let mut serve_port = 49000u16;
+    let mut mcp_transport = None;
     let (command, positional) = match cli.command {
         CliCommand::Scrape(args) => (CommandKind::Scrape, args.positional_urls),
         CliCommand::Crawl(args) => (
@@ -161,7 +164,10 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             )
         }
         CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
-        CliCommand::Mcp => (CommandKind::Mcp, Vec::new()),
+        CliCommand::Mcp(args) => {
+            mcp_transport = args.transport;
+            (CommandKind::Mcp, Vec::new())
+        }
         CliCommand::Serve(args) => {
             serve_port = args.port;
             (CommandKind::Serve, Vec::new())
@@ -424,6 +430,14 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             h
         },
         serve_port,
+        mcp_transport: resolve_mcp_transport(mcp_transport, env::var("AXON_MCP_TRANSPORT").ok())?,
+        mcp_http_host: env::var("AXON_MCP_HTTP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+        mcp_http_port: env::var("AXON_MCP_HTTP_PORT")
+            .ok()
+            .as_deref()
+            .map(parse_mcp_http_port)
+            .transpose()?
+            .unwrap_or(8001),
         custom_headers: global.custom_headers,
     };
 
@@ -463,4 +477,34 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     }
 
     Ok(cfg)
+}
+
+fn resolve_mcp_transport(
+    cli_transport: Option<McpTransport>,
+    env_transport: Option<String>,
+) -> Result<McpTransport, String> {
+    if let Some(transport) = cli_transport {
+        return Ok(transport);
+    }
+
+    match env_transport
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
+        None => Ok(McpTransport::Http),
+        Some(raw) => match raw {
+            "stdio" => Ok(McpTransport::Stdio),
+            "http" => Ok(McpTransport::Http),
+            "both" => Ok(McpTransport::Both),
+            _ => Err(format!(
+                "invalid AXON_MCP_TRANSPORT '{raw}' (expected stdio, http, or both)"
+            )),
+        },
+    }
+}
+
+fn parse_mcp_http_port(raw: &str) -> Result<u16, String> {
+    raw.parse::<u16>()
+        .map_err(|e| format!("invalid AXON_MCP_HTTP_PORT '{raw}': {e}"))
 }
