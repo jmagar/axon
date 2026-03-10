@@ -197,6 +197,56 @@ pub(super) fn emit_analysis_header(cfg: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(super) fn build_evaluate_json(
+    cfg: &Config,
+    query: &str,
+    ctx: &super::super::ask::AskContext,
+    answers: &EvalAnswers<'_>,
+    timing: &EvalTiming,
+    source_urls: &[String],
+) -> serde_json::Value {
+    serde_json::json!({
+        "query": query,
+        "rag_answer": answers.rag,
+        "baseline_answer": answers.baseline,
+        "analysis_answer": answers.analysis,
+        "source_urls": source_urls,
+        "crawl_suggestions": answers.crawl_suggestions.iter().map(|s| serde_json::json!({
+            "url": s.url,
+            "reason": s.reason,
+        })).collect::<Vec<_>>(),
+        "crawl_enqueue_outcomes": answers.crawl_enqueue_outcomes.iter().map(|o| serde_json::json!({
+            "url": o.url,
+            "job_id": o.job_id,
+            "error": o.error,
+        })).collect::<Vec<_>>(),
+        "ref_chunk_count": answers.ref_chunk_count,
+        "diagnostics": if cfg.ask_diagnostics {
+            serde_json::json!({
+                "candidate_pool": ctx.candidate_count,
+                "reranked_pool": ctx.reranked_count,
+                "chunks_selected": ctx.chunks_selected,
+                "full_docs_selected": ctx.full_docs_selected,
+                "supplemental_selected": ctx.supplemental_count,
+                "context_chars": answers.context_chars,
+                "min_relevance_score": cfg.ask_min_relevance_score,
+                "doc_fetch_concurrency": cfg.ask_doc_fetch_concurrency,
+            })
+        } else {
+            serde_json::Value::Null
+        },
+        "timing_ms": {
+            "retrieval": ctx.retrieval_elapsed_ms,
+            "context_build": ctx.context_elapsed_ms,
+            "rag_llm": timing.rag_elapsed_ms,
+            "baseline_llm": timing.baseline_elapsed_ms,
+            "research_elapsed_ms": timing.research_elapsed_ms,
+            "analysis_llm_ms": timing.analysis_elapsed_ms,
+            "total": timing.total_elapsed_ms,
+        }
+    })
+}
+
 fn emit_json_output(
     cfg: &Config,
     query: &str,
@@ -205,49 +255,8 @@ fn emit_json_output(
     timing: &EvalTiming,
     source_urls: &[String],
 ) -> Result<(), Box<dyn Error>> {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::json!({
-            "query": query,
-            "rag_answer": answers.rag,
-            "baseline_answer": answers.baseline,
-            "analysis_answer": answers.analysis,
-            "source_urls": source_urls,
-            "crawl_suggestions": answers.crawl_suggestions.iter().map(|s| serde_json::json!({
-                "url": s.url,
-                "reason": s.reason,
-            })).collect::<Vec<_>>(),
-            "crawl_enqueue_outcomes": answers.crawl_enqueue_outcomes.iter().map(|o| serde_json::json!({
-                "url": o.url,
-                "job_id": o.job_id,
-                "error": o.error,
-            })).collect::<Vec<_>>(),
-            "ref_chunk_count": answers.ref_chunk_count,
-            "diagnostics": if cfg.ask_diagnostics {
-                serde_json::json!({
-                    "candidate_pool": ctx.candidate_count,
-                    "reranked_pool": ctx.reranked_count,
-                    "chunks_selected": ctx.chunks_selected,
-                    "full_docs_selected": ctx.full_docs_selected,
-                    "supplemental_selected": ctx.supplemental_count,
-                    "context_chars": answers.context_chars,
-                    "min_relevance_score": cfg.ask_min_relevance_score,
-                    "doc_fetch_concurrency": cfg.ask_doc_fetch_concurrency,
-                })
-            } else {
-                serde_json::Value::Null
-            },
-            "timing_ms": {
-                "retrieval": ctx.retrieval_elapsed_ms,
-                "context_build": ctx.context_elapsed_ms,
-                "rag_llm": timing.rag_elapsed_ms,
-                "baseline_llm": timing.baseline_elapsed_ms,
-                "research_elapsed_ms": timing.research_elapsed_ms,
-                "analysis_llm_ms": timing.analysis_elapsed_ms,
-                "total": timing.total_elapsed_ms,
-            }
-        }))?
-    );
+    let json = build_evaluate_json(cfg, query, ctx, answers, timing, source_urls);
+    println!("{}", serde_json::to_string_pretty(&json)?);
     Ok(())
 }
 

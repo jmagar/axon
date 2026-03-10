@@ -1,3 +1,7 @@
+pub mod doctor;
+
+pub use doctor::build_doctor_report;
+
 use crate::crates::core::logging::log_info;
 use std::env;
 use std::time::Duration;

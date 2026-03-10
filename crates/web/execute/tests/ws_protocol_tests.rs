@@ -414,6 +414,10 @@ fn direct_sync_modes_contains_core_service_modes() {
         "doctor",
         "status",
         "pulse_chat",
+        "suggest",
+        "evaluate",
+        "dedupe",
+        "screenshot",
     ] {
         assert!(
             direct.contains(expected),
@@ -426,14 +430,7 @@ fn direct_sync_modes_contains_core_service_modes() {
 fn fallback_subprocess_modes_not_in_direct_sync_or_async() {
     // These modes are not yet wired to direct service dispatch and are expected
     // to fall through to the subprocess path.  Verify their classification.
-    let fallback_modes = &[
-        "suggest",
-        "screenshot",
-        "evaluate",
-        "sessions",
-        "dedupe",
-        "debug",
-    ];
+    let fallback_modes = &["sessions", "debug"];
     let direct = super::direct_sync_modes();
     let async_m = super::async_modes();
     for mode in fallback_modes {

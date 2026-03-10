@@ -12,9 +12,10 @@ export function useSplitPane() {
   const [desktopSplitPercent, setDesktopSplitPercent] = useState(50)
   const [mobileSplitPercent, setMobileSplitPercent] = useState(56)
   const [isDesktop, setIsDesktop] = useState(false)
-  const [mobilePane, setMobilePane] = useState<'chat' | 'editor'>('chat')
+  const [mobilePane, setMobilePane] = useState<'chat' | 'editor' | 'settings'>('chat')
   const [showChat, setShowChat] = useState(true)
   const [showEditor, setShowEditor] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const desktopSplitPercentRef = useRef(50)
   const mobileSplitPercentRef = useRef(56)
@@ -23,6 +24,7 @@ export function useSplitPane() {
   const splitHandleRef = useRef<HTMLDivElement>(null)
   const showEditorRef = useRef(false)
   const showChatRef = useRef(true)
+  const showSettingsRef = useRef(false)
 
   const setDesktopSplitPercentTracked = useCallback((val: number) => {
     desktopSplitPercentRef.current = val
@@ -44,6 +46,11 @@ export function useSplitPane() {
     setShowChat(val)
   }, [])
 
+  const setShowSettingsTracked = useCallback((val: boolean) => {
+    showSettingsRef.current = val
+    setShowSettings(val)
+  }, [])
+
   // Storage restore effect
   useEffect(() => {
     try {
@@ -58,7 +65,7 @@ export function useSplitPane() {
         setMobileSplitPercent(parsedMobile)
       }
       const pane = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
-      if (pane === 'chat' || pane === 'editor') setMobilePane(pane)
+      if (pane === 'chat' || pane === 'editor' || pane === 'settings') setMobilePane(pane)
     } catch {
       // Ignore storage errors.
     }
@@ -125,7 +132,7 @@ export function useSplitPane() {
     }
   }, [])
 
-  const persistMobilePane = useCallback((pane: 'chat' | 'editor') => {
+  const persistMobilePane = useCallback((pane: 'chat' | 'editor' | 'settings') => {
     setMobilePane(pane)
     try {
       window.localStorage.setItem(MOBILE_PANE_STORAGE_KEY, pane)
@@ -153,6 +160,11 @@ export function useSplitPane() {
       const value = next ?? !prev
       if (!value && !showChatRef.current) return prev
       showEditorRef.current = value
+      // Mutually exclusive with settings panel
+      if (value) {
+        showSettingsRef.current = false
+        setShowSettings(false)
+      }
       try {
         window.localStorage.setItem(SHOW_EDITOR_STORAGE_KEY, String(value))
       } catch {
@@ -160,6 +172,18 @@ export function useSplitPane() {
       }
       return value
     })
+  }, [])
+
+  const toggleSettings = useCallback((next?: boolean) => {
+    const value = next ?? !showSettingsRef.current
+    if (!value && !showChatRef.current) return
+    showSettingsRef.current = value
+    setShowSettings(value)
+    // Mutually exclusive with editor panel
+    if (value) {
+      showEditorRef.current = false
+      setShowEditor(false)
+    }
   }, [])
 
   return {
@@ -176,6 +200,9 @@ export function useSplitPane() {
     showEditor,
     setShowEditor: setShowEditorTracked,
     toggleEditor,
+    showSettings,
+    setShowSettings: setShowSettingsTracked,
+    toggleSettings,
     splitContainerRef,
     splitHandleRef,
     dragStartRef,

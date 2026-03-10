@@ -1,12 +1,12 @@
-use crate::crates::cli::commands::research::research_payload;
-use crate::crates::cli::commands::search::search_results;
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_warn;
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{
     ResearchResult, SearchOptions, SearchResult, ServiceTimeRange,
 };
-use spider_agent::TimeRange;
+use spider_agent::{Agent, Message, SearchOptions as SpiderSearchOptions, TimeRange, TokenUsage};
 use std::error::Error;
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 /// Convert a [`ServiceTimeRange`] to the `spider_agent` crate's [`TimeRange`].
@@ -18,6 +18,186 @@ fn to_spider_time_range(tr: ServiceTimeRange) -> TimeRange {
         ServiceTimeRange::Week => TimeRange::Week,
         ServiceTimeRange::Month => TimeRange::Month,
         ServiceTimeRange::Year => TimeRange::Year,
+    }
+}
+
+/// Execute a Tavily web search and return raw JSON result items.
+///
+/// This is the core search implementation — validates the API key, builds the
+/// spider_agent query, and maps results to a flat `Vec<serde_json::Value>`.
+pub async fn search_results(
+    cfg: &Config,
+    query: &str,
+    limit: usize,
+    offset: usize,
+    time_range: Option<TimeRange>,
+) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
+    if cfg.tavily_api_key.is_empty() {
+        return Err("search requires TAVILY_API_KEY — set it in .env".into());
+    }
+    let mut search_opts = SpiderSearchOptions::new().with_limit((limit + offset).clamp(1, 100));
+    if let Some(tr) = time_range {
+        search_opts = search_opts.with_time_range(tr);
+    }
+    let agent = Agent::builder()
+        .with_search_tavily(&cfg.tavily_api_key)
+        .build()?;
+    let results = agent.search_with_options(query, search_opts).await?;
+    Ok(results
+        .results
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|r| {
+            serde_json::json!({
+                "position": r.position,
+                "title": r.title,
+                "url": r.url,
+                "snippet": r.snippet,
+            })
+        })
+        .collect::<Vec<_>>())
+}
+
+/// Execute a Tavily AI research query with LLM synthesis.
+///
+/// Validates config, runs a Tavily search, extracts content snippets, and
+/// synthesizes a summary via the configured LLM endpoint. Returns the full
+/// research payload as a JSON value.
+pub async fn research_payload(
+    cfg: &Config,
+    query: &str,
+    limit: usize,
+    offset: usize,
+    time_range: Option<TimeRange>,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let started = Instant::now();
+    if cfg.tavily_api_key.is_empty() {
+        return Err("research requires TAVILY_API_KEY — set it in .env".into());
+    }
+    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
+        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
+    }
+
+    let base = cfg.openai_base_url.trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        return Err(
+            "OPENAI_BASE_URL should not include /chat/completions — set the base URL only (e.g. http://host/v1)".into()
+        );
+    }
+    let _ = spider::url::Url::parse(base)
+        .map_err(|e| format!("invalid OPENAI_BASE_URL '{base}': {e}"))?;
+    let llm_url = format!("{base}/chat/completions");
+
+    let agent = Agent::builder()
+        .with_openai_compatible(llm_url, &cfg.openai_api_key, &cfg.openai_model)
+        .with_search_tavily(&cfg.tavily_api_key)
+        .build()?;
+
+    // Step 1: search — Tavily returns URLs + content excerpts
+    let mut search_options = SpiderSearchOptions::new().with_limit((limit + offset).clamp(1, 100));
+    if let Some(tr) = time_range {
+        search_options = search_options.with_time_range(tr);
+    }
+    let search_results = agent.search_with_options(query, search_options).await?;
+
+    // Step 2: use Tavily's content excerpts directly — skip redundant fetch+extract
+    let extractions: Vec<serde_json::Value> = search_results
+        .results
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|r| {
+            serde_json::json!({
+                "url": r.url,
+                "title": r.title,
+                "extracted": r.snippet.as_deref().unwrap_or(""),
+            })
+        })
+        .collect();
+
+    // Step 3: synthesize — one LLM call over the snippets
+    let (summary, usage) = synthesize(query, &extractions, &agent).await;
+
+    let search_results_json = search_results
+        .results
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|r| {
+            serde_json::json!({
+                "position": r.position,
+                "title": r.title,
+                "url": r.url,
+                "snippet": r.snippet,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(serde_json::json!({
+        "query": query,
+        "limit": limit,
+        "offset": offset,
+        "search_results": search_results_json,
+        "extractions": extractions,
+        "summary": summary,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        },
+        "timing_ms": {
+            "total": started.elapsed().as_millis(),
+        },
+    }))
+}
+
+/// Synthesize extracted content into a coherent summary via LLM.
+async fn synthesize(
+    query: &str,
+    extractions: &[serde_json::Value],
+    agent: &Agent,
+) -> (Option<String>, TokenUsage) {
+    if extractions.is_empty() {
+        return (None, TokenUsage::default());
+    }
+
+    let mut context = String::new();
+    for (i, e) in extractions.iter().enumerate() {
+        context.push_str(&format!(
+            "\n\nSource {} ({}): {}\n{}",
+            i + 1,
+            e["url"].as_str().unwrap_or(""),
+            e["title"].as_str().unwrap_or(""),
+            e["extracted"].as_str().unwrap_or(""),
+        ));
+    }
+
+    let messages = vec![
+        Message::system(
+            "You are a research synthesis assistant. Summarize the findings from multiple sources into a coherent response.",
+        ),
+        Message::user(format!(
+            "Topic: {query}\n\nSources:{context}\n\nProvide a comprehensive summary of the findings, citing sources where appropriate. Return as JSON with a 'summary' field."
+        )),
+    ];
+
+    match agent.complete(messages).await {
+        Ok(response) => {
+            let summary = serde_json::from_str::<serde_json::Value>(&response.content)
+                .ok()
+                .and_then(|v| {
+                    v.get("summary")
+                        .and_then(|s| s.as_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or(response.content);
+            (Some(summary), response.usage)
+        }
+        Err(e) => {
+            log_warn(&format!("synthesis failed: {e}"));
+            (None, TokenUsage::default())
+        }
     }
 }
 

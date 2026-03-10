@@ -3,6 +3,7 @@ mod download;
 pub mod execute;
 mod pack;
 mod shell;
+pub mod tailscale_auth;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
@@ -10,6 +11,7 @@ use crate::crates::services::acp::{AcpConnectionHandle, PermissionResponderMap};
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use dashmap::DashMap;
@@ -19,6 +21,7 @@ use std::error::Error;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tailscale_auth::{AuthOutcome, DenyReason, TailscaleAuthConfig, auth_log_message, check_auth};
 use tokio::sync::{Mutex, broadcast};
 
 /// Global semaphore limiting concurrent ACP sessions (pulse_chat + pulse_chat_probe).
@@ -44,6 +47,9 @@ pub(crate) struct AppState {
     /// Same token used by the Next.js proxy for /api/* routes.
     /// None = gate disabled (open WS, trusted-network deployments only).
     api_token: Option<String>,
+    /// Tailscale Serve identity auth configuration.
+    /// Loaded once from env vars at startup — not re-read per request.
+    ts_auth: TailscaleAuthConfig,
     /// Base server config — shared across all connections.
     ///
     /// Tasks 5.2 and 5.3 will use this to drive direct service dispatch
@@ -68,15 +74,36 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
     let api_token = std::env::var("AXON_WEB_API_TOKEN")
         .ok()
         .filter(|t| !t.is_empty());
-    match &api_token {
-        Some(_) => log_info("WS gate: active (AXON_WEB_API_TOKEN)"),
-        None => log_info("WS gate: disabled (set AXON_WEB_API_TOKEN to enable)"),
+
+    let ts_auth = TailscaleAuthConfig::from_env();
+
+    // Log the active auth configuration at startup so operators can verify.
+    match (&api_token, ts_auth.strict, ts_auth.has_allowlist()) {
+        (_, true, _) => log_info(
+            "WS gate: AXON_TAILSCALE_STRICT=true — only tailscale serve connections accepted",
+        ),
+        (_, false, true) => log_info(&format!(
+            "WS gate: tailscale serve + allowlist ({} users) | token fallback: {}",
+            ts_auth.allowed_users.len(),
+            if api_token.is_some() {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        )),
+        (Some(_), false, false) => {
+            log_info("WS gate: api token | tailscale serve identity headers also accepted")
+        }
+        (None, false, false) => {
+            log_info("WS gate: tailscale serve only (no AXON_WEB_API_TOKEN, no strict mode)")
+        }
     }
 
     let state = Arc::new(AppState {
         stats_tx: stats_tx.clone(),
         job_dirs: job_dirs.clone(),
         api_token,
+        ts_auth,
         cfg,
     });
 
@@ -191,46 +218,46 @@ async fn serve_output_file(
 async fn ws_upgrade(
     ws: WebSocketUpgrade,
     Query(params): Query<WsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    match &state.api_token {
-        Some(expected) => {
-            let token = params.token.as_deref().unwrap_or("").trim();
-            if token.is_empty() {
-                log::warn!("ws upgrade rejected: no token from {}", addr.ip());
-                return (axum::http::StatusCode::UNAUTHORIZED, "token required").into_response();
-            }
-            if token != expected.as_str() {
-                log::warn!("ws upgrade rejected: invalid token from {}", addr.ip());
-                return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
-            }
-        }
-        None => {
-            // No token configured — open access is only permitted in debug/test builds.
-            // In release builds, AXON_WEB_API_TOKEN must be set to prevent unauthenticated
-            // access to the WebSocket execution bridge.
-            #[cfg(not(any(debug_assertions, test)))]
-            {
-                log::warn!(
-                    "ws upgrade rejected: AXON_WEB_API_TOKEN not set (required in release builds) \
-                     — connection from {}",
-                    addr.ip()
-                );
-                return (
-                    axum::http::StatusCode::UNAUTHORIZED,
-                    "AXON_WEB_API_TOKEN required in production",
-                )
-                    .into_response();
-            }
-        }
+    let outcome = check_auth(
+        &headers,
+        params.token.as_deref(),
+        state.api_token.as_deref(),
+        &state.ts_auth,
+    );
+
+    let log_msg = auth_log_message(&outcome, addr);
+    match &outcome {
+        AuthOutcome::Tailscale(_) | AuthOutcome::Token => log::info!("{log_msg}"),
+        AuthOutcome::Denied(_) => log::warn!("{log_msg}"),
     }
+
+    if matches!(outcome, AuthOutcome::Denied(_)) {
+        let body = match outcome {
+            AuthOutcome::Denied(DenyReason::UserNotAllowed(_)) => {
+                "forbidden: user not in allowlist"
+            }
+            AuthOutcome::Denied(DenyReason::StrictModeRequiresTailscale) => {
+                "forbidden: tailscale serve required (AXON_TAILSCALE_STRICT=true)"
+            }
+            AuthOutcome::Denied(DenyReason::NoAuthConfigured) => {
+                "unauthorized: configure AXON_WEB_API_TOKEN or use tailscale serve"
+            }
+            _ => "unauthorized",
+        };
+        return (axum::http::StatusCode::UNAUTHORIZED, body).into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
 async fn shell_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(params): Query<WsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
@@ -243,38 +270,32 @@ async fn shell_ws_upgrade(
         }
     };
 
+    // Loopback (localhost) connections are always allowed — they originate from the
+    // local machine (Next.js dev server, tailscale serve daemon, etc.).
     if !is_loopback {
-        // Non-loopback: require a valid API token (same credential as /ws).
-        match &state.api_token {
-            Some(expected) => {
-                let token = params.token.as_deref().unwrap_or("").trim();
-                if token.is_empty() {
-                    log::warn!("shell ws upgrade rejected: no token from {}", addr.ip());
-                    return (axum::http::StatusCode::UNAUTHORIZED, "token required")
-                        .into_response();
-                }
-                if token != expected.as_str() {
-                    log::warn!(
-                        "shell ws upgrade rejected: invalid token from {}",
-                        addr.ip()
-                    );
-                    return (axum::http::StatusCode::FORBIDDEN, "invalid token").into_response();
-                }
+        // Non-loopback: apply the same auth check as the main /ws endpoint.
+        let outcome = check_auth(
+            &headers,
+            params.token.as_deref(),
+            state.api_token.as_deref(),
+            &state.ts_auth,
+        );
+        let log_msg = auth_log_message(&outcome, addr);
+        match &outcome {
+            AuthOutcome::Tailscale(_) | AuthOutcome::Token => {
+                log::info!("shell ws: {log_msg}")
             }
-            None => {
-                // No token configured and not loopback — deny for safety.
-                log::warn!(
-                    "shell ws upgrade rejected: remote connection from {} without AXON_WEB_API_TOKEN",
-                    addr.ip()
-                );
-                return (
-                    axum::http::StatusCode::FORBIDDEN,
-                    "Shell access requires AXON_WEB_API_TOKEN for non-loopback connections",
-                )
-                    .into_response();
-            }
+            AuthOutcome::Denied(_) => log::warn!("shell ws: {log_msg}"),
+        }
+        if matches!(outcome, AuthOutcome::Denied(_)) {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "shell access denied — use tailscale serve or set AXON_WEB_API_TOKEN",
+            )
+                .into_response();
         }
     }
+
     ws.on_upgrade(shell::handle_shell_ws)
 }
 
