@@ -1,3 +1,6 @@
+pub mod classify;
+pub mod code;
+
 use crate::crates::core::http::normalize_url;
 use std::collections::HashSet;
 

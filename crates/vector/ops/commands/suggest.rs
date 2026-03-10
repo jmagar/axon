@@ -136,6 +136,9 @@ fn host_of(url: &str) -> String {
 
 struct SuggestPromptContext {
     desired: usize,
+    /// How many URLs to request from the LLM. Over-samples relative to `desired`
+    /// so that after filtering already-indexed URLs the output still reaches `desired`.
+    llm_request: usize,
     indexed_urls: Vec<String>,
     indexed_lookup: HashSet<String>,
     ranked_base_urls: Vec<(String, usize)>,
@@ -192,8 +195,14 @@ async fn build_suggest_prompt_context(
         .cloned()
         .collect::<Vec<_>>()
         .join("\n");
+    // Over-sample by 3× so that post-filter rejections (already-indexed URLs the LLM
+    // couldn't see) don't reduce the final output below `desired`. Capped at 100 to
+    // stay within reasonable LLM context limits.
+    let llm_request = (desired * 3).min(100);
+
     Ok(SuggestPromptContext {
         desired,
+        llm_request,
         indexed_urls,
         indexed_lookup,
         ranked_base_urls,
@@ -212,12 +221,14 @@ Rules:\n\
 - Provide exactly {} suggestions.\n\
 - Suggest docs/reference/changelog/API/help URLs likely to complement the indexed base URLs.\n\
 - Do not suggest any URL from ALREADY_INDEXED_URLS.\n\
+- Do not suggest any URL whose domain is already well-covered (high page count in INDEXED_BASE_URLS_WITH_PAGE_COUNTS) unless you are confident the specific path is not yet indexed.\n\
+- Prefer new domains or deeply nested sections not represented in ALREADY_INDEXED_URLS.\n\
 - Prefer URLs likely to be crawl entrypoints or high-value docs pages.\n\
 - Use only absolute http/https URLs.\n\n\
 Focus (optional): {}\n\n\
 INDEXED_BASE_URLS_WITH_PAGE_COUNTS:\n{}\n\n\
-ALREADY_INDEXED_URLS:\n{}",
-        ctx.desired, ctx.focus, ctx.base_context, ctx.existing_url_context
+ALREADY_INDEXED_URLS (sample — more may be indexed):\n{}",
+        ctx.llm_request, ctx.focus, ctx.base_context, ctx.existing_url_context
     );
     user_prompt
 }
