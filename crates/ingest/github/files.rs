@@ -205,22 +205,25 @@ async fn fetch_and_embed_file(ctx: &FileEmbedCtx, path: &str) -> Result<usize, S
 ///
 /// Uses `embed_code_with_metadata` for AST-aware chunking when the file
 /// extension has tree-sitter grammar support, falling back to prose chunking.
+///
+/// If `progress_tx` is provided, sends `{"files_done", "files_total", "chunks_embedded"}`
+/// after every file completes so the worker can persist live progress to the DB.
 pub async fn embed_files(
     cfg: &Config,
     common: &GitHubCommonFields,
     include_source: bool,
     token: Option<&str>,
+    progress_tx: Option<&tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
 ) -> Result<usize, Box<dyn Error>> {
     let client = build_client()?;
     let auth: Option<String> = token.map(|t| format!("Bearer {t}"));
     let auth_ref = auth.as_deref();
 
     let file_items = fetch_indexable_files(&client, common, include_source, auth_ref).await?;
+    let files_total = file_items.len();
 
     log_info(&format!(
-        "github file_tree size={} indexable={}",
-        file_items.len(),
-        file_items.len()
+        "github file_tree size={files_total} indexable={files_total}"
     ));
     let ctx = FileEmbedCtx {
         client,
@@ -235,19 +238,34 @@ pub async fn embed_files(
     };
 
     let concurrency = std::cmp::min(cfg.batch_concurrency, 16);
-    let results: Vec<Result<usize, String>> = stream::iter(file_items)
+    let mut file_stream = stream::iter(file_items)
         .map(|path| {
             let ctx = ctx.clone();
             async move { fetch_and_embed_file(&ctx, &path).await }
         })
-        .buffer_unordered(concurrency)
-        .collect()
-        .await;
+        .buffer_unordered(concurrency);
 
-    let total: usize = results.len();
-    let failed = results.iter().filter(|r| r.is_err()).count();
+    let mut chunks_embedded = 0usize;
+    let mut files_done = 0usize;
+    let mut failed = 0usize;
+
+    while let Some(result) = file_stream.next().await {
+        files_done += 1;
+        match result {
+            Ok(n) => chunks_embedded += n,
+            Err(_) => failed += 1,
+        }
+        if let Some(tx) = progress_tx {
+            let _ = tx.send(serde_json::json!({
+                "files_done": files_done,
+                "files_total": files_total,
+                "chunks_embedded": chunks_embedded,
+            }));
+        }
+    }
+
     log_info(&format!(
-        "github files_fetched total={total} failed={failed}"
+        "github files_fetched total={files_total} failed={failed}"
     ));
-    Ok(results.into_iter().filter_map(|r| r.ok()).sum())
+    Ok(chunks_embedded)
 }

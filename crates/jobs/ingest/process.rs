@@ -56,12 +56,9 @@ async fn load_playlist_progress_with_pool(pool: &PgPool, job_id: Uuid) -> (usize
     (chunks, urls)
 }
 
-/// Persist playlist progress to the DB. Logs a warning on failure so errors are observable.
-async fn update_playlist_progress_with_pool(
-    pool: &PgPool,
-    job_id: Uuid,
-    progress: &serde_json::Value,
-) {
+/// Persist ingest progress to the DB. Used by both YouTube playlist and GitHub progress tracking.
+/// Logs a warning on failure so errors are observable.
+async fn update_ingest_progress(pool: &PgPool, job_id: Uuid, progress: &serde_json::Value) {
     if let Err(e) =
         sqlx::query("UPDATE axon_ingest_jobs SET result_json=$1, updated_at=NOW() WHERE id=$2")
             .bind(progress)
@@ -70,7 +67,7 @@ async fn update_playlist_progress_with_pool(
             .await
     {
         log_warn(&format!(
-            "command=ingest_youtube_playlist progress_update_failed job_id={job_id} err={e}"
+            "command=ingest progress_update_failed job_id={job_id} err={e}"
         ));
     }
 }
@@ -113,7 +110,7 @@ async fn ingest_video_with_retry(cfg: &Config, video_url: &str) -> Result<usize,
 ///
 /// Drains `pending` videos using `FuturesUnordered` with up to `PLAYLIST_CONCURRENCY`
 /// in-flight at once. Progress is persisted to the DB after each completion via
-/// `update_playlist_progress_with_pool`.
+/// `update_ingest_progress`.
 ///
 /// Returns the total number of chunks embedded across all processed videos.
 async fn drain_playlist_videos_with_pool(
@@ -161,7 +158,7 @@ async fn drain_playlist_videos_with_pool(
             "chunks_embedded": chunks_embedded,
             "completed_urls": completed_urls.iter().collect::<Vec<_>>(),
         });
-        update_playlist_progress_with_pool(pool, job_id, &progress).await;
+        update_ingest_progress(pool, job_id, &progress).await;
 
         // Queue next pending video to maintain PLAYLIST_CONCURRENCY
         if let Some(next_url) = pending_iter.next() {
@@ -193,8 +190,7 @@ async fn ingest_youtube_playlist_with_pool(
     // Write enumerating placeholder so `axon status` shows activity while yt-dlp lists the channel.
     // Only written on a fresh start — resumed jobs already have result_json with video counts.
     if completed_urls.is_empty() {
-        update_playlist_progress_with_pool(pool, job_id, &serde_json::json!({"enumerating": true}))
-            .await;
+        update_ingest_progress(pool, job_id, &serde_json::json!({"enumerating": true})).await;
     }
 
     // Enumerate all videos via single yt-dlp --flat-playlist call
@@ -228,7 +224,7 @@ async fn ingest_youtube_playlist_with_pool(
         "chunks_embedded": chunks_embedded,
         "completed_urls": completed_urls.iter().collect::<Vec<_>>(),
     });
-    update_playlist_progress_with_pool(pool, job_id, &initial_progress).await;
+    update_ingest_progress(pool, job_id, &initial_progress).await;
 
     let final_chunks = drain_playlist_videos_with_pool(
         cfg,
@@ -289,7 +285,22 @@ pub(crate) async fn process_ingest_job(cfg: Config, pool: PgPool, id: Uuid) {
         IngestSource::Github {
             repo,
             include_source,
-        } => ingest::github::ingest_github(&cfg, repo, *include_source).await,
+        } => {
+            let (progress_tx, mut progress_rx) =
+                tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
+            let progress_pool = pool.clone();
+            let progress_id = id;
+            let progress_task = tokio::spawn(async move {
+                while let Some(progress) = progress_rx.recv().await {
+                    update_ingest_progress(&progress_pool, progress_id, &progress).await;
+                }
+            });
+            let r =
+                ingest::github::ingest_github(&cfg, repo, *include_source, Some(progress_tx)).await;
+            // Wait for final DB write to complete before marking done
+            let _ = progress_task.await;
+            r
+        }
         IngestSource::Reddit { target } => ingest::reddit::ingest_reddit(&cfg, target).await,
         IngestSource::Youtube { target } => {
             if ingest::youtube::is_playlist_or_channel_url(target) {
