@@ -45,6 +45,18 @@ export function PulseWorkspace() {
     }
   }, [ws.rightPanel])
 
+  // Also track mobile pane selections so first-time mobile panel switches mount the component.
+  useEffect(() => {
+    if (ws.mobilePane && ws.mobilePane !== 'chat') {
+      setOpenedPanels((prev) => {
+        if (prev.has(ws.mobilePane as RightPanelId)) return prev
+        const next = new Set(prev)
+        next.add(ws.mobilePane as RightPanelId)
+        return next
+      })
+    }
+  }, [ws.mobilePane])
+
   const hasRightPanel = ws.rightPanel !== null
 
   return (

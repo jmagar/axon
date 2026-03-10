@@ -67,6 +67,7 @@ pub enum JobTable {
     Extract,
     Embed,
     Ingest,
+    Graph,
 }
 
 impl JobTable {
@@ -77,6 +78,7 @@ impl JobTable {
             Self::Extract => "axon_extract_jobs",
             Self::Embed => "axon_embed_jobs",
             Self::Ingest => "axon_ingest_jobs",
+            Self::Graph => "axon_graph_jobs",
         }
     }
 }

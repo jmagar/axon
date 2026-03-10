@@ -93,9 +93,26 @@ fn strip_markdown_inline(text: &str) -> String {
     out
 }
 
-/// Clean chunk text for snippet display: strip markdown structure, navigation
-/// boilerplate, and bare URLs so sentence extraction sees prose only.
-fn clean_snippet_source(text: &str) -> String {
+fn markdown_link_count(text: &str) -> usize {
+    text.match_indices("](").count()
+}
+
+fn looks_like_page_title(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.len() > 120 {
+        return false;
+    }
+    if trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?') {
+        return false;
+    }
+    if !(trimmed.contains(" - ") || trimmed.contains(" | ") || trimmed.contains(" :: ")) {
+        return false;
+    }
+    let word_count = trimmed.split_whitespace().count();
+    (3..=14).contains(&word_count)
+}
+
+fn is_boilerplate_line(raw_line: &str, cleaned_line: &str) -> bool {
     const NAV: &[&str] = &[
         "prev",
         "next",
@@ -104,20 +121,41 @@ fn clean_snippet_source(text: &str) -> String {
         "read more",
         "copy",
         "subscribe",
+        "search",
+        "search...",
+        "navigation",
+        "skip to main content",
+        "model context protocol home page",
         "was this page helpful",
         "table of contents",
         "on this page",
         "developer docs",
     ];
 
+    let lower = cleaned_line.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return true;
+    }
+    if NAV.iter().any(|p| lower == *p) {
+        return true;
+    }
+    if markdown_link_count(raw_line) >= 3 {
+        return true;
+    }
+    looks_like_page_title(cleaned_line)
+}
+
+/// Clean chunk text for snippet display: strip markdown structure, navigation
+/// boilerplate, and bare URLs so sentence extraction sees prose only.
+fn clean_snippet_source(text: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        let raw_line = line.trim();
+        if raw_line.is_empty() || raw_line.starts_with('#') {
             continue;
         }
         // Horizontal rules
-        let no_spaces: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+        let no_spaces: String = raw_line.chars().filter(|c| !c.is_whitespace()).collect();
         if no_spaces.len() >= 3
             && (no_spaces.chars().all(|c| c == '-')
                 || no_spaces.chars().all(|c| c == '*')
@@ -125,19 +163,12 @@ fn clean_snippet_source(text: &str) -> String {
         {
             continue;
         }
-        // Short-line nav boilerplate
-        if line.len() < 50 {
-            let lower = line.to_ascii_lowercase();
-            if NAV.iter().any(|p| lower.trim() == *p) {
-                continue;
-            }
-        }
         // Strip leading list markers
-        let line = line
+        let line = raw_line
             .strip_prefix("- ")
             .or_else(|| line.strip_prefix("* "))
             .or_else(|| line.strip_prefix("• "))
-            .unwrap_or(line);
+            .unwrap_or(raw_line);
         // Strip inline markdown then bare URLs
         let stripped = strip_markdown_inline(line);
         let filtered: String = stripped
@@ -145,7 +176,7 @@ fn clean_snippet_source(text: &str) -> String {
             .filter(|w| !w.starts_with("http://") && !w.starts_with("https://"))
             .collect::<Vec<_>>()
             .join(" ");
-        if !filtered.is_empty() {
+        if !is_boilerplate_line(raw_line, &filtered) {
             parts.push(filtered);
         }
     }

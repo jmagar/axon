@@ -237,6 +237,41 @@ pub struct Config {
     /// Tavily search API key. Env: `TAVILY_API_KEY`. **Secret.**
     pub tavily_api_key: String,
 
+    /// Neo4j HTTP base URL for graph extraction and retrieval.
+    /// Env: `AXON_NEO4J_URL`.
+    pub neo4j_url: String,
+
+    /// Neo4j username for the transactional Cypher API.
+    /// Env: `AXON_NEO4J_USER`.
+    pub neo4j_user: String,
+
+    /// Neo4j password for the transactional Cypher API. Env: `AXON_NEO4J_PASSWORD`. **Secret.**
+    pub neo4j_password: String,
+
+    /// AMQP queue name for graph extraction jobs. Env: `AXON_GRAPH_QUEUE`.
+    pub graph_queue: String,
+
+    /// Parallelism for graph extraction workers. Env: `AXON_GRAPH_CONCURRENCY`.
+    pub graph_concurrency: usize,
+
+    /// Base URL for the graph extraction LLM endpoint. Env: `AXON_GRAPH_LLM_URL`.
+    pub graph_llm_url: String,
+
+    /// Model name used for graph extraction. Env: `AXON_GRAPH_LLM_MODEL`.
+    pub graph_llm_model: String,
+
+    /// Minimum similarity score for graph candidate edges. Env: `AXON_GRAPH_SIMILARITY_THRESHOLD`.
+    pub graph_similarity_threshold: f64,
+
+    /// Maximum similar candidates considered during graph extraction. Env: `AXON_GRAPH_SIMILARITY_LIMIT`.
+    pub graph_similarity_limit: usize,
+
+    /// Maximum characters of graph context injected into `ask`. Env: `AXON_GRAPH_CONTEXT_MAX_CHARS`.
+    pub graph_context_max_chars: usize,
+
+    /// Optional override path for the graph taxonomy file. Env: `AXON_GRAPH_TAXONOMY_PATH`.
+    pub graph_taxonomy_path: String,
+
     /// Allowed cross-origin browser origins for web and MCP HTTP surfaces.
     /// Env: `AXON_WEB_ALLOWED_ORIGINS` (comma-separated).
     pub web_allowed_origins: Vec<String>,
@@ -247,6 +282,9 @@ pub struct Config {
 
     /// Print verbose RAG diagnostics (retrieved chunks, scores) during `ask`/`evaluate`. Flag: `--diagnostics`.
     pub ask_diagnostics: bool,
+
+    /// Enable graph-enhanced retrieval during `ask` when Neo4j is configured. Flag: `--graph`.
+    pub ask_graph: bool,
 
     /// Output mode for live `evaluate` answer rendering (`inline`, `side-by-side`, `events`).
     pub evaluate_responses_mode: EvaluateResponsesMode,

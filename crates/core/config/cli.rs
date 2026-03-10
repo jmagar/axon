@@ -41,6 +41,8 @@ pub(super) enum CliCommand {
     Ingest(IngestArgs),
     Sessions(SessionsArgs),
     Screenshot(ScrapeArgs),
+    /// Knowledge graph operations
+    Graph(TextArg),
     #[command(alias = "completion")]
     Completions(CompletionArgs),
     Mcp(McpArgs),

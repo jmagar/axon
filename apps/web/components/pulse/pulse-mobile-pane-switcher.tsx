@@ -8,6 +8,7 @@ import {
   Settings2,
   TerminalSquare,
 } from 'lucide-react'
+import type { ComponentType } from 'react'
 import type { MobilePane } from '@/hooks/use-split-pane'
 
 interface PulseMobilePaneSwitcherProps {
@@ -17,7 +18,7 @@ interface PulseMobilePaneSwitcherProps {
 
 const PANE_BUTTONS: {
   id: MobilePane
-  Icon: React.ComponentType<{ className?: string }>
+  Icon: ComponentType<{ className?: string }>
   label: string
   activeClass: string
 }[] = [

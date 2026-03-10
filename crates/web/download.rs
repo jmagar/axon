@@ -12,9 +12,10 @@ mod validation;
 
 use std::sync::Arc;
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use serde::Deserialize;
 
 use self::archive::build_zip;
 use self::manifest::load_all_files;
@@ -23,11 +24,21 @@ use super::DownloadAuthState;
 use super::pack;
 use super::tailscale_auth::{AuthOutcome, check_auth};
 
+/// Query parameters for download routes — mirrors `WsQuery` in `web.rs`.
+#[derive(Deserialize)]
+pub(crate) struct DownloadQuery {
+    token: Option<String>,
+}
+
 /// Authenticate a download request.
 ///
 /// Tries SSH key auth first (if configured and SSH headers are present),
 /// then falls back to TS/token via `check_auth`.
-fn auth_download(headers: &HeaderMap, state: &DownloadAuthState) -> AuthOutcome {
+fn auth_download(
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+    state: &DownloadAuthState,
+) -> AuthOutcome {
     if let Some(keys_path) = state
         .ssh_authorized_keys
         .as_deref()
@@ -41,13 +52,16 @@ fn auth_download(headers: &HeaderMap, state: &DownloadAuthState) -> AuthOutcome 
             }
         };
     }
-    // Extract token from x-api-key or Authorization: Bearer header
-    let token = headers
+    // Extract token from x-api-key or Authorization: Bearer header, falling
+    // back to `?token=` query parameter for browser-initiated downloads that
+    // cannot set custom headers.
+    let header_token = headers
         .get("x-api-key")
         .or_else(|| headers.get("authorization"))
         .and_then(|v| v.to_str().ok())
         .map(|v| v.trim_start_matches("Bearer ").trim())
         .filter(|s| !s.is_empty());
+    let token = header_token.or(query_token);
     check_auth(headers, token, state.api_token.as_deref(), &state.ts_auth)
 }
 
@@ -55,9 +69,13 @@ fn auth_download(headers: &HeaderMap, state: &DownloadAuthState) -> AuthOutcome 
 pub async fn serve_pack_md(
     AxumPath(job_id): AxumPath<String>,
     headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
     State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    if matches!(auth_download(&headers, &state), AuthOutcome::Denied(_)) {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
 
@@ -95,9 +113,13 @@ pub async fn serve_pack_md(
 pub async fn serve_pack_xml(
     AxumPath(job_id): AxumPath<String>,
     headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
     State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    if matches!(auth_download(&headers, &state), AuthOutcome::Denied(_)) {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
 
@@ -135,9 +157,13 @@ pub async fn serve_pack_xml(
 pub async fn serve_zip(
     AxumPath(job_id): AxumPath<String>,
     headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
     State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    if matches!(auth_download(&headers, &state), AuthOutcome::Denied(_)) {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
 
@@ -190,9 +216,13 @@ pub async fn serve_zip(
 pub async fn serve_file(
     AxumPath((job_id, file_path)): AxumPath<(String, String)>,
     headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
     State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    if matches!(auth_download(&headers, &state), AuthOutcome::Denied(_)) {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
 

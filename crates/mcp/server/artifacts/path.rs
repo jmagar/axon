@@ -1,12 +1,44 @@
 use super::super::common::{internal_error, invalid_params};
 use rmcp::ErrorData;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 pub const MCP_ARTIFACT_DIR_ENV: &str = "AXON_MCP_ARTIFACT_DIR";
 
+/// Detect a context name from the client's working directory.
+///
+/// Walks up from CWD looking for a `.git` directory. If found, returns the
+/// repo root's directory name. Otherwise returns the CWD's directory name.
+/// Result is cached for the process lifetime (MCP server runs as a subprocess
+/// whose CWD is fixed at launch).
+pub fn client_context_name() -> &'static str {
+    static CONTEXT: OnceLock<String> = OnceLock::new();
+    CONTEXT.get_or_init(|| {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // Walk up looking for .git
+        let mut dir = cwd.as_path();
+        loop {
+            if dir.join(".git").exists() {
+                return dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "default".to_string());
+            }
+            match dir.parent() {
+                Some(parent) if parent != dir => dir = parent,
+                _ => break,
+            }
+        }
+        // No git repo — use CWD dirname
+        cwd.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "default".to_string())
+    })
+}
+
 pub fn artifact_root() -> PathBuf {
-    std::env::var(MCP_ARTIFACT_DIR_ENV)
+    let base = std::env::var(MCP_ARTIFACT_DIR_ENV)
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
@@ -18,11 +50,14 @@ pub fn artifact_root() -> PathBuf {
                 .filter(|d| !d.is_empty())
                 .map(|d| PathBuf::from(d).join("axon/artifacts"))
         })
-        .unwrap_or_else(|| PathBuf::from(".cache/axon-mcp"))
+        .unwrap_or_else(|| PathBuf::from(".cache/axon-mcp"));
+    base.join(client_context_name())
 }
 
 fn fallback_artifact_root() -> PathBuf {
-    std::env::temp_dir().join("axon-mcp")
+    std::env::temp_dir()
+        .join("axon-mcp")
+        .join(client_context_name())
 }
 
 async fn ensure_dir(path: &Path) -> Result<(), std::io::Error> {
@@ -163,7 +198,7 @@ mod tests {
 
     #[allow(unsafe_code)]
     #[test]
-    fn ensure_artifact_root_uses_env_override_when_set() {
+    fn ensure_artifact_root_uses_env_override_with_context_subdir() {
         let _guard = ENV_CWD_LOCK.lock().expect("lock poisoned");
         let tmp = tempdir().expect("tempdir");
         let override_path = tmp.path().join("custom-artifacts");
@@ -176,7 +211,9 @@ mod tests {
             .build()
             .expect("tokio rt");
         let root = rt.block_on(ensure_artifact_root()).expect("artifact root");
-        assert_eq!(root, override_path);
+        // Context subdir is appended to the override path
+        let expected = override_path.join(client_context_name());
+        assert_eq!(root, expected);
         assert!(root.exists());
         // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
         unsafe {
