@@ -169,7 +169,7 @@ pub async fn embed_files(
                         log_warn(&format!(
                             "command=ingest_github embed_failed path={path} err={e}"
                         ));
-                        Ok(0)
+                        Err(e.to_string())
                     }
                 }
             }

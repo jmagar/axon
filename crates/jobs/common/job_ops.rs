@@ -82,15 +82,17 @@ pub async fn mark_job_failed(
         failed = JobStatus::Failed.as_str(),
         running = JobStatus::Running.as_str(),
     );
-    sqlx::query(&query)
+    let result = sqlx::query(&query)
         .bind(id)
         .bind(error_text)
         .execute(pool)
         .await
         .with_context(|| format!("mark_job_failed for job {id} in {table_name}"))?;
-    log_warn(&format!(
-        "job_failed job_id={id} table={table_name} reason={error_text}"
-    ));
+    if result.rows_affected() > 0 {
+        log_warn(&format!(
+            "job_failed job_id={id} table={table_name} reason={error_text}"
+        ));
+    }
     Ok(())
 }
 

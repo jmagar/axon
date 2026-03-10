@@ -34,7 +34,14 @@ pub async fn start_crawl_jobs_batch(
     for &url in start_urls {
         match processor::build_start_plan(url, &cfg.exclude_path_prefix) {
             Ok(plan) => normalised.push(plan.start_url),
-            Err(e) => log_warn(&format!("command=crawl_batch {e}")),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("path excluded") {
+                    log_warn(&format!("command=crawl_batch {msg}"));
+                } else {
+                    return Err(e);
+                }
+            }
         }
     }
     if normalised.is_empty() {
