@@ -120,7 +120,19 @@ fn ingest_progress(result_json: &Option<serde_json::Value>) -> Option<String> {
         return Some(format!("{done} / {total} files, {chunks} chunks embedded"));
     }
 
-    // Generic chunks-only (e.g. GitHub before files start, or single YouTube video)
+    // GitHub task-level progress (before file-level kicks in)
+    if let (Some(done), Some(total)) = (
+        r.get("tasks_done").and_then(|v| v.as_u64()),
+        r.get("tasks_total").and_then(|v| v.as_u64()),
+    ) {
+        if chunks > 0 {
+            return Some(format!("{done} / {total} tasks, {chunks} chunks embedded"));
+        }
+        let phase = r.get("phase").and_then(|v| v.as_str()).unwrap_or("working");
+        return Some(format!("{phase} ({done} / {total} tasks)"));
+    }
+
+    // Generic chunks-only (e.g. single YouTube video)
     if chunks > 0 {
         return Some(format!("{chunks} chunks embedded"));
     }
