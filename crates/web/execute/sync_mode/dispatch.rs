@@ -10,8 +10,9 @@ use super::super::events::CommandContext;
 use super::super::files;
 use super::pulse_chat::{handle_pulse_chat, handle_pulse_chat_probe};
 use super::service_calls::{
-    call_ask, call_doctor, call_domains, call_map, call_query, call_research, call_retrieve,
-    call_scrape, call_search, call_sources, call_stats, call_status, send_json_owned,
+    call_ask, call_dedupe, call_doctor, call_domains, call_evaluate, call_map, call_query,
+    call_research, call_retrieve, call_scrape, call_screenshot, call_search, call_sources,
+    call_stats, call_status, call_suggest, send_json_owned,
 };
 use super::types::{AcpConn, DirectParams, ServiceMode, SvcError};
 
@@ -165,6 +166,44 @@ async fn dispatch_search_and_info_modes(
         }
         ServiceMode::Status => {
             let result = match call_status(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Suggest => {
+            let focus = if input.is_empty() { None } else { Some(input) };
+            let result = match call_suggest(cfg, focus).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, json!({ "urls": result.urls })).await;
+        }
+        ServiceMode::Evaluate => {
+            let result = match call_evaluate(cfg, input).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Dedupe => {
+            let result = match call_dedupe(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(
+                tx,
+                ws_ctx,
+                json!({
+                    "completed": result.completed,
+                    "duplicate_groups": result.duplicate_groups,
+                    "deleted": result.deleted,
+                }),
+            )
+            .await;
+        }
+        ServiceMode::Screenshot => {
+            let result = match call_screenshot(cfg, input).await {
                 Ok(r) => r,
                 Err(e) => return Some(Err(e)),
             };

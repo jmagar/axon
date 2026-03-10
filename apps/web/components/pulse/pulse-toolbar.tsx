@@ -1,6 +1,6 @@
 'use client'
 
-import { Plus } from 'lucide-react'
+import { Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 
 interface PulseToolbarProps {
@@ -8,6 +8,8 @@ interface PulseToolbarProps {
   onTitleChange: (title: string) => void
   isDesktop?: boolean
   onNewSession?: () => void
+  showSettings?: boolean
+  onToggleSettings?: () => void
 }
 
 export function PulseToolbar({
@@ -15,6 +17,8 @@ export function PulseToolbar({
   onTitleChange,
   isDesktop = false,
   onNewSession,
+  showSettings = false,
+  onToggleSettings,
 }: PulseToolbarProps) {
   const [isDirty, setIsDirty] = useState(false)
   return (
@@ -41,7 +45,21 @@ export function PulseToolbar({
 
       {isDesktop && (
         <div className="ml-auto flex items-center gap-1">
-          {/* New session — separator + button */}
+          {onToggleSettings && (
+            <button
+              type="button"
+              onClick={onToggleSettings}
+              title="Toggle settings panel [⌘⇧S]"
+              className={`ui-chip inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors ${
+                showSettings
+                  ? 'border-[rgba(175,215,255,0.35)] bg-[rgba(175,215,255,0.12)] text-[var(--axon-primary-strong)]'
+                  : 'border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.45)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.35)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              <Settings2 className="size-3" />
+              <span className="text-[10px] font-medium leading-none">Settings</span>
+            </button>
+          )}
           {onNewSession && (
             <>
               <span className="mx-0.5 h-4 w-px bg-[var(--border-subtle)]" />

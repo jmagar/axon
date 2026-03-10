@@ -1,33 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { buildPulseSystemPrompt } from '@/lib/pulse/rag'
 
-// Defaults for the fields added after these tests were originally written.
-const BASE_REQUEST_EXTRAS = {
-  disableSlashCommands: false,
-  noSessionPersistence: false,
-  fallbackModel: '',
-  allowedTools: '',
-  disallowedTools: '',
-  agent: 'claude',
-} as const
+const BASE_REQUEST = {
+  prompt: 'summarize' as string,
+  documentMarkdown: '# Doc' as string,
+  selectedCollections: ['pulse'] as string[],
+  threadSources: [] as string[],
+  conversationHistory: [] as Array<{ role: 'user' | 'assistant'; content: string }>,
+  agent: 'claude' as const,
+}
 
 describe('pulse rag prompt builder', () => {
   it('includes permission level', () => {
     const prompt = buildPulseSystemPrompt(
-      {
-        prompt: 'summarize',
-        documentMarkdown: '# Doc',
-        selectedCollections: ['pulse'],
-        threadSources: [],
-        conversationHistory: [],
-        permissionLevel: 'accept-edits',
-        model: 'sonnet',
-        effort: 'medium',
-        maxTurns: 0,
-        maxBudgetUsd: 0,
-        appendSystemPrompt: '',
-        ...BASE_REQUEST_EXTRAS,
-      },
+      { ...BASE_REQUEST, permissionLevel: 'accept-edits', model: 'sonnet' },
       [],
     )
     expect(prompt).toContain('Permission level: accept-edits')
@@ -35,20 +21,7 @@ describe('pulse rag prompt builder', () => {
 
   it('includes citation snippets when provided', () => {
     const prompt = buildPulseSystemPrompt(
-      {
-        prompt: 'summarize',
-        documentMarkdown: '# Doc',
-        selectedCollections: ['pulse'],
-        threadSources: [],
-        conversationHistory: [],
-        permissionLevel: 'plan',
-        model: 'sonnet',
-        effort: 'medium',
-        maxTurns: 0,
-        maxBudgetUsd: 0,
-        appendSystemPrompt: '',
-        ...BASE_REQUEST_EXTRAS,
-      },
+      { ...BASE_REQUEST, permissionLevel: 'plan', model: 'sonnet' },
       [
         {
           url: 'https://example.com',
@@ -65,21 +38,13 @@ describe('pulse rag prompt builder', () => {
   it('includes prior conversation turns in the system prompt', () => {
     const prompt = buildPulseSystemPrompt(
       {
-        prompt: 'summarize',
-        documentMarkdown: '# Doc',
-        selectedCollections: ['pulse'],
-        threadSources: [],
+        ...BASE_REQUEST,
         conversationHistory: [
           { role: 'user', content: 'First user turn' },
           { role: 'assistant', content: 'First assistant turn' },
         ],
         permissionLevel: 'accept-edits',
         model: 'sonnet',
-        effort: 'medium',
-        maxTurns: 0,
-        maxBudgetUsd: 0,
-        appendSystemPrompt: '',
-        ...BASE_REQUEST_EXTRAS,
       },
       [],
     )
@@ -97,18 +62,10 @@ describe('pulse rag prompt builder', () => {
     }))
     const prompt = buildPulseSystemPrompt(
       {
-        prompt: 'summarize',
-        documentMarkdown: '# Doc',
-        selectedCollections: ['pulse'],
-        threadSources: [],
+        ...BASE_REQUEST,
         conversationHistory: history,
         permissionLevel: 'accept-edits',
         model: 'sonnet',
-        effort: 'medium',
-        maxTurns: 0,
-        maxBudgetUsd: 0,
-        appendSystemPrompt: '',
-        ...BASE_REQUEST_EXTRAS,
       },
       [],
     )
@@ -120,18 +77,10 @@ describe('pulse rag prompt builder', () => {
   it('truncates oversized document context', () => {
     const prompt = buildPulseSystemPrompt(
       {
-        prompt: 'summarize',
+        ...BASE_REQUEST,
         documentMarkdown: 'A'.repeat(5000),
-        selectedCollections: ['pulse'],
-        threadSources: [],
-        conversationHistory: [],
         permissionLevel: 'bypass-permissions',
         model: 'sonnet',
-        effort: 'medium',
-        maxTurns: 0,
-        maxBudgetUsd: 0,
-        appendSystemPrompt: '',
-        ...BASE_REQUEST_EXTRAS,
       },
       [],
     )

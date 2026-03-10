@@ -21,7 +21,7 @@ impl AxonMcpServer {
         req: StatusRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = parse_response_mode(req.response_mode);
-        let (json, text) = crate::crates::cli::commands::status::status_full(self.cfg.as_ref())
+        let result = crate::crates::services::system::full_status(self.cfg.as_ref())
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
 
@@ -31,8 +31,8 @@ impl AxonMcpServer {
             response_mode,
             "status",
             serde_json::json!({
-                "text": text,
-                "json": json,
+                "text": result.text,
+                "json": result.payload,
             }),
         )
         .await

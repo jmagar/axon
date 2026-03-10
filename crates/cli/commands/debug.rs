@@ -1,5 +1,5 @@
-use crate::crates::cli::commands::doctor::build_doctor_report;
 use crate::crates::core::config::Config;
+use crate::crates::core::health::build_doctor_report;
 use crate::crates::core::http::http_client;
 use crate::crates::core::ui::{muted, primary};
 use serde_json::Value;

@@ -4,7 +4,6 @@ mod util;
 #[cfg(test)]
 mod screenshot_migration_tests;
 
-pub(crate) use spider_capture::spider_screenshot_with_options;
 pub(crate) use util::url_to_screenshot_filename;
 
 use super::common::parse_urls;

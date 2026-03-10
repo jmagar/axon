@@ -78,6 +78,8 @@ pub struct StatusResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DedupeResult {
     pub completed: bool,
+    pub duplicate_groups: usize,
+    pub deleted: usize,
 }
 
 // ── Query / retrieve / ask / evaluate / suggest ──────────────────────────────

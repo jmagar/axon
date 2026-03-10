@@ -6,8 +6,8 @@ use crate::crates::services::types::{
 };
 use crate::crates::vector::ops::commands::ask::ask_payload;
 use crate::crates::vector::ops::commands::discover_crawl_suggestions;
+use crate::crates::vector::ops::commands::evaluate_payload;
 use crate::crates::vector::ops::commands::query_results;
-use crate::crates::vector::ops::commands::run_evaluate_native;
 use crate::crates::vector::ops::qdrant::retrieve_result;
 use std::error::Error;
 use tokio::sync::mpsc;
@@ -109,19 +109,13 @@ pub async fn ask(
 
 /// RAG evaluate: run RAG and baseline answers, then judge with a second LLM call.
 ///
-/// Note: `run_evaluate_native` writes its JSON output to stdout when
-/// `cfg.json_output` is true. This wrapper calls the native function for its
-/// side effects and returns a completed marker. Callers that need the structured
-/// JSON payload should capture stdout or use `ask_payload` directly.
+/// Returns the full structured evaluate payload without printing to stdout.
 pub async fn evaluate(cfg: &Config, question: &str) -> Result<EvaluateResult, Box<dyn Error>> {
     let mut derived = cfg.clone();
     derived.query = Some(question.to_string());
     derived.positional = Vec::new();
-    run_evaluate_native(&derived).await?;
-    Ok(map_evaluate_payload(serde_json::json!({
-        "question": question,
-        "note": "output emitted to stdout; set cfg.json_output=true for structured JSON"
-    })))
+    let payload = evaluate_payload(&derived).await?;
+    Ok(map_evaluate_payload(payload))
 }
 
 /// Suggest new URLs to crawl based on the current Qdrant index and an optional focus.

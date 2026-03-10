@@ -11,6 +11,7 @@ import type {
   PulseModel,
   PulsePermissionLevel,
   PulseToolUse,
+  RightPanelId,
 } from '@/lib/pulse/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ export type PersistedPulseWorkspaceState = {
   lastResponseLatencyMs: number | null
   lastResponseModel: PulseModel | null
   showChat: boolean
-  showEditor: boolean
+  rightPanel: RightPanelId | null
   savedAt: number
 }
 
