@@ -14,6 +14,14 @@ const PulseEditorPane = dynamic(
   { ssr: false },
 )
 
+const PulseSettingsPane = dynamic(
+  () =>
+    import('@/components/pulse/pulse-settings-pane').then((m) => ({
+      default: m.PulseSettingsPane,
+    })),
+  { ssr: false },
+)
+
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { ResultsPanel } from '@/components/results-panel'
 import { WsIndicator } from '@/components/ws-indicator'
@@ -53,7 +61,7 @@ export default function DashboardPage() {
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
   const omniboxDockRef = useRef<HTMLDivElement>(null)
-  const [landingMobilePane, setLandingMobilePane] = useState<'chat' | 'editor'>('chat')
+  const [landingMobilePane, setLandingMobilePane] = useState<'chat' | 'editor' | 'settings'>('chat')
   const [landingEditorMarkdown, setLandingEditorMarkdown] = useState('')
 
   // Persist landing editor content across tab switches / page unloads
@@ -77,10 +85,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const saved = getStorageItem(MOBILE_PANE_STORAGE_KEY)
-    if (saved === 'chat' || saved === 'editor') setLandingMobilePane(saved)
+    if (saved === 'chat' || saved === 'editor' || saved === 'settings') setLandingMobilePane(saved)
   }, [])
 
-  const handleLandingMobilePaneChange = useCallback((pane: 'chat' | 'editor') => {
+  const handleLandingMobilePaneChange = useCallback((pane: 'chat' | 'editor' | 'settings') => {
     setLandingMobilePane(pane)
     setStorageItem(MOBILE_PANE_STORAGE_KEY, pane)
   }, [])
@@ -160,6 +168,7 @@ export default function DashboardPage() {
   // overlay stops above it instead of being clipped behind it.
   // Re-run when isPulseWorkspaceActive changes so the observer attaches after
   // the omnibox dock mounts (it is only rendered when the workspace is active).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isPulseWorkspaceActive is intentional — triggers re-attach when dock mounts
   useEffect(() => {
     const node = omniboxDockRef.current
     if (!node) return
@@ -195,7 +204,7 @@ export default function DashboardPage() {
           className={`relative z-[1] mx-auto max-w-[1180px] transition-[padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:max-w-[1240px] ${
             hasResults
               ? 'px-2.5 pb-5 pt-12 sm:px-3.5 sm:pb-8'
-              : landingMobilePane === 'editor'
+              : landingMobilePane === 'editor' || landingMobilePane === 'settings'
                 ? 'px-2.5 pb-5 pt-11 sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
                 : 'px-2.5 pb-5 pt-[35vh] sm:px-3.5 sm:pb-8 sm:pt-[40vh]'
           }`}
@@ -214,7 +223,7 @@ export default function DashboardPage() {
           >
             <div className="flex flex-col gap-2">
               <div
-                className={`order-1 scale-100 ${landingMobilePane === 'editor' ? 'hidden lg:block' : 'block'}`}
+                className={`order-1 scale-100 ${landingMobilePane === 'editor' || landingMobilePane === 'settings' ? 'hidden lg:block' : 'block'}`}
               >
                 <Omnibox />
                 {!hasResults && <LandingCards />}
@@ -229,10 +238,18 @@ export default function DashboardPage() {
                     />
                   </div>
                 )}
+                {landingMobilePane === 'settings' && !hasResults && (
+                  <div className="flex h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] lg:hidden">
+                    <PulseSettingsPane />
+                  </div>
+                )}
                 {!isInlineMode && (
                   <div
                     className={
-                      landingMobilePane === 'editor' && !hasResults ? 'hidden lg:block' : undefined
+                      (landingMobilePane === 'editor' || landingMobilePane === 'settings') &&
+                      !hasResults
+                        ? 'hidden lg:block'
+                        : undefined
                     }
                   >
                     <ResultsPanel statsSlot={<DockerStats onStats={handleStats} />} />

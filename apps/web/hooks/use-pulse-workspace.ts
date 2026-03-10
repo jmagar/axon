@@ -99,15 +99,6 @@ export function usePulseWorkspaceBehavior() {
     onPendingValidation: setPendingValidation,
     onAcpConfigUpdate: setAcpConfigOptions,
     onPermissionRequest: setPendingPermission,
-    effort: pulseSettings.effort,
-    maxTurns: pulseSettings.maxTurns,
-    maxBudgetUsd: pulseSettings.maxBudgetUsd,
-    appendSystemPrompt: pulseSettings.appendSystemPrompt,
-    disableSlashCommands: pulseSettings.disableSlashCommands,
-    noSessionPersistence: pulseSettings.noSessionPersistence,
-    fallbackModel: pulseSettings.fallbackModel,
-    allowedTools: pulseSettings.allowedTools,
-    disallowedTools: pulseSettings.disallowedTools,
   })
 
   const {
@@ -354,6 +345,11 @@ export function usePulseWorkspaceBehavior() {
         splitPane.toggleChat()
         return
       }
+      if (isMod && event.shiftKey && event.key === 'S') {
+        event.preventDefault()
+        splitPane.toggleSettings()
+        return
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -363,6 +359,7 @@ export function usePulseWorkspaceBehavior() {
     setPulsePermissionLevel,
     splitPane.toggleChat,
     splitPane.toggleEditor,
+    splitPane.toggleSettings,
   ])
 
   // Workspace prompt handler

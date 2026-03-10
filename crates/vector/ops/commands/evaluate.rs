@@ -11,7 +11,10 @@ use std::time::Instant;
 
 use super::ask::build_ask_context;
 use super::suggest::discover_crawl_suggestions;
-use display::{emit_analysis_header, emit_context_header, emit_evaluate_output, emit_event};
+use display::{
+    build_evaluate_json, emit_analysis_header, emit_context_header, emit_evaluate_output,
+    emit_event,
+};
 use scoring::{
     build_judge_reference, build_suggestion_focus, format_rag_sources, rag_underperformed,
 };
@@ -177,6 +180,100 @@ async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
     };
     emit_evaluate_output(cfg, &query, &ctx, &eval_answers, &timing)?;
     Ok(())
+}
+
+/// Run the evaluate pipeline and return structured JSON without printing to stdout.
+///
+/// Forces `json_output = true` internally so the non-streaming path is used,
+/// then builds the JSON payload via `build_evaluate_json()` and returns it.
+pub async fn evaluate_payload(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+    let mut derived = cfg.clone();
+    derived.json_output = true;
+    let query = evaluate_query(&derived)?;
+    let client = http_client()?;
+    let eval_started = Instant::now();
+    let ctx = build_ask_context(&derived, &query).await?;
+    let rag = run_rag_answer(&derived, client, &query, &ctx.context).await?;
+    let baseline = run_baseline_answer(&derived, client, &query).await?;
+    let (rag_answer, rag_elapsed_ms) = rag;
+    let (baseline_answer, baseline_elapsed_ms) = baseline;
+    let research_started = Instant::now();
+    let (judge_reference, ref_chunk_count) = build_judge_reference(&derived, &query)
+        .await
+        .unwrap_or_else(|e| {
+            log_warn(&format!(
+                "evaluate: judge reference retrieval failed (proceeding without grounding): {e}"
+            ));
+            ("No reference material available.".to_string(), 0)
+        });
+    let research_elapsed_ms = research_started.elapsed().as_millis();
+    let rag_sources_list = format_rag_sources(&ctx.diagnostic_sources);
+    let ref_quality_note = if ref_chunk_count < 3 {
+        "\u{26a0}\u{fe0f}  Reference material is limited — accuracy scores may be less reliable.\n\n"
+    } else {
+        ""
+    };
+    let source_count = ctx.chunks_selected + ctx.full_docs_selected + ctx.supplemental_count;
+    let context_chars = ctx.context.len();
+    let judge_ctx = super::streaming::JudgeContext {
+        query: &query,
+        rag_answer: &rag_answer,
+        baseline_answer: &baseline_answer,
+        reference_chunks: &judge_reference,
+        rag_sources_list: &rag_sources_list,
+        ref_quality_note,
+        rag_elapsed_ms,
+        baseline_elapsed_ms,
+        source_count,
+        context_chars,
+    };
+    let (analysis_answer, analysis_elapsed_ms) = run_analysis(&derived, client, &judge_ctx).await;
+    let crawl_suggestions = if rag_underperformed(&analysis_answer) {
+        let focus = build_suggestion_focus(&query, &analysis_answer);
+        discover_crawl_suggestions(&derived, &focus, 5)
+            .await
+            .unwrap_or_else(|e| {
+                log_warn(&format!(
+                    "evaluate: suggestion discovery failed after rag underperformance: {e}"
+                ));
+                Vec::new()
+            })
+            .into_iter()
+            .map(|(url, reason)| CrawlSuggestion { url, reason })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let crawl_enqueue_outcomes = if crawl_suggestions.is_empty() {
+        Vec::new()
+    } else {
+        enqueue_suggested_crawls(&derived, &crawl_suggestions).await
+    };
+    let timing = EvalTiming {
+        rag_elapsed_ms,
+        baseline_elapsed_ms,
+        research_elapsed_ms,
+        analysis_elapsed_ms,
+        total_elapsed_ms: eval_started.elapsed().as_millis(),
+    };
+    let eval_answers = EvalAnswers {
+        rag: &rag_answer,
+        baseline: &baseline_answer,
+        analysis: &analysis_answer,
+        crawl_suggestions: &crawl_suggestions,
+        crawl_enqueue_outcomes: &crawl_enqueue_outcomes,
+        ref_chunk_count,
+        context_chars,
+    };
+    let source_urls = scoring::extract_source_urls(&ctx.diagnostic_sources);
+    Ok(build_evaluate_json(
+        &derived,
+        &query,
+        &ctx,
+        &eval_answers,
+        &timing,
+        &source_urls,
+    ))
 }
 
 fn evaluate_query(cfg: &Config) -> Result<String, Box<dyn Error>> {

@@ -7,6 +7,7 @@ import { PermissionModal } from './permission-modal'
 import { PulseChatPane } from './pulse-chat-pane'
 import { PulseMobilePaneSwitcher } from './pulse-mobile-pane-switcher'
 import { PulseOpConfirmation } from './pulse-op-confirmation'
+import { PulseSettingsPane } from './pulse-settings-pane'
 import { PulseToolbar } from './pulse-toolbar'
 
 const PulseEditorPane = dynamic(
@@ -62,6 +63,8 @@ export function PulseWorkspace() {
           onTitleChange={ws.setDocumentTitle}
           isDesktop={ws.isDesktop}
           onNewSession={ws.handleNewSession}
+          showSettings={ws.showSettings}
+          onToggleSettings={ws.toggleSettings}
         />
       )}
 
@@ -153,7 +156,7 @@ export function PulseWorkspace() {
             )}
           </div>
 
-          {/* Drag handle (desktop, both panels open) */}
+          {/* Drag handle (desktop, both panels open, not in settings mode) */}
           {ws.isDesktop && (
             <div
               ref={ws.splitHandleRef}
@@ -166,7 +169,7 @@ export function PulseWorkspace() {
               aria-valuemax={80}
               aria-valuetext={`Chat: ${Math.round(ws.desktopSplitPercent)}%, Editor: ${Math.round(100 - ws.desktopSplitPercent)}%`}
               className={`group mx-0.5 hidden w-2 cursor-col-resize items-center justify-center rounded-sm transition-colors hover:bg-[var(--border-subtle)] ${
-                ws.showChat && ws.showEditor ? 'lg:flex' : 'lg:hidden'
+                ws.showChat && ws.showEditor && !ws.showSettings ? 'lg:flex' : 'lg:hidden'
               }`}
               onPointerDown={(event) => {
                 ws.dragStartRef.current = {
@@ -184,21 +187,23 @@ export function PulseWorkspace() {
             </div>
           )}
 
-          {/* Editor panel */}
+          {/* Editor panel — hidden on desktop when settings is active */}
           <div
             className={`group/editor relative flex h-full flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] transition-[flex-basis,width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               ws.isDesktop
-                ? ws.showEditor
-                  ? ws.showChat
-                    ? 'lg:flex-none'
-                    : 'lg:flex-1'
-                  : 'lg:w-7 lg:flex-none'
+                ? ws.showSettings
+                  ? 'hidden'
+                  : ws.showEditor
+                    ? ws.showChat
+                      ? 'lg:flex-none'
+                      : 'lg:flex-1'
+                    : 'lg:w-7 lg:flex-none'
                 : ws.mobilePane === 'editor'
                   ? 'flex'
                   : 'hidden'
             }`}
             style={
-              ws.isDesktop && ws.showEditor && ws.showChat
+              ws.isDesktop && ws.showEditor && !ws.showSettings && ws.showChat
                 ? { flexBasis: `${100 - ws.desktopSplitPercent}%` }
                 : undefined
             }
@@ -240,6 +245,28 @@ export function PulseWorkspace() {
                 />
               </>
             )}
+          </div>
+
+          {/* Settings panel */}
+          <div
+            className={`relative flex h-full flex-col overflow-hidden rounded-xl bg-[rgba(10,18,35,0.5)] transition-[flex-basis,width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+              ws.isDesktop
+                ? ws.showSettings
+                  ? ws.showChat
+                    ? 'lg:flex-none'
+                    : 'lg:flex-1'
+                  : 'hidden'
+                : ws.mobilePane === 'settings'
+                  ? 'flex'
+                  : 'hidden'
+            }`}
+            style={
+              ws.isDesktop && ws.showSettings && ws.showChat
+                ? { flexBasis: `${100 - ws.desktopSplitPercent}%` }
+                : undefined
+            }
+          >
+            <PulseSettingsPane />
           </div>
         </div>
       </div>

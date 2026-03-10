@@ -1,17 +1,4 @@
-import {
-  Bot,
-  Brain,
-  Cpu,
-  Gauge,
-  Server,
-  Shield,
-  ShieldCheck,
-  ShieldOff,
-  Sparkles,
-  Terminal,
-  Wrench,
-  Zap,
-} from 'lucide-react'
+import { Bot, Cpu, Network, Shield, ShieldCheck, ShieldOff, Zap } from 'lucide-react'
 import type { PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
 
 export const CLAUDE_MODEL_IDS = ['sonnet', 'opus', 'haiku'] as const
@@ -62,24 +49,6 @@ export const PERMISSION_OPTIONS: {
   },
 ]
 
-export const EFFORT_OPTIONS: {
-  id: 'low' | 'medium' | 'high'
-  label: string
-  hint: string
-  sub: string
-}[] = [
-  { id: 'low', label: 'Low', hint: 'Fastest', sub: 'Quick answers, minimal reasoning' },
-  { id: 'medium', label: 'Medium', hint: 'Balanced', sub: 'Default thinking budget' },
-  { id: 'high', label: 'High', hint: 'Thorough', sub: 'Extended reasoning, deepest analysis' },
-]
-
-export const FALLBACK_MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Disabled (no fallback)' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'haiku', label: 'Haiku' },
-]
-
 export const KEYBOARD_SHORTCUTS = [
   { keys: ['/', 'Ctrl+K'], desc: 'Focus the omnibox' },
   { keys: ['Alt', '1'], desc: 'Switch to Sonnet' },
@@ -93,12 +62,8 @@ export const KEYBOARD_SHORTCUTS = [
 export const NAV_SECTIONS = [
   { id: 'model', label: 'Model', icon: Cpu },
   { id: 'permission', label: 'Permission Mode', icon: Shield },
-  { id: 'effort', label: 'Reasoning Effort', icon: Brain },
-  { id: 'limits', label: 'Limits', icon: Gauge },
-  { id: 'instructions', label: 'Custom Instructions', icon: Sparkles },
-  { id: 'tools', label: 'Tools & Permissions', icon: Wrench },
-  { id: 'session', label: 'Session Behavior', icon: Terminal },
+  { id: 'mcp', label: 'MCP Servers', icon: Network },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Zap },
 ]
 
-export { Bot, Server }
+export { Bot, Network as Server }

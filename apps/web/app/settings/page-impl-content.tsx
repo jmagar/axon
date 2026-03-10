@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { DEFAULT_PULSE_SETTINGS, usePulseSettings } from '@/hooks/use-pulse-settings'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
-import { Bot, NAV_SECTIONS, Server } from './settings-data'
+import { Bot, NAV_SECTIONS } from './settings-data'
 import { SettingsSections } from './settings-sections'
 
 const NeuralCanvas = dynamic(() => import('@/components/neural-canvas'), { ssr: false })
@@ -119,14 +119,6 @@ export default function SettingsPage() {
               <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
                 Related
               </p>
-              <button
-                type="button"
-                onClick={() => router.push('/settings/mcp')}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-[var(--text-muted)] transition-all duration-150 hover:bg-[var(--surface-float)] hover:text-[var(--text-secondary)]"
-              >
-                <Server className="size-3.5 shrink-0" />
-                MCP Servers
-              </button>
               <button
                 type="button"
                 onClick={() => router.push('/agents')}

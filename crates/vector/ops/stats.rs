@@ -1,21 +1,10 @@
-mod display;
+pub(crate) mod display;
 mod pg;
 mod qdrant_fetch;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
 use std::error::Error;
-
-pub async fn run_stats_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let result = crate::crates::services::system::stats(cfg).await?;
-    let stats = result.payload;
-    if cfg.json_output {
-        println!("{}", serde_json::to_string_pretty(&stats)?);
-    } else {
-        display::print_stats_human(&stats);
-    }
-    Ok(())
-}
 
 pub async fn stats_payload(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
     let client = http_client()?;

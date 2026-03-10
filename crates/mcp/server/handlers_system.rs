@@ -8,10 +8,10 @@ use super::common::{
     MCP_TOOL_SCHEMA_URI, invalid_params, logged_internal_error, parse_limit_usize, parse_offset,
     parse_response_mode, to_pagination,
 };
-use crate::crates::cli::commands::screenshot::{
+use crate::crates::core::http::{normalize_url, validate_url};
+use crate::crates::crawl::screenshot::{
     spider_screenshot_with_options, url_to_screenshot_filename,
 };
-use crate::crates::core::http::{normalize_url, validate_url};
 use crate::crates::mcp::schema::{
     ArtifactsRequest, ArtifactsSubaction, AxonToolResponse, DoctorRequest, DomainsRequest,
     HelpRequest, ScreenshotRequest, SourcesRequest, StatsRequest,
