@@ -242,6 +242,10 @@ pub(super) struct IngestArgs {
     #[arg(long, action = ArgAction::SetTrue)]
     pub(super) include_source: bool,
 
+    /// (GitHub only) Skip source code files when ingesting a GitHub repository (default: include source).
+    #[arg(long = "no-source")]
+    pub(super) no_source: bool,
+
     // ── Reddit-specific filters (ignored for GitHub / YouTube) ────────────
     /// Subreddit sorting (hot, top, new, rising)
     #[arg(long, value_enum, default_value_t = RedditSort::Hot)]

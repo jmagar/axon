@@ -16,7 +16,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
 
     let mut ask_diagnostics = false;
     let mut evaluate_responses_mode = EvaluateResponsesMode::Inline;
-    let mut github_include_source = false;
+    let mut github_include_source = true;
     let mut reddit_sort = RedditSort::Hot;
     let mut reddit_time = RedditTime::Day;
     let mut reddit_max_posts = 25usize;
@@ -127,7 +127,10 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
         CliCommand::Status => (CommandKind::Status, Vec::new()),
         CliCommand::Dedupe => (CommandKind::Dedupe, Vec::new()),
         CliCommand::Ingest(args) => {
-            github_include_source = args.include_source;
+            // --no-source overrides the default (true). --include-source is now a no-op.
+            if args.no_source {
+                github_include_source = false;
+            }
             reddit_sort = args.sort;
             reddit_time = args.time;
             reddit_max_posts = args.max_posts;
