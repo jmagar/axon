@@ -9,6 +9,22 @@ mod issues;
 pub(super) mod meta;
 mod wiki;
 
+use meta::{GitHubPayloadParams, build_github_payload};
+
+// ── Shared repo context passed to all sub-tasks ──────────────────────────────
+
+/// Common fields extracted once from `repos().get()` and shared across all
+/// concurrent sub-tasks (files, issues, PRs, wiki, metadata).
+pub(crate) struct GitHubCommonFields {
+    pub owner: String,
+    pub name: String,
+    pub repo_slug: String,
+    pub default_branch: String,
+    pub repo_description: Option<String>,
+    pub pushed_at: Option<String>,
+    pub is_private: Option<bool>,
+}
+
 // ── Pure helper functions (re-exported for tests and cli command) ──────────────
 
 /// Returns true if a file path should be indexed when --include-source is set.
@@ -86,8 +102,9 @@ fn build_octocrab(cfg: &Config) -> Result<Octocrab, Box<dyn Error>> {
 async fn embed_repo_metadata(
     cfg: &Config,
     repo: &octocrab::models::Repository,
+    common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
-    let owner_name = repo.full_name.as_deref().unwrap_or("");
+    let owner_name = &common.repo_slug;
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(desc) = &repo.description
@@ -118,7 +135,24 @@ async fn embed_repo_metadata(
 
     let content = format!("# {owner_name}\n\n{}", parts.join("\n"));
     let url = format!("https://github.com/{owner_name}");
-    let extra = meta::build_github_repo_extra_payload(repo);
+    let language = repo.language.as_ref().and_then(|v| v.as_str());
+    let extra = build_github_payload(&GitHubPayloadParams {
+        repo: common.name.clone(),
+        owner: common.owner.clone(),
+        content_kind: "repo_metadata".into(),
+        default_branch: Some(common.default_branch.clone()),
+        repo_description: common.repo_description.clone(),
+        pushed_at: common.pushed_at.clone(),
+        is_private: common.is_private,
+        stars: repo.stargazers_count,
+        forks: repo.forks_count,
+        open_issues: repo.open_issues_count,
+        language: language.map(|s| s.to_string()),
+        topics: repo.topics.clone(),
+        is_fork: repo.fork,
+        is_archived: repo.archived,
+        ..Default::default()
+    });
     embed_text_with_extra_payload(cfg, &content, &url, "github", Some(owner_name), &extra).await
 }
 
@@ -151,19 +185,22 @@ pub async fn ingest_github(
         .unwrap_or("main")
         .to_string();
 
+    let common = GitHubCommonFields {
+        repo_slug: format!("{owner}/{name}"),
+        owner: owner.clone(),
+        name: name.clone(),
+        default_branch: default_branch.clone(),
+        repo_description: repo_info.description.clone(),
+        pushed_at: repo_info.pushed_at.map(|dt| dt.to_rfc3339()),
+        is_private: repo_info.private,
+    };
+
     let (files_result, metadata_result, issues_result, prs_result, wiki_result) = tokio::join!(
-        files::embed_files(
-            cfg,
-            &owner,
-            &name,
-            &default_branch,
-            include_source,
-            cfg.github_token.as_deref()
-        ),
-        embed_repo_metadata(cfg, &repo_info),
-        issues::ingest_issues(cfg, &octo, &owner, &name),
-        issues::ingest_pull_requests(cfg, &octo, &owner, &name),
-        wiki::ingest_wiki(cfg, &owner, &name, cfg.github_token.as_deref()),
+        files::embed_files(cfg, &common, include_source, cfg.github_token.as_deref()),
+        embed_repo_metadata(cfg, &repo_info, &common),
+        issues::ingest_issues(cfg, &octo, &common),
+        issues::ingest_pull_requests(cfg, &octo, &common),
+        wiki::ingest_wiki(cfg, &common, cfg.github_token.as_deref()),
     );
 
     let mut total = 0usize;
