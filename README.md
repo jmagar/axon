@@ -1,5 +1,5 @@
 # ⚡ **Axon**
-Last Modified: 2026-03-03
+Last Modified: 2026-03-10
 
 Self-hosted web crawling and RAG pipeline powered by Spider.rs. Single binary (`axon`) backed by a local Docker stack.
 
@@ -71,9 +71,11 @@ Documentation:
 - Design/runtime guide: `docs/MCP.md`
 - Wire contract/schema source of truth: `docs/MCP-TOOL-SCHEMA.md`
 
-Transport status:
-- `axon mcp` is intentionally HTTP-only via container/s6-managed `mcp-http`.
-- Stdio transport is not exposed.
+Transport modes:
+- `axon mcp` defaults to HTTP transport on `/mcp`.
+- `axon mcp --transport stdio` starts stdio transport only.
+- `axon mcp --transport both` starts stdio and HTTP concurrently.
+- `AXON_MCP_TRANSPORT=stdio|http|both` provides the equivalent env override.
 
 MCP defaults are context-safe:
 - Artifact-first responses (`response_mode=path`) written to `.cache/axon-mcp/` inside the running process/container (override with `AXON_MCP_ARTIFACT_DIR`; in Docker this is typically bind-mounted to `${AXON_DATA_DIR}/axon/artifacts`)
@@ -300,7 +302,7 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `dedupe` | Remove duplicate vectors from Qdrant collection | No |
-| `mcp` | Start MCP HTTP server runtime (`mcp-http`, no stdio transport) | No |
+| `mcp` | Start MCP server runtime (`http`, `stdio`, or `both`) | No |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Freshness Strategy (Tiered Refresh + Discovery Crawl)

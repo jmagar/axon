@@ -19,10 +19,11 @@ Last Modified: 2026-03-10
 
 ## Overview
 
-`axon mcp` runs a separate HTTP server (default port `8001`) that exposes a single MCP tool (`axon`) over streamable HTTP (`/mcp`). Access to this server requires OAuth — handled by the built-in Google OAuth broker.
+`axon mcp` supports `http`, `stdio`, and `both` transport modes. This document covers the HTTP transport only: the separate HTTP server (default port `8001`) exposes a single MCP tool (`axon`) over streamable HTTP (`/mcp`). Access to that HTTP surface requires OAuth — handled by the built-in Google OAuth broker.
 
 **Key facts:**
 - `atk_` tokens issued by this broker are scoped to `/mcp` **only**. They have no effect on the WebSocket gate (`/ws`) or `/api/*` routes.
+- `stdio` transport does not use this OAuth broker. It is a separate local-process transport choice.
 - If `GOOGLE_OAUTH_CLIENT_ID` is not configured, all requests to `/mcp` return unauthorized.
 - OAuth state is persisted in Redis when available; in-memory fallback is used otherwise.
 - MCP clients that support dynamic client registration (DCR) — Claude Desktop, mcporter, etc. — auto-register via `/oauth/register`.
@@ -66,7 +67,7 @@ The broker acts as an OAuth 2.0 authorization server, using Google as the identi
 
 1. A Google OAuth 2.0 application with credentials.
 2. The redirect URI configured in Google Cloud Console.
-3. `axon mcp` running and reachable from the MCP client.
+3. `axon mcp` running with HTTP transport enabled and reachable from the MCP client.
 4. Redis running (optional but recommended — without it, tokens are lost on server restart).
 
 ---
@@ -101,6 +102,12 @@ AXON_MCP_HTTP_PORT=8001
 ```bash
 # From project root — binary reads .env automatically
 AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp
+
+# Explicit HTTP mode (equivalent)
+AXON_MCP_TRANSPORT=http AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp
+
+# Dual mode also exposes the same OAuth-protected HTTP endpoint
+AXON_MCP_TRANSPORT=both AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp
 
 # Or via just dev (starts everything including MCP server at port 8001)
 just dev
@@ -178,6 +185,7 @@ When Redis is unavailable, the in-memory fallback is used. Tokens are lost when 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `AXON_MCP_TRANSPORT` | `http` | MCP transport mode (`stdio`, `http`, `both`) |
 | `AXON_MCP_HTTP_HOST` | `0.0.0.0` | MCP server bind address |
 | `AXON_MCP_HTTP_PORT` | `8001` | MCP server port |
 | `GOOGLE_OAUTH_AUTH_URL` | Google default | Override Google authorization URL |
@@ -220,6 +228,8 @@ Add to your Claude Desktop MCP config (`~/.claude/mcp.json` or the path given by
 ```
 
 Claude Desktop supports OAuth out of the box — it will open a browser window for Google sign-in on first connection.
+
+If you instead configure Claude Desktop to use `stdio` mode (`axon mcp --transport stdio`), this OAuth flow does not apply because there is no HTTP `/mcp` endpoint in that mode.
 
 ### mcporter
 
