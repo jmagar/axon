@@ -1,6 +1,6 @@
 mod global_args;
 
-use super::types::{EvaluateResponsesMode, RedditSort, RedditTime};
+use super::types::{EvaluateResponsesMode, McpTransport, RedditSort, RedditTime};
 use clap::{ArgAction, Args, Parser, Subcommand};
 
 pub(super) use global_args::GlobalArgs;
@@ -41,8 +41,15 @@ pub(super) enum CliCommand {
     Ingest(IngestArgs),
     Sessions(SessionsArgs),
     Screenshot(ScrapeArgs),
-    Mcp,
+    Mcp(McpArgs),
     Serve(ServeArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct McpArgs {
+    /// MCP transport: stdio, http, or both.
+    #[arg(long, value_enum)]
+    pub(super) transport: Option<McpTransport>,
 }
 
 #[derive(Debug, Args)]
@@ -296,4 +303,28 @@ pub(super) enum JobSubcommand {
     Clear,
     Worker,
     Recover,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn parse_mcp_transport_stdio_flag() {
+        let result = Cli::try_parse_from(["axon", "mcp", "--transport", "stdio"]);
+        assert!(
+            result.is_ok(),
+            "mcp --transport stdio should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_mcp_transport_both_flag() {
+        let result = Cli::try_parse_from(["axon", "mcp", "--transport", "both"]);
+        assert!(
+            result.is_ok(),
+            "mcp --transport both should parse: {result:?}"
+        );
+    }
 }

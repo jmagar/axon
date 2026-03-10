@@ -27,7 +27,7 @@ pub fn parse_args() -> Config {
 #[cfg(test)]
 mod tests {
     use super::docker::is_docker_service_host;
-    use crate::crates::core::config::types::CommandKind;
+    use crate::crates::core::config::types::{CommandKind, McpTransport};
     use clap::Parser;
     use std::env;
     use std::sync::Mutex;
@@ -559,5 +559,62 @@ mod tests {
             normalized.prefixes.is_empty(),
             "bare slash should not produce any prefix entries"
         );
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_mcp_transport_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        const TRANSPORT: &str = "AXON_MCP_TRANSPORT";
+
+        unsafe {
+            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
+            env::set_var(REDIS, "redis://127.0.0.1:53379");
+            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
+            env::set_var(TRANSPORT, "stdio");
+        }
+
+        let cli = super::Cli::parse_from(["axon", "mcp"]);
+        let cfg = super::build_config::into_config(cli).expect("mcp config should parse");
+        assert!(matches!(cfg.command, CommandKind::Mcp));
+        assert_eq!(cfg.mcp_transport, McpTransport::Stdio);
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+            env::remove_var(TRANSPORT);
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_mcp_transport_flag_overrides_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        const TRANSPORT: &str = "AXON_MCP_TRANSPORT";
+
+        unsafe {
+            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
+            env::set_var(REDIS, "redis://127.0.0.1:53379");
+            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
+            env::set_var(TRANSPORT, "http");
+        }
+
+        let cli = super::Cli::parse_from(["axon", "mcp", "--transport", "both"]);
+        let cfg = super::build_config::into_config(cli).expect("mcp config should parse");
+        assert_eq!(cfg.mcp_transport, McpTransport::Both);
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+            env::remove_var(TRANSPORT);
+        }
     }
 }
