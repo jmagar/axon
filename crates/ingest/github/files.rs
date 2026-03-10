@@ -34,6 +34,12 @@ fn file_extension(path: &str) -> String {
 ///
 /// Returns the temp directory handle (dropped = cleanup) and the path.
 /// Auth uses `http.extraHeader` via git config env vars — token never appears in process args.
+/// Run `git clone --depth=1` into a temp directory.
+///
+/// Tries authenticated clone first (if token provided), then falls back to
+/// unauthenticated for public repos. Uses `token` prefix (not `Bearer`) for
+/// the Authorization header — works with both classic (`ghp_`) and
+/// fine-grained (`github_pat_`) GitHub PATs.
 async fn clone_repo(
     common: &GitHubCommonFields,
     branch: &str,
@@ -41,11 +47,9 @@ async fn clone_repo(
 ) -> Result<tempfile::TempDir, Box<dyn Error>> {
     let tmp = tempfile::tempdir()?;
     let tmp_path = tmp.path().to_string_lossy().to_string();
-
     let clone_url = format!("https://github.com/{}/{}.git", common.owner, common.name);
 
-    let mut cmd = tokio::process::Command::new("git");
-    cmd.args([
+    let base_args = [
         "clone",
         "--depth=1",
         "--branch",
@@ -54,15 +58,35 @@ async fn clone_repo(
         "--",
         &clone_url,
         &tmp_path,
-    ]);
+    ];
 
+    // Try authenticated first, fall back to unauthenticated for public repos.
     if let Some(t) = token {
-        cmd.env("GIT_CONFIG_COUNT", "1");
-        cmd.env("GIT_CONFIG_KEY_0", "http.extraHeader");
-        cmd.env("GIT_CONFIG_VALUE_0", format!("Authorization: Bearer {t}"));
+        let output = tokio::process::Command::new("git")
+            .args(base_args)
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+            .env("GIT_CONFIG_VALUE_0", format!("Authorization: token {t}"))
+            .output()
+            .await
+            .map_err(|e| format!("git not found or failed to start: {e}"))?;
+
+        if output.status.success() {
+            return Ok(tmp);
+        }
+
+        // Auth failed — retry without token (public repos don't need it).
+        log_warn(&format!(
+            "command=ingest_github auth_clone_failed repo={}/{} retrying_unauthenticated",
+            common.owner, common.name
+        ));
+        // Clean up the failed partial clone before retrying.
+        let _ = tokio::fs::remove_dir_all(tmp.path()).await;
+        let _ = tokio::fs::create_dir_all(tmp.path()).await;
     }
 
-    let output = cmd
+    let output = tokio::process::Command::new("git")
+        .args(base_args)
         .output()
         .await
         .map_err(|e| format!("git not found or failed to start: {e}"))?;
