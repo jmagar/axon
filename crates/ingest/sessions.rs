@@ -126,21 +126,21 @@ pub async fn ingest_sessions(cfg: &Config) -> Result<usize, Box<dyn Error>> {
         let count = claude::ingest_claude_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
-        log_info(&format!("sessions platform=claude files={count}"));
+        log_info(&format!("sessions platform=claude chunks={count}"));
         total_chunks += count;
     }
     if cfg.sessions_codex || all_platforms {
         let count = codex::ingest_codex_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
-        log_info(&format!("sessions platform=codex files={count}"));
+        log_info(&format!("sessions platform=codex chunks={count}"));
         total_chunks += count;
     }
     if cfg.sessions_gemini || all_platforms {
         let count = gemini::ingest_gemini_sessions(cfg, &state, &multi)
             .await
             .unwrap_or(0);
-        log_info(&format!("sessions platform=gemini files={count}"));
+        log_info(&format!("sessions platform=gemini chunks={count}"));
         total_chunks += count;
     }
 

@@ -38,10 +38,12 @@ pub async fn run_extract(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
     if !cfg.wait {
         let result = enqueue_extract_job(cfg, &urls, prompt).await;
-        log_info(&format!(
-            "job_enqueued command=extract queue={}",
-            cfg.extract_queue
-        ));
+        if result.is_ok() {
+            log_info(&format!(
+                "job_enqueued command=extract queue={}",
+                cfg.extract_queue
+            ));
+        }
         return result;
     }
 
