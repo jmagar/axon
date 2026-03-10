@@ -31,10 +31,12 @@ pub async fn run_embed(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let input = resolve_embed_input(cfg);
     if !cfg.wait {
         let result = enqueue_embed_job(cfg, &input).await;
-        log_info(&format!(
-            "job_enqueued command=embed queue={}",
-            cfg.embed_queue
-        ));
+        if result.is_ok() {
+            log_info(&format!(
+                "job_enqueued command=embed queue={}",
+                cfg.embed_queue
+            ));
+        }
         return result;
     }
 

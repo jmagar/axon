@@ -42,10 +42,12 @@ pub async fn run_crawl(cfg: &Config) -> Result<(), Box<dyn Error>> {
         Ok(())
     } else {
         let result = run_async_enqueue_multi(cfg, &urls).await;
-        log_info(&format!(
-            "job_enqueued command=crawl queue={}",
-            cfg.crawl_queue
-        ));
+        if result.is_ok() {
+            log_info(&format!(
+                "job_enqueued command=crawl queue={}",
+                cfg.crawl_queue
+            ));
+        }
         result
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-fetch'
 import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
 
@@ -92,6 +92,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
+  const prevSessionIdRef = useRef<string | null>(null)
 
   const reload = useCallback(() => setVersion((v) => v + 1), [])
 
@@ -102,12 +103,17 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
       setLoading(false)
       setLoaded(false)
       setError(null)
+      prevSessionIdRef.current = null
       return
     }
 
+    const sessionChanged = prevSessionIdRef.current !== sessionId
+    prevSessionIdRef.current = sessionId
     let cancelled = false
     setLoading(true)
-    setLoaded(false)
+    if (sessionChanged) {
+      setLoaded(false)
+    }
     setError(null)
 
     fetchSessionWithRetry(sessionId, () => cancelled)

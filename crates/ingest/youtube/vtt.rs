@@ -30,13 +30,14 @@ pub fn parse_vtt_to_text(vtt: &str) -> String {
             continue;
         }
 
-        // Detect block directive opening lines
+        // Detect block directive opening lines — only valid at block level, not inside a cue body
         let trimmed = line.trim();
-        if trimmed == "WEBVTT"
-            || trimmed.starts_with("WEBVTT ")
-            || trimmed.starts_with("NOTE")
-            || trimmed.starts_with("STYLE")
-            || trimmed.starts_with("REGION")
+        if !next_is_cue_body
+            && (trimmed == "WEBVTT"
+                || trimmed.starts_with("WEBVTT ")
+                || trimmed.starts_with("NOTE")
+                || trimmed.starts_with("STYLE")
+                || trimmed.starts_with("REGION"))
         {
             in_block_directive = true;
             continue;

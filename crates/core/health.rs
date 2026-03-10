@@ -18,11 +18,19 @@ pub async fn redis_healthy(redis_url: &str) -> bool {
     let _probe_start = Instant::now();
     let url =
         crate::crates::core::config::parse::normalize_local_service_url(redis_url.to_string());
+    // Redact credentials — the raw URL may contain a password; log only host:port.
+    let host_label = reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u: reqwest::Url| {
+            u.host_str()
+                .map(|h| format!("{}:{}", h, u.port().unwrap_or(6379)))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
     let client = match redis::Client::open(url.as_str()) {
         Ok(client) => client,
         Err(_) => {
             log_info(&format!(
-                "health_probe service=redis url={url} result=false duration_ms={}",
+                "health_probe service=redis host={host_label} result=false duration_ms={}",
                 _probe_start.elapsed().as_millis()
             ));
             return false;
@@ -42,7 +50,7 @@ pub async fn redis_healthy(redis_url: &str) -> bool {
         Ok(Ok(()))
     );
     log_info(&format!(
-        "health_probe service=redis url={url} result={result} duration_ms={}",
+        "health_probe service=redis host={host_label} result={result} duration_ms={}",
         _probe_start.elapsed().as_millis()
     ));
     result
