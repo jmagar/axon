@@ -195,6 +195,12 @@ High-level subsystem map:
   - job states in `crates/jobs/status.rs`
 - Vector + RAG:
   - `crates/vector/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
+- Services layer (services-first contract):
+  - `crates/services/` — typed entry points consumed by both CLI handlers and MCP/web routes
+  - CLI commands call `crates/services::{query,retrieve,ask,sources,domains,stats,system}` — **not** raw `run_*_native()` functions (those are removed)
+  - Each service function returns a typed `ServiceResult` struct (defined in `crates/services/types/service.rs`) — no raw JSON printing or stdout side-effects
+  - MCP handlers and web routes call the same service functions, mapping typed results to wire format
+  - ACP orchestration lives in `crates/services/acp/` (session lifecycle, permission bridge, adapter subprocess)
 - MCP server:
   - `crates/mcp/` (schema, server routing, handler modules, config)
   - Single `axon` tool with `action`/`subaction` routing

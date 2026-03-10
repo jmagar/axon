@@ -1,16 +1,13 @@
 pub mod crates;
 
 use self::crates::cli::commands::{
-    run_crawl, run_debug, run_doctor, run_embed, run_extract, run_ingest, run_map, run_mcp,
-    run_refresh, run_research, run_scrape, run_screenshot, run_search, run_serve, run_sessions,
-    run_status, run_watch, start_url_from_cfg,
+    run_ask, run_crawl, run_debug, run_dedupe, run_doctor, run_domains, run_embed, run_evaluate,
+    run_extract, run_ingest, run_map, run_mcp, run_query, run_refresh, run_research, run_retrieve,
+    run_scrape, run_screenshot, run_search, run_serve, run_sessions, run_sources, run_stats,
+    run_status, run_suggest, run_watch, start_url_from_cfg,
 };
 use self::crates::core::config::{CommandKind, Config, parse_args};
 use self::crates::core::logging::{init_tracing, log_done, log_info, log_warn};
-use self::crates::vector::ops::{
-    run_ask_native, run_dedupe_native, run_domains_native, run_evaluate_native, run_query_native,
-    run_retrieve_native, run_sources_native, run_stats_native, run_suggest_native,
-};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use std::error::Error;
@@ -72,16 +69,16 @@ async fn run_once(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
         CommandKind::Embed => run_embed(cfg).await?,
         CommandKind::Debug => run_debug(cfg).await?,
         CommandKind::Doctor => run_doctor(cfg).await?,
-        CommandKind::Query => run_query_native(cfg).await?,
-        CommandKind::Retrieve => run_retrieve_native(cfg).await?,
-        CommandKind::Ask => run_ask_native(cfg).await?,
-        CommandKind::Evaluate => run_evaluate_native(cfg).await?,
-        CommandKind::Suggest => run_suggest_native(cfg).await?,
-        CommandKind::Sources => run_sources_native(cfg).await?,
-        CommandKind::Domains => run_domains_native(cfg).await?,
-        CommandKind::Stats => run_stats_native(cfg).await?,
+        CommandKind::Query => run_query(cfg).await?,
+        CommandKind::Retrieve => run_retrieve(cfg).await?,
+        CommandKind::Ask => run_ask(cfg).await?,
+        CommandKind::Evaluate => run_evaluate(cfg).await?,
+        CommandKind::Suggest => run_suggest(cfg).await?,
+        CommandKind::Sources => run_sources(cfg).await?,
+        CommandKind::Domains => run_domains(cfg).await?,
+        CommandKind::Stats => run_stats(cfg).await?,
         CommandKind::Status => run_status(cfg).await?,
-        CommandKind::Dedupe => run_dedupe_native(cfg).await?,
+        CommandKind::Dedupe => run_dedupe(cfg).await?,
         CommandKind::Ingest => run_ingest(cfg).await?,
         CommandKind::Sessions => run_sessions(cfg).await?,
         CommandKind::Research => run_research(cfg).await?,

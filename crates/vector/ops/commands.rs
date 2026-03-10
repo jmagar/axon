@@ -4,10 +4,9 @@ mod query;
 pub(crate) mod streaming;
 mod suggest;
 
-pub use ask::run_ask_native;
+pub use evaluate::evaluate_payload;
 pub use evaluate::run_evaluate_native;
 pub use query::query_results;
-pub use query::run_query_native;
 pub use suggest::discover_crawl_suggestions;
 pub use suggest::run_suggest_native;
 

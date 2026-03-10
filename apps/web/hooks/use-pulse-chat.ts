@@ -38,15 +38,6 @@ interface UsePulseChatInput {
   onPendingValidation: (v: ValidationResult | null) => void
   onAcpConfigUpdate?: (options: AcpConfigOption[]) => void
   onPermissionRequest?: (req: AcpPermissionRequest) => void
-  effort?: string
-  maxTurns?: number
-  maxBudgetUsd?: number
-  appendSystemPrompt?: string
-  disableSlashCommands?: boolean
-  noSessionPersistence?: boolean
-  fallbackModel?: string
-  allowedTools?: string
-  disallowedTools?: string
 }
 
 // ── Main hook ───────────────────────────────────────────────────────────────
@@ -62,15 +53,6 @@ export function usePulseChat({
   onPendingValidation,
   onAcpConfigUpdate,
   onPermissionRequest,
-  effort,
-  maxTurns,
-  maxBudgetUsd,
-  appendSystemPrompt,
-  disableSlashCommands,
-  noSessionPersistence,
-  fallbackModel,
-  allowedTools,
-  disallowedTools,
 }: UsePulseChatInput) {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [isChatLoading, setIsChatLoading] = useState(false)
@@ -108,15 +90,6 @@ export function usePulseChat({
     permissionLevel,
     agent,
     model,
-    effort,
-    maxTurns,
-    maxBudgetUsd,
-    appendSystemPrompt,
-    disableSlashCommands,
-    noSessionPersistence,
-    fallbackModel,
-    allowedTools,
-    disallowedTools,
   })
 
   // Keep the ref in sync — single assignment instead of re-creating the object
@@ -129,15 +102,6 @@ export function usePulseChat({
   configRef.current.permissionLevel = permissionLevel
   configRef.current.agent = agent
   configRef.current.model = model
-  configRef.current.effort = effort
-  configRef.current.maxTurns = maxTurns
-  configRef.current.maxBudgetUsd = maxBudgetUsd
-  configRef.current.appendSystemPrompt = appendSystemPrompt
-  configRef.current.disableSlashCommands = disableSlashCommands
-  configRef.current.noSessionPersistence = noSessionPersistence
-  configRef.current.fallbackModel = fallbackModel
-  configRef.current.allowedTools = allowedTools
-  configRef.current.disallowedTools = disallowedTools
 
   const setChatHistoryTracked = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
     if (typeof action === 'function') {
@@ -323,15 +287,6 @@ export function usePulseChat({
           permissionLevel: cfg.permissionLevel,
           agent: cfg.agent,
           model: cfg.model,
-          effort: cfg.effort,
-          maxTurns: cfg.maxTurns,
-          maxBudgetUsd: cfg.maxBudgetUsd,
-          appendSystemPrompt: cfg.appendSystemPrompt,
-          disableSlashCommands: cfg.disableSlashCommands,
-          noSessionPersistence: cfg.noSessionPersistence,
-          fallbackModel: cfg.fallbackModel,
-          allowedTools: cfg.allowedTools,
-          disallowedTools: cfg.disallowedTools,
         })
 
         if (inFlightPromptRef.current !== promptId) return

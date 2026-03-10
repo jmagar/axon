@@ -8,12 +8,14 @@ use crate::crates::core::config::Config;
 use crate::crates::services::map as map_svc;
 use crate::crates::services::query as query_svc;
 use crate::crates::services::scrape as scrape_svc;
+use crate::crates::services::screenshot as screenshot_svc;
 use crate::crates::services::search as search_svc;
 use crate::crates::services::system as system_svc;
 use crate::crates::services::types::{
-    AskResult, DoctorResult, DomainsResult, MapOptions, MapResult, Pagination, QueryResult,
-    ResearchResult, RetrieveOptions, RetrieveResult, ScrapeResult, SearchOptions, SearchResult,
-    SourcesResult, StatsResult, StatusResult,
+    AskResult, DedupeResult, DoctorResult, DomainsResult, EvaluateResult, MapOptions, MapResult,
+    Pagination, QueryResult, ResearchResult, RetrieveOptions, RetrieveResult, ScrapeResult,
+    ScreenshotResult, SearchOptions, SearchResult, SourcesResult, StatsResult, StatusResult,
+    SuggestResult,
 };
 
 use super::super::events::{
@@ -230,6 +232,66 @@ pub(super) fn call_status(
 ) -> Pin<Box<dyn Future<Output = Result<StatusResult, SvcError>> + Send + 'static>> {
     Box::pin(async move {
         system_svc::full_status(&cfg)
+            .await
+            .map_err(|e| -> SvcError { format!("{e}").into() })
+    })
+}
+
+pub(super) fn call_suggest(
+    cfg: Arc<Config>,
+    focus: Option<String>,
+) -> Pin<Box<dyn Future<Output = Result<SuggestResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        query_svc::suggest(&cfg, focus.as_deref())
+            .await
+            .map_err(|e| -> SvcError { format!("{e}").into() })
+    })
+}
+
+/// Evaluate requires special handling: the internal streaming code holds
+/// `Box<dyn Error>` (not `Send`) across `.await` points, making the future
+/// non-`Send`.  We work around this by spawning on a `LocalSet` inside a
+/// dedicated OS thread, then awaiting the result via a oneshot channel.
+pub(super) fn call_evaluate(
+    cfg: Arc<Config>,
+    question: String,
+) -> Pin<Box<dyn Future<Output = Result<EvaluateResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("evaluate runtime");
+            let local = tokio::task::LocalSet::new();
+            local.block_on(&rt, async move {
+                let result = query_svc::evaluate(&cfg, &question)
+                    .await
+                    .map_err(|e| -> SvcError { format!("{e}").into() });
+                let _ = tx.send(result);
+            });
+        });
+        rx.await
+            .map_err(|_| -> SvcError { "evaluate task panicked".into() })?
+    })
+}
+
+pub(super) fn call_dedupe(
+    cfg: Arc<Config>,
+) -> Pin<Box<dyn Future<Output = Result<DedupeResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        system_svc::dedupe(&cfg, None)
+            .await
+            .map_err(|e| -> SvcError { format!("{e}").into() })
+    })
+}
+
+pub(super) fn call_screenshot(
+    cfg: Arc<Config>,
+    url: String,
+) -> Pin<Box<dyn Future<Output = Result<ScreenshotResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        screenshot_svc::screenshot_capture(&cfg, &url)
             .await
             .map_err(|e| -> SvcError { format!("{e}").into() })
     })

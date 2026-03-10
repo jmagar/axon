@@ -8,7 +8,7 @@ fn fmt_count(v: &serde_json::Value) -> String {
     )
 }
 
-pub(super) fn print_stats_human(stats: &serde_json::Value) {
+pub(crate) fn print_stats_human(stats: &serde_json::Value) {
     print_vector_stats(stats);
     println!();
     print_pipeline_stats(stats);

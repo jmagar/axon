@@ -63,13 +63,6 @@ export async function POST(request: Request) {
 
     const req = parsed.data
 
-    // Server-side validation for toolsRestrict matching the backend TOOL_ENTRY_RE contract.
-    // Zod already applies a regex, but this is defense-in-depth against any schema drift.
-    const TOOL_ENTRY_RE = /^[a-zA-Z0-9_:*-]+$/
-    if (req.toolsRestrict && !TOOL_ENTRY_RE.test(req.toolsRestrict)) {
-      return apiError(400, 'Invalid tool restriction pattern', { code: 'invalid_tools_restrict' })
-    }
-
     // last_event_id / lastEventId — now validated through Zod instead of raw body cast
     const lastEventId = req.last_event_id ?? req.lastEventId
 

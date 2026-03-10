@@ -28,15 +28,6 @@ export interface PromptConfig {
   permissionLevel: PulsePermissionLevel
   agent: PulseAgent
   model: PulseModel
-  effort?: string
-  maxTurns?: number
-  maxBudgetUsd?: number
-  appendSystemPrompt?: string
-  disableSlashCommands?: boolean
-  noSessionPersistence?: boolean
-  fallbackModel?: string
-  allowedTools?: string
-  disallowedTools?: string
 }
 
 /** Mutable accumulator shared across streaming event handlers for a single prompt. */
