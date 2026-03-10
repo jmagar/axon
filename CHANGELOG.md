@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-10 (session: v0.14.0 — web auth hardening + Pulse workspace improvements + CLI cleanup)
+Last Modified: 2026-03-10 (session: v0.14.1 — GitHub code-aware chunking + git clone + Qdrant tuning)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **GitHub code-aware chunking + git clone performance + Qdrant tuning (v0.14.1)** — `embed_code_with_metadata()` added to `crates/vector/ops/tei.rs` — tries tree-sitter AST-aware chunking (Rust, Python, JS, TS, Go, Bash) with fallback to 2000-char prose; unified `GitHubPayloadParams` builder in `crates/ingest/github/meta.rs` produces 31 `gh_*` structured metadata fields per chunk; `--no-source` flag (source code included by default); GitHub repo re-ingest via refresh schedules gated on `pushed_at`; **performance**: replaced per-file HTTP API fetches with `git clone --depth=1` — 10K+ individual requests → single clone operation (biomejs/biome: 30+ min → seconds); live progress tracking via `UnboundedSender<serde_json::Value>` channel from `embed_files()` → DB writer task in `process.rs`; progress displays task-level phase, file-level counts, and final chunks in both `axon ingest list` and `axon status`; Qdrant `production.yaml` config added (on-disk payload + vectors + HNSW, memmap threshold 20KB); docker-compose gains Qdrant memory limits (1G–4G); `ssh_auth.rs` test cleanup (base64_encode moved inside test module)
 
 - **Web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0)** — SSH key auth (`crates/web/ssh_auth.rs`) validates SSH public keys from `~/.ssh/authorized_keys` or `AXON_SSH_AUTHORIZED_KEYS`; dual-auth mode (`AXON_REQUIRE_DUAL_AUTH`) requires both Tailscale identity AND API token; Tailscale auth module hardened with configurable allowed users/networks; Pulse workspace gains dedicated logs/MCP/terminal panes (`pulse-logs-pane.tsx`, `pulse-mcp-pane.tsx`, `pulse-terminal-pane.tsx`); mobile pane switcher improved; `use-split-pane` rewritten for new pane layout; proxy middleware updated; `axon.subdomain.conf` deleted (superseded by Tailscale auth); CLI: `spider_capture.rs` dead code deleted; `map.rs`/`scrape.rs`/`screenshot.rs` cleaned up; crawl runtime DB helpers expanded; AMQP channel improvements; `suggest.rs` simplified; `vector/ops/input` split into module; web download handler hardened; new `.env.example` entries for auth settings; `auth/` docs added
 
@@ -111,7 +113,16 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | feat(web) | web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0) |
+| `pending` | chore | Qdrant tuning + ssh_auth test cleanup (v0.14.1) |
+| `81e6a874` | fix(ingest) | display task-level and phase progress for GitHub ingest |
+| `17782382` | perf(ingest) | replace per-file GitHub API fetches with git clone --depth=1 |
+| `fa11b4a3` | feat(ingest) | add live progress tracking for GitHub repo ingestion |
+| `d29b1f4a` | docs | update all docs for GitHub code-aware chunking feature |
+| `ed336b16` | feat(refresh) | GitHub repo re-ingest schedules with pushed_at gating |
+| `31db768b` | feat(cli) | source code included by default in GitHub ingest |
+| `bdd687d1` | feat(ingest) | unified GitHub payload builder + code-aware chunking |
+| `61a0f387` | feat(vector) | add embed_code_with_metadata with AST chunking fallback |
+| `69f673c0` | feat(web) | web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0) |
 | `0401eaa0` | feat(deps) | add text-splitter + tree-sitter grammar crates |
 | `717d37cc` | fix(review) | address 114 CodeRabbit threads + remove dead run_*_native functions (v0.13.3) |
 | `2f53720f` | fix(review) | address 14 CodeRabbit/cubic-dev-ai PR comments |
