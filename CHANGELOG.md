@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-10 (session: v0.14.1 — GitHub code-aware chunking + git clone + Qdrant tuning)
+Last Modified: 2026-03-10 (session: v0.14.2 — GitHub ingest progress display fixes)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **GitHub ingest progress display fixes (v0.14.2)** — three bugs fixed: (1) `Authorization: Bearer` → `Authorization: token` for classic GitHub PATs (`ghp_`) in `files.rs` and `wiki.rs`; (2) added unauthenticated clone fallback for public repos; (3) final progress send (`5/5 tasks, chunks_embedded`) added after `tokio::join!` completes in `github.rs`; (4) `ingest_metrics_suffix()` completed branch in `metrics.rs` now handles `tasks_total` — `axon status` shows `5/5 tasks | N chunks` for completed GitHub ingests
 
 - **GitHub code-aware chunking + git clone performance + Qdrant tuning (v0.14.1)** — `embed_code_with_metadata()` added to `crates/vector/ops/tei.rs` — tries tree-sitter AST-aware chunking (Rust, Python, JS, TS, Go, Bash) with fallback to 2000-char prose; unified `GitHubPayloadParams` builder in `crates/ingest/github/meta.rs` produces 31 `gh_*` structured metadata fields per chunk; `--no-source` flag (source code included by default); GitHub repo re-ingest via refresh schedules gated on `pushed_at`; **performance**: replaced per-file HTTP API fetches with `git clone --depth=1` — 10K+ individual requests → single clone operation (biomejs/biome: 30+ min → seconds); live progress tracking via `UnboundedSender<serde_json::Value>` channel from `embed_files()` → DB writer task in `process.rs`; progress displays task-level phase, file-level counts, and final chunks in both `axon ingest list` and `axon status`; Qdrant `production.yaml` config added (on-disk payload + vectors + HNSW, memmap threshold 20KB); docker-compose gains Qdrant memory limits (1G–4G); `ssh_auth.rs` test cleanup (base64_encode moved inside test module)
 
@@ -113,7 +115,8 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | chore | Qdrant tuning + ssh_auth test cleanup (v0.14.1) |
+| `1a4ded20` | fix(ingest) | GitHub clone auth + progress display fixes (v0.14.2) |
+| `0c8f2b57` | chore | Qdrant tuning + ssh_auth test cleanup (v0.14.1) |
 | `81e6a874` | fix(ingest) | display task-level and phase progress for GitHub ingest |
 | `17782382` | perf(ingest) | replace per-file GitHub API fetches with git clone --depth=1 |
 | `fa11b4a3` | feat(ingest) | add live progress tracking for GitHub repo ingestion |
