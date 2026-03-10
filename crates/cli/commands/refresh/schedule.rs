@@ -1,3 +1,4 @@
+use super::github::dispatch_github_refresh;
 use super::resolve::resolve_schedule_urls;
 use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
@@ -78,6 +79,14 @@ fn schedule_name_arg(cfg: &Config, action: &str, index: usize) -> Result<String,
 
 async fn handle_refresh_schedule_add(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let name = schedule_name_arg(cfg, "add", 2)?;
+    // Detect `github:owner/repo` prefix — GitHub re-ingest schedule.
+    if let Some(repo) = name.strip_prefix("github:") {
+        if !repo.contains('/') || repo.split('/').count() != 2 {
+            return Err("Invalid GitHub target. Expected: github:owner/repo".into());
+        }
+        return super::github::handle_refresh_schedule_add_github(cfg, repo, &name).await;
+    }
+
     let mut seed_url: Option<String> = None;
     let mut every_seconds: Option<i64> = None;
     let mut tier_seconds: Option<i64> = None;
@@ -148,9 +157,7 @@ async fn handle_refresh_schedule_add(cfg: &Config) -> Result<(), Box<dyn Error>>
         .or(tier_seconds)
         .unwrap_or(REFRESH_TIER_MEDIUM_SECONDS);
     if seed_url.is_none() && urls.is_none() {
-        return Err(
-            "refresh schedule add requires at least one of [seed_url] or --urls <csv>".into(),
-        );
+        return Err("refresh schedule add requires [seed_url] or --urls <csv>".into());
     }
     let next_run_at = Utc::now() + Duration::seconds(every_seconds);
     let schedule = RefreshScheduleCreate {
@@ -160,6 +167,8 @@ async fn handle_refresh_schedule_add(cfg: &Config) -> Result<(), Box<dyn Error>>
         every_seconds,
         enabled: true,
         next_run_at,
+        source_type: None,
+        target: None,
     };
     let created = create_refresh_schedule(cfg, &schedule).await?;
     let watch_payload = serde_json::json!({
@@ -394,6 +403,33 @@ async fn run_refresh_schedule_due_sweep(
     }
 
     for schedule in &claimed {
+        // GitHub repo re-ingest: delegate to github module.
+        if schedule.source_type.as_deref() == Some("github")
+            && let Some(target) = &schedule.target
+        {
+            match dispatch_github_refresh(cfg, &pool, schedule, target).await {
+                Ok(Some(job_id)) => {
+                    dispatched += 1;
+                    let next_run_at = now + Duration::seconds(schedule.every_seconds);
+                    jobs.push(serde_json::json!({
+                        "schedule_id": schedule.id,
+                        "name": schedule.name,
+                        "job_id": job_id,
+                        "source_type": "github",
+                        "target": target,
+                        "next_run_at": next_run_at,
+                    }));
+                }
+                Ok(None) => {
+                    skipped += 1;
+                }
+                Err(_) => {
+                    failed += 1;
+                }
+            }
+            continue;
+        }
+
         let urls = resolve_schedule_urls(cfg, schedule).await?;
         if urls.is_empty() {
             let next_run_at = now + Duration::seconds(schedule.every_seconds);
