@@ -248,6 +248,15 @@ pub async fn ingest_github(
         }
     }
 
+    // Send final progress so completed state shows accurate task counts
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send(serde_json::json!({
+            "tasks_done": 5,
+            "tasks_total": 5,
+            "chunks_embedded": total,
+        }));
+    }
+
     log_info(&format!(
         "github issues_fetched={issues_count} prs_fetched={prs_count}"
     ));

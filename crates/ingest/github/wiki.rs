@@ -58,7 +58,7 @@ pub async fn ingest_wiki(
     if let Some(t) = token {
         cmd.env("GIT_CONFIG_COUNT", "1");
         cmd.env("GIT_CONFIG_KEY_0", "http.extraHeader");
-        cmd.env("GIT_CONFIG_VALUE_0", format!("Authorization: Bearer {t}"));
+        cmd.env("GIT_CONFIG_VALUE_0", format!("Authorization: token {t}"));
     }
 
     let output = cmd

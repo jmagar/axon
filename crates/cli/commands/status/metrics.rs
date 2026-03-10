@@ -260,6 +260,20 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
             metric(chunks, "chunks"),
         );
     }
+    let tasks_total = r.get("tasks_total").and_then(|v| v.as_u64());
+    if let Some(total) = tasks_total {
+        let numerator = r
+            .get("tasks_done")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(total);
+        return format!(
+            "{sep}{}{}{} tasks{sep}{}",
+            accent(&numerator.to_string()),
+            subtle("/"),
+            accent(&total.to_string()),
+            metric(chunks, "chunks"),
+        );
+    }
     format!("{sep}{}", metric(chunks, "chunks"))
 }
 
