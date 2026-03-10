@@ -1,5 +1,5 @@
 # axon_cli — Axon CLI (Rust + Spider.rs)
-Last Modified: 2026-03-09
+Last Modified: 2026-03-10
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 
@@ -65,7 +65,7 @@ MCP docs:
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
-| `ingest <target>` | Ingest external source (GitHub repo, Reddit subreddit/thread, YouTube video/playlist/channel) — auto-detects source type from target | Yes (default) |
+| `ingest <target>` | Ingest external source (GitHub repo, Reddit subreddit/thread, YouTube video/playlist/channel) — auto-detects source type from target. GitHub: source code indexed by default with tree-sitter AST chunking; use `--no-source` to skip. | Yes (default) |
 | `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
@@ -74,7 +74,7 @@ MCP docs:
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `mcp` | Start MCP stdio server | No |
-| `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list) | Yes (default) |
+| `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list). Supports `github:owner/repo` schedules with `pushed_at` gating. | Yes (default) |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed / refresh)

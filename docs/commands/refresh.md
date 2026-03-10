@@ -1,5 +1,5 @@
 # axon refresh
-Last Modified: 2026-03-03
+Last Modified: 2026-03-10
 
 Revalidate already-known URLs and keep indexed content fresh without full rediscovery crawls.
 
@@ -46,6 +46,7 @@ axon refresh worker
 
 ```bash
 axon refresh schedule add <name> [seed_url] [--every-seconds N | --tier high|medium|low] [--urls "u1,u2"]
+axon refresh schedule add github:<owner>/<repo> [--every-seconds N | --tier high|medium|low]
 axon refresh schedule list
 axon refresh schedule enable <name>
 axon refresh schedule disable <name>
@@ -56,10 +57,20 @@ axon refresh schedule run-due [--batch N]
 
 `refresh schedule` is a compatibility surface backed by top-level watch definitions (`task_type=refresh`). You can continue using the same commands/scripts; schedule rows are bridged to watch scheduler state.
 
+### URL schedules
+
 `refresh schedule add` requires at least one of:
 
 - `[seed_url]`
 - `--urls <csv>`
+
+### GitHub repo schedules
+
+Use the `github:owner/repo` prefix to create a periodic re-ingest schedule for a GitHub repository. On each tick, the scheduler checks the repo's `pushed_at` timestamp — if nothing has been pushed since the last ingest, the run is skipped (no wasted API calls).
+
+```bash
+axon refresh schedule add github:rust-lang/rust --tier medium
+```
 
 ## Tier Presets
 
@@ -93,6 +104,9 @@ axon refresh schedule add docs-high https://docs.rs --tier high
 
 # Create schedule using explicit URL list
 axon refresh schedule add docs-explicit --urls "https://docs.rs/spider,https://qdrant.tech/documentation"
+
+# Create a GitHub repo re-ingest schedule (checks pushed_at before re-indexing)
+axon refresh schedule add github:rust-lang/rust --tier high
 
 # Run one due-schedule sweep now
 axon refresh schedule run-due --batch 50 --json
