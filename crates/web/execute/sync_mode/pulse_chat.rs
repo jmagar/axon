@@ -60,17 +60,17 @@ async fn dispatch_acp_event(
                 "[pulse_chat] editor_update: op={operation} content_len={}",
                 content.len()
             );
-            // Wrap in the same command.output.json envelope as ACP events so
-            // the frontend unwrap path (ctx.mode === 'pulse_chat') can route it.
-            let raw_json = json!({
+            // `editor_update` is a standalone top-level WS message per the protocol
+            // contract in docs/WS-PROTOCOL.md — it is NOT wrapped in command.output.json.
+            // Wrapping it would mismatch the documented shape:
+            //   { "type": "editor_update", "content": "...", "operation": "replace"|"append" }
+            let standalone = json!({
                 "type": "editor_update",
                 "content": content,
                 "operation": operation,
             })
             .to_string();
-            if let Some(envelope) = serialize_raw_output_event(ws_ctx, &raw_json) {
-                let _ = tx.send(envelope).await;
-            }
+            let _ = tx.send(standalone).await;
         }
     }
 }
@@ -140,9 +140,13 @@ async fn get_or_create_acp_connection(
 
     // First turn or agent change — spawn the persistent adapter.
     let adapter = resolve_acp_adapter_command(cfg, agent)?;
+    // Log the basename only — avoid leaking full filesystem paths (e.g. /home/user/...).
+    let adapter_name = std::path::Path::new(&adapter.program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&adapter.program);
     log::info!(
-        "[pulse_chat] spawning persistent adapter: program={} args={:?}",
-        adapter.program,
+        "[pulse_chat] spawning persistent adapter: program={adapter_name} args={:?}",
         adapter.args
     );
     let scaffold = acp_svc::AcpClientScaffold::new(adapter.clone());
@@ -194,16 +198,24 @@ pub(super) async fn handle_pulse_chat(
 
     // For new sessions (no session_id), inject the <axon:editor> syntax guide
     // as a preamble so agents know they can write directly to the editor.
+    //
+    // IMPORTANT: Do NOT include literal <axon:editor>…</axon:editor> example
+    // blocks in this preamble. The parser in persistent_conn.rs scans the
+    // agent's full response text for those tags, so any example blocks in the
+    // system preamble that an agent might echo back would be misinterpreted as
+    // real editor-write commands and incorrectly modify the editor state.
     let prompt_input = if session_id.is_none() {
         format!(
             "[System context — Axon editor integration]\n\
              You have access to the user's Axon editor. To write content \
-             directly into the editor, wrap markdown in:\n\
-             <axon:editor op=\"replace\">your content</axon:editor>\n\
-             Use op=\"replace\" to set the full document, op=\"append\" to add \
-             to the end. The user will see it update in real time. Only use \
-             <axon:editor> tags when the user explicitly asks you to write to \
-             or update the editor.\n\
+             directly into the editor, output a block starting with the \
+             XML opening tag `<axon:editor op=\"replace\">` (or op=\"append\" \
+             to add to the end), followed by your markdown content, followed \
+             by the closing tag `</axon:editor>`. Do NOT show this tag in a \
+             code fence or explain it unless the user explicitly asks — \
+             just use it. The user will see the editor update in real time. \
+             Only use axon:editor tags when the user explicitly asks you to \
+             write to or update the editor.\n\
              [User message]\n{input}"
         )
     } else {

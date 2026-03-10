@@ -118,7 +118,12 @@ pub async fn clear_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
         .execute(&pool)
         .await?
         .rows_affected();
-    let _ = purge_queue_safe(cfg, &cfg.ingest_queue).await;
+    if let Err(e) = purge_queue_safe(cfg, &cfg.ingest_queue).await {
+        log_warn(&format!(
+            "queue_purge_failed queue={} error={e}",
+            cfg.ingest_queue
+        ));
+    }
     Ok(rows)
 }
 

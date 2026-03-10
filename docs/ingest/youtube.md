@@ -1,7 +1,7 @@
 # YouTube Ingest
 Last Modified: 2026-03-09
 
-> CLI reference (flags, subcommands, examples): [`docs/commands/ingest.md`](../commands/ingest.md)
+> See [`docs/commands/youtube.md`](../commands/youtube.md) for CLI reference and usage examples.
 
 Ingests YouTube video transcripts and metadata into Qdrant via `yt-dlp`. No API key required. Supports single videos, playlists, and channel URLs.
 

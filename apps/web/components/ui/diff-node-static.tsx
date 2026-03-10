@@ -4,7 +4,7 @@ import { SlateLeaf } from 'platejs/static'
 
 import { cn } from '@/lib/utils'
 
-export function DiffLeafStatic({ className, leaf, ...props }: SlateLeafProps) {
+export function DiffLeafStatic({ className, leaf, children, ...props }: SlateLeafProps) {
   const op = (leaf as Record<string, unknown>).diffOperation as DiffOperation | undefined
 
   return (
@@ -18,7 +18,7 @@ export function DiffLeafStatic({ className, leaf, ...props }: SlateLeafProps) {
         className,
       )}
     >
-      {props.children}
+      {children}
     </SlateLeaf>
   )
 }

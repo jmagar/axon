@@ -65,9 +65,7 @@ MCP docs:
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
-| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
-| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
-| `youtube <url\|playlist\|channel>` | Ingest YouTube video, playlist, or entire channel (transcripts + metadata) into Qdrant | Yes (default) |
+| `ingest <target>` | Ingest external source (GitHub repo, Reddit subreddit/thread, YouTube video/playlist/channel) — auto-detects source type from target | Yes (default) |
 | `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
@@ -288,10 +286,10 @@ AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
 # Search and research (required for search/research commands)
 TAVILY_API_KEY=your-tavily-api-key
 
-# Ingest credentials (required for github/reddit/youtube commands)
+# Ingest credentials (required for axon ingest <github|reddit|youtube> targets)
 GITHUB_TOKEN=                       # optional — raises GitHub rate limits
-REDDIT_CLIENT_ID=                   # required for reddit command
-REDDIT_CLIENT_SECRET=               # required for reddit command
+REDDIT_CLIENT_ID=                   # required for Reddit ingest targets
+REDDIT_CLIENT_SECRET=               # required for Reddit ingest targets
 
 # Worker tuning (optional, defaults shown)
 AXON_INGEST_LANES=2                 # parallel ingest worker lanes
@@ -343,7 +341,7 @@ The CLI auto-detects whether it's running inside Docker:
 ## Gotchas
 
 ### `--wait false` (default) = fire-and-forget
-By default, `crawl`, `extract`, `embed`, `github`, `reddit`, and `youtube` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
+By default, `crawl`, `extract`, `embed`, and `ingest` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
 
 ### `render-mode auto-switch`
 The default mode. Runs an HTTP crawl first; if >60% of pages are thin (<200 chars) or total coverage is too low, automatically retries with Chrome. Chrome requires a running Chrome instance — if none is available, the HTTP result is kept.
@@ -536,7 +534,7 @@ All tables share: `created_at`, `updated_at`, `started_at`, `finished_at` (TIMES
 
 **Never use `mod.rs`.** Use the Rust 2018+ file-per-module layout:
 
-```
+```plaintext
 # WRONG — do not do this
 foo/
 └── mod.rs      ← forbidden

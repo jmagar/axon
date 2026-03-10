@@ -1,4 +1,5 @@
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_info;
 use crate::crates::core::ui::{muted, primary};
 use crate::crates::services::query as query_service;
 use crate::crates::services::types::Pagination;
@@ -83,6 +84,11 @@ pub async fn query_results(
 
 pub async fn run_query_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let query = resolve_query_text(cfg).ok_or("query requires text")?;
+    log_info(&format!(
+        "command=query query_len={} limit={}",
+        query.len(),
+        cfg.search_limit
+    ));
     // Route data-fetch through the services layer.
     let opts = Pagination {
         limit: cfg.search_limit.max(1),

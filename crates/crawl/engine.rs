@@ -9,7 +9,7 @@ mod url_utils;
 
 use crate::crates::core::config::{Config, RenderMode};
 use crate::crates::core::content::{build_selector_config, build_transform_config};
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use collector::{CollectorConfig, collect_crawl_pages};
 use runtime::configure_website;
@@ -232,6 +232,12 @@ pub async fn run_crawl_once(
     previous_manifest: HashMap<String, ManifestEntry>,
     crawl_id: Option<&str>,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    log_info(&format!(
+        "crawl start url={} render_mode={:?} max_pages={} max_depth={}",
+        start_url, mode, cfg.max_pages, cfg.max_depth
+    ));
+    let _crawl_start = Instant::now();
+
     let markdown_dir = output_dir.join("markdown");
     let recycling_bin = output_dir.join("markdown.old");
 
@@ -340,6 +346,12 @@ pub async fn run_crawl_once(
         log_info("Purged recycling bin — armory is now synchronized with battlefield.");
     }
 
+    log_done(&format!(
+        "crawl done url={} pages_fetched={} duration_ms={}",
+        start_url,
+        summary.pages_seen,
+        _crawl_start.elapsed().as_millis()
+    ));
     Ok((summary, urls))
 }
 

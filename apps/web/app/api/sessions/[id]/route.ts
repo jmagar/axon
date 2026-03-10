@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         errorId: makeErrorId('session'),
         detail: 'Session with provided id was not found',
       },
-      { status: 404, headers: { 'X-Retry-After': '1' } },
+      { status: 404 },
     )
   }
 

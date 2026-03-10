@@ -21,6 +21,7 @@ pub(super) mod persistent_conn;
 pub(super) mod runtime;
 pub(super) mod session;
 
+use std::future::Future;
 use std::sync::Arc;
 
 use agent_client_protocol::{
@@ -86,6 +87,41 @@ pub struct AcpClientScaffold {
 
 const ACP_ADAPTER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+// ── run_acp_event_loop ───────────────────────────────────────────────────────
+
+/// Spawn a dedicated `spawn_blocking` thread with a `current_thread` tokio
+/// runtime and `LocalSet`, run `fut` inside it with a 5-minute timeout, and
+/// return the result.
+///
+/// ACP SDK futures are `!Send` (uses `?Send` traits), so they cannot be spawned
+/// directly on the Axon multi-thread runtime.  This helper encapsulates that
+/// boilerplate once so `start_prompt_turn` and `start_session_probe` do not
+/// duplicate the identical setup.
+async fn run_acp_event_loop<F, Fut>(fut: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), String>>,
+{
+    let join = tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|err| format!("failed to create ACP tokio runtime: {err}"))?;
+        let local = tokio::task::LocalSet::new();
+        local.block_on(&rt, async {
+            match tokio::time::timeout(ACP_ADAPTER_TIMEOUT, fut()).await {
+                Ok(result) => result,
+                Err(_) => Err("ACP adapter timed out after 5 minutes".into()),
+            }
+        })
+    })
+    .await
+    .map_err(|err| format!("failed to join ACP runtime worker: {err}"))?;
+
+    join.map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 impl AcpClientScaffold {
     #[must_use]
     pub fn new(adapter: AcpAdapterCommand) -> Self {
@@ -102,6 +138,11 @@ impl AcpClientScaffold {
     }
 
     /// Spawn the adapter subprocess with a clean environment (env_clear allowlist).
+    ///
+    /// `command.env_clear()` only affects the *subprocess* environment — it does NOT
+    /// modify the parent (Axon) process environment.  No `std::env::remove_var` or
+    /// `std::env::set_var` calls are made; the parent's environment is never touched
+    /// and needs no restoration.
     pub fn spawn_adapter(&self) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
         let mut command = tokio::process::Command::new(&self.adapter.program);
@@ -115,6 +156,9 @@ impl AcpClientScaffold {
         // stored API keys for authentication.
         // CLAUDECODE is excluded to prevent nested-session detection.
         command.env_clear();
+        // NOTE: `HOME` is Linux/macOS-only. Axon targets Linux self-hosted deployments
+        // exclusively (see CLAUDE.md), so `HOME` is always present in the environment.
+        // On Windows, `USERPROFILE` would be needed instead — not relevant here.
         for key in &[
             "PATH",
             "HOME",
@@ -176,6 +220,8 @@ impl AcpClientScaffold {
             command.current_dir(cwd);
         }
         command.env_clear();
+        // NOTE: `HOME` is Linux/macOS-only. Axon targets Linux self-hosted deployments
+        // exclusively — `HOME` is always present. Windows would need `USERPROFILE` instead.
         for key in &[
             "PATH",
             "HOME",
@@ -265,40 +311,20 @@ impl AcpClientScaffold {
         let adapter = self.adapter.clone();
         let req_owned = req.clone();
 
-        // ACP SDK futures are !Send (uses ?Send traits), so we run on a
-        // dedicated thread with its own tokio runtime + LocalSet.
-        // tokio::process provides non-blocking I/O that returns Pending
-        // instead of blocking (fixes the AllowStdIo deadlock root cause).
-        let join = tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|err| format!("failed to create ACP tokio runtime: {err}"))?;
-            let local = tokio::task::LocalSet::new();
-            local.block_on(&rt, async {
-                match tokio::time::timeout(
-                    ACP_ADAPTER_TIMEOUT,
-                    run_prompt_turn(
-                        adapter,
-                        initialize,
-                        session_setup,
-                        req_owned,
-                        tx,
-                        permission_responders,
-                    ),
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(_) => Err("ACP adapter timed out after 5 minutes".into()),
-                }
-            })
+        // ACP SDK futures are !Send (uses ?Send traits) — delegate to the shared
+        // `run_acp_event_loop` helper which provides a dedicated `current_thread`
+        // runtime + LocalSet with a 5-minute timeout.
+        run_acp_event_loop(move || {
+            run_prompt_turn(
+                adapter,
+                initialize,
+                session_setup,
+                req_owned,
+                tx,
+                permission_responders,
+            )
         })
         .await
-        .map_err(|err| format!("failed to join ACP runtime worker: {err}"))?;
-
-        join.map_err(|err| err.to_string())?;
-        Ok(())
     }
 
     pub async fn start_session_probe(
@@ -324,35 +350,16 @@ impl AcpClientScaffold {
         let adapter = self.adapter.clone();
         let req_owned = req.clone();
 
-        let join = tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|err| format!("failed to create ACP tokio runtime: {err}"))?;
-            let local = tokio::task::LocalSet::new();
-            local.block_on(&rt, async {
-                match tokio::time::timeout(
-                    ACP_ADAPTER_TIMEOUT,
-                    run_session_probe(
-                        adapter,
-                        initialize,
-                        session_setup,
-                        req_owned,
-                        tx,
-                        permission_responders,
-                    ),
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(_) => Err("ACP adapter timed out after 5 minutes".into()),
-                }
-            })
+        run_acp_event_loop(move || {
+            run_session_probe(
+                adapter,
+                initialize,
+                session_setup,
+                req_owned,
+                tx,
+                permission_responders,
+            )
         })
         .await
-        .map_err(|err| format!("failed to join ACP runtime worker: {err}"))?;
-
-        join.map_err(|err| err.to_string())?;
-        Ok(())
     }
 }

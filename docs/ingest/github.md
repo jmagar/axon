@@ -57,7 +57,7 @@ The argument accepts:
 
 All GitHub chunks carry structured `gh_*` payload fields built in `crates/ingest/github/meta.rs`. The fields present depend on chunk type.
 
-### Repository chunks (`gh_is_pr: false`, file and wiki chunks)
+### Repository, file, and wiki chunks
 
 | Field | Type | Description |
 |-------|------|-------------|

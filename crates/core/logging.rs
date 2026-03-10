@@ -1,8 +1,13 @@
+use console::Style;
+use std::fmt;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tracing::{info, warn};
+use tracing::field::{Field, Visit};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::fmt::writer::MakeWriter;
+use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, format::Writer};
+use tracing_subscriber::registry::LookupSpan;
 
 #[derive(Debug)]
 struct SizeRotatingFile {
@@ -183,6 +188,142 @@ fn open_rotating_file(
     }
 }
 
+// ── Console event formatter ──────────────────────────────────────────────────
+//
+// Renders log lines on stderr as:
+//   HH:MM:SS   LEVEL  event_name  key=value  key=value
+//
+// Colors (when ANSI is supported):
+//   timestamp — dim
+//   LEVEL     — green (INFO), yellow (WARN), red (ERROR), dim (DEBUG/TRACE)
+//   event     — bold white (first whitespace-delimited token of the message)
+//   key=      — dim
+//   value     — normal (inherits terminal default)
+//
+// The JSON file layer uses tracing-subscriber's built-in JSON formatter with
+// `with_ansi(false)`, so it never receives ANSI escape codes.
+
+#[derive(Default)]
+struct EventVisitor {
+    message: String,
+    extra: Vec<(String, String)>,
+}
+
+impl Visit for EventVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_owned();
+        } else {
+            self.extra.push((field.name().to_owned(), value.to_owned()));
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        let s = format!("{value:?}");
+        if field.name() == "message" {
+            self.message = s;
+        } else {
+            self.extra.push((field.name().to_owned(), s));
+        }
+    }
+}
+
+struct CliFormat;
+
+impl<S, N> FormatEvent<S, N> for CliFormat
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        _ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> fmt::Result {
+        let ansi = writer.has_ansi_escapes();
+
+        // HH:MM:SS (UTC) ─────────────────────────────────────────────────────
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let ts = format!(
+            "{:02}:{:02}:{:02}",
+            (secs % 86400) / 3600,
+            (secs % 3600) / 60,
+            secs % 60
+        );
+        if ansi {
+            write!(writer, "{}  ", Style::new().dim().apply_to(&ts))?;
+        } else {
+            write!(writer, "{ts}  ")?;
+        }
+
+        // LEVEL ───────────────────────────────────────────────────────────────
+        let level = *event.metadata().level();
+        if ansi {
+            let s = match level {
+                tracing::Level::ERROR => Style::new().red().bold().apply_to("ERROR").to_string(),
+                tracing::Level::WARN => Style::new().yellow().bold().apply_to(" WARN").to_string(),
+                tracing::Level::INFO => Style::new().green().apply_to(" INFO").to_string(),
+                tracing::Level::DEBUG => Style::new().dim().apply_to("DEBUG").to_string(),
+                tracing::Level::TRACE => Style::new().dim().apply_to("TRACE").to_string(),
+            };
+            write!(writer, "{s}  ")?;
+        } else {
+            write!(writer, "{level:5}  ")?;
+        }
+
+        // MESSAGE ─────────────────────────────────────────────────────────────
+        let mut v = EventVisitor::default();
+        event.record(&mut v);
+
+        if ansi && !v.message.is_empty() {
+            let tokens: Vec<&str> = v.message.split_whitespace().collect();
+            for (i, token) in tokens.iter().enumerate() {
+                if i > 0 {
+                    write!(writer, " ")?;
+                }
+                if i == 0 {
+                    // event name — bold
+                    write!(writer, "{}", Style::new().bold().apply_to(*token))?;
+                } else if let Some(eq) = token.find('=') {
+                    // key=value — dim key, normal value
+                    write!(
+                        writer,
+                        "{}{}{}",
+                        Style::new().dim().apply_to(&token[..eq]),
+                        Style::new().dim().apply_to("="),
+                        &token[eq + 1..]
+                    )?;
+                } else {
+                    write!(writer, "{token}")?;
+                }
+            }
+        } else {
+            write!(writer, "{}", v.message)?;
+        }
+
+        // extra structured fields (e.g. status="done" from log_done) ─────────
+        for (key, val) in &v.extra {
+            if ansi {
+                write!(
+                    writer,
+                    "  {}{}{}",
+                    Style::new().dim().apply_to(key.as_str()),
+                    Style::new().dim().apply_to("="),
+                    val
+                )?;
+            } else {
+                write!(writer, "  {key}={val}")?;
+            }
+        }
+
+        writeln!(writer)
+    }
+}
+
 pub fn init_tracing() {
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
@@ -254,6 +395,7 @@ pub fn init_tracing() {
     let log_path = PathBuf::from(&json_log_file);
 
     let console_layer = tracing_subscriber::fmt::layer()
+        .event_format(CliFormat)
         .with_writer(io::stderr)
         .with_filter(console_filter);
 
@@ -311,6 +453,14 @@ pub fn log_warn(msg: &str) {
 
 pub fn log_done(msg: &str) {
     info!(status = "done", "{}", msg);
+}
+
+pub fn log_error(msg: &str) {
+    error!("{}", msg);
+}
+
+pub fn log_debug(msg: &str) {
+    debug!("{}", msg);
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@ use super::path::build_artifact_path;
 use super::shape::{clip_inline_json, json_shape_preview, line_count, sha256_hex};
 use crate::crates::mcp::schema::{AxonToolResponse, ResponseMode};
 use rmcp::ErrorData;
+use uuid::Uuid;
 
 pub async fn write_json_artifact(
     stem: &str,
@@ -10,9 +11,22 @@ pub async fn write_json_artifact(
 ) -> Result<serde_json::Value, ErrorData> {
     let text = serde_json::to_string_pretty(payload).map_err(|e| internal_error(e.to_string()))?;
     let path = build_artifact_path(stem, "json").await?;
-    tokio::fs::write(&path, text.as_bytes())
+
+    // Write to a sibling temp file first, then rename atomically.
+    // This ensures that if the write fails, the original file (if any) is preserved.
+    let tmp_path = path.with_extension(format!("json.{}.tmp", Uuid::new_v4().simple()));
+    tokio::fs::write(&tmp_path, text.as_bytes())
         .await
-        .map_err(|e| internal_error(e.to_string()))?;
+        .map_err(|e| internal_error(format!("failed to write artifact temp file: {e}")))?;
+    tokio::fs::rename(&tmp_path, &path).await.map_err(|e| {
+        // Best-effort cleanup of the temp file on rename failure.
+        let tmp = tmp_path.clone();
+        tokio::spawn(async move {
+            let _ = tokio::fs::remove_file(tmp).await;
+        });
+        internal_error(format!("failed to finalize artifact file: {e}"))
+    })?;
+
     Ok(serde_json::json!({
         "path": path,
         "bytes": text.len(),
@@ -28,9 +42,7 @@ pub async fn respond_with_mode(
     artifact_stem: &str,
     payload: serde_json::Value,
 ) -> Result<AxonToolResponse, ErrorData> {
-    let artifact = write_json_artifact(artifact_stem, &payload).await?;
-
-    // Auto-inline: if payload serializes small, skip the artifact round-trip entirely.
+    // Auto-inline: if payload serializes small, skip the artifact disk write entirely.
     // Claude can read it directly without a follow-up artifacts.read call.
     // Threshold configurable via AXON_INLINE_BYTES_THRESHOLD (default: 8192).
     // Set to 0 to disable auto-inline and force path mode for all payloads.
@@ -48,10 +60,12 @@ pub async fn respond_with_mode(
             serde_json::json!({
                 "response_mode": "auto-inline",
                 "data": payload,
-                "artifact": artifact,
             }),
         ));
     }
+
+    // Payload is large — write artifact to disk and respond according to the requested mode.
+    let artifact = write_json_artifact(artifact_stem, &payload).await?;
 
     let shape = json_shape_preview(&payload);
     match mode {

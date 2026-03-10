@@ -5,7 +5,7 @@ pub use vtt::parse_vtt_to_text;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::vector::ops::{embed_text_with_extra_payload, embed_text_with_metadata};
 use spider::url::Url;
 use std::error::Error;
@@ -99,6 +99,10 @@ pub fn is_playlist_or_channel_url(url: &str) -> bool {
 
 /// Run `yt-dlp --flat-playlist` to enumerate all individual video URLs in a playlist or channel.
 pub async fn enumerate_playlist_videos(url: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    // SSRF guard: validate before invoking yt-dlp so malicious targets cannot make
+    // yt-dlp fetch internal/private network resources.
+    validate_url(url)?;
+
     let output = tokio::process::Command::new("yt-dlp")
         .args([
             "--flat-playlist",
@@ -171,12 +175,18 @@ async fn run_ytdlp(safe_url: &str, tmp_path: &str) -> Result<(), Box<dyn Error>>
 ///
 /// Requires `yt-dlp` to be installed and on PATH.
 pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Error>> {
-    // SSRF guard: validate the URL against private IP ranges before any processing
-    validate_url(url)?;
-
-    // Extract and validate YouTube video ID to prevent argument injection
+    log_info(&format!("command=ingest source=youtube target={url}"));
+    // Extract and validate YouTube video ID to prevent argument injection.
+    // This must happen before the SSRF check because bare 11-character video IDs
+    // (e.g. "dQw4w9WgXcQ") are not URLs and would fail validate_url before
+    // canonicalization. We validate the canonicalized safe_url instead.
     let video_id = extract_video_id(url).ok_or("URL does not appear to be a YouTube video URL")?;
     let safe_url = format!("https://www.youtube.com/watch?v={video_id}");
+
+    // SSRF guard: validate the canonicalized URL against private IP ranges.
+    // YouTube.com is always a public host, so this is belt-and-suspenders against
+    // any unexpected bypass in extract_video_id.
+    validate_url(&safe_url)?;
 
     // Create a temp directory; cleaned up automatically when `tmp` is dropped
     let tmp = tempfile::tempdir()?;
@@ -196,6 +206,11 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
             _ => {}
         }
     }
+
+    log_info(&format!(
+        "youtube yt_dlp_complete vtt_files={}",
+        vtt_files.len()
+    ));
 
     if vtt_files.is_empty() {
         return Err(
@@ -294,6 +309,9 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
         }
     }
 
+    log_done(&format!(
+        "command=ingest source=youtube video_id={video_id} chunk_count={count}"
+    ));
     Ok(count)
 }
 

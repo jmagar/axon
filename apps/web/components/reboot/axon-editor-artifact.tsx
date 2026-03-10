@@ -1,7 +1,7 @@
 'use client'
 
 import { Check, Copy, FileCode2, Pencil } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Artifact,
   ArtifactAction,
@@ -16,6 +16,14 @@ import { MessageResponse } from '@/components/ai-elements/message'
 // ── <axon:editor> block parsing ───────────────────────────────────────────────
 
 const EDITOR_BLOCK_RE = /<axon:editor(?:\s[^>]*)?>[\s\S]*?<\/axon:editor>/g
+
+/**
+ * Remove all `<axon:editor>…</axon:editor>` blocks from a string, trimming the result.
+ * Exported so tests can verify the production implementation directly.
+ */
+export function stripEditorBlocks(content: string): string {
+  return content.replace(EDITOR_BLOCK_RE, '').trim()
+}
 
 export interface EditorArtifact {
   content: string
@@ -39,15 +47,46 @@ function extractPreview(md: string, limit: number): string {
     .trimEnd()
 }
 
+/**
+ * Replace fenced code blocks (``` … ```) and inline code spans (` … `) with
+ * placeholder text of equal length so that index positions in the original
+ * string are preserved and `<axon:editor>` tags inside code are not matched.
+ */
+function maskCodeRegions(text: string): string {
+  // Fenced code blocks: ```…``` (may have a language hint after the opening fence)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: non-control zero-width stand-in
+  const masked = text.replace(/```[\s\S]*?```/g, (m) => '\x00'.repeat(m.length))
+  // Inline code spans: `…` (single backtick, non-greedy)
+  return masked.replace(/`[^`\n]*`/g, (m) => '\x00'.repeat(m.length))
+}
+
 export function parseEditorArtifacts(content: string): {
   displayText: string
   artifacts: EditorArtifact[]
 } {
+  const masked = maskCodeRegions(content)
   const artifacts: EditorArtifact[] = []
-  const displayText = content.replace(EDITOR_BLOCK_RE, (match) => {
-    const op = match.match(/op="(replace|append)"/)
+
+  // Collect all match offsets from the masked string so that tags inside
+  // code fences or inline-code spans are silently ignored.
+  const matchRanges: Array<{ start: number; end: number }> = []
+  let m: RegExpExecArray | null
+  const re = new RegExp(EDITOR_BLOCK_RE.source, 'g')
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+  while ((m = re.exec(masked)) !== null) {
+    matchRanges.push({ start: m.index, end: m.index + m[0].length })
+  }
+
+  // Build displayText by removing matched ranges from the *original* content.
+  let displayText = ''
+  let cursor = 0
+  for (const range of matchRanges) {
+    displayText += content.slice(cursor, range.start)
+    // Extract artifact data from the original content at this range
+    const original = content.slice(range.start, range.end)
+    const op = original.match(/op="(replace|append)"/)
     const operation: 'replace' | 'append' = op?.[1] === 'append' ? 'append' : 'replace'
-    const inner = match.match(/<axon:editor[^>]*>([\s\S]*?)<\/axon:editor>/)
+    const inner = original.match(/<axon:editor[^>]*>([\s\S]*?)<\/axon:editor>/)
     const blockContent = inner?.[1]?.trim() ?? ''
     if (blockContent) {
       artifacts.push({
@@ -57,8 +96,9 @@ export function parseEditorArtifacts(content: string): {
         wordCount: blockContent.split(/\s+/).filter(Boolean).length,
       })
     }
-    return ''
-  })
+    cursor = range.end
+  }
+  displayText += content.slice(cursor)
   return { displayText: displayText.trim(), artifacts }
 }
 
@@ -73,6 +113,13 @@ function EditorArtifactCard({
 }) {
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear the pending copy-reset timer if the card unmounts before it fires.
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
 
   function openInEditor() {
     onEditorContent?.(artifact.content, artifact.operation)

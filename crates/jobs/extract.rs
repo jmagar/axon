@@ -6,7 +6,7 @@ use crate::crates::core::content::{
     DeterministicExtractionEngine, ExtractWebConfig, run_extract_with_engine,
 };
 use crate::crates::core::health::redis_healthy;
-use crate::crates::core::logging::{log_done, log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_done, log_info, log_warn};
 use crate::crates::jobs::common::{
     JobTable, begin_schema_migration_tx, enqueue_job, make_pool, mark_job_failed,
     open_amqp_channel, purge_queue_safe, reclaim_stale_running_jobs,
@@ -278,7 +278,12 @@ pub async fn clear_extract_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
         .execute(&pool)
         .await?
         .rows_affected();
-    let _ = purge_queue_safe(cfg, &cfg.extract_queue).await;
+    if let Err(e) = purge_queue_safe(cfg, &cfg.extract_queue).await {
+        log_warn(&format!(
+            "queue_purge_failed queue={} error={e}",
+            cfg.extract_queue
+        ));
+    }
     Ok(rows)
 }
 

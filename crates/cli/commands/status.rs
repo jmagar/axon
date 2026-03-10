@@ -2,6 +2,7 @@ pub(crate) mod metrics;
 mod presentation;
 
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_info;
 use crate::crates::jobs::crawl::{CrawlJob, list_jobs};
 use crate::crates::jobs::embed::{EmbedJob, list_embed_jobs};
 use crate::crates::jobs::extract::{ExtractJob, list_extract_jobs};
@@ -12,6 +13,7 @@ use std::error::Error;
 const WATCHDOG_RECLAIM_PREFIX: &str = "watchdog reclaimed stale running ";
 
 pub async fn run_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    log_info(&format!("command=status json={}", cfg.json_output));
     if cfg.json_output {
         // JSON path: route through the service layer for a stable payload shape.
         let result = crate::crates::services::system::full_status(cfg).await?;

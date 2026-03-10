@@ -42,6 +42,139 @@ fn format_domains_payload(result: DomainsResult) -> serde_json::Value {
     })
 }
 
+// ── Per-mode dispatch helpers ────────────────────────────────────────────────
+// Each helper handles one ServiceMode arm, keeping `dispatch_service` concise.
+
+struct QueryPagination {
+    limit: usize,
+    offset: usize,
+    max_points: Option<usize>,
+}
+
+async fn dispatch_query_modes(
+    mode: &ServiceMode,
+    cfg: std::sync::Arc<crate::crates::core::config::Config>,
+    input: String,
+    pagination: QueryPagination,
+    tx: mpsc::Sender<String>,
+    ws_ctx: CommandContext,
+) -> Option<Result<(), SvcError>> {
+    let QueryPagination {
+        limit,
+        offset,
+        max_points,
+    } = pagination;
+    match mode {
+        ServiceMode::Scrape => {
+            let result = match call_scrape(cfg, input).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx.clone(), ws_ctx.clone(), result.payload).await;
+            files::send_scrape_file(tx, ws_ctx).await;
+        }
+        ServiceMode::Map => {
+            let result = match call_map(cfg, input, MapOptions { limit, offset }).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Query => {
+            let result = match call_query(cfg, input, Pagination { limit, offset }).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, json!({ "results": result.results })).await;
+        }
+        ServiceMode::Retrieve => {
+            let result = match call_retrieve(cfg, input, RetrieveOptions { max_points }).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, json!({ "chunks": result.chunks })).await;
+        }
+        ServiceMode::Ask => {
+            let result = match call_ask(cfg, input).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        _ => return None,
+    }
+    Some(Ok(()))
+}
+
+async fn dispatch_search_and_info_modes(
+    mode: &ServiceMode,
+    cfg: std::sync::Arc<crate::crates::core::config::Config>,
+    input: String,
+    limit: usize,
+    offset: usize,
+    tx: mpsc::Sender<String>,
+    ws_ctx: CommandContext,
+) -> Option<Result<(), SvcError>> {
+    let search_opts = || SearchOptions {
+        limit,
+        offset,
+        time_range: None,
+    };
+    match mode {
+        ServiceMode::Search => {
+            let result = match call_search(cfg, input, search_opts()).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, json!({ "results": result.results })).await;
+        }
+        ServiceMode::Research => {
+            let result = match call_research(cfg, input, search_opts()).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Stats => {
+            let result = match call_stats(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Sources => {
+            let result = match call_sources(cfg, Pagination { limit, offset }).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, format_sources_payload(result)).await;
+        }
+        ServiceMode::Domains => {
+            let result = match call_domains(cfg, Pagination { limit, offset }).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, format_domains_payload(result)).await;
+        }
+        ServiceMode::Doctor => {
+            let result = match call_doctor(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Status => {
+            let result = match call_status(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        _ => return None,
+    }
+    Some(Ok(()))
+}
+
 /// Inner dispatch — routes a pre-classified `ServiceMode` to the appropriate
 /// service call and streams the result back over the WS channel.
 ///
@@ -67,66 +200,38 @@ pub(super) async fn dispatch_service(
         model,
     } = params;
 
+    if let Some(result) = dispatch_query_modes(
+        &mode,
+        cfg.clone(),
+        input.clone(),
+        QueryPagination {
+            limit,
+            offset,
+            max_points,
+        },
+        tx.clone(),
+        ws_ctx.clone(),
+    )
+    .await
+    {
+        return result;
+    }
+
+    if let Some(result) = dispatch_search_and_info_modes(
+        &mode,
+        cfg.clone(),
+        input.clone(),
+        limit,
+        offset,
+        tx.clone(),
+        ws_ctx.clone(),
+    )
+    .await
+    {
+        return result;
+    }
+
     match mode {
-        ServiceMode::Scrape => {
-            let result = call_scrape(cfg, input).await?;
-            send_json_owned(tx.clone(), ws_ctx.clone(), result.payload).await;
-            files::send_scrape_file(tx, ws_ctx).await;
-        }
-        ServiceMode::Map => {
-            let result = call_map(cfg, input, MapOptions { limit, offset }).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
-        ServiceMode::Query => {
-            let result = call_query(cfg, input, Pagination { limit, offset }).await?;
-            send_json_owned(tx, ws_ctx, json!({ "results": result.results })).await;
-        }
-        ServiceMode::Retrieve => {
-            let result = call_retrieve(cfg, input, RetrieveOptions { max_points }).await?;
-            send_json_owned(tx, ws_ctx, json!({ "chunks": result.chunks })).await;
-        }
-        ServiceMode::Ask => {
-            let result = call_ask(cfg, input).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
-        ServiceMode::Search => {
-            let opts = SearchOptions {
-                limit,
-                offset,
-                time_range: None,
-            };
-            let result = call_search(cfg, input, opts).await?;
-            send_json_owned(tx, ws_ctx, json!({ "results": result.results })).await;
-        }
-        ServiceMode::Research => {
-            let opts = SearchOptions {
-                limit,
-                offset,
-                time_range: None,
-            };
-            let result = call_research(cfg, input, opts).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
-        ServiceMode::Stats => {
-            let result = call_stats(cfg).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
-        ServiceMode::Sources => {
-            let result = call_sources(cfg, Pagination { limit, offset }).await?;
-            send_json_owned(tx, ws_ctx, format_sources_payload(result)).await;
-        }
-        ServiceMode::Domains => {
-            let result = call_domains(cfg, Pagination { limit, offset }).await?;
-            send_json_owned(tx, ws_ctx, format_domains_payload(result)).await;
-        }
-        ServiceMode::Doctor => {
-            let result = call_doctor(cfg).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
-        ServiceMode::Status => {
-            let result = call_status(cfg).await?;
-            send_json_owned(tx, ws_ctx, result.payload).await;
-        }
         ServiceMode::PulseChat => {
             handle_pulse_chat(
                 cfg,
@@ -153,6 +258,7 @@ pub(super) async fn dispatch_service(
             )
             .await?;
         }
+        _ => {}
     }
 
     Ok(())

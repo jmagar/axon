@@ -103,6 +103,16 @@ pub async fn validate_artifact_path(raw: &str) -> Result<PathBuf, ErrorData> {
             root.display()
         )));
     }
+    // Reject symlink-backed paths: use symlink_metadata (lstat) to check whether the
+    // resolved path itself — or any component of it relative to the artifact root — is
+    // a symlink. Following symlinks via canonicalize() is not sufficient because a
+    // symlink *inside* the root can point to a target *outside* the root.
+    if std::fs::symlink_metadata(&canonical)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(invalid_params("artifact path must not be a symlink"));
+    }
     Ok(canonical)
 }
 
@@ -129,7 +139,16 @@ pub async fn resolve_artifact_output_path(raw: &str) -> Result<PathBuf, ErrorDat
             "output path cannot contain traversal components",
         ));
     }
-    Ok(ensure_artifact_root().await?.join(candidate))
+    let resolved = ensure_artifact_root().await?.join(candidate);
+    // If the target path already exists, reject it if it is a symlink to prevent
+    // writes from being silently redirected outside the artifact root.
+    if std::fs::symlink_metadata(&resolved)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(invalid_params("output path must not be a symlink"));
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]

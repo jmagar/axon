@@ -185,7 +185,9 @@ workers:
     cargo run --locked --bin axon -- extract worker & PIDS+=($!)
     cargo run --locked --bin axon -- ingest worker & PIDS+=($!)
     cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
-    wait
+    EXIT=0
+    for pid in "${PIDS[@]}"; do wait "$pid" || EXIT=$?; done
+    exit "$EXIT"
 
 # Start infra, axum server, MCP server, workers, shell server, and Next.js dev server
 # Ctrl+C cleanly stops all spawned processes via the EXIT trap.
@@ -198,7 +200,7 @@ dev:
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
     PIDS=()
-    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; just stop; }
+    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
     trap cleanup INT TERM EXIT
     AXON_SERVE_HOST=0.0.0.0 cargo run --locked --bin axon -- serve --port 49000 & PIDS+=($!)
     AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp & PIDS+=($!)
@@ -209,4 +211,6 @@ dev:
     cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
     (cd apps/web && node shell-server.mjs) & PIDS+=($!)
     (cd apps/web && pnpm dev) & PIDS+=($!)
-    wait
+    EXIT=0
+    for pid in "${PIDS[@]}"; do wait "$pid" || EXIT=$?; done
+    exit "$EXIT"

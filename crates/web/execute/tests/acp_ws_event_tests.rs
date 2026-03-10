@@ -347,16 +347,26 @@ fn acp_session_fallback_in_ws_pipeline() {
 
 /// Snapshot test for the exact JSON the frontend receives for an `editor_update`.
 ///
-/// Any change to the wire format requires running `cargo insta review` and
+/// `pulse_chat.rs` emits `editor_update` as a **standalone top-level** WS
+/// message (NOT wrapped in `command.output.json`) per the protocol contract:
+///
+///   { "type": "editor_update", "content": "...", "operation": "replace"|"append" }
+///
+/// Any change to this wire format requires running `cargo insta review` and
 /// consciously approving the diff — prevents silent protocol drift.
+///
+/// The snapshot covers the full standalone message so changes to either the
+/// outer type tag OR the inner fields are caught.
 #[test]
 fn editor_write_dispatch_snapshot() {
-    let json_val = serde_json::json!({
+    // Reproduce the exact JSON that pulse_chat.rs sends for ServiceEvent::EditorWrite.
+    // See pulse_chat.rs:67-72 — this is a standalone top-level WS message.
+    let standalone = serde_json::json!({
         "type": "editor_update",
         "content": "# Hello",
         "operation": EditorOperation::Replace,
     });
-    insta::assert_json_snapshot!(json_val, @r##"
+    insta::assert_json_snapshot!(standalone, @r##"
     {
       "content": "# Hello",
       "operation": "replace",

@@ -1,5 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::vector::ops::embed_text_with_metadata;
 use futures_util::stream::{self, StreamExt};
 use reqwest::Client;
@@ -99,6 +99,11 @@ pub async fn embed_files(
     )
     .await?;
 
+    log_info(&format!(
+        "github file_tree size={} indexable={}",
+        file_items.len(),
+        file_items.len()
+    ));
     let concurrency = std::cmp::min(cfg.batch_concurrency, 16);
     let results: Vec<Result<usize, String>> = stream::iter(file_items)
         .map(|path| {
@@ -173,5 +178,10 @@ pub async fn embed_files(
         .collect()
         .await;
 
+    let total: usize = results.len();
+    let failed = results.iter().filter(|r| r.is_err()).count();
+    log_info(&format!(
+        "github files_fetched total={total} failed={failed}"
+    ));
     Ok(results.into_iter().filter_map(|r| r.ok()).sum())
 }

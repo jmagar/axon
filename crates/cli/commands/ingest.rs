@@ -1,5 +1,6 @@
 use crate::crates::cli::commands::ingest_common;
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_info;
 use crate::crates::ingest::classify;
 use std::error::Error;
 
@@ -14,10 +15,16 @@ pub async fn run_ingest(cfg: &Config) -> Result<(), Box<dyn Error>> {
         .cloned()
         .ok_or("ingest requires a target: GitHub slug (owner/repo), YouTube URL or @handle, or Reddit subreddit (r/name) or URL")?;
 
+    log_info(&format!("command=ingest target={target}"));
     let source = classify::classify_target(&target, cfg.github_include_source)?;
 
     if !cfg.wait {
-        return ingest_common::enqueue_ingest_job(cfg, source).await;
+        let result = ingest_common::enqueue_ingest_job(cfg, source).await;
+        log_info(&format!(
+            "job_enqueued command=ingest queue={}",
+            cfg.ingest_queue
+        ));
+        return result;
     }
 
     ingest_common::run_ingest_sync(cfg, source).await

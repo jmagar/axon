@@ -5,6 +5,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::content::redact_url;
 use crate::crates::core::health::browser_diagnostics_pattern;
 use crate::crates::core::http::build_client;
+use crate::crates::core::logging::log_info;
 use crate::crates::jobs::common::count_stale_and_pending_jobs;
 use crate::crates::jobs::crawl::doctor as crawl_doctor;
 use crate::crates::jobs::embed::embed_doctor;
@@ -377,6 +378,33 @@ pub async fn build_doctor_report(cfg: &Config) -> Result<Value, Box<dyn Error>> 
     let openai_model = resolve_openai_model(cfg);
     let probes = gather_doctor_probes(cfg, &openai_model).await?;
     let (openai_live_ok, _) = probes.openai_probe.clone();
+
+    // Structured per-service probe logging
+    log_info(&format!(
+        "doctor probe service=tei status={}",
+        if probes.tei_probe.0 { "ok" } else { "fail" }
+    ));
+    log_info(&format!(
+        "doctor probe service=qdrant status={}",
+        if probes.qdrant_probe.0 { "ok" } else { "fail" }
+    ));
+    log_info(&format!(
+        "doctor probe service=chrome status={}",
+        if probes.chrome_probe.0 { "ok" } else { "fail" }
+    ));
+    log_info(&format!(
+        "doctor probe service=openai status={}",
+        if openai_live_ok { "ok" } else { "fail" }
+    ));
+    log_info(&format!(
+        "doctor probe service=crawl_infra status={}",
+        if probes.crawl_report["all_ok"].as_bool().unwrap_or(false) {
+            "ok"
+        } else {
+            "fail"
+        }
+    ));
+
     let pipelines = build_pipeline_status(&probes, openai_live_ok);
     let services = build_services_status(cfg, &probes, &openai_model);
     let queue_names = build_queue_names(cfg);

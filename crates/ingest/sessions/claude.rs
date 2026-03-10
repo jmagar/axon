@@ -184,8 +184,11 @@ async fn process_claude_file(
             Err(e) => {
                 if attempt < 3 {
                     attempt += 1;
-                    tokio::time::sleep(Duration::from_millis(attempt * 500)).await;
-                    log_warn(&format!("retry {} for {}: {}", attempt, url, e));
+                    let backoff_ms = attempt * 500;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    log_warn(&format!(
+                        "retry attempt={attempt}/max=3 backoff_ms={backoff_ms} url={url} error={e}"
+                    ));
                 } else {
                     return Err(e);
                 }
