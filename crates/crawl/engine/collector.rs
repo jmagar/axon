@@ -4,7 +4,7 @@ use super::thin_refetch::{
 use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
 use crate::crates::core::content::clean_markdown_whitespace;
 use crate::crates::core::content::url_to_filename;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use sha2::{Digest, Sha256};
 use spider_transformations::transformation::content::{
@@ -82,6 +82,10 @@ pub(super) fn process_page(
     let chars = trimmed.len();
 
     if chars < col.min_chars {
+        log_debug(&format!(
+            "content thin_page url={url} chars={chars} min={}",
+            col.min_chars
+        ));
         return PageOutcome::Thin;
     }
     if trimmed.is_empty() {

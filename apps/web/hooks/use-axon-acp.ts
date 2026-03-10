@@ -16,6 +16,28 @@ const EditorUpdateSchema = z.object({
 
 const STREAMING_TIMEOUT_MS = 300_000
 
+/**
+ * Handle an `editor_update` wire message.
+ * Validates the message shape with Zod, invokes the editor content callback,
+ * and calls `onShowEditor` so callers can reveal the editor pane on mobile.
+ *
+ * Exported for testing — callers should use the `useAxonAcp` hook instead of
+ * calling this directly.
+ */
+export function handleEditorMsg(
+  msg: Record<string, unknown>,
+  onEditorUpdate: ((content: string, operation: 'replace' | 'append') => void) | undefined,
+  onShowEditor: (() => void) | undefined,
+): void {
+  const result = EditorUpdateSchema.safeParse(msg)
+  if (!result.success) {
+    console.warn('[acp] editor_update validation failed:', result.error.issues)
+    return
+  }
+  onEditorUpdate?.(result.data.content, result.data.operation)
+  onShowEditor?.()
+}
+
 interface UseAxonAcpOptions {
   activeSessionId: string | null
   agent?: string
@@ -24,6 +46,9 @@ interface UseAxonAcpOptions {
   onMessagesChange: (updater: (prev: AxonMessage[]) => AxonMessage[]) => void
   onTurnComplete?: () => void
   onEditorUpdate?: (content: string, operation: 'replace' | 'append') => void
+  /** Called when an `editor_update` message is received. Use this to make the editor
+   * pane visible on mobile viewports when the agent writes to the document. */
+  onShowEditor?: () => void
 }
 
 export function useAxonAcp({
@@ -34,6 +59,7 @@ export function useAxonAcp({
   onMessagesChange,
   onTurnComplete,
   onEditorUpdate,
+  onShowEditor,
 }: UseAxonAcpOptions) {
   const [isStreaming, setIsStreaming] = useState(false)
   const streamingIdRef = useRef<string | null>(null)
@@ -178,12 +204,7 @@ export function useAxonAcp({
         }
 
         case 'editor_update': {
-          const result = EditorUpdateSchema.safeParse(msg)
-          if (!result.success) {
-            console.warn('[acp] editor_update validation failed:', result.error.issues)
-            break
-          }
-          onEditorUpdate?.(result.data.content, result.data.operation)
+          handleEditorMsg(msg, onEditorUpdate, onShowEditor)
           break
         }
       }
@@ -204,6 +225,7 @@ export function useAxonAcp({
     onSessionFallback,
     onTurnComplete,
     onEditorUpdate,
+    onShowEditor,
   ])
 
   const submitPrompt = useCallback(

@@ -61,7 +61,7 @@ pub(super) async fn fetch_reddit_json(
             }
             let wait_secs = 2u64.pow(attempt as u32);
             log_warn(&format!(
-                "Reddit 429 rate limit — waiting {wait_secs}s before retrying {url}"
+                "Reddit 429 rate limit attempt={attempt}/max=3 retry_delay_secs={wait_secs} url={url}"
             ));
             tokio::time::sleep(Duration::from_secs(wait_secs)).await;
             continue;

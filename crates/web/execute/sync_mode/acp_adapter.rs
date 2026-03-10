@@ -2,6 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use crate::crates::core::config::Config;
+use crate::crates::services::acp::validate_adapter_command;
 use crate::crates::services::types::AcpAdapterCommand;
 
 use super::types::PulseChatAgent;
@@ -134,10 +135,17 @@ pub(super) fn resolve_acp_adapter_command(
     let cmd_override = env::var(cmd_env_key).ok();
     let args_override = env::var(args_env_key).ok();
 
-    resolve_acp_adapter_command_from_values(
+    let cmd = resolve_acp_adapter_command_from_values(
         cmd_override.as_deref().or(cfg.acp_adapter_cmd.as_deref()),
         args_override.as_deref().or(cfg.acp_adapter_args.as_deref()),
-    )
+    )?;
+
+    // Run the shell-blocklist and path validation eagerly here so callers that
+    // do not go through `AcpClientScaffold::prepare_initialize` cannot bypass
+    // the security checks in `validate_adapter_command`.
+    validate_adapter_command(&cmd).map_err(|e| e.to_string())?;
+
+    Ok(cmd)
 }
 
 #[cfg(test)]

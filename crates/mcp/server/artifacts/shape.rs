@@ -65,8 +65,10 @@ pub fn json_shape_preview(value: &serde_json::Value) -> serde_json::Value {
             Some(hist) => serde_json::json!({ "total": arr.len(), "by_status": hist }),
             None => format!("<array[{}]>", arr.len()).into(),
         },
-        serde_json::Value::String(s) if s.len() <= 100 => serde_json::Value::String(s.clone()),
-        serde_json::Value::String(s) => format!("<string {}>", s.len()).into(),
+        serde_json::Value::String(s) if s.chars().count() <= 100 => {
+            serde_json::Value::String(s.clone())
+        }
+        serde_json::Value::String(s) => format!("<string {}>", s.chars().count()).into(),
         other => other.clone(),
     }
 }

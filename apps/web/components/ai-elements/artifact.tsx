@@ -33,7 +33,9 @@ export const ArtifactDescription = memo(({ className, ...props }: ComponentProps
 ArtifactDescription.displayName = 'ArtifactDescription'
 
 export const ArtifactActions = memo(({ className, ...props }: ComponentProps<'div'>) => (
-  <div className={cn('flex shrink-0 items-center gap-1', className)} {...props} />
+  <TooltipProvider>
+    <div className={cn('flex shrink-0 items-center gap-1', className)} {...props} />
+  </TooltipProvider>
 ))
 ArtifactActions.displayName = 'ArtifactActions'
 
@@ -45,25 +47,23 @@ export const ArtifactAction = memo(
     className,
     ...props
   }: ComponentProps<typeof Button> & { tooltip?: string; label?: string; icon?: LucideIcon }) => (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={label ?? tooltip}
-            className={cn(
-              'size-7 rounded-full text-[var(--text-dim)] hover:text-[var(--text-primary)]',
-              className,
-            )}
-            {...props}
-          >
-            {Icon ? <Icon className="size-3.5" /> : null}
-          </Button>
-        </TooltipTrigger>
-        {tooltip ? <TooltipContent>{tooltip}</TooltipContent> : null}
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={label ?? tooltip}
+          className={cn(
+            'size-7 rounded-full text-[var(--text-dim)] hover:text-[var(--text-primary)]',
+            className,
+          )}
+          {...props}
+        >
+          {Icon ? <Icon className="size-3.5" /> : null}
+        </Button>
+      </TooltipTrigger>
+      {tooltip ? <TooltipContent>{tooltip}</TooltipContent> : null}
+    </Tooltip>
   ),
 )
 ArtifactAction.displayName = 'ArtifactAction'

@@ -2,9 +2,29 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { decodeProjectPath, enrichWithGit } from './git-metadata'
-import { cleanProjectName, mapWithConcurrency, SKIP_PATTERNS, sessionId } from './session-utils'
+import {
+  cleanProjectName,
+  mapWithConcurrency as mapWithConcurrencyRaw,
+  SKIP_PATTERNS,
+  sessionId,
+} from './session-utils'
 
 export type AgentKind = 'claude' | 'codex' | 'gemini'
+
+/**
+ * Validated wrapper around `mapWithConcurrency` that throws if `concurrency <= 0`.
+ * All internal call sites and the re-export use this to prevent silent no-ops.
+ */
+function mapWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  if (concurrency <= 0) {
+    throw new RangeError(`mapWithConcurrency: concurrency must be >= 1, got ${concurrency}`)
+  }
+  return mapWithConcurrencyRaw(items, fn, concurrency)
+}
 
 // Re-export shared helpers so existing imports still work
 export { cleanProjectName, mapWithConcurrency, sessionId, SKIP_PATTERNS }
@@ -132,6 +152,12 @@ async function isDirEntry(entryPath: string): Promise<boolean> {
  * Scan all agent session stores (Claude + Codex + Gemini), return up to `limit` sessions
  * sorted by mtime desc. Guarantees representation from each agent by pre-sampling up to
  * `perAgentLimit` sessions per agent before the global merge+sort.
+ *
+ * This function invokes `scanCodexSessions` and `scanGeminiSessions` internally.
+ * **Do not** call those scanners alongside this function — doing so causes duplicate
+ * processing and inflated results. Use this function as the single entry point for
+ * multi-agent session listing.
+ *
  * Never throws — returns [] on any filesystem error.
  */
 export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<SessionFile[]> {
@@ -196,7 +222,7 @@ export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<Sess
         },
         16, // max 16 concurrent file reads per project
       )
-      return fileResults.filter((f): f is SessionFile => f !== null)
+      return (fileResults as (SessionFile | null)[]).filter((f): f is SessionFile => f !== null)
     },
     8, // max 8 concurrent project scans (each may spawn a git subprocess)
   )
@@ -230,13 +256,15 @@ export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<Sess
   const allSorted = Array.from(deduped.values()).sort((a, b) => b.mtimeMs - a.mtimeMs)
 
   // Guarantee at least `minPerAgent` sessions from each agent that has results,
-  // picking the most recent of each. Remaining slots filled by global recency.
+  // picking the most recent of each. Never exceeds `limit` total.
+  // Remaining slots filled by global recency.
   const minPerAgent = 3
   const agentCounts = new Map<AgentKind, number>()
   const guaranteed: SessionFile[] = []
   const guaranteedKeys = new Set<string>()
 
   for (const s of allSorted) {
+    if (guaranteed.length >= limit) break
     const count = agentCounts.get(s.agent) ?? 0
     if (count < minPerAgent) {
       agentCounts.set(s.agent, count + 1)
@@ -246,8 +274,10 @@ export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<Sess
   }
 
   // Fill remaining slots with the most recent not already guaranteed, then sort.
-  const filler = allSorted
-    .filter((s) => !guaranteedKeys.has(`${s.agent}:${s.filename}`))
-    .slice(0, limit - guaranteed.length)
+  const remaining = limit - guaranteed.length
+  const filler =
+    remaining > 0
+      ? allSorted.filter((s) => !guaranteedKeys.has(`${s.agent}:${s.filename}`)).slice(0, remaining)
+      : []
   return [...guaranteed, ...filler].sort((a, b) => b.mtimeMs - a.mtimeMs)
 }

@@ -239,7 +239,7 @@ pub(super) struct IngestArgs {
     pub(super) target: Option<String>,
 
     /// (GitHub only) Also index source code files in addition to markdown, issues, and PRs
-    #[arg(long, action = ArgAction::Set, default_value_t = false)]
+    #[arg(long, action = ArgAction::SetTrue)]
     pub(super) include_source: bool,
 
     // ── Reddit-specific filters (ignored for GitHub / YouTube) ────────────
@@ -259,7 +259,7 @@ pub(super) struct IngestArgs {
     #[arg(long, default_value_t = 2)]
     pub(super) depth: usize,
     /// Scrape content of linked URLs in link posts
-    #[arg(long, action = ArgAction::Set, default_value_t = false)]
+    #[arg(long, action = ArgAction::SetTrue)]
     pub(super) scrape_links: bool,
 }
 

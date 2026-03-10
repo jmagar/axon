@@ -7,7 +7,7 @@ pub use client::get_access_token;
 pub use types::{RedditTarget, classify_target};
 
 use crate::crates::core::config::{Config, RedditSort};
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::vector::ops::embed_text_with_extra_payload;
 use std::error::Error;
 use std::time::Duration;
@@ -213,6 +213,7 @@ fn format_comments_into(content: &mut String, title: &str, comments: &[CommentWi
 /// - For a thread URL: fetches that thread + full recursive comment tree
 /// - Embeds all content into Qdrant via embed_text_with_extra_payload with reddit_* metadata
 pub async fn ingest_reddit(cfg: &Config, target: &str) -> Result<usize, Box<dyn Error>> {
+    log_info(&format!("command=ingest source=reddit target={target}"));
     let client_id = cfg
         .reddit_client_id
         .as_deref()
@@ -223,9 +224,14 @@ pub async fn ingest_reddit(cfg: &Config, target: &str) -> Result<usize, Box<dyn 
         .ok_or("REDDIT_CLIENT_SECRET not configured (--reddit-client-secret or env var)")?;
 
     let token = get_access_token(client_id, client_secret).await?;
+    log_info("reddit oauth_acquired");
 
-    match classify_target(target) {
-        RedditTarget::Subreddit(name) => ingest_subreddit(cfg, &token, &name).await,
-        RedditTarget::Thread(url) => ingest_thread(cfg, &token, &url).await,
-    }
+    let chunk_count = match classify_target(target) {
+        RedditTarget::Subreddit(name) => ingest_subreddit(cfg, &token, &name).await?,
+        RedditTarget::Thread(url) => ingest_thread(cfg, &token, &url).await?,
+    };
+    log_done(&format!(
+        "command=ingest source=reddit target={target} chunk_count={chunk_count}"
+    ));
+    Ok(chunk_count)
 }

@@ -64,7 +64,7 @@ pub(super) fn extract_params(
     let cfg = derive_cfg(context, flags);
     let limit = flag_usize(flags, "limit", cfg.search_limit);
     let offset = flag_usize(flags, "offset", 0);
-    let max_points = flag_opt_usize(flags, "limit");
+    let max_points = flag_opt_usize(flags, "max_points");
     let agent = PulseChatAgent::from_flag(flags.get("agent").and_then(serde_json::Value::as_str));
     let session_id = flags
         .get("session_id")

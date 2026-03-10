@@ -1,11 +1,14 @@
 # Changelog
-Last Modified: 2026-03-09 (session: v0.13.1 — ingest progress display + embed list polish + crawl batch resilience)
+Last Modified: 2026-03-09 (session: v0.13.2 — sync dispatch refactor + session guard scaffold + dead code fix)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Sync dispatch refactor + session guard scaffold (v0.13.2)** — `dispatch_service` split into focused per-mode helpers (`dispatch_query_modes`, `dispatch_acp_modes`, etc.) to keep the top-level router concise; `session_guard.rs` added as `pub(crate)` module under `crates/web/execute/` — polls `~/.claude/projects/` for `{session_id}.jsonl` after a Pulse turn completes (100ms × 50 retries); `#![allow(dead_code)]` suppresses warnings while the call site is wired; `AcpConn` type alias simplifies signatures in `acp_adapter.rs`; `subprocess.rs` restructured for cleaner fallback path; `pulse_chat.rs` session-file integration points added; ACP WS event tests updated to cover new event shapes
+
 
 - **Ingest progress display + embed list polish + crawl batch resilience (v0.13.1)** — `axon status` now shows live YouTube ingest progress (`videos_done/total`, `enumerating…` placeholder) via `result_json` COALESCE merge on completion; `axon embed list` displays rich per-job rows (target, metrics, collection, age, error) reusing `status/metrics` helpers (made `pub(crate)`); `crawl_batch` downgrades excluded-URL errors to warnings and only hard-fails if all URLs are excluded; `find_excluded_prefix` replaces `is_excluded_url_path` with clearer error message; `YoutubeVideoMeta` gains `video_id` + `thumbnail` fields stored as `yt_video_id`/`yt_thumbnail` Qdrant payload
 

@@ -1,3 +1,4 @@
+use crate::crates::core::logging::log_warn;
 use crate::crates::services::types::AcpBridgeEvent;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -78,7 +79,7 @@ pub fn emit(tx: &Option<mpsc::Sender<ServiceEvent>>, event: ServiceEvent) {
     if let Some(sender) = tx
         && sender.try_send(event).is_err()
     {
-        eprintln!("[acp] event channel full — dropping event");
+        log_warn("acp event_channel_full action=drop");
     }
 }
 

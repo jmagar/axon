@@ -194,15 +194,35 @@ async fn ws_upgrade(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    if let Some(ref expected) = state.api_token {
-        let token = params.token.as_deref().unwrap_or("").trim();
-        if token.is_empty() {
-            log::warn!("ws upgrade rejected: no token from {}", addr.ip());
-            return (axum::http::StatusCode::UNAUTHORIZED, "token required").into_response();
+    match &state.api_token {
+        Some(expected) => {
+            let token = params.token.as_deref().unwrap_or("").trim();
+            if token.is_empty() {
+                log::warn!("ws upgrade rejected: no token from {}", addr.ip());
+                return (axum::http::StatusCode::UNAUTHORIZED, "token required").into_response();
+            }
+            if token != expected.as_str() {
+                log::warn!("ws upgrade rejected: invalid token from {}", addr.ip());
+                return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
+            }
         }
-        if token != expected.as_str() {
-            log::warn!("ws upgrade rejected: invalid token from {}", addr.ip());
-            return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
+        None => {
+            // No token configured — open access is only permitted in debug/test builds.
+            // In release builds, AXON_WEB_API_TOKEN must be set to prevent unauthenticated
+            // access to the WebSocket execution bridge.
+            #[cfg(not(any(debug_assertions, test)))]
+            {
+                log::warn!(
+                    "ws upgrade rejected: AXON_WEB_API_TOKEN not set (required in release builds) \
+                     — connection from {}",
+                    addr.ip()
+                );
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "AXON_WEB_API_TOKEN required in production",
+                )
+                    .into_response();
+            }
         }
     }
     ws.on_upgrade(move |socket| handle_ws(socket, state))

@@ -8,7 +8,7 @@ Last Modified: 2026-03-09
 - Tool count: 1
 - Tool name: `axon`
 - Routing fields: `action` + `subaction` for lifecycle families
-- Response behavior field: `response_mode` (`path|inline|both`, default `path`)
+- Response behavior field: `response_mode` (`path|inline|both|auto-inline`, default `path`; `auto-inline` is system-assigned)
 
 Canonical schema and action contract:
 - `docs/MCP-TOOL-SCHEMA.md`
@@ -232,6 +232,8 @@ Artifact responses written in path mode are pretty-printed JSON. The preferred i
 ### `response_mode` on All Actions
 
 `doctor`, `stats`, and `status` now support `response_mode`. Default is `path`, writing the payload to an artifact and returning a compact shape summary. Use `response_mode=inline` to get the payload directly in the response.
+
+Valid `response_mode` values: `path|inline|both|auto-inline`. Note that `auto-inline` is system-assigned — it cannot be requested by the caller. See [`MCP-TOOL-SCHEMA.md`](MCP-TOOL-SCHEMA.md) for the full enum definition.
 
 ### Auto-inline for Small Payloads
 

@@ -17,6 +17,48 @@ use axon::crates::services::types::{
 };
 use std::sync::Mutex;
 
+// ── EnvVarGuard ───────────────────────────────────────────────────────────────
+
+/// RAII guard that restores an environment variable to its previous value when
+/// dropped.  If the variable was absent before the test set it, the guard
+/// removes it on drop.  This prevents test-induced env mutations from leaking
+/// into subsequent tests, even when a test panics.
+///
+/// # Safety
+///
+/// Callers must hold `ENV_LOCK` for the entire duration the guard is alive.
+/// `std::env::set_var` / `remove_var` are not thread-safe — the lock enforces
+/// single-threaded access to the process environment within this test binary.
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvVarGuard {
+    /// Set `key` to `value`, recording the prior value for restoration.
+    ///
+    /// # Safety
+    ///
+    /// Caller must hold `ENV_LOCK`.
+    unsafe fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        // SAFETY: caller holds ENV_LOCK; single-threaded env access guaranteed.
+        unsafe { std::env::set_var(key, value) };
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: caller holds ENV_LOCK for the duration of the test; the drop
+        // runs inside that scope.
+        match &self.previous {
+            Some(prev) => unsafe { std::env::set_var(self.key, prev) },
+            None => unsafe { std::env::remove_var(self.key) },
+        }
+    }
+}
+
 // ── AcpSessionUpdateKind serde correctness ──────────────────────────────────
 
 #[test]
@@ -186,27 +228,29 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 async fn spawn_adapter_does_not_pass_proxy_vars() {
     let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
-    const PROXY_VARS: &[&str] = &[
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "NO_PROXY",
-        "no_proxy",
+    const PROXY_VARS: &[(&str, &str)] = &[
+        ("HTTP_PROXY", "http://poison-proxy.test:9999"),
+        ("HTTPS_PROXY", "http://poison-proxy.test:9999"),
+        ("http_proxy", "http://poison-proxy.test:9999"),
+        ("https_proxy", "http://poison-proxy.test:9999"),
+        ("NO_PROXY", "http://poison-proxy.test:9999"),
+        ("no_proxy", "http://poison-proxy.test:9999"),
     ];
-    const SENTINEL: &str = "http://poison-proxy.test:9999";
 
-    // SAFETY: ENV_LOCK is held; no concurrent env mutation.
-    unsafe {
-        for v in PROXY_VARS {
-            std::env::set_var(v, SENTINEL);
-        }
-    }
+    // Set each proxy var, recording the original value for restoration via
+    // drop guard.  Guards are collected so they all drop together at scope end,
+    // even if an assertion panics.
+    //
+    // SAFETY: ENV_LOCK is held for this entire test; single-threaded env access.
+    let _guards: Vec<EnvVarGuard> = PROXY_VARS
+        .iter()
+        .map(|(key, val)| unsafe { EnvVarGuard::set(key, val) })
+        .collect();
 
     // Build a probe that prints the concatenated values of all proxy vars.
     let args_inner = PROXY_VARS
         .iter()
-        .map(|v| format!("\"${v}\""))
+        .map(|(key, _)| format!("\"${key}\""))
         .collect::<Vec<_>>()
         .join("");
     let cmd = format!("printf '%s' {args_inner}");
@@ -228,12 +272,7 @@ async fn spawn_adapter_does_not_pass_proxy_vars() {
         .expect("child should complete");
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    // SAFETY: ENV_LOCK is held.
-    unsafe {
-        for v in PROXY_VARS {
-            std::env::remove_var(v);
-        }
-    }
+    // _guards drops here, restoring all proxy vars to their original values.
 
     assert!(
         stdout.is_empty(),
@@ -250,10 +289,11 @@ async fn spawn_adapter_does_not_pass_proxy_vars() {
 async fn spawn_adapter_does_not_pass_claudecode() {
     let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
-    // SAFETY: ENV_LOCK is held.
-    unsafe {
-        std::env::set_var("CLAUDECODE", "poison_nested_session");
-    }
+    // Set CLAUDECODE, restoring it to its original value (or removing it) on
+    // drop — even if the test panics before reaching the end of the scope.
+    //
+    // SAFETY: ENV_LOCK is held for this entire test; single-threaded env access.
+    let _guard = unsafe { EnvVarGuard::set("CLAUDECODE", "poison_nested_session") };
 
     let adapter = AcpAdapterCommand {
         program: "sh".to_string(),
@@ -272,10 +312,7 @@ async fn spawn_adapter_does_not_pass_claudecode() {
         .expect("child should complete");
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    // SAFETY: ENV_LOCK is held.
-    unsafe {
-        std::env::remove_var("CLAUDECODE");
-    }
+    // _guard drops here, restoring CLAUDECODE to its prior state.
 
     assert!(
         stdout.is_empty(),

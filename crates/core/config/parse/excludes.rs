@@ -1,3 +1,5 @@
+use crate::crates::core::logging::log_warn;
+
 pub(crate) struct NormalizedExcludePrefixes {
     pub(crate) prefixes: Vec<String>,
     pub(crate) disable_defaults: bool,
@@ -124,10 +126,10 @@ pub(crate) fn normalize_exclude_prefixes(input: Vec<String>) -> NormalizedExclud
             .filter(|value| !value.is_empty() && *value != "/")
             .collect();
         if !ignored.is_empty() {
-            eprintln!(
-                "warning: --exclude-path-prefix 'none' disables exclusions; ignoring additional prefixes: {}",
+            log_warn(&format!(
+                "exclude_prefix_ignored action=disabling_defaults ignored_prefixes={}",
                 ignored.join(", ")
-            );
+            ));
         }
         return NormalizedExcludePrefixes {
             prefixes: Vec::new(),

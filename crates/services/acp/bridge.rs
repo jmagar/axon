@@ -30,6 +30,15 @@ pub struct AcpRuntimeState {
     /// so bridge callbacks (session_notification, request_permission) always route
     /// to the active turn's channel, not the stale first-turn channel.
     pub(super) service_tx: std::cell::RefCell<Option<mpsc::Sender<ServiceEvent>>>,
+    /// Monotonically-increasing turn counter.  Incremented at the start of each
+    /// turn by `run_turn_on_conn`.  `session_notification` compares the active
+    /// turn ID against this value and drops deltas that arrive after the turn has
+    /// ended (e.g. late results from a previous timed-out turn).
+    pub(super) current_turn_id: std::cell::Cell<u64>,
+    /// The model string applied when the ACP session was established.
+    /// Used by `run_turn_on_conn` to detect and warn about mid-session model
+    /// change requests, which cannot be applied without restarting the session.
+    pub(super) established_model: std::cell::RefCell<Option<String>>,
 }
 
 // ── Auto-approve helpers ────────────────────────────────────────────────────
@@ -99,6 +108,9 @@ pub(super) fn stop_reason_to_str(reason: StopReason) -> &'static str {
 /// Inserts the oneshot sender into `permission_responders`, logs that we are
 /// waiting, then races the channel receive against a 60-second timeout.
 /// On timeout the map entry is cleaned up before returning `Cancelled`.
+///
+/// Returns `Cancelled` immediately with a warning if `session_id` is blank —
+/// a blank key would prevent the WS router from ever routing the response.
 pub(super) async fn handle_interactive_permission(
     args: &RequestPermissionRequest,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
@@ -106,6 +118,23 @@ pub(super) async fn handle_interactive_permission(
     session_id: &str,
     tool_call_id: &str,
 ) -> RequestPermissionOutcome {
+    // Reject blank session_id early — the composite (session_id, tool_call_id) key
+    // would never match a route_permission_response call, so the request would hang
+    // until timeout.  Fail fast with a clear error instead.
+    if session_id.trim().is_empty() {
+        emit(
+            tx,
+            ServiceEvent::Log {
+                level: LogLevel::Warn,
+                message: format!(
+                    "ACP permission: blank session_id for tool_call={tool_call_id}, \
+                     cannot route response — cancelling"
+                ),
+            },
+        );
+        return RequestPermissionOutcome::Cancelled;
+    }
+
     let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
     // Key is (session_id, tool_call_id) — SEC-7: prevents cross-session routing.
     permission_responders.insert((session_id.to_string(), tool_call_id.to_string()), resp_tx);
@@ -157,8 +186,12 @@ pub(super) async fn handle_interactive_permission(
                 }
             }
         }
-        // Disconnect path: the frontend dropped the responder channel.
+        // Disconnect path: the oneshot sender was dropped without being sent.
+        // This can happen if the DashMap entry was removed by an external cleanup
+        // path that discarded the sender rather than calling send().  As a safety
+        // net, explicitly remove the map entry here so no stale entry can linger.
         Ok(Err(_)) => {
+            permission_responders.remove(&(session_id.to_string(), tool_call_id.to_string()));
             emit(
                 tx,
                 ServiceEvent::Log {
@@ -252,12 +285,30 @@ impl Client for AcpBridgeClient {
             // FINDING-2: RefCell — no Mutex lock on the hot streaming token path.
             // Safe: current_thread runtime + LocalSet ensures single-threaded access.
             let state = &*self.runtime_state;
+
+            // Capture the turn ID at the start of this notification to detect
+            // late results from a previous timed-out turn.  `run_turn_on_conn`
+            // increments `current_turn_id` before each prompt; if the value changed
+            // between when this notification was enqueued and now, we drop the delta.
+            let active_turn_id = state.current_turn_id.get();
+
             if let Some(text_delta) = extract_text_delta(&args.update)
                 && matches!(
                     map_session_update_kind(&args.update),
                     AcpSessionUpdateKind::AssistantDelta
                 )
             {
+                // Reject deltas that arrived after the current turn ended.  This
+                // guards against late results from a previous timed-out turn being
+                // attributed to the new active turn.
+                if active_turn_id != state.current_turn_id.get() {
+                    log::warn!(
+                        "[acp_bridge] dropping late text delta: turn_id mismatch \
+                         (expected {active_turn_id}, current {})",
+                        state.current_turn_id.get()
+                    );
+                    return Ok(());
+                }
                 // Cap at 1 MiB to prevent unbounded accumulation from long sessions.
                 const MAX_ASSISTANT_TEXT_BYTES: usize = 1024 * 1024;
                 let mut text = state.assistant_text.borrow_mut();

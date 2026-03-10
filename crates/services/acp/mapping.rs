@@ -113,12 +113,25 @@ pub fn map_config_options(options: &[SdkConfigOption]) -> Vec<AcpConfigOption> {
                 SessionConfigOptionCategory::Other(s) => s.clone(),
                 _ => "other".to_string(),
             });
+            // Validate that current_value is actually present in the options list.
+            // An absent or stale current_value violates the contract and could cause
+            // the frontend to render a selected item that doesn't exist in the menu.
+            // Drop the entire option entry rather than forwarding an invalid state.
+            let current_value_str = select.current_value.0.to_string();
+            if !select_options_contains_value(&select.options, &current_value_str) {
+                tracing::warn!(
+                    option_id = %opt.id.0,
+                    current_value = %current_value_str,
+                    "ACP config option current_value not found in options list; skipping option"
+                );
+                return None;
+            }
             Some(AcpConfigOption {
                 id: opt.id.0.to_string(),
                 name: opt.name.clone(),
                 description: opt.description.clone(),
                 category,
-                current_value: select.current_value.0.to_string(),
+                current_value: current_value_str,
                 options: values,
             })
         })
@@ -369,6 +382,16 @@ pub fn validate_probe_request(req: &AcpSessionProbeRequest) -> Result<(), Box<dy
 pub fn validate_session_cwd(cwd: &Path) -> Result<PathBuf, Box<dyn Error>> {
     if !cwd.is_absolute() {
         return Err("ACP session cwd must be an absolute path".into());
+    }
+    if !cwd.exists() {
+        return Err(format!("ACP session cwd does not exist: {}", cwd.display()).into());
+    }
+    if !cwd.is_dir() {
+        return Err(format!(
+            "ACP session cwd exists but is not a directory: {}",
+            cwd.display()
+        )
+        .into());
     }
     Ok(cwd.to_path_buf())
 }

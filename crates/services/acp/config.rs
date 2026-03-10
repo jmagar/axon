@@ -98,16 +98,21 @@ pub(super) async fn read_codex_cached_model_options(
             description: model.description,
         })
         .collect::<Vec<_>>();
+    // Resolve the preferred model slug from the current request or the persisted default.
     // Use if-let rather than `.or()` to avoid eagerly awaiting the fallback
     // when the normalized model is already known.
-    let selected = if let Some(m) = current_model.and_then(|v| normalized_requested_model(Some(v)))
+    let preferred = if let Some(m) = current_model.and_then(|v| normalized_requested_model(Some(v)))
     {
-        m
-    } else if let Some(m) = read_codex_default_model().await {
-        m
+        Some(m)
     } else {
-        options.first().map(|option| option.value.clone())?
+        read_codex_default_model().await
     };
+    // Only use `preferred` as `current_value` when it's actually present in the
+    // options list — a stale default from models_cache.json would produce an
+    // unselectable value.  Fall back to the first available option.
+    let selected = preferred
+        .filter(|m| options.iter().any(|o| &o.value == m))
+        .or_else(|| options.first().map(|o| o.value.clone()))?;
     Some(vec![AcpConfigOption {
         id: "model".to_string(),
         name: "Model".to_string(),

@@ -13,6 +13,7 @@
 
 use crate::crates::core::config::Config;
 use crate::crates::core::content::redact_url;
+use crate::crates::core::logging::log_debug;
 use anyhow::{Context, Result};
 use lapin::types::FieldTable;
 use lapin::{Channel, Connection, ConnectionProperties};
@@ -113,8 +114,16 @@ pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]
     ch.wait_for_confirms()
         .await
         .context("wait_for_confirms failed")?;
-    let _ = ch.close(0, "".into()).await;
-    let _ = conn.close(200, "".into()).await;
+    if let Err(e) = ch.close(0, "".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={queue_name} error={e}"
+        ));
+    }
+    if let Err(e) = conn.close(200, "".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={queue_name} error={e}"
+        ));
+    }
 
     Ok(())
 }
@@ -131,8 +140,16 @@ pub(crate) async fn purge_queue_safe(cfg: &Config, queue_name: &str) -> Result<(
     ch.queue_purge(queue_name.into(), QueuePurgeOptions::default())
         .await
         .context("queue_purge failed")?;
-    let _ = ch.close(0, "".into()).await;
-    let _ = conn.close(200, "".into()).await;
+    if let Err(e) = ch.close(0, "".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={queue_name} error={e}"
+        ));
+    }
+    if let Err(e) = conn.close(200, "".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={queue_name} error={e}"
+        ));
+    }
     Ok(())
 }
 

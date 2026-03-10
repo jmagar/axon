@@ -1,6 +1,6 @@
 use crate::crates::core::config::Config;
 use crate::crates::vector::ops::input;
-use crate::crates::vector::ops::qdrant::qdrant_delete_by_url_filter;
+use crate::crates::vector::ops::qdrant::qdrant_delete_stale_tail;
 use std::error::Error;
 
 mod pipeline;
@@ -64,9 +64,6 @@ async fn embed_text_impl(
     if qdrant_store::collection_needs_init(&cfg.collection) {
         qdrant_store::ensure_collection(cfg, dim).await?;
     }
-    // Pre-delete all existing points for this URL before upserting fresh chunks.
-    // Prevents stale orphan chunks when chunk count changes between re-ingests.
-    qdrant_delete_by_url_filter(cfg, url).await?;
     let domain = spider::url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))
@@ -103,8 +100,22 @@ async fn embed_text_impl(
             "payload": payload,
         }));
     }
+    // Upsert FIRST so the fresh document is always available in the index.
+    // Never delete before the upsert succeeds — a pre-delete followed by a
+    // failed upsert permanently destroys the previously-indexed content.
+    //
+    // Point IDs are deterministic (UUID v5 over "url:chunk_idx"), so upserting
+    // the new batch automatically overwrites any chunks at the same indices.
+    // After a successful upsert, delete stale tail chunks — orphan points with
+    // chunk_index >= new_count that survived from a previous larger ingest.
+    let new_count = points.len();
     qdrant_store::qdrant_upsert(cfg, &points).await?;
-    Ok(points.len())
+    // Stale-tail cleanup: remove any old chunks for this URL with index >=
+    // new_count. Uses a range filter so we only touch genuinely orphaned points.
+    // If the prior ingest produced the same number of chunks or fewer, Qdrant
+    // will match zero points and the call is a cheap no-op.
+    qdrant_delete_stale_tail(cfg, url, new_count).await?;
+    Ok(new_count)
 }
 
 /// Embed arbitrary text content with explicit source metadata into Qdrant.
