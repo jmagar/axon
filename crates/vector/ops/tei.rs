@@ -48,6 +48,18 @@ async fn embed_text_impl(
     if chunks.is_empty() {
         return Ok(0);
     }
+    embed_chunks_impl(cfg, chunks, url, source_type, title, extra).await
+}
+
+/// Embed pre-chunked text into Qdrant. Shared by text and code embedding paths.
+async fn embed_chunks_impl(
+    cfg: &Config,
+    chunks: Vec<String>,
+    url: &str,
+    source_type: &str,
+    title: Option<&str>,
+    extra: Option<&serde_json::Value>,
+) -> Result<usize, Box<dyn Error>> {
     let vectors = tei_embed(cfg, &chunks).await?;
     if vectors.is_empty() {
         return Err(format!("TEI returned no vectors for {url}").into());
@@ -141,6 +153,29 @@ pub async fn embed_text_with_extra_payload(
     extra: &serde_json::Value,
 ) -> Result<usize, Box<dyn Error>> {
     embed_text_impl(cfg, content, url, source_type, title, Some(extra)).await
+}
+
+/// Embed source code with AST-aware chunking, falling back to plain text chunking
+/// when the file extension is unsupported or AST chunking produces no chunks.
+pub async fn embed_code_with_metadata(
+    cfg: &Config,
+    content: &str,
+    url: &str,
+    source_type: &str,
+    title: Option<&str>,
+    file_extension: &str,
+    extra: Option<&serde_json::Value>,
+) -> Result<usize, Box<dyn Error>> {
+    if content.trim().is_empty() {
+        return Ok(0);
+    }
+    let chunks = input::code::chunk_code(content, file_extension)
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| input::chunk_text(content));
+    if chunks.is_empty() {
+        return Ok(0);
+    }
+    embed_chunks_impl(cfg, chunks, url, source_type, title, extra).await
 }
 
 pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary, Box<dyn Error>> {
