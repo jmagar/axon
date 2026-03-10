@@ -161,24 +161,42 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
         let Some(r) = result_json else {
             return String::new();
         };
-        let videos_done = r.get("videos_done").and_then(|v| v.as_u64());
-        let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
         let chunks = r
             .get("chunks_embedded")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let enumerating = r
-            .get("enumerating")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        return match (videos_done, videos_total) {
-            (Some(done), Some(total)) => format!(
+
+        // YouTube playlist progress
+        let videos_done = r.get("videos_done").and_then(|v| v.as_u64());
+        let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
+        if let (Some(done), Some(total)) = (videos_done, videos_total) {
+            return format!(
                 "{sep}{}{}{} videos{sep}{}",
                 accent(&done.to_string()),
                 subtle("/"),
                 accent(&total.to_string()),
                 metric(chunks, "chunks"),
-            ),
+            );
+        }
+
+        // GitHub file-level progress
+        let files_done = r.get("files_done").and_then(|v| v.as_u64());
+        let files_total = r.get("files_total").and_then(|v| v.as_u64());
+        if let (Some(done), Some(total)) = (files_done, files_total) {
+            return format!(
+                "{sep}{}{}{} files{sep}{}",
+                accent(&done.to_string()),
+                subtle("/"),
+                accent(&total.to_string()),
+                metric(chunks, "chunks"),
+            );
+        }
+
+        let enumerating = r
+            .get("enumerating")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        return match () {
             _ if enumerating => format!("{sep}{}", muted("enumerating…")),
             _ if chunks > 0 => format!("{sep}{}", metric(chunks, "chunks")),
             _ => String::new(),
@@ -195,21 +213,37 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
     if chunks == 0 {
         return String::new();
     }
+
+    // Completed: show final counts (YouTube or GitHub)
     let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
-    let videos_done = r.get("videos_done").and_then(|v| v.as_u64());
-    match videos_total {
-        Some(total) => {
-            let numerator = videos_done.unwrap_or(total);
-            format!(
-                "{sep}{}{}{} videos{sep}{}",
-                accent(&numerator.to_string()),
-                subtle("/"),
-                accent(&total.to_string()),
-                metric(chunks, "chunks"),
-            )
-        }
-        None => format!("{sep}{}", metric(chunks, "chunks")),
+    if let Some(total) = videos_total {
+        let numerator = r
+            .get("videos_done")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(total);
+        return format!(
+            "{sep}{}{}{} videos{sep}{}",
+            accent(&numerator.to_string()),
+            subtle("/"),
+            accent(&total.to_string()),
+            metric(chunks, "chunks"),
+        );
     }
+    let files_total = r.get("files_total").and_then(|v| v.as_u64());
+    if let Some(total) = files_total {
+        let numerator = r
+            .get("files_done")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(total);
+        return format!(
+            "{sep}{}{}{} files{sep}{}",
+            accent(&numerator.to_string()),
+            subtle("/"),
+            accent(&total.to_string()),
+            metric(chunks, "chunks"),
+        );
+    }
+    format!("{sep}{}", metric(chunks, "chunks"))
 }
 
 /// Extract the `"collection"` string from a job's `config_json`, if present.
