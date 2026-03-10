@@ -160,19 +160,6 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
         Err(err) => log_warn(&format!("watchdog crawl startup sweep failed: {err}")),
     }
 
-    // Re-enqueue any pending jobs that survived a broker restart or were
-    // submitted while no worker was running.  Done before the AMQP probe so
-    // we only publish when we know a consumer is about to be ready.
-    match reenqueue_orphaned_pending_jobs(cfg, &pool).await {
-        Ok(0) => {}
-        Ok(n) => log_info(&format!(
-            "crawl worker startup: re-enqueued {n} orphaned pending job(s)"
-        )),
-        Err(err) => log_warn(&format!(
-            "crawl worker startup: orphaned pending re-enqueue failed: {err}"
-        )),
-    }
-
     // Probe AMQP connectivity with a short-lived connection+channel pair.
     // Close both explicitly so RabbitMQ doesn't accumulate orphaned channels.
     // Each lane opens its own long-lived connection for its consumer loop.
@@ -202,6 +189,19 @@ pub(crate) async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     };
     if !amqp_available {
         return run_worker_polling_loop(cfg, &pool).await;
+    }
+
+    // Re-enqueue any pending jobs that survived a broker restart or were
+    // submitted while no worker was running. Done after the AMQP probe so
+    // we only publish when we know the broker is reachable.
+    match reenqueue_orphaned_pending_jobs(cfg, &pool).await {
+        Ok(0) => {}
+        Ok(n) => log_info(&format!(
+            "crawl worker startup: re-enqueued {n} orphaned pending job(s)"
+        )),
+        Err(err) => log_warn(&format!(
+            "crawl worker startup: orphaned pending re-enqueue failed: {err}"
+        )),
     }
     let cfg_arc = Arc::new(cfg.clone());
     if WORKER_CONCURRENCY <= 1 {

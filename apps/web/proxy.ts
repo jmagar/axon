@@ -144,6 +144,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function isAuthorized(req: NextRequest): boolean {
+  const isLocalhost = isLocalhostRequest(req)
+  if (ALLOW_INSECURE_LOCAL_DEV && isLocalhost) return true
+
   const hasToken =
     API_TOKEN !== null &&
     (() => {
@@ -152,12 +155,14 @@ function isAuthorized(req: NextRequest): boolean {
     })()
 
   // Tailscale-User-Login is injected by `tailscale serve` after stripping any
-  // incoming value — trustworthy ONLY when Next.js is bound to localhost (not 0.0.0.0).
-  const hasTsHeader = !!req.headers.get('tailscale-user-login')?.trim()
+  // incoming value — trustworthy ONLY when the request arrives from localhost.
+  // A non-localhost client could spoof this header, so reject it unless the
+  // request originates from a loopback address.
+  const hasTsHeader = isLocalhost && !!req.headers.get('tailscale-user-login')?.trim()
 
   if (REQUIRE_DUAL_AUTH) return hasToken && hasTsHeader
   if (API_TOKEN !== null) return hasToken || hasTsHeader
-  return hasTsHeader || (ALLOW_INSECURE_LOCAL_DEV && isLocalhostRequest(req))
+  return hasTsHeader
 }
 
 export function proxy(req: NextRequest) {

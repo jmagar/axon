@@ -148,8 +148,6 @@ pub(crate) async fn dispatch_github_refresh(
                             "refresh github ingest enqueue failed schedule={} repo={target} error={err}",
                             schedule.name
                         ));
-                        let _ = mark_refresh_schedule_ran_with_pool(pool, schedule.id, next_run_at)
-                            .await;
                         return Err(err);
                     }
                 }
@@ -166,7 +164,6 @@ pub(crate) async fn dispatch_github_refresh(
                 "refresh github pushed_at check failed schedule={} repo={target} error={err}",
                 schedule.name
             ));
-            let _ = mark_refresh_schedule_ran_with_pool(pool, schedule.id, next_run_at).await;
             Err(err)
         }
     }

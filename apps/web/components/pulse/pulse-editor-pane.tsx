@@ -91,8 +91,10 @@ export function PulseEditorPane({
   const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastAppliedMarkdownRef = useRef<string>(markdown)
   const wordCountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [wordCount, setWordCount] = useState(() => countWords(markdown))
   const [sourceMode, setSourceMode] = useState<'markdown' | 'json' | null>(null)
+  const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
     if (markdown === lastAppliedMarkdownRef.current) return
@@ -113,19 +115,21 @@ export function PulseEditorPane({
       ;(editor as unknown as { onChange: () => void }).onChange()
     } catch (err) {
       // onChange threw (e.g. a plugin normalizer failed on complex scraped content).
-      // Reset the guard flag and bail out WITHOUT marking the update as applied —
-      // leaving lastAppliedMarkdownRef unchanged means the effect will retry on the
-      // next render, rather than silently desyncing editor content from props.
+      // Reset the guard flag and schedule a retry — bumping retryTick forces this
+      // effect to re-run even though markdown/editor haven't changed.
       if (process.env.NODE_ENV === 'development') {
-        console.warn('[PulseEditorPane] external update failed, will retry:', err)
+        console.warn('[PulseEditorPane] external update failed, scheduling retry:', err)
       }
       isApplyingExternalUpdateRef.current = false
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = setTimeout(() => setRetryTick((n) => n + 1), 500)
       return
     }
     isApplyingExternalUpdateRef.current = false
     lastAppliedMarkdownRef.current = markdown
     setWordCount(countWords(markdown))
-  }, [editor, markdown])
+    // biome-ignore lint/correctness/useExhaustiveDependencies: retryTick drives re-runs after catch failures
+  }, [editor, markdown, retryTick])
 
   // Defer scroll restore one frame so content has rendered before we set scrollTop.
   useEffect(() => {
@@ -147,6 +151,7 @@ export function PulseEditorPane({
     return () => {
       if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
       if (wordCountTimerRef.current) clearTimeout(wordCountTimerRef.current)
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [])
 

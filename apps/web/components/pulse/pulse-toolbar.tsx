@@ -1,7 +1,7 @@
 'use client'
 
 import { Network, PenLine, Plus, ScrollText, Settings2, TerminalSquare } from 'lucide-react'
-import { useState } from 'react'
+import { type ComponentType, useState } from 'react'
 import type { RightPanelId } from '@/lib/pulse/types'
 
 interface PulseToolbarProps {
@@ -15,7 +15,7 @@ interface PulseToolbarProps {
 
 const PANEL_BUTTONS: {
   id: RightPanelId
-  Icon: React.ComponentType<{ className?: string }>
+  Icon: ComponentType<{ className?: string }>
   label: string
 }[] = [
   { id: 'editor', Icon: PenLine, label: 'Editor [⌘⇧E]' },

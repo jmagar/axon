@@ -90,14 +90,15 @@ export function parsePersistedWorkspaceState(
       typeof parsed.showChat === 'boolean'
         ? parsed.showChat
         : (parsed as Record<string, unknown>).desktopViewMode !== 'editor' // old: 'chat' or 'both' → showChat true
-    // Migration: derive rightPanel from old showEditor field if rightPanel is absent
+    // Migration: derive rightPanel from old showEditor / desktopViewMode fields if rightPanel is absent
     const VALID_RIGHT_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings']
     const rightPanel: RightPanelId | null =
       parsed.rightPanel !== undefined && parsed.rightPanel !== null
         ? VALID_RIGHT_PANELS.includes(parsed.rightPanel as string)
           ? (parsed.rightPanel as RightPanelId)
           : null
-        : (parsed as Record<string, unknown>).showEditor === true
+        : (parsed as Record<string, unknown>).showEditor === true ||
+            (parsed as Record<string, unknown>).desktopViewMode === 'editor'
           ? 'editor'
           : null
     // Safety: if chat is collapsed and no panel open, keep chat visible (it will show on next load)

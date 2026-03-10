@@ -302,6 +302,9 @@ mod tests {
         const PG: &str = "AXON_PG_URL";
         const REDIS: &str = "AXON_REDIS_URL";
         const AMQP: &str = "AXON_AMQP_URL";
+        let prev_pg = env::var(PG).ok();
+        let prev_redis = env::var(REDIS).ok();
+        let prev_amqp = env::var(AMQP).ok();
 
         unsafe {
             env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
@@ -323,10 +326,17 @@ mod tests {
             ]
         );
 
-        unsafe {
-            env::remove_var(PG);
-            env::remove_var(REDIS);
-            env::remove_var(AMQP);
+        match prev_pg {
+            Some(v) => unsafe { env::set_var(PG, v) },
+            None => unsafe { env::remove_var(PG) },
+        }
+        match prev_redis {
+            Some(v) => unsafe { env::set_var(REDIS, v) },
+            None => unsafe { env::remove_var(REDIS) },
+        }
+        match prev_amqp {
+            Some(v) => unsafe { env::set_var(AMQP, v) },
+            None => unsafe { env::remove_var(AMQP) },
         }
     }
 
@@ -337,6 +347,9 @@ mod tests {
         const PG: &str = "AXON_PG_URL";
         const REDIS: &str = "AXON_REDIS_URL";
         const AMQP: &str = "AXON_AMQP_URL";
+        let prev_pg = env::var(PG).ok();
+        let prev_redis = env::var(REDIS).ok();
+        let prev_amqp = env::var(AMQP).ok();
 
         unsafe {
             env::remove_var(PG);
@@ -349,6 +362,19 @@ mod tests {
             .expect("completions should parse without service env vars");
         assert!(matches!(cfg.command, CommandKind::Completions));
         assert_eq!(cfg.positional, vec!["bash".to_string()]);
+
+        match prev_pg {
+            Some(v) => unsafe { env::set_var(PG, v) },
+            None => unsafe { env::remove_var(PG) },
+        }
+        match prev_redis {
+            Some(v) => unsafe { env::set_var(REDIS, v) },
+            None => unsafe { env::remove_var(REDIS) },
+        }
+        match prev_amqp {
+            Some(v) => unsafe { env::set_var(AMQP, v) },
+            None => unsafe { env::remove_var(AMQP) },
+        }
     }
 
     #[test]

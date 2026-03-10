@@ -36,7 +36,8 @@ export async function mapWithConcurrency<T, R>(
   fn: (item: T) => Promise<R>,
   concurrency: number,
 ): Promise<R[]> {
-  if (concurrency <= 0) throw new RangeError('concurrency must be >= 1')
+  concurrency = Math.max(1, Math.floor(concurrency))
+  if (!Number.isFinite(concurrency)) concurrency = 1
   const results: R[] = new Array(items.length)
   let next = 0
   async function worker() {

@@ -2,8 +2,9 @@ use super::thin_refetch::{
     RefetchResult, THIN_REFETCH_CONCURRENCY, render_html_with_chrome, write_refetch_results,
 };
 use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
-use crate::crates::core::content::clean_markdown_whitespace;
-use crate::crates::core::content::url_to_filename;
+use crate::crates::core::content::{
+    BOILERPLATE_SELECTORS, clean_markdown_whitespace, url_to_filename,
+};
 use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use sha2::{Digest, Sha256};
@@ -75,7 +76,7 @@ pub(super) fn process_page(
         screenshot_bytes: None,
         encoding: None,
         selector_config: col.selector_config.as_ref(),
-        ignore_tags: None,
+        ignore_tags: Some(BOILERPLATE_SELECTORS),
     };
     let markdown = transform_content_input(input, col.transform_cfg);
     let trimmed = clean_markdown_whitespace(markdown.trim());

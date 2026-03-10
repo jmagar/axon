@@ -10,12 +10,11 @@ pub async fn run_mcp(cfg: &Config) -> Result<(), Box<dyn Error>> {
         McpTransport::Both => {
             let host = cfg.mcp_http_host.clone();
             let port = cfg.mcp_http_port;
-            let (stdio_result, http_result) = tokio::join!(
+            tokio::try_join!(
                 crate::crates::mcp::run_stdio_server(),
                 crate::crates::mcp::run_http_server(&host, port),
-            );
-            stdio_result?;
-            http_result
+            )?;
+            Ok(())
         }
     }
 }

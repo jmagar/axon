@@ -173,6 +173,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             )
         }
         CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
+        CliCommand::Graph(args) => (CommandKind::Graph, args.value),
         CliCommand::Completions(args) => (
             CommandKind::Completions,
             vec![
@@ -359,6 +360,39 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty()),
         tavily_api_key: env::var("TAVILY_API_KEY").ok().unwrap_or_default(),
+        neo4j_url: env::var("AXON_NEO4J_URL").ok().unwrap_or_default(),
+        neo4j_user: env::var("AXON_NEO4J_USER")
+            .ok()
+            .unwrap_or_else(|| "neo4j".to_string()),
+        neo4j_password: env::var("AXON_NEO4J_PASSWORD").ok().unwrap_or_default(),
+        graph_queue: env::var("AXON_GRAPH_QUEUE")
+            .ok()
+            .unwrap_or_else(|| "axon.graph.jobs".to_string()),
+        graph_concurrency: env::var("AXON_GRAPH_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4),
+        graph_llm_url: env::var("AXON_GRAPH_LLM_URL")
+            .ok()
+            .unwrap_or_else(|| "http://localhost:11434".to_string()),
+        graph_llm_model: env::var("AXON_GRAPH_LLM_MODEL")
+            .ok()
+            .unwrap_or_else(|| "qwen3.5:2b".to_string()),
+        graph_similarity_threshold: env::var("AXON_GRAPH_SIMILARITY_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.75),
+        graph_similarity_limit: env::var("AXON_GRAPH_SIMILARITY_LIMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20),
+        graph_context_max_chars: env::var("AXON_GRAPH_CONTEXT_MAX_CHARS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2_000),
+        graph_taxonomy_path: env::var("AXON_GRAPH_TAXONOMY_PATH")
+            .ok()
+            .unwrap_or_default(),
         web_allowed_origins: env::var("AXON_WEB_ALLOWED_ORIGINS")
             .ok()
             .map(|raw| parse_origin_allowlist(&raw))
@@ -368,6 +402,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             .map(|raw| parse_origin_allowlist(&raw))
             .unwrap_or_default(),
         ask_diagnostics,
+        ask_graph: global.graph,
         evaluate_responses_mode,
         ask_max_context_chars: performance::env_usize_clamped(
             "AXON_ASK_MAX_CONTEXT_CHARS",

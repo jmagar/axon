@@ -83,6 +83,7 @@ async fn run_once(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>> {
         CommandKind::Sessions => run_sessions(cfg).await?,
         CommandKind::Research => run_research(cfg).await?,
         CommandKind::Screenshot => run_screenshot(cfg).await?,
+        CommandKind::Graph => return Err("graph command is not implemented yet".into()),
         CommandKind::Completions => run_completions(cfg).await?,
         CommandKind::Mcp => run_mcp(cfg).await?,
         CommandKind::Serve => run_serve(cfg).await?,

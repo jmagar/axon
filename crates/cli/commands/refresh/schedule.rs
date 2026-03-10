@@ -81,7 +81,8 @@ async fn handle_refresh_schedule_add(cfg: &Config) -> Result<(), Box<dyn Error>>
     let name = schedule_name_arg(cfg, "add", 2)?;
     // Detect `github:owner/repo` prefix — GitHub re-ingest schedule.
     if let Some(repo) = name.strip_prefix("github:") {
-        if !repo.contains('/') || repo.split('/').count() != 2 {
+        let parts: Vec<&str> = repo.split('/').collect();
+        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
             return Err("Invalid GitHub target. Expected: github:owner/repo".into());
         }
         return super::github::handle_refresh_schedule_add_github(cfg, repo, &name).await;
