@@ -52,8 +52,9 @@ interface UseAxonSessionResult {
 const EDITOR_PREAMBLE_MARKER = '[User message]\n'
 
 function stripEditorPreamble(content: string): string {
-  const idx = content.indexOf(EDITOR_PREAMBLE_MARKER)
-  return idx !== -1 ? content.slice(idx + EDITOR_PREAMBLE_MARKER.length) : content
+  return content.startsWith(EDITOR_PREAMBLE_MARKER)
+    ? content.slice(EDITOR_PREAMBLE_MARKER.length)
+    : content
 }
 
 // Retry delays in ms for 404 responses — the session file may not be on disk yet.

@@ -1,7 +1,7 @@
 use super::AxonMcpServer;
 use super::common::{
     invalid_params, logged_internal_error, parse_job_id, parse_limit, parse_offset,
-    parse_response_mode, respond_with_mode,
+    respond_with_mode,
 };
 use crate::crates::core::http::validate_url;
 use crate::crates::jobs::refresh::{
@@ -20,7 +20,7 @@ impl AxonMcpServer {
         &self,
         req: StatusRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let result = crate::crates::services::system::full_status(self.cfg.as_ref())
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
@@ -42,7 +42,7 @@ impl AxonMcpServer {
         &self,
         req: RefreshRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             RefreshSubaction::Start => {
                 let urls = req
@@ -138,7 +138,7 @@ impl AxonMcpServer {
     async fn handle_refresh_schedule(
         &self,
         req: RefreshRequest,
-        response_mode: ResponseMode,
+        response_mode: Option<ResponseMode>,
     ) -> Result<AxonToolResponse, ErrorData> {
         let sub = req.schedule_subaction.as_deref().unwrap_or("list");
         match sub {

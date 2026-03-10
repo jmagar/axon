@@ -124,6 +124,14 @@ pub(in crate::crates::core::config) struct GlobalArgs {
     #[arg(global = true, long, action = ArgAction::SetTrue)]
     pub(in crate::crates::core::config) json: bool,
 
+    #[arg(
+        global = true,
+        long,
+        action = ArgAction::SetTrue,
+        help = "Enable graph-enhanced retrieval (requires Neo4j)"
+    )]
+    pub(in crate::crates::core::config) graph: bool,
+
     /// Status mode: show only watchdog-reclaimed jobs.
     #[arg(global = true, long, action = ArgAction::SetTrue)]
     pub(in crate::crates::core::config) reclaimed: bool,

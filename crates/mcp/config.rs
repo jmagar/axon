@@ -144,6 +144,8 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         const WEB: &str = "AXON_WEB_ALLOWED_ORIGINS";
         const SHELL: &str = "AXON_SHELL_ALLOWED_ORIGINS";
+        let prev_web = env::var(WEB).ok();
+        let prev_shell = env::var(SHELL).ok();
 
         unsafe {
             env::set_var(WEB, "https://axon.example.com,http://localhost:49010");
@@ -164,9 +166,13 @@ mod tests {
             vec!["http://localhost:49011".to_string()]
         );
 
-        unsafe {
-            env::remove_var(WEB);
-            env::remove_var(SHELL);
+        match prev_web {
+            Some(v) => unsafe { env::set_var(WEB, v) },
+            None => unsafe { env::remove_var(WEB) },
+        }
+        match prev_shell {
+            Some(v) => unsafe { env::set_var(SHELL, v) },
+            None => unsafe { env::remove_var(SHELL) },
         }
     }
 }

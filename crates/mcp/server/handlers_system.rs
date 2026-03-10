@@ -1,12 +1,12 @@
 use super::AxonMcpServer;
 use super::artifacts::{
-    artifact_root, clean_artifact_files, delete_artifact_file, ensure_artifact_root, line_count,
-    list_artifact_files, resolve_artifact_output_path, respond_with_mode, search_artifact_files,
-    validate_artifact_path,
+    artifact_root, clean_artifact_files, client_context_name, delete_artifact_file,
+    ensure_artifact_root, line_count, list_artifact_files, resolve_artifact_output_path,
+    respond_with_mode, search_artifact_files, validate_artifact_path,
 };
 use super::common::{
     MCP_TOOL_SCHEMA_URI, invalid_params, logged_internal_error, parse_limit_usize, parse_offset,
-    parse_response_mode, to_pagination,
+    to_pagination,
 };
 use crate::crates::core::http::{normalize_url, validate_url};
 use crate::crates::crawl::screenshot::{
@@ -181,7 +181,7 @@ impl AxonMcpServer {
         let url = req
             .url
             .ok_or_else(|| invalid_params("url is required for screenshot"))?;
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let normalized = normalize_url(&url);
         validate_url(&normalized).map_err(|e| invalid_params(e.to_string()))?;
 
@@ -235,7 +235,7 @@ impl AxonMcpServer {
         &self,
         req: ArtifactsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         match req.subaction {
             ArtifactsSubaction::List => {
                 let limit = parse_limit_usize(req.limit, 50, 500);
@@ -358,7 +358,7 @@ impl AxonMcpServer {
         respond_with_mode(
             "help",
             "help",
-            parse_response_mode(req.response_mode),
+            req.response_mode,
             "help-actions",
             serde_json::json!({
                 "tool": "axon",
@@ -389,7 +389,8 @@ impl AxonMcpServer {
                 ],
                 "defaults": {
                     "response_mode": "path",
-                    "artifact_dir": artifact_root()
+                    "artifact_dir": artifact_root(),
+                    "artifact_context": client_context_name()
                 }
             }),
         )
@@ -400,7 +401,7 @@ impl AxonMcpServer {
         &self,
         req: DoctorRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let result = system::doctor(self.cfg.as_ref())
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
@@ -412,7 +413,7 @@ impl AxonMcpServer {
         req: DomainsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let pagination = to_pagination(req.limit.or(Some(25)), req.offset);
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let result = system::domains(self.cfg.as_ref(), pagination)
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
@@ -432,7 +433,7 @@ impl AxonMcpServer {
         req: SourcesRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let pagination = to_pagination(req.limit.or(Some(25)), req.offset);
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let result = system::sources(self.cfg.as_ref(), pagination)
             .await
             .map_err(|e| logged_internal_error("operation", e))?;
@@ -449,7 +450,7 @@ impl AxonMcpServer {
         &self,
         req: StatsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let response_mode = parse_response_mode(req.response_mode);
+        let response_mode = req.response_mode;
         let result = system::stats(self.cfg.as_ref())
             .await
             .map_err(|e| logged_internal_error("operation", e))?;

@@ -126,7 +126,7 @@ describe('GET /api/sessions/list', () => {
     const { GET } = await import('@/app/api/sessions/list/route')
 
     await GET()
-    expect(scanSessionsMock).toHaveBeenCalledWith(30, 30)
+    expect(scanSessionsMock).toHaveBeenCalledWith(20, 30)
   })
 })
 

@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TerminalHandle } from '@/components/terminal/terminal-emulator'
 import { useShellSession } from '@/hooks/use-shell-session'
 
@@ -37,6 +37,25 @@ export function PulseTerminalPane() {
   const handleSearchChange = useCallback((val: string) => {
     setSearchQuery(val)
     if (val) terminalRef.current?.search(val)
+  }, [])
+
+  // Ctrl+F / Cmd+F toggles the search overlay
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        setSearchVisible((prev) => {
+          if (prev) {
+            setSearchQuery('')
+            terminalRef.current?.focus()
+            return false
+          }
+          return true
+        })
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   return (

@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-10 (session: v0.14.2 — GitHub ingest progress display fixes)
+Last Modified: 2026-03-10 (session: v0.15.0 — MCP transport/docs updates + shell completions + CORS/crawl path hardening)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **MCP transport/docs alignment + shell completions/CORS/crawl output hardening (v0.15.0)** — `feat(mcp)` adds stdio + dual transport support (`a3c1f18e`), docs/env alignment for MCP transport settings (`ef2c4fad`), and feature-level CLI/web hardening for shell completions, CORS/origin handling, and crawl output path behavior (`3d3f9d98`); includes ingest progress fix baseline in this unreleased window (`e462931f`)
 
 - **GitHub ingest progress display fixes (v0.14.2)** — three bugs fixed: (1) `Authorization: Bearer` → `Authorization: token` for classic GitHub PATs (`ghp_`) in `files.rs` and `wiki.rs`; (2) added unauthenticated clone fallback for public repos; (3) final progress send (`5/5 tasks, chunks_embedded`) added after `tokio::join!` completes in `github.rs`; (4) `ingest_metrics_suffix()` completed branch in `metrics.rs` now handles `tasks_total` — `axon status` shows `5/5 tasks | N chunks` for completed GitHub ingests
 
@@ -115,6 +117,10 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
+| `3d3f9d98` | feat | add shell completions, CORS guards, and crawl output paths |
+| `ef2c4fad` | docs(mcp) | align transport docs and env example |
+| `a3c1f18e` | feat(mcp) | support stdio and dual transport modes |
+| `e462931f` | fix(ingest) | GitHub clone auth + progress display fixes (v0.14.2) |
 | `1a4ded20` | fix(ingest) | GitHub clone auth + progress display fixes (v0.14.2) |
 | `0c8f2b57` | chore | Qdrant tuning + ssh_auth test cleanup (v0.14.1) |
 | `81e6a874` | fix(ingest) | display task-level and phase progress for GitHub ingest |

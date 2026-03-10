@@ -2,6 +2,7 @@ use super::*;
 use crate::crates::core::content::deterministic::{
     DeterministicExtractionEngine, estimate_llm_cost_usd,
 };
+use spider_transformations::transformation::content::SelectorConfiguration;
 
 // ── Regression guard: build_transform_config() safety rails ─────────────────
 
@@ -33,6 +34,116 @@ fn build_transform_config_clean_html_is_false() {
         "clean_html must stay false — [class*='ad'] matches Tailwind shadow-* classes, \
          silently wiping shadow-styled elements from Tailwind sites"
     );
+}
+
+#[test]
+fn to_markdown_strips_aria_and_html5_boilerplate() {
+    let html = r#"
+        <html><body>
+          <div role="banner">Site Header</div>
+          <div role="navigation"><a href="/docs">Docs</a></div>
+          <div role="search">Search...</div>
+          <aside role="complementary">Sidebar links</aside>
+          <div role="contentinfo">Footer links</div>
+          <iframe src="https://example.com/embed"></iframe>
+          <noscript>Please enable JavaScript</noscript>
+          <div hidden>Hidden banner</div>
+          <div data-nosnippet>Do not snippet me</div>
+          <main>
+            <h1>Specification</h1>
+            <p>MCP defines how models communicate with tools.</p>
+          </main>
+        </body></html>
+    "#;
+
+    let markdown = to_markdown(html, None);
+
+    assert!(markdown.contains("MCP defines how models communicate with tools."));
+    assert!(!markdown.contains("Site Header"));
+    assert!(!markdown.contains("Docs"));
+    assert!(!markdown.contains("Search..."));
+    assert!(!markdown.contains("Sidebar links"));
+    assert!(!markdown.contains("Footer links"));
+    assert!(!markdown.contains("Please enable JavaScript"));
+    assert!(!markdown.contains("Hidden banner"));
+    assert!(!markdown.contains("Do not snippet me"));
+    assert!(!markdown.contains("example.com/embed"));
+}
+
+#[test]
+fn to_markdown_preserves_selector_scoping_with_boilerplate_filtering() {
+    let html = r#"
+        <html><body>
+          <div role="navigation">Top nav</div>
+          <main id="content">
+            <div class="intro">Keep me</div>
+            <div class="skip">Drop me</div>
+          </main>
+        </body></html>
+    "#;
+
+    let selector_config = SelectorConfiguration {
+        root_selector: Some("#content".to_string()),
+        exclude_selector: Some(".skip".to_string()),
+    };
+
+    let markdown = to_markdown(html, Some(&selector_config));
+
+    assert!(markdown.contains("Keep me"));
+    assert!(!markdown.contains("Top nav"));
+    assert!(!markdown.contains("Drop me"));
+}
+
+#[test]
+fn to_markdown_strips_mintlify_navigation_chrome() {
+    let html = r##"
+        <html><body>
+          <a href="#content-area">Skip to main content</a>
+          <div id="navbar">
+            <div>Search...</div>
+            <div>Navigation</div>
+            <div>Model Context Protocol home page</div>
+          </div>
+          <div id="sidebar">
+            <a href="/docs/getting-started/intro">Documentation</a>
+            <a href="/extensions/overview">Extensions</a>
+          </div>
+          <div id="table-of-contents">On this page</div>
+          <div id="page-context-menu">Copy page</div>
+          <main id="content-area">
+            <h1>Specification</h1>
+            <p>MCP is an open protocol that enables integration between tools and LLM apps.</p>
+          </main>
+          <div class="feedback-toolbar">
+            <p>Was this page helpful?</p>
+            <button id="feedback-thumbs-up">Yes</button>
+            <button id="feedback-thumbs-down">No</button>
+          </div>
+          <div id="pagination">
+            <a href="/prev">Previous</a>
+            <a href="/next">Next</a>
+          </div>
+          <div id="footer">Was this page helpful</div>
+        </body></html>
+    "##;
+
+    let markdown = to_markdown(html, None);
+
+    assert!(markdown.contains("Specification"));
+    assert!(markdown.contains("MCP is an open protocol"));
+    assert!(!markdown.contains("Skip to main content"));
+    assert!(!markdown.contains("Search..."));
+    assert!(!markdown.contains("Navigation"));
+    assert!(!markdown.contains("Model Context Protocol home page"));
+    assert!(!markdown.contains("Documentation"));
+    assert!(!markdown.contains("Extensions"));
+    assert!(!markdown.contains("On this page"));
+    assert!(!markdown.contains("Copy page"));
+    assert!(!markdown.contains("Previous"));
+    assert!(!markdown.contains("Next"));
+    assert!(!markdown.contains("Was this page helpful"));
+    assert!(!markdown.contains("Yes"));
+    assert!(!markdown.contains("No"));
 }
 
 #[test]
