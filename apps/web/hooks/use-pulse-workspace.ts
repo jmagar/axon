@@ -207,7 +207,7 @@ export function usePulseWorkspaceBehavior() {
       lastResponseLatencyMs,
       lastResponseModel,
       showChat: splitPane.showChat,
-      showEditor: splitPane.showEditor,
+      rightPanel: splitPane.rightPanel,
     },
     setters: {
       setPulsePermissionLevel,
@@ -225,7 +225,7 @@ export function usePulseWorkspaceBehavior() {
       setLastResponseLatencyMs,
       setLastResponseModel,
       setShowChat: splitPane.setShowChat,
-      setShowEditor: splitPane.setShowEditor,
+      setRightPanel: splitPane.setRightPanel,
     },
     messageIdRef,
   })
@@ -337,7 +337,7 @@ export function usePulseWorkspaceBehavior() {
       }
       if (isMod && event.shiftKey && event.key === 'E') {
         event.preventDefault()
-        splitPane.toggleEditor()
+        splitPane.toggleRightPanel('editor')
         return
       }
       if (isMod && event.shiftKey && event.key === 'C') {
@@ -347,7 +347,22 @@ export function usePulseWorkspaceBehavior() {
       }
       if (isMod && event.shiftKey && event.key === 'S') {
         event.preventDefault()
-        splitPane.toggleSettings()
+        splitPane.toggleRightPanel('settings')
+        return
+      }
+      if (isMod && event.shiftKey && event.key === 'T') {
+        event.preventDefault()
+        splitPane.toggleRightPanel('terminal')
+        return
+      }
+      if (isMod && event.shiftKey && event.key === 'L') {
+        event.preventDefault()
+        splitPane.toggleRightPanel('logs')
+        return
+      }
+      if (isMod && event.shiftKey && event.key === 'M') {
+        event.preventDefault()
+        splitPane.toggleRightPanel('mcp')
         return
       }
     }
@@ -358,8 +373,7 @@ export function usePulseWorkspaceBehavior() {
     setPulseModel,
     setPulsePermissionLevel,
     splitPane.toggleChat,
-    splitPane.toggleEditor,
-    splitPane.toggleSettings,
+    splitPane.toggleRightPanel,
   ])
 
   // Workspace prompt handler
@@ -379,7 +393,7 @@ export function usePulseWorkspaceBehavior() {
 
     // New omnibox prompt should start in conversation-first view.
     splitPane.setShowChat(true)
-    splitPane.setShowEditor(false)
+    splitPane.setRightPanel(null)
     splitPane.setMobilePane('chat')
 
     void handlePromptRef.current(workspacePrompt)
@@ -388,7 +402,7 @@ export function usePulseWorkspaceBehavior() {
     workspacePrompt,
     splitPane.setMobilePane,
     splitPane.setShowChat,
-    splitPane.setShowEditor,
+    splitPane.setRightPanel,
   ])
 
   useEffect(() => {
@@ -410,7 +424,7 @@ export function usePulseWorkspaceBehavior() {
     setPendingPermission(null)
 
     splitPane.setShowChat(true)
-    splitPane.setShowEditor(false)
+    splitPane.setRightPanel(null)
     splitPane.setMobilePane('chat')
   }, [
     workspaceResumeVersion,
@@ -421,7 +435,7 @@ export function usePulseWorkspaceBehavior() {
     setIndexedSources,
     setActiveThreadSources,
     splitPane.setShowChat,
-    splitPane.setShowEditor,
+    splitPane.setRightPanel,
     splitPane.setMobilePane,
   ])
 

@@ -1,60 +1,88 @@
 'use client'
 
-import { MessageSquare, PenLine, Settings2 } from 'lucide-react'
+import {
+  MessageSquare,
+  Network,
+  PenLine,
+  ScrollText,
+  Settings2,
+  TerminalSquare,
+} from 'lucide-react'
+import type { MobilePane } from '@/hooks/use-split-pane'
 
 interface PulseMobilePaneSwitcherProps {
-  mobilePane: 'chat' | 'editor' | 'settings'
-  onMobilePaneChange: (pane: 'chat' | 'editor' | 'settings') => void
+  mobilePane: MobilePane
+  onMobilePaneChange: (pane: MobilePane) => void
 }
+
+const PANE_BUTTONS: {
+  id: MobilePane
+  Icon: React.ComponentType<{ className?: string }>
+  label: string
+  activeClass: string
+}[] = [
+  {
+    id: 'chat',
+    Icon: MessageSquare,
+    label: 'Chat pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'editor',
+    Icon: PenLine,
+    label: 'Editor pane',
+    activeClass: 'border-[rgba(255,135,175,0.25)] bg-[var(--axon-secondary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'terminal',
+    Icon: TerminalSquare,
+    label: 'Terminal pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'logs',
+    Icon: ScrollText,
+    label: 'Logs pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'mcp',
+    Icon: Network,
+    label: 'MCP pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'settings',
+    Icon: Settings2,
+    label: 'Settings pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+]
+
+const INACTIVE_CLASS =
+  'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]'
 
 export function PulseMobilePaneSwitcher({
   mobilePane,
   onMobilePaneChange,
 }: PulseMobilePaneSwitcherProps) {
   return (
-    <div role="tablist" aria-label="Workspace pane" className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mobilePane === 'chat'}
-        aria-label="Chat pane"
-        onClick={() => onMobilePaneChange('chat')}
-        className={`inline-flex size-7 items-center justify-center rounded border transition-all duration-200 backdrop-blur-sm ${
-          mobilePane === 'chat'
-            ? 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)] shadow-[var(--shadow-sm)]'
-            : 'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]'
-        }`}
-      >
-        <MessageSquare className="size-3.5" />
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mobilePane === 'editor'}
-        aria-label="Editor pane"
-        onClick={() => onMobilePaneChange('editor')}
-        className={`inline-flex size-7 items-center justify-center rounded border transition-all duration-200 backdrop-blur-sm ${
-          mobilePane === 'editor'
-            ? 'border-[rgba(255,135,175,0.25)] bg-[var(--axon-secondary)] text-[var(--axon-bg)] shadow-[var(--shadow-sm)]'
-            : 'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]'
-        }`}
-      >
-        <PenLine className="size-3.5" />
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mobilePane === 'settings'}
-        aria-label="Settings pane"
-        onClick={() => onMobilePaneChange('settings')}
-        className={`inline-flex size-7 items-center justify-center rounded border transition-all duration-200 backdrop-blur-sm ${
-          mobilePane === 'settings'
-            ? 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)] shadow-[var(--shadow-sm)]'
-            : 'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]'
-        }`}
-      >
-        <Settings2 className="size-3.5" />
-      </button>
+    <div role="tablist" aria-label="Workspace pane" className="inline-flex items-center gap-0.5">
+      {PANE_BUTTONS.map(({ id, Icon, label, activeClass }) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === id}
+          aria-label={label}
+          onClick={() => onMobilePaneChange(id)}
+          className={`inline-flex size-6 items-center justify-center rounded border transition-all duration-200 backdrop-blur-sm ${
+            mobilePane === id ? activeClass : INACTIVE_CLASS
+          }`}
+        >
+          <Icon className="size-3" />
+        </button>
+      ))}
     </div>
   )
 }

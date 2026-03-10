@@ -10,6 +10,9 @@ const ALLOWED_ORIGINS = (process.env.AXON_WEB_ALLOWED_ORIGINS ?? '')
   .filter(Boolean)
 const ALLOW_INSECURE_LOCAL_DEV = process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
 const IS_DEV = process.env.NODE_ENV !== 'production'
+// Default: true — require BOTH a valid Tailscale-User-Login header AND the API token.
+// Set AXON_REQUIRE_DUAL_AUTH=false to relax to single-factor (either suffices).
+const REQUIRE_DUAL_AUTH = process.env.AXON_REQUIRE_DUAL_AUTH !== 'false'
 
 function buildConnectSrc(): string {
   const sources = [
@@ -141,12 +144,20 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function isAuthorized(req: NextRequest): boolean {
-  if (API_TOKEN !== null) {
-    const token = extractToken(req)
-    return token.length > 0 && constantTimeEqual(token, API_TOKEN)
-  }
+  const hasToken =
+    API_TOKEN !== null &&
+    (() => {
+      const token = extractToken(req)
+      return token.length > 0 && constantTimeEqual(token, API_TOKEN)
+    })()
 
-  return ALLOW_INSECURE_LOCAL_DEV && isLocalhostRequest(req)
+  // Tailscale-User-Login is injected by `tailscale serve` after stripping any
+  // incoming value — trustworthy ONLY when Next.js is bound to localhost (not 0.0.0.0).
+  const hasTsHeader = !!req.headers.get('tailscale-user-login')?.trim()
+
+  if (REQUIRE_DUAL_AUTH) return hasToken && hasTsHeader
+  if (API_TOKEN !== null) return hasToken || hasTsHeader
+  return hasTsHeader || (ALLOW_INSECURE_LOCAL_DEV && isLocalhostRequest(req))
 }
 
 export function proxy(req: NextRequest) {

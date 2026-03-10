@@ -33,6 +33,15 @@
 use axum::http::HeaderMap;
 use std::collections::HashSet;
 
+// ── SSH key identity ──────────────────────────────────────────────────────────
+
+/// Identity established via SSH key challenge-response authentication.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SshKeyIdentity {
+    /// SSH key fingerprint — `"SHA256:XXXXX"` as reported by `ssh-keygen -Y verify`.
+    pub fingerprint: String,
+}
+
 // ── Header names ──────────────────────────────────────────────────────────────
 
 /// Tailscale injects and strips these exact header names (case-insensitive in HTTP/2,
@@ -50,6 +59,10 @@ pub enum AuthOutcome {
     Tailscale(TailscaleIdentity),
     /// Authenticated via API token fallback (`AXON_WEB_API_TOKEN`).
     Token,
+    /// Authenticated via dual-auth mode — both Tailscale identity AND API token passed.
+    DualAuth(TailscaleIdentity),
+    /// Authenticated via SSH key challenge-response.
+    SshKey(SshKeyIdentity),
     /// Not authenticated.
     Denied(DenyReason),
 }
@@ -66,6 +79,10 @@ pub enum DenyReason {
     StrictModeRequiresTailscale,
     /// No auth method is configured and this is a release build.
     NoAuthConfigured,
+    /// Dual-auth mode (`AXON_REQUIRE_DUAL_AUTH=true`) and Tailscale header was absent or user not allowed.
+    DualAuthRequiresTailscale,
+    /// Dual-auth mode and API token was missing or incorrect.
+    DualAuthRequiresToken,
 }
 
 /// Identity extracted from Tailscale Serve headers.
@@ -105,6 +122,10 @@ pub struct TailscaleAuthConfig {
     /// Allowlist of login emails permitted through. Empty = any tailnet user.
     /// Set with `AXON_TAILSCALE_ALLOWED_USERS=alice@example.com,bob@example.com`.
     pub allowed_users: HashSet<String>,
+    /// When `true`, BOTH a valid Tailscale identity AND the API token must be present.
+    /// Either alone is insufficient — both independent factors are required.
+    /// Set with `AXON_REQUIRE_DUAL_AUTH=true` (default: `true`).
+    pub require_dual_auth: bool,
 }
 
 impl TailscaleAuthConfig {
@@ -122,9 +143,16 @@ impl TailscaleAuthConfig {
             .map(str::to_lowercase)
             .collect();
 
+        // Default: true — require both TS identity AND API token.
+        // Set AXON_REQUIRE_DUAL_AUTH=false to relax to single-factor (either suffices).
+        let require_dual_auth = std::env::var("AXON_REQUIRE_DUAL_AUTH")
+            .map(|v| !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true);
+
         Self {
             strict,
             allowed_users,
+            require_dual_auth,
         }
     }
 
@@ -204,7 +232,9 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// Determine whether a request is authorized to access the axon WS endpoint.
 ///
 /// Auth priority:
-/// 1. Tailscale identity header (`Tailscale-User-Login`) — preferred path.
+/// 0. Dual-auth mode (`AXON_REQUIRE_DUAL_AUTH=true`, the default) — BOTH Tailscale
+///    identity AND API token must be present. Either alone is rejected.
+/// 1. Tailscale identity header (`Tailscale-User-Login`) — preferred single-factor path.
 ///    Tailscale Serve injects this after verifying the user is authenticated
 ///    to the tailnet. The backend MUST listen on localhost only (invariant).
 /// 2. API token (`AXON_WEB_API_TOKEN`) — fallback for non-Tailscale deployments.
@@ -216,6 +246,27 @@ pub fn check_auth(
     api_token: Option<&str>,
     ts_cfg: &TailscaleAuthConfig,
 ) -> AuthOutcome {
+    // ── 0. Dual-auth mode: BOTH Tailscale identity AND API token required ────
+    if ts_cfg.require_dual_auth {
+        let identity = match extract_tailscale_identity(headers) {
+            Some(id) if ts_cfg.is_user_allowed(&id.login) => id,
+            Some(id) => {
+                return AuthOutcome::Denied(DenyReason::UserNotAllowed(id.login));
+            }
+            None => return AuthOutcome::Denied(DenyReason::DualAuthRequiresTailscale),
+        };
+        let token_ok = api_token
+            .map(|expected| {
+                let provided = query_token.unwrap_or("").trim();
+                !provided.is_empty() && constant_time_eq(provided.as_bytes(), expected.as_bytes())
+            })
+            .unwrap_or(false);
+        if !token_ok {
+            return AuthOutcome::Denied(DenyReason::DualAuthRequiresToken);
+        }
+        return AuthOutcome::DualAuth(identity);
+    }
+
     // ── 1. Tailscale identity check ──────────────────────────────────────────
     if let Some(identity) = extract_tailscale_identity(headers) {
         if ts_cfg.is_user_allowed(&identity.login) {
@@ -261,6 +312,16 @@ pub fn auth_log_message(outcome: &AuthOutcome, addr: std::net::SocketAddr) -> St
             format!("ws auth: tailscale user '{}' from {}", id.login, addr.ip())
         }
         AuthOutcome::Token => format!("ws auth: api token from {}", addr.ip()),
+        AuthOutcome::DualAuth(id) => format!(
+            "ws auth: dual-auth OK (TS+token) — user='{}' from {}",
+            id.login,
+            addr.ip()
+        ),
+        AuthOutcome::SshKey(id) => format!(
+            "ws auth: ssh-key OK — fingerprint='{}' from {}",
+            id.fingerprint,
+            addr.ip()
+        ),
         AuthOutcome::Denied(reason) => match reason {
             DenyReason::NoCredentials => {
                 format!("ws denied: no credentials from {}", addr.ip())
@@ -283,6 +344,18 @@ pub fn auth_log_message(outcome: &AuthOutcome, addr: std::net::SocketAddr) -> St
             DenyReason::NoAuthConfigured => {
                 format!(
                     "ws denied: no auth configured (set AXON_WEB_API_TOKEN or use tailscale serve) from {}",
+                    addr.ip()
+                )
+            }
+            DenyReason::DualAuthRequiresTailscale => {
+                format!(
+                    "ws denied: AXON_REQUIRE_DUAL_AUTH=true but no valid Tailscale header from {}",
+                    addr.ip()
+                )
+            }
+            DenyReason::DualAuthRequiresToken => {
+                format!(
+                    "ws denied: AXON_REQUIRE_DUAL_AUTH=true but token missing or wrong from {}",
                     addr.ip()
                 )
             }
@@ -318,6 +391,7 @@ mod tests {
         TailscaleAuthConfig {
             strict: false,
             allowed_users: HashSet::new(),
+            require_dual_auth: false,
         }
     }
 
@@ -325,6 +399,7 @@ mod tests {
         TailscaleAuthConfig {
             strict: true,
             allowed_users: HashSet::new(),
+            require_dual_auth: false,
         }
     }
 
@@ -332,6 +407,23 @@ mod tests {
         TailscaleAuthConfig {
             strict: false,
             allowed_users: users.iter().map(|s| s.to_lowercase()).collect(),
+            require_dual_auth: false,
+        }
+    }
+
+    fn dual_auth_cfg() -> TailscaleAuthConfig {
+        TailscaleAuthConfig {
+            strict: false,
+            allowed_users: HashSet::new(),
+            require_dual_auth: true,
+        }
+    }
+
+    fn dual_auth_allowlist_cfg(users: &[&str]) -> TailscaleAuthConfig {
+        TailscaleAuthConfig {
+            strict: false,
+            allowed_users: users.iter().map(|s| s.to_lowercase()).collect(),
+            require_dual_auth: true,
         }
     }
 
@@ -704,6 +796,101 @@ mod tests {
         assert!(
             msg.contains("AXON_TAILSCALE_STRICT"),
             "log must reference the env var: {msg}"
+        );
+    }
+
+    // ── check_auth: dual-auth mode ────────────────────────────────────────────
+
+    #[test]
+    fn dual_auth_succeeds_when_both_ts_and_token_valid() {
+        let headers = headers_with_ts("alice@example.com");
+        let outcome = check_auth(
+            &headers,
+            Some("correct-token"),
+            Some("correct-token"),
+            &dual_auth_cfg(),
+        );
+        assert!(
+            matches!(outcome, AuthOutcome::DualAuth(ref id) if id.login == "alice@example.com"),
+            "dual-auth must succeed when both TS header and token are valid: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn dual_auth_fails_if_ts_header_absent() {
+        let outcome = check_auth(
+            &empty_headers(),
+            Some("correct-token"),
+            Some("correct-token"),
+            &dual_auth_cfg(),
+        );
+        assert!(
+            matches!(
+                outcome,
+                AuthOutcome::Denied(DenyReason::DualAuthRequiresTailscale)
+            ),
+            "dual-auth must fail without TS header: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn dual_auth_fails_if_user_not_in_allowlist() {
+        let headers = headers_with_ts("mallory@attacker.com");
+        let cfg = dual_auth_allowlist_cfg(&["alice@example.com"]);
+        let outcome = check_auth(&headers, Some("correct-token"), Some("correct-token"), &cfg);
+        assert!(
+            matches!(outcome, AuthOutcome::Denied(DenyReason::UserNotAllowed(ref u)) if u == "mallory@attacker.com"),
+            "dual-auth must fail when user not in allowlist: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn dual_auth_fails_if_token_wrong() {
+        let headers = headers_with_ts("alice@example.com");
+        let outcome = check_auth(
+            &headers,
+            Some("wrong-token"),
+            Some("correct-token"),
+            &dual_auth_cfg(),
+        );
+        assert!(
+            matches!(
+                outcome,
+                AuthOutcome::Denied(DenyReason::DualAuthRequiresToken)
+            ),
+            "dual-auth must fail with wrong token: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn dual_auth_fails_if_only_ts_present() {
+        // TS header valid but no token configured at all
+        let headers = headers_with_ts("alice@example.com");
+        let outcome = check_auth(&headers, None, None, &dual_auth_cfg());
+        assert!(
+            matches!(
+                outcome,
+                AuthOutcome::Denied(DenyReason::DualAuthRequiresToken)
+            ),
+            "dual-auth must fail when only TS header is present (no token): {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn dual_auth_fails_if_only_token_present() {
+        // Token correct but no TS header
+        let outcome = check_auth(
+            &empty_headers(),
+            Some("correct-token"),
+            Some("correct-token"),
+            &dual_auth_cfg(),
+        );
+        assert!(
+            matches!(
+                outcome,
+                AuthOutcome::Denied(DenyReason::DualAuthRequiresTailscale)
+            ),
+            "dual-auth must fail when only token is present (no TS header): {outcome:?}"
         );
     }
 }
