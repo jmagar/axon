@@ -52,6 +52,14 @@ spider = { version = "2", default-features = false, features = [
 spider_agent = { version = "2.46", default-features = false, features = ["search_tavily", "openai"] }
 spider_transformations = "2"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+text-splitter = { version = "0.29", features = ["code"] }
+tree-sitter-bash = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-language = "0.1"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "net", "process", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
