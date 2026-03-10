@@ -1,5 +1,5 @@
 # crates/ingest — Source Ingestion Handlers
-Last Modified: 2026-03-09
+Last Modified: 2026-03-10
 
 Ingests external sources (GitHub, Reddit, YouTube, AI sessions) into Qdrant.
 
@@ -11,7 +11,7 @@ ingest/
 ├── github/        # GitHub repo ingestion (code, issues, PRs, wiki)
 │   ├── files.rs   # file tree fetch + raw content via reqwest
 │   ├── issues.rs  # octocrab paginated issues + PRs
-│   ├── meta.rs    # GithubRepoMeta/IssueMeta/PrMeta payload builders (gh_* fields)
+│   ├── meta.rs    # GitHubPayloadParams unified builder → 31 gh_* fields per chunk
 │   └── wiki.rs    # git clone --depth=1 subprocess; no wiki = Ok(0)
 ├── github.rs      # module root + orchestration
 ├── reddit.rs      # module root — ingest_reddit, ingest_subreddit, ingest_thread
@@ -36,10 +36,11 @@ ingest/
 ### GitHub (`github/`)
 - Uses raw `reqwest` for file content fetching; `octocrab` for issues/PRs pagination
 - `GITHUB_TOKEN` is **optional** but strongly recommended — unauthenticated rate limit is 60 req/hr; authenticated is 5000 req/hr
-- Ingests: repo code files, issues (open+closed), PRs, wiki pages
+- Source code is **included by default** — disable with `--no-source`. Code files use **tree-sitter AST-aware chunking** (Rust, Python, JavaScript, TypeScript, Go, Bash); unsupported languages fall back to 2000-char prose chunking
 - Files are fetched tree-first (one API call), then content per file concurrently via `buffer_unordered(16)` — can be slow without token on large repos
 - `wiki.rs` runs `git clone --depth=1` as a subprocess — requires `git` in PATH/container. Non-zero exit = no wiki = `Ok(0)` (not an error)
-- **Metadata**: `github/meta.rs` builds `gh_*` fields for repo chunks (stars, forks, language, topics, created_at, is_fork, is_archived) and issue/PR chunks (number, state, author, labels, comment_count, merged_at, is_draft) via `embed_text_with_extra_payload`
+- **Metadata**: `github/meta.rs` builds a **unified** 31-field `gh_*` payload via `GitHubPayloadParams` struct and `build_github_payload()`. All chunk types (file, issue, PR, wiki) share the same field schema — unused fields are null/default. Includes repo-level (owner, stars, forks, topics, pushed_at), file-level (path, language, file_type, is_test, chunking_method), and issue/PR-level (number, state, author, labels, merged_at, is_draft) fields.
+- **File classification**: `classify_file_type()` in `crates/vector/ops/input/classify.rs` tags each file as `test`/`config`/`doc`/`source` — stored in `gh_file_type`
 
 ### Reddit (`reddit.rs` + `reddit/`)
 - Reddit OAuth2 **client credentials** flow (app-only, no user login)
@@ -79,14 +80,22 @@ cargo test -- --nocapture # show parsed output
 All ingest unit tests run without live services (pure logic: parsing, classification, ID extraction). Tests for `ingest_github`, `ingest_reddit`, `ingest_youtube` that hit real APIs require credentials set in env.
 
 ## Embedding Pattern
-All ingest handlers call `embed_text_with_metadata()` or `embed_text_with_extra_payload()` from `crates/vector/ops/tei.rs` (re-exported from `vector/ops.rs`). Both functions:
+All ingest handlers call one of three embedding functions from `crates/vector/ops/tei.rs` (re-exported from `vector/ops.rs`):
+
+| Function | Used by | Chunking |
+|----------|---------|----------|
+| `embed_text_with_metadata()` | Sessions (plain text) | 2000-char prose |
+| `embed_text_with_extra_payload()` | GitHub issues/PRs/wiki, Reddit, YouTube | 2000-char prose + extra `gh_*`/`reddit_*`/`yt_*` fields |
+| `embed_code_with_metadata()` | GitHub source code files | tree-sitter AST first, prose fallback + extra `gh_*` fields |
+
+All three functions follow the same pipeline:
 1. **Pre-delete** all existing Qdrant points for the source URL (`qdrant_delete_by_url_filter`) — prevents stale orphan chunks on re-ingest
-2. Chunk the text
-3. Attach source metadata (URL/source_type, title, etc.) plus any extra payload fields (YouTube uses `embed_text_with_extra_payload` to merge channel/date/tags into every chunk)
+2. Chunk the content (AST-aware for code, 2000-char for prose)
+3. Attach source metadata (URL/source_type, title, etc.) plus any extra payload fields
 4. Call `tei_embed()` with auto-split on 413
 5. Upsert to Qdrant
 
-Use `embed_text_with_extra_payload` when the source has structured metadata to store per-chunk (GitHub, Reddit, YouTube). Use `embed_text_with_metadata` for plain text sources (sessions).
+`embed_code_with_metadata` tries `chunk_code()` (tree-sitter, 500–2000 char AST boundaries) first; if the file extension has no grammar or parsing fails, falls back to standard `chunk_text()` (2000-char with 200-char overlap).
 
 ## ingest_jobs Schema
 `axon_ingest_jobs` differs from other job tables:

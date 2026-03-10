@@ -1,5 +1,5 @@
 # axon ingest
-Last Modified: 2026-03-09
+Last Modified: 2026-03-10
 
 Ingest external sources (GitHub, Reddit, YouTube) into Qdrant. Source type is auto-detected from the target — no need to choose the right command.
 
@@ -65,7 +65,7 @@ All global flags apply. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--include-source <bool>` | `false` | Also index source-code files (in addition to docs, issues, PRs, wiki). |
+| `--no-source` | `false` | Skip source-code file indexing. Source code is included by default with tree-sitter AST-aware chunking for supported languages (Rust, Python, JavaScript, TypeScript, Go, Bash). |
 
 ### Reddit-specific flags
 
@@ -100,8 +100,11 @@ axon ingest rust-lang/rust
 # GitHub: URL form (auto-detected)
 axon ingest https://github.com/anthropics/claude-code --wait true
 
-# GitHub: include source code files
-axon ingest tokio-rs/tokio --include-source true --wait true
+# GitHub: source code is included by default (AST-aware chunking)
+axon ingest tokio-rs/tokio --wait true
+
+# GitHub: skip source code, ingest only docs/issues/PRs/wiki
+axon ingest tokio-rs/tokio --no-source --wait true
 
 # YouTube: video URL (auto-detected)
 axon ingest "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --wait true
@@ -129,5 +132,5 @@ axon ingest clear --yes
 ## Notes
 
 - Reddit-specific flags (`--sort`, `--time`, etc.) are silently ignored for GitHub and YouTube targets.
-- `--include-source` is silently ignored for Reddit and YouTube targets.
+- `--no-source` is silently ignored for Reddit and YouTube targets.
 - `axon sessions` is not routed through `axon ingest` — sessions take no URL/target and have format-specific flags.

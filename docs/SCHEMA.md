@@ -142,12 +142,14 @@ Scheduled refresh configurations. Each schedule defines a set of URLs (or a seed
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NOT NULL | — | Primary key, schedule identifier |
 | `name` | TEXT | NOT NULL | — | Unique human-readable name for the schedule |
-| `seed_url` | TEXT | NULL | — | Optional seed URL (for future crawl-and-refresh workflows) |
+| `seed_url` | TEXT | NULL | — | Optional seed URL (for crawl-and-refresh workflows) |
 | `urls_json` | JSONB | NULL | — | Array of specific URLs to refresh |
 | `every_seconds` | BIGINT | NOT NULL | — | Interval between runs in seconds |
 | `enabled` | BOOLEAN | NOT NULL | `TRUE` | Whether the schedule is active |
 | `next_run_at` | TIMESTAMPTZ | NOT NULL | — | When the next run is due |
 | `last_run_at` | TIMESTAMPTZ | NULL | — | When the schedule last ran |
+| `source_type` | TEXT | NULL | — | Non-URL schedule type: `"github"` for repo re-ingest |
+| `target` | TEXT | NULL | — | Target identifier for non-URL schedules (e.g., `"owner/repo"` for GitHub) |
 | `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Schedule creation timestamp |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last modification timestamp |
 
@@ -157,7 +159,8 @@ Scheduled refresh configurations. Each schedule defines a set of URLs (or a seed
 
 **Notes:**
 - Claim uses a lease mechanism: `next_run_at` is advanced by `SCHEDULE_CLAIM_LEASE_SECS` (300s) during claim to prevent duplicate claims. After the job completes, `mark_refresh_schedule_ran` sets `next_run_at` to the actual next interval.
-- Either `seed_url` or `urls_json` (or both) should be provided. `seed_url` is reserved for future integration with crawl-based URL discovery.
+- For URL schedules: either `seed_url` or `urls_json` (or both) should be provided.
+- For GitHub repo schedules: `source_type = 'github'` and `target = 'owner/repo'`. The scheduler checks the repo's `pushed_at` timestamp via the GitHub API and skips re-ingestion if nothing has been pushed since `last_run_at`.
 
 ## axon_watch_defs
 
