@@ -14,6 +14,7 @@ Documentation index for Axon.
 - [Schema](./SCHEMA.md)
 - [Job Lifecycle](./JOB-LIFECYCLE.md)
 - [Serve Runtime](./SERVE.md)
+- [Shell Completions](./SHELL-COMPLETIONS.md)
 - [Live Test Scripts](./LIVE-TEST-SCRIPTS.md)
 - [Testing Guide](./TESTING.md)
 

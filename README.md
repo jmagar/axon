@@ -16,7 +16,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `ingest`, `sessions`, `screenshot`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
+- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `ingest`, `sessions`, `screenshot`, `completions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
 - Async queue-backed jobs for `crawl`/`extract`/`embed`/`refresh`/ingest
 - **Surgical Incremental Crawling**: SHA-256 content hashing, Reflink/Hardlink storage reuse, and smart embedding skips for unchanged pages.
 - TEI embeddings + Qdrant vector storage
@@ -295,6 +295,7 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `ingest <target>` | Ingest GitHub, Reddit, or YouTube — source type auto-detected from target (slug, URL, @handle, r/name) | Yes (default) |
 | `sessions [--claude] [--codex] [--gemini] [--project <name>]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `screenshot <url>...` | Capture page screenshot(s) via Chrome | No |
+| `completions <bash|zsh|fish>` | Generate shell completion scripts (`completion` alias also works) | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
@@ -304,6 +305,16 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `dedupe` | Remove duplicate vectors from Qdrant collection | No |
 | `mcp` | Start MCP server runtime (`http`, `stdio`, or `both`) | No |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
+
+### Shell Completions
+
+```bash
+axon completions bash > ~/.local/share/bash-completion/completions/axon
+axon completions zsh > ~/.zfunc/_axon
+axon completions fish > ~/.config/fish/completions/axon.fish
+```
+
+See `docs/SHELL-COMPLETIONS.md` and `docs/commands/completions.md` for installation details.
 
 ### Freshness Strategy (Tiered Refresh + Discovery Crawl)
 

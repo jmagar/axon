@@ -134,8 +134,19 @@ pub struct ResearchResult {
 // ── Lifecycle: crawl / embed / extract ───────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrawlStartJob {
+    pub job_id: String,
+    pub url: String,
+    pub output_dir: String,
+    pub predicted_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrawlStartResult {
     pub job_ids: Vec<String>,
+    pub output_dir: Option<String>,
+    pub predicted_paths: Vec<String>,
+    pub jobs: Vec<CrawlStartJob>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

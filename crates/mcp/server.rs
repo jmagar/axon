@@ -18,8 +18,14 @@ mod oauth_google;
 use super::config::load_mcp_config;
 use super::schema::{AxonRequest, parse_axon_request};
 use crate::crates::core::config::Config;
+use crate::crates::web::cors_middleware;
 use axum::{
-    Router, middleware,
+    Router,
+    body::Body,
+    extract::State,
+    middleware,
+    middleware::Next,
+    response::Response,
     routing::{get, post},
 };
 use common::{MCP_TOOL_SCHEMA_URI, internal_error, invalid_params};
@@ -196,6 +202,7 @@ pub async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let cors_cfg = Arc::new(load_mcp_config());
     let oauth_state = GoogleOAuthState::from_env(host, port);
     let oauth_state_for_layer = oauth_state.clone();
 
@@ -235,9 +242,21 @@ pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::e
         .layer(middleware::from_fn_with_state(
             oauth_state_for_layer,
             require_google_auth,
+        ))
+        .layer(middleware::from_fn_with_state(
+            cors_cfg,
+            mcp_http_cors_middleware,
         ));
 
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn mcp_http_cors_middleware(
+    State(cfg): State<Arc<Config>>,
+    request: axum::http::Request<Body>,
+    next: Next,
+) -> Response {
+    cors_middleware(request, next, &cfg.web_allowed_origins).await
 }

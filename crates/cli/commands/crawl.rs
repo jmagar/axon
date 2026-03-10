@@ -192,10 +192,23 @@ async fn run_async_enqueue_multi(cfg: &Config, urls: &[String]) -> Result<(), Bo
         );
     }
     for (url, job_id) in &jobs {
+        let output_dir = crate::crates::services::crawl::predict_crawl_output_dir(
+            &cfg.output_dir,
+            url,
+            &job_id.to_string(),
+        );
+        let predicted_paths =
+            crate::crates::services::crawl::predict_crawl_output_paths(&output_dir, url);
         if cfg.json_output {
             println!(
                 "{}",
-                serde_json::json!({"url": url, "job_id": job_id, "status": "pending"})
+                serde_json::json!({
+                    "url": url,
+                    "job_id": job_id,
+                    "status": "pending",
+                    "output_dir": output_dir,
+                    "predicted_paths": predicted_paths,
+                })
             );
         } else {
             println!(

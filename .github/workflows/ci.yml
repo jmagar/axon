@@ -42,6 +42,20 @@ jobs:
       - name: Enforce Next.js proxy-only entrypoint (middleware.ts deprecated)
         run: ./scripts/check_no_next_middleware.sh
 
+  shell-completions-smoke:
+    name: shell-completions-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Build axon binary
+        run: cargo build --locked --bin axon
+      - name: Smoke test generated shell completions
+        run: ./scripts/check_shell_completions.sh ./target/debug/axon
+
   mcp-schema-doc-sync:
     name: mcp-schema-doc-sync
     runs-on: ubuntu-latest
