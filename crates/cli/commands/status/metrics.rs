@@ -192,6 +192,23 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
             );
         }
 
+        // GitHub task-level progress (before file-level kicks in)
+        let tasks_done = r.get("tasks_done").and_then(|v| v.as_u64());
+        let tasks_total = r.get("tasks_total").and_then(|v| v.as_u64());
+        if let (Some(done), Some(total)) = (tasks_done, tasks_total) {
+            let phase = r.get("phase").and_then(|v| v.as_str()).unwrap_or("working");
+            if chunks > 0 {
+                return format!(
+                    "{sep}{}{}{} tasks{sep}{}",
+                    accent(&done.to_string()),
+                    subtle("/"),
+                    accent(&total.to_string()),
+                    metric(chunks, "chunks"),
+                );
+            }
+            return format!("{sep}{}", muted(phase));
+        }
+
         let enumerating = r
             .get("enumerating")
             .and_then(|v| v.as_bool())
