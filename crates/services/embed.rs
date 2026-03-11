@@ -2,6 +2,7 @@ use crate::crates::core::config::Config;
 use crate::crates::jobs::embed::start_embed_job;
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{EmbedJobResult, EmbedStartResult};
+use crate::crates::vector::ops::embed_path_native;
 use std::error::Error;
 use tokio::sync::mpsc;
 
@@ -50,4 +51,13 @@ pub async fn embed_start(
     );
 
     Ok(map_embed_start_result(job_id.to_string()))
+}
+
+pub async fn embed_now(cfg: &Config, input: &str) -> Result<EmbedJobResult, Box<dyn Error>> {
+    embed_path_native(cfg, input).await?;
+    Ok(map_embed_job_result(serde_json::json!({
+        "input": input,
+        "collection": cfg.collection,
+        "completed": true,
+    })))
 }

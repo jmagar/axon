@@ -21,7 +21,9 @@ type McpConfig = {
 
 type ServerStatus = 'online' | 'offline' | 'unknown' | 'auth-required'
 
-const MCP_JSON_PATH = path.join(os.homedir(), '.claude', 'mcp.json')
+const MCP_JSON_PATH = process.env.AXON_DATA_DIR
+  ? path.join(process.env.AXON_DATA_DIR, 'axon', 'config.json')
+  : path.join(os.homedir(), '.config', 'axon', 'config.json')
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1'])
 const PRIVATE_IP_PATTERNS = [

@@ -10,9 +10,6 @@ const ALLOWED_ORIGINS = (process.env.AXON_WEB_ALLOWED_ORIGINS ?? '')
   .filter(Boolean)
 const ALLOW_INSECURE_LOCAL_DEV = process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
 const IS_DEV = process.env.NODE_ENV !== 'production'
-// Default: true — require BOTH a valid Tailscale-User-Login header AND the API token.
-// Set AXON_REQUIRE_DUAL_AUTH=false to relax to single-factor (either suffices).
-const REQUIRE_DUAL_AUTH = process.env.AXON_REQUIRE_DUAL_AUTH !== 'false'
 
 function buildConnectSrc(): string {
   const sources = [
@@ -147,23 +144,10 @@ function isAuthorized(req: NextRequest): boolean {
   const isLocalhost = isLocalhostRequest(req)
   if (ALLOW_INSECURE_LOCAL_DEV && isLocalhost) return true
 
-  const hasToken =
-    API_TOKEN !== null &&
-    (() => {
-      const token = extractToken(req)
-      return token.length > 0 && constantTimeEqual(token, API_TOKEN)
-    })()
+  if (API_TOKEN === null) return false
 
-  // Tailscale-User-Login is injected by `tailscale serve` after stripping any
-  // incoming value — trustworthy when the request arrives via Tailscale's
-  // reverse proxy (both localhost and tailnet hostname access).
-  // tailscale serve strips spoofed Tailscale-User-Login headers before
-  // forwarding, so the header is authentic if present.
-  const hasTsHeader = !!req.headers.get('tailscale-user-login')?.trim()
-
-  if (REQUIRE_DUAL_AUTH) return hasToken && hasTsHeader
-  if (API_TOKEN !== null) return hasToken || hasTsHeader
-  return hasTsHeader
+  const token = extractToken(req)
+  return token.length > 0 && constantTimeEqual(token, API_TOKEN)
 }
 
 export function proxy(req: NextRequest) {

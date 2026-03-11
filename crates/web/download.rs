@@ -30,28 +30,12 @@ pub(crate) struct DownloadQuery {
     token: Option<String>,
 }
 
-/// Authenticate a download request.
-///
-/// Tries SSH key auth first (if configured and SSH headers are present),
-/// then falls back to TS/token via `check_auth`.
+/// Authenticate a download request with the shared API token.
 fn auth_download(
     headers: &HeaderMap,
     query_token: Option<&str>,
     state: &DownloadAuthState,
 ) -> AuthOutcome {
-    if let Some(keys_path) = state
-        .ssh_authorized_keys
-        .as_deref()
-        .filter(|_| headers.contains_key("x-ssh-nonce"))
-    {
-        return match super::ssh_auth::check_ssh_headers(headers, &state.ssh_challenges, keys_path) {
-            Ok(id) => AuthOutcome::SshKey(id),
-            Err(e) => {
-                log::warn!("download ssh auth failed: {e}");
-                AuthOutcome::Denied(super::tailscale_auth::DenyReason::NoCredentials)
-            }
-        };
-    }
     // Extract token from x-api-key or Authorization: Bearer header, falling
     // back to `?token=` query parameter for browser-initiated downloads that
     // cannot set custom headers.
@@ -62,7 +46,7 @@ fn auth_download(
         .map(|v| v.trim_start_matches("Bearer ").trim())
         .filter(|s| !s.is_empty());
     let token = header_token.or(query_token);
-    check_auth(headers, token, state.api_token.as_deref(), &state.ts_auth)
+    check_auth(headers, token, state.api_token.as_deref())
 }
 
 /// `GET /download/{job_id}/pack.md`

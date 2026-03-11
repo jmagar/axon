@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Brain,
   MessageSquare,
   Network,
   PenLine,
@@ -50,6 +51,12 @@ const PANE_BUTTONS: {
     id: 'mcp',
     Icon: Network,
     label: 'MCP pane',
+    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+  },
+  {
+    id: 'cortex',
+    Icon: Brain,
+    label: 'Cortex pane',
     activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
   },
   {

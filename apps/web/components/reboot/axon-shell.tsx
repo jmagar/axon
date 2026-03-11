@@ -17,10 +17,10 @@ import { DockerStats } from '@/components/docker-stats'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { Button } from '@/components/ui/button'
 import type { FileEntry } from '@/components/workspace/file-tree'
+import { useAssistantSessions } from '@/hooks/use-assistant-sessions'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
 import type { AxonMessage } from '@/hooks/use-axon-session'
 import { useAxonSession } from '@/hooks/use-axon-session'
-import { useAssistantSessions } from '@/hooks/use-assistant-sessions'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
@@ -215,13 +215,16 @@ export function AxonShell() {
   // longer keeps the UI in a permanent loading state.
   const sessionLoading = sessionLoadingBase || (chatSessionId !== null && !sessionLoaded)
 
-  const onSessionIdChange = useCallback((newId: string) => {
-    if (railMode === 'assistant') {
-      setActiveAssistantSessionId(newId)
-      return
-    }
-    setActiveSessionId(newId)
-  }, [railMode])
+  const onSessionIdChange = useCallback(
+    (newId: string) => {
+      if (railMode === 'assistant') {
+        setActiveAssistantSessionId(newId)
+        return
+      }
+      setActiveSessionId(newId)
+    },
+    [railMode],
+  )
 
   const onMessagesChange = useCallback((updater: (prev: AxonMessage[]) => AxonMessage[]) => {
     setLiveMessages(updater)
