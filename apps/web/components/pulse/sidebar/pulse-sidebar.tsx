@@ -147,7 +147,7 @@ export function PulseSidebar() {
 
   return (
     <div
-      className={`relative z-[2] flex h-screen flex-shrink-0 flex-col overflow-hidden border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 ${
+      className={`relative z-[2] hidden h-screen flex-shrink-0 flex-col overflow-hidden border-r border-[var(--border-subtle)] bg-[rgba(10,18,35,0.85)] backdrop-blur-sm transition-all duration-200 lg:flex ${
         collapsed ? 'w-12' : 'w-[260px]'
       }`}
     >

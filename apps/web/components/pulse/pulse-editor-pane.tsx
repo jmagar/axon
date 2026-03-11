@@ -66,6 +66,8 @@ function countWords(text: string): number {
     .filter((s) => /\w/.test(s)).length
 }
 
+const EXTERNAL_UPDATE_RETRY_LIMIT = 3
+
 interface PulseEditorPaneProps {
   markdown: string
   onMarkdownChange: (md: string) => void
@@ -92,6 +94,7 @@ export function PulseEditorPane({
   const lastAppliedMarkdownRef = useRef<string>(markdown)
   const wordCountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const externalUpdateRetryCountRef = useRef(0)
   const [wordCount, setWordCount] = useState(() => countWords(markdown))
   const [sourceMode, setSourceMode] = useState<'markdown' | 'json' | null>(null)
   const [retryTick, setRetryTick] = useState(0)
@@ -101,6 +104,7 @@ export function PulseEditorPane({
     // a catch failure below — reading it here satisfies the exhaustive-deps rule.
     void retryTick
     if (markdown === lastAppliedMarkdownRef.current) return
+    externalUpdateRetryCountRef.current = 0
     const current = serializeMd(editor)
     if (current === markdown) {
       lastAppliedMarkdownRef.current = markdown
@@ -124,11 +128,19 @@ export function PulseEditorPane({
         console.warn('[PulseEditorPane] external update failed, scheduling retry:', err)
       }
       isApplyingExternalUpdateRef.current = false
+      externalUpdateRetryCountRef.current += 1
+      if (externalUpdateRetryCountRef.current > EXTERNAL_UPDATE_RETRY_LIMIT) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[PulseEditorPane] external update retry limit reached')
+        }
+        return
+      }
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       retryTimerRef.current = setTimeout(() => setRetryTick((n) => n + 1), 500)
       return
     }
     isApplyingExternalUpdateRef.current = false
+    externalUpdateRetryCountRef.current = 0
     lastAppliedMarkdownRef.current = markdown
     setWordCount(countWords(markdown))
   }, [editor, markdown, retryTick])

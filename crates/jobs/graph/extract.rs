@@ -85,15 +85,13 @@ pub fn normalize_entity_name(name: &str) -> String {
     if let Some((prefix, _)) = normalized.split_once('(') {
         normalized = prefix.to_string();
     }
-    if let Some((prefix, _)) = normalized.rsplit_once('.') {
-        if matches!(
-            normalized.rsplit('.').next(),
-            Some(
-                "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "json" | "toml" | "yaml" | "yml" | "md"
-            )
-        ) {
-            normalized = prefix.to_string();
-        }
+    if let Some((prefix, ext)) = normalized.rsplit_once('.')
+        && matches!(
+            ext,
+            "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "json" | "toml" | "yaml" | "yml" | "md"
+        )
+    {
+        normalized = prefix.to_string();
     }
     normalized.trim_end_matches("()").to_string()
 }

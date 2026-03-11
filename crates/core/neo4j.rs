@@ -2,6 +2,7 @@
 //!
 //! All queries use parameterized `$variables` to avoid string interpolation.
 
+use crate::crates::core::http::http_client;
 use base64::Engine;
 use serde_json::Value;
 
@@ -40,10 +41,14 @@ impl Neo4jClient {
         });
 
         Some(Self {
-            http: reqwest::Client::new(),
+            http: http_client().ok()?.clone(),
             endpoint,
             auth_header,
         })
+    }
+
+    pub fn from_config(cfg: &crate::crates::core::config::Config) -> Option<Self> {
+        Self::from_parts(&cfg.neo4j_url, &cfg.neo4j_user, &cfg.neo4j_password)
     }
 
     pub async fn execute(&self, cypher: &str, params: Value) -> Neo4jResult<()> {

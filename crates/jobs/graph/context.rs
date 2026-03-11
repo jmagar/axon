@@ -52,7 +52,12 @@ pub fn format_context_text(entities: &[GraphEntity], max_chars: usize) -> String
         return String::new();
     }
 
-    let mut out = String::from("Graph Context:\n");
+    let header = "Graph Context:";
+    if max_chars < header.len() {
+        return String::new();
+    }
+
+    let mut out = format!("{header}\n");
     for entity in entities {
         let block = format_entity(entity);
         let candidate = if out.ends_with('\n') {
@@ -65,7 +70,12 @@ pub fn format_context_text(entities: &[GraphEntity], max_chars: usize) -> String
         }
         out = candidate;
     }
-    out.trim().to_string()
+    let trimmed = out.trim().to_string();
+    if trimmed.len() > max_chars {
+        String::new()
+    } else {
+        trimmed
+    }
 }
 
 pub fn sort_entities_by_priority(entities: &mut [GraphEntity]) {
@@ -206,6 +216,19 @@ mod tests {
             similar_docs: vec![],
         };
         assert!(ctx.context_text.is_empty());
+    }
+
+    #[test]
+    fn format_context_respects_budget_smaller_than_header() {
+        let entities = vec![GraphEntity {
+            name: "Tokio".to_string(),
+            entity_type: "technology".to_string(),
+            description: String::new(),
+            relations: vec![],
+            doc_count: 1,
+            chunk_count: 1,
+        }];
+        assert_eq!(format_context_text(&entities, 5), "");
     }
 
     #[test]

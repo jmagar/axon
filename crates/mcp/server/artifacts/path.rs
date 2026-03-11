@@ -225,14 +225,15 @@ mod tests {
     #[test]
     fn ensure_artifact_root_falls_back_when_primary_root_is_invalid() {
         let _guard = ENV_CWD_LOCK.lock().expect("lock poisoned");
+        let tmp = tempdir().expect("tempdir");
+        // Point artifact dir at a path that can't be created (a file blocks mkdir).
+        let blocked = tmp.path().join("blocked");
+        fs::write(&blocked, b"not-a-directory").expect("create blocking file");
+        let invalid_root = blocked.join("subdir");
         // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
         unsafe {
-            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+            env::set_var(MCP_ARTIFACT_DIR_ENV, &invalid_root);
         }
-        let cwd_before = env::current_dir().expect("cwd");
-        let tmp = tempdir().expect("tempdir");
-        env::set_current_dir(tmp.path()).expect("chdir temp");
-        fs::write(tmp.path().join(".cache"), b"not-a-directory").expect("create file .cache");
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -243,6 +244,9 @@ mod tests {
         let expected_fallback = fallback_artifact_root();
         assert_eq!(root, expected_fallback);
         assert!(root.exists());
-        env::set_current_dir(cwd_before).expect("restore cwd");
+        // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
     }
 }
