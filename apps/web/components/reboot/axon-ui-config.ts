@@ -48,7 +48,6 @@ export interface PageItem {
 
 export const PAGE_ITEMS: ReadonlyArray<PageItem> = [
   { href: '/', label: 'Conversations', icon: MessageSquareText, group: 'primary' },
-  { href: '/reboot', label: 'Axon', icon: Sparkles, group: 'primary' },
   { href: '/editor', label: 'Editor', icon: FilePenLine, group: 'primary' },
   { href: '/jobs', label: 'Jobs', icon: Layers, group: 'primary' },
   { href: '/logs', label: 'Logs', icon: ScrollText, group: 'primary' },
@@ -57,6 +56,7 @@ export const PAGE_ITEMS: ReadonlyArray<PageItem> = [
   { href: '/cortex/status', label: 'Cortex', icon: Brain, group: 'primary' },
   { href: '/settings/mcp', label: 'MCP Servers', icon: Network, group: 'primary' },
   { href: '/agents', label: 'Agents', icon: Bot, group: 'footer' },
+  { href: '/legacy', label: 'Legacy Dashboard', icon: Sparkles, group: 'footer' },
   { href: '/settings', label: 'Settings', icon: Settings2, group: 'footer' },
 ]
 
