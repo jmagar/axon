@@ -400,9 +400,16 @@ async fn process_graph_job(
 
 async fn process_claimed_graph_job(cfg: Config, pool: PgPool, id: Uuid) {
     let neo4j = match Neo4jClient::from_config(&cfg) {
-        Some(client) => client,
-        None => {
+        Ok(Some(client)) => client,
+        Ok(None) => {
             let error_text = "AXON_NEO4J_URL is required for graph worker".to_string();
+            if let Err(err) = mark_job_failed(&pool, TABLE, id, &error_text).await {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={err}"));
+            }
+            return;
+        }
+        Err(e) => {
+            let error_text = format!("Failed to initialize Neo4j client: {}", e);
             if let Err(err) = mark_job_failed(&pool, TABLE, id, &error_text).await {
                 log_warn(&format!("mark_job_failed failed job_id={id} error={err}"));
             }
@@ -435,6 +442,7 @@ pub async fn run_graph_worker(cfg: &Config) -> anyhow::Result<()> {
     ));
 
     let neo4j = Neo4jClient::from_config(cfg)
+        .map_err(|e| anyhow::anyhow!("Neo4j client init failed: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("graph worker requires Neo4j configuration"))?;
     let pool = make_pool(cfg).await?;
     ensure_graph_schema(&pool)

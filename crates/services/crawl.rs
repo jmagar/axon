@@ -184,4 +184,27 @@ mod tests {
                 .join("job-456")
         );
     }
+
+    #[test]
+    fn map_crawl_job_result_preserves_output_files() {
+        let result = super::map_crawl_job_result(serde_json::json!({
+            "phase": "completed",
+            "output_files": [
+                "/tmp/axon-output/manifest.jsonl",
+                "/tmp/axon-output/markdown/index.md"
+            ]
+        }));
+
+        let output_files = result
+            .output_files
+            .as_ref()
+            .expect("output_files should be mapped from payload");
+        assert_eq!(
+            output_files,
+            &vec![
+                "/tmp/axon-output/manifest.jsonl".to_string(),
+                "/tmp/axon-output/markdown/index.md".to_string(),
+            ]
+        );
+    }
 }

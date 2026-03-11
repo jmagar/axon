@@ -140,14 +140,19 @@ function McpPaneContent() {
     setConfig(mergedConfig)
     setFormOpen(false)
     setEditTarget(null)
-    const res = await apiFetch('/api/mcp', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Pulse-Request': '1' },
-      body: JSON.stringify(mergedConfig),
-    })
-    if (!res.ok) {
+    try {
+      const res = await apiFetch('/api/mcp', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Pulse-Request': '1' },
+        body: JSON.stringify(mergedConfig),
+      })
+      if (!res.ok) {
+        setConfig(previousConfig)
+        setError('Save failed')
+      }
+    } catch (_err) {
       setConfig(previousConfig)
-      setError('Save failed')
+      setError('Network failure: Save aborted')
     }
   }
 
