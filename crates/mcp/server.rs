@@ -6,6 +6,8 @@ pub mod common;
 mod handlers_crawl_extract;
 #[path = "server/handlers_embed_ingest.rs"]
 mod handlers_embed_ingest;
+#[path = "server/handlers_graph.rs"]
+mod handlers_graph;
 #[path = "server/handlers_query.rs"]
 mod handlers_query;
 #[path = "server/handlers_refresh_status.rs"]
@@ -68,7 +70,7 @@ impl AxonMcpServer {
 impl AxonMcpServer {
     #[tool(
         name = "axon",
-        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
+        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, graph, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
     )]
     async fn axon<'a>(
         &'a self,
@@ -117,6 +119,7 @@ impl AxonMcpServer {
             }
             AxonRequest::Screenshot(req) => self.handle_screenshot(req).await?,
             AxonRequest::Refresh(req) => self.handle_refresh(req).await?,
+            AxonRequest::Graph(req) => self.handle_graph(req).await?,
         };
         serde_json::to_string(&response).map_err(|e| internal_error(e.to_string()))
     }

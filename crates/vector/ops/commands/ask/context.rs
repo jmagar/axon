@@ -46,11 +46,19 @@ pub(crate) async fn build_ask_context(cfg: &Config, query: &str) -> Result<AskCo
     let mut graph_elapsed_ms = 0u128;
     let mut context = built.context;
 
-    if cfg.ask_graph
-        && !cfg.neo4j_url.trim().is_empty()
-        && let Some(neo4j) =
-            Neo4jClient::from_parts(&cfg.neo4j_url, &cfg.neo4j_user, &cfg.neo4j_password)
-    {
+    let neo4j_opt = if cfg.ask_graph && !cfg.neo4j_url.trim().is_empty() {
+        match Neo4jClient::from_parts(&cfg.neo4j_url, &cfg.neo4j_user, &cfg.neo4j_password) {
+            Ok(client) => client,
+            Err(e) => {
+                log_warn(&format!("Failed to init Neo4j client: {}", e));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(neo4j) = neo4j_opt {
         let graph_started = std::time::Instant::now();
         let chunk_texts = retrieval
             .top_chunk_indices
