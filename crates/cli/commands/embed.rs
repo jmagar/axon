@@ -13,7 +13,6 @@ use crate::crates::jobs::embed::{
     recover_stale_embed_jobs, run_embed_worker,
 };
 use crate::crates::services::embed as embed_service;
-use crate::crates::vector::ops::embed_path_native;
 use std::error::Error;
 use std::path::Path;
 use uuid::Uuid;
@@ -40,7 +39,7 @@ pub async fn run_embed(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return result;
     }
 
-    embed_path_native(cfg, &input).await?;
+    embed_service::embed_now(cfg, &input).await?;
     log_done(&format!(
         "command=embed complete collection={} duration_ms={}",
         cfg.collection,

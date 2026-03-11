@@ -1,5 +1,5 @@
 # ⚡ **Axon**
-Last Modified: 2026-03-10
+Last Modified: 2026-03-11
 
 Self-hosted web crawling and RAG pipeline powered by Spider.rs. Single binary (`axon`) backed by a local Docker stack.
 
@@ -76,6 +76,10 @@ Transport modes:
 - `axon mcp --transport stdio` starts stdio transport only.
 - `axon mcp --transport both` starts stdio and HTTP concurrently.
 - `AXON_MCP_TRANSPORT=stdio|http|both` provides the equivalent env override.
+
+ACP MCP server store (used by Pulse ACP and Web UI `/api/mcp`):
+- `${AXON_DATA_DIR}/axon/config.json` when `AXON_DATA_DIR` is set
+- `~/.config/axon/config.json` fallback
 
 MCP defaults are context-safe:
 - Artifact-first responses (`response_mode=path`) written to `.cache/axon-mcp/` inside the running process/container (override with `AXON_MCP_ARTIFACT_DIR`; in Docker this is typically bind-mounted to `${AXON_DATA_DIR}/axon/artifacts`)
@@ -203,7 +207,7 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 
 ### Web App Security (`apps/web`)
 
-Full auth documentation (Tailscale serve, API token, SSH key, shell token, MCP OAuth): **[`docs/auth/`](docs/auth/README.md)**
+Full auth documentation (API token, shell token, MCP OAuth): **[`docs/auth/`](docs/auth/README.md)**
 
 Auth is enforced by `apps/web/proxy.ts` on all `/api/*` routes. Token required in `Authorization: Bearer <token>` or `x-api-key` header.
 

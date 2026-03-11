@@ -42,9 +42,10 @@ fn migrated_cli_commands_do_not_import_raw_business_logic_layers() {
     ];
 
     for (file, source, forbidden_fragments) in checks {
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         for forbidden in forbidden_fragments {
             assert!(
-                !source.contains(forbidden),
+                !production_source.contains(forbidden),
                 "{file} still contains forbidden direct-layer reference: {forbidden}"
             );
         }

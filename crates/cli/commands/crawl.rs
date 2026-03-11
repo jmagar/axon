@@ -13,7 +13,7 @@ use crate::crates::core::config::Config;
 use crate::crates::core::http::validate_url;
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::core::ui::{muted, primary, print_option, print_phase};
-use crate::crates::jobs::crawl::start_crawl_jobs_batch;
+use crate::crates::services::crawl as crawl_service;
 use spider::url::Url;
 use std::error::Error;
 use std::path::Path;
@@ -177,8 +177,7 @@ async fn run_async_enqueue_multi(cfg: &Config, urls: &[String]) -> Result<(), Bo
     print_async_options(cfg, &display);
     println!();
 
-    let url_refs: Vec<&str> = urls.iter().map(String::as_str).collect();
-    let jobs = start_crawl_jobs_batch(cfg, &url_refs).await?;
+    let result = crawl_service::crawl_start(cfg, urls, None).await?;
     println!(
         "  {}",
         muted(
@@ -191,42 +190,35 @@ async fn run_async_enqueue_multi(cfg: &Config, urls: &[String]) -> Result<(), Bo
             muted("Embedding job will be queued automatically after crawl completion.")
         );
     }
-    for (url, job_id) in &jobs {
-        let output_dir = crate::crates::services::crawl::predict_crawl_output_dir(
-            &cfg.output_dir,
-            url,
-            &job_id.to_string(),
-        );
-        let predicted_paths =
-            crate::crates::services::crawl::predict_crawl_output_paths(&output_dir, url);
+    for job in &result.jobs {
         if cfg.json_output {
             println!(
                 "{}",
                 serde_json::json!({
-                    "url": url,
-                    "job_id": job_id,
+                    "url": job.url,
+                    "job_id": job.job_id,
                     "status": "pending",
-                    "output_dir": output_dir,
-                    "predicted_paths": predicted_paths,
+                    "output_dir": job.output_dir,
+                    "predicted_paths": job.predicted_paths,
                 })
             );
         } else {
             println!(
                 "  {} {} → {}",
                 primary("Crawl Job"),
-                crate::crates::core::ui::accent(&job_id.to_string()),
-                muted(url)
+                crate::crates::core::ui::accent(&job.job_id),
+                muted(&job.url)
             );
             println!(
                 "  {}",
-                muted(&format!("Check status: axon crawl status {job_id}"))
+                muted(&format!("Check status: axon crawl status {}", job.job_id))
             );
         }
     }
     println!();
     if !cfg.json_output {
-        for (_, job_id) in &jobs {
-            println!("Job ID: {job_id}");
+        for job in &result.jobs {
+            println!("Job ID: {}", job.job_id);
         }
     }
     Ok(())

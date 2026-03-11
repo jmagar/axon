@@ -99,7 +99,10 @@ export async function scanAssistantSessions(limit = 50): Promise<SessionFile[]> 
     async (fileName) => {
       const absolutePath = path.join(projectPath, fileName)
       try {
-        const [stat, preview] = await Promise.all([fs.stat(absolutePath), extractPreviewLine(absolutePath)])
+        const [stat, preview] = await Promise.all([
+          fs.stat(absolutePath),
+          extractPreviewLine(absolutePath),
+        ])
         if (!stat.isFile()) return null
         const session: SessionFile = {
           id: sessionId(absolutePath),

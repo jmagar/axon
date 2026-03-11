@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch } from '@/lib/api-fetch'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
+import { apiFetch } from '@/lib/api-fetch'
 
 export function useAssistantSessions() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])

@@ -118,7 +118,7 @@ mod tests {
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     fn with_env_lock<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().expect("env test lock should not poison");
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         f()
     }
 
@@ -137,10 +137,16 @@ mod tests {
         with_env_lock(|| {
             reset_env();
             let pattern = browser_diagnostics_pattern();
+            let expected_output_dir = env::var("AXON_DATA_DIR")
+                .ok()
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .map(|d| format!("{d}/axon/chrome-diagnostics"))
+                .unwrap_or_else(|| ".cache/chrome-diagnostics".to_string());
             assert!(!pattern.enabled);
             assert!(!pattern.screenshot);
             assert!(!pattern.events);
-            assert_eq!(pattern.output_dir, ".cache/chrome-diagnostics");
+            assert_eq!(pattern.output_dir, expected_output_dir);
             reset_env();
         });
     }

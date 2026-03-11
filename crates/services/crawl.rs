@@ -73,7 +73,18 @@ pub fn map_crawl_start_result(
 }
 
 pub fn map_crawl_job_result(payload: serde_json::Value) -> CrawlJobResult {
-    CrawlJobResult { payload }
+    let output_files = payload.get("output_files").and_then(|value| {
+        value.as_array().map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToString::to_string))
+                .collect::<Vec<_>>()
+        })
+    });
+    CrawlJobResult {
+        payload,
+        output_files,
+    }
 }
 
 // --- Service functions ---

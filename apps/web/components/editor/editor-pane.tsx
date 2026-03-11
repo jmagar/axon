@@ -3,6 +3,7 @@
 import { serializeMd } from '@platejs/markdown'
 import {
   Bold,
+  Braces,
   Code2,
   FileJson,
   FileText,
@@ -12,10 +13,15 @@ import {
   Highlighter,
   Italic,
   Link2,
+  List,
+  ListOrdered,
+  Quote,
   Redo2,
   Slash,
   Sparkles,
   Strikethrough,
+  Subscript,
+  Superscript,
   Underline,
   Undo2,
 } from 'lucide-react'

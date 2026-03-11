@@ -39,7 +39,6 @@ export function AILoadingBar() {
 
   useHotkeys('esc', () => {
     api.aiChat.stop()
-    // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
     ;(chat as any).stop?.()
   })
 
@@ -61,7 +60,6 @@ export function AILoadingBar() {
           className="flex items-center gap-1 text-xs"
           onClick={() => {
             api.aiChat.stop()
-            // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
             ;(chat as any).stop?.()
           }}
         >
