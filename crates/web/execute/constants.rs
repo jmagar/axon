@@ -67,6 +67,7 @@ pub(super) const ALLOWED_FLAGS: &[(&str, &str)] = &[
     ("agent", "--agent"),
     ("model", "--model"),
     ("session_id", "--session-id"),
+    ("assistant_mode", "--assistant-mode"),
 ];
 
 /// Modes that use fire-and-forget direct service enqueue.
