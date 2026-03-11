@@ -11,6 +11,7 @@ pub use commands::{run_evaluate_native, run_suggest_native};
 pub use input::{chunk_text, url_lookup_candidates};
 pub use stats::stats_payload;
 pub use tei::{
-    EmbedProgress, EmbedSummary, embed_code_with_metadata, embed_path_native,
-    embed_path_native_with_progress, embed_text_with_extra_payload, embed_text_with_metadata,
+    EmbedDocument, EmbedProgress, EmbedSummary, embed_code_with_metadata, embed_documents_batch,
+    embed_path_native, embed_path_native_with_progress, embed_text_with_extra_payload,
+    embed_text_with_metadata,
 };
