@@ -1,9 +1,9 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
-use crate::crates::vector::ops::embed_code_with_metadata;
 use crate::crates::vector::ops::input::classify::{
     classify_file_type, is_test_path, language_name,
 };
+use crate::crates::vector::ops::{EmbedDocument, embed_code_with_metadata, embed_documents_batch};
 use futures_util::stream::{self, StreamExt};
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -152,8 +152,11 @@ struct FileEmbedCtx {
     is_private: Option<bool>,
 }
 
-/// Read a single file from the cloned repo and embed it with code-aware chunking + metadata.
-async fn read_and_embed_file(ctx: &FileEmbedCtx, path: &str) -> Result<usize, String> {
+/// Read a single file from the cloned repo and build an embedding document.
+async fn read_file_embed_doc(
+    ctx: &FileEmbedCtx,
+    path: &str,
+) -> Result<Option<EmbedDocument>, String> {
     let full_path = ctx.repo_root.join(path);
     let text = match tokio::fs::read_to_string(&full_path).await {
         Ok(t) => t,
@@ -161,11 +164,11 @@ async fn read_and_embed_file(ctx: &FileEmbedCtx, path: &str) -> Result<usize, St
             log_warn(&format!(
                 "command=ingest_github read_failed path={path} err={e}"
             ));
-            return Ok(0);
+            return Ok(None);
         }
     };
     if text.trim().is_empty() {
-        return Ok(0);
+        return Ok(None);
     }
 
     let ext = file_extension(path);
@@ -191,22 +194,14 @@ async fn read_and_embed_file(ctx: &FileEmbedCtx, path: &str) -> Result<usize, St
         "https://github.com/{}/{}/blob/{}/{}",
         ctx.owner, ctx.name, ctx.default_branch, path
     );
-    embed_code_with_metadata(
-        &ctx.cfg,
-        &text,
-        &source_url,
-        "github",
-        Some(path),
-        &ext,
-        Some(&extra),
-    )
-    .await
-    .map_err(|e| {
-        log_warn(&format!(
-            "command=ingest_github embed_failed path={path} err={e}"
-        ));
-        e.to_string()
-    })
+    Ok(Some(EmbedDocument {
+        content: text,
+        url: source_url,
+        source_type: "github".to_string(),
+        title: Some(path.to_string()),
+        extra: Some(extra),
+        file_extension: Some(ext),
+    }))
 }
 
 /// Clone the repo and embed all indexable files concurrently.
@@ -251,10 +246,11 @@ pub async fn embed_files(
     let mut file_stream = stream::iter(file_items)
         .map(|path| {
             let ctx = ctx.clone();
-            async move { read_and_embed_file(&ctx, &path).await }
+            async move { read_file_embed_doc(&ctx, &path).await }
         })
         .buffer_unordered(concurrency);
 
+    let mut docs = Vec::new();
     let mut chunks_embedded = 0usize;
     let mut files_done = 0usize;
     let mut failed = 0usize;
@@ -262,7 +258,8 @@ pub async fn embed_files(
     while let Some(result) = file_stream.next().await {
         files_done += 1;
         match result {
-            Ok(n) => chunks_embedded += n,
+            Ok(Some(doc)) => docs.push(doc),
+            Ok(None) => {}
             Err(_) => failed += 1,
         }
         if let Some(tx) = progress_tx {
@@ -272,6 +269,50 @@ pub async fn embed_files(
                 "chunks_embedded": chunks_embedded,
             }));
         }
+    }
+
+    match embed_documents_batch(cfg, &docs).await {
+        Ok(summary) => {
+            chunks_embedded += summary.chunks_embedded;
+        }
+        Err(err) => {
+            log_warn(&format!(
+                "command=ingest_github embed_file_batch_failed docs={} err={err}; falling_back_to_per_file_embedding",
+                docs.len()
+            ));
+            for doc in &docs {
+                let ext = doc.file_extension.as_deref().unwrap_or("");
+                let extra = doc.extra.as_ref();
+                match embed_code_with_metadata(
+                    &ctx.cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                    ext,
+                    extra,
+                )
+                .await
+                {
+                    Ok(n) => chunks_embedded += n,
+                    Err(e) => {
+                        failed += 1;
+                        log_warn(&format!(
+                            "command=ingest_github embed_file_fallback_failed url={} err={e}",
+                            doc.url
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(tx) = progress_tx {
+        let _ = tx.try_send(serde_json::json!({
+            "files_done": files_total,
+            "files_total": files_total,
+            "chunks_embedded": chunks_embedded,
+        }));
     }
 
     // tmp is dropped here → clone directory cleaned up
