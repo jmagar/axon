@@ -3,7 +3,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ScrollText } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type LogEntry, LogLine } from '@/components/logs/log-line'
+import { LogLine } from '@/components/logs/log-line'
 import {
   type IndividualService,
   LogsToolbar,
