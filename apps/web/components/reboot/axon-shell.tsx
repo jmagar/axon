@@ -37,14 +37,14 @@ import type { PulseAgent } from '@/lib/pulse/types'
 import { getStorageItem, setStorageItem } from '@/lib/storage'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { AxonFrame } from './axon-frame'
-import { AxonLogsDialog } from './axon-logs-dialog'
-import { AxonMcpDialog } from './axon-mcp-dialog'
+import { AxonLogsPane } from './axon-logs-pane'
+import { AxonMcpPane } from './axon-mcp-pane'
 import { AxonMessageList } from './axon-message-list'
 import { AxonPaneHandle } from './axon-pane-handle'
 import { AxonPromptComposer } from './axon-prompt-composer'
-import { AxonSettingsDialog } from './axon-settings-dialog'
+import { AxonSettingsPane } from './axon-settings-pane'
 import { AxonSidebar } from './axon-sidebar'
-import { AxonTerminalDialog } from './axon-terminal-dialog'
+import { AxonTerminalPane } from './axon-terminal-pane'
 import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-ui-config'
 import { McpIcon } from './mcp-config'
 
@@ -54,13 +54,16 @@ const PulseEditorPane = dynamic(
   { ssr: false },
 )
 
-type AxonMobilePane = 'sidebar' | 'chat' | 'editor'
+type RightPane = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | null
+const VALID_RIGHT_PANES = new Set<string>(['editor', 'terminal', 'logs', 'mcp', 'settings'])
+
+type AxonMobilePane = 'sidebar' | 'chat' | 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings'
 const AXON_MOBILE_PANE_STORAGE_KEY = 'axon.web.reboot.mobile-pane'
 const SIDEBAR_WIDTH_STORAGE_KEY = 'axon.web.reboot.sidebar-width'
 const CHAT_FLEX_STORAGE_KEY = 'axon.web.reboot.chat-flex'
 const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.reboot.sidebar-open'
 const CHAT_OPEN_STORAGE_KEY = 'axon.web.reboot.chat-open'
-const EDITOR_OPEN_STORAGE_KEY = 'axon.web.reboot.editor-open'
+const RIGHT_PANE_STORAGE_KEY = 'axon.web.reboot.right-pane'
 const RAIL_MODE_STORAGE_KEY = 'axon.web.reboot.rail-mode'
 const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 const SIDEBAR_WIDTH_DEFAULT = 260
@@ -158,12 +161,9 @@ export function AxonShell() {
   const [railQuery, setRailQuery] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [chatOpen, setChatOpen] = useState(true)
-  const [editorOpen, setEditorOpen] = useState(true)
+  const [rightPane, setRightPane] = useState<RightPane>('editor')
   // ↑ defaults used for SSR; localStorage overrides applied in mount effect below
-  const [terminalOpen, setTerminalOpen] = useState(false)
-  const [logsOpen, setLogsOpen] = useState(false)
-  const [mcpOpen, setMcpOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const editorOpen = rightPane !== null
   const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
     DEFAULT_NEURAL_CANVAS_PROFILE,
   )
@@ -213,9 +213,9 @@ export function AxonShell() {
   const onEditorUpdate = useCallback((content: string, operation: 'replace' | 'append') => {
     setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
     // Ensure the editor pane is visible on desktop when the agent writes to it.
-    setEditorOpen(true)
+    setRightPane('editor')
     try {
-      window.localStorage.setItem(EDITOR_OPEN_STORAGE_KEY, 'true')
+      window.localStorage.setItem(RIGHT_PANE_STORAGE_KEY, 'editor')
     } catch {
       /* ignore */
     }
@@ -336,7 +336,12 @@ export function AxonShell() {
     setChatFlex(readStoredFloat(CHAT_FLEX_STORAGE_KEY, 1))
     setSidebarOpen(readStoredBool(SIDEBAR_OPEN_STORAGE_KEY, true))
     setChatOpen(readStoredBool(CHAT_OPEN_STORAGE_KEY, true))
-    setEditorOpen(readStoredBool(EDITOR_OPEN_STORAGE_KEY, true))
+    const storedPane = getStorageItem(RIGHT_PANE_STORAGE_KEY)
+    if (storedPane && VALID_RIGHT_PANES.has(storedPane)) {
+      setRightPane(storedPane as RightPane)
+    } else {
+      setRightPane('editor')
+    }
     setRailMode(readStoredRailMode(RAIL_MODE_STORAGE_KEY, 'sessions'))
     const rawProfile = getStorageItem(CANVAS_PROFILE_STORAGE_KEY)
     if (rawProfile && ['current', 'subtle', 'cinematic', 'electric', 'zen'].includes(rawProfile)) {
@@ -516,7 +521,7 @@ export function AxonShell() {
 
   const persistSidebarOpen = useCallback(
     (open: boolean) => {
-      if (!open && !chatOpen && !editorOpen) return
+      if (!open && !chatOpen && rightPane === null) return
       setSidebarOpen(open)
       try {
         window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, String(open))
@@ -524,12 +529,12 @@ export function AxonShell() {
         /* ignore */
       }
     },
-    [chatOpen, editorOpen],
+    [chatOpen, rightPane],
   )
 
   const persistChatOpen = useCallback(
     (open: boolean) => {
-      if (!open && !sidebarOpen && !editorOpen) return
+      if (!open && !sidebarOpen && rightPane === null) return
       setChatOpen(open)
       try {
         window.localStorage.setItem(CHAT_OPEN_STORAGE_KEY, String(open))
@@ -537,15 +542,15 @@ export function AxonShell() {
         /* ignore */
       }
     },
-    [sidebarOpen, editorOpen],
+    [sidebarOpen, rightPane],
   )
 
-  const persistEditorOpen = useCallback(
-    (open: boolean) => {
-      if (!open && !sidebarOpen && !chatOpen) return
-      setEditorOpen(open)
+  const persistRightPane = useCallback(
+    (pane: RightPane) => {
+      if (pane === null && !sidebarOpen && !chatOpen) return
+      setRightPane(pane)
       try {
-        window.localStorage.setItem(EDITOR_OPEN_STORAGE_KEY, String(open))
+        window.localStorage.setItem(RIGHT_PANE_STORAGE_KEY, pane ?? '')
       } catch {
         /* ignore */
       }
@@ -557,9 +562,9 @@ export function AxonShell() {
     (path: string) => {
       setActiveFile(path)
       workspace.setSelectedFilePath(path)
-      persistEditorOpen(true)
+      persistRightPane('editor')
     },
-    [workspace, persistEditorOpen],
+    [workspace, persistRightPane],
   )
 
   function handleSidebarFileSelect(entry: FileEntry) {
@@ -732,35 +737,6 @@ export function AxonShell() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setTerminalOpen((current) => !current)}
-                aria-label="Toggle terminal drawer"
-                aria-pressed={terminalOpen}
-                className={`inline-flex size-7 items-center justify-center rounded border transition-colors ${
-                  terminalOpen
-                    ? 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-dim)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                <TerminalSquare className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setLogsOpen(true)}
-                aria-label="Open logs"
-                className="inline-flex size-7 items-center justify-center rounded border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-dim)] transition-colors hover:text-[var(--text-primary)]"
-              >
-                <ScrollText className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMcpOpen(true)}
-                aria-label="Open MCP servers"
-                className="inline-flex size-7 items-center justify-center rounded border border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-dim)] transition-colors hover:text-[var(--text-primary)]"
-              >
-                <McpIcon className="size-3.5" />
-              </button>
-              <button
-                type="button"
                 onClick={() => setMobilePaneTracked('sidebar')}
                 aria-label="Sidebar pane"
                 aria-pressed={mobilePane === 'sidebar'}
@@ -773,17 +749,13 @@ export function AxonShell() {
                 <PanelLeft className="size-3.5" />
               </button>
               <PulseMobilePaneSwitcher
-                mobilePane={mobilePane === 'editor' ? 'editor' : 'chat'}
-                onMobilePaneChange={(pane) =>
-                  setMobilePaneTracked(pane === 'editor' ? 'editor' : 'chat')
-                }
+                mobilePane={mobilePane === 'sidebar' ? 'chat' : mobilePane}
+                onMobilePaneChange={(pane) => setMobilePaneTracked(pane)}
               />
             </div>
           </div>
 
-          <div
-            className={`flex min-h-0 flex-1 flex-col ${terminalOpen ? 'pb-[calc(42dvh+0.75rem)]' : ''}`}
-          >
+          <div className="flex min-h-0 flex-1 flex-col">
             {mobilePane === 'sidebar' ? (
               <AxonSidebar
                 variant="mobile"
@@ -817,7 +789,7 @@ export function AxonShell() {
                   <AxonPromptComposer compact {...composerProps} />
                 </div>
               </div>
-            ) : (
+            ) : mobilePane === 'editor' ? (
               <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
                 <div className="min-h-0 flex-1 overflow-hidden">
                   <PulseEditorPane
@@ -827,7 +799,26 @@ export function AxonShell() {
                   />
                 </div>
               </div>
-            )}
+            ) : mobilePane === 'terminal' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+                <AxonTerminalPane />
+              </div>
+            ) : mobilePane === 'logs' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+                <AxonLogsPane />
+              </div>
+            ) : mobilePane === 'mcp' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+                <AxonMcpPane />
+              </div>
+            ) : mobilePane === 'settings' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+                <AxonSettingsPane
+                  canvasProfile={canvasProfile}
+                  onCanvasProfileChange={handleCanvasProfileChange}
+                />
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -924,9 +915,11 @@ export function AxonShell() {
                     variant="ghost"
                     size="icon-sm"
                     className={
-                      terminalOpen ? 'text-[var(--axon-primary)]' : 'text-[var(--text-secondary)]'
+                      rightPane === 'terminal'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
                     }
-                    onClick={() => setTerminalOpen((current) => !current)}
+                    onClick={() => persistRightPane(rightPane === 'terminal' ? null : 'terminal')}
                   >
                     <TerminalSquare className="size-4" />
                     <span className="sr-only">Toggle terminal</span>
@@ -935,31 +928,43 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="text-[var(--text-secondary)]"
-                    onClick={() => setLogsOpen(true)}
+                    className={
+                      rightPane === 'logs'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
+                    }
+                    onClick={() => persistRightPane(rightPane === 'logs' ? null : 'logs')}
                   >
                     <ScrollText className="size-4" />
-                    <span className="sr-only">Open logs</span>
+                    <span className="sr-only">Toggle logs</span>
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="text-[var(--text-secondary)]"
-                    onClick={() => setMcpOpen(true)}
+                    className={
+                      rightPane === 'mcp'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
+                    }
+                    onClick={() => persistRightPane(rightPane === 'mcp' ? null : 'mcp')}
                   >
                     <McpIcon className="size-4" />
-                    <span className="sr-only">Open MCP servers</span>
+                    <span className="sr-only">Toggle MCP servers</span>
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="text-[var(--text-secondary)]"
-                    onClick={() => setSettingsOpen(true)}
+                    className={
+                      rightPane === 'settings'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
+                    }
+                    onClick={() => persistRightPane(rightPane === 'settings' ? null : 'settings')}
                   >
                     <Settings2 className="size-4" />
-                    <span className="sr-only">Settings</span>
+                    <span className="sr-only">Toggle settings</span>
                   </Button>
                   <Button
                     type="button"
@@ -978,9 +983,11 @@ export function AxonShell() {
                     variant="ghost"
                     size="icon-sm"
                     className={
-                      editorOpen ? 'text-[var(--axon-primary)]' : 'text-[var(--text-secondary)]'
+                      rightPane === 'editor'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
                     }
-                    onClick={() => persistEditorOpen(!editorOpen)}
+                    onClick={() => persistRightPane(rightPane === 'editor' ? null : 'editor')}
                   >
                     <PanelRight className="size-4" />
                     <span className="sr-only">Toggle editor</span>
@@ -1027,32 +1034,38 @@ export function AxonShell() {
             />
           ) : null}
 
-          {/* Editor pane */}
-          {editorOpen ? (
+          {/* Right pane */}
+          {rightPane ? (
             <aside
               className={`h-full min-h-0 overflow-hidden bg-[var(--glass-editor)] animate-fade-in ${transitionClass}`}
               style={{ flex: '1 1 0%', minWidth: PANE_WIDTH_MIN }}
             >
-              <PulseEditorPane
-                markdown={editorMarkdown}
-                onMarkdownChange={setEditorMarkdown}
-                scrollStorageKey="axon.web.reboot.editor-scroll"
-              />
+              {rightPane === 'editor' && (
+                <PulseEditorPane
+                  markdown={editorMarkdown}
+                  onMarkdownChange={setEditorMarkdown}
+                  scrollStorageKey="axon.web.reboot.editor-scroll"
+                />
+              )}
+              {rightPane === 'terminal' && <AxonTerminalPane />}
+              {rightPane === 'logs' && <AxonLogsPane />}
+              {rightPane === 'mcp' && <AxonMcpPane />}
+              {rightPane === 'settings' && (
+                <AxonSettingsPane
+                  canvasProfile={canvasProfile}
+                  onCanvasProfileChange={handleCanvasProfileChange}
+                />
+              )}
             </aside>
           ) : (
-            <AxonPaneHandle label="Editor" side="right" onClick={() => persistEditorOpen(true)} />
+            <AxonPaneHandle
+              label="Editor"
+              side="right"
+              onClick={() => persistRightPane('editor')}
+            />
           )}
         </section>
       </div>
-      <AxonLogsDialog open={logsOpen} onOpenChange={setLogsOpen} />
-      <AxonMcpDialog open={mcpOpen} onOpenChange={setMcpOpen} />
-      <AxonTerminalDialog open={terminalOpen} onOpenChange={setTerminalOpen} />
-      <AxonSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        canvasProfile={canvasProfile}
-        onCanvasProfileChange={handleCanvasProfileChange}
-      />
     </AxonFrame>
   )
 }

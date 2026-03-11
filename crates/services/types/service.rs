@@ -174,6 +174,28 @@ pub struct ExtractJobResult {
     pub payload: serde_json::Value,
 }
 
+// ── Graph ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphBuildResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphStatusResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphExploreResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphStatsResult {
+    pub payload: serde_json::Value,
+}
+
 // ── Ingest / screenshot ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]

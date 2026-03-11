@@ -167,15 +167,20 @@ use axon::crates::services::types::CrawlStartResult;
 
 #[test]
 fn smoke_map_crawl_start_result_wraps_job_ids() {
-    let ids = vec!["uuid-1".to_string(), "uuid-2".to_string()];
-    let result: CrawlStartResult = map_crawl_start_result(ids);
+    use std::path::Path;
+    let jobs = vec![
+        ("https://example.com".to_string(), "uuid-1".to_string()),
+        ("https://other.com".to_string(), "uuid-2".to_string()),
+    ];
+    let result: CrawlStartResult = map_crawl_start_result(Path::new("/tmp/output"), &jobs);
     assert_eq!(result.job_ids.len(), 2);
     assert_eq!(result.job_ids[0], "uuid-1");
 }
 
 #[test]
 fn smoke_map_crawl_start_result_empty() {
-    let result: CrawlStartResult = map_crawl_start_result(Vec::new());
+    use std::path::Path;
+    let result: CrawlStartResult = map_crawl_start_result(Path::new("/tmp/output"), &[]);
     assert!(result.job_ids.is_empty());
 }
 

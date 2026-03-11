@@ -282,7 +282,7 @@ async fn apply_page_outcome(
                 screenshot_bytes: None,
                 encoding: None,
                 selector_config: col.selector_config.as_ref(),
-                ignore_tags: None,
+                ignore_tags: Some(BOILERPLATE_SELECTORS),
             };
             let markdown = transform_content_input(input, col.transform_cfg);
             let trimmed = clean_markdown_whitespace(markdown.trim());

@@ -165,9 +165,18 @@ export function LogsViewer() {
   const rowVirtualizer = useVirtualizer({
     count: filteredLines.length,
     getScrollElement: () => scrollAreaRef.current,
-    estimateSize: () => (wrapLines ? 36 : 20),
+    estimateSize: () => (wrapLines ? (compact ? 32 : 48) : compact ? 16 : 24),
     overscan: 30,
+    measureElement: (el) => {
+      if (!el) return 0
+      return el.getBoundingClientRect().height
+    },
   })
+
+  // Reset measurements when density or wrapping changes
+  useEffect(() => {
+    rowVirtualizer.measure()
+  }, [rowVirtualizer])
 
   // Auto-scroll when new lines arrive. Depend on filteredLines (array ref)
   // instead of filteredLines.length so the effect fires even when length is
@@ -290,9 +299,12 @@ export function LogsViewer() {
               return (
                 <div
                   key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
                   style={{
                     position: 'absolute',
                     top: 0,
+                    left: 0,
                     transform: `translateY(${virtualRow.start}px)`,
                     width: '100%',
                   }}

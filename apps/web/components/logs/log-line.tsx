@@ -104,32 +104,50 @@ function ServiceBadge({ service }: { service: string }) {
 export function LogLine({ entry, compact = true, wrapLines = false }: LogLineProps) {
   const parsed = parseLine(entry.text)
   const lineClasses = wrapLines ? 'break-words whitespace-pre-wrap' : 'break-all whitespace-nowrap'
-  const paddingBlock = compact ? '2px' : '5px'
+
+  // Spacing and density based on compact toggle
+  const paddingBlock = compact ? '1px' : '5.5px'
+  const fontSize = compact ? 'var(--text-2xs)' : 'var(--text-xs)'
+  const lineHeight = compact ? 'var(--leading-tight)' : 'var(--leading-copy)'
 
   if (parsed) {
     const { time, level, module, message } = parsed
     return (
       <div
         className={`flex min-w-0 select-text items-baseline gap-2 ${lineClasses}`}
-        style={{ paddingBlock, lineHeight: 'var(--leading-copy)' }}
+        style={{
+          paddingBlock,
+          fontSize: `var(${fontSize === 'var(--text-2xs)' ? '--text-2xs' : '--text-xs'})`,
+          lineHeight,
+        }}
       >
         {entry.service && <ServiceBadge service={entry.service} />}
 
         {/* Timestamp — text-2xs (10px) per design system chip/micro-label scale */}
-        <span className="shrink-0 font-mono text-[length:var(--text-2xs)] tabular-nums text-[var(--text-dim)]">
+        <span
+          className="shrink-0 font-mono tabular-nums text-[var(--text-dim)]"
+          style={{ fontSize: 'inherit' }}
+        >
           {time}
         </span>
 
         {/* Level badge — ui-chip-status provides pill shape, 10px, 600w, uppercase */}
-        <span className={`ui-chip-status shrink-0 ${LEVEL_TEXT[level]} ${LEVEL_BG[level]}`}>
+        <span
+          className={`ui-chip-status shrink-0 ${LEVEL_TEXT[level]} ${LEVEL_BG[level]}`}
+          style={{ fontSize: compact ? '9px' : '10px', paddingBlock: compact ? '0px' : '1px' }}
+        >
           {level}
         </span>
 
         {/* Module path — ui-mono: text-sm (12px) */}
-        <span className="ui-mono shrink-0 text-[var(--text-dim)]">{module}</span>
+        <span className="ui-mono shrink-0 text-[var(--text-dim)]" style={{ fontSize: 'inherit' }}>
+          {module}
+        </span>
 
         {/* Message — ui-mono for code-adjacent content */}
-        <span className={`ui-mono min-w-0 ${MESSAGE_TEXT[level]}`}>{message}</span>
+        <span className={`ui-mono min-w-0 ${MESSAGE_TEXT[level]}`} style={{ fontSize: 'inherit' }}>
+          {message}
+        </span>
       </div>
     )
   }
@@ -138,10 +156,16 @@ export function LogLine({ entry, compact = true, wrapLines = false }: LogLinePro
   return (
     <div
       className={`flex min-w-0 select-text items-baseline gap-2 ${lineClasses} ${fallbackColor(entry.text)}`}
-      style={{ paddingBlock, lineHeight: 'var(--leading-copy)' }}
+      style={{
+        paddingBlock,
+        fontSize: `var(${fontSize === 'var(--text-2xs)' ? '--text-2xs' : '--text-xs'})`,
+        lineHeight,
+      }}
     >
       {entry.service && <ServiceBadge service={entry.service} />}
-      <span className="ui-mono min-w-0">{entry.text}</span>
+      <span className="ui-mono min-w-0" style={{ fontSize: 'inherit' }}>
+        {entry.text}
+      </span>
     </div>
   )
 }

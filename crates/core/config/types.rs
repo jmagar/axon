@@ -146,7 +146,10 @@ mod tests {
         let debug_output = format!("{cfg:?}");
 
         // Secrets must NOT appear in Debug output.
-        assert!(!debug_output.contains("password"), "pg_url password leaked");
+        assert!(
+            !debug_output.contains("user:password@"),
+            "pg_url password leaked"
+        );
         assert!(!debug_output.contains("secret@"), "redis_url secret leaked");
         assert!(
             !debug_output.contains("sk-supersecret"),

@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use super::durable_queue_options;
 
+#[expect(dead_code)]
 pub const GRAPH_QUEUE_DEFAULT: &str = "axon.graph.jobs";
 
 /// Open an AMQP channel with a 5-second connection timeout and declare the given queue.
