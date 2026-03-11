@@ -1,5 +1,5 @@
-import { AxonShell } from '@/components/reboot/axon-shell'
+import { redirect } from 'next/navigation'
 
-export default function AxonPage() {
-  return <AxonShell />
+export default function RebootPage() {
+  redirect('/')
 }
