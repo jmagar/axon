@@ -3,10 +3,12 @@
 //! service event channel.
 
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
+use crate::crates::services::types::AcpConfigOption;
 use crate::crates::services::types::AcpSessionUpdateKind;
 use agent_client_protocol::{
     Client, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, StopReason,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+    StopReason,
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -36,9 +38,14 @@ pub struct AcpRuntimeState {
     /// ended (e.g. late results from a previous timed-out turn).
     pub(super) current_turn_id: std::cell::Cell<u64>,
     /// The model string applied when the ACP session was established.
-    /// Used by `run_turn_on_conn` to detect and warn about mid-session model
-    /// change requests, which cannot be applied without restarting the session.
+    /// Updated by `run_turn_on_conn` when a model switch succeeds.
     pub(super) established_model: std::cell::RefCell<Option<String>>,
+    /// Latest config options known for this session (from setup and runtime updates).
+    /// Used by the persistent runtime to resolve config option IDs for mid-session
+    /// config changes (for example model changes).
+    pub(super) config_options: std::cell::RefCell<Vec<AcpConfigOption>>,
+    /// Disabled MCP tool command names for the active session/runtime.
+    pub(super) blocked_mcp_tools: std::cell::RefCell<std::collections::HashSet<String>>,
 }
 
 // ── Auto-approve helpers ────────────────────────────────────────────────────
@@ -248,6 +255,35 @@ impl Client for AcpBridgeClient {
         emit(&service_tx, map_permission_request_event(&args));
 
         let tool_call_id = args.tool_call.tool_call_id.0.to_string();
+        let tool_name = args
+            .tool_call
+            .fields
+            .title
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+
+        if !tool_name.is_empty()
+            && self
+                .runtime_state
+                .blocked_mcp_tools
+                .borrow()
+                .contains(&tool_name)
+        {
+            emit(
+                &service_tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Info,
+                    message: format!(
+                        "ACP permission auto-cancelled for blocked MCP tool: {tool_name}"
+                    ),
+                },
+            );
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
+        }
 
         if self.auto_approve {
             return Ok(RequestPermissionResponse::new(auto_approve_outcome(
@@ -320,6 +356,11 @@ impl Client for AcpBridgeClient {
             state
                 .session_id
                 .get_or_init(|| args.session_id.0.to_string());
+
+            if let SessionUpdate::ConfigOptionUpdate(update) = &args.update {
+                let mapped = super::mapping::map_config_options(&update.config_options);
+                *state.config_options.borrow_mut() = mapped;
+            }
         }
 
         // Use the current turn's service_tx (updated per-turn by run_turn_on_conn).

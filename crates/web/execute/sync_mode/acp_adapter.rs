@@ -44,6 +44,14 @@ fn resolve_acp_adapter_command_from_values(
     })
 }
 
+fn default_adapter_for_agent(agent: PulseChatAgent) -> (&'static str, Option<&'static str>) {
+    match agent {
+        PulseChatAgent::Claude => ("claude-agent-acp", None),
+        PulseChatAgent::Codex => ("codex-acp", None),
+        PulseChatAgent::Gemini => ("gemini", Some("--experimental-acp")),
+    }
+}
+
 /// Resolve ACP adapter command and args for `pulse_chat`.
 ///
 /// Values are parsed from `Config` fields sourced from environment parsing:
@@ -134,10 +142,17 @@ pub(super) fn resolve_acp_adapter_command(
 
     let cmd_override = env::var(cmd_env_key).ok();
     let args_override = env::var(args_env_key).ok();
+    let (default_cmd, default_args) = default_adapter_for_agent(agent);
 
     let cmd = resolve_acp_adapter_command_from_values(
-        cmd_override.as_deref().or(cfg.acp_adapter_cmd.as_deref()),
-        args_override.as_deref().or(cfg.acp_adapter_args.as_deref()),
+        cmd_override
+            .as_deref()
+            .or(cfg.acp_adapter_cmd.as_deref())
+            .or(Some(default_cmd)),
+        args_override
+            .as_deref()
+            .or(cfg.acp_adapter_args.as_deref())
+            .or(default_args),
     )?;
 
     // Run the shell-blocklist and path validation eagerly here so callers that
@@ -194,5 +209,20 @@ mod tests {
             err.contains("AXON_ACP_ADAPTER_CMD"),
             "error should mention missing/invalid env var: {err}"
         );
+    }
+
+    #[test]
+    fn default_adapter_for_agent_returns_expected_values() {
+        let (claude_cmd, claude_args) = default_adapter_for_agent(PulseChatAgent::Claude);
+        assert_eq!(claude_cmd, "claude-agent-acp");
+        assert!(claude_args.is_none());
+
+        let (codex_cmd, codex_args) = default_adapter_for_agent(PulseChatAgent::Codex);
+        assert_eq!(codex_cmd, "codex-acp");
+        assert!(codex_args.is_none());
+
+        let (gemini_cmd, gemini_args) = default_adapter_for_agent(PulseChatAgent::Gemini);
+        assert_eq!(gemini_cmd, "gemini");
+        assert_eq!(gemini_args, Some("--experimental-acp"));
     }
 }

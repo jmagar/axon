@@ -2,46 +2,68 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { SessionFile } from './session-scanner'
-import { cleanProjectName, mapWithConcurrency, SKIP_PATTERNS, sessionId } from './session-utils'
+import {
+  chooseAdaptivePromptPreview,
+  cleanProjectName,
+  mapWithConcurrency,
+  normalizePromptPreview,
+  sessionId,
+} from './session-utils'
 
 /**
  * Extract a preview from a Codex JSONL file.
  * Looks for lines with type:'event_msg' + payload.type:'user_message' → payload.message.
  * Never throws.
  */
+function extractCodexCandidates(lines: string[]): string[] {
+  const candidates: string[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    let val: Record<string, unknown>
+    try {
+      val = JSON.parse(trimmed) as Record<string, unknown>
+    } catch {
+      continue
+    }
+
+    if (val.type !== 'event_msg') continue
+    const payload = val.payload as Record<string, unknown> | undefined
+    if (!payload || payload.type !== 'user_message') continue
+    const message = payload.message
+    if (typeof message !== 'string') continue
+
+    const normalized = normalizePromptPreview(message)
+    if (!normalized) continue
+    candidates.push(normalized)
+  }
+  return candidates
+}
+
 async function extractCodexPreview(absolutePath: string): Promise<string | undefined> {
   try {
     const fd = await fs.open(absolutePath, 'r')
     try {
-      const buf = Buffer.allocUnsafe(4096)
-      const { bytesRead } = await fd.read(buf, 0, 4096, 0)
-      const chunk = buf.subarray(0, bytesRead).toString('utf8')
-      const lines = chunk.split('\n').slice(0, 30)
+      const stat = await fd.stat()
+      const headSize = 8 * 1024
+      const tailSize = 128 * 1024
+      const size = stat.size
 
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
+      const headBuf = Buffer.allocUnsafe(Math.min(headSize, size))
+      const headRead = await fd.read(headBuf, 0, headBuf.length, 0)
+      const headLines = headBuf.subarray(0, headRead.bytesRead).toString('utf8').split('\n')
+      const headCandidates = extractCodexCandidates(headLines.slice(0, 200))
 
-        let val: Record<string, unknown>
-        try {
-          val = JSON.parse(trimmed) as Record<string, unknown>
-        } catch {
-          continue
-        }
+      const tailStart = size > tailSize ? size - tailSize : 0
+      const tailBuf = Buffer.allocUnsafe(size - tailStart)
+      const tailRead = await fd.read(tailBuf, 0, tailBuf.length, tailStart)
+      const tailLines = tailBuf.subarray(0, tailRead.bytesRead).toString('utf8').split('\n')
+      const tailCandidates = extractCodexCandidates(tailLines.slice(-1200))
 
-        if (val.type !== 'event_msg') continue
-        const payload = val.payload as Record<string, unknown> | undefined
-        if (!payload || payload.type !== 'user_message') continue
-        const message = payload.message
-        if (typeof message !== 'string' || !message.trim()) continue
-
-        const text = message.trim().replace(/\n+/g, ' ')
-        if (SKIP_PATTERNS.some((re) => re.test(text))) continue
-        if (text.length > 500 && !/[.?!]/.test(text.slice(0, 200))) continue
-
-        return text.length > 80 ? `${text.slice(0, 80)}…` : text
-      }
-      return undefined
+      const best =
+        chooseAdaptivePromptPreview(tailCandidates) ?? chooseAdaptivePromptPreview(headCandidates)
+      return best ? (best.length > 80 ? `${best.slice(0, 80)}…` : best) : undefined
     } finally {
       await fd.close()
     }

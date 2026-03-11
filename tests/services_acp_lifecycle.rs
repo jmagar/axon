@@ -42,6 +42,8 @@ fn prepare_session_setup_builds_new_session_when_no_session_id() {
         session_id: None,
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let setup = scaffold
@@ -66,6 +68,8 @@ fn prepare_session_setup_builds_load_session_when_session_id_present() {
         session_id: Some("session-42".to_string()),
         prompt: vec!["continue".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let setup = scaffold
@@ -91,6 +95,8 @@ fn prepare_session_setup_rejects_blank_session_id() {
         session_id: Some("   ".to_string()),
         prompt: vec!["continue".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = scaffold
@@ -106,6 +112,8 @@ fn prepare_session_setup_rejects_relative_cwd() {
         session_id: None,
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = scaffold
@@ -120,6 +128,8 @@ fn validate_prompt_turn_request_rejects_empty_prompt() {
         session_id: None,
         prompt: vec![],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = validate_prompt_turn_request(&req).expect_err("empty prompt should fail");
@@ -175,6 +185,8 @@ fn validate_prompt_turn_request_rejects_blank_session_id() {
         session_id: Some("   ".to_string()),
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err =

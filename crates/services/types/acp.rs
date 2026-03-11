@@ -16,6 +16,10 @@ pub struct AcpPromptTurnRequest {
     pub prompt: Vec<String>,
     /// Model config option value to set after session setup (if agent supports it).
     pub model: Option<String>,
+    /// Session mode / approval config value to apply on the active session.
+    pub session_mode: Option<String>,
+    /// MCP tool names (command IDs) blocked for this turn/session runtime.
+    pub blocked_mcp_tools: Vec<String>,
     /// MCP servers to pass through to the ACP agent session.
     pub mcp_servers: Vec<AcpMcpServerConfig>,
 }

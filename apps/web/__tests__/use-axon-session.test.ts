@@ -40,6 +40,51 @@ describe('useAxonSession', () => {
     expect(result.current.messages[0].content).toBe('hello')
   })
 
+  it('strips inline system wrapper from user messages', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        project: 'assistant',
+        filename: 'session-abc',
+        sessionId: 'abc-123',
+        messages: [
+          {
+            role: 'user',
+            content:
+              '[System context — Axon editor integration] guidance text [User message] Hello there',
+          },
+          { role: 'assistant', content: 'Hi' },
+        ],
+      }),
+    } as Response)
+
+    const { result } = renderHook(() => useAxonSession('abc-123'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.messages[0].content).toBe('Hello there')
+  })
+
+  it('strips newline marker wrapper from user messages', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        project: 'assistant',
+        filename: 'session-abc',
+        sessionId: 'abc-123',
+        messages: [
+          {
+            role: 'user',
+            content:
+              '[System context — Axon editor integration]\\n[User message]\\nBuild me a changelog',
+          },
+        ],
+      }),
+    } as Response)
+
+    const { result } = renderHook(() => useAxonSession('abc-123'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.messages[0].content).toBe('Build me a changelog')
+  })
+
   it('sets error on fetch failure', async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: false,

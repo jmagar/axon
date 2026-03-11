@@ -47,14 +47,23 @@ interface UseAxonSessionResult {
   reload: () => void
 }
 
-// The Rust ACP adapter prepends a system context preamble to the first user message
-// in a new session so the LLM knows about editor integration. Strip it before display.
-const EDITOR_PREAMBLE_MARKER = '[User message]\n'
+// The Rust ACP adapter prepends a system context block to the first user prompt
+// in new sessions. Never show that wrapper in the chat UI.
+const USER_MESSAGE_MARKER = '[User message]'
 
 function stripEditorPreamble(content: string): string {
-  return content.startsWith(EDITOR_PREAMBLE_MARKER)
-    ? content.slice(EDITOR_PREAMBLE_MARKER.length)
-    : content
+  const markerIdx = content.indexOf(USER_MESSAGE_MARKER)
+  if (markerIdx >= 0) {
+    return content
+      .slice(markerIdx + USER_MESSAGE_MARKER.length)
+      .replace(/^\\n+/, '')
+      .trimStart()
+  }
+  // Fallback for malformed wrappers missing [User message].
+  if (/^\[System context[^\]]*\]/i.test(content)) {
+    return content.replace(/^\[System context[^\]]*\]\s*/i, '').trimStart()
+  }
+  return content
 }
 
 // Retry delays in ms for 404 responses — the session file may not be on disk yet.

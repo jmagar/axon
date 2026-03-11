@@ -221,6 +221,7 @@ Web MCP settings (`/api/mcp`) persist MCP servers to:
 - `~/.config/axon/mcp.json` fallback when `AXON_DATA_DIR` is unset
 
 Pulse ACP reads MCP servers from this same file (`crates/web/execute/mcp_config.rs`), so servers added via the Web UI are passed into ACP sessions.
+MCP config changes are hot-reloaded by ACP and take effect on the next turn.
 
 ### Always Dark Mode
 `app/layout.tsx` hardcodes `<html className="dark">`. Do not add theme toggling without updating this.

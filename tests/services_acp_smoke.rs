@@ -29,6 +29,8 @@ fn acp_prompt_turn_request_is_constructible() {
         session_id: Some("session-1".to_string()),
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     assert_eq!(req.session_id.as_deref(), Some("session-1"));
