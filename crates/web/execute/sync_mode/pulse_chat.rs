@@ -123,11 +123,16 @@ async fn get_or_create_acp_connection(
     acp_connection: &AcpConn,
     req: &AcpPromptTurnRequest,
     agent: PulseChatAgent,
+    assistant_mode: bool,
     cfg: &Arc<Config>,
     permission_responders: &acp_svc::PermissionResponderMap,
 ) -> Result<Arc<AcpConnectionHandle>, String> {
     let mut guard = acp_connection.lock().await; // MutexGuard<Option<(String, Arc<AcpConnectionHandle>)>>
-    let agent_key = format!("{agent:?}");
+    let agent_key = if assistant_mode {
+        format!("{agent:?}:assistant")
+    } else {
+        format!("{agent:?}")
+    };
 
     if let Some((stored_agent, existing)) = guard.as_ref() {
         if stored_agent == &agent_key {
@@ -151,7 +156,19 @@ async fn get_or_create_acp_connection(
     );
     let scaffold = acp_svc::AcpClientScaffold::new(adapter.clone());
     let initialize = scaffold.prepare_initialize().map_err(|e| e.to_string())?;
-    let cwd = env::current_dir().map_err(|e| e.to_string())?;
+    let cwd = if assistant_mode {
+        let base = env::var("AXON_DATA_DIR").unwrap_or_else(|_| {
+            let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            format!("{home}/.local/share/axon")
+        });
+        let assistant_path = std::path::PathBuf::from(base).join("axon").join("assistant");
+        tokio::fs::create_dir_all(&assistant_path)
+            .await
+            .map_err(|e| format!("failed to create assistant dir: {e}"))?;
+        assistant_path
+    } else {
+        env::current_dir().map_err(|e| e.to_string())?
+    };
     let session_setup = scaffold
         .prepare_session_setup(req, cwd)
         .map_err(|e| e.to_string())?;
@@ -175,14 +192,16 @@ pub(super) async fn handle_pulse_chat(
     session_id: Option<String>,
     model: Option<String>,
     agent: PulseChatAgent,
+    assistant_mode: bool,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
     acp_connection: AcpConn,
 ) -> Result<(), String> {
     log::info!(
-        "[pulse_chat] starting: agent={:?} session_id={:?} model={:?} input_len={}",
+        "[pulse_chat] starting: agent={:?} assistant_mode={} session_id={:?} model={:?} input_len={}",
         agent,
+        assistant_mode,
         session_id,
         model,
         input.len()
@@ -229,9 +248,15 @@ pub(super) async fn handle_pulse_chat(
         mcp_servers,
     };
 
-    let conn_handle =
-        get_or_create_acp_connection(&acp_connection, &req, agent, &cfg, &permission_responders)
-            .await?;
+    let conn_handle = get_or_create_acp_connection(
+        &acp_connection,
+        &req,
+        agent,
+        assistant_mode,
+        &cfg,
+        &permission_responders,
+    )
+    .await?;
 
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let (result_tx, result_rx) = oneshot::channel::<Result<(), String>>();
