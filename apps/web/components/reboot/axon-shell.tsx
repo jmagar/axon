@@ -1,6 +1,13 @@
 'use client'
 
-import { MessageSquareText, PanelLeft, PanelRight, ScrollText, TerminalSquare } from 'lucide-react'
+import {
+  MessageSquareText,
+  PanelLeft,
+  PanelRight,
+  ScrollText,
+  Settings2,
+  TerminalSquare,
+} from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -22,7 +29,12 @@ import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
 import { getAcpModelConfigOption } from '@/lib/pulse/acp-config'
+import {
+  DEFAULT_NEURAL_CANVAS_PROFILE,
+  type NeuralCanvasProfile,
+} from '@/lib/pulse/neural-canvas-presets'
 import type { PulseAgent } from '@/lib/pulse/types'
+import { getStorageItem, setStorageItem } from '@/lib/storage'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { AxonFrame } from './axon-frame'
 import { AxonLogsDialog } from './axon-logs-dialog'
@@ -30,6 +42,7 @@ import { AxonMcpDialog } from './axon-mcp-dialog'
 import { AxonMessageList } from './axon-message-list'
 import { AxonPaneHandle } from './axon-pane-handle'
 import { AxonPromptComposer } from './axon-prompt-composer'
+import { AxonSettingsDialog } from './axon-settings-dialog'
 import { AxonSidebar } from './axon-sidebar'
 import { AxonTerminalDialog } from './axon-terminal-dialog'
 import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-ui-config'
@@ -49,6 +62,7 @@ const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.reboot.sidebar-open'
 const CHAT_OPEN_STORAGE_KEY = 'axon.web.reboot.chat-open'
 const EDITOR_OPEN_STORAGE_KEY = 'axon.web.reboot.editor-open'
 const RAIL_MODE_STORAGE_KEY = 'axon.web.reboot.rail-mode'
+const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 const SIDEBAR_WIDTH_DEFAULT = 260
 const SIDEBAR_WIDTH_MIN = 180
 const SIDEBAR_WIDTH_MAX = 520
@@ -149,6 +163,10 @@ export function AxonShell() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
+    DEFAULT_NEURAL_CANVAS_PROFILE,
+  )
   const [sessionKey, setSessionKey] = useState(0)
   const [liveMessages, setLiveMessages] = useState<AxonMessage[]>([])
   const [activeFile, setActiveFile] = useState('')
@@ -320,7 +338,16 @@ export function AxonShell() {
     setChatOpen(readStoredBool(CHAT_OPEN_STORAGE_KEY, true))
     setEditorOpen(readStoredBool(EDITOR_OPEN_STORAGE_KEY, true))
     setRailMode(readStoredRailMode(RAIL_MODE_STORAGE_KEY, 'sessions'))
+    const rawProfile = getStorageItem(CANVAS_PROFILE_STORAGE_KEY)
+    if (rawProfile && ['current', 'subtle', 'cinematic', 'electric', 'zen'].includes(rawProfile)) {
+      setCanvasProfile(rawProfile as NeuralCanvasProfile)
+    }
     setLayoutRestored(true)
+  }, [])
+
+  const handleCanvasProfileChange = useCallback((profile: NeuralCanvasProfile) => {
+    setCanvasProfile(profile)
+    setStorageItem(CANVAS_PROFILE_STORAGE_KEY, profile)
   }, [])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: railMode is intentional trigger
@@ -683,7 +710,7 @@ export function AxonShell() {
   const agentLabel = agentDisplayName(pulseAgent ?? 'claude')
 
   return (
-    <AxonFrame canvasRef={canvasRef}>
+    <AxonFrame canvasRef={canvasRef} canvasProfile={canvasProfile}>
       <div className="hidden">
         <DockerStats onStats={handleStats} />
       </div>
@@ -928,6 +955,16 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    className="text-[var(--text-secondary)]"
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    <Settings2 className="size-4" />
+                    <span className="sr-only">Settings</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     className={
                       chatOpen ? 'text-[var(--axon-primary)]' : 'text-[var(--text-secondary)]'
                     }
@@ -1010,6 +1047,12 @@ export function AxonShell() {
       <AxonLogsDialog open={logsOpen} onOpenChange={setLogsOpen} />
       <AxonMcpDialog open={mcpOpen} onOpenChange={setMcpOpen} />
       <AxonTerminalDialog open={terminalOpen} onOpenChange={setTerminalOpen} />
+      <AxonSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        canvasProfile={canvasProfile}
+        onCanvasProfileChange={handleCanvasProfileChange}
+      />
     </AxonFrame>
   )
 }
