@@ -43,6 +43,8 @@ pub(crate) const DIRECT_SYNC_MODES: &[&str] = &[
     "evaluate",
     "dedupe",
     "screenshot",
+    "debug",
+    "sessions",
     "pulse_chat",
     "pulse_chat_probe",
 ];
@@ -67,6 +69,7 @@ pub(crate) struct DirectParams {
     pub(super) agent: PulseChatAgent,
     pub(super) session_id: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) assistant_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +118,8 @@ pub(super) enum ServiceMode {
     Evaluate,
     Dedupe,
     Screenshot,
+    Debug,
+    Sessions,
     PulseChat,
     PulseChatProbe,
 }
@@ -139,6 +144,8 @@ impl ServiceMode {
             "evaluate" => Some(Self::Evaluate),
             "dedupe" => Some(Self::Dedupe),
             "screenshot" => Some(Self::Screenshot),
+            "debug" => Some(Self::Debug),
+            "sessions" => Some(Self::Sessions),
             "pulse_chat" => Some(Self::PulseChat),
             "pulse_chat_probe" => Some(Self::PulseChatProbe),
             _ => None,

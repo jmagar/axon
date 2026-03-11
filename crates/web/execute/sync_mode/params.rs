@@ -74,6 +74,10 @@ pub(super) fn extract_params(
         .get("model")
         .and_then(serde_json::Value::as_str)
         .map(ToString::to_string);
+    let assistant_mode = flags
+        .get("assistant_mode")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     Some(DirectParams {
         mode,
         input: context.input.clone(),
@@ -84,6 +88,7 @@ pub(super) fn extract_params(
         agent,
         session_id,
         model,
+        assistant_mode,
     })
 }
 
@@ -236,5 +241,35 @@ mod tests {
         };
         let flags = serde_json::json!({});
         assert!(extract_params(&context, &flags).is_none());
+    }
+
+    #[test]
+    fn extract_params_reads_assistant_mode_flag() {
+        let base = Config::default();
+        let context = ExecCommandContext {
+            exec_id: "test".to_string(),
+            mode: "pulse_chat".to_string(),
+            input: "hello".to_string(),
+            flags: serde_json::Value::Null,
+            cfg: Arc::new(base),
+        };
+        let flags = serde_json::json!({"assistant_mode": true});
+        let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
+        assert!(params.assistant_mode);
+    }
+
+    #[test]
+    fn extract_params_assistant_mode_defaults_false() {
+        let base = Config::default();
+        let context = ExecCommandContext {
+            exec_id: "test".to_string(),
+            mode: "pulse_chat".to_string(),
+            input: "hello".to_string(),
+            flags: serde_json::Value::Null,
+            cfg: Arc::new(base),
+        };
+        let flags = serde_json::json!({});
+        let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
+        assert!(!params.assistant_mode);
     }
 }
