@@ -74,10 +74,12 @@ JSON-RPC 2.0 over stdio. Agent runs as subprocess — client writes to its stdin
 // Client → Agent
 {
   "jsonrpc": "2.0", "id": 2, "method": "authenticate",
-  "params": { "methodId": "api_key", "credentials": { "apiKey": "sk-..." } }
+  "params": { "methodId": "api_key" }
+  // NOTE: AuthenticateRequest has NO "credentials" field. Secrets come from env vars
+  //       (advertised via AuthMethodEnvVar) or a browser/terminal flow — not this message.
 }
 // Agent → Client
-{ "jsonrpc": "2.0", "id": 2, "result": { "authenticated": true } }
+{ "jsonrpc": "2.0", "id": 2, "result": {} }
 ```
 
 ## session/new
@@ -105,9 +107,11 @@ JSON-RPC 2.0 over stdio. Agent runs as subprocess — client writes to its stdin
   "jsonrpc": "2.0", "id": 4, "method": "session/prompt",
   "params": {
     "sessionId": "uuid-1234",
-    "messages": [
-      { "role": "user", "content": [{ "type": "text", "text": "fix the bug" }] }
+    "prompt": [
+      { "type": "text", "text": "fix the bug" }
     ]
+    // NOTE: field is "prompt": Vec<ContentBlock>, NOT "messages". ContentBlock is a flat
+    //       type-tagged object, not a {role, content} envelope.
   }
 }
 
@@ -136,26 +140,27 @@ JSON-RPC 2.0 over stdio. Agent runs as subprocess — client writes to its stdin
 // → { "jsonrpc": "2.0", "id": 5, "result": {} }
 ```
 
-## fs/readTextFile (agent → client)
+## fs/read_text_file (agent → client)
 
 ```json
-{ "jsonrpc": "2.0", "id": 10, "method": "fs/readTextFile", "params": { "path": "src/main.rs" } }
+{ "jsonrpc": "2.0", "id": 10, "method": "fs/read_text_file", "params": { "path": "src/main.rs" } }
 // → { "result": { "content": "fn main() { ... }" } }
 ```
 
-## request/permission (agent → client)
+## session/request_permission (agent → client)
 
 ```json
 {
-  "jsonrpc": "2.0", "id": 11, "method": "request/permission",
+  "jsonrpc": "2.0", "id": 11, "method": "session/request_permission",
   "params": {
     "description": "Write to src/main.rs",
     "kind": "write",
     "path": "src/main.rs"
   }
 }
-// → { "result": { "outcome": "Approved" } }
-// outcome: "Approved" | "Denied" | "Cancelled"
+// → { "result": { "outcome": { "type": "selected", "optionId": "allow" } } }
+// RequestPermissionOutcome: Cancelled | Selected(SelectedPermissionOutcome { option_id })
+// NOTE: "Approved" is NOT a valid variant — outcome is always Cancelled or Selected.
 ```
 
 ---
@@ -193,14 +198,14 @@ Poll the output buffer of a running terminal. Returns buffered output since last
 // → { "result": { "output": "   Compiling myapp v0.1.0\n" } }
 ```
 
-### terminal/waitForExit
+### terminal/wait_for_exit
 
 Block until the process exits (or timeout). Agent calls this after reading all expected output.
 
 ```json
 // Agent → Client
 {
-  "jsonrpc": "2.0", "id": 22, "method": "terminal/waitForExit",
+  "jsonrpc": "2.0", "id": 22, "method": "terminal/wait_for_exit",
   "params": { "terminalId": "term-1", "timeoutMs": 30000 }
 }
 // → { "result": { "exitCode": 0, "signal": null } }
@@ -255,8 +260,9 @@ Clean up terminal resources after use. Call after `waitForExit` or `kill`.
 // Client → Agent
 {
   "jsonrpc": "2.0", "id": 7, "method": "session/set_mode",
-  "params": { "sessionId": "uuid-1234", "mode": "acceptEdits" }
+  "params": { "sessionId": "uuid-1234", "modeId": "acceptEdits" }
+  // NOTE: parameter is "modeId" (SetSessionModeRequest.mode_id → serde rename "modeId"), NOT "mode"
 }
 // → { "result": {} }
-// mode: "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions"
+// modeId: "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions"
 ```

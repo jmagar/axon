@@ -98,14 +98,14 @@ Populate `.env` before first deploy. `dev-setup.sh` handles secrets and service 
 |----------|---------|---------|
 | `AXON_ACP_MAX_CONCURRENT_SESSIONS` | `8` | Maximum simultaneous ACP agent sessions |
 | `AXON_ACP_AUTO_APPROVE` | `true` | Auto-approve tool calls in ACP sessions (set `false` to require explicit approval) |
-| `AXON_ACP_ADAPTER_CMD` | — | Default adapter binary path (fallback for all agents) |
-| `AXON_ACP_ADAPTER_ARGS` | — | Default adapter args, pipe-separated (e.g. `--stdio\|--model\|claude-opus-4`) |
-| `AXON_ACP_CLAUDE_ADAPTER_CMD` | — | Claude-specific adapter binary (overrides default) |
+| `AXON_ACP_ADAPTER_CMD` | auto | Optional global adapter override. If unset, uses per-agent defaults (`claude-agent-acp`, `codex-acp`, `gemini`). |
+| `AXON_ACP_ADAPTER_ARGS` | auto | Optional global adapter args override. |
+| `AXON_ACP_CLAUDE_ADAPTER_CMD` | auto | Claude-specific adapter override (highest precedence for Claude). |
 | `AXON_ACP_CLAUDE_ADAPTER_ARGS` | — | Claude-specific adapter args |
-| `AXON_ACP_CODEX_ADAPTER_CMD` | — | Codex-specific adapter binary (overrides default) |
+| `AXON_ACP_CODEX_ADAPTER_CMD` | auto | Codex-specific adapter override (highest precedence for Codex). |
 | `AXON_ACP_CODEX_ADAPTER_ARGS` | — | Codex-specific adapter args |
-| `AXON_ACP_GEMINI_ADAPTER_CMD` | — | Gemini-specific adapter binary (overrides default) |
-| `AXON_ACP_GEMINI_ADAPTER_ARGS` | — | Gemini-specific adapter args |
+| `AXON_ACP_GEMINI_ADAPTER_CMD` | auto | Gemini-specific adapter override (highest precedence for Gemini). |
+| `AXON_ACP_GEMINI_ADAPTER_ARGS` | `--experimental-acp` | Gemini-specific adapter args override. |
 
 ### Test infrastructure
 

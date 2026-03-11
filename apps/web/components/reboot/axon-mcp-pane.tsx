@@ -184,12 +184,12 @@ function McpPaneContent() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-4 py-2.5">
+      <div className="axon-toolbar flex shrink-0 items-center justify-between px-4 py-2.5">
         {error ? <span className="text-xs text-red-400">{error}</span> : <span />}
         <button
           type="button"
           onClick={openAdd}
-          className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.18)] bg-[rgba(175,215,255,0.07)] px-3 py-1.5 text-[12px] font-semibold text-[var(--axon-primary-strong)] transition-colors hover:bg-[rgba(175,215,255,0.13)]"
+          className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.24)] bg-[linear-gradient(145deg,rgba(135,175,255,0.22),rgba(135,175,255,0.08))] px-3 py-1.5 text-[12px] font-semibold text-[var(--axon-primary-strong)] transition-colors hover:bg-[linear-gradient(145deg,rgba(135,175,255,0.3),rgba(135,175,255,0.12))]"
         >
           <Plus className="size-3.5" />
           Add Server
@@ -255,7 +255,7 @@ function McpPaneContent() {
 export function AxonMcpPane() {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
+      <div className="axon-toolbar flex shrink-0 items-center gap-2 px-4 py-3">
         <McpIcon className="size-4 text-[var(--axon-primary-strong)]" />
         <span className="text-[14px] font-semibold text-[var(--text-primary)]">MCP Servers</span>
       </div>

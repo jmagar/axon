@@ -11,7 +11,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { type ChangeEvent, useRef } from 'react'
+import { type ChangeEvent, useRef, useState } from 'react'
 import {
   PromptInput,
   PromptInputAttachments,
@@ -36,7 +36,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { McpServersState } from '@/hooks/use-mcp-servers'
 import type { PulseAgent } from '@/lib/pulse/types'
-import { AXON_PERMISSION_OPTIONS, type AxonPermissionValue } from './axon-ui-config'
+
+type ToolPresetOption = { id: string; name: string }
 
 const AGENT_OPTIONS: Array<{ value: PulseAgent; label: string }> = [
   { value: 'claude', label: 'Claude' },
@@ -45,13 +46,13 @@ const AGENT_OPTIONS: Array<{ value: PulseAgent; label: string }> = [
 ]
 
 const AXON_COMPOSER_PANEL_CLASS =
-  'border-[rgba(175,215,255,0.14)] bg-[linear-gradient(180deg,rgba(10,18,35,0.92),rgba(5,10,22,0.98))] shadow-[0_14px_40px_rgba(0,0,0,0.34)] backdrop-blur-xl'
+  'border-[rgba(175,215,255,0.2)] bg-[linear-gradient(180deg,rgba(10,18,35,0.94),rgba(4,9,20,0.98))] shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl'
 
 function ComposerDropdownTrigger({ children, ...props }: React.ComponentProps<'button'>) {
   return (
     <button
       type="button"
-      className="inline-flex size-7 items-center justify-center rounded border border-[rgba(175,215,255,0.14)] bg-[rgba(255,255,255,0.04)] text-[var(--text-secondary)] transition-colors hover:border-[rgba(175,215,255,0.22)] hover:text-[var(--text-primary)]"
+      className="axon-icon-btn inline-flex size-7 items-center justify-center"
       {...props}
     >
       {children}
@@ -96,12 +97,22 @@ export function AxonPromptComposer({
   onFilesChange,
   onSubmit,
   modelOptions,
+  permissionOptions,
   pulseModel,
   pulsePermissionLevel,
   onModelChange,
   onPermissionChange,
   toolsState,
   onToggleMcpServer,
+  mcpToolsByServer,
+  enabledMcpTools,
+  onToggleMcpTool,
+  onEnableServerTools,
+  onDisableServerTools,
+  toolPresets,
+  onApplyToolPreset,
+  onDeleteToolPreset,
+  onSaveToolPreset,
   pulseAgent,
   onAgentChange,
   compact = false,
@@ -112,12 +123,22 @@ export function AxonPromptComposer({
   onFilesChange: (files: PromptInputFile[]) => void
   onSubmit: (message: PromptInputMessage) => void | Promise<void>
   modelOptions: Array<{ value: string; label: string }>
+  permissionOptions: Array<{ value: string; label: string }>
   pulseModel: string
-  pulsePermissionLevel: AxonPermissionValue
+  pulsePermissionLevel: string
   onModelChange: (value: string) => void
-  onPermissionChange: (value: AxonPermissionValue) => void
+  onPermissionChange: (value: string) => void
   toolsState: McpServersState
   onToggleMcpServer: (serverName: string) => void
+  mcpToolsByServer: Record<string, string[]>
+  enabledMcpTools: string[]
+  onToggleMcpTool: (toolName: string) => void
+  onEnableServerTools: (serverName: string) => void
+  onDisableServerTools: (serverName: string) => void
+  toolPresets: ToolPresetOption[]
+  onApplyToolPreset: (presetId: string) => void
+  onDeleteToolPreset: (presetId: string) => void
+  onSaveToolPreset: (name: string) => void
   pulseAgent: PulseAgent
   onAgentChange: (value: PulseAgent) => void
   compact?: boolean
@@ -125,11 +146,18 @@ export function AxonPromptComposer({
   connected?: boolean
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [presetDraft, setPresetDraft] = useState('')
   const PermissionIcon = getPermissionIcon(pulsePermissionLevel)
-  const toolLabel = formatToolSelectionLabel(
-    toolsState.enabledMcpServers.length,
-    toolsState.mcpServers.length,
-  )
+  const knownTools = Object.values(mcpToolsByServer).flat()
+  const enabledServerSet = new Set(toolsState.enabledMcpServers)
+  const enabledToolSet = new Set(enabledMcpTools)
+  const enabledToolCount = knownTools.filter((tool) => {
+    const server = tool.split('__')[1] ?? ''
+    return enabledServerSet.has(server) && enabledToolSet.has(tool)
+  }).length
+  const toolLabel = knownTools.length
+    ? formatToolSelectionLabel(enabledToolCount, knownTools.length)
+    : formatToolSelectionLabel(toolsState.enabledMcpServers.length, toolsState.mcpServers.length)
 
   function handleFilePick(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? [])
@@ -172,8 +200,8 @@ export function AxonPromptComposer({
 
         <PromptInputBody className="items-start gap-2">
           <PromptInputTextarea
-            className={`${compact ? 'min-h-16 max-h-56' : 'min-h-20 max-h-72'} rounded-[14px] border border-[rgba(175,215,255,0.08)] bg-[rgba(3,7,18,0.38)] px-3 py-2.5 leading-6`}
-            placeholder="Keep the current Axon look. Change only the shell."
+            className={`axon-input ${compact ? 'min-h-16 max-h-56' : 'min-h-20 max-h-72'} rounded-[14px] px-3 py-2.5 leading-6`}
+            placeholder="Describe what you want to build, edit, or debug..."
           />
         </PromptInputBody>
 
@@ -195,33 +223,77 @@ export function AxonPromptComposer({
                     MCP server tools
                   </DropdownMenuLabel>
                   <div className="px-2 pb-2 text-[11px] leading-5 text-[var(--text-dim)]">
-                    Granular per-tool toggles can hang off this next. For now this scopes by MCP
-                    server.
+                    Server and per-tool toggles apply to the active chat immediately.
                   </div>
                   <DropdownMenuSeparator className="bg-[rgba(175,215,255,0.08)]" />
                   {toolsState.mcpServers.length > 0 ? (
                     toolsState.mcpServers.map((serverName) => {
                       const serverStatus = toolsState.mcpStatusByServer[serverName] ?? 'unknown'
+                      const serverTools = mcpToolsByServer[serverName] ?? []
+                      const serverEnabled = toolsState.enabledMcpServers.includes(serverName)
                       return (
-                        <DropdownMenuCheckboxItem
-                          key={serverName}
-                          checked={toolsState.enabledMcpServers.includes(serverName)}
-                          onCheckedChange={() => onToggleMcpServer(serverName)}
-                          className="gap-2 py-2"
-                        >
-                          <span className="truncate">{serverName}</span>
-                          <span
-                            className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                              serverStatus === 'online'
-                                ? 'bg-[rgba(64,196,128,0.12)] text-[rgba(128,220,160,0.92)]'
-                                : serverStatus === 'offline'
-                                  ? 'bg-[rgba(255,135,175,0.12)] text-[rgba(255,170,196,0.86)]'
-                                  : 'bg-[rgba(175,215,255,0.08)] text-[var(--text-dim)]'
-                            }`}
+                        <div key={serverName}>
+                          <DropdownMenuCheckboxItem
+                            checked={serverEnabled}
+                            onCheckedChange={() => onToggleMcpServer(serverName)}
+                            className="gap-2 py-2"
                           >
-                            {serverStatus}
-                          </span>
-                        </DropdownMenuCheckboxItem>
+                            <span className="truncate">{serverName}</span>
+                            <span
+                              className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                serverStatus === 'online'
+                                  ? 'bg-[rgba(64,196,128,0.12)] text-[rgba(128,220,160,0.92)]'
+                                  : serverStatus === 'offline'
+                                    ? 'bg-[rgba(255,135,175,0.12)] text-[rgba(255,170,196,0.86)]'
+                                    : 'bg-[rgba(175,215,255,0.08)] text-[var(--text-dim)]'
+                              }`}
+                            >
+                              {serverStatus}
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          {serverTools.length > 0 ? (
+                            <div className="pb-1 pl-6 pr-2">
+                              <div className="mb-1 flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)] hover:text-[var(--text-primary)]"
+                                  onClick={(event) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    onEnableServerTools(serverName)
+                                  }}
+                                >
+                                  All on
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)] hover:text-[var(--text-primary)]"
+                                  onClick={(event) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    onDisableServerTools(serverName)
+                                  }}
+                                >
+                                  All off
+                                </button>
+                              </div>
+                              {serverTools.map((toolName) => {
+                                const shortName = toolName.split('__').slice(2).join('__')
+                                return (
+                                  <DropdownMenuCheckboxItem
+                                    key={toolName}
+                                    checked={enabledMcpTools.includes(toolName)}
+                                    disabled={!serverEnabled}
+                                    onCheckedChange={() => onToggleMcpTool(toolName)}
+                                    className="py-1 text-xs"
+                                  >
+                                    <span className="truncate">{shortName}</span>
+                                  </DropdownMenuCheckboxItem>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
                       )
                     })
                   ) : (
@@ -229,6 +301,66 @@ export function AxonPromptComposer({
                       No MCP servers configured yet.
                     </div>
                   )}
+                  <DropdownMenuSeparator className="bg-[rgba(175,215,255,0.08)]" />
+                  <DropdownMenuLabel className="px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                    Tool presets
+                  </DropdownMenuLabel>
+                  <div className="space-y-2 px-2 pb-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        value={presetDraft}
+                        onChange={(event) => setPresetDraft(event.target.value)}
+                        placeholder="Preset name"
+                        className="h-7 min-w-0 flex-1 rounded border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.03)] px-2 text-xs text-[var(--text-primary)] outline-none"
+                      />
+                      <button
+                        type="button"
+                        className="h-7 rounded border border-[var(--border-subtle)] px-2 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          const name = presetDraft.trim()
+                          if (!name) return
+                          onSaveToolPreset(name)
+                          setPresetDraft('')
+                        }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                    {toolPresets.length > 0 ? (
+                      <div className="max-h-36 space-y-1 overflow-y-auto">
+                        {toolPresets.map((preset) => (
+                          <div key={preset.id} className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              className="h-7 min-w-0 flex-1 truncate rounded border border-[var(--border-subtle)] px-2 text-left text-xs text-[var(--text-primary)] hover:bg-[rgba(175,215,255,0.08)]"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                onApplyToolPreset(preset.id)
+                              }}
+                            >
+                              {preset.name}
+                            </button>
+                            <button
+                              type="button"
+                              className="h-7 rounded border border-[var(--border-subtle)] px-2 text-[11px] text-[var(--text-dim)] hover:text-[var(--text-primary)]"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                onDeleteToolPreset(preset.id)
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-[var(--text-dim)]">No presets yet.</div>
+                    )}
+                  </div>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -278,9 +410,8 @@ export function AxonPromptComposer({
                 <DropdownMenuTrigger asChild>
                   <ComposerDropdownTrigger
                     aria-label={
-                      AXON_PERMISSION_OPTIONS.find(
-                        (option) => option.value === pulsePermissionLevel,
-                      )?.label ?? pulsePermissionLevel
+                      permissionOptions.find((option) => option.value === pulsePermissionLevel)
+                        ?.label ?? pulsePermissionLevel
                     }
                   >
                     <PermissionIcon className="size-3.5 text-[var(--axon-secondary-strong)]" />
@@ -295,9 +426,9 @@ export function AxonPromptComposer({
                   </DropdownMenuLabel>
                   <DropdownMenuRadioGroup
                     value={pulsePermissionLevel}
-                    onValueChange={(value) => onPermissionChange(value as AxonPermissionValue)}
+                    onValueChange={onPermissionChange}
                   >
-                    {AXON_PERMISSION_OPTIONS.map((option) => (
+                    {permissionOptions.map((option) => (
                       <DropdownMenuRadioItem key={option.value} value={option.value}>
                         {option.label}
                       </DropdownMenuRadioItem>

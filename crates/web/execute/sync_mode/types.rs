@@ -69,6 +69,9 @@ pub(crate) struct DirectParams {
     pub(super) agent: PulseChatAgent,
     pub(super) session_id: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) session_mode: Option<String>,
+    pub(super) enabled_mcp_servers: Option<Vec<String>>,
+    pub(super) blocked_mcp_tools: Vec<String>,
     pub(super) assistant_mode: bool,
 }
 

@@ -1,4 +1,5 @@
 use std::env;
+use std::hash::{DefaultHasher, Hasher};
 use std::sync::Arc;
 
 use serde_json::json;
@@ -128,10 +129,13 @@ async fn get_or_create_acp_connection(
     permission_responders: &acp_svc::PermissionResponderMap,
 ) -> Result<Arc<AcpConnectionHandle>, String> {
     let mut guard = acp_connection.lock().await; // MutexGuard<Option<(String, Arc<AcpConnectionHandle>)>>
+    // Include MCP server fingerprint in the connection key so edits to mcp.json
+    // hot-reload by forcing a fresh ACP session setup with updated MCP servers.
+    let mcp_fingerprint = fingerprint_mcp_servers(&req.mcp_servers);
     let agent_key = if assistant_mode {
-        format!("{agent:?}:assistant")
+        format!("{agent:?}:assistant:mcp={mcp_fingerprint}")
     } else {
-        format!("{agent:?}")
+        format!("{agent:?}:mcp={mcp_fingerprint}")
     };
 
     if let Some((stored_agent, existing)) = guard.as_ref() {
@@ -185,6 +189,15 @@ async fn get_or_create_acp_connection(
     Ok(handle)
 }
 
+fn fingerprint_mcp_servers(
+    mcp_servers: &[crate::crates::services::types::AcpMcpServerConfig],
+) -> u64 {
+    let raw = serde_json::to_string(mcp_servers).unwrap_or_default();
+    let mut hasher = DefaultHasher::new();
+    hasher.write(raw.as_bytes());
+    hasher.finish()
+}
+
 /// Handle the `pulse_chat` service mode: send a prompt turn to the persistent
 /// ACP adapter and stream events back over the WS channel.
 #[allow(clippy::too_many_arguments)]
@@ -193,6 +206,9 @@ pub(super) async fn handle_pulse_chat(
     input: String,
     session_id: Option<String>,
     model: Option<String>,
+    session_mode: Option<String>,
+    enabled_mcp_servers: Option<Vec<String>>,
+    blocked_mcp_tools: Vec<String>,
     agent: PulseChatAgent,
     assistant_mode: bool,
     tx: mpsc::Sender<String>,
@@ -209,7 +225,18 @@ pub(super) async fn handle_pulse_chat(
         input.len()
     );
 
-    let mcp_servers = read_axon_mcp_servers().await;
+    let mut mcp_servers = read_axon_mcp_servers().await;
+    if let Some(allowlist) = enabled_mcp_servers {
+        let allowed: std::collections::HashSet<String> = allowlist.into_iter().collect();
+        mcp_servers.retain(|server| match server {
+            crate::crates::services::types::AcpMcpServerConfig::Stdio { name, .. } => {
+                allowed.contains(name)
+            }
+            crate::crates::services::types::AcpMcpServerConfig::Http { name, .. } => {
+                allowed.contains(name)
+            }
+        });
+    }
     if !mcp_servers.is_empty() {
         log::info!(
             "[pulse_chat] passing {} MCP server(s) to ACP session",
@@ -247,6 +274,8 @@ pub(super) async fn handle_pulse_chat(
         session_id,
         prompt: vec![prompt_input],
         model,
+        session_mode,
+        blocked_mcp_tools,
         mcp_servers,
     };
 

@@ -3,8 +3,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { decodeProjectPath, enrichWithGit } from './git-metadata'
 import {
+  chooseAdaptivePromptPreview,
   cleanProjectName,
   mapWithConcurrency as mapWithConcurrencyRaw,
+  normalizePromptPreview,
   SKIP_PATTERNS,
   sessionId,
 } from './session-utils'
@@ -54,74 +56,84 @@ function selectPreferredSession(current: SessionFile, next: SessionFile): Sessio
   return current
 }
 
-const PREVIEW_TRUNCATE_PATTERNS = [
-  /\s+Respond as JSON only with this exact shape:.*/i,
-  /\s+Respond as JSON only with this shape:.*/i,
-]
-
 const normalizePreviewText = (text: string): string => {
   let out = text.trim().replace(/\n+/g, ' ')
-  for (const pattern of PREVIEW_TRUNCATE_PATTERNS) {
-    out = out.replace(pattern, '').trim()
-  }
+  out = out
+    .replace(/\s+Respond as JSON only with this exact shape:.*/i, '')
+    .replace(/\s+Respond as JSON only with this shape:.*/i, '')
+    .trim()
   return out
 }
 
+function extractCandidatesFromLines(lines: string[]): string[] {
+  const candidates: string[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    let val: Record<string, unknown>
+    try {
+      val = JSON.parse(trimmed) as Record<string, unknown>
+    } catch {
+      continue
+    }
+
+    if (val.type !== 'user') continue
+
+    const msg = val.message as Record<string, unknown> | undefined
+    const msgContent = msg?.content
+
+    let text = ''
+    if (typeof msgContent === 'string') {
+      text = msgContent
+    } else if (Array.isArray(msgContent)) {
+      for (const block of msgContent) {
+        const blockText = (block as Record<string, unknown>).text
+        if (typeof blockText === 'string') text += `${blockText}\n`
+      }
+    }
+
+    text = normalizePreviewText(text)
+    const normalized = normalizePromptPreview(text)
+    if (!normalized) continue
+    candidates.push(normalized)
+  }
+  return candidates
+}
+
 /**
- * Read up to the first 4KB of a JSONL session file and extract the first
- * meaningful user message as a short preview string (≤80 chars).
+ * Read head+tail samples of a JSONL session file and extract the latest
+ * substantive user message as a short preview string (≤80 chars).
  * Never throws — returns undefined on any error or if no good message is found.
  */
 async function extractPreview(absolutePath: string): Promise<string | undefined> {
   try {
     const fd = await fs.open(absolutePath, 'r')
     try {
-      const buf = Buffer.allocUnsafe(4096)
-      const { bytesRead } = await fd.read(buf, 0, 4096, 0)
-      const chunk = buf.subarray(0, bytesRead).toString('utf8')
+      const stat = await fd.stat()
+      const headSize = 8 * 1024
+      const tailSize = 128 * 1024
+      const size = stat.size
 
-      // Work line-by-line; take at most the first 20 lines to stay fast.
-      const lines = chunk.split('\n').slice(0, 20)
+      const headBuf = Buffer.allocUnsafe(Math.min(headSize, size))
+      const headRead = await fd.read(headBuf, 0, headBuf.length, 0)
+      const headLines = headBuf.subarray(0, headRead.bytesRead).toString('utf8').split('\n')
+      const headCandidates = extractCandidatesFromLines(headLines.slice(0, 160))
 
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
+      const tailStart = size > tailSize ? size - tailSize : 0
+      const tailBuf = Buffer.allocUnsafe(size - tailStart)
+      const tailRead = await fd.read(tailBuf, 0, tailBuf.length, tailStart)
+      const tailLines = tailBuf.subarray(0, tailRead.bytesRead).toString('utf8').split('\n')
+      const tailCandidates = extractCandidatesFromLines(tailLines.slice(-800))
 
-        let val: Record<string, unknown>
-        try {
-          val = JSON.parse(trimmed) as Record<string, unknown>
-        } catch {
-          continue
-        }
-
-        if (val.type !== 'user') continue
-
-        const msg = val.message as Record<string, unknown> | undefined
-        const msgContent = msg?.content
-
-        let text = ''
-        if (typeof msgContent === 'string') {
-          text = msgContent
-        } else if (Array.isArray(msgContent)) {
-          for (const block of msgContent) {
-            const blockText = (block as Record<string, unknown>).text
-            if (typeof blockText === 'string') text += `${blockText}\n`
-          }
-        }
-
-        text = normalizePreviewText(text)
-        if (!text) continue
-
-        // Skip system-like / handoff messages.
-        if (SKIP_PATTERNS.some((re) => re.test(text))) continue
-
-        // Skip very long unstructured blobs (likely injected context, not real questions).
-        if (text.length > 500 && !/[.?!]/.test(text.slice(0, 200))) continue
-
-        // We have a good candidate — trim to 80 chars.
-        return text.length > 80 ? `${text.slice(0, 80)}…` : text
-      }
-
+      const allCandidates = [...headCandidates, ...tailCandidates]
+      const meaningful = allCandidates.filter((candidate) => {
+        const words = candidate.split(/\s+/).filter(Boolean)
+        return words.length >= 3
+      })
+      const best =
+        chooseAdaptivePromptPreview(meaningful) ?? chooseAdaptivePromptPreview(allCandidates)
+      if (best) return best.length > 80 ? `${best.slice(0, 80)}…` : best
       return undefined
     } finally {
       await fd.close()

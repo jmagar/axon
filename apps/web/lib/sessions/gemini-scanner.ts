@@ -2,7 +2,12 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { SessionFile } from './session-scanner'
-import { mapWithConcurrency, SKIP_PATTERNS, sessionId } from './session-utils'
+import {
+  chooseAdaptivePromptPreview,
+  mapWithConcurrency,
+  normalizePromptPreview,
+  sessionId,
+} from './session-utils'
 
 interface GeminiMessage {
   type: string
@@ -81,19 +86,22 @@ export async function scanGeminiSessions(limit = Number.MAX_SAFE_INTEGER): Promi
             ? new Date(data.lastUpdated).getTime() || stat.mtimeMs
             : stat.mtimeMs
 
-          // Extract first user message as preview
-          let preview: string | undefined
+          const promptCandidates: string[] = []
           for (const msg of data.messages ?? []) {
             if (msg.type !== 'user') continue
             // Guard against malformed message objects where content is not a string
             if (typeof msg.content !== 'string') continue
-            const text = msg.content.trim().replace(/\n+/g, ' ')
-            if (!text) continue
-            if (SKIP_PATTERNS.some((re) => re.test(text))) continue
-            if (text.length > 500 && !/[.?!]/.test(text.slice(0, 200))) continue
-            preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
-            break
+            const normalized = normalizePromptPreview(msg.content)
+            if (!normalized) continue
+            promptCandidates.push(normalized)
           }
+          const selected = chooseAdaptivePromptPreview(promptCandidates)
+          const preview =
+            selected !== undefined
+              ? selected.length > 80
+                ? `${selected.slice(0, 80)}…`
+                : selected
+              : undefined
 
           if (allResults.length < limit) {
             allResults.push({

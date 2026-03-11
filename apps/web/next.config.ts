@@ -31,7 +31,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  allowedDevOrigins: ['axon.tootie.tv'],
+  allowedDevOrigins: ['axon.tootie.tv', 'localhost:49010', '127.0.0.1:49010', '10.1.0.6:49010'],
   transpilePackages: [
     '@platejs/ai',
     '@platejs/diff',

@@ -29,14 +29,14 @@ fn derive_cfg(context: &ExecCommandContext, flags: &serde_json::Value) -> Arc<Co
 
     let mut cfg = context.cfg.apply_overrides(&overrides);
 
-    if let Some(cmd) = env::var("AXON_ACP_CLAUDE_ADAPTER_CMD")
+    if let Some(cmd) = env::var("AXON_ACP_ADAPTER_CMD")
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
     {
         cfg.acp_adapter_cmd = Some(cmd);
     }
-    if let Some(args) = env::var("AXON_ACP_CLAUDE_ADAPTER_ARGS")
+    if let Some(args) = env::var("AXON_ACP_ADAPTER_ARGS")
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
@@ -74,6 +74,28 @@ pub(super) fn extract_params(
         .get("model")
         .and_then(serde_json::Value::as_str)
         .map(ToString::to_string);
+    let session_mode = flags
+        .get("session_mode")
+        .and_then(serde_json::Value::as_str)
+        .map(ToString::to_string);
+    let enabled_mcp_servers = flags.get("mcp_servers").and_then(|value| {
+        value.as_array().map(|arr| {
+            arr.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+    });
+    let blocked_mcp_tools = flags
+        .get("blocked_mcp_tools")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let assistant_mode = flags
         .get("assistant_mode")
         .and_then(serde_json::Value::as_bool)
@@ -88,6 +110,9 @@ pub(super) fn extract_params(
         agent,
         session_id,
         model,
+        session_mode,
+        enabled_mcp_servers,
+        blocked_mcp_tools,
         assistant_mode,
     })
 }
@@ -163,6 +188,7 @@ mod tests {
         assert_eq!(params.agent, PulseChatAgent::Claude);
         assert_eq!(params.session_id.as_deref(), Some("session-123"));
         assert_eq!(params.model, None);
+        assert_eq!(params.session_mode, None);
     }
 
     #[test]
@@ -179,6 +205,7 @@ mod tests {
         let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
         assert_eq!(params.agent, PulseChatAgent::Codex);
         assert_eq!(params.model, None);
+        assert_eq!(params.session_mode, None);
     }
 
     #[test]
@@ -195,6 +222,7 @@ mod tests {
         let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
         assert_eq!(params.agent, PulseChatAgent::Codex);
         assert_eq!(params.model.as_deref(), Some("o3"));
+        assert_eq!(params.session_mode, None);
     }
 
     #[test]
@@ -211,6 +239,7 @@ mod tests {
         let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
         assert_eq!(params.agent, PulseChatAgent::Gemini);
         assert_eq!(params.model, None);
+        assert_eq!(params.session_mode, None);
     }
 
     #[test]
@@ -227,6 +256,7 @@ mod tests {
         let params = extract_params(&context, &flags).expect("pulse_chat is a recognised mode");
         assert_eq!(params.agent, PulseChatAgent::Gemini);
         assert_eq!(params.model.as_deref(), Some("gemini-3-pro-preview"));
+        assert_eq!(params.session_mode, None);
     }
 
     #[test]
