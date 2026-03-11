@@ -6,12 +6,15 @@ import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Conversation, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import type { PromptInputFile, PromptInputMessage } from '@/components/ai-elements/prompt-input'
+import { DockerStats } from '@/components/docker-stats'
+import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { Button } from '@/components/ui/button'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
 import type { AxonMessage } from '@/hooks/use-axon-session'
 import { useAxonSession } from '@/hooks/use-axon-session'
+import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
 import { useRecentSessions } from '@/hooks/use-recent-sessions'
@@ -20,6 +23,7 @@ import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-message
 import { apiFetch } from '@/lib/api-fetch'
 import { getAcpModelConfigOption } from '@/lib/pulse/acp-config'
 import type { PulseAgent } from '@/lib/pulse/types'
+import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { AxonFrame } from './axon-frame'
 import { AxonLogsDialog } from './axon-logs-dialog'
 import { AxonMcpDialog } from './axon-mcp-dialog'
@@ -154,6 +158,7 @@ export function AxonShell() {
   const [chatFlex, setChatFlex] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [layoutRestored, setLayoutRestored] = useState(false)
+  const canvasRef = useRef<NeuralCanvasHandle>(null)
   const sectionRef = useRef<HTMLElement>(null)
 
   // Live session list from ~/.claude/projects
@@ -223,6 +228,41 @@ export function AxonShell() {
   useEffect(() => {
     isStreamingRef.current = isStreaming
   }, [isStreaming])
+
+  // Canvas intensity: pulse on command done/error
+  const { subscribe: subscribeWs } = useAxonWs()
+  useEffect(() => {
+    return subscribeWs((msg: WsServerMsg) => {
+      if (msg.type === 'command.done' || msg.type === 'command.error') {
+        canvasRef.current?.setIntensity(0.15)
+        setTimeout(() => canvasRef.current?.setIntensity(0), 3000)
+      }
+    })
+  }, [subscribeWs])
+
+  // Canvas intensity: full while streaming
+  useEffect(() => {
+    if (isStreaming) {
+      canvasRef.current?.setIntensity(1)
+    }
+  }, [isStreaming])
+
+  // Docker stats → canvas stimulation + CPU-based intensity
+  const handleStats = useCallback(
+    (data: {
+      aggregate: { cpu_percent: number }
+      containers: Record<string, ContainerStats>
+      container_count: number
+    }) => {
+      canvasRef.current?.stimulate(data.containers)
+      if (!isStreamingRef.current) {
+        const maxCpu = data.container_count * 100
+        const norm = Math.min(data.aggregate.cpu_percent / maxCpu, 1.0)
+        canvasRef.current?.setIntensity(0.02 + norm * 0.83)
+      }
+    },
+    [],
+  )
 
   // Sync JSONL history into live messages when session changes or reloads.
   // Guard against overwriting live messages mid-stream or during load.
@@ -614,7 +654,10 @@ export function AxonShell() {
   const agentLabel = agentDisplayName(pulseAgent ?? 'claude')
 
   return (
-    <AxonFrame>
+    <AxonFrame canvasRef={canvasRef}>
+      <div className="hidden">
+        <DockerStats onStats={handleStats} />
+      </div>
       <div className="flex h-dvh min-h-dvh flex-col">
         {/* ── Mobile layout ── */}
         <section className="flex min-h-0 flex-1 flex-col lg:hidden">
