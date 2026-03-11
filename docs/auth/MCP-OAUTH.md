@@ -329,4 +329,4 @@ The MCP client cannot reach the `/.well-known/oauth-authorization-server` endpoi
 
 ### `atk_` token rejected on `/ws`
 
-Expected. MCP OAuth tokens are scoped to `/mcp` only. For WebSocket access, use Tailscale auth, API token, or SSH key auth — see `docs/auth/README.md`.
+Expected. MCP OAuth tokens are scoped to `/mcp` only. For WebSocket access, use the shared API token — see `docs/auth/README.md`.

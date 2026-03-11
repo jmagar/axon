@@ -231,8 +231,11 @@ Dropdown button in toolbar area — switches between 4 modes:
 |------|------|---------|
 | `sessions` | `MessageSquareText` | Flat session list with unread indicators |
 | `files` | `FolderOpen` | FileTree component with count label |
-| `pages` | `PanelLeft` | App navigation links with `aria-current="page"` |
-| `agents` | `Bot` | Agent status list (non-interactive `<div>`, not `<button>`) |
+| `assistant` | `Bot` | Assistant-only chat session list (`/api/assistant/sessions`) |
+
+Assistant mode sends `assistant_mode: true` in the `pulse_chat` WS flags. The backend resolves
+assistant turns to `$AXON_DATA_DIR/axon/assistant` (fallback:
+`~/.local/share/axon/axon/assistant`) and scopes ACP connection reuse by agent+mode.
 
 ### Rail Item Active State
 

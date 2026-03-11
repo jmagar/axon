@@ -106,7 +106,6 @@ export function AIMenu() {
 
   useHotkeys('esc', () => {
     api.aiChat.stop()
-    // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
     ;(chat as any).stop?.()
   })
 

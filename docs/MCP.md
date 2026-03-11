@@ -1,5 +1,5 @@
 # Axon MCP Server Guide
-Last Modified: 2026-03-10
+Last Modified: 2026-03-11
 
 ## Purpose
 `axon mcp` exposes Axon through one MCP tool named `axon`.
@@ -80,6 +80,46 @@ AXON_MCP_TRANSPORT=stdio   # or http / both
 HTTP transport uses:
 - `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
 - `AXON_MCP_HTTP_PORT` (default `8001`)
+
+## ACP MCP Server Store (Web UI + Pulse ACP)
+
+ACP sessions (`pulse_chat`) read MCP server definitions from:
+
+- `${AXON_DATA_DIR}/axon/config.json` when `AXON_DATA_DIR` is set
+- `~/.config/axon/config.json` fallback when `AXON_DATA_DIR` is unset
+
+The Web UI MCP settings page (`/api/mcp`) writes to this same file, so servers
+added in the UI are the servers passed into ACP sessions.
+
+### Config File Examples
+
+Stdio MCP server example:
+
+```json
+{
+  "mcpServers": {
+    "axon-stdio": {
+      "command": "axon",
+      "args": ["mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+HTTP MCP server example:
+
+```json
+{
+  "mcpServers": {
+    "axon-http": {
+      "url": "https://axon.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer atk_your_token_here"
+      }
+    }
+  }
+}
+```
 
 ### Claude Desktop Example
 

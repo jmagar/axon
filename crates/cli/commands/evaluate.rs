@@ -1,12 +1,15 @@
 use crate::crates::core::config::Config;
-use crate::crates::vector::ops::run_evaluate_native;
+use crate::crates::services::query as query_service;
 use std::error::Error;
 
 /// CLI shim for the evaluate command.
-///
-/// Currently delegates directly to `run_evaluate_native` in the vector/ops layer.
-/// Phase 2 will extract the business logic into a service function and have this
-/// file handle only output formatting.
 pub async fn run_evaluate(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    run_evaluate_native(cfg).await
+    let question = cfg
+        .query
+        .clone()
+        .or_else(|| (!cfg.positional.is_empty()).then(|| cfg.positional.join(" ")))
+        .ok_or("evaluate requires a question")?;
+    let result = query_service::evaluate(cfg, &question).await?;
+    println!("{}", serde_json::to_string_pretty(&result.payload)?);
+    Ok(())
 }

@@ -1,8 +1,8 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::refresh::start_refresh_job;
 use crate::crates::jobs::watch::{
     WatchDefCreate, create_watch_def, create_watch_run, list_watch_defs, list_watch_runs,
 };
+use crate::crates::services::refresh as refresh_service;
 use chrono::{Duration, Utc};
 use std::error::Error;
 use uuid::Uuid;
@@ -127,7 +127,9 @@ async fn handle_watch_run_now(cfg: &Config) -> Result<(), Box<dyn Error>> {
         if urls.is_empty() {
             None
         } else {
-            Some(start_refresh_job(cfg, &urls).await?)
+            Some(Uuid::parse_str(
+                &refresh_service::refresh_start(cfg, &urls).await?.job_id,
+            )?)
         }
     } else {
         None
