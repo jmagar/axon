@@ -155,10 +155,11 @@ function isAuthorized(req: NextRequest): boolean {
     })()
 
   // Tailscale-User-Login is injected by `tailscale serve` after stripping any
-  // incoming value — trustworthy ONLY when the request arrives from localhost.
-  // A non-localhost client could spoof this header, so reject it unless the
-  // request originates from a loopback address.
-  const hasTsHeader = isLocalhost && !!req.headers.get('tailscale-user-login')?.trim()
+  // incoming value — trustworthy when the request arrives via Tailscale's
+  // reverse proxy (both localhost and tailnet hostname access).
+  // tailscale serve strips spoofed Tailscale-User-Login headers before
+  // forwarding, so the header is authentic if present.
+  const hasTsHeader = !!req.headers.get('tailscale-user-login')?.trim()
 
   if (REQUIRE_DUAL_AUTH) return hasToken && hasTsHeader
   if (API_TOKEN !== null) return hasToken || hasTsHeader

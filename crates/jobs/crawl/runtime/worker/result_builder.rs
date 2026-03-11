@@ -116,7 +116,7 @@ mod tests {
         let manifest_path = temp.path().join("manifest.jsonl");
         tokio::fs::write(
             &manifest_path,
-            "{\"url\":\"https://example.com/a\",\"file_path\":\"markdown/a.md\",\"markdown_chars\":123,\"changed\":true}\n",
+            "{\"url\":\"https://example.com/a\",\"relative_path\":\"markdown/a.md\",\"markdown_chars\":123,\"changed\":true}\n",
         )
         .await
         .expect("write manifest");

@@ -5,8 +5,10 @@ pub(crate) mod extract;
 mod schema;
 pub(crate) mod similarity;
 pub(crate) mod taxonomy;
+pub(crate) mod worker;
 
 pub use schema::{ensure_graph_schema, ensure_neo4j_schema};
+pub use worker::run_graph_worker;
 
 #[cfg(test)]
 mod tests {

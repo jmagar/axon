@@ -104,6 +104,9 @@ fn async_mode_enqueue_job_result_maps_job_ids() {
 
     let result = CrawlStartResult {
         job_ids: vec!["aabbccdd-1234-1234-1234-aabbccddeeff".to_string()],
+        output_dir: None,
+        predicted_paths: vec![],
+        jobs: vec![],
     };
     // The first job_id should be emittable as a JSON-serializable string.
     assert_eq!(result.job_ids.len(), 1);

@@ -14,9 +14,11 @@ const TerminalEmulatorWrapper = dynamic(
 )
 
 export function PulseTerminalPane() {
+  const paneRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<TerminalHandle | null>(null)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const searchVisibleRef = useRef(searchVisible)
 
   const { sendInput, resize } = useShellSession({
     onOutput: (data) => terminalRef.current?.write(data),
@@ -39,9 +41,26 @@ export function PulseTerminalPane() {
     if (val) terminalRef.current?.search(val)
   }, [])
 
+  useEffect(() => {
+    searchVisibleRef.current = searchVisible
+  }, [searchVisible])
+
   // Ctrl+F / Cmd+F toggles the search overlay
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false
+      if (target.isContentEditable) return true
+      const tag = target.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeWithinPane =
+        !!paneRef.current &&
+        !!document.activeElement &&
+        paneRef.current.contains(document.activeElement)
+      if (isEditableTarget(e.target)) return
+      if (!activeWithinPane) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault()
         setSearchVisible((prev) => {
@@ -59,7 +78,7 @@ export function PulseTerminalPane() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div ref={paneRef} className="flex h-full flex-col overflow-hidden">
       <div className="relative flex-1 overflow-hidden p-1.5">
         <div
           className="relative h-full overflow-hidden rounded-xl border"
