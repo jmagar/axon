@@ -1,6 +1,8 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_extra_payload;
+use crate::crates::vector::ops::{
+    EmbedDocument, embed_documents_batch, embed_text_with_extra_payload,
+};
 use octocrab::Octocrab;
 use octocrab::{models, params};
 use std::error::Error;
@@ -17,6 +19,7 @@ pub async fn ingest_issues(
     octo: &Octocrab,
     common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
+    let mut docs = Vec::new();
     let mut total = 0usize;
     let mut page = octo
         .issues(&common.owner, &common.name)
@@ -69,21 +72,50 @@ pub async fn ingest_issues(
                 ..Default::default()
             });
 
-            match embed_text_with_extra_payload(cfg, &content, &url, "github", Some(&title), &extra)
-                .await
-            {
-                Ok(n) => total += n,
-                Err(e) => log_warn(&format!(
-                    "command=ingest_github embed_issue_failed number={} err={e}",
-                    issue.number
-                )),
-            }
+            docs.push(EmbedDocument {
+                content,
+                url,
+                source_type: "github".to_string(),
+                title: Some(title),
+                extra: Some(extra),
+                file_extension: None,
+            });
         }
 
         page = match octo.get_page::<models::issues::Issue>(&page.next).await? {
             Some(next) => next,
             None => break,
         };
+    }
+
+    match embed_documents_batch(cfg, &docs).await {
+        Ok(summary) => total += summary.chunks_embedded,
+        Err(err) => {
+            log_warn(&format!(
+                "command=ingest_github embed_issue_batch_failed docs={} err={err}; falling_back_to_per_issue_embedding",
+                docs.len()
+            ));
+            for doc in docs {
+                if let Some(extra) = doc.extra.as_ref() {
+                    match embed_text_with_extra_payload(
+                        cfg,
+                        &doc.content,
+                        &doc.url,
+                        &doc.source_type,
+                        doc.title.as_deref(),
+                        extra,
+                    )
+                    .await
+                    {
+                        Ok(n) => total += n,
+                        Err(e) => log_warn(&format!(
+                            "command=ingest_github embed_issue_fallback_failed url={} err={e}",
+                            doc.url
+                        )),
+                    }
+                }
+            }
+        }
     }
 
     Ok(total)
@@ -95,6 +127,7 @@ pub async fn ingest_pull_requests(
     octo: &Octocrab,
     common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
+    let mut docs = Vec::new();
     let mut total = 0usize;
     let mut page = octo
         .pulls(&common.owner, &common.name)
@@ -144,22 +177,14 @@ pub async fn ingest_pull_requests(
                 ..Default::default()
             });
 
-            match embed_text_with_extra_payload(
-                cfg,
-                &content,
-                &url,
-                "github",
-                Some(&embed_title),
-                &extra,
-            )
-            .await
-            {
-                Ok(n) => total += n,
-                Err(e) => log_warn(&format!(
-                    "command=ingest_github embed_pr_failed number={} err={e}",
-                    pr.number
-                )),
-            }
+            docs.push(EmbedDocument {
+                content,
+                url,
+                source_type: "github".to_string(),
+                title: Some(embed_title),
+                extra: Some(extra),
+                file_extension: None,
+            });
         }
 
         page = match octo
@@ -169,6 +194,36 @@ pub async fn ingest_pull_requests(
             Some(next) => next,
             None => break,
         };
+    }
+
+    match embed_documents_batch(cfg, &docs).await {
+        Ok(summary) => total += summary.chunks_embedded,
+        Err(err) => {
+            log_warn(&format!(
+                "command=ingest_github embed_pr_batch_failed docs={} err={err}; falling_back_to_per_pr_embedding",
+                docs.len()
+            ));
+            for doc in docs {
+                if let Some(extra) = doc.extra.as_ref() {
+                    match embed_text_with_extra_payload(
+                        cfg,
+                        &doc.content,
+                        &doc.url,
+                        &doc.source_type,
+                        doc.title.as_deref(),
+                        extra,
+                    )
+                    .await
+                    {
+                        Ok(n) => total += n,
+                        Err(e) => log_warn(&format!(
+                            "command=ingest_github embed_pr_fallback_failed url={} err={e}",
+                            doc.url
+                        )),
+                    }
+                }
+            }
+        }
     }
 
     Ok(total)

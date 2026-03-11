@@ -32,6 +32,28 @@ pub(super) struct PreparedDoc {
     chunks: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct EmbedDocument {
+    pub content: String,
+    pub url: String,
+    pub source_type: String,
+    pub title: Option<String>,
+    pub extra: Option<serde_json::Value>,
+    pub file_extension: Option<String>,
+}
+
+#[derive(Debug)]
+struct PreparedBatchDocument {
+    url: String,
+    domain: String,
+    source_type: String,
+    title: Option<String>,
+    extra: Option<serde_json::Value>,
+    content_type: &'static str,
+    scraped_at: String,
+    chunks: Vec<String>,
+}
+
 /// Shared implementation for text embedding with optional extra payload fields.
 async fn embed_text_impl(
     cfg: &Config,
@@ -176,6 +198,118 @@ pub async fn embed_code_with_metadata(
         return Ok(0);
     }
     embed_chunks_impl(cfg, chunks, url, source_type, title, extra).await
+}
+
+fn prepare_batch_document(doc: &EmbedDocument) -> Option<PreparedBatchDocument> {
+    if doc.content.trim().is_empty() {
+        return None;
+    }
+    let chunks = match doc.file_extension.as_deref() {
+        Some(ext) if !ext.is_empty() => input::code::chunk_code(&doc.content, ext)
+            .filter(|c| !c.is_empty())
+            .unwrap_or_else(|| input::chunk_text(&doc.content)),
+        _ => input::chunk_text(&doc.content),
+    };
+    if chunks.is_empty() {
+        return None;
+    }
+    let domain = spider::url::Url::parse(&doc.url)
+        .ok()
+        .and_then(|u| u.host_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+    Some(PreparedBatchDocument {
+        url: doc.url.clone(),
+        domain,
+        source_type: doc.source_type.clone(),
+        title: doc.title.clone(),
+        extra: doc.extra.clone(),
+        content_type: "text",
+        scraped_at: chrono::Utc::now().to_rfc3339(),
+        chunks,
+    })
+}
+
+pub async fn embed_documents_batch(
+    cfg: &Config,
+    docs: &[EmbedDocument],
+) -> Result<EmbedSummary, Box<dyn Error>> {
+    let prepared: Vec<PreparedBatchDocument> =
+        docs.iter().filter_map(prepare_batch_document).collect();
+    if prepared.is_empty() {
+        return Ok(EmbedSummary {
+            docs_embedded: 0,
+            chunks_embedded: 0,
+        });
+    }
+
+    let all_chunks: Vec<String> = prepared
+        .iter()
+        .flat_map(|doc| doc.chunks.iter().cloned())
+        .collect();
+    let chunks_embedded = all_chunks.len();
+    let vectors = tei_embed(cfg, &all_chunks).await?;
+    if vectors.is_empty() {
+        return Err("TEI returned no vectors for batch embed".into());
+    }
+    if vectors.len() != chunks_embedded {
+        return Err(format!(
+            "TEI vector count mismatch for batch embed: {} vectors for {} chunks",
+            vectors.len(),
+            chunks_embedded
+        )
+        .into());
+    }
+
+    let dim = vectors[0].len();
+    if qdrant_store::collection_needs_init(&cfg.collection) {
+        qdrant_store::ensure_collection(cfg, dim).await?;
+    }
+
+    let mut points: Vec<serde_json::Value> = Vec::with_capacity(chunks_embedded);
+    let mut vectors_iter = vectors.into_iter();
+    for doc in &prepared {
+        for (idx, chunk) in doc.chunks.iter().enumerate() {
+            let vector = vectors_iter
+                .next()
+                .ok_or_else(|| "internal vector iterator underflow".to_string())?;
+            let point_id = uuid::Uuid::new_v5(
+                &uuid::Uuid::NAMESPACE_URL,
+                format!("{}:{}", doc.url, idx).as_bytes(),
+            );
+            let mut payload = serde_json::json!({
+                "url": doc.url,
+                "domain": doc.domain,
+                "source_type": doc.source_type,
+                "source_command": doc.source_type,
+                "content_type": doc.content_type,
+                "chunk_index": idx,
+                "chunk_text": chunk,
+                "scraped_at": doc.scraped_at,
+            });
+            if let Some(title) = &doc.title {
+                payload["title"] = serde_json::Value::String(title.clone());
+            }
+            if let Some(serde_json::Value::Object(map)) = &doc.extra {
+                for (k, v) in map {
+                    payload[k] = v.clone();
+                }
+            }
+            points.push(serde_json::json!({
+                "id": point_id.to_string(),
+                "vector": vector,
+                "payload": payload,
+            }));
+        }
+    }
+    qdrant_store::qdrant_upsert(cfg, &points).await?;
+    for doc in &prepared {
+        qdrant_delete_stale_tail(cfg, &doc.url, doc.chunks.len()).await?;
+    }
+
+    Ok(EmbedSummary {
+        docs_embedded: prepared.len(),
+        chunks_embedded,
+    })
 }
 
 pub async fn embed_path_native(cfg: &Config, input: &str) -> Result<EmbedSummary, Box<dyn Error>> {
