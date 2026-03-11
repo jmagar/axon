@@ -1,70 +1,69 @@
 //! MCP server configuration cache for ACP sessions.
 //!
 //! Extracted from `sync_mode.rs` to keep that module under the monolith line limit.
-//! Provides a 30-second (configurable via `AXON_MCP_CONFIG_TTL_SECS`) in-memory
-//! cache of MCP server configs read from disk, avoiding repeated I/O on every
-//! ACP session start.
+//! Uses metadata-aware cache invalidation (`mtime`) so edits to `mcp.json`
+//! are picked up automatically without process restart.
 
 use crate::crates::services::types::AcpMcpServerConfig;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::SystemTime;
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
 pub(super) struct McpServerCache {
     pub(super) servers: Vec<AcpMcpServerConfig>,
-    pub(super) fetched_at: Instant,
+    pub(super) config_path: PathBuf,
+    pub(super) modified_at: Option<SystemTime>,
 }
 
 pub(super) static MCP_SERVER_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<McpServerCache>>> =
     std::sync::OnceLock::new();
 
-/// Read MCP server configs from `AXON_DATA_DIR/axon/config.json` (or
-/// `~/.config/axon/config.json` fallback). Returns an empty vec on any error.
-/// Results are cached for the TTL duration (env var `AXON_MCP_CONFIG_TTL_SECS`,
-/// default 30s) to avoid repeated disk I/O per session.
+/// Read MCP server configs from `AXON_DATA_DIR/axon/mcp.json` (or
+/// `~/.config/axon/mcp.json` fallback). Returns an empty vec on any error.
+///
+/// Cache invalidation is file-change driven:
+/// - if path and mtime are unchanged, return cached servers
+/// - if either changes, reload from disk
 pub(super) async fn read_axon_mcp_servers() -> Vec<AcpMcpServerConfig> {
-    let ttl = mcp_config_ttl();
+    let Some(config_path) = resolve_mcp_config_path() else {
+        return vec![];
+    };
+    let modified_at = file_modified_at(&config_path).await;
     let cache_lock = MCP_SERVER_CACHE.get_or_init(|| std::sync::Mutex::new(None));
 
     // Check cache under a short lock scope — drop the guard before any await.
     {
         let guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref cached) = *guard
-            && cached.fetched_at.elapsed() < ttl
+            && cached.config_path == config_path
+            && cached.modified_at == modified_at
         {
             return cached.servers.clone();
         }
     }
 
     // Cache miss — fetch from disk.
-    let servers = fetch_axon_mcp_servers_from_disk().await;
+    let servers = fetch_axon_mcp_servers_from_disk(&config_path).await;
 
     // Update cache.
     {
         let mut guard = cache_lock.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(McpServerCache {
             servers: servers.clone(),
-            fetched_at: Instant::now(),
+            config_path,
+            modified_at,
         });
     }
 
     servers
 }
 
-/// Return the MCP config cache TTL.  Reads `AXON_MCP_CONFIG_TTL_SECS` from the
-/// environment; falls back to 30 seconds on missing or invalid values.
-fn mcp_config_ttl() -> Duration {
-    let secs = env::var("AXON_MCP_CONFIG_TTL_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(30);
-    Duration::from_secs(secs)
-}
-
 /// Read and parse MCP server configs from disk. Called only on cache miss.
-pub(super) async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig> {
+pub(super) async fn fetch_axon_mcp_servers_from_disk(
+    config_path: &Path,
+) -> Vec<AcpMcpServerConfig> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct AxonConfig {
@@ -80,15 +79,7 @@ pub(super) async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig
         url: Option<String>,
     }
 
-    let config_path = if let Ok(data_dir) = env::var("AXON_DATA_DIR") {
-        PathBuf::from(data_dir).join("axon/config.json")
-    } else if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".config/axon/config.json")
-    } else {
-        return vec![];
-    };
-
-    let raw = match tokio::fs::read_to_string(&config_path).await {
+    let raw = match tokio::fs::read_to_string(config_path).await {
         Ok(raw) => raw,
         Err(_) => return vec![],
     };
@@ -138,9 +129,26 @@ pub(super) async fn fetch_axon_mcp_servers_from_disk() -> Vec<AcpMcpServerConfig
         .collect()
 }
 
+fn resolve_mcp_config_path() -> Option<PathBuf> {
+    if let Ok(data_dir) = env::var("AXON_DATA_DIR") {
+        Some(PathBuf::from(data_dir).join("axon/mcp.json"))
+    } else if let Ok(home) = env::var("HOME") {
+        Some(PathBuf::from(home).join(".config/axon/mcp.json"))
+    } else {
+        None
+    }
+}
+
+async fn file_modified_at(path: &Path) -> Option<SystemTime> {
+    tokio::fs::metadata(path)
+        .await
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+}
+
 /// Validate that an MCP server command is not a shell interpreter and, if it
 /// looks like a path, is absolute.  This blocks trivial command-injection via
-/// `config.json` entries like `{"command": "bash", "args": ["-c", "evil"]}`.
+/// `mcp.json` entries like `{"command": "bash", "args": ["-c", "evil"]}`.
 pub(super) fn is_safe_mcp_command(cmd: &str) -> bool {
     // Reject empty or whitespace-only commands.
     if cmd.trim().is_empty() {

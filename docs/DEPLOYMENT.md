@@ -267,7 +267,7 @@ If deploying Next.js:
 
 - Ensure web runtime sees required env vars (`OPENAI_*`, `TEI_URL`, `QDRANT_URL` as needed).
 - Validate `/api/pulse/chat` and `/api/omnibox/files` responses.
-- MCP servers configured in Web UI are stored in `${AXON_DATA_DIR}/axon/config.json` (fallback: `~/.config/axon/config.json`) and consumed by Pulse ACP.
+- MCP servers configured in Web UI are stored in `${AXON_DATA_DIR}/axon/mcp.json` (fallback: `~/.config/axon/mcp.json`) and consumed by Pulse ACP.
 
 ## Source Map
 

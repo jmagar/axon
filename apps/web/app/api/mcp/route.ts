@@ -26,8 +26,8 @@ const McpConfigSchema = z.object({
 type McpConfig = z.infer<typeof McpConfigSchema>
 
 const MCP_JSON_PATH = process.env.AXON_DATA_DIR
-  ? path.join(process.env.AXON_DATA_DIR, 'axon', 'config.json')
-  : path.join(os.homedir(), '.config', 'axon', 'config.json')
+  ? path.join(process.env.AXON_DATA_DIR, 'axon', 'mcp.json')
+  : path.join(os.homedir(), '.config', 'axon', 'mcp.json')
 
 async function readMcpConfig(): Promise<McpConfig> {
   try {
