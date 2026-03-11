@@ -26,7 +26,7 @@ export function AILoadingBar() {
     if (type === 'accept') {
       editor.tf.unsetNodes([getTransientCommentKey()], {
         at: [],
-        match: (n) => TextApi.isText(n) && !!n[KEYS.comment],
+        match: (n: any) => TextApi.isText(n) && !!n[KEYS.comment],
       })
     }
 

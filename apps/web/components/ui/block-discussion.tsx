@@ -157,7 +157,7 @@ const BlockCommentContent = ({
             editor.tf.unsetNodes(getDraftCommentKey(), {
               at: [],
               mode: 'lowest',
-              match: (n) => n[getDraftCommentKey()],
+              match: (n: any) => n[getDraftCommentKey()],
             })
           }
           setOpen(_open_)

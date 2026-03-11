@@ -298,14 +298,14 @@ export const useResolveSuggestion = (
       if (!PathApi.equals(path, blockPath)) return
 
       const entries = [
-        ...editor.api.nodes<TElement | TSuggestionText>({
+        ...editor.api.nodes({
           at: [],
           mode: 'all',
-          match: (n) =>
+          match: (n: any) =>
             (n[KEYS.suggestion] && n[getSuggestionKey(id)]) ||
             api.suggestion.nodeId(n as TElement) === id,
         }),
-      ]
+      ] as [TElement | TSuggestionText, any][]
 
       // move line break to the end
       entries.sort(([, path1], [, path2]) => (PathApi.isChild(path1, path2) ? -1 : 1))
@@ -318,7 +318,7 @@ export const useResolveSuggestion = (
       // overlapping suggestion
       entries.forEach(([node]) => {
         if (TextApi.isText(node)) {
-          const dataList = api.suggestion.dataList(node)
+          const dataList = api.suggestion.dataList(node as TSuggestionText)
 
           dataList.forEach((data) => {
             if (data.id === id) {
