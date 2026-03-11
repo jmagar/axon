@@ -1,7 +1,7 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::neo4j::Neo4jClient;
-use crate::crates::jobs::common::{enqueue_job, make_pool};
-use crate::crates::jobs::graph::ensure_graph_schema;
+use crate::crates::jobs::common::make_pool;
+use crate::crates::jobs::graph::{enqueue_graph_job, ensure_graph_schema};
 use crate::crates::services::types::{
     GraphBuildResult, GraphExploreResult, GraphStatsResult, GraphStatusResult,
 };
@@ -12,7 +12,7 @@ use std::error::Error;
 use uuid::Uuid;
 
 fn require_neo4j(cfg: &Config) -> Result<Neo4jClient, Box<dyn Error>> {
-    Neo4jClient::from_config(cfg).ok_or_else(|| "graph operations require AXON_NEO4J_URL".into())
+    Neo4jClient::from_config(cfg)?.ok_or_else(|| "graph operations require AXON_NEO4J_URL".into())
 }
 
 fn url_matches_domain(url: &str, domain: &str) -> bool {
@@ -24,49 +24,6 @@ fn url_matches_domain(url: &str, domain: &str) -> bool {
                 .map(|host| host == domain || host.ends_with(&format!(".{domain}")))
         })
         .unwrap_or(false)
-}
-
-async fn enqueue_graph_job(
-    cfg: &Config,
-    pool: &sqlx::PgPool,
-    url: &str,
-    source_type: &str,
-) -> Result<Uuid, Box<dyn Error>> {
-    let active = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        SELECT id
-        FROM axon_graph_jobs
-        WHERE url = $1
-          AND status IN ('pending', 'running')
-        ORDER BY created_at DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(url)
-    .fetch_optional(pool)
-    .await?;
-    if let Some(id) = active {
-        return Ok(id);
-    }
-
-    let id = Uuid::new_v4();
-    sqlx::query(
-        r#"
-        INSERT INTO axon_graph_jobs (id, url, status, config_json)
-        VALUES ($1, $2, 'pending', $3)
-        "#,
-    )
-    .bind(id)
-    .bind(url)
-    .bind(serde_json::json!({ "source_type": source_type }))
-    .execute(pool)
-    .await?;
-
-    if let Err(err) = enqueue_job(cfg, &cfg.graph_queue, id).await {
-        return Err(format!("graph enqueue failed for {id}: {err}").into());
-    }
-
-    Ok(id)
 }
 
 pub async fn graph_build(
@@ -96,7 +53,7 @@ pub async fn graph_build(
 
     let mut job_ids = Vec::new();
     for item in &urls {
-        let job_id = enqueue_graph_job(cfg, &pool, item, "crawl").await?;
+        let job_id = enqueue_graph_job(&pool, cfg, item, "crawl").await?;
         job_ids.push(job_id.to_string());
     }
 

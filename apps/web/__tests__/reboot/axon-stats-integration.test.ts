@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
-function computeCanvasIntensity(
-  cpuPercent: number,
-  containerCount: number,
-  isProcessing: boolean,
-): number {
-  if (isProcessing) return 1
-  const maxCpu = containerCount * 100
-  const norm = Math.min(cpuPercent / maxCpu, 1.0)
-  return 0.02 + norm * 0.83
-}
+import { computeCanvasIntensity } from '../../lib/pulse/stats-utils'
 
 describe('computeCanvasIntensity', () => {
   it('returns 1 when processing', () => {
@@ -28,6 +18,11 @@ describe('computeCanvasIntensity', () => {
 
   it('returns baseline with zero CPU', () => {
     const result = computeCanvasIntensity(0, 4, false)
+    expect(result).toBeCloseTo(0.02, 2)
+  })
+
+  it('guards against container_count === 0', () => {
+    const result = computeCanvasIntensity(50, 0, false)
     expect(result).toBeCloseTo(0.02, 2)
   })
 })

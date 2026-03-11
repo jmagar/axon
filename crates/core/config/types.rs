@@ -152,16 +152,8 @@ mod tests {
         );
         assert!(!debug_output.contains("secret@"), "redis_url secret leaked");
         assert!(
-            !debug_output.contains("sk-supersecret"),
-            "openai_api_key leaked"
-        );
-        assert!(
-            !debug_output.contains("tvly-supersecret"),
-            "tavily_api_key leaked"
-        );
-        assert!(
-            !debug_output.contains("ghp_supersecret"),
-            "github_token leaked"
+            !debug_output.contains("supersecret"),
+            "openai_api_key, tavily_api_key, or github_token leaked"
         );
         assert!(
             !debug_output.contains("my-reddit-id"),

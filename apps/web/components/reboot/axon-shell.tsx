@@ -15,7 +15,6 @@ import { Conversation, ConversationScrollButton } from '@/components/ai-elements
 import type { PromptInputFile, PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { DockerStats } from '@/components/docker-stats'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
-import { PulseMobilePaneSwitcher } from '@/components/pulse/pulse-mobile-pane-switcher'
 import { Button } from '@/components/ui/button'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
@@ -40,6 +39,7 @@ import { AxonFrame } from './axon-frame'
 import { AxonLogsPane } from './axon-logs-pane'
 import { AxonMcpPane } from './axon-mcp-pane'
 import { AxonMessageList } from './axon-message-list'
+import { AxonMobilePaneSwitcher } from './axon-mobile-pane-switcher'
 import { AxonPaneHandle } from './axon-pane-handle'
 import { AxonPromptComposer } from './axon-prompt-composer'
 import { AxonSettingsPane } from './axon-settings-pane'
@@ -48,9 +48,8 @@ import { AxonTerminalPane } from './axon-terminal-pane'
 import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-ui-config'
 import { McpIcon } from './mcp-config'
 
-const PulseEditorPane = dynamic(
-  () =>
-    import('@/components/pulse/pulse-editor-pane').then((m) => ({ default: m.PulseEditorPane })),
+const EditorPane = dynamic(
+  () => import('@/components/editor/editor-pane').then((m) => ({ default: m.PulseEditorPane })),
   { ssr: false },
 )
 
@@ -321,7 +320,17 @@ export function AxonShell() {
     // Restore all persisted layout state after mount (avoids SSR hydration mismatch)
     try {
       const saved = window.localStorage.getItem(AXON_MOBILE_PANE_STORAGE_KEY)
-      if (saved === 'sidebar' || saved === 'chat' || saved === 'editor') setMobilePane(saved)
+      if (
+        saved === 'sidebar' ||
+        saved === 'chat' ||
+        saved === 'editor' ||
+        saved === 'terminal' ||
+        saved === 'logs' ||
+        saved === 'mcp' ||
+        saved === 'settings'
+      ) {
+        setMobilePane(saved as AxonMobilePane)
+      }
     } catch {
       /* ignore */
     }
@@ -337,7 +346,9 @@ export function AxonShell() {
     setSidebarOpen(readStoredBool(SIDEBAR_OPEN_STORAGE_KEY, true))
     setChatOpen(readStoredBool(CHAT_OPEN_STORAGE_KEY, true))
     const storedPane = getStorageItem(RIGHT_PANE_STORAGE_KEY)
-    if (storedPane && VALID_RIGHT_PANES.has(storedPane)) {
+    if (storedPane === '') {
+      setRightPane(null)
+    } else if (storedPane && VALID_RIGHT_PANES.has(storedPane)) {
       setRightPane(storedPane as RightPane)
     } else {
       setRightPane('editor')
@@ -748,7 +759,7 @@ export function AxonShell() {
               >
                 <PanelLeft className="size-3.5" />
               </button>
-              <PulseMobilePaneSwitcher
+              <AxonMobilePaneSwitcher
                 mobilePane={mobilePane === 'sidebar' ? 'chat' : mobilePane}
                 onMobilePaneChange={(pane) => setMobilePaneTracked(pane)}
               />
@@ -792,7 +803,7 @@ export function AxonShell() {
             ) : mobilePane === 'editor' ? (
               <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  <PulseEditorPane
+                  <EditorPane
                     markdown={editorMarkdown}
                     onMarkdownChange={setEditorMarkdown}
                     scrollStorageKey="axon.web.reboot.editor-scroll"
@@ -1041,7 +1052,7 @@ export function AxonShell() {
               style={{ flex: '1 1 0%', minWidth: PANE_WIDTH_MIN }}
             >
               {rightPane === 'editor' && (
-                <PulseEditorPane
+                <EditorPane
                   markdown={editorMarkdown}
                   onMarkdownChange={setEditorMarkdown}
                   scrollStorageKey="axon.web.reboot.editor-scroll"

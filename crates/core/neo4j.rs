@@ -27,10 +27,10 @@ impl Neo4jClient {
     /// Create a client from raw connection parts.
     ///
     /// Returns `None` when the Neo4j URL is empty so graph features stay opt-in.
-    pub fn from_parts(url: &str, user: &str, password: &str) -> Option<Self> {
+    pub fn from_parts(url: &str, user: &str, password: &str) -> Neo4jResult<Option<Self>> {
         let trimmed = url.trim();
         if trimmed.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let endpoint = format!("{}/db/neo4j/tx/commit", trimmed.trim_end_matches('/'));
@@ -40,14 +40,14 @@ impl Neo4jClient {
             format!("Basic {encoded}")
         });
 
-        Some(Self {
-            http: http_client().ok()?.clone(),
+        Ok(Some(Self {
+            http: http_client()?.clone(),
             endpoint,
             auth_header,
-        })
+        }))
     }
 
-    pub fn from_config(cfg: &crate::crates::core::config::Config) -> Option<Self> {
+    pub fn from_config(cfg: &crate::crates::core::config::Config) -> Neo4jResult<Option<Self>> {
         Self::from_parts(&cfg.neo4j_url, &cfg.neo4j_user, &cfg.neo4j_password)
     }
 
@@ -104,13 +104,13 @@ mod tests {
 
     #[test]
     fn new_returns_none_when_url_empty() {
-        let client = Neo4jClient::from_parts("", "neo4j", "");
+        let client = Neo4jClient::from_parts("", "neo4j", "").unwrap();
         assert!(client.is_none());
     }
 
     #[test]
     fn new_returns_some_when_url_set() {
-        let client = Neo4jClient::from_parts("http://localhost:7474", "neo4j", "pass");
+        let client = Neo4jClient::from_parts("http://localhost:7474", "neo4j", "pass").unwrap();
         assert!(client.is_some());
     }
 
@@ -131,7 +131,9 @@ mod tests {
 
     #[test]
     fn auth_header_built_correctly() {
-        let client = Neo4jClient::from_parts("http://localhost:7474", "neo4j", "secret").unwrap();
+        let client = Neo4jClient::from_parts("http://localhost:7474", "neo4j", "secret")
+            .unwrap()
+            .unwrap();
         assert_eq!(client.endpoint, "http://localhost:7474/db/neo4j/tx/commit");
     }
 }

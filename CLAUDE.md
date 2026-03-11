@@ -19,6 +19,7 @@ docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chr
 cargo run --bin axon -- crawl worker
 cargo run --bin axon -- embed worker
 cargo run --bin axon -- extract worker
+cargo run --bin axon -- graph worker
 
 # 4. Run the web frontend locally
 cd apps/web && pnpm dev    # → http://localhost:49010
@@ -62,7 +63,7 @@ MCP docs:
 | `embed [input]` | Embed file/dir/URL into Qdrant | Yes (default) |
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
-| `ask <question>` | RAG: search + LLM answer | No |
+| `ask <question>` | RAG: search + LLM answer. Use `--graph` to inject Neo4j graph context when configured. | No |
 | `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
 | `ingest <target>` | Ingest external source (GitHub repo, Reddit subreddit/thread, YouTube video/playlist/channel) — auto-detects source type from target. GitHub: source code indexed by default with tree-sitter AST chunking; use `--no-source` to skip. | Yes (default) |
@@ -75,6 +76,7 @@ MCP docs:
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `mcp` | Start MCP stdio server | No |
 | `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list). Supports `github:owner/repo` schedules with `pushed_at` gating. | Yes (default) |
+| `graph <sub>` | Knowledge graph operations: `build`, `status`, `explore`, `stats`, `worker`. Requires `AXON_NEO4J_URL`. | Depends |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed / refresh)
@@ -101,6 +103,7 @@ All flags are `--global` (usable with any subcommand).
 | `--wait <bool>` | bool | `false` | Run synchronously and block until completion. Without this, async commands enqueue and return immediately. |
 | `--yes` | flag | `false` | Skip confirmation prompts (non-interactive mode). |
 | `--json` | flag | `false` | Machine-readable JSON output on stdout. |
+| `--graph` | flag | `false` | Enable graph-enhanced retrieval for `ask` (requires Neo4j). |
 
 #### Crawl & Scrape
 
@@ -287,7 +290,20 @@ AXON_CRAWL_QUEUE=axon.crawl.jobs
 AXON_EXTRACT_QUEUE=axon.extract.jobs
 AXON_EMBED_QUEUE=axon.embed.jobs
 AXON_INGEST_QUEUE=axon.ingest.jobs
+AXON_GRAPH_QUEUE=axon.graph.jobs
 AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
+
+# Neo4j / GraphRAG (optional — graph features are disabled when AXON_NEO4J_URL is empty)
+AXON_NEO4J_URL=bolt://localhost:7687
+AXON_NEO4J_USER=neo4j
+AXON_NEO4J_PASSWORD=
+AXON_GRAPH_CONCURRENCY=4
+AXON_GRAPH_LLM_URL=http://localhost:11434
+AXON_GRAPH_LLM_MODEL=qwen3.5:2b
+AXON_GRAPH_SIMILARITY_THRESHOLD=0.75
+AXON_GRAPH_SIMILARITY_LIMIT=20
+AXON_GRAPH_CONTEXT_MAX_CHARS=2000
+AXON_GRAPH_TAXONOMY_PATH=
 
 # Search and research (required for search/research commands)
 TAVILY_API_KEY=your-tavily-api-key
