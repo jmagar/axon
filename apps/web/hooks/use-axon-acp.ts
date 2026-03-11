@@ -41,6 +41,8 @@ export function handleEditorMsg(
 interface UseAxonAcpOptions {
   activeSessionId: string | null
   agent?: string
+  /** When true, sends assistant_mode:true so backend uses assistant CWD. */
+  assistantMode?: boolean
   onSessionIdChange: (newId: string) => void
   onSessionFallback?: (oldId: string, newId: string) => void
   onMessagesChange: (updater: (prev: AxonMessage[]) => AxonMessage[]) => void
@@ -54,6 +56,7 @@ interface UseAxonAcpOptions {
 export function useAxonAcp({
   activeSessionId,
   agent = 'claude',
+  assistantMode = false,
   onSessionIdChange,
   onSessionFallback,
   onMessagesChange,
@@ -278,10 +281,11 @@ export function useAxonAcp({
         flags: {
           ...(activeSessionId ? { session_id: activeSessionId } : {}),
           agent,
+          ...(assistantMode ? { assistant_mode: true } : {}),
         },
       })
     },
-    [connected, isStreaming, activeSessionId, agent, send, onMessagesChange],
+    [connected, isStreaming, activeSessionId, agent, assistantMode, send, onMessagesChange],
   )
 
   return { submitPrompt, isStreaming, connected }
