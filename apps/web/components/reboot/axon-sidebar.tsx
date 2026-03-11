@@ -1,14 +1,6 @@
 'use client'
 
 import { ChevronDown, PanelLeft, Plus, Search } from 'lucide-react'
-import Link from 'next/link'
-import {
-  Queue,
-  QueueList,
-  QueueSection,
-  QueueSectionLabel,
-  QueueSectionTrigger,
-} from '@/components/ai-elements/queue'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -20,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { FileTree } from '@/components/workspace/file-tree'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
-import { AGENT_ITEMS, PAGE_ITEMS, RAIL_MODES, type RailMode } from './axon-ui-config'
+import { RAIL_MODES, type RailMode } from './axon-ui-config'
 
 const AGENT_BADGE: Record<string, { label: string; colorClass: string }> = {
   claude: { label: 'C', colorClass: 'text-[#afd7ff]' },
@@ -34,18 +26,14 @@ function railItemClass(isActive: boolean) {
     : 'border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.18)] hover:bg-[rgba(175,215,255,0.03)] hover:text-[var(--text-primary)]'
 }
 
-function isPageActive(pathname: string | null, href: string) {
-  if (href === '/cortex/status') return pathname?.startsWith('/cortex') ?? false
-  if (href === '/') return pathname === '/'
-  return pathname === href
-}
-
 function RailContent({
   mode,
   sessions,
-  pathname,
   activeSessionId,
   onSelectSession,
+  assistantSessions,
+  activeAssistantSessionId,
+  onSelectAssistantSession,
   fileEntries,
   fileLoading,
   selectedFilePath,
@@ -54,9 +42,11 @@ function RailContent({
 }: {
   mode: RailMode
   sessions: SessionSummary[]
-  pathname: string | null
   activeSessionId: string | null
   onSelectSession: (sessionId: string) => void
+  assistantSessions: SessionSummary[]
+  activeAssistantSessionId: string | null
+  onSelectAssistantSession: (sessionId: string) => void
   fileEntries: FileEntry[]
   fileLoading: boolean
   selectedFilePath: string | null
@@ -77,7 +67,7 @@ function RailContent({
     })
 
     return (
-      <QueueList className="mt-1 space-y-0.5">
+      <ul className="mt-1 space-y-0.5">
         {filteredSessions.map((session) => {
           const isActive = session.id === activeSessionId
           const title = session.preview?.slice(0, 60) ?? session.project ?? 'Untitled'
@@ -117,7 +107,7 @@ function RailContent({
             </li>
           )
         })}
-      </QueueList>
+      </ul>
     )
   }
 
@@ -141,96 +131,47 @@ function RailContent({
     )
   }
 
-  if (mode === 'pages') {
-    const filteredPages = PAGE_ITEMS.filter((page) => {
+  if (mode === 'assistant') {
+    const filteredSessions = assistantSessions.filter((session) => {
       if (!normalizedQuery) return true
-      return page.label.toLowerCase().includes(normalizedQuery)
+      return session.preview?.toLowerCase().includes(normalizedQuery) ?? false
     })
-    const primaryPages = filteredPages.filter((page) => page.group === 'primary')
-    const footerPages = filteredPages.filter((page) => page.group === 'footer')
 
     return (
-      <div className="flex min-h-full flex-col">
-        <Queue className="rounded-none border-none bg-transparent px-0 pb-0 pt-0 shadow-none">
-          <QueueSection defaultOpen>
-            <QueueSectionTrigger className="h-8 rounded-none border-b border-[rgba(175,215,255,0.08)] px-0 text-[var(--text-secondary)] hover:bg-transparent hover:text-[var(--text-primary)]">
-              <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                Pages
-              </span>
-            </QueueSectionTrigger>
-            <QueueList className="mt-1 space-y-0.5">
-              {primaryPages.map((page) => {
-                const Icon = page.icon
-                const active = isPageActive(pathname, page.href)
-                return (
-                  <li key={page.href}>
-                    <Link
-                      href={page.href}
-                      aria-current={active ? 'page' : undefined}
-                      className={`flex items-center gap-2 border-l-2 px-3 py-2 text-[13px] transition-colors ${railItemClass(active)}`}
-                    >
-                      <Icon className="size-3.5 shrink-0" />
-                      <span className="truncate">{page.label}</span>
-                    </Link>
-                  </li>
-                )
-              })}
-            </QueueList>
-          </QueueSection>
-        </Queue>
-
-        {footerPages.length > 0 ? (
-          <div className="mt-auto border-t border-[rgba(175,215,255,0.08)] pt-2">
-            <QueueList className="space-y-0.5">
-              {footerPages.map((page) => {
-                const Icon = page.icon
-                const active = isPageActive(pathname, page.href)
-                return (
-                  <li key={page.href}>
-                    <Link
-                      href={page.href}
-                      aria-current={active ? 'page' : undefined}
-                      className={`flex items-center gap-2 border-l-2 px-3 py-2 text-[13px] transition-colors ${railItemClass(active)}`}
-                    >
-                      <Icon className="size-3.5 shrink-0" />
-                      <span className="truncate">{page.label}</span>
-                    </Link>
-                  </li>
-                )
-              })}
-            </QueueList>
-          </div>
+      <ul className="mt-1 space-y-0.5">
+        {filteredSessions.length === 0 ? (
+          <li className="px-3 py-4 text-xs text-[var(--text-dim)]">
+            No assistant chats yet. Start a conversation below.
+          </li>
         ) : null}
-      </div>
+        {filteredSessions.map((session) => {
+          const isActive = session.id === activeAssistantSessionId
+          const title = session.preview?.slice(0, 60) ?? 'Untitled'
+          return (
+            <li key={session.id}>
+              <button
+                type="button"
+                onClick={() => onSelectAssistantSession(session.id)}
+                aria-current={isActive ? 'true' : undefined}
+                className={`w-full border-l-2 px-0 py-2 text-left transition-colors ${railItemClass(isActive)}`}
+              >
+                <div className="px-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[13px] font-medium">{title}</span>
+                    <span className="text-[11px] text-[var(--text-dim)]">
+                      {formatRelativeTime(session.mtimeMs)}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     )
   }
 
-  return (
-    <Queue className="rounded-none border-none bg-transparent px-0 pb-0 pt-0 shadow-none">
-      <QueueSection defaultOpen>
-        <QueueSectionTrigger className="h-8 rounded-none border-b border-[rgba(175,215,255,0.08)] px-0 text-[var(--text-secondary)] hover:bg-transparent hover:text-[var(--text-primary)]">
-          <QueueSectionLabel count={AGENT_ITEMS.length} label="agents" />
-        </QueueSectionTrigger>
-        <QueueList className="mt-1 space-y-0.5">
-          {AGENT_ITEMS.map((agent) => (
-            <li key={agent.name}>
-              <div className="flex w-full items-start justify-between gap-3 border-l-2 border-transparent px-3 py-2 text-left text-[var(--text-secondary)]">
-                <div className="min-w-0">
-                  <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                    {agent.name}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">{agent.detail}</div>
-                </div>
-                <span className="shrink-0 text-[10px] uppercase tracking-[0.18em] text-[var(--text-dim)]">
-                  {agent.status}
-                </span>
-              </div>
-            </li>
-          ))}
-        </QueueList>
-      </QueueSection>
-    </Queue>
-  )
+  return null
 }
 
 export function AxonSidebar({
@@ -240,10 +181,12 @@ export function AxonSidebar({
   onRailModeChange,
   railQuery,
   onRailQueryChange,
-  pathname,
   activeSessionId,
   activeSessionRepo,
   onSelectSession,
+  assistantSessions,
+  activeAssistantSessionId,
+  onSelectAssistantSession,
   fileEntries,
   fileLoading,
   selectedFilePath,
@@ -257,10 +200,12 @@ export function AxonSidebar({
   onRailModeChange: (mode: RailMode) => void
   railQuery: string
   onRailQueryChange: (query: string) => void
-  pathname: string | null
   activeSessionId: string | null
   activeSessionRepo: string
   onSelectSession: (sessionId: string) => void
+  assistantSessions: SessionSummary[]
+  activeAssistantSessionId: string | null
+  onSelectAssistantSession: (sessionId: string) => void
   fileEntries: FileEntry[]
   fileLoading: boolean
   selectedFilePath: string | null
@@ -276,11 +221,9 @@ export function AxonSidebar({
   const subtitle =
     railMode === 'sessions'
       ? activeSessionRepo
-      : railMode === 'files'
-        ? 'workspace root'
-        : railMode === 'pages'
-          ? 'navigation'
-          : 'assistant lanes'
+      : railMode === 'assistant'
+        ? 'assistant'
+        : 'workspace root'
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--glass-panel)] animate-fade-in">
@@ -407,9 +350,9 @@ export function AxonSidebar({
             placeholder={
               railMode === 'sessions'
                 ? 'Search sessions...'
-                : railMode === 'files'
-                  ? 'Search files...'
-                  : 'Search...'
+                : railMode === 'assistant'
+                  ? 'Search assistant chats...'
+                  : 'Search files...'
             }
             aria-label={`Search ${activeMode.label.toLowerCase()}`}
             className={`${searchH} w-full rounded-md border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.32)] pl-7 pr-2 font-sans text-[var(--text-secondary)] placeholder:text-[var(--text-dim)] focus:border-[rgba(175,215,255,0.18)] focus:outline-none`}
@@ -421,9 +364,11 @@ export function AxonSidebar({
         <RailContent
           mode={railMode}
           sessions={sessions}
-          pathname={pathname}
           activeSessionId={activeSessionId}
           onSelectSession={onSelectSession}
+          assistantSessions={assistantSessions}
+          activeAssistantSessionId={activeAssistantSessionId}
+          onSelectAssistantSession={onSelectAssistantSession}
           fileEntries={fileEntries}
           fileLoading={fileLoading}
           selectedFilePath={selectedFilePath}
