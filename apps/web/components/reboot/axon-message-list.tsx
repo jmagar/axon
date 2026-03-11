@@ -151,6 +151,8 @@ export const AxonMessageList = memo(function AxonMessageList({
   error = null,
   onRetry,
   onEditorContent,
+  onEdit,
+  onRetryMessage,
 }: {
   messages: AxonMessage[]
   agentName: string
@@ -164,6 +166,8 @@ export const AxonMessageList = memo(function AxonMessageList({
   error?: string | null
   onRetry?: () => void
   onEditorContent?: (content: string, operation: 'replace' | 'append') => void
+  onEdit?: (messageId: string, content: string) => void
+  onRetryMessage?: (messageId: string) => void
 }) {
   const isMobile = variant === 'mobile'
   const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[80%]'
@@ -312,10 +316,7 @@ export const AxonMessageList = memo(function AxonMessageList({
                 <MessageAction
                   label="Edit message"
                   tooltip="Edit"
-                  onClick={() => {
-                    /* TODO: implement edit — wire to an onEdit prop callback */
-                    console.log('Edit message:', message.id)
-                  }}
+                  onClick={() => onEdit?.(message.id, message.content)}
                 >
                   <Pencil className="size-3.5" />
                 </MessageAction>
@@ -323,10 +324,7 @@ export const AxonMessageList = memo(function AxonMessageList({
                 <MessageAction
                   label="Retry"
                   tooltip="Retry"
-                  onClick={() => {
-                    /* TODO: implement retry — wire to an onRetryMessage prop callback */
-                    console.log('Retry from message:', message.id)
-                  }}
+                  onClick={() => onRetryMessage?.(message.id)}
                 >
                   <RotateCcw className="size-3.5" />
                 </MessageAction>

@@ -609,6 +609,35 @@ export function AxonShell() {
     [openFile, setMobilePaneTracked],
   )
 
+  const handleEditMessage = useCallback(
+    (messageId: string, content: string) => {
+      setLiveMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId)
+        return idx >= 0 ? prev.slice(0, idx) : prev
+      })
+      submitPrompt(content)
+    },
+    [submitPrompt],
+  )
+
+  const handleRetryMessage = useCallback(
+    (messageId: string) => {
+      const idx = liveMessages.findIndex((m) => m.id === messageId)
+      if (idx <= 0) return
+      const userMsg = liveMessages
+        .slice(0, idx)
+        .reverse()
+        .find((m) => m.role === 'user')
+      if (!userMsg) return
+      setLiveMessages((prev) => {
+        const userIdx = prev.findIndex((m) => m.id === userMsg.id)
+        return userIdx >= 0 ? prev.slice(0, userIdx) : prev
+      })
+      submitPrompt(userMsg.content)
+    },
+    [liveMessages, submitPrompt],
+  )
+
   const sidebarProps = {
     sessions: rawSessions,
     railMode,
@@ -751,6 +780,8 @@ export function AxonShell() {
                     error={sessionError}
                     onRetry={reloadSession}
                     onEditorContent={onEditorUpdate}
+                    onEdit={handleEditMessage}
+                    onRetryMessage={handleRetryMessage}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
@@ -935,6 +966,8 @@ export function AxonShell() {
                     error={sessionError}
                     onRetry={reloadSession}
                     onEditorContent={onEditorUpdate}
+                    onEdit={handleEditMessage}
+                    onRetryMessage={handleRetryMessage}
                   />
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
