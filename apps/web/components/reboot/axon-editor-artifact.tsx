@@ -54,7 +54,6 @@ function extractPreview(md: string, limit: number): string {
  */
 function maskCodeRegions(text: string): string {
   // Fenced code blocks: ```…``` (may have a language hint after the opening fence)
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: non-control zero-width stand-in
   const masked = text.replace(/```[\s\S]*?```/g, (m) => '\x00'.repeat(m.length))
   // Inline code spans: `…` (single backtick, non-greedy)
   return masked.replace(/`[^`\n]*`/g, (m) => '\x00'.repeat(m.length))
