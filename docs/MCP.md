@@ -91,6 +91,11 @@ ACP sessions (`pulse_chat`) read MCP server definitions from:
 The Web UI MCP settings page (`/api/mcp`) writes to this same file, so servers
 added in the UI are the servers passed into ACP sessions.
 
+Hot reload behavior:
+- ACP watches `mcp.json` changes via file metadata checks.
+- When MCP server config changes, Pulse ACP respawns the persistent adapter
+  session with the updated MCP server list on the next turn.
+
 ### Config File Examples
 
 Stdio MCP server example:
