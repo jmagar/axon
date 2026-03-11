@@ -161,7 +161,9 @@ async fn get_or_create_acp_connection(
             let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
             format!("{home}/.local/share/axon")
         });
-        let assistant_path = std::path::PathBuf::from(base).join("axon").join("assistant");
+        let assistant_path = std::path::PathBuf::from(base)
+            .join("axon")
+            .join("assistant");
         tokio::fs::create_dir_all(&assistant_path)
             .await
             .map_err(|e| format!("failed to create assistant dir: {e}"))?;
