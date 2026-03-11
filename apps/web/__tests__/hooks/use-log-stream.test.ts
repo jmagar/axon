@@ -1,45 +1,53 @@
-import { describe, expect, it } from 'vitest'
+/**
+ * @vitest-environment jsdom
+ */
 
-interface LogEntry {
-  text: string
-  ts: number
-  service?: string
-}
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { useLogStream } from '../../hooks/use-log-stream'
 
-function appendLogEntry(buffer: LogEntry[], entry: LogEntry, maxLines: number): LogEntry[] {
-  if (buffer.length >= maxLines) {
-    const trimmed = buffer.slice(buffer.length - maxLines + 1)
-    trimmed.push(entry)
-    return trimmed
-  }
-  return [...buffer, entry]
-}
-
-describe('appendLogEntry', () => {
-  it('appends entry within limit', () => {
-    const buf: LogEntry[] = [
-      { text: 'a', ts: 1 },
-      { text: 'b', ts: 2 },
-    ]
-    const result = appendLogEntry(buf, { text: 'c', ts: 3 }, 10)
-    expect(result).toHaveLength(3)
-    expect(result[2].text).toBe('c')
+describe('useLogStream', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn()
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it('trims oldest when at limit', () => {
-    const buf: LogEntry[] = [
-      { text: 'a', ts: 1 },
-      { text: 'b', ts: 2 },
-      { text: 'c', ts: 3 },
-    ]
-    const result = appendLogEntry(buf, { text: 'd', ts: 4 }, 3)
-    expect(result).toHaveLength(3)
-    expect(result[0].text).toBe('b')
-    expect(result[2].text).toBe('d')
+  it('connects and receives log entries', async () => {
+    const mockReader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(`data: ${JSON.stringify({ line: 'hello', ts: 1 })}\n\n`),
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined }),
+    }
+
+    ;(global.fetch as Mock).mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => mockReader,
+      },
+    })
+
+    const { result } = renderHook(() => useLogStream({ service: 'all', tail: 10, enabled: true }))
+
+    await waitFor(() => {
+      expect(result.current.lines).toHaveLength(1)
+      expect(result.current.lines[0].text).toBe('hello')
+    })
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(false)
+    })
   })
 
-  it('handles empty buffer', () => {
-    const result = appendLogEntry([], { text: 'x', ts: 1 }, 5)
-    expect(result).toEqual([{ text: 'x', ts: 1 }])
+  it('handles empty buffer via clear()', () => {
+    const { result } = renderHook(() => useLogStream({ service: 'all', tail: 10, enabled: false }))
+    act(() => {
+      result.current.clear()
+    })
+    expect(result.current.lines).toEqual([])
   })
 })

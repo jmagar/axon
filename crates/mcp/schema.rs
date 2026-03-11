@@ -25,6 +25,7 @@ pub enum AxonRequest {
     Ask(AskRequest),
     Screenshot(ScreenshotRequest),
     Refresh(RefreshRequest),
+    Graph(GraphRequest),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
@@ -354,6 +355,26 @@ pub struct RefreshRequest {
     pub response_mode: Option<ResponseMode>,
 }
 
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphSubaction {
+    Build,
+    Status,
+    Explore,
+    Stats,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GraphRequest {
+    pub subaction: GraphSubaction,
+    pub url: Option<String>,
+    pub domain: Option<String>,
+    pub all: Option<bool>,
+    pub entity: Option<String>,
+    pub response_mode: Option<ResponseMode>,
+}
+
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AxonToolResponse {
@@ -510,6 +531,40 @@ mod tests {
         let result = parse_axon_request(raw);
         assert!(result.is_ok(), "stats should parse successfully");
         assert!(matches!(result.unwrap(), AxonRequest::Stats(_)));
+    }
+
+    #[test]
+    fn parse_graph_build_action() {
+        let raw = obj(json!({
+            "action": "graph",
+            "subaction": "build",
+            "domain": "tanstack.com"
+        }));
+        let result = parse_axon_request(raw);
+        assert!(result.is_ok(), "graph build should parse successfully");
+        if let Ok(AxonRequest::Graph(g)) = result {
+            assert!(matches!(g.subaction, GraphSubaction::Build));
+            assert_eq!(g.domain.as_deref(), Some("tanstack.com"));
+        } else {
+            panic!("expected Graph variant");
+        }
+    }
+
+    #[test]
+    fn parse_graph_explore_action() {
+        let raw = obj(json!({
+            "action": "graph",
+            "subaction": "explore",
+            "entity": "Neo4j"
+        }));
+        let result = parse_axon_request(raw);
+        assert!(result.is_ok(), "graph explore should parse successfully");
+        if let Ok(AxonRequest::Graph(g)) = result {
+            assert!(matches!(g.subaction, GraphSubaction::Explore));
+            assert_eq!(g.entity.as_deref(), Some("Neo4j"));
+        } else {
+            panic!("expected Graph variant");
+        }
     }
 
     #[test]

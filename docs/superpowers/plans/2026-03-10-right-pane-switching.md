@@ -1001,7 +1001,7 @@ git commit -m "chore(web): lint fixes for right pane switching"
 6. Click the active icon again → right pane closes (collapse handle shows)
 7. Click collapse handle → re-opens editor (default)
 8. Editor content persists when switching away and back
-9. Terminal session persists when switching away and back (component stays mounted via conditional rendering)
+9. Terminal session persists when switching away and back (component stays mounted via CSS hidden class, not conditional rendering)
 10. Active icon is highlighted with `--axon-primary` color
 11. localStorage saves `rightPane` selection and restores on reload
 12. `pnpm lint` and `pnpm build` pass

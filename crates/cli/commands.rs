@@ -31,6 +31,9 @@ pub mod status;
 pub mod suggest;
 pub mod watch;
 
+#[cfg(test)]
+mod services_migration_tests;
+
 pub use ask::run_ask;
 pub use common::start_url_from_cfg;
 pub use completions::run_completions;

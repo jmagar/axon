@@ -241,7 +241,7 @@ const handleStats = useCallback(
     canvasRef.current?.stimulate(data.containers)
     if (!isStreaming) {
       const maxCpu = data.container_count * 100
-      const norm = Math.min(data.aggregate.cpu_percent / maxCpu, 1.0)
+      const norm = maxCpu > 0 ? Math.min(data.aggregate.cpu_percent / maxCpu, 1.0) : 0
       canvasRef.current?.setIntensity(0.02 + norm * 0.83)
     }
   },
@@ -311,15 +311,15 @@ In `axon-shell.tsx`, add:
 ```tsx
 const handleEditMessage = useCallback(
   (messageId: string, content: string) => {
-    // Remove messages from this point forward, populate composer
+    // Remove messages from this point forward
     setLiveMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === messageId)
       return idx >= 0 ? prev.slice(0, idx) : prev
     })
-    // Submit the edited content directly
-    submitPrompt(content)
+    // Populate the composer with the content so the user can edit it
+    // TODO: implement setComposerText(content) or similar instead of auto-submitting
   },
-  [submitPrompt],
+  [],
 )
 
 const handleRetryMessage = useCallback(

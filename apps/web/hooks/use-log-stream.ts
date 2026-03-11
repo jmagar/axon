@@ -49,7 +49,10 @@ export function useLogStream({ service, tail, enabled }: UseLogStreamOptions) {
 
         while (alive) {
           const { done, value } = await reader.read()
-          if (done) break
+          if (done) {
+            setIsConnected(false)
+            break
+          }
           buf += decoder.decode(value, { stream: true })
           const parts = buf.split('\n\n')
           buf = parts.pop() ?? ''

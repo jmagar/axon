@@ -29,12 +29,26 @@ async fn handle_build(cfg: &Config) -> Result<(), Box<dyn Error>> {
     while i < cfg.positional.len() {
         match cfg.positional[i].as_str() {
             "--url" => {
-                url = cfg.positional.get(i + 1).cloned();
-                i += 2;
+                if let Some(val) = cfg.positional.get(i + 1) {
+                    if val.starts_with("--") {
+                        return Err("Expected value after --url".into());
+                    }
+                    url = Some(val.clone());
+                    i += 2;
+                } else {
+                    return Err("Expected value after --url".into());
+                }
             }
             "--domain" => {
-                domain = cfg.positional.get(i + 1).cloned();
-                i += 2;
+                if let Some(val) = cfg.positional.get(i + 1) {
+                    if val.starts_with("--") {
+                        return Err("Expected value after --domain".into());
+                    }
+                    domain = Some(val.clone());
+                    i += 2;
+                } else {
+                    return Err("Expected value after --domain".into());
+                }
             }
             "--all" => {
                 all = true;

@@ -418,6 +418,8 @@ fn direct_sync_modes_contains_core_service_modes() {
         "evaluate",
         "dedupe",
         "screenshot",
+        "debug",
+        "sessions",
     ] {
         assert!(
             direct.contains(expected),
@@ -427,20 +429,17 @@ fn direct_sync_modes_contains_core_service_modes() {
 }
 
 #[test]
-fn fallback_subprocess_modes_not_in_direct_sync_or_async() {
-    // These modes are not yet wired to direct service dispatch and are expected
-    // to fall through to the subprocess path.  Verify their classification.
-    let fallback_modes = &["sessions", "debug"];
+fn no_sync_service_modes_remain_on_subprocess_fallback() {
     let direct = super::direct_sync_modes();
     let async_m = super::async_modes();
-    for mode in fallback_modes {
+    for mode in &["sessions", "debug"] {
         assert!(
-            !direct.contains(mode),
-            "fallback mode '{mode}' must NOT be in direct_sync_modes yet"
+            direct.contains(mode),
+            "mode '{mode}' should now dispatch directly through services"
         );
         assert!(
             !async_m.contains(mode),
-            "fallback mode '{mode}' must NOT be in async_modes"
+            "mode '{mode}' must not be reclassified as async"
         );
     }
 }
