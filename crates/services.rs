@@ -3,6 +3,7 @@ pub mod crawl;
 pub mod embed;
 pub mod events;
 pub mod extract;
+pub mod graph;
 pub mod ingest;
 pub mod map;
 pub mod query;

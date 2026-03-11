@@ -45,6 +45,7 @@ pub enum CandidateSource {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[expect(dead_code)]
 pub struct TaxonomyEntry {
     pub name: String,
     #[serde(rename = "type")]

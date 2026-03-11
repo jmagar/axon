@@ -1,11 +1,15 @@
 # Changelog
-Last Modified: 2026-03-10 (session: v0.15.0 — MCP transport/docs updates + shell completions + CORS/crawl path hardening)
+Last Modified: 2026-03-10 (session: v0.16.0 — Reboot UI cutover + GraphRAG scaffolding)
 
 ## [Unreleased] — refactor/acp-performance-modern-rust
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Reboot UI cutover — chat-first interface promoted to root route (v0.16.0)** — `AxonShell` (the reboot UI) promoted from `/reboot` to `/`; legacy dashboard preserved at `/legacy`; `AppShell` sidebar guard updated to `hideAppSidebar` covering `/`, `/legacy`, `/reboot`; sidebar page links updated (removed duplicate `/reboot` entry, added `/legacy`); Docker stats wired to NeuralCanvas intensity via `canvasRef` + `useAxonWs` subscription (`command.done`/`command.error` pulse, CPU-normalized idle intensity); message edit and retry callbacks implemented (trim-and-resubmit pattern); settings dialog added with canvas profile picker (current/subtle/cinematic/electric/zen) persisted to localStorage; `useLogStream` hook extracted from `AxonLogsDialog` to eliminate SSE duplication with `logs-viewer.tsx`; TypeScript build errors from Plate.js untyped APIs resolved; 771 tests passing, Next.js build clean
+
+- **GraphRAG scaffolding** — `crates/core/neo4j.rs`, `crates/jobs/graph.rs`, `crates/jobs/graph/worker.rs`, `crates/services/graph.rs` stubs added; `ServiceResult` gains graph-related variants; `rust-toolchain.toml` updated
 
 - **MCP transport/docs alignment + shell completions/CORS/crawl output hardening (v0.15.0)** — `feat(mcp)` adds stdio + dual transport support (`a3c1f18e`), docs/env alignment for MCP transport settings (`ef2c4fad`), and feature-level CLI/web hardening for shell completions, CORS/origin handling, and crawl output path behavior (`3d3f9d98`); includes ingest progress fix baseline in this unreleased window (`e462931f`)
 
@@ -117,6 +121,15 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
+| `4f71971d` | fix(web) | resolve TypeScript build errors from Plate.js untyped APIs |
+| `65a74309` | fix(web) | remove unused LogEntry import from axon-logs-dialog |
+| `a42cf681` | refactor(web) | extract shared log stream hook from AxonLogsDialog |
+| `4dcf1746` | feat(web) | add settings dialog with canvas profile to reboot shell |
+| `f7f60573` | feat(web) | wire message edit and retry in reboot chat |
+| `88cf67e3` | feat(web) | wire Docker stats and NeuralCanvas intensity into reboot shell |
+| `8dbbb1f1` | feat(web) | update reboot sidebar page links for root route |
+| `fdf06eee` | feat(web) | promote reboot UI to root route, move legacy dashboard to /legacy |
+| `163998b4` | feat | finalize mcp transport and review hardening (v0.15.0) |
 | `3d3f9d98` | feat | add shell completions, CORS guards, and crawl output paths |
 | `ef2c4fad` | docs(mcp) | align transport docs and env example |
 | `a3c1f18e` | feat(mcp) | support stdio and dual transport modes |
