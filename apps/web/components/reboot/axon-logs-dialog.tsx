@@ -13,9 +13,9 @@ import {
   type TailLines,
 } from '@/components/logs/logs-toolbar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useLogStream } from '@/hooks/use-log-stream'
 
 const MAX_LINES = 1200
-const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
 const LOGS_SERVICE_KEY = 'axon.web.logs.service'
 const DEFAULT_SERVICE: ServiceName = 'all'
 
@@ -28,12 +28,20 @@ export function AxonLogsDialog({
 }) {
   const [service, setService] = useState<ServiceName>(DEFAULT_SERVICE)
   const [tailLines, setTailLines] = useState<TailLines>(TAIL_OPTIONS[1])
-  const [lines, setLines] = useState<LogEntry[]>([])
   const [filter, setFilter] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   const [compact, setCompact] = useState(true)
   const [wrapLines, setWrapLines] = useState(false)
-  const [isConnected, setIsConnected] = useState(false)
+
+  const {
+    lines,
+    isConnected,
+    clear: clearLines,
+  } = useLogStream({
+    service,
+    tail: tailLines,
+    enabled: open,
+  })
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const autoScrollRef = useRef(autoScroll)
@@ -52,91 +60,6 @@ export function AxonLogsDialog({
       /* ignore */
     }
   }, [])
-
-  // TODO: This SSE streaming + virtualised log rendering block duplicates the
-  // equivalent logic in `components/logs/logs-viewer.tsx` (the canonical
-  // implementation). Both must be kept in sync manually until the shared
-  // behaviour is extracted into a reusable hook (e.g. `hooks/use-log-stream.ts`).
-  // Maintenance drift risk: any bug fix or protocol change applied to one must
-  // also be applied to the other.
-  // SSE connection — only when dialog is open
-  useEffect(() => {
-    if (!open) return
-
-    setLines([])
-    setIsConnected(false)
-
-    const params = new URLSearchParams({ service, tail: String(tailLines) })
-    const abortCtrl = new AbortController()
-    let alive = true
-
-    async function connect() {
-      try {
-        const headers: Record<string, string> = { Accept: 'text/event-stream' }
-        if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`
-
-        const res = await fetch(`/api/logs?${params.toString()}`, {
-          headers,
-          signal: abortCtrl.signal,
-        })
-
-        if (!res.ok || !res.body) {
-          setIsConnected(false)
-          return
-        }
-
-        setIsConnected(true)
-
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buf = ''
-
-        while (alive) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buf += decoder.decode(value, { stream: true })
-          const parts = buf.split('\n\n')
-          buf = parts.pop() ?? ''
-          for (const part of parts) {
-            const dataLine = part.split('\n').find((l) => l.startsWith('data: '))
-            if (!dataLine) continue
-            try {
-              const {
-                line,
-                ts,
-                service: svc,
-              } = JSON.parse(dataLine.slice(6)) as {
-                line: string
-                ts: number
-                service?: string
-              }
-              const entry: LogEntry = { text: line, ts, ...(svc ? { service: svc } : {}) }
-              setLines((prev) => {
-                if (prev.length >= MAX_LINES) {
-                  const trimmed = prev.slice(prev.length - MAX_LINES + 1)
-                  trimmed.push(entry)
-                  return trimmed
-                }
-                return [...prev, entry]
-              })
-            } catch {
-              // malformed SSE data
-            }
-          }
-        }
-      } catch {
-        if (alive) setIsConnected(false)
-      }
-    }
-
-    void connect()
-
-    return () => {
-      alive = false
-      abortCtrl.abort()
-      setIsConnected(false)
-    }
-  }, [open, service, tailLines])
 
   const handleScroll = useCallback(() => {
     const el = scrollAreaRef.current
@@ -209,7 +132,7 @@ export function AxonLogsDialog({
             onAutoScrollToggle={handleAutoScrollToggle}
             onCompactToggle={() => setCompact((prev) => !prev)}
             onWrapToggle={() => setWrapLines((prev) => !prev)}
-            onClear={() => setLines([])}
+            onClear={clearLines}
           />
         </div>
 
