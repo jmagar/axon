@@ -128,11 +128,29 @@ fn inline_bytes_threshold() -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::super::path::MCP_ARTIFACT_DIR_ENV;
     use super::*;
+    use std::env;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex;
+
+    static ARTIFACT_ENV_LOCK: Mutex<()> = Mutex::const_new(());
+
+    #[allow(unsafe_code)]
+    fn scoped_artifact_root() -> TempDir {
+        let tmp = TempDir::new().expect("tempdir");
+        unsafe {
+            env::set_var(MCP_ARTIFACT_DIR_ENV, tmp.path());
+        }
+        tmp
+    }
 
     /// Small payload with no explicit mode should auto-inline.
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn auto_inline_when_mode_is_none_and_payload_small() {
+        let _guard = ARTIFACT_ENV_LOCK.lock().await;
+        let _tmp = scoped_artifact_root();
         let payload = serde_json::json!({"key": "value"});
         let resp = respond_with_mode("test", "sub", None, "test-artifact", payload.clone())
             .await
@@ -140,12 +158,18 @@ mod tests {
         assert!(resp.ok);
         assert_eq!(resp.data["response_mode"], "auto-inline");
         assert_eq!(resp.data["data"], payload);
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
     }
 
     /// Explicit Path mode on a small payload should NOT auto-inline — it should
     /// write to disk and return a path response.
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn explicit_path_mode_respected_even_for_small_payload() {
+        let _guard = ARTIFACT_ENV_LOCK.lock().await;
+        let _tmp = scoped_artifact_root();
         let payload = serde_json::json!({"key": "value"});
         let resp = respond_with_mode(
             "test",
@@ -160,11 +184,17 @@ mod tests {
         assert_eq!(resp.data["response_mode"], "path");
         assert!(resp.data["artifact"].is_object());
         assert!(resp.data["shape"].is_object());
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
     }
 
     /// Explicit Inline mode should return inline data with the artifact on disk.
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn explicit_inline_mode_returns_inline_data() {
+        let _guard = ARTIFACT_ENV_LOCK.lock().await;
+        let _tmp = scoped_artifact_root();
         let payload = serde_json::json!({"items": [1, 2, 3]});
         let resp = respond_with_mode(
             "test",
@@ -180,11 +210,17 @@ mod tests {
         assert!(resp.data["inline"].is_object() || resp.data["inline"].is_array());
         assert!(resp.data.get("truncated").is_some());
         assert!(resp.data["artifact"].is_object());
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
     }
 
     /// Both mode should return inline data, shape preview, and the artifact.
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn both_mode_returns_inline_and_shape_and_artifact() {
+        let _guard = ARTIFACT_ENV_LOCK.lock().await;
+        let _tmp = scoped_artifact_root();
         let payload = serde_json::json!({"name": "axon", "count": 42});
         let resp = respond_with_mode(
             "test",
@@ -201,5 +237,8 @@ mod tests {
         assert!(resp.data.get("truncated").is_some());
         assert!(resp.data["shape"].is_object());
         assert!(resp.data["artifact"].is_object());
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
     }
 }

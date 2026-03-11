@@ -1,11 +1,15 @@
 # Changelog
-Last Modified: 2026-03-10 (session: v0.16.0 — Reboot UI cutover + GraphRAG scaffolding)
+Last Modified: 2026-03-11 (session: v0.18.0 — Assistant mode + verification/lint stabilization)
 
-## [Unreleased] — refactor/acp-performance-modern-rust
+## [Unreleased] — feat/github-code-aware-chunking
 
 This section documents commits on `refactor/acp-performance-modern-rust` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Assistant mode in Reboot sidebar and ACP path isolation (v0.18.0)** — added `assistant` rail mode with dedicated session list (`/api/assistant/sessions`), `useAssistantSessions` hook, and shell wiring for separate assistant session continuity; pulse chat now accepts `assistant_mode` and resolves CWD to `$AXON_DATA_DIR/axon/assistant` (fallback `~/.local/share/axon/axon/assistant`) with per-agent+mode ACP connection scoping.
+
+- **Verification hardening + pre-existing gate cleanup** — fixed pre-existing failing tests/clippy issues (`await_holding_lock`, `collapsible_if`, env-coupled health assertions, refresh DB test skip behavior) so `just verify` passes cleanly; aligned web lint configuration for upstream PlateJS-derived components via scoped Biome overrides and removed stale suppressions.
 
 - **Reboot UI cutover — chat-first interface promoted to root route (v0.16.0)** — `AxonShell` (the reboot UI) promoted from `/reboot` to `/`; legacy dashboard preserved at `/legacy`; `AppShell` sidebar guard updated to `hideAppSidebar` covering `/`, `/legacy`, `/reboot`; sidebar page links updated (removed duplicate `/reboot` entry, added `/legacy`); Docker stats wired to NeuralCanvas intensity via `canvasRef` + `useAxonWs` subscription (`command.done`/`command.error` pulse, CPU-normalized idle intensity); message edit and retry callbacks implemented (trim-and-resubmit pattern); settings dialog added with canvas profile picker (current/subtle/cinematic/electric/zen) persisted to localStorage; `useLogStream` hook extracted from `AxonLogsDialog` to eliminate SSE duplication with `logs-viewer.tsx`; TypeScript build errors from Plate.js untyped APIs resolved; 771 tests passing, Next.js build clean
 
@@ -121,6 +125,60 @@ This section documents commits on `refactor/acp-performance-modern-rust` relativ
 
 | Commit | Type | Message |
 |---|---|---|
+| `93537231` | feat(web) | wire assistant mode sessions through shell and ACP |
+| `aef2014f` | test(web) | fix cortex route mock arg typing |
+| `c54de559` | feat(web) | render assistant session list in sidebar |
+| `17a6d231` | feat(web) | add assistant rail mode to config |
+| `e7271b23` | feat(web) | add assistant sessions API route and scanner |
+| `c2d414c8` | feat(web) | use assistant CWD when assistant_mode=true |
+| `9c7e6a5f` | feat(web) | add assistant_mode to DirectParams and extract from flags |
+| `05d13ba5` | test(services) | align scrape payload contract assertion |
+| `df0f0ffe` | feat(web) | add assistant_mode to ALLOWED_FLAGS |
+| `4fdc70be` | feat | complete GraphRAG rollout and prune reboot remnants |
+| `4e107038` | feat | add graph worker, services layer, artifact context isolation, and toolchain bump (v0.16.0) |
+| `61568562` | dev-setup | arch-aware just prebuilt install with binary verification |
+| `c8ba34a8` | dev-setup | always backfill .env entries and data dirs on rerun |
+| `fea465cc` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `b645b204` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `fc197755` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `60c50870` | dev-setup | fix die newlines and sed -i portability on macOS |
+| `8ea30464` | dev-setup | fix local-outside-function bug, drop dead just fallback |
+| `e900e335` | just | add test-infra-up/down recipes; use them in dev-setup |
+| `c308205f` | dev-setup | start test infra, populate test env URLs, fix stale summary |
+| `c762a652` | feat(dev-setup) | pre-create container data directories |
+| `f6098774` | feat(dev-setup) | auto-generate secrets on first .env creation |
+| `bc3dbc6b` | feat(dev-setup) | prompt for AXON_DATA_DIR on first .env creation |
+| `86062089` | fix(dev-setup) | fast just install + clarify entrypoint |
+| `08e35097` | feat | add dev-setup.sh bootstrap script |
+| `5179cba0` | fix | make hook script paths portable via git rev-parse |
+| `48d372d9` | fix | correct stale hook script paths in .claude/settings.json |
+| `706e84b7` | fix(sessions) | suppress biome dep warning, format shell-server.mjs |
+| `b488a20a` | feat(reboot) | add loading/error states to AxonMessageList |
+| `a83b1901` | feat(reboot) | disable AxonPromptComposer submit during streaming, add spinner |
+| `96120f43` | fix(sessions) | add repo/branch to SessionSummary type |
+| `8a0ada40` | fix(reboot) | add repo/branch to sidebar filter and card display |
+| `a2a252bb` | feat(reboot) | wire AxonSidebar to real SessionSummary list |
+| `dc51e2ed` | fix(reboot) | guard history sync during streaming, fix timestamp display |
+| `c0ffbf59` | fix(reboot) | wrap onTurnComplete callback in useCallback |
+| `9ce7c25a` | feat(reboot) | wire AxonShell to real session data and ACP WebSocket |
+| `eca13f44` | fix(hooks) | use randomUUID for message IDs + add ACP types to WsServerMsg |
+| `863cdee7` | test(hooks) | add behavioral tests for useAxonSession |
+| `ba85c64e` | refactor(reboot) | rename remaining REBOOT_ constants to AXON_ |
+| `ee1e5403` | refactor(reboot) | rename Reboot* components to Axon* |
+| `e3f2ae1c` | fix(pulse) | forward session_fallback through route handler + fix types |
+| `c1367c35` | feat(pulse) | handle session_fallback event in stream pipeline |
+| `bc2d691f` | style(sessions) | use template literals in git-metadata (biome) |
+| `26273571` | feat(sessions) | add git-metadata helper for repo/branch enrichment |
+| `adff1e2f` | merge | integrate feat/sidebar into main |
+| `3e8d7778` | chore(config) | update mcporter axon transport endpoint shape |
+| `5405832a` | fix(docker) | unblock worker/web healthchecks in local compose |
+| `fb91fadd` | chore(release) | v0.4.1 — stabilize web token/docs and prep services refactor execution |
+| `555ade14` | feat | add evaluate page, cortex suggest API, image SHA verification, CLI help contract; consolidate modules and expand command docs (v0.3.0) |
+| `460c8e30` | refactor | unify scrape response shaping and fetch pattern |
+| `cd831c88` | Merge pull request #7 from jmagar/add-claude-github-actions-1772591515488 | Merge pull request #7 from jmagar/add-claude-github-actions-1772591515488 |
+| `5472d9f3` | "Claude Code Review workflow" | "Claude Code Review workflow" |
+| `604d2d67` | "Claude PR Assistant workflow" | "Claude PR Assistant workflow" |
+| `cd8d172c` | feat(mcp) | add HTTP transport with Google OAuth + cleanup |
 | `4f71971d` | fix(web) | resolve TypeScript build errors from Plate.js untyped APIs |
 | `65a74309` | fix(web) | remove unused LogEntry import from axon-logs-dialog |
 | `a42cf681` | refactor(web) | extract shared log stream hook from AxonLogsDialog |

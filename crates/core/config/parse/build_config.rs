@@ -593,21 +593,24 @@ mod tests {
     #[test]
     fn into_config_parses_web_origin_allowlists_from_env() {
         let _guard = ENV_LOCK.lock().unwrap();
-        const PG: &str = "AXON_PG_URL";
-        const REDIS: &str = "AXON_REDIS_URL";
-        const AMQP: &str = "AXON_AMQP_URL";
         const WEB: &str = "AXON_WEB_ALLOWED_ORIGINS";
         const SHELL: &str = "AXON_SHELL_ALLOWED_ORIGINS";
 
         unsafe {
-            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
-            env::set_var(REDIS, "redis://127.0.0.1:53379");
-            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
             env::set_var(WEB, " https://axon.example.com , http://localhost:49010 ");
             env::set_var(SHELL, " http://localhost:49011 ");
         }
 
-        let cli = Cli::parse_from(["axon", "status"]);
+        let cli = Cli::parse_from([
+            "axon",
+            "--pg-url",
+            "postgresql://axon:postgres@127.0.0.1:53432/axon",
+            "--redis-url",
+            "redis://127.0.0.1:53379",
+            "--amqp-url",
+            "amqp://axon:axonrabbit@127.0.0.1:45535/%2f",
+            "status",
+        ]);
         let cfg = into_config(cli).expect("status config should parse");
 
         assert_eq!(
@@ -623,9 +626,6 @@ mod tests {
         );
 
         unsafe {
-            env::remove_var(PG);
-            env::remove_var(REDIS);
-            env::remove_var(AMQP);
             env::remove_var(WEB);
             env::remove_var(SHELL);
         }

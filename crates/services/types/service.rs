@@ -70,6 +70,11 @@ pub struct DoctorResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct DebugResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusResult {
     pub payload: serde_json::Value,
     pub text: String,
@@ -114,6 +119,9 @@ pub struct SuggestResult {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrapeResult {
     pub payload: serde_json::Value,
+    pub url: String,
+    pub markdown: String,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -152,6 +160,7 @@ pub struct CrawlStartResult {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CrawlJobResult {
     pub payload: serde_json::Value,
+    pub output_files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +209,17 @@ pub struct GraphStatsResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IngestResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefreshStartResult {
+    pub job_id: String,
+    pub urls: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RefreshRunResult {
     pub payload: serde_json::Value,
 }
 

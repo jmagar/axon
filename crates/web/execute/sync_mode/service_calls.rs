@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::crates::core::config::Config;
+use crate::crates::services::debug as debug_svc;
+use crate::crates::services::ingest as ingest_svc;
 use crate::crates::services::map as map_svc;
 use crate::crates::services::query as query_svc;
 use crate::crates::services::scrape as scrape_svc;
@@ -12,10 +14,10 @@ use crate::crates::services::screenshot as screenshot_svc;
 use crate::crates::services::search as search_svc;
 use crate::crates::services::system as system_svc;
 use crate::crates::services::types::{
-    AskResult, DedupeResult, DoctorResult, DomainsResult, EvaluateResult, MapOptions, MapResult,
-    Pagination, QueryResult, ResearchResult, RetrieveOptions, RetrieveResult, ScrapeResult,
-    ScreenshotResult, SearchOptions, SearchResult, SourcesResult, StatsResult, StatusResult,
-    SuggestResult,
+    AskResult, DebugResult, DedupeResult, DoctorResult, DomainsResult, EvaluateResult,
+    IngestResult, MapOptions, MapResult, Pagination, QueryResult, ResearchResult, RetrieveOptions,
+    RetrieveResult, ScrapeResult, ScreenshotResult, SearchOptions, SearchResult, SourcesResult,
+    StatsResult, StatusResult, SuggestResult,
 };
 
 use super::super::events::{
@@ -292,6 +294,27 @@ pub(super) fn call_screenshot(
 ) -> Pin<Box<dyn Future<Output = Result<ScreenshotResult, SvcError>> + Send + 'static>> {
     Box::pin(async move {
         screenshot_svc::screenshot_capture(&cfg, &url)
+            .await
+            .map_err(|e| -> SvcError { format!("{e}").into() })
+    })
+}
+
+pub(super) fn call_debug(
+    cfg: Arc<Config>,
+    context: String,
+) -> Pin<Box<dyn Future<Output = Result<DebugResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        debug_svc::debug_report(&cfg, &context)
+            .await
+            .map_err(|e| -> SvcError { format!("{e}").into() })
+    })
+}
+
+pub(super) fn call_sessions(
+    cfg: Arc<Config>,
+) -> Pin<Box<dyn Future<Output = Result<IngestResult, SvcError>> + Send + 'static>> {
+    Box::pin(async move {
+        ingest_svc::ingest_sessions(&cfg, None)
             .await
             .map_err(|e| -> SvcError { format!("{e}").into() })
     })

@@ -193,10 +193,11 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
             .bind(JobStatus::Running.as_str())
             .execute(pool)
             .await?;
-            if !cfg.neo4j_url.trim().is_empty() && validate_url(&input).is_ok() {
-                if let Err(err) = enqueue_graph_job(pool, cfg, &input, "embed").await {
-                    log_warn(&format!("graph auto-enqueue failed for {input}: {err}"));
-                }
+            if !cfg.neo4j_url.trim().is_empty()
+                && validate_url(&input).is_ok()
+                && let Err(err) = enqueue_graph_job(pool, cfg, &input, "embed").await
+            {
+                log_warn(&format!("graph auto-enqueue failed for {input}: {err}"));
             }
             log_done(&format!(
                 "worker completed embed job {id} collection={collection} chunk_count={chunk_count} duration_ms={}",

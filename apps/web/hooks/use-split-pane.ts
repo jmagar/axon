@@ -9,7 +9,7 @@ const SHOW_CHAT_STORAGE_KEY = 'axon.web.pulse.show-chat'
 const RIGHT_PANEL_STORAGE_KEY = 'axon.web.pulse.right-panel'
 export const MOBILE_PANE_STORAGE_KEY = 'axon.web.pulse.mobile-pane'
 
-const VALID_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings']
+const VALID_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings', 'cortex']
 export type MobilePane = 'chat' | RightPanelId
 
 export function useSplitPane() {

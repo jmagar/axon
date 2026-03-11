@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::crates::core::config::{RenderMode, ScrapeFormat};
+use crate::crates::crawl::scrape::{build_scrape_website, select_output};
 
 // -----------------------------------------------------------------------
 // select_output — pure function, no network required
@@ -419,7 +420,7 @@ fn test_build_scrape_website_explicit_timeout_overrides_spider_default() {
         .configuration
         .request_timeout
         .as_ref()
-        .map(|d| d.as_millis());
+        .map(|d| d.as_ref().as_millis());
     assert_ne!(
         default_timeout,
         Some(7_500),

@@ -165,4 +165,4 @@ export interface PulseDocument {
   tags: string[]
 }
 
-export type RightPanelId = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings'
+export type RightPanelId = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | 'cortex'

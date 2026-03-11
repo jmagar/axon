@@ -1,12 +1,25 @@
 use crate::crates::core::config::Config;
-use crate::crates::vector::ops::run_suggest_native;
+use crate::crates::services::query as query_service;
 use std::error::Error;
 
 /// CLI shim for the suggest command.
-///
-/// Currently delegates directly to `run_suggest_native` in the vector/ops layer.
-/// Phase 2 will extract the business logic into a service function and have this
-/// file handle only output formatting.
 pub async fn run_suggest(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    run_suggest_native(cfg).await
+    let focus = cfg
+        .query
+        .clone()
+        .or_else(|| (!cfg.positional.is_empty()).then(|| cfg.positional.join(" ")));
+    let result = query_service::suggest(cfg, focus.as_deref()).await?;
+    if cfg.json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "suggestions": result.urls
+            }))?
+        );
+    } else {
+        for url in result.urls {
+            println!("{url}");
+        }
+    }
+    Ok(())
 }

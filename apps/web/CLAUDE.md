@@ -1,5 +1,5 @@
 # apps/web — Axon Next.js UI
-Last Modified: 2026-03-03
+Last Modified: 2026-03-11
 
 Next.js 16 App Router frontend for the Axon RAG system. Runs on port `49010` in Docker via the `axon-web` service.
 
@@ -216,7 +216,11 @@ sudo chown -R jmagar:jmagar /path/to/appdata/axon/claude/
 Container fix: `docker/web/cont-init.d/15-fix-claude-dir-ownership` runs `chown -R node:node /home/node/.claude` on every start.
 
 ### MCP Config Path
-Claude CLI is given `--mcp-config /home/node/.claude/mcp.json --strict-mcp-config`. It ignores `~/.claude.json`. To add MCP servers, edit the project-owned `mcp.json`, not the user-level config.
+Web MCP settings (`/api/mcp`) persist MCP servers to:
+- `${AXON_DATA_DIR}/axon/config.json` when `AXON_DATA_DIR` is set
+- `~/.config/axon/config.json` fallback when `AXON_DATA_DIR` is unset
+
+Pulse ACP reads MCP servers from this same file (`crates/web/execute/mcp_config.rs`), so servers added via the Web UI are passed into ACP sessions.
 
 ### Always Dark Mode
 `app/layout.tsx` hardcodes `<html className="dark">`. Do not add theme toggling without updating this.

@@ -3,7 +3,6 @@ mod download;
 pub mod execute;
 mod pack;
 mod shell;
-pub mod ssh_auth;
 pub mod tailscale_auth;
 
 use crate::crates::core::config::Config;
@@ -20,12 +19,11 @@ use axum::routing::get;
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use ssh_auth::SshChallengeStore;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use tailscale_auth::{AuthOutcome, DenyReason, TailscaleAuthConfig, auth_log_message, check_auth};
+use tailscale_auth::{AuthOutcome, DenyReason, auth_log_message, check_auth};
 use tokio::sync::{Mutex, broadcast};
 
 /// Global semaphore limiting concurrent ACP sessions (pulse_chat + pulse_chat_probe).
@@ -51,14 +49,6 @@ pub(crate) struct AppState {
     /// Same token used by the Next.js proxy for /api/* routes.
     /// None = gate disabled (open WS, trusted-network deployments only).
     api_token: Option<String>,
-    /// Tailscale Serve identity auth configuration.
-    /// Arc so it can be shared with DownloadAuthState without cloning.
-    ts_auth: Arc<TailscaleAuthConfig>,
-    /// SSH challenge-response nonce store — shared with download routes.
-    ssh_challenges: Arc<SshChallengeStore>,
-    /// Path to the SSH authorized_keys file for SSH key auth.
-    /// None = SSH key auth layer disabled.
-    ssh_authorized_keys: Option<PathBuf>,
     /// Base server config — shared across all connections.
     pub(crate) cfg: Arc<Config>,
 }
@@ -67,9 +57,6 @@ pub(crate) struct AppState {
 pub(crate) struct DownloadAuthState {
     pub job_dirs: Arc<DashMap<String, PathBuf>>,
     pub api_token: Option<String>,
-    pub ts_auth: Arc<TailscaleAuthConfig>,
-    pub ssh_challenges: Arc<SshChallengeStore>,
-    pub ssh_authorized_keys: Option<PathBuf>,
 }
 
 /// Query parameters for the `/ws` upgrade request.
@@ -94,73 +81,15 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
         .ok()
         .filter(|t| !t.is_empty());
 
-    let ts_auth = Arc::new(TailscaleAuthConfig::from_env());
-
-    // Resolve SSH authorized_keys path: env var → ~/.ssh/authorized_keys fallback.
-    let ssh_authorized_keys: Option<PathBuf> = std::env::var("AXON_SSH_AUTHORIZED_KEYS")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(|s| expand_tilde(&s))
-        .or_else(|| {
-            let default = dirs_home().join(".ssh").join("authorized_keys");
-            default.exists().then_some(default)
-        });
-
-    let ssh_challenges = SshChallengeStore::new();
-
-    // Log the active auth configuration at startup so operators can verify.
-    match (
-        &api_token,
-        ts_auth.strict,
-        ts_auth.has_allowlist(),
-        ts_auth.require_dual_auth,
-    ) {
-        (_, _, _, true) => log_info(&format!(
-            "WS gate: DUAL-AUTH required (TS identity + API token) | allowlist: {} users | ssh: {}",
-            ts_auth.allowed_users.len(),
-            if ssh_authorized_keys.is_some() {
-                "enabled"
-            } else {
-                "disabled"
-            }
-        )),
-        (_, true, _, _) => log_info(
-            "WS gate: AXON_TAILSCALE_STRICT=true — only tailscale serve connections accepted",
-        ),
-        (_, false, true, _) => log_info(&format!(
-            "WS gate: tailscale serve + allowlist ({} users) | token fallback: {}",
-            ts_auth.allowed_users.len(),
-            if api_token.is_some() {
-                "enabled"
-            } else {
-                "disabled"
-            }
-        )),
-        (Some(_), false, false, _) => {
-            log_info("WS gate: api token | tailscale serve identity headers also accepted")
-        }
-        (None, false, false, _) => {
-            log_info("WS gate: tailscale serve only (no AXON_WEB_API_TOKEN, no strict mode)")
-        }
+    match &api_token {
+        Some(_) => log_info("WS gate: api token"),
+        None => log_info("WS gate: open in debug/test builds; set AXON_WEB_API_TOKEN for auth"),
     }
-
-    // Background task: evict expired SSH nonces every 60 seconds.
-    let evict_store = ssh_challenges.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        loop {
-            interval.tick().await;
-            evict_store.evict_expired();
-        }
-    });
 
     let state = Arc::new(AppState {
         stats_tx: stats_tx.clone(),
         job_dirs: job_dirs.clone(),
         api_token: api_token.clone(),
-        ts_auth: ts_auth.clone(),
-        ssh_challenges: ssh_challenges.clone(),
-        ssh_authorized_keys: ssh_authorized_keys.clone(),
         cfg: cfg.clone(),
     });
 
@@ -170,9 +99,6 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
     let download_state = Arc::new(DownloadAuthState {
         job_dirs: job_dirs.clone(),
         api_token,
-        ts_auth,
-        ssh_challenges,
-        ssh_authorized_keys,
     });
 
     let download_routes = Router::new()
@@ -186,7 +112,6 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
         .route("/ws", get(ws_upgrade))
         .route("/ws/shell", get(shell_ws_upgrade))
         .route("/output/{*path}", get(serve_output_file))
-        .route("/auth/ssh-challenge", get(ssh_challenge))
         .with_state(state)
         .merge(download_routes)
         .layer(middleware::from_fn_with_state(
@@ -222,55 +147,15 @@ async fn shutdown_signal() {
         .expect("failed to listen for ctrl+c");
 }
 
-/// Expand a leading `~` to the home directory.
-fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        dirs_home().join(rest)
-    } else if path == "~" {
-        dirs_home()
-    } else {
-        PathBuf::from(path)
-    }
-}
-
-/// Best-effort home directory for SSH key path resolution.
-fn dirs_home() -> PathBuf {
-    std::env::var("HOME")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/root"))
-}
-
-// ── SSH challenge endpoint ────────────────────────────────────────────────────
-
-/// `GET /auth/ssh-challenge` — public endpoint; returns a single-use 30-second nonce.
-async fn ssh_challenge(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let nonce = state.ssh_challenges.generate_nonce();
-    axum::Json(serde_json::json!({ "nonce": nonce, "expires_secs": 30 }))
-}
-
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
-/// Perform auth for HTTP handlers that support both SSH-key and TS/token paths.
+/// Perform token auth for HTTP handlers.
 fn http_auth(
     req_headers: &HeaderMap,
     query_token: Option<&str>,
     api_token: Option<&str>,
-    ts_auth: &TailscaleAuthConfig,
-    ssh_challenges: &SshChallengeStore,
-    ssh_authorized_keys: Option<&Path>,
 ) -> AuthOutcome {
-    if let Some(keys_path) = ssh_authorized_keys.filter(|_| req_headers.contains_key("x-ssh-nonce"))
-    {
-        return match ssh_auth::check_ssh_headers(req_headers, ssh_challenges, keys_path) {
-            Ok(id) => AuthOutcome::SshKey(id),
-            Err(e) => {
-                log::warn!("ssh auth failed: {e}");
-                AuthOutcome::Denied(DenyReason::NoCredentials)
-            }
-        };
-    }
-    check_auth(req_headers, query_token, api_token, ts_auth)
+    check_auth(req_headers, query_token, api_token)
 }
 
 // ── Output file serving ───────────────────────────────────────────────────────
@@ -291,9 +176,6 @@ async fn serve_output_file(
         &req_headers,
         params.token.as_deref(),
         state.api_token.as_deref(),
-        &state.ts_auth,
-        &state.ssh_challenges,
-        state.ssh_authorized_keys.as_deref(),
     );
     if matches!(auth, AuthOutcome::Denied(_)) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
@@ -364,30 +246,18 @@ async fn ws_upgrade(
         &headers,
         params.token.as_deref(),
         state.api_token.as_deref(),
-        &state.ts_auth,
-        &state.ssh_challenges,
-        state.ssh_authorized_keys.as_deref(),
     );
 
     let log_msg = auth_log_message(&outcome, addr);
     match &outcome {
-        AuthOutcome::Tailscale(_)
-        | AuthOutcome::Token
-        | AuthOutcome::DualAuth(_)
-        | AuthOutcome::SshKey(_) => log::info!("{log_msg}"),
+        AuthOutcome::Token => log::info!("{log_msg}"),
         AuthOutcome::Denied(_) => log::warn!("{log_msg}"),
     }
 
     if matches!(outcome, AuthOutcome::Denied(_)) {
         let body = match outcome {
-            AuthOutcome::Denied(DenyReason::UserNotAllowed(_)) => {
-                "forbidden: user not in allowlist"
-            }
-            AuthOutcome::Denied(DenyReason::StrictModeRequiresTailscale) => {
-                "forbidden: tailscale serve required (AXON_TAILSCALE_STRICT=true)"
-            }
             AuthOutcome::Denied(DenyReason::NoAuthConfigured) => {
-                "unauthorized: configure AXON_WEB_API_TOKEN or use tailscale serve"
+                "unauthorized: configure AXON_WEB_API_TOKEN"
             }
             _ => "unauthorized",
         };
@@ -422,29 +292,23 @@ async fn shell_ws_upgrade(
     };
 
     // Loopback (localhost) connections are always allowed — they originate from the
-    // local machine (Next.js dev server, tailscale serve daemon, etc.).
+    // local machine (Next.js dev server, local reverse proxy, etc.).
     if !is_loopback {
         // Non-loopback: apply the same auth check as the main /ws endpoint.
         let outcome = http_auth(
             &headers,
             params.token.as_deref(),
             state.api_token.as_deref(),
-            &state.ts_auth,
-            &state.ssh_challenges,
-            state.ssh_authorized_keys.as_deref(),
         );
         let log_msg = auth_log_message(&outcome, addr);
         match &outcome {
-            AuthOutcome::Tailscale(_)
-            | AuthOutcome::Token
-            | AuthOutcome::DualAuth(_)
-            | AuthOutcome::SshKey(_) => log::info!("shell ws: {log_msg}"),
+            AuthOutcome::Token => log::info!("shell ws: {log_msg}"),
             AuthOutcome::Denied(_) => log::warn!("shell ws: {log_msg}"),
         }
         if matches!(outcome, AuthOutcome::Denied(_)) {
             return (
                 StatusCode::FORBIDDEN,
-                "shell access denied — use tailscale serve or set AXON_WEB_API_TOKEN",
+                "shell access denied — set AXON_WEB_API_TOKEN",
             )
                 .into_response();
         }
