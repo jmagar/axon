@@ -20,10 +20,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Shared mock for the WS execution bridge
 // ---------------------------------------------------------------------------
 
-const runAxonCommandWsMock = vi.fn<() => Promise<unknown>>()
+const runAxonCommandWsMock = vi.fn<
+  (mode: string, timeoutMs: number, focus?: string) => Promise<unknown>
+>()
 
 vi.mock('@/lib/axon-ws-exec', () => ({
-  runAxonCommandWs: (...args: unknown[]) => runAxonCommandWsMock(...args),
+  runAxonCommandWs: (mode: string, timeoutMs: number, focus?: string) =>
+    runAxonCommandWsMock(mode, timeoutMs, focus),
   runAxonCommandWsStream: vi.fn(),
 }))
 
