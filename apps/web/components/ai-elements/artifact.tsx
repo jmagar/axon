@@ -1,6 +1,7 @@
 'use client'
 
-import type { ComponentProps, LucideIcon } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import type { ComponentProps } from 'react'
 import { memo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
