@@ -10,9 +10,9 @@ use super::super::events::CommandContext;
 use super::super::files;
 use super::pulse_chat::{handle_pulse_chat, handle_pulse_chat_probe};
 use super::service_calls::{
-    call_ask, call_dedupe, call_doctor, call_domains, call_evaluate, call_map, call_query,
-    call_research, call_retrieve, call_scrape, call_screenshot, call_search, call_sources,
-    call_stats, call_status, call_suggest, send_json_owned,
+    call_ask, call_debug, call_dedupe, call_doctor, call_domains, call_evaluate, call_map,
+    call_query, call_research, call_retrieve, call_scrape, call_screenshot, call_search,
+    call_sessions, call_sources, call_stats, call_status, call_suggest, send_json_owned,
 };
 use super::types::{AcpConn, DirectParams, ServiceMode, SvcError};
 
@@ -209,6 +209,20 @@ async fn dispatch_search_and_info_modes(
             };
             send_json_owned(tx, ws_ctx, result.payload).await;
         }
+        ServiceMode::Debug => {
+            let result = match call_debug(cfg, input).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
+        ServiceMode::Sessions => {
+            let result = match call_sessions(cfg).await {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            send_json_owned(tx, ws_ctx, result.payload).await;
+        }
         _ => return None,
     }
     Some(Ok(()))
@@ -237,6 +251,7 @@ pub(super) async fn dispatch_service(
         agent,
         session_id,
         model,
+        assistant_mode,
     } = params;
 
     if let Some(result) = dispatch_query_modes(
