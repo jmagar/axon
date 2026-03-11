@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Brain,
   MessageSquareText,
   PanelLeft,
   PanelRight,
@@ -9,7 +10,6 @@ import {
   TerminalSquare,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Conversation, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import type { PromptInputFile, PromptInputMessage } from '@/components/ai-elements/prompt-input'
@@ -20,6 +20,7 @@ import type { FileEntry } from '@/components/workspace/file-tree'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
 import type { AxonMessage } from '@/hooks/use-axon-session'
 import { useAxonSession } from '@/hooks/use-axon-session'
+import { useAssistantSessions } from '@/hooks/use-assistant-sessions'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
@@ -35,6 +36,7 @@ import {
 import type { PulseAgent } from '@/lib/pulse/types'
 import { getStorageItem, setStorageItem } from '@/lib/storage'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
+import { AxonCortexPane } from './axon-cortex-pane'
 import { AxonFrame } from './axon-frame'
 import { AxonLogsPane } from './axon-logs-pane'
 import { AxonMcpPane } from './axon-mcp-pane'
@@ -53,10 +55,25 @@ const EditorPane = dynamic(
   { ssr: false },
 )
 
-type RightPane = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | null
-const VALID_RIGHT_PANES = new Set<string>(['editor', 'terminal', 'logs', 'mcp', 'settings'])
+type RightPane = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | 'cortex' | null
+const VALID_RIGHT_PANES = new Set<string>([
+  'editor',
+  'terminal',
+  'logs',
+  'mcp',
+  'settings',
+  'cortex',
+])
 
-type AxonMobilePane = 'sidebar' | 'chat' | 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings'
+type AxonMobilePane =
+  | 'sidebar'
+  | 'chat'
+  | 'editor'
+  | 'terminal'
+  | 'logs'
+  | 'mcp'
+  | 'settings'
+  | 'cortex'
 const AXON_MOBILE_PANE_STORAGE_KEY = 'axon.web.reboot.mobile-pane'
 const SIDEBAR_WIDTH_STORAGE_KEY = 'axon.web.reboot.sidebar-width'
 const CHAT_FLEX_STORAGE_KEY = 'axon.web.reboot.chat-flex'
@@ -94,7 +111,7 @@ function readStoredBool(key: string, fallback: boolean): boolean {
 function readStoredRailMode(key: string, fallback: RailMode): RailMode {
   try {
     const v = window.localStorage.getItem(key)
-    if (v === 'sessions' || v === 'files' || v === 'pages' || v === 'agents') return v
+    if (v === 'sessions' || v === 'files' || v === 'assistant') return v
     return fallback
   } catch {
     return fallback
@@ -147,7 +164,6 @@ function agentDisplayName(agent: string): string {
 }
 
 export function AxonShell() {
-  const pathname = usePathname()
   const { pulseModel, pulsePermissionLevel, acpConfigOptions, pulseAgent } = useWsWorkspaceState()
   const { setPulseModel, setPulsePermissionLevel, setPulseAgent } = useWsMessageActions()
   const { copiedId, copy: copyMessage } = useCopyFeedback()
@@ -155,6 +171,7 @@ export function AxonShell() {
   const workspace = useWorkspaceFiles()
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [activeAssistantSessionId, setActiveAssistantSessionId] = useState<string | null>(null)
   const [railMode, setRailMode] = useState<RailMode>('sessions')
   const [mobilePane, setMobilePane] = useState<AxonMobilePane>('chat')
   const [railQuery, setRailQuery] = useState('')
@@ -180,6 +197,8 @@ export function AxonShell() {
 
   // Live session list from ~/.claude/projects
   const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
+  const { sessions: assistantSessions, reload: reloadAssistantSessions } = useAssistantSessions()
+  const chatSessionId = railMode === 'assistant' ? activeAssistantSessionId : activeSessionId
 
   // Load JSONL history for the active session
   const {
@@ -188,17 +207,21 @@ export function AxonShell() {
     loaded: sessionLoaded,
     error: sessionError,
     reload: reloadSession,
-  } = useAxonSession(activeSessionId)
+  } = useAxonSession(chatSessionId)
 
   // Treat as loading while the hook has not yet completed its first fetch.
   // `loaded` becomes true in `.finally()` regardless of whether messages were
   // returned, so a legitimately empty session (`messages.length === 0`) no
   // longer keeps the UI in a permanent loading state.
-  const sessionLoading = sessionLoadingBase || (activeSessionId !== null && !sessionLoaded)
+  const sessionLoading = sessionLoadingBase || (chatSessionId !== null && !sessionLoaded)
 
   const onSessionIdChange = useCallback((newId: string) => {
+    if (railMode === 'assistant') {
+      setActiveAssistantSessionId(newId)
+      return
+    }
     setActiveSessionId(newId)
-  }, [])
+  }, [railMode])
 
   const onMessagesChange = useCallback((updater: (prev: AxonMessage[]) => AxonMessage[]) => {
     setLiveMessages(updater)
@@ -207,7 +230,10 @@ export function AxonShell() {
   const onTurnComplete = useCallback(() => {
     reloadSessions()
     reloadSession()
-  }, [reloadSessions, reloadSession])
+    if (railMode === 'assistant') {
+      reloadAssistantSessions()
+    }
+  }, [reloadSessions, reloadSession, reloadAssistantSessions, railMode])
 
   const onEditorUpdate = useCallback((content: string, operation: 'replace' | 'append') => {
     setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
@@ -229,8 +255,9 @@ export function AxonShell() {
   }, [])
 
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
-    activeSessionId,
+    activeSessionId: chatSessionId,
     agent: pulseAgent ?? 'claude',
+    assistantMode: railMode === 'assistant',
     onSessionIdChange,
     onSessionFallback: undefined,
     onMessagesChange,
@@ -293,10 +320,12 @@ export function AxonShell() {
   }, [historicalMessages, sessionLoading, sessionError])
 
   // Derive active session metadata for display
-  const activeSession = useMemo(
-    () => rawSessions.find((s) => s.id === activeSessionId) ?? null,
-    [rawSessions, activeSessionId],
-  )
+  const activeSession = useMemo(() => {
+    if (railMode === 'assistant') {
+      return assistantSessions.find((s) => s.id === activeAssistantSessionId) ?? null
+    }
+    return rawSessions.find((s) => s.id === activeSessionId) ?? null
+  }, [railMode, assistantSessions, activeAssistantSessionId, rawSessions, activeSessionId])
 
   const modelOptions = useMemo(() => {
     const modelOption = getAcpModelConfigOption(acpConfigOptions)
@@ -327,7 +356,8 @@ export function AxonShell() {
         saved === 'terminal' ||
         saved === 'logs' ||
         saved === 'mcp' ||
-        saved === 'settings'
+        saved === 'settings' ||
+        saved === 'cortex'
       ) {
         setMobilePane(saved as AxonMobilePane)
       }
@@ -609,6 +639,7 @@ export function AxonShell() {
   const handleSelectSession = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId)
+      setActiveAssistantSessionId(null)
       setSessionKey((k) => k + 1)
       const session = rawSessions.find((s) => s.id === sessionId)
       if (session?.agent && session.agent !== (pulseAgent ?? 'claude')) {
@@ -619,8 +650,15 @@ export function AxonShell() {
     [rawSessions, pulseAgent, setPulseAgent, setPulseModel],
   )
 
+  const handleSelectAssistantSession = useCallback((sessionId: string) => {
+    setActiveAssistantSessionId(sessionId)
+    setActiveSessionId(null)
+    setSessionKey((k) => k + 1)
+  }, [])
+
   const handleNewSession = useCallback(() => {
     setActiveSessionId(null)
+    setActiveAssistantSessionId(null)
     setLiveMessages([])
     setSessionKey((k) => k + 1)
   }, [])
@@ -687,9 +725,11 @@ export function AxonShell() {
     onRailModeChange: setRailModeTracked,
     railQuery,
     onRailQueryChange: setRailQuery,
-    pathname,
     activeSessionId,
     activeSessionRepo: activeSession?.project ?? '',
+    assistantSessions,
+    activeAssistantSessionId,
+    onSelectAssistantSession: handleSelectAssistantSession,
     fileEntries: workspace.fileEntries,
     fileLoading: workspace.fileLoading,
     selectedFilePath: workspace.selectedFilePath,
@@ -829,6 +869,10 @@ export function AxonShell() {
                   onCanvasProfileChange={handleCanvasProfileChange}
                 />
               </div>
+            ) : mobilePane === 'cortex' ? (
+              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+                <AxonCortexPane />
+              </div>
             ) : null}
           </div>
         </section>
@@ -921,6 +965,20 @@ export function AxonShell() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className={
+                      rightPane === 'cortex'
+                        ? 'text-[var(--axon-primary)]'
+                        : 'text-[var(--text-secondary)]'
+                    }
+                    onClick={() => persistRightPane(rightPane === 'cortex' ? null : 'cortex')}
+                  >
+                    <Brain className="size-4" />
+                    <span className="sr-only">Toggle cortex</span>
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1058,6 +1116,7 @@ export function AxonShell() {
                   scrollStorageKey="axon.web.reboot.editor-scroll"
                 />
               )}
+              {rightPane === 'cortex' && <AxonCortexPane />}
               {rightPane === 'terminal' && <AxonTerminalPane />}
               {rightPane === 'logs' && <AxonLogsPane />}
               {rightPane === 'mcp' && <AxonMcpPane />}
