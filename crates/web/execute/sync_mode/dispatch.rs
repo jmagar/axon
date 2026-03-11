@@ -293,6 +293,7 @@ pub(super) async fn dispatch_service(
                 session_id,
                 model,
                 agent,
+                assistant_mode,
                 tx,
                 ws_ctx,
                 permission_responders,
