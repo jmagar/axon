@@ -94,7 +94,7 @@ pub(super) async fn establish_acp_session(
     let (conn, runtime_state, exit_rx) =
         initialize_connection(spawned, initialize, tx, permission_responders).await?;
     let (session_id, initial_config_options) = setup_session(&conn, session_setup, tx).await?;
-    apply_config_and_model(
+    let latest_config_options = apply_config_and_model(
         &conn,
         &session_id,
         initial_config_options,
@@ -104,6 +104,7 @@ pub(super) async fn establish_acp_session(
         tx,
     )
     .await?;
+    *runtime_state.config_options.borrow_mut() = latest_config_options;
 
     Ok(EstablishedSession {
         conn,

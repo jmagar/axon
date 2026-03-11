@@ -80,6 +80,7 @@ Transport modes:
 ACP MCP server store (used by Pulse ACP and Web UI `/api/mcp`):
 - `${AXON_DATA_DIR}/axon/mcp.json` when `AXON_DATA_DIR` is set
 - `~/.config/axon/mcp.json` fallback
+- ACP hot-reloads MCP config changes from this file and reapplies them on the next turn.
 
 MCP defaults are context-safe:
 - Artifact-first responses (`response_mode=path`) written to `.cache/axon-mcp/` inside the running process/container (override with `AXON_MCP_ARTIFACT_DIR`; in Docker this is typically bind-mounted to `${AXON_DATA_DIR}/axon/artifacts`)

@@ -246,7 +246,7 @@ Also needed for retrieval features:
 Check:
 
 - `AXON_ACP_MAX_CONCURRENT_SESSIONS` — if at limit (default 8), sessions will be rejected until existing ones complete
-- `AXON_ACP_ADAPTER_CMD` (or agent-specific override) — must point to a valid adapter binary
+- Adapter resolution order is: `AXON_ACP_<AGENT>_ADAPTER_*` → `AXON_ACP_ADAPTER_*` → built-in defaults (`claude-agent-acp`, `codex-acp`, `gemini --experimental-acp`)
 - `AXON_ACP_AUTO_APPROVE` — if `false`, tool calls require explicit approval; unexpected for automated flows
 
 ## Job Queue Operations

@@ -28,12 +28,18 @@ import { useRecentSessions } from '@/hooks/use-recent-sessions'
 import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
-import { getAcpModelConfigOption } from '@/lib/pulse/acp-config'
+import { getAcpModeConfigOption, getAcpModelConfigOption } from '@/lib/pulse/acp-config'
 import {
   DEFAULT_NEURAL_CANVAS_PROFILE,
   type NeuralCanvasProfile,
 } from '@/lib/pulse/neural-canvas-presets'
 import type { PulseAgent } from '@/lib/pulse/types'
+import {
+  fetchToolPreferences,
+  persistToolPreferences,
+  TOOL_PREFERENCES_LS_KEY,
+  type ToolPreset,
+} from '@/lib/reboot/tool-preferences'
 import { getStorageItem, setStorageItem } from '@/lib/storage'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { AxonCortexPane } from './axon-cortex-pane'
@@ -47,7 +53,8 @@ import { AxonPromptComposer } from './axon-prompt-composer'
 import { AxonSettingsPane } from './axon-settings-pane'
 import { AxonSidebar } from './axon-sidebar'
 import { AxonTerminalPane } from './axon-terminal-pane'
-import { type AxonPermissionValue, RAIL_MODES, type RailMode } from './axon-ui-config'
+import { AXON_PERMISSION_OPTIONS, RAIL_MODES, type RailMode } from './axon-ui-config'
+import { shouldSyncHistoricalMessages } from './live-message-sync'
 import { McpIcon } from './mcp-config'
 
 const EditorPane = dynamic(
@@ -82,6 +89,7 @@ const CHAT_OPEN_STORAGE_KEY = 'axon.web.reboot.chat-open'
 const RIGHT_PANE_STORAGE_KEY = 'axon.web.reboot.right-pane'
 const RAIL_MODE_STORAGE_KEY = 'axon.web.reboot.rail-mode'
 const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
+const LIVE_MESSAGES_STORAGE_KEY = 'axon.web.reboot.live-messages.v1'
 const SIDEBAR_WIDTH_DEFAULT = 260
 const SIDEBAR_WIDTH_MIN = 180
 const SIDEBAR_WIDTH_MAX = 520
@@ -163,9 +171,45 @@ function agentDisplayName(agent: string): string {
   return agent.charAt(0).toUpperCase() + agent.slice(1)
 }
 
+function createClientId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch {
+    // Fall through to deterministic fallback for non-secure origins.
+  }
+  return `preset-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
+
+function buildAgentHandoffContext(
+  messages: AxonMessage[],
+  fromAgent: string,
+  toAgent: string,
+): string {
+  const recentTurns = messages
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim().length > 0)
+    .slice(-12)
+    .map((m) => `${m.role.toUpperCase()}: ${m.content.trim()}`)
+  if (recentTurns.length === 0) return ''
+  return [
+    `Context handoff: switched active agent from ${fromAgent} to ${toAgent}.`,
+    'Continue the same task with this prior chat context.',
+    '',
+    ...recentTurns,
+  ].join('\n')
+}
+
+// New turns can complete before a session ID is assigned. In that state,
+// reloading persisted session history would clear optimistic in-memory messages.
+export function shouldReloadSessionOnTurnComplete(chatSessionId: string | null): boolean {
+  return chatSessionId !== null
+}
+
 export function AxonShell() {
   const { pulseModel, pulsePermissionLevel, acpConfigOptions, pulseAgent } = useWsWorkspaceState()
-  const { setPulseModel, setPulsePermissionLevel, setPulseAgent } = useWsMessageActions()
+  const { setPulseModel, setPulsePermissionLevel, setPulseAgent, setAcpConfigOptions } =
+    useWsMessageActions()
   const { copiedId, copy: copyMessage } = useCopyFeedback()
   const mcp = useMcpServers()
   const workspace = useWorkspaceFiles()
@@ -185,6 +229,18 @@ export function AxonShell() {
   )
   const [sessionKey, setSessionKey] = useState(0)
   const [liveMessages, setLiveMessages] = useState<AxonMessage[]>([])
+  const [liveMessagesHydrated, setLiveMessagesHydrated] = useState(false)
+  const [pendingHandoffContext, setPendingHandoffContext] = useState<string | null>(null)
+  const [sessionMode, setSessionMode] = useState<string>(pulsePermissionLevel)
+  const [mcpToolsByServer, setMcpToolsByServer] = useState<Record<string, string[]>>({})
+  const [enabledMcpTools, setEnabledMcpTools] = useState<string[] | null>(null)
+  const [toolPresets, setToolPresets] = useState<ToolPreset[]>([])
+  const [toolPrefsHydrated, setToolPrefsHydrated] = useState(false)
+  const [pendingToolPrefs, setPendingToolPrefs] = useState<{
+    enabledMcpServers: string[]
+    enabledMcpTools: string[]
+    presets: ToolPreset[]
+  } | null>(null)
   const [activeFile, setActiveFile] = useState('')
   const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
@@ -230,13 +286,152 @@ export function AxonShell() {
     setLiveMessages(updater)
   }, [])
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(TOOL_PREFERENCES_LS_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        enabledMcpServers?: string[]
+        enabledMcpTools?: string[]
+        presets?: ToolPreset[]
+      }
+      setPendingToolPrefs({
+        enabledMcpServers: Array.isArray(parsed.enabledMcpServers) ? parsed.enabledMcpServers : [],
+        enabledMcpTools: Array.isArray(parsed.enabledMcpTools) ? parsed.enabledMcpTools : [],
+        presets: Array.isArray(parsed.presets) ? parsed.presets : [],
+      })
+    } catch {
+      // Ignore malformed local cache.
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchToolPreferences().then((remote) => {
+      if (cancelled || !remote) return
+      setPendingToolPrefs({
+        enabledMcpServers: remote.enabledMcpServers,
+        enabledMcpTools: remote.enabledMcpTools,
+        presets: remote.presets,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!pendingToolPrefs) return
+    setEnabledMcpTools(pendingToolPrefs.enabledMcpTools)
+    setToolPresets(pendingToolPrefs.presets)
+    if (mcp.mcpServers.length > 0) {
+      mcp.setEnabledMcpServers(pendingToolPrefs.enabledMcpServers)
+    }
+    setToolPrefsHydrated(true)
+    setPendingToolPrefs(null)
+  }, [mcp.mcpServers.length, mcp.setEnabledMcpServers, pendingToolPrefs])
+
+  useEffect(() => {
+    if (toolPrefsHydrated) return
+    if (pendingToolPrefs) return
+    setToolPrefsHydrated(true)
+  }, [pendingToolPrefs, toolPrefsHydrated])
+
+  useEffect(() => {
+    let timer: number | null = null
+    try {
+      const raw = window.sessionStorage.getItem(LIVE_MESSAGES_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { messages?: AxonMessage[] }
+      if (Array.isArray(parsed.messages)) {
+        setLiveMessages(parsed.messages)
+      }
+    } catch {
+      // Ignore malformed cached messages.
+    }
+    // Defer hydration flag to avoid writing an empty snapshot before
+    // restored messages are applied during the same mount cycle.
+    timer = window.setTimeout(() => setLiveMessagesHydrated(true), 0)
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [])
+
+  const handleCommandsUpdate = useCallback((commands: Array<{ name: string }>) => {
+    const grouped = new Map<string, string[]>()
+    for (const command of commands) {
+      if (!command.name.startsWith('mcp__')) continue
+      const parts = command.name.split('__')
+      if (parts.length < 3) continue
+      const serverName = parts[1]?.trim()
+      if (!serverName) continue
+      const existing = grouped.get(serverName) ?? []
+      existing.push(command.name)
+      grouped.set(serverName, existing)
+    }
+    const next = Object.fromEntries(
+      Array.from(grouped.entries()).map(([serverName, tools]) => [
+        serverName,
+        tools.sort((a, b) => a.localeCompare(b)),
+      ]),
+    )
+    setMcpToolsByServer(next)
+    const allTools = Object.values(next).flat()
+    setEnabledMcpTools((current) => {
+      if (current === null) return allTools
+      return current.filter((toolName) => allTools.includes(toolName))
+    })
+  }, [])
+
   const onTurnComplete = useCallback(() => {
     reloadSessions()
-    reloadSession()
+    // For brand-new chats, session ID is still null until the result event
+    // arrives. Reloading with null forces useAxonSession to clear history,
+    // which can wipe optimistic live messages from the UI.
+    if (shouldReloadSessionOnTurnComplete(chatSessionId)) {
+      reloadSession()
+    }
     if (railMode === 'assistant') {
       reloadAssistantSessions()
     }
-  }, [reloadSessions, reloadSession, reloadAssistantSessions, railMode])
+  }, [reloadSessions, reloadSession, reloadAssistantSessions, railMode, chatSessionId])
+
+  const effectiveEnabledMcpTools = useMemo(() => {
+    const knownTools = Object.values(mcpToolsByServer).flat()
+    if (enabledMcpTools === null) return knownTools
+    return enabledMcpTools
+  }, [enabledMcpTools, mcpToolsByServer])
+
+  const blockedMcpTools = useMemo(() => {
+    const blocked = new Set<string>()
+    for (const [serverName, tools] of Object.entries(mcpToolsByServer)) {
+      const serverEnabled = mcp.enabledMcpServers.includes(serverName)
+      for (const toolName of tools) {
+        if (!serverEnabled || !effectiveEnabledMcpTools.includes(toolName)) {
+          blocked.add(toolName)
+        }
+      }
+    }
+    return Array.from(blocked)
+  }, [effectiveEnabledMcpTools, mcp.enabledMcpServers, mcpToolsByServer])
+
+  useEffect(() => {
+    if (!toolPrefsHydrated) return
+    const payload = {
+      enabledMcpServers: mcp.enabledMcpServers,
+      enabledMcpTools: effectiveEnabledMcpTools,
+      presets: toolPresets,
+    }
+    try {
+      window.localStorage.setItem(TOOL_PREFERENCES_LS_KEY, JSON.stringify(payload))
+    } catch {
+      // Ignore localStorage write failures.
+    }
+    const timer = setTimeout(() => {
+      void persistToolPreferences(payload)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [effectiveEnabledMcpTools, mcp.enabledMcpServers, toolPrefsHydrated, toolPresets])
 
   const onEditorUpdate = useCallback((content: string, operation: 'replace' | 'append') => {
     setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
@@ -260,10 +455,18 @@ export function AxonShell() {
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
     activeSessionId: chatSessionId,
     agent: pulseAgent ?? 'claude',
+    model: pulseModel,
+    sessionMode,
+    enabledMcpServers: mcp.enabledMcpServers,
+    blockedMcpTools,
     assistantMode: railMode === 'assistant',
+    handoffContext: pendingHandoffContext,
     onSessionIdChange,
     onSessionFallback: undefined,
     onMessagesChange,
+    onAcpConfigOptionsUpdate: setAcpConfigOptions,
+    onCommandsUpdate: handleCommandsUpdate,
+    onHandoffConsumed: () => setPendingHandoffContext(null),
     onTurnComplete,
     onEditorUpdate,
   })
@@ -272,6 +475,7 @@ export function AxonShell() {
   // being in its dependency array. Without this, the effect fires when isStreaming
   // goes false → overwrites live messages with stale historicalMessages.
   const isStreamingRef = useRef(false)
+  const lastSyncedSessionIdRef = useRef<string | null>(null)
   useEffect(() => {
     isStreamingRef.current = isStreaming
   }, [isStreaming])
@@ -316,11 +520,29 @@ export function AxonShell() {
   // isStreaming intentionally excluded from deps — use isStreamingRef so this
   // effect only re-runs when historicalMessages/sessionLoading/sessionError change.
   useEffect(() => {
-    if (isStreamingRef.current) return
-    if (sessionLoading) return
-    if (sessionError) return
+    if (!liveMessagesHydrated) return
+    const sessionChanged = lastSyncedSessionIdRef.current !== chatSessionId
+    const shouldSync = shouldSyncHistoricalMessages({
+      isStreaming: isStreamingRef.current,
+      sessionLoading,
+      sessionError,
+      sessionChanged,
+      historicalCount: historicalMessages.length,
+      liveCount: liveMessages.length,
+    })
+    if (!shouldSync) {
+      return
+    }
     setLiveMessages(historicalMessages)
-  }, [historicalMessages, sessionLoading, sessionError])
+    lastSyncedSessionIdRef.current = chatSessionId
+  }, [
+    chatSessionId,
+    historicalMessages,
+    liveMessages.length,
+    liveMessagesHydrated,
+    sessionLoading,
+    sessionError,
+  ])
 
   // Derive active session metadata for display
   const activeSession = useMemo(() => {
@@ -338,6 +560,27 @@ export function AxonShell() {
       label: option.name,
     }))
   }, [acpConfigOptions])
+
+  const permissionOptions = useMemo(() => {
+    const modeOption = getAcpModeConfigOption(acpConfigOptions)
+    if (!modeOption?.options?.length) {
+      return AXON_PERMISSION_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+      }))
+    }
+    return modeOption.options.map((option) => ({
+      value: option.value,
+      label: option.name,
+    }))
+  }, [acpConfigOptions])
+
+  useEffect(() => {
+    if (permissionOptions.length === 0) return
+    if (!permissionOptions.some((opt) => opt.value === sessionMode)) {
+      setSessionMode(permissionOptions[0]?.value ?? '')
+    }
+  }, [permissionOptions, sessionMode])
 
   const composerToolsState = useMemo(
     () => ({
@@ -641,6 +884,9 @@ export function AxonShell() {
 
   const handleSelectSession = useCallback(
     (sessionId: string) => {
+      // Reset optimistic chat state immediately; the selected session history
+      // will be loaded by useAxonSession and synced back in.
+      setLiveMessages([])
       setActiveSessionId(sessionId)
       setActiveAssistantSessionId(null)
       setSessionKey((k) => k + 1)
@@ -663,8 +909,19 @@ export function AxonShell() {
     setActiveSessionId(null)
     setActiveAssistantSessionId(null)
     setLiveMessages([])
+    setPendingHandoffContext(null)
     setSessionKey((k) => k + 1)
   }, [])
+
+  const handleDesktopNewSession = useCallback(() => {
+    handleNewSession()
+    persistChatOpen(true)
+  }, [handleNewSession, persistChatOpen])
+
+  const handleMobileNewSession = useCallback(() => {
+    handleNewSession()
+    setMobilePaneTracked('chat')
+  }, [handleNewSession, setMobilePaneTracked])
 
   const handleMobileSelectSession = useCallback(
     (sessionId: string) => {
@@ -722,6 +979,64 @@ export function AxonShell() {
     [liveMessages, submitPrompt],
   )
 
+  const handleEnableServerTools = useCallback(
+    (serverName: string) => {
+      const serverTools = mcpToolsByServer[serverName] ?? []
+      if (serverTools.length === 0) return
+      setEnabledMcpTools((current) => {
+        const base = current ?? Object.values(mcpToolsByServer).flat()
+        return Array.from(new Set([...base, ...serverTools]))
+      })
+    },
+    [mcpToolsByServer],
+  )
+
+  const handleDisableServerTools = useCallback(
+    (serverName: string) => {
+      const serverTools = new Set(mcpToolsByServer[serverName] ?? [])
+      if (serverTools.size === 0) return
+      setEnabledMcpTools((current) => {
+        const base = current ?? Object.values(mcpToolsByServer).flat()
+        return base.filter((toolName) => !serverTools.has(toolName))
+      })
+    },
+    [mcpToolsByServer],
+  )
+
+  const handleSaveToolPreset = useCallback(
+    (name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      const preset: ToolPreset = {
+        id: createClientId(),
+        name: trimmed,
+        enabledMcpServers: [...mcp.enabledMcpServers],
+        enabledMcpTools: [...effectiveEnabledMcpTools],
+      }
+      setToolPresets((current) => {
+        const withoutSameName = current.filter(
+          (item) => item.name.toLowerCase() !== trimmed.toLowerCase(),
+        )
+        return [preset, ...withoutSameName].slice(0, 50)
+      })
+    },
+    [effectiveEnabledMcpTools, mcp.enabledMcpServers],
+  )
+
+  const handleApplyToolPreset = useCallback(
+    (presetId: string) => {
+      const preset = toolPresets.find((item) => item.id === presetId)
+      if (!preset) return
+      mcp.setEnabledMcpServers(preset.enabledMcpServers)
+      setEnabledMcpTools(preset.enabledMcpTools)
+    },
+    [mcp.setEnabledMcpServers, toolPresets],
+  )
+
+  const handleDeleteToolPreset = useCallback((presetId: string) => {
+    setToolPresets((current) => current.filter((item) => item.id !== presetId))
+  }, [])
+
   const sidebarProps = {
     sessions: rawSessions,
     railMode,
@@ -736,7 +1051,7 @@ export function AxonShell() {
     fileEntries: workspace.fileEntries,
     fileLoading: workspace.fileLoading,
     selectedFilePath: workspace.selectedFilePath,
-    onNewSession: handleNewSession,
+    onNewSession: handleDesktopNewSession,
   } as const
 
   const composerProps = {
@@ -744,14 +1059,42 @@ export function AxonShell() {
     onFilesChange: setComposerFiles,
     onSubmit: handlePromptSubmit,
     modelOptions,
+    permissionOptions,
     pulseModel: pulseModel ?? 'sonnet',
-    pulsePermissionLevel,
+    pulsePermissionLevel: sessionMode,
     onModelChange: (value: string) => setPulseModel(value),
-    onPermissionChange: (value: AxonPermissionValue) => setPulsePermissionLevel(value),
+    onPermissionChange: (value: string) => {
+      setSessionMode(value)
+      if (value === 'plan' || value === 'accept-edits' || value === 'bypass-permissions') {
+        setPulsePermissionLevel(value)
+      }
+    },
     toolsState: composerToolsState,
     onToggleMcpServer: mcp.toggleMcpServer,
+    mcpToolsByServer,
+    enabledMcpTools: effectiveEnabledMcpTools,
+    onEnableServerTools: handleEnableServerTools,
+    onDisableServerTools: handleDisableServerTools,
+    onToggleMcpTool: (toolName: string) => {
+      setEnabledMcpTools((current) => {
+        const knownTools = Object.values(mcpToolsByServer).flat()
+        const base = current ?? knownTools
+        return base.includes(toolName)
+          ? base.filter((name) => name !== toolName)
+          : [...base, toolName]
+      })
+    },
+    toolPresets: toolPresets.map((preset) => ({ id: preset.id, name: preset.name })),
+    onApplyToolPreset: handleApplyToolPreset,
+    onDeleteToolPreset: handleDeleteToolPreset,
+    onSaveToolPreset: handleSaveToolPreset,
     pulseAgent: (pulseAgent ?? 'claude') as PulseAgent,
     onAgentChange: (value: PulseAgent) => {
+      const fromAgent = pulseAgent ?? 'claude'
+      if (value !== fromAgent) {
+        const handoff = buildAgentHandoffContext(liveMessages, fromAgent, value)
+        setPendingHandoffContext(handoff || null)
+      }
       setPulseAgent(value)
       setPulseModel('default')
     },
@@ -760,6 +1103,31 @@ export function AxonShell() {
   } as const
 
   const displayMessages = liveMessages
+
+  useEffect(() => {
+    if (!liveMessagesHydrated) return
+    if (!connected && chatSessionId === null && liveMessages.length === 0) return
+    // Keep existing non-empty draft during refresh/hot-reload races.
+    if (chatSessionId === null && liveMessages.length === 0) {
+      try {
+        const existingRaw = window.sessionStorage.getItem(LIVE_MESSAGES_STORAGE_KEY)
+        if (existingRaw) {
+          const existing = JSON.parse(existingRaw) as { messages?: AxonMessage[] }
+          if (Array.isArray(existing.messages) && existing.messages.length > 0) {
+            return
+          }
+        }
+      } catch {
+        // Ignore malformed cache and continue writing.
+      }
+    }
+    const payload = { messages: liveMessages.slice(-200) }
+    try {
+      window.sessionStorage.setItem(LIVE_MESSAGES_STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      // Ignore sessionStorage quota/private mode failures.
+    }
+  }, [chatSessionId, connected, liveMessages, liveMessagesHydrated])
 
   const transitionClass =
     isDragging || !layoutRestored ? '' : 'transition-[width,flex] duration-300 ease-out'
@@ -776,7 +1144,7 @@ export function AxonShell() {
       <div className="flex h-dvh min-h-dvh flex-col">
         {/* ── Mobile layout ── */}
         <section className="flex min-h-0 flex-1 flex-col lg:hidden">
-          <div className="flex h-14 items-center justify-between border-b border-[var(--border-subtle)] bg-[rgba(7,12,26,0.55)] backdrop-blur-sm px-3">
+          <div className="axon-toolbar flex h-14 items-center justify-between bg-[rgba(7,12,26,0.62)] px-3">
             <span
               className="select-none text-sm font-extrabold tracking-[3px]"
               style={{
@@ -796,8 +1164,8 @@ export function AxonShell() {
                 aria-pressed={mobilePane === 'sidebar'}
                 className={`inline-flex size-7 items-center justify-center rounded border transition-colors ${
                   mobilePane === 'sidebar'
-                    ? 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-dim)] hover:text-[var(--text-primary)]'
+                    ? 'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]'
+                    : 'border-[var(--border-subtle)] bg-[var(--surface-input)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.24)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 <PanelLeft className="size-3.5" />
@@ -816,9 +1184,10 @@ export function AxonShell() {
                 {...sidebarProps}
                 onSelectSession={handleMobileSelectSession}
                 onSelectFile={handleMobileFileSelect}
+                onNewSession={handleMobileNewSession}
               />
             ) : mobilePane === 'chat' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-chat)] backdrop-blur-sm">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <Conversation key={sessionKey} className="w-full flex-1 px-3 py-3">
                   <AxonMessageList
                     messages={displayMessages}
@@ -839,12 +1208,12 @@ export function AxonShell() {
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
 
-                <div className="border-t border-[var(--border-subtle)] px-3 py-3">
+                <div className="axon-toolbar border-t border-b-0 px-3 py-3">
                   <AxonPromptComposer compact {...composerProps} />
                 </div>
               </div>
             ) : mobilePane === 'editor' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <div className="min-h-0 flex-1 overflow-hidden">
                   <EditorPane
                     markdown={editorMarkdown}
@@ -854,26 +1223,26 @@ export function AxonShell() {
                 </div>
               </div>
             ) : mobilePane === 'terminal' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <AxonTerminalPane />
               </div>
             ) : mobilePane === 'logs' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <AxonLogsPane />
               </div>
             ) : mobilePane === 'mcp' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <AxonMcpPane />
               </div>
             ) : mobilePane === 'settings' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <AxonSettingsPane
                   canvasProfile={canvasProfile}
                   onCanvasProfileChange={handleCanvasProfileChange}
                 />
               </div>
             ) : mobilePane === 'cortex' ? (
-              <div className="flex h-full min-h-0 flex-col bg-[var(--glass-editor)]">
+              <div className="axon-glass-shell flex h-full min-h-0 flex-col border-0 rounded-none">
                 <AxonCortexPane />
               </div>
             ) : null}
@@ -897,12 +1266,12 @@ export function AxonShell() {
               />
             </aside>
           ) : (
-            <div className="flex h-full w-10 shrink-0 flex-col items-center border-r border-[var(--border-subtle)] bg-[var(--glass-panel)] pt-1">
+            <div className="flex h-full w-10 shrink-0 flex-col items-center border-r border-[var(--border-subtle)] bg-[linear-gradient(180deg,rgba(9,17,35,0.82),rgba(6,12,26,0.9))] pt-1">
               <button
                 type="button"
                 onClick={() => persistSidebarOpen(true)}
                 aria-label="Expand sidebar"
-                className="flex size-7 items-center justify-center rounded text-[var(--text-dim)] transition-colors hover:bg-[rgba(175,215,255,0.06)] hover:text-[var(--axon-primary)]"
+                className="axon-icon-btn flex size-7 items-center justify-center"
               >
                 <PanelLeft className="size-3.5" />
               </button>
@@ -922,7 +1291,7 @@ export function AxonShell() {
                     title={mode.label}
                     className={`flex size-7 items-center justify-center rounded transition-colors ${
                       isActive
-                        ? 'text-[var(--axon-primary)]'
+                        ? 'border border-[rgba(175,215,255,0.42)] bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] text-[var(--text-primary)]'
                         : 'text-[var(--text-dim)] hover:bg-[rgba(175,215,255,0.06)] hover:text-[var(--text-primary)]'
                     }`}
                   >
@@ -947,10 +1316,10 @@ export function AxonShell() {
           {/* Chat pane */}
           {chatOpen ? (
             <div
-              className={`h-full min-h-0 overflow-hidden bg-[var(--glass-chat)] backdrop-blur-sm animate-fade-in ${transitionClass}`}
+              className={`axon-glass-shell h-full min-h-0 overflow-hidden rounded-none border-0 animate-fade-in ${transitionClass}`}
               style={{ flex: `${chatFlex} ${chatFlex} 0%`, minWidth: PANE_WIDTH_MIN }}
             >
-              <div className="flex h-14 items-center justify-between border-b border-[var(--border-subtle)] px-4">
+              <div className="axon-toolbar flex h-14 items-center justify-between px-4">
                 <div className="min-w-0">
                   <div className="truncate text-[15px] font-semibold leading-snug tracking-[-0.01em] text-[var(--text-primary)]">
                     {chatTitle}
@@ -972,11 +1341,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'cortex'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'cortex'}
                     onClick={() => persistRightPane(rightPane === 'cortex' ? null : 'cortex')}
                   >
                     <Brain className="size-4" />
@@ -986,11 +1352,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'terminal'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'terminal'}
                     onClick={() => persistRightPane(rightPane === 'terminal' ? null : 'terminal')}
                   >
                     <TerminalSquare className="size-4" />
@@ -1000,11 +1363,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'logs'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'logs'}
                     onClick={() => persistRightPane(rightPane === 'logs' ? null : 'logs')}
                   >
                     <ScrollText className="size-4" />
@@ -1014,11 +1374,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'mcp'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'mcp'}
                     onClick={() => persistRightPane(rightPane === 'mcp' ? null : 'mcp')}
                   >
                     <McpIcon className="size-4" />
@@ -1028,11 +1385,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'settings'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'settings'}
                     onClick={() => persistRightPane(rightPane === 'settings' ? null : 'settings')}
                   >
                     <Settings2 className="size-4" />
@@ -1042,9 +1396,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      chatOpen ? 'text-[var(--axon-primary)]' : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={chatOpen}
                     onClick={() => persistChatOpen(!chatOpen)}
                   >
                     <MessageSquareText className="size-4" />
@@ -1054,11 +1407,8 @@ export function AxonShell() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className={
-                      rightPane === 'editor'
-                        ? 'text-[var(--axon-primary)]'
-                        : 'text-[var(--text-secondary)]'
-                    }
+                    className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                    data-active={rightPane === 'editor'}
                     onClick={() => persistRightPane(rightPane === 'editor' ? null : 'editor')}
                   >
                     <PanelRight className="size-4" />
@@ -1088,7 +1438,7 @@ export function AxonShell() {
                   <ConversationScrollButton className="animate-scale-in" />
                 </Conversation>
 
-                <div className="border-t border-[var(--border-subtle)] px-4 py-3">
+                <div className="axon-toolbar border-t border-b-0 px-4 py-3">
                   <AxonPromptComposer {...composerProps} />
                 </div>
               </div>
@@ -1109,7 +1459,7 @@ export function AxonShell() {
           {/* Right pane */}
           {rightPane ? (
             <aside
-              className={`h-full min-h-0 overflow-hidden bg-[var(--glass-editor)] animate-fade-in ${transitionClass}`}
+              className={`axon-glass-shell h-full min-h-0 overflow-hidden rounded-none border-0 animate-fade-in ${transitionClass}`}
               style={{ flex: '1 1 0%', minWidth: PANE_WIDTH_MIN }}
             >
               {rightPane === 'editor' && (

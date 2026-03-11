@@ -132,9 +132,9 @@ function formatTimestamp(ts: number | string | undefined): string | null {
 }
 
 const AXON_USER_BUBBLE_CLASS =
-  'rounded-xl border border-[var(--border-standard)] bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] px-4 py-3 shadow-[var(--shadow-md)] text-[var(--text-primary)] text-sm'
+  'rounded-xl border border-[rgba(175,215,255,0.44)] bg-[linear-gradient(150deg,rgba(135,175,255,0.3),rgba(135,175,255,0.11))] px-4 py-3 shadow-[0_10px_30px_rgba(6,14,32,0.38)] text-[var(--text-primary)] text-sm'
 const AXON_ASSISTANT_BUBBLE_CLASS =
-  'rounded-xl border border-[rgba(255,135,175,0.18)] bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] px-4 py-3 shadow-[0_6px_18px_rgba(3,7,18,0.3)] text-[var(--text-secondary)] text-sm'
+  'rounded-xl border border-[rgba(255,135,175,0.28)] bg-[linear-gradient(150deg,rgba(255,135,175,0.13),rgba(10,18,35,0.62))] px-4 py-3 shadow-[0_10px_30px_rgba(3,7,18,0.34)] text-[var(--text-secondary)] text-sm'
 
 export { AXON_ASSISTANT_BUBBLE_CLASS }
 
@@ -201,7 +201,7 @@ export const AxonMessageList = memo(function AxonMessageList({
         <div
           className={`flex h-full flex-col items-center justify-center gap-3 ${emptyStatePadding} text-center animate-fade-in`}
         >
-          <div className="rounded-2xl border border-[rgba(255,135,175,0.12)] bg-[rgba(255,135,175,0.06)] p-4">
+          <div className="rounded-2xl border border-[rgba(255,135,175,0.18)] bg-[linear-gradient(145deg,rgba(255,135,175,0.09),rgba(10,18,35,0.42))] p-4 shadow-[0_0_20px_rgba(255,135,175,0.12)]">
             <Bot className={`${botIconSize} text-[var(--axon-secondary-strong)] opacity-60`} />
           </div>
           <div className="space-y-1">
@@ -223,7 +223,7 @@ export const AxonMessageList = memo(function AxonMessageList({
             className={
               message.role === 'assistant'
                 ? `${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
-                : `${AXON_USER_BUBBLE_CLASS} space-y-1.5`
+                : `${AXON_USER_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
             }
           >
             <div className="mb-1.5 flex items-center gap-2">

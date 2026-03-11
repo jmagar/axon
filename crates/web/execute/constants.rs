@@ -66,6 +66,9 @@ pub(super) const ALLOWED_FLAGS: &[(&str, &str)] = &[
     ("responses_mode", "--responses-mode"),
     ("agent", "--agent"),
     ("model", "--model"),
+    ("session_mode", "--session-mode"),
+    ("mcp_servers", "--mcp-servers"),
+    ("blocked_mcp_tools", "--blocked-mcp-tools"),
     ("session_id", "--session-id"),
     ("assistant_mode", "--assistant-mode"),
 ];

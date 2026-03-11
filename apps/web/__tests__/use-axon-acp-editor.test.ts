@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleEditorMsg } from '@/hooks/use-axon-acp'
+import { createClientMessageId, handleEditorMsg } from '@/hooks/use-axon-acp'
 
 describe('useAxonAcp editor_update handling', () => {
   it('calls onEditorUpdate with content and replace operation', () => {
@@ -73,5 +73,21 @@ describe('useAxonAcp editor_update handling', () => {
     const onShowEditor = vi.fn()
     handleEditorMsg({ type: 'other_type' }, undefined, onShowEditor)
     expect(onShowEditor).not.toHaveBeenCalled()
+  })
+})
+
+describe('createClientMessageId', () => {
+  it('falls back when randomUUID is unavailable', () => {
+    const originalCrypto = globalThis.crypto
+    Object.defineProperty(globalThis, 'crypto', {
+      value: {},
+      configurable: true,
+    })
+    const id = createClientMessageId('user')
+    expect(id.startsWith('user-')).toBe(true)
+    Object.defineProperty(globalThis, 'crypto', {
+      value: originalCrypto,
+      configurable: true,
+    })
   })
 })

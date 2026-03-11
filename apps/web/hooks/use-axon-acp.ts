@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
+import type { AcpConfigOption } from '@/lib/pulse/types'
 import type { AxonMessage } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
 
@@ -15,6 +16,26 @@ const EditorUpdateSchema = z.object({
 })
 
 const STREAMING_TIMEOUT_MS = 300_000
+
+function createFallbackClientId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
+
+/**
+ * Generate client-side IDs in both secure and insecure contexts.
+ * `crypto.randomUUID()` is unavailable on non-secure origins (for example
+ * http://10.x.x.x on mobile LAN), so we must gracefully fall back.
+ */
+export function createClientMessageId(prefix: string): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `${prefix}-${crypto.randomUUID()}`
+    }
+  } catch {
+    // Fall through to non-crypto fallback.
+  }
+  return createFallbackClientId(prefix)
+}
 
 /**
  * Handle an `editor_update` wire message.
@@ -41,11 +62,19 @@ export function handleEditorMsg(
 interface UseAxonAcpOptions {
   activeSessionId: string | null
   agent?: string
+  model?: string
+  sessionMode?: string
+  enabledMcpServers?: string[]
+  blockedMcpTools?: string[]
   /** When true, sends assistant_mode:true so backend uses assistant CWD. */
   assistantMode?: boolean
+  handoffContext?: string | null
   onSessionIdChange: (newId: string) => void
   onSessionFallback?: (oldId: string, newId: string) => void
   onMessagesChange: (updater: (prev: AxonMessage[]) => AxonMessage[]) => void
+  onAcpConfigOptionsUpdate?: (options: AcpConfigOption[]) => void
+  onCommandsUpdate?: (commands: Array<{ name: string; description?: string }>) => void
+  onHandoffConsumed?: () => void
   onTurnComplete?: () => void
   onEditorUpdate?: (content: string, operation: 'replace' | 'append') => void
   /** Called when an `editor_update` message is received. Use this to make the editor
@@ -56,10 +85,18 @@ interface UseAxonAcpOptions {
 export function useAxonAcp({
   activeSessionId,
   agent = 'claude',
+  model,
+  sessionMode,
+  enabledMcpServers = [],
+  blockedMcpTools = [],
   assistantMode = false,
+  handoffContext = null,
   onSessionIdChange,
   onSessionFallback,
   onMessagesChange,
+  onAcpConfigOptionsUpdate,
+  onCommandsUpdate,
+  onHandoffConsumed,
   onTurnComplete,
   onEditorUpdate,
   onShowEditor,
@@ -67,8 +104,48 @@ export function useAxonAcp({
   const [isStreaming, setIsStreaming] = useState(false)
   const streamingIdRef = useRef<string | null>(null)
   const streamingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingDeltaRef = useRef('')
+  const pendingThinkingRef = useRef<string[]>([])
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const turnStartAtRef = useRef<number | null>(null)
+  const firstDeltaAtRef = useRef<number | null>(null)
+  const streamedCharsRef = useRef(0)
   const { send, subscribe, status } = useAxonWs()
   const connected = status === 'connected'
+
+  const flushBufferedStream = useCallback(() => {
+    flushTimerRef.current = null
+    const sid = streamingIdRef.current
+    if (!sid) {
+      pendingDeltaRef.current = ''
+      pendingThinkingRef.current = []
+      return
+    }
+    const delta = pendingDeltaRef.current
+    const thoughts = pendingThinkingRef.current
+    pendingDeltaRef.current = ''
+    pendingThinkingRef.current = []
+    if (!delta && thoughts.length === 0) return
+    onMessagesChange((prev) =>
+      prev.map((m) =>
+        m.id === sid
+          ? {
+              ...m,
+              content: delta ? m.content + delta : m.content,
+              chainOfThought:
+                thoughts.length > 0 ? [...(m.chainOfThought ?? []), ...thoughts] : m.chainOfThought,
+            }
+          : m,
+      ),
+    )
+  }, [onMessagesChange])
+
+  const scheduleFlushBufferedStream = useCallback(() => {
+    if (flushTimerRef.current) return
+    flushTimerRef.current = setTimeout(() => {
+      flushBufferedStream()
+    }, 32)
+  }, [flushBufferedStream])
 
   useEffect(() => {
     const unsubscribe = subscribe((rawMsg) => {
@@ -88,22 +165,20 @@ export function useAxonAcp({
         case 'assistant_delta': {
           const delta = (msg.delta as string) ?? ''
           const sid = streamingIdRef.current
-          if (!sid) return
-          onMessagesChange((prev) =>
-            prev.map((m) => (m.id === sid ? { ...m, content: m.content + delta } : m)),
-          )
+          if (!sid || !delta) return
+          if (firstDeltaAtRef.current === null) firstDeltaAtRef.current = Date.now()
+          streamedCharsRef.current += delta.length
+          pendingDeltaRef.current += delta
+          scheduleFlushBufferedStream()
           break
         }
 
         case 'thinking_content': {
           const content = (msg.content as string) ?? ''
           const sid = streamingIdRef.current
-          if (!sid) return
-          onMessagesChange((prev) =>
-            prev.map((m) =>
-              m.id === sid ? { ...m, chainOfThought: [...(m.chainOfThought ?? []), content] } : m,
-            ),
-          )
+          if (!sid || !content) return
+          pendingThinkingRef.current.push(content)
+          scheduleFlushBufferedStream()
           break
         }
 
@@ -118,14 +193,39 @@ export function useAxonAcp({
         }
 
         case 'result': {
+          flushBufferedStream()
           // Check BEFORE clearing — if already null the turn timed out; skip
           // onTurnComplete/onSessionIdChange to prevent a late result from a
           // slow agent (e.g. Gemini) polluting the next turn's session state.
           const wasActiveTurn = streamingIdRef.current !== null
           const newSessionId = msg.session_id as string | undefined
           if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
+          if (process.env.NODE_ENV !== 'production' && turnStartAtRef.current !== null) {
+            const end = Date.now()
+            const durationMs = end - turnStartAtRef.current
+            const firstDeltaMs =
+              firstDeltaAtRef.current === null
+                ? null
+                : firstDeltaAtRef.current - turnStartAtRef.current
+            const charsPerSec =
+              durationMs > 0
+                ? Number(((streamedCharsRef.current * 1000) / durationMs).toFixed(1))
+                : 0
+            console.debug('[acp-stream-telemetry]', {
+              agent,
+              model: model ?? 'default',
+              sessionMode: sessionMode ?? 'default',
+              durationMs,
+              firstDeltaMs,
+              streamedChars: streamedCharsRef.current,
+              charsPerSec,
+            })
+          }
           setIsStreaming(false)
           streamingIdRef.current = null
+          turnStartAtRef.current = null
+          firstDeltaAtRef.current = null
+          streamedCharsRef.current = 0
           if (wasActiveTurn) {
             onTurnComplete?.()
             // With the persistent adapter, session data is written incrementally —
@@ -138,11 +238,15 @@ export function useAxonAcp({
         }
 
         case 'error': {
+          flushBufferedStream()
           const errSid = streamingIdRef.current
           const errMsg = (msg.message as string) || (msg.error as string) || 'Agent error'
           if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
           setIsStreaming(false)
           streamingIdRef.current = null
+          turnStartAtRef.current = null
+          firstDeltaAtRef.current = null
+          streamedCharsRef.current = 0
           if (errSid) {
             onMessagesChange((prev) =>
               prev.map((m) =>
@@ -210,6 +314,32 @@ export function useAxonAcp({
           handleEditorMsg(msg, onEditorUpdate, onShowEditor)
           break
         }
+
+        case 'config_options_update':
+        case 'config_option_update': {
+          const raw = msg.configOptions
+          if (!Array.isArray(raw)) return
+          const parsed = z.array(z.unknown()).safeParse(raw)
+          if (!parsed.success) return
+          onAcpConfigOptionsUpdate?.(raw as AcpConfigOption[])
+          break
+        }
+
+        case 'commands_update': {
+          const raw = msg.commands
+          if (!Array.isArray(raw)) return
+          const parsed = z
+            .array(
+              z.object({
+                name: z.string(),
+                description: z.string().optional(),
+              }),
+            )
+            .safeParse(raw)
+          if (!parsed.success) return
+          onCommandsUpdate?.(parsed.data)
+          break
+        }
       }
     })
     return () => {
@@ -219,6 +349,10 @@ export function useAxonAcp({
         clearTimeout(streamingTimeoutRef.current)
         streamingTimeoutRef.current = null
       }
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
       unsubscribe()
     }
   }, [
@@ -226,18 +360,30 @@ export function useAxonAcp({
     onMessagesChange,
     onSessionIdChange,
     onSessionFallback,
+    onAcpConfigOptionsUpdate,
+    onCommandsUpdate,
     onTurnComplete,
     onEditorUpdate,
     onShowEditor,
+    flushBufferedStream,
+    scheduleFlushBufferedStream,
+    agent,
+    model,
+    sessionMode,
   ])
 
   const submitPrompt = useCallback(
     (prompt: string) => {
-      if (!connected || isStreaming) return
+      if (!connected || isStreaming) {
+        return
+      }
 
-      const userId = `user-${crypto.randomUUID()}`
-      const assistantId = `assistant-${crypto.randomUUID()}`
+      const userId = createClientMessageId('user')
+      const assistantId = createClientMessageId('assistant')
       streamingIdRef.current = assistantId
+      turnStartAtRef.current = Date.now()
+      firstDeltaAtRef.current = null
+      streamedCharsRef.current = 0
 
       onMessagesChange((prev) => [
         ...prev,
@@ -250,7 +396,6 @@ export function useAxonAcp({
           streaming: true,
         },
       ])
-
       setIsStreaming(true)
 
       // Fallback: clear stuck streaming state after timeout
@@ -274,18 +419,42 @@ export function useAxonAcp({
         }
       }, STREAMING_TIMEOUT_MS)
 
+      const handoffPrefix = handoffContext
+        ? `<system-handoff>\n${handoffContext}\n</system-handoff>\n\n`
+        : ''
+      const wirePrompt = `${handoffPrefix}${prompt}`
+
       send({
         type: 'execute',
         mode: 'pulse_chat',
-        input: prompt,
+        input: wirePrompt,
         flags: {
           ...(activeSessionId ? { session_id: activeSessionId } : {}),
           agent,
+          ...(model && model !== 'default' ? { model } : {}),
+          ...(sessionMode ? { session_mode: sessionMode } : {}),
+          ...(enabledMcpServers.length > 0 ? { mcp_servers: enabledMcpServers } : {}),
+          ...(blockedMcpTools.length > 0 ? { blocked_mcp_tools: blockedMcpTools } : {}),
           ...(assistantMode ? { assistant_mode: true } : {}),
         },
       })
+      if (handoffContext) onHandoffConsumed?.()
     },
-    [connected, isStreaming, activeSessionId, agent, assistantMode, send, onMessagesChange],
+    [
+      connected,
+      isStreaming,
+      activeSessionId,
+      agent,
+      model,
+      sessionMode,
+      enabledMcpServers,
+      blockedMcpTools,
+      assistantMode,
+      handoffContext,
+      onHandoffConsumed,
+      send,
+      onMessagesChange,
+    ],
   )
 
   return { submitPrompt, isStreaming, connected }

@@ -27,48 +27,55 @@ const PANE_BUTTONS: {
     id: 'chat',
     Icon: MessageSquare,
     label: 'Chat pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
   {
     id: 'editor',
     Icon: PenLine,
     label: 'Editor pane',
-    activeClass: 'border-[rgba(255,135,175,0.25)] bg-[var(--axon-secondary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(255,135,175,0.45)] bg-[linear-gradient(145deg,rgba(255,135,175,0.3),rgba(255,135,175,0.12))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(255,135,175,0.16)]',
   },
   {
     id: 'terminal',
     Icon: TerminalSquare,
     label: 'Terminal pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
   {
     id: 'logs',
     Icon: ScrollText,
     label: 'Logs pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
   {
     id: 'mcp',
     Icon: Network,
     label: 'MCP pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
   {
     id: 'cortex',
     Icon: Brain,
     label: 'Cortex pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
   {
     id: 'settings',
     Icon: Settings2,
     label: 'Settings pane',
-    activeClass: 'border-[rgba(175,215,255,0.25)] bg-[var(--axon-primary)] text-[var(--axon-bg)]',
+    activeClass:
+      'border-[rgba(175,215,255,0.48)] bg-[linear-gradient(145deg,rgba(135,175,255,0.34),rgba(135,175,255,0.14))] text-[var(--text-primary)] shadow-[0_0_14px_rgba(135,175,255,0.2)]',
   },
 ]
 
 const INACTIVE_CLASS =
-  'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:border-[rgba(175,215,255,0.25)] hover:text-[var(--axon-primary-strong)]'
+  'border-[var(--border-subtle)] bg-[rgba(10,18,35,0.42)] text-[var(--text-dim)] hover:-translate-y-0.5 hover:border-[rgba(175,215,255,0.3)] hover:text-[var(--axon-primary-strong)]'
 
 export function AxonMobilePaneSwitcher({
   mobilePane,

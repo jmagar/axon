@@ -251,6 +251,9 @@ pub(super) async fn dispatch_service(
         agent,
         session_id,
         model,
+        session_mode,
+        enabled_mcp_servers,
+        blocked_mcp_tools,
         assistant_mode,
     } = params;
 
@@ -292,6 +295,9 @@ pub(super) async fn dispatch_service(
                 input,
                 session_id,
                 model,
+                session_mode,
+                enabled_mcp_servers,
+                blocked_mcp_tools,
                 agent,
                 assistant_mode,
                 tx,

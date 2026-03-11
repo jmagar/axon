@@ -2,7 +2,104 @@
 
 These patterns are extracted from the codex-acp reference implementation. Apply them in any Rust ACP agent.
 
-> **Source:** `~/workspace/codex-acp/` — patterns below are extracted and self-contained, but the full source is available for deeper reference.
+> **Source:** `~/workspace/acp/codex-acp/` — patterns below are extracted and self-contained, but the full source is available for deeper reference.
+
+---
+
+## OnceLock Global Connection
+
+Store the `AgentSideConnection` in a `OnceLock` so any part of the codebase can call `session_notification`, `read_text_file`, etc. without passing the connection through the call tree.
+
+```rust
+use agent_client_protocol::AgentSideConnection;
+use std::sync::{Arc, OnceLock};
+
+// In lib.rs — set exactly once when the connection is created.
+pub static ACP_CLIENT: OnceLock<Arc<AgentSideConnection>> = OnceLock::new();
+
+// In main / run():
+let (client, io_task) = AgentSideConnection::new(agent, stdout, stdin, |fut| {
+    tokio::task::spawn_local(fut);
+});
+if ACP_CLIENT.set(Arc::new(client)).is_err() {
+    return Err(std::io::Error::other("ACP client already set"));
+}
+io_task.await?;
+
+// From anywhere in the codebase:
+fn get_client() -> &'static AgentSideConnection {
+    ACP_CLIENT.get().expect("ACP client not yet initialised")
+}
+```
+
+> **Why OnceLock over passing `conn` around:** `AgentSideConnection` is `!Send` (SDK uses `Rc`). Passing it via `Arc<Mutex<>>` doesn't work. OnceLock with `Arc<AgentSideConnection>` lets any `spawn_local` task access the connection without ownership problems.
+
+---
+
+## SessionClient — Error-Tolerant Notification Wrapper
+
+Wrap the connection access in a thin struct that holds the `session_id` and implements `send_notification()` as a fire-and-log (never fatal) operation.
+
+```rust
+use agent_client_protocol::{Client, SessionNotification, SessionUpdate};
+use std::sync::Arc;
+
+struct SessionClient {
+    session_id: SessionId,
+    client: Arc<dyn Client>,
+}
+
+impl SessionClient {
+    fn new(session_id: SessionId) -> Self {
+        Self {
+            session_id,
+            client: ACP_CLIENT.get().expect("client not set").clone(),
+        }
+    }
+
+    /// Send a session/update notification to the client.
+    /// Errors are logged, never propagated — a broken pipe does not abort the agent.
+    async fn send_notification(&self, update: SessionUpdate) {
+        if let Err(e) = self
+            .client
+            .session_notification(SessionNotification::new(self.session_id.clone(), update))
+            .await
+        {
+            tracing::error!("Failed to send session notification: {:?}", e);
+        }
+    }
+
+    /// Helper: send an agent message chunk from a plain string.
+    async fn send_agent_text(&self, text: impl Into<String>) {
+        // text.into() → String → ContentBlock via From<T: Into<String>>
+        self.send_notification(SessionUpdate::AgentMessageChunk(
+            ContentChunk::new(text.into().into()),
+        ))
+        .await;
+    }
+}
+```
+
+> **Key decision:** `send_notification` swallows errors. If the client disconnects mid-prompt, don't abort the agent turn — just stop sending updates. The final `PromptResponse` will still be delivered.
+
+---
+
+## String → ContentBlock Conversion
+
+`ContentBlock` implements `From<T: Into<String>>`, converting to `ContentBlock::Text(TextContent::new(s))`. Use this to avoid verbose struct construction.
+
+```rust
+// These are all equivalent:
+ContentChunk::new("hello".into())                              // &str → ContentBlock
+ContentChunk::new(String::from("hello").into())               // String → ContentBlock
+ContentChunk::new(ContentBlock::Text(TextContent::new("hello")))  // explicit
+
+// Content::new() takes impl Into<ContentBlock>, so strings work directly:
+Content::new("fn main() { ... }")    // compiles — &str: Into<ContentBlock>
+
+// WRONG — ContentChunk::new takes ContentBlock, not impl Into:
+// ContentChunk::new("hello")         ← compile error
+```
 
 ---
 
@@ -51,6 +148,48 @@ fn resolve_path(&self, path: &Path, cwd: &Path) -> anyhow::Result<PathBuf> {
 
 ---
 
+## Auth Guard Before new_session
+
+Check authentication succeeded before creating a session. Codex-acp calls `check_auth()` at the top of `new_session` so invalid credentials fail fast before any session state is allocated.
+
+```rust
+async fn new_session(&self, request: NewSessionRequest) -> acp::Result<NewSessionResponse> {
+    // Reject if authenticate() was not called or failed.
+    self.check_auth().await?;
+    // ... proceed to allocate session state
+}
+
+async fn check_auth(&self) -> acp::Result<()> {
+    if self.auth.is_none() {
+        return Err(acp::Error::auth_required());
+    }
+    Ok(())
+}
+```
+
+---
+
+## Authenticate via env vars / method_id
+
+`AuthenticateRequest` carries only `method_id` — there is **no** `credentials` field. The actual secrets come from env vars (advertised via `AuthMethodEnvVar`) or from a browser/terminal flow. Validate `method_id` against what you advertised in `initialize`.
+
+```rust
+async fn authenticate(&self, req: AuthenticateRequest) -> acp::Result<AuthenticateResponse> {
+    match req.method_id.as_str() {
+        "openai_api_key" => {
+            // Env var was set by the client or already present — just check it.
+            if std::env::var("OPENAI_API_KEY").is_err() {
+                return Err(acp::Error::auth_required());
+            }
+            Ok(AuthenticateResponse::new())
+        }
+        _ => Err(acp::Error::method_not_found()),
+    }
+}
+```
+
+---
+
 ## Session Listing with Pagination
 
 ```rust
@@ -92,66 +231,51 @@ fn normalize_mcp_name(name: &str) -> String {
 
 ## Graceful Cancellation
 
-Check a cancellation signal inside the prompt loop. Use `tokio::select!` to race the LLM response against the cancel signal.
+Check a cancellation signal inside the prompt loop with `biased tokio::select!` to race the LLM stream against the cancel signal.
 
 ```rust
 use tokio::sync::watch;
 
-// In SessionState
+// In SessionState:
 cancel_tx: watch::Sender<bool>,
 cancel_rx: watch::Receiver<bool>,
 
-// In prompt handler
-async fn prompt(&self, req: PromptRequest, notifier: SessionNotifier) -> anyhow::Result<PromptResponse> {
-    let mut cancel = self.get_cancel_rx(&req.session_id);
+// In Agent::cancel():
+async fn cancel(&self, notification: CancelNotification) -> acp::Result<()> {
+    if let Some(state) = self.sessions.get(&notification.session_id) {
+        let _ = state.cancel_tx.send(true);
+    }
+    Ok(())
+}
+
+// In Agent::prompt() — race LLM chunks vs cancel:
+async fn prompt(&self, req: PromptRequest) -> acp::Result<PromptResponse> {
+    let client = SessionClient::new(req.session_id.clone().into());
+    let mut cancel = self.sessions.get(&req.session_id)
+        .map(|s| s.cancel_rx.clone())
+        .ok_or_else(acp::Error::internal_error)?;
 
     loop {
         tokio::select! {
-            // biased: prioritizes cancel branch over llm chunks.
-            // Without biased, rapid chunk spam can starve the cancel signal.
+            // biased: checks cancel first every iteration (prevents starvation
+            // when chunk spam is fast).
             biased;
             _ = cancel.changed() => {
                 if *cancel.borrow() {
-                    return Ok(PromptResponse { stop_reason: "cancelled".into(), usage: None });
+                    return Ok(PromptResponse::new(StopReason::Cancelled));
                 }
             }
             chunk = llm_stream.next() => {
                 match chunk {
-                    Some(text) => notifier.send(SessionUpdate::AgentMessageChunk(text)).await?,
+                    Some(text) => client.send_agent_text(text).await,
                     None => break,
                 }
             }
         }
     }
 
-    Ok(PromptResponse { stop_reason: "end_turn".into(), usage: None })
-}
-
-// In the session/cancel handler (called from Agent trait)
-fn handle_cancel(&self, session_id: &str) {
-    if let Some(state) = self.sessions.get(session_id) {
-        let _ = state.blocking_lock().cancel_tx.send(true);
-    }
+    Ok(PromptResponse::new(StopReason::EndTurn))
 }
 ```
 
----
-
-## Auth via Environment Variables
-
-Set credentials as env vars after `authenticate` — downstream LLM clients pick them up automatically.
-
-```rust
-async fn authenticate(&self, req: AuthenticateRequest) -> anyhow::Result<AuthenticateResponse> {
-    match req.method_id.as_str() {
-        "openai_api_key" => {
-            let key = req.credentials.get("apiKey")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("missing apiKey"))?;
-            std::env::set_var("OPENAI_API_KEY", key);
-            Ok(AuthenticateResponse { authenticated: true })
-        }
-        _ => Err(anyhow::anyhow!("unknown auth method: {}", req.method_id)),
-    }
-}
-```
+> **`biased` is required:** Without it, Tokio's `select!` uses a fair random branch selection. Under rapid LLM chunk generation, the cancel branch can be starved indefinitely. `biased` ensures cancel is checked on every iteration.

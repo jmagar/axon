@@ -307,7 +307,8 @@ pub(super) async fn apply_config_and_model(
     codex_adapter: bool,
     gemini_adapter: bool,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
-) -> Result<(), String> {
+) -> Result<Vec<crate::crates::services::types::AcpConfigOption>, String> {
+    let mut latest_config_options = Vec::new();
     let mapped = initial_config_options
         .as_ref()
         .map(|o| map_config_options(o));
@@ -315,6 +316,7 @@ pub(super) async fn apply_config_and_model(
     if let Some(ref opts) = mapped
         && !opts.is_empty()
     {
+        latest_config_options = opts.clone();
         emit(
             tx,
             ServiceEvent::AcpBridge {
@@ -326,6 +328,7 @@ pub(super) async fn apply_config_and_model(
         );
     } else if codex_adapter {
         if let Some(fb) = read_codex_cached_model_options(model).await {
+            latest_config_options = fb.clone();
             emit(
                 tx,
                 ServiceEvent::AcpBridge {
@@ -337,6 +340,7 @@ pub(super) async fn apply_config_and_model(
             );
         }
     } else if gemini_adapter && let Some(fb) = read_gemini_cached_model_options(model).await {
+        latest_config_options = fb.clone();
         emit(
             tx,
             ServiceEvent::AcpBridge {
@@ -350,11 +354,12 @@ pub(super) async fn apply_config_and_model(
 
     if let Some(req_model) = normalized_requested_model(model)
         && let Some(ref opts) = initial_config_options
+        && let Some(updated) = apply_model_config(conn, session_id, opts, req_model, tx).await?
     {
-        apply_model_config(conn, session_id, opts, req_model, tx).await?;
+        latest_config_options = updated;
     }
 
-    Ok(())
+    Ok(latest_config_options)
 }
 
 /// Apply a model config option if the requested model is in the allowed values.
@@ -364,14 +369,14 @@ async fn apply_model_config(
     config_options: &[agent_client_protocol::SessionConfigOption],
     requested_model: String,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
-) -> Result<(), String> {
+) -> Result<Option<Vec<crate::crates::services::types::AcpConfigOption>>, String> {
     let model_config = config_options.iter().find(|opt| {
         opt.category
             .as_ref()
             .is_some_and(|c| matches!(c, SessionConfigOptionCategory::Model))
     });
     let Some(model_config) = model_config else {
-        return Ok(());
+        return Ok(None);
     };
 
     let value_allowed = match &model_config.kind {
@@ -404,11 +409,12 @@ async fn apply_model_config(
                 ServiceEvent::AcpBridge {
                     event: AcpBridgeEvent::ConfigOptionsUpdate {
                         session_id: session_id.0.to_string(),
-                        config_options: updated,
+                        config_options: updated.clone(),
                     },
                 },
             );
         }
+        return Ok(Some(updated));
     } else {
         // Use the already-computed `requested_model` rather than recomputing
         // `normalized_requested_model(model)` — they produce the same value.
@@ -423,5 +429,5 @@ async fn apply_model_config(
         );
     }
 
-    Ok(())
+    Ok(None)
 }

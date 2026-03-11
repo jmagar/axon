@@ -12,7 +12,8 @@
 use std::sync::Arc;
 
 use agent_client_protocol::{
-    Agent, ClientSideConnection, ContentBlock, PromptRequest, SessionId, StopReason,
+    Agent, ClientSideConnection, ContentBlock, PromptRequest, SessionId,
+    SetSessionConfigOptionRequest, StopReason,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -219,33 +220,46 @@ async fn run_turn_on_conn(
         result_tx,
     } = turn;
 
-    // Detect mid-session model changes.  The ACP session was established with a
-    // specific model; changing it after the session is open has no effect because
-    // `set_session_config_option` is only called during `establish_acp_session`.
-    // Warn explicitly so the caller knows the change was ignored rather than applied.
+    *runtime_state.blocked_mcp_tools.borrow_mut() = req
+        .blocked_mcp_tools
+        .iter()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+
+    if let Err(err) = apply_requested_model_before_prompt(
+        conn,
+        session_id,
+        runtime_state,
+        req.model.as_deref(),
+        &service_tx,
+    )
+    .await
     {
-        let established = runtime_state.established_model.borrow();
-        let requested = req.model.as_deref();
-        let mismatch = match (established.as_deref(), requested) {
-            (Some(e), Some(r)) => e != r,
-            (None, Some(_)) => false, // No model was set at session time; ignore new request.
-            _ => false,
-        };
-        if mismatch {
-            emit(
-                &service_tx,
-                ServiceEvent::Log {
-                    level: LogLevel::Warn,
-                    message: format!(
-                        "ACP runtime: model change ignored mid-session \
-                         (established={}, requested={}) — \
-                         model changes take effect on the next new session",
-                        established.as_deref().unwrap_or("<none>"),
-                        requested.unwrap_or("<none>"),
-                    ),
-                },
-            );
-        }
+        emit(
+            &service_tx,
+            ServiceEvent::Log {
+                level: LogLevel::Warn,
+                message: format!("ACP runtime: failed to apply model change mid-session: {err}"),
+            },
+        );
+    }
+    if let Err(err) = apply_requested_mode_before_prompt(
+        conn,
+        session_id,
+        runtime_state,
+        req.session_mode.as_deref(),
+        &service_tx,
+    )
+    .await
+    {
+        emit(
+            &service_tx,
+            ServiceEvent::Log {
+                level: LogLevel::Warn,
+                message: format!("ACP runtime: failed to apply session_mode mid-session: {err}"),
+            },
+        );
     }
 
     // Route the bridge's session_notification / request_permission callbacks to
@@ -275,70 +289,227 @@ async fn run_turn_on_conn(
 
     let result = match prompt_result {
         Err(e) => Err(e.to_string()),
-        Ok(response) => {
-            let stop_reason = response.stop_reason;
-            let stop_reason_str = stop_reason_to_str(stop_reason);
-            let log_level = match stop_reason {
-                StopReason::EndTurn => LogLevel::Info,
-                StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => {
-                    LogLevel::Warn
-                }
-                _ => LogLevel::Info,
-            };
-            emit(
-                &service_tx,
-                ServiceEvent::Log {
-                    level: log_level,
-                    message: format!(
-                        "ACP runtime: prompt turn completed \
-                         (stop_reason={stop_reason_str}, session_id={session_id_str})"
-                    ),
-                },
-            );
-
-            let session = runtime_state
-                .session_id
-                .get()
-                .cloned()
-                .unwrap_or_else(|| session_id_str.clone());
-            let text = runtime_state.assistant_text.borrow().clone();
-
-            // Emit editor write events before TurnResult so the editor updates
-            // arrive before the turn-complete signal resets the streaming state.
-            for (content, op_str) in parse_editor_blocks(&text) {
-                let operation = if op_str == "append" {
-                    EditorOperation::Append
-                } else {
-                    EditorOperation::Replace
-                };
-                emit(
-                    &service_tx,
-                    ServiceEvent::EditorWrite { content, operation },
-                );
-            }
-
-            emit(
-                &service_tx,
-                ServiceEvent::AcpBridge {
-                    event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
-                        session_id: session.clone(),
-                        stop_reason: stop_reason_str.to_string(),
-                        result: text,
-                    }),
-                },
-            );
-            emit(
-                &service_tx,
-                ServiceEvent::Log {
-                    level: LogLevel::Info,
-                    message: format!("ACP runtime: TurnResult emitted (session_id={session})"),
-                },
-            );
-            Ok(())
-        }
+        Ok(response) => finalize_successful_turn(
+            response.stop_reason,
+            runtime_state,
+            &service_tx,
+            &session_id_str,
+        ),
     };
 
     let _ = result_tx.send(result);
+}
+
+fn finalize_successful_turn(
+    stop_reason: StopReason,
+    runtime_state: &Arc<AcpRuntimeState>,
+    service_tx: &Option<mpsc::Sender<ServiceEvent>>,
+    session_id_str: &str,
+) -> Result<(), String> {
+    let stop_reason_str = stop_reason_to_str(stop_reason);
+    let log_level = match stop_reason {
+        StopReason::EndTurn => LogLevel::Info,
+        StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
+        _ => LogLevel::Info,
+    };
+    emit(
+        service_tx,
+        ServiceEvent::Log {
+            level: log_level,
+            message: format!(
+                "ACP runtime: prompt turn completed \
+                 (stop_reason={stop_reason_str}, session_id={session_id_str})"
+            ),
+        },
+    );
+
+    let session = runtime_state
+        .session_id
+        .get()
+        .cloned()
+        .unwrap_or_else(|| session_id_str.to_string());
+    let text = runtime_state.assistant_text.borrow().clone();
+
+    // Emit editor write events before TurnResult so the editor updates
+    // arrive before the turn-complete signal resets the streaming state.
+    for (content, op_str) in parse_editor_blocks(&text) {
+        let operation = if op_str == "append" {
+            EditorOperation::Append
+        } else {
+            EditorOperation::Replace
+        };
+        emit(service_tx, ServiceEvent::EditorWrite { content, operation });
+    }
+
+    emit(
+        service_tx,
+        ServiceEvent::AcpBridge {
+            event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
+                session_id: session.clone(),
+                stop_reason: stop_reason_str.to_string(),
+                result: text,
+            }),
+        },
+    );
+    emit(
+        service_tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!("ACP runtime: TurnResult emitted (session_id={session})"),
+        },
+    );
+    Ok(())
+}
+
+async fn apply_requested_model_before_prompt(
+    conn: &ClientSideConnection,
+    session_id: &SessionId,
+    runtime_state: &Arc<AcpRuntimeState>,
+    requested_model: Option<&str>,
+    service_tx: &Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<(), String> {
+    let Some(requested) = requested_model.map(str::trim).filter(|m| !m.is_empty()) else {
+        return Ok(());
+    };
+
+    let established = runtime_state.established_model.borrow().clone();
+    if established.as_deref() == Some(requested) {
+        return Ok(());
+    }
+
+    let known_options = runtime_state.config_options.borrow().clone();
+    let (option_id, value_allowed) = resolve_model_option_for_request(&known_options, requested);
+    if !value_allowed {
+        emit(
+            service_tx,
+            ServiceEvent::Log {
+                level: LogLevel::Warn,
+                message: format!(
+                    "ACP runtime: requested model '{requested}' is not in ACP config options; keeping current model"
+                ),
+            },
+        );
+        return Ok(());
+    }
+
+    emit(
+        service_tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!(
+                "ACP runtime: applying model change mid-session (option_id={option_id}, value={requested})"
+            ),
+        },
+    );
+
+    let set_resp = conn
+        .set_session_config_option(SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            option_id.clone(),
+            requested.to_string(),
+        ))
+        .await
+        .map_err(|err| format!("set_session_config_option failed: {err}"))?;
+
+    let updated = super::mapping::map_config_options(&set_resp.config_options);
+    if !updated.is_empty() {
+        *runtime_state.config_options.borrow_mut() = updated.clone();
+        emit(
+            service_tx,
+            ServiceEvent::AcpBridge {
+                event: AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id: session_id.0.to_string(),
+                    config_options: updated,
+                },
+            },
+        );
+    }
+
+    *runtime_state.established_model.borrow_mut() = Some(requested.to_string());
+    Ok(())
+}
+
+fn resolve_model_option_for_request(
+    options: &[crate::crates::services::types::AcpConfigOption],
+    requested_model: &str,
+) -> (String, bool) {
+    let model_option = options
+        .iter()
+        .find(|opt| opt.category.as_deref() == Some("model"));
+    if let Some(opt) = model_option {
+        let allowed = opt.options.iter().any(|o| o.value == requested_model);
+        return (opt.id.clone(), allowed);
+    }
+    // Fallback for adapters that do not provide config options but still accept
+    // the conventional `model` config ID.
+    ("model".to_string(), true)
+}
+
+async fn apply_requested_mode_before_prompt(
+    conn: &ClientSideConnection,
+    session_id: &SessionId,
+    runtime_state: &Arc<AcpRuntimeState>,
+    requested_mode: Option<&str>,
+    service_tx: &Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<(), String> {
+    let Some(requested) = requested_mode.map(str::trim).filter(|m| !m.is_empty()) else {
+        return Ok(());
+    };
+
+    let known_options = runtime_state.config_options.borrow().clone();
+    let (option_id, value_allowed) = resolve_mode_option_for_request(&known_options, requested);
+    if !value_allowed {
+        emit(
+            service_tx,
+            ServiceEvent::Log {
+                level: LogLevel::Warn,
+                message: format!(
+                    "ACP runtime: requested session_mode '{requested}' is not in ACP mode options; keeping current value"
+                ),
+            },
+        );
+        return Ok(());
+    }
+
+    let set_resp = conn
+        .set_session_config_option(SetSessionConfigOptionRequest::new(
+            session_id.clone(),
+            option_id.clone(),
+            requested.to_string(),
+        ))
+        .await
+        .map_err(|err| format!("set_session_config_option(session_mode) failed: {err}"))?;
+
+    let updated = super::mapping::map_config_options(&set_resp.config_options);
+    if !updated.is_empty() {
+        *runtime_state.config_options.borrow_mut() = updated.clone();
+        emit(
+            service_tx,
+            ServiceEvent::AcpBridge {
+                event: AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id: session_id.0.to_string(),
+                    config_options: updated,
+                },
+            },
+        );
+    }
+
+    Ok(())
+}
+
+fn resolve_mode_option_for_request(
+    options: &[crate::crates::services::types::AcpConfigOption],
+    requested_mode: &str,
+) -> (String, bool) {
+    let mode_option = options
+        .iter()
+        .find(|opt| opt.category.as_deref() == Some("mode"));
+    if let Some(opt) = mode_option {
+        let allowed = opt.options.iter().any(|o| o.value == requested_mode);
+        return (opt.id.clone(), allowed);
+    }
+    // Conservative fallback: no known mode option means do not guess/apply.
+    ("".to_string(), false)
 }
 
 // ── Editor block parsing ───────────────────────────────────────────────────
@@ -450,5 +621,87 @@ Content</axon:editor>"#;
     fn parse_editor_blocks_no_blocks() {
         let blocks = parse_editor_blocks("just some text with no editor blocks");
         assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn resolve_model_option_uses_model_category() {
+        let options = vec![crate::crates::services::types::AcpConfigOption {
+            id: "model_select".to_string(),
+            name: "Model".to_string(),
+            description: None,
+            category: Some("model".to_string()),
+            current_value: "sonnet".to_string(),
+            options: vec![
+                crate::crates::services::types::AcpConfigSelectValue {
+                    value: "sonnet".to_string(),
+                    name: "Sonnet".to_string(),
+                    description: None,
+                },
+                crate::crates::services::types::AcpConfigSelectValue {
+                    value: "opus".to_string(),
+                    name: "Opus".to_string(),
+                    description: None,
+                },
+            ],
+        }];
+
+        let (id, allowed) = resolve_model_option_for_request(&options, "opus");
+        assert_eq!(id, "model_select");
+        assert!(allowed);
+    }
+
+    #[test]
+    fn resolve_model_option_rejects_unknown_value_when_options_known() {
+        let options = vec![crate::crates::services::types::AcpConfigOption {
+            id: "model".to_string(),
+            name: "Model".to_string(),
+            description: None,
+            category: Some("model".to_string()),
+            current_value: "sonnet".to_string(),
+            options: vec![crate::crates::services::types::AcpConfigSelectValue {
+                value: "sonnet".to_string(),
+                name: "Sonnet".to_string(),
+                description: None,
+            }],
+        }];
+
+        let (_id, allowed) = resolve_model_option_for_request(&options, "not-valid");
+        assert!(!allowed);
+    }
+
+    #[test]
+    fn resolve_model_option_falls_back_to_default_model_id() {
+        let options: Vec<crate::crates::services::types::AcpConfigOption> = Vec::new();
+        let (id, allowed) = resolve_model_option_for_request(&options, "anything");
+        assert_eq!(id, "model");
+        assert!(allowed);
+    }
+
+    #[test]
+    fn resolve_mode_option_uses_mode_category() {
+        let options = vec![crate::crates::services::types::AcpConfigOption {
+            id: "approval_mode".to_string(),
+            name: "Approval Mode".to_string(),
+            description: None,
+            category: Some("mode".to_string()),
+            current_value: "default".to_string(),
+            options: vec![crate::crates::services::types::AcpConfigSelectValue {
+                value: "default".to_string(),
+                name: "Default".to_string(),
+                description: None,
+            }],
+        }];
+
+        let (id, allowed) = resolve_mode_option_for_request(&options, "default");
+        assert_eq!(id, "approval_mode");
+        assert!(allowed);
+    }
+
+    #[test]
+    fn resolve_mode_option_returns_not_allowed_when_missing() {
+        let options: Vec<crate::crates::services::types::AcpConfigOption> = Vec::new();
+        let (id, allowed) = resolve_mode_option_for_request(&options, "default");
+        assert_eq!(id, "");
+        assert!(!allowed);
     }
 }
