@@ -117,7 +117,7 @@ export function AIMenu() {
       let anchorNode = editor.api.node({
         at: [],
         reverse: true,
-        match: (n) => !!n[KEYS.suggestion] && !!n[getTransientSuggestionKey()],
+        match: (n: any) => !!n[KEYS.suggestion] && !!n[getTransientSuggestionKey()],
       })
 
       if (!anchorNode) {

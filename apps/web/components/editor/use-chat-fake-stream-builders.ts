@@ -11,7 +11,7 @@ const createCommentChunks = (editor: PlateEditor) => {
       selectionFallback: true,
       sort: true,
     })
-    .map(([block]) => block)
+    .map(([block]: [any]) => block)
 
   const isSelectingSome = editor.getOption(BlockSelectionPlugin, 'isSelectingSome')
 
@@ -86,11 +86,13 @@ const createTableCellChunks = (editor: PlateEditor) => {
     const cells = Array.from(
       editor.api.nodes({
         at: editor.selection ?? undefined,
-        match: (n) =>
+        match: (n: any) =>
           (n as { type?: string }).type === KEYS.td || (n as { type?: string }).type === KEYS.th,
       }),
     )
-    cellIds = cells.map(([node]) => (node as { id?: string }).id).filter(Boolean) as string[]
+    cellIds = cells
+      .map((entry: any) => ((entry as [any])[0] as { id?: string }).id)
+      .filter(Boolean) as string[]
   }
 
   // If still no cells, return empty chunks

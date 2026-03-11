@@ -150,7 +150,7 @@ export const setBlockType = (editor: PlateEditor, type: string, { at }: { at?: P
     }
 
     if (at) {
-      const entry = editor.api.node<TElement>(at)
+      const entry = editor.api.node(at) as NodeEntry<TElement> | undefined
 
       if (entry) {
         setEntry(entry)
@@ -161,7 +161,7 @@ export const setBlockType = (editor: PlateEditor, type: string, { at }: { at?: P
 
     const entries = editor.api.blocks({ mode: 'lowest' })
 
-    entries.forEach((entry) => {
+    entries.forEach((entry: NodeEntry<TElement>) => {
       setEntry(entry)
     })
   })

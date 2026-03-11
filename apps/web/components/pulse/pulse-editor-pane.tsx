@@ -97,6 +97,9 @@ export function PulseEditorPane({
   const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
+    // retryTick is intentionally in the dependency array to force a re-run after
+    // a catch failure below — reading it here satisfies the exhaustive-deps rule.
+    void retryTick
     if (markdown === lastAppliedMarkdownRef.current) return
     const current = serializeMd(editor)
     if (current === markdown) {
@@ -128,7 +131,6 @@ export function PulseEditorPane({
     isApplyingExternalUpdateRef.current = false
     lastAppliedMarkdownRef.current = markdown
     setWordCount(countWords(markdown))
-    // biome-ignore lint/correctness/useExhaustiveDependencies: retryTick drives re-runs after catch failures
   }, [editor, markdown, retryTick])
 
   // Defer scroll restore one frame so content has rendered before we set scrollTop.
