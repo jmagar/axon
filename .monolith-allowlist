@@ -42,3 +42,6 @@ crates/web/docker_stats.rs  # expires: 2026-03-15
 
 # expires: 2026-03-15 — init_tracing() (137L) pre-existing on services-layer-refactor; split pending.
 crates/core/logging.rs  # expires: 2026-03-15
+
+# expires: 2026-03-15 — ACP hook grew with session persistence/reconnect logic; split pending.
+apps/web/hooks/use-axon-acp.ts  # expires: 2026-03-15

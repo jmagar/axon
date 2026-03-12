@@ -21,7 +21,8 @@ use service_calls::{send_done_owned, send_error_owned};
 use types::ServiceMode;
 
 pub(super) use subprocess::handle_sync_command;
-pub(super) use types::{AcpConn, DIRECT_SYNC_MODES, DirectParams};
+pub(super) use types::DIRECT_SYNC_MODES;
+pub(super) use types::DirectParams;
 
 /// Classify a mode string and extract all request parameters into owned values.
 ///
@@ -50,19 +51,12 @@ pub(super) async fn handle_sync_direct(
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
-    acp_connection: AcpConn,
 ) {
     let start = Instant::now();
 
     // dispatch_service takes full ownership — no borrows cross any .await.
-    let svc_result = dispatch_service(
-        params,
-        tx.clone(),
-        ws_ctx.clone(),
-        permission_responders,
-        acp_connection,
-    )
-    .await;
+    let svc_result =
+        dispatch_service(params, tx.clone(), ws_ctx.clone(), permission_responders).await;
     let elapsed_ms = Some(start.elapsed().as_millis() as u64);
 
     match svc_result {

@@ -17,6 +17,7 @@ const EditorUpdateSchema = z.object({
 })
 
 const STREAMING_TIMEOUT_MS = 300_000
+const ACP_SESSION_STORAGE_KEY = 'axon-acp-session-id'
 
 function createFallbackClientId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
@@ -124,6 +125,34 @@ export function useAxonAcp({
   const streamedCharsRef = useRef(0)
   const { send, subscribe, status } = useAxonWs()
   const connected = status === 'connected'
+  const wasConnectedRef = useRef(false)
+
+  // Persist activeSessionId to sessionStorage for reconnect
+  useEffect(() => {
+    try {
+      if (activeSessionId) {
+        sessionStorage.setItem(ACP_SESSION_STORAGE_KEY, activeSessionId)
+      }
+    } catch {
+      // sessionStorage may be unavailable in some contexts
+    }
+  }, [activeSessionId])
+
+  // On WS reconnect, attempt to resume the cached ACP session
+  useEffect(() => {
+    if (connected && wasConnectedRef.current === false) {
+      // First connect or reconnect — try resume
+      try {
+        const storedId = sessionStorage.getItem(ACP_SESSION_STORAGE_KEY)
+        if (storedId && !isStreaming) {
+          send({ type: 'acp_resume', session_id: storedId })
+        }
+      } catch {
+        // sessionStorage unavailable
+      }
+    }
+    wasConnectedRef.current = connected
+  }, [connected, send, isStreaming])
 
   const flushBufferedStream = useCallback(() => {
     flushTimerRef.current = null
@@ -428,6 +457,24 @@ export function useAxonAcp({
             .safeParse(raw)
           if (!parsed.success) return
           onCommandsUpdate?.(parsed.data)
+          break
+        }
+
+        case 'acp_resume_result': {
+          const ok = msg.ok as boolean | undefined
+          const replayed = msg.replayed as number | undefined
+          const sessionId = msg.session_id as string | undefined
+          if (ok) {
+            console.info(`[acp] resumed session, replayed ${replayed ?? 0} buffered events`)
+            if (sessionId) onSessionIdChange(sessionId)
+          } else {
+            console.info('[acp] session resume failed — session expired or unknown')
+            try {
+              sessionStorage.removeItem(ACP_SESSION_STORAGE_KEY)
+            } catch {
+              /* noop */
+            }
+          }
           break
         }
       }
