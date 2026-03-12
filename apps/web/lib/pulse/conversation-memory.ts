@@ -14,7 +14,8 @@ function normalizeColor(raw: string): string {
 
 function extractFavoriteColorFromHistory(history: ConversationTurn[]): string | null {
   for (let index = history.length - 1; index >= 0; index -= 1) {
-    const turn = history[index]
+    // index is always a valid index — loop bounds ensure it
+    const turn = history[index]!
     if (turn.role !== 'user') continue
     const match = FAVORITE_COLOR_PATTERN.exec(turn.content)
     if (!match) continue

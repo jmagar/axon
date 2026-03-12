@@ -1,35 +1,10 @@
 import type { NextConfig } from 'next'
 
+import { buildCspHeader } from './lib/server/csp'
+
 const axonBackendUrl =
   process.env.AXON_BACKEND_URL || `http://localhost:${process.env.NEXT_PUBLIC_AXON_PORT || '49000'}`
 const isDev = process.env.NODE_ENV !== 'production'
-
-function buildConnectSources(): string[] {
-  const sources = new Set<string>(["'self'"])
-  const urls = [axonBackendUrl, process.env.NEXT_PUBLIC_AXON_WS_URL].filter(
-    (value): value is string => typeof value === 'string' && value.length > 0,
-  )
-
-  for (const raw of urls) {
-    try {
-      const parsed = new URL(raw)
-      sources.add(parsed.origin)
-      const wsScheme = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
-      sources.add(`${wsScheme}//${parsed.host}`)
-    } catch {
-      // Ignore malformed URLs.
-    }
-  }
-
-  if (isDev) {
-    sources.add('http://localhost:*')
-    sources.add('http://127.0.0.1:*')
-    sources.add('ws://localhost:*')
-    sources.add('ws://127.0.0.1:*')
-  }
-
-  return Array.from(sources)
-}
 
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -38,18 +13,13 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
   {
     key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "object-src 'none'",
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
-      `connect-src ${buildConnectSources().join(' ')}`,
-    ].join('; '),
+    // CSP is built by the shared lib/server/csp.ts module. proxy.ts uses the
+    // same builder so both layers always emit the same policy string.
+    value: buildCspHeader({
+      isDev,
+      backendUrl: axonBackendUrl,
+      wsUrl: process.env.NEXT_PUBLIC_AXON_WS_URL,
+    }),
   },
   ...(isDev
     ? []
@@ -76,14 +46,21 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   images: {
+    // S-M4: Restrict /_next/image proxy to HTTPS-only self-hosted origins.
+    //
+    // The wildcard `hostname: '**'` makes /_next/image?url=<any-url> an open
+    // SSRF proxy. We lock it to the self-hosted Axon backend only.
+    //
+    // Editor image nodes (image-node.tsx, media-image-node-static.tsx) may
+    // embed arbitrary user-supplied image URLs. Those components use
+    // `unoptimized` or pass through the raw src, so they do NOT hit this proxy.
+    // If a new component is added that proxies an external image, add its
+    // specific hostname here — do not re-open the wildcard.
     remotePatterns: [
       {
+        // Self-hosted Axon backend (screenshots, output files served over HTTPS)
         protocol: 'https',
-        hostname: '**',
-      },
-      {
-        protocol: 'http',
-        hostname: '**',
+        hostname: process.env.AXON_BACKEND_HOSTNAME ?? 'localhost',
       },
     ],
   },

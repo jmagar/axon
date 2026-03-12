@@ -17,6 +17,7 @@ pub mod adapters;
 pub(super) mod bridge;
 pub(super) mod config;
 pub mod mapping;
+pub(super) mod permission;
 pub(super) mod persistent_conn;
 pub(super) mod preflight;
 pub(super) mod runtime;
@@ -90,6 +91,52 @@ pub struct AcpClientScaffold {
 }
 
 const ACP_ADAPTER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Environment variables forwarded to ACP adapter subprocesses.
+///
+/// `env_clear()` strips everything; only these keys are re-injected from the
+/// parent environment when present.  Kept as a module-level constant so
+/// `spawn_adapter` and `spawn_adapter_skip_validation` stay in sync.
+const ACP_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "TERM",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+    "TMPDIR",
+    "XDG_RUNTIME_DIR",
+    // TLS certificate paths for custom CA bundles
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    // Gemini CLI auth and config
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_CLOUD_LOCATION",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GEMINI_CLI_HOME",
+    "GEMINI_FORCE_FILE_STORAGE",
+];
+
+/// Clear all inherited env vars from `cmd`, then re-inject only the keys in
+/// [`ACP_ENV_ALLOWLIST`] that are present in the parent environment.
+fn apply_env_allowlist(cmd: &mut tokio::process::Command) {
+    cmd.env_clear();
+    for key in ACP_ENV_ALLOWLIST {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+}
 
 // ── run_acp_event_loop ───────────────────────────────────────────────────────
 
@@ -189,43 +236,7 @@ impl AcpClientScaffold {
         // proxy, not at OpenAI. Adapters (Claude CLI, Codex) use their own OAuth /
         // stored API keys for authentication.
         // CLAUDECODE is excluded to prevent nested-session detection.
-        command.env_clear();
-        // NOTE: `HOME` is Linux/macOS-only. Axon targets Linux self-hosted deployments
-        // exclusively (see CLAUDE.md), so `HOME` is always present in the environment.
-        // On Windows, `USERPROFILE` would be needed instead — not relevant here.
-        for key in &[
-            "PATH",
-            "HOME",
-            "USER",
-            "SHELL",
-            "TERM",
-            "LANG",
-            "LC_ALL",
-            "TZ",
-            "TMPDIR",
-            "XDG_RUNTIME_DIR",
-            // TLS certificate paths for custom CA bundles
-            "SSL_CERT_FILE",
-            "SSL_CERT_DIR",
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "XDG_CONFIG_HOME",
-            "XDG_DATA_HOME",
-            "XDG_CACHE_HOME",
-            // Gemini CLI auth and config
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "GOOGLE_CLOUD_PROJECT",
-            "GOOGLE_CLOUD_LOCATION",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "GEMINI_CLI_HOME",
-            "GEMINI_FORCE_FILE_STORAGE",
-        ] {
-            if let Ok(val) = std::env::var(key) {
-                command.env(key, val);
-            }
-        }
+        apply_env_allowlist(&mut command);
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());
@@ -238,12 +249,11 @@ impl AcpClientScaffold {
 
     /// Test-only variant of `spawn_adapter` that skips `validate_adapter_command`.
     ///
-    /// Used by env-isolation tests that need to spawn a real shell (`sh`) to probe
-    /// which env vars are passed through, without being blocked by the shell-name
-    /// validator added to production code.
-    /// Test-only helper: spawns the adapter without running `validate_adapter_command`.
-    /// Used by env-isolation integration tests that need to spawn a real shell (e.g. `sh`)
-    /// without being blocked by the shell-name validator.
+    /// Used by env-isolation integration tests that need to spawn a real shell
+    /// (e.g. `sh`) without being blocked by the shell-name validator.
+    ///
+    /// Gated behind the `test-helpers` feature so it cannot be called in
+    /// production builds.  Enable with `cargo test --features test-helpers`.
     #[doc(hidden)]
     pub fn spawn_adapter_skip_validation(
         &self,
@@ -253,40 +263,7 @@ impl AcpClientScaffold {
         if let Some(cwd) = &self.adapter.cwd {
             command.current_dir(cwd);
         }
-        command.env_clear();
-        // NOTE: `HOME` is Linux/macOS-only. Axon targets Linux self-hosted deployments
-        // exclusively — `HOME` is always present. Windows would need `USERPROFILE` instead.
-        for key in &[
-            "PATH",
-            "HOME",
-            "USER",
-            "SHELL",
-            "TERM",
-            "LANG",
-            "LC_ALL",
-            "TZ",
-            "TMPDIR",
-            "XDG_RUNTIME_DIR",
-            "SSL_CERT_FILE",
-            "SSL_CERT_DIR",
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "XDG_CONFIG_HOME",
-            "XDG_DATA_HOME",
-            "XDG_CACHE_HOME",
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "GOOGLE_CLOUD_PROJECT",
-            "GOOGLE_CLOUD_LOCATION",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "GEMINI_CLI_HOME",
-            "GEMINI_FORCE_FILE_STORAGE",
-        ] {
-            if let Ok(val) = std::env::var(key) {
-                command.env(key, val);
-            }
-        }
+        apply_env_allowlist(&mut command);
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
         command.stderr(std::process::Stdio::piped());

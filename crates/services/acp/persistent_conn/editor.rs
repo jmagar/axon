@@ -11,7 +11,7 @@
 /// Content here
 /// </axon:editor>
 /// ```
-pub(super) fn parse_editor_blocks(text: &str) -> Vec<(String, String)> {
+pub(crate) fn parse_editor_blocks(text: &str) -> Vec<(String, String)> {
     const OPEN: &str = "<axon:editor";
     const CLOSE: &str = "</axon:editor>";
 

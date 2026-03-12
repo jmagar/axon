@@ -107,7 +107,12 @@ export function recordAssistantDelta(
   delta: string,
   startedAt: number,
 ): void {
-  parserState.blocks.push({ type: 'text', content: delta })
+  const lastBlock = parserState.blocks[parserState.blocks.length - 1]
+  if (lastBlock?.type === 'text') {
+    lastBlock.content += delta
+  } else {
+    parserState.blocks.push({ type: 'text', content: delta })
+  }
   parserState.deltaCount += 1
   parserState.firstDeltaMs ??= Date.now() - startedAt
 }

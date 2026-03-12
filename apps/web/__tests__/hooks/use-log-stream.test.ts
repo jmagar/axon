@@ -36,7 +36,7 @@ describe('useLogStream', () => {
 
     await waitFor(() => {
       expect(result.current.lines).toHaveLength(1)
-      expect(result.current.lines[0].text).toBe('hello')
+      expect(result.current.lines[0]!.text).toBe('hello')
     })
     await waitFor(() => {
       expect(result.current.isConnected).toBe(false)

@@ -24,7 +24,8 @@ function resolveLocalUrl(raw: string | undefined): string | undefined {
     const hostPort = `${url.hostname}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`
     const mapped = DOCKER_HOST_MAP[hostPort]
     if (mapped) {
-      const [host, port] = mapped.split(':')
+      // DOCKER_HOST_MAP values are always "host:port" strings — split always yields 2 parts
+      const [host, port] = mapped.split(':') as [string, string]
       url.hostname = host
       url.port = port
       return url.toString().replace(/\/$/, '')

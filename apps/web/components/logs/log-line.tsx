@@ -66,9 +66,10 @@ function parseLine(text: string) {
   if (!m) return null
   const [, datetime, levelRaw, module, message] = m
   return {
-    time: datetime.split('T')[1], // HH:MM:SS
+    // TRACING_RE captures the full datetime in group 1 — splitting on 'T' always yields 2 parts
+    time: datetime!.split('T')[1] ?? '',
     level: levelRaw as Level,
-    module: shortenModule(module),
+    module: shortenModule(module ?? ''),
     message,
   }
 }

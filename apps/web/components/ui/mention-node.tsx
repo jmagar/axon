@@ -38,9 +38,10 @@ export function MentionElement(props: MentionElementProps) {
         'inline-block rounded-md bg-muted px-1.5 py-0.5 align-baseline font-medium text-sm',
         !readOnly && 'cursor-pointer',
         selected && focused && 'ring-2 ring-ring',
-        element.children[0][KEYS.bold] === true && 'font-bold',
-        element.children[0][KEYS.italic] === true && 'italic',
-        element.children[0][KEYS.underline] === true && 'underline',
+        // Mention nodes always have at least one child — plate data contract
+        element.children[0]![KEYS.bold] === true && 'font-bold',
+        element.children[0]![KEYS.italic] === true && 'italic',
+        element.children[0]![KEYS.underline] === true && 'underline',
       )}
       attributes={{
         ...props.attributes,

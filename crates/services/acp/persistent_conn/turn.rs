@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use agent_client_protocol::{
     Agent, ClientSideConnection, ContentBlock, LoadSessionRequest, NewSessionRequest,
-    PromptRequest, SessionId, StopReason,
+    PromptRequest, SessionId,
 };
 use tokio::sync::{mpsc, oneshot};
 
-use crate::crates::services::events::{EditorOperation, LogLevel, ServiceEvent, emit};
-use crate::crates::services::types::{AcpBridgeEvent, AcpTurnResultEvent};
+use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
+use crate::crates::services::types::AcpBridgeEvent;
 
-use super::super::bridge::{AcpRuntimeState, stop_reason_to_str};
+use super::super::bridge::{AcpRuntimeState, finalize_successful_turn};
+use super::TurnRequest;
 use super::session_options::{
     apply_requested_mode_before_prompt, apply_requested_model_before_prompt,
 };
-use super::{TurnRequest, editor::parse_editor_blocks};
 
 struct TurnContext {
     req: crate::crates::services::types::AcpPromptTurnRequest,
@@ -305,66 +305,4 @@ fn emit_prompt_start_log(service_tx: &Option<mpsc::Sender<ServiceEvent>>, sessio
             ),
         },
     );
-}
-
-fn finalize_successful_turn(
-    stop_reason: StopReason,
-    runtime_state: &Arc<AcpRuntimeState>,
-    service_tx: &Option<mpsc::Sender<ServiceEvent>>,
-    session_id_str: &str,
-) -> Result<(), String> {
-    let stop_reason_str = stop_reason_to_str(stop_reason);
-    let log_level = match stop_reason {
-        StopReason::EndTurn => LogLevel::Info,
-        StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
-        _ => LogLevel::Info,
-    };
-    let msg = format!(
-        "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
-    );
-    if log_level == LogLevel::Info {
-        crate::crates::core::logging::log_info(&msg);
-    } else {
-        crate::crates::core::logging::log_warn(&msg);
-    }
-    emit(
-        service_tx,
-        ServiceEvent::Log {
-            level: log_level,
-            message: msg,
-        },
-    );
-
-    let session = session_id_str.to_string();
-    let text = runtime_state.assistant_text.borrow().clone();
-
-    for (content, op_str) in parse_editor_blocks(&text) {
-        let operation = if op_str == "append" {
-            EditorOperation::Append
-        } else {
-            EditorOperation::Replace
-        };
-        emit(service_tx, ServiceEvent::EditorWrite { content, operation });
-    }
-
-    emit(
-        service_tx,
-        ServiceEvent::AcpBridge {
-            event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
-                session_id: session.clone(),
-                stop_reason: stop_reason_str.to_string(),
-                result: text,
-            }),
-        },
-    );
-    let msg = format!("ACP runtime: TurnResult emitted (session_id={session})");
-    crate::crates::core::logging::log_info(&msg);
-    emit(
-        service_tx,
-        ServiceEvent::Log {
-            level: LogLevel::Info,
-            message: msg,
-        },
-    );
-    Ok(())
 }

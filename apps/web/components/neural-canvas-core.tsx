@@ -70,7 +70,8 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
       const stimCount = Math.floor(avgCpu / 20)
       for (let i = 0; i < stimCount && i < state.neurons.length; i++) {
         const idx = Math.floor(Math.random() * state.neurons.length)
-        state.neurons[idx].receiveSignal(20 + avgCpu * 0.3)
+        // idx is bounded by state.neurons.length — always a valid index
+        state.neurons[idx]!.receiveSignal(20 + avgCpu * 0.3)
       }
     },
   }))
@@ -309,8 +310,9 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
           const maxSignals = Math.max(1, 2 + Math.floor((state.intensity * 5) / connectionStride))
           let sent = 0
           for (let c = 0; c < outgoing.length && sent < maxSignals; c++) {
-            if (Math.random() < outgoing[c].strength * 0.4) {
-              state.signals.push(new ActionPotential(neuron as never, outgoing[c] as never))
+            // c is bounded by outgoing.length — always a valid index
+            if (Math.random() < outgoing[c]!.strength * 0.4) {
+              state.signals.push(new ActionPotential(neuron as never, outgoing[c]! as never))
               sent++
             }
           }
@@ -330,11 +332,13 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
         state.neurons.length > 0
       ) {
         const focusIndex = Math.floor(Math.random() * state.neurons.length)
-        const focus = state.neurons[focusIndex]
+        // focusIndex is bounded by state.neurons.length (length > 0 checked above)
+        const focus = state.neurons[focusIndex]!
         const burstRadiusSq = (180 * state.visual.burstStrength) ** 2
         let excited = 0
         for (let i = 0; i < state.neurons.length && excited < 16; i++) {
-          const n = state.neurons[i]
+          // i is bounded by state.neurons.length — always a valid index
+          const n = state.neurons[i]!
           const dx = n.x - focus.x
           const dy = n.y - focus.y
           const near = dx * dx + dy * dy < burstRadiusSq
@@ -349,9 +353,10 @@ const NeuralCanvas = forwardRef<NeuralCanvasHandle, NeuralCanvasProps>(function 
 
       // Action potentials
       for (let i = state.signals.length - 1; i >= 0; i--) {
-        state.signals[i].update(dt)
-        state.signals[i].draw(ctx, state.renderAssets, !degraded)
-        if (!state.signals[i].active) state.signals.splice(i, 1)
+        // i is a valid index — loop iterates from length-1 down to 0
+        state.signals[i]!.update(dt)
+        state.signals[i]!.draw(ctx, state.renderAssets, !degraded)
+        if (!state.signals[i]!.active) state.signals.splice(i, 1)
       }
       while (state.signals.length > signalCap) state.signals.shift()
 

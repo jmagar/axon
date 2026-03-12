@@ -37,24 +37,23 @@ export function mergeHistoricalMessages(
 ): AxonMessage[] {
   const usedLiveIndexes = new Set<number>()
 
-  function normalize(text: string): string {
-    return text.replace(/\s+/g, ' ').trim()
-  }
-
-  function isSemanticallySameContent(a: string, b: string): boolean {
-    if (a === b) return true
-    return normalize(a) === normalize(b)
+  // Build lookup maps — O(n) construction, O(1) lookup per historical message
+  const liveBySourceId = new Map<string, number>()
+  for (let i = 0; i < live.length; i++) {
+    // i is always a valid index — loop bounds ensure it
+    const m = live[i]!
+    if (m.sourceMessageId && !liveBySourceId.has(m.sourceMessageId)) {
+      liveBySourceId.set(m.sourceMessageId, i)
+    }
   }
 
   return historical.map((h, idx) => {
     if (h.sourceMessageId) {
-      const bySourceId = live.findIndex(
-        (candidate, liveIdx) =>
-          !usedLiveIndexes.has(liveIdx) && candidate.sourceMessageId === h.sourceMessageId,
-      )
-      if (bySourceId >= 0) {
-        usedLiveIndexes.add(bySourceId)
-        const matched = live[bySourceId]
+      const bySourceIdx = liveBySourceId.get(h.sourceMessageId)
+      if (bySourceIdx !== undefined && !usedLiveIndexes.has(bySourceIdx)) {
+        usedLiveIndexes.add(bySourceIdx)
+        // bySourceIdx was stored from a valid live[] iteration — always defined
+        const matched = live[bySourceIdx]!
         return {
           ...h,
           chainOfThought: h.chainOfThought ?? matched.chainOfThought,
@@ -70,7 +69,7 @@ export function mergeHistoricalMessages(
       preferred &&
       !usedLiveIndexes.has(idx) &&
       preferred.role === h.role &&
-      isSemanticallySameContent(preferred.content, h.content)
+      preferred.content === h.content
     ) {
       usedLiveIndexes.add(idx)
       return {
@@ -82,21 +81,6 @@ export function mergeHistoricalMessages(
       }
     }
 
-    const fallbackIdx = live.findIndex(
-      (candidate, liveIdx) =>
-        !usedLiveIndexes.has(liveIdx) &&
-        candidate.role === h.role &&
-        isSemanticallySameContent(candidate.content, h.content),
-    )
-    if (fallbackIdx === -1) return h
-    usedLiveIndexes.add(fallbackIdx)
-    const fallback = live[fallbackIdx]
-    return {
-      ...h,
-      chainOfThought: h.chainOfThought ?? fallback.chainOfThought,
-      blocks: h.blocks ?? fallback.blocks,
-      toolUses: h.toolUses ?? fallback.toolUses,
-      steps: h.steps ?? fallback.steps,
-    }
+    return h
   })
 }

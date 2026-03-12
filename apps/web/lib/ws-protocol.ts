@@ -57,6 +57,25 @@ export type WsServerMsg =
   | { type: 'result'; session_id?: string; result?: string; [key: string]: unknown }
   | { type: 'error'; message?: string; [key: string]: unknown }
   | { type: 'editor_update'; content: string; operation: 'replace' | 'append' }
+  | {
+      type: 'tool_use'
+      tool_call_id?: string
+      tool_name?: string
+      tool_input?: Record<string, unknown>
+    }
+  | {
+      type: 'tool_use_update'
+      tool_call_id?: string
+      tool_status?: string
+      tool_content?: string
+    }
+  | { type: 'config_options_update'; configOptions: unknown[] }
+  | { type: 'config_option_update'; configOptions: unknown[] }
+  | {
+      type: 'commands_update'
+      commands: Array<{ name: string; description?: string }>
+    }
+  | { type: 'acp_resume_result'; ok?: boolean; replayed?: number; session_id?: string }
 
 export interface WsV2CommandContext {
   exec_id: string

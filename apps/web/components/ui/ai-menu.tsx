@@ -246,8 +246,9 @@ export const AIMenuItems = ({
   const menuGroups = React.useMemo(() => menuStateItems[menuState], [menuState])
 
   React.useEffect(() => {
-    if (menuGroups.length > 0 && menuGroups[0].items.length > 0) {
-      setValue(menuGroups[0].items[0].value)
+    if (menuGroups.length > 0 && menuGroups[0]!.items.length > 0) {
+      // Both guards above ensure these indices are valid
+      setValue(menuGroups[0]!.items[0]!.value)
     }
   }, [menuGroups, setValue])
 
