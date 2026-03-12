@@ -245,8 +245,7 @@ cancel_rx: watch::Receiver<bool>,
 // In Agent::cancel():
 async fn cancel(&self, notification: CancelNotification) -> acp::Result<()> {
     if let Some(state) = self.sessions.get(&notification.session_id) {
-        let lock = state.cancel_tx.lock().await;
-        let _ = lock.send(true);
+        let _ = state.cancel_tx.send(true);
     }
     Ok(())
 }
@@ -254,10 +253,9 @@ async fn cancel(&self, notification: CancelNotification) -> acp::Result<()> {
 // In Agent::prompt() — race LLM chunks vs cancel:
 async fn prompt(&self, req: PromptRequest) -> acp::Result<PromptResponse> {
     let client = SessionClient::new(req.session_id.clone().into());
-    let cancel_rx = self.sessions.get(&req.session_id)
-        .map(|s| s.cancel_rx.lock().await.clone())
+    let mut cancel = self.sessions.get(&req.session_id)
+        .map(|s| s.cancel_rx.clone())
         .ok_or_else(acp::Error::internal_error)?;
-    let mut cancel = cancel_rx;
 
     loop {
         tokio::select! {

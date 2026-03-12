@@ -41,8 +41,8 @@ function getKey(scope: string, request: Request): string {
 
 function increment(scope: string, request: Request, limit: WindowLimit, now: number): Counter {
   // Evict proactively when nearing capacity to avoid rejecting legitimate new keys.
-  // Force eviction regardless of EVICT_INTERVAL_MS when at capacity.
-  if (counters.size >= MAX_COUNTER_KEYS) {
+  // Force eviction at most once per second to prevent full-map sweep on every request.
+  if (counters.size >= MAX_COUNTER_KEYS && now - lastEvictAt >= 1_000) {
     lastEvictAt = 0
   }
   evictExpired(now)

@@ -95,7 +95,7 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 For scheduled refreshes: `{ "action": "refresh", "subaction": "schedule", "schedule_subaction": "list|create|delete|enable|disable", "schedule_name": "..." }`
 
 ## Lifecycle Action Families
-- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- `path` required for `head|grep|wc|read|delete`; `pattern` required for `grep`; `list|clean|search` do not require `path`
+- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- `path` required for `head|grep|wc|read|delete`; `pattern` required for `grep|search`; `list|clean` do not require `path`
 - `crawl`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
 - `embed`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `input` (string)
 - `extract`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
