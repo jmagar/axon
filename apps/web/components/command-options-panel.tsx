@@ -15,7 +15,8 @@ function parseEnumValues(notes?: string): string[] {
   // Match patterns like "hot|top|new|rising" or "hour|day|week|month|year|all"
   const pipeMatch = notes.match(/:\s*([a-zA-Z0-9_|]+)$/)
   if (pipeMatch) {
-    return pipeMatch[1].split('|').filter(Boolean)
+    // pipeMatch[1] is always defined when the match succeeds (capture group 1)
+    return pipeMatch[1]!.split('|').filter(Boolean)
   }
   return []
 }

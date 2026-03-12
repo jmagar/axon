@@ -1,64 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { z } from 'zod'
+import { createClientId } from '@/lib/client-id'
 import type { AcpConfigOption } from '@/lib/pulse/types'
+import { getSessionItem, setSessionItem } from '@/lib/storage'
 import type { WsUsageStats } from '@/lib/ws-protocol'
+import { advanceAcpSessionLifecycle } from './use-axon-acp/session-id-lifecycle'
+import { useFlushBufferedStream, useScheduleFlush } from './use-axon-acp/stream-flush'
+import { handleAcpWsMessage, isAcpRelevantWsMessage } from './use-axon-acp/ws-handler'
 import type { AxonMessage } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
 
-// Zod schema for the editor_update wire message.  Any change to this shape
-// requires updating both this schema and the Rust EditorOperation enum in
-// crates/services/events.rs — they are the single canonical definition.
-const EditorUpdateSchema = z.object({
-  type: z.literal('editor_update'),
-  content: z.string(),
-  operation: z.enum(['replace', 'append']).default('replace'),
-})
+// Re-export for consumers and tests that import directly from this module.
+export { handleEditorMsg } from './use-axon-acp/editor-handler'
 
 const STREAMING_TIMEOUT_MS = 300_000
 const ACP_SESSION_STORAGE_KEY = 'axon-acp-session-id'
 
-function createFallbackClientId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
-}
-
-/**
- * Generate client-side IDs in both secure and insecure contexts.
- * `crypto.randomUUID()` is unavailable on non-secure origins (for example
- * http://10.x.x.x on mobile LAN), so we must gracefully fall back.
- */
+/** @deprecated Use {@link createClientId} from `@/lib/client-id` directly. */
 export function createClientMessageId(prefix: string): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return `${prefix}-${crypto.randomUUID()}`
-    }
-  } catch {
-    // Fall through to non-crypto fallback.
-  }
-  return createFallbackClientId(prefix)
-}
-
-/**
- * Handle an `editor_update` wire message.
- * Validates the message shape with Zod, invokes the editor content callback,
- * and calls `onShowEditor` so callers can reveal the editor pane on mobile.
- *
- * Exported for testing — callers should use the `useAxonAcp` hook instead of
- * calling this directly.
- */
-export function handleEditorMsg(
-  msg: Record<string, unknown>,
-  onEditorUpdate: ((content: string, operation: 'replace' | 'append') => void) | undefined,
-  onShowEditor: (() => void) | undefined,
-): void {
-  const result = EditorUpdateSchema.safeParse(msg)
-  if (!result.success) {
-    console.warn('[acp] editor_update validation failed:', result.error.issues)
-    return
-  }
-  onEditorUpdate?.(result.data.content, result.data.operation)
-  onShowEditor?.()
+  return createClientId(prefix)
 }
 
 interface UseAxonAcpOptions {
@@ -119,22 +80,47 @@ export function useAxonAcp({
   const streamingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDeltaRef = useRef('')
   const pendingThinkingRef = useRef<string[]>([])
+  // Pending usage/location patches accumulated during a flush window.
+  // Applied alongside delta+thinking in a single prev.map() at flush time,
+  // avoiding a second React state update per assistant_delta event.
+  const pendingUsageRef = useRef<WsUsageStats | null>(null)
+  const pendingLocationsRef = useRef<{
+    toolCallId: string | undefined
+    locations: string[]
+  } | null>(null)
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const turnStartAtRef = useRef<number | null>(null)
   const firstDeltaAtRef = useRef<number | null>(null)
   const streamedCharsRef = useRef(0)
-  const { send, subscribe, status } = useAxonWs()
+  const agentRef = useRef(agent)
+  const modelRef = useRef(model)
+  const sessionModeRef = useRef(sessionMode)
+  const { send, subscribeByTypes, status } = useAxonWs()
   const connected = status === 'connected'
   const wasConnectedRef = useRef(false)
+  const lifecycleStateRef = useRef<
+    | 'idle'
+    | 'resume_requested'
+    | 'turn_in_flight'
+    | 'session_bound'
+    | 'fallback_applied'
+    | 'resume_failed'
+  >('idle')
+
+  useEffect(() => {
+    agentRef.current = agent
+  }, [agent])
+  useEffect(() => {
+    modelRef.current = model
+  }, [model])
+  useEffect(() => {
+    sessionModeRef.current = sessionMode
+  }, [sessionMode])
 
   // Persist activeSessionId to sessionStorage for reconnect
   useEffect(() => {
-    try {
-      if (activeSessionId) {
-        sessionStorage.setItem(ACP_SESSION_STORAGE_KEY, activeSessionId)
-      }
-    } catch {
-      // sessionStorage may be unavailable in some contexts
+    if (activeSessionId) {
+      setSessionItem(ACP_SESSION_STORAGE_KEY, activeSessionId)
     }
   }, [activeSessionId])
 
@@ -142,351 +128,105 @@ export function useAxonAcp({
   useEffect(() => {
     if (connected && wasConnectedRef.current === false) {
       // First connect or reconnect — try resume
-      try {
-        const storedId = sessionStorage.getItem(ACP_SESSION_STORAGE_KEY)
-        if (storedId && !isStreaming) {
-          send({ type: 'acp_resume', session_id: storedId })
-        }
-      } catch {
-        // sessionStorage unavailable
+      const storedId = getSessionItem(ACP_SESSION_STORAGE_KEY)
+      if (storedId && !isStreaming) {
+        send({ type: 'acp_resume', session_id: storedId })
+        lifecycleStateRef.current = advanceAcpSessionLifecycle(
+          lifecycleStateRef.current,
+          'request_resume',
+        )
       }
     }
     wasConnectedRef.current = connected
   }, [connected, send, isStreaming])
 
-  const flushBufferedStream = useCallback(() => {
-    flushTimerRef.current = null
-    const sid = streamingIdRef.current
-    if (!sid) {
-      pendingDeltaRef.current = ''
-      pendingThinkingRef.current = []
-      return
-    }
-    const delta = pendingDeltaRef.current
-    const thoughts = pendingThinkingRef.current
-    pendingDeltaRef.current = ''
-    pendingThinkingRef.current = []
-    if (!delta && thoughts.length === 0) return
-    onMessagesChange((prev) =>
-      prev.map((m) =>
-        m.id === sid
-          ? {
-              ...m,
-              content: delta ? m.content + delta : m.content,
-              chainOfThought:
-                thoughts.length > 0
-                  ? (() => {
-                      const thoughtDelta = thoughts.join('')
-                      if (!thoughtDelta) return m.chainOfThought
-                      if (!m.chainOfThought || m.chainOfThought.length === 0) return [thoughtDelta]
-                      const next = [...m.chainOfThought]
-                      next[next.length - 1] = `${next[next.length - 1] ?? ''}${thoughtDelta}`
-                      return next
-                    })()
-                  : m.chainOfThought,
-            }
-          : m,
-      ),
-    )
-  }, [onMessagesChange])
-
-  const scheduleFlushBufferedStream = useCallback(() => {
-    if (flushTimerRef.current) return
-    flushTimerRef.current = setTimeout(() => {
-      flushBufferedStream()
-    }, 32)
-  }, [flushBufferedStream])
+  const flushRefs = {
+    streamingIdRef,
+    pendingDeltaRef,
+    pendingThinkingRef,
+    pendingUsageRef,
+    pendingLocationsRef,
+    flushTimerRef,
+  }
+  const flushBufferedStream = useFlushBufferedStream(flushRefs, onMessagesChange)
+  const scheduleFlushBufferedStream = useScheduleFlush(flushTimerRef, flushBufferedStream)
 
   useEffect(() => {
-    const unsubscribe = subscribe((rawMsg) => {
-      let msg = rawMsg as unknown as Record<string, unknown>
-
-      // Rust backend wraps all ACP events in command.output.json.
-      // Unwrap the inner payload so the switch below can match ACP event types.
-      if (msg.type === 'command.output.json' && msg.data !== null && typeof msg.data === 'object') {
-        const outer = msg.data as Record<string, unknown>
-        const ctx = outer.ctx as Record<string, unknown> | undefined
-        if (ctx?.mode === 'pulse_chat' && outer.data !== null && typeof outer.data === 'object') {
-          msg = outer.data as Record<string, unknown>
-        }
-      }
-
-      switch (msg.type) {
-        case 'assistant_delta': {
-          const delta = (msg.delta as string) ?? ''
-          const sid = streamingIdRef.current
-          if (!sid) return
-
-          // Update usage if provided in delta
-          const usage = msg.usage as WsUsageStats | undefined
-          const locations = msg.tool_locations as string[] | undefined
-
-          if (delta) {
-            if (firstDeltaAtRef.current === null) firstDeltaAtRef.current = Date.now()
-            streamedCharsRef.current += delta.length
-            pendingDeltaRef.current += delta
-            scheduleFlushBufferedStream()
-          }
-
-          if (usage || locations) {
-            onMessagesChange((prev) =>
-              prev.map((m) =>
-                m.id === sid
-                  ? {
-                      ...m,
-                      ...(usage ? { usage } : {}),
-                      ...(locations
-                        ? {
-                            toolUses: (m.toolUses ?? []).map((tu, idx, arr) =>
-                              // If this delta came with a tool_call_id, update that specific tool.
-                              // Otherwise, if it's the last tool in the list, update it.
-                              tu.toolCallId === msg.tool_call_id ||
-                              (!msg.tool_call_id && idx === arr.length - 1)
-                                ? { ...tu, locations }
-                                : tu,
-                            ),
-                          }
-                        : {}),
-                    }
-                  : m,
-              ),
-            )
-          }
-          break
-        }
-
-        case 'usage_update': {
-          const usage = msg.usage as WsUsageStats | undefined
-          if (!usage) break
-          const sid = streamingIdRef.current
-          if (!sid) return
-          onMessagesChange((prev) =>
-            prev.map((m) =>
-              m.id === sid
-                ? ({
-                    ...m,
-                    usage: m.usage ? { ...m.usage, ...usage } : usage,
-                  } as AxonMessage)
-                : m,
-            ),
-          )
-          break
-        }
-
-        case 'thinking_content': {
-          const content = (msg.content as string) ?? ''
-          const sid = streamingIdRef.current
-          if (!sid || !content) return
-          pendingThinkingRef.current.push(content)
-          scheduleFlushBufferedStream()
-          break
-        }
-
-        case 'session_fallback': {
-          const oldId = (msg.old_session_id as string) ?? ''
-          const newId = (msg.new_session_id as string) ?? ''
-          if (newId) {
-            onSessionIdChange(newId)
-            onSessionFallback?.(oldId, newId)
-          }
-          break
-        }
-
-        case 'result': {
-          flushBufferedStream()
-          // Check BEFORE clearing — if already null the turn timed out; skip
-          // onTurnComplete/onSessionIdChange to prevent a late result from a
-          // slow agent (e.g. Gemini) polluting the next turn's session state.
-          const wasActiveTurn = streamingIdRef.current !== null
-          const resultSid = streamingIdRef.current
-          const newSessionId = msg.session_id as string | undefined
-          if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
-          if (process.env.NODE_ENV !== 'production' && turnStartAtRef.current !== null) {
-            const end = Date.now()
-            const durationMs = end - turnStartAtRef.current
-            const firstDeltaMs =
-              firstDeltaAtRef.current === null
-                ? null
-                : firstDeltaAtRef.current - turnStartAtRef.current
-            const charsPerSec =
-              durationMs > 0
-                ? Number(((streamedCharsRef.current * 1000) / durationMs).toFixed(1))
-                : 0
-            console.debug('[acp-stream-telemetry]', {
-              agent,
-              model: model ?? 'default',
-              sessionMode: sessionMode ?? 'default',
-              durationMs,
-              firstDeltaMs,
-              streamedChars: streamedCharsRef.current,
-              charsPerSec,
-            })
-          }
-          setIsStreaming(false)
-          streamingIdRef.current = null
-          turnStartAtRef.current = null
-          firstDeltaAtRef.current = null
-          streamedCharsRef.current = 0
-          // Mark the message as no longer streaming so the typing-dots indicator
-          // is removed even if no deltas were received (e.g. lost events).
-          if (resultSid) {
-            onMessagesChange((prev) =>
-              prev.map((m) => (m.id === resultSid ? { ...m, streaming: false } : m)),
-            )
-          }
-          if (wasActiveTurn) {
-            onTurnComplete?.()
-            // With the persistent adapter, session data is written incrementally —
-            // trigger session fetch immediately without waiting for a polling event.
-            if (newSessionId) {
-              onSessionIdChange(newSessionId)
-            }
-          }
-          break
-        }
-
-        case 'error': {
-          flushBufferedStream()
-          const errSid = streamingIdRef.current
-          const errMsg = (msg.message as string) || (msg.error as string) || 'Agent error'
-          if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
-          setIsStreaming(false)
-          streamingIdRef.current = null
-          turnStartAtRef.current = null
-          firstDeltaAtRef.current = null
-          streamedCharsRef.current = 0
-          if (errSid) {
-            onMessagesChange((prev) =>
-              prev.map((m) =>
-                m.id === errSid ? { ...m, content: `⚠ ${errMsg}`, streaming: false } : m,
-              ),
-            )
-          }
-          break
-        }
-
-        case 'tool_use': {
-          const toolCallId = (msg.tool_call_id as string) ?? ''
-          const toolName = (msg.tool_name as string) ?? 'unknown'
-          const toolInput = (msg.tool_input as Record<string, unknown>) ?? {}
-          const now = Date.now()
-          const sid = streamingIdRef.current
-          if (!sid) return
-          onMessagesChange((prev) =>
-            prev.map((m) =>
-              m.id === sid
-                ? {
-                    ...m,
-                    toolUses: [
-                      ...(m.toolUses ?? []),
-                      {
-                        name: toolName,
-                        input: toolInput,
-                        toolCallId,
-                        status: 'running',
-                        sequence: (m.toolUses?.length ?? 0) + 1,
-                        startedAtMs: now,
-                        updatedAtMs: now,
-                      },
-                    ],
-                  }
-                : m,
-            ),
-          )
-          break
-        }
-
-        case 'tool_use_update': {
-          const toolCallId = (msg.tool_call_id as string) ?? ''
-          const toolStatus = (msg.tool_status as string) ?? ''
-          const toolContent = (msg.tool_content as string) ?? ''
-          const now = Date.now()
-          const sid = streamingIdRef.current
-          if (!sid) return
-          onMessagesChange((prev) =>
-            prev.map((m) =>
-              m.id === sid
-                ? {
-                    ...m,
-                    toolUses: (m.toolUses ?? []).map((tu) =>
-                      tu.toolCallId === toolCallId
-                        ? {
-                            ...tu,
-                            status: toolStatus || tu.status,
-                            content: toolContent
-                              ? tu.content
-                                ? `${tu.content}${toolContent}`
-                                : toolContent
-                              : tu.content,
-                            updatedAtMs: now,
-                            ...(toolStatus === 'completed' || toolStatus === 'success'
-                              ? {
-                                  completedAtMs: now,
-                                  durationMs: tu.startedAtMs
-                                    ? Math.max(0, now - tu.startedAtMs)
-                                    : undefined,
-                                }
-                              : {}),
-                          }
-                        : tu,
-                    ),
-                  }
-                : m,
-            ),
-          )
-          break
-        }
-
-        case 'editor_update': {
-          handleEditorMsg(msg, onEditorUpdate, onShowEditor)
-          break
-        }
-
-        case 'config_options_update':
-        case 'config_option_update': {
-          const raw = msg.configOptions
-          if (!Array.isArray(raw)) return
-          const parsed = z.array(z.unknown()).safeParse(raw)
-          if (!parsed.success) return
-          onAcpConfigOptionsUpdate?.(raw as AcpConfigOption[])
-          break
-        }
-
-        case 'commands_update': {
-          const raw = msg.commands
-          if (!Array.isArray(raw)) return
-          const parsed = z
-            .array(
-              z.object({
-                name: z.string(),
-                description: z.string().optional(),
-              }),
-            )
-            .safeParse(raw)
-          if (!parsed.success) return
-          onCommandsUpdate?.(parsed.data)
-          break
-        }
-
-        case 'acp_resume_result': {
-          const ok = msg.ok as boolean | undefined
-          const replayed = msg.replayed as number | undefined
-          const sessionId = msg.session_id as string | undefined
-          if (ok) {
-            console.info(`[acp] resumed session, replayed ${replayed ?? 0} buffered events`)
-            if (sessionId) onSessionIdChange(sessionId)
-          } else {
-            console.info('[acp] session resume failed — session expired or unknown')
-            try {
-              sessionStorage.removeItem(ACP_SESSION_STORAGE_KEY)
-            } catch {
-              /* noop */
-            }
-          }
-          break
-        }
-      }
-    })
+    const unsubscribe = subscribeByTypes(
+      [
+        'assistant_delta',
+        'usage_update',
+        'thinking_content',
+        'session_fallback',
+        'result',
+        'error',
+        'tool_use',
+        'tool_use_update',
+        'editor_update',
+        'config_options_update',
+        'config_option_update',
+        'commands_update',
+        'acp_resume_result',
+        'command.output.json',
+      ],
+      (rawMsg) => {
+        if (!isAcpRelevantWsMessage(rawMsg)) return
+        handleAcpWsMessage(
+          rawMsg,
+          {
+            streamingIdRef,
+            streamingTimeoutRef,
+            turnStartAtRef,
+            firstDeltaAtRef,
+            streamedCharsRef,
+            pendingDeltaRef,
+            pendingThinkingRef,
+            pendingUsageRef,
+            pendingLocationsRef,
+          },
+          {
+            setIsStreaming,
+            onMessagesChange,
+            onSessionIdChange: (newId) => {
+              lifecycleStateRef.current = advanceAcpSessionLifecycle(
+                lifecycleStateRef.current,
+                'bind_session',
+              )
+              onSessionIdChange(newId)
+            },
+            onSessionFallback: onSessionFallback
+              ? (oldId, newId) => {
+                  lifecycleStateRef.current = advanceAcpSessionLifecycle(
+                    lifecycleStateRef.current,
+                    'apply_fallback',
+                  )
+                  onSessionFallback(oldId, newId)
+                }
+              : undefined,
+            onAcpConfigOptionsUpdate,
+            onCommandsUpdate,
+            onTurnComplete,
+            onResumeSessionOk: () => {
+              lifecycleStateRef.current = advanceAcpSessionLifecycle(
+                lifecycleStateRef.current,
+                'resume_ok',
+              )
+            },
+            onResumeSessionMiss: () => {
+              lifecycleStateRef.current = advanceAcpSessionLifecycle(
+                lifecycleStateRef.current,
+                'resume_miss',
+              )
+            },
+            onEditorUpdate,
+            onShowEditor,
+            flushBufferedStream,
+            scheduleFlushBufferedStream,
+          },
+          { agent: agentRef.current, model: modelRef.current, sessionMode: sessionModeRef.current },
+        )
+      },
+    )
     return () => {
       // Clear pending timeout to prevent setState/onMessagesChange calls
       // after the hook is unmounted.
@@ -501,7 +241,7 @@ export function useAxonAcp({
       unsubscribe()
     }
   }, [
-    subscribe,
+    subscribeByTypes,
     onMessagesChange,
     onSessionIdChange,
     onSessionFallback,
@@ -512,9 +252,6 @@ export function useAxonAcp({
     onShowEditor,
     flushBufferedStream,
     scheduleFlushBufferedStream,
-    agent,
-    model,
-    sessionMode,
   ])
 
   const submitPrompt = useCallback(
@@ -525,6 +262,10 @@ export function useAxonAcp({
 
       const userId = createClientMessageId('user')
       const assistantId = createClientMessageId('assistant')
+      lifecycleStateRef.current = advanceAcpSessionLifecycle(
+        lifecycleStateRef.current,
+        'start_turn',
+      )
       streamingIdRef.current = assistantId
       turnStartAtRef.current = Date.now()
       firstDeltaAtRef.current = null

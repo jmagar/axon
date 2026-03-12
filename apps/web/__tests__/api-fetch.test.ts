@@ -45,7 +45,7 @@ describe('apiFetch — no API token configured', () => {
     await apiFetch('/api/foo')
     expect(globalThis.fetch).toHaveBeenCalledOnce()
     // When no token, the call is fetch(input, init) — second arg is undefined / original init
-    const [calledInput, calledInit] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const [calledInput, calledInit] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect(calledInput).toBe('/api/foo')
     // No x-api-key should be injected (we pass through as-is)
     if (calledInit?.headers) {

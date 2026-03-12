@@ -113,7 +113,8 @@ describe('GET /api/sessions/list', () => {
 
     const json = (await res.json()) as Array<Record<string, unknown>>
     expect(json).toHaveLength(1)
-    const item = json[0]
+    // json.length === 1 checked above via toHaveLength(1) — index 0 is always valid
+    const item = json[0]!
     expect(item?.id).toBe('deadbeef9999')
     // preview, repo, branch are undefined — JSON.stringify omits them entirely
     expect('preview' in item).toBe(false)

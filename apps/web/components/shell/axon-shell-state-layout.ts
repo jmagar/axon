@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  DEFAULT_NEURAL_CANVAS_PROFILE,
-  type NeuralCanvasProfile,
-} from '@/lib/pulse/neural-canvas-presets'
-import { getStorageItem, setStorageItem } from '@/lib/storage'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import type { NeuralCanvasProfile } from '@/lib/pulse/neural-canvas-presets'
+import { useShellStore } from '@/lib/shell-store'
+import { getStorageItem, removeStorageItem, setStorageItem } from '@/lib/storage'
 import {
   AXON_MOBILE_PANE_STORAGE_KEY,
   type AxonDensity,
@@ -61,39 +59,49 @@ type LayoutControls = {
 }
 
 export function useAxonShellLayoutControls(): LayoutControls {
-  const [railMode, setRailMode] = useState<RailMode>('sessions')
-  const [mobilePane, setMobilePane] = useState<AxonMobilePane>('chat')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [chatOpen, setChatOpen] = useState(true)
-  const [rightPane, setRightPane] = useState<RightPane>('editor')
-  const [density, setDensity] = useState<AxonDensity>('comfortable')
+  // Read from store (surgical per-field subscriptions)
+  const railMode = useShellStore((s) => s.railMode)
+  const mobilePane = useShellStore((s) => s.mobilePane)
+  const sidebarOpen = useShellStore((s) => s.sidebarOpen)
+  const chatOpen = useShellStore((s) => s.chatOpen)
+  const rightPane = useShellStore((s) => s.rightPane)
+  const density = useShellStore((s) => s.density)
+  const canvasProfile = useShellStore((s) => s.canvasProfile)
+  const sidebarWidth = useShellStore((s) => s.sidebarWidth)
+  const chatFlex = useShellStore((s) => s.chatFlex)
+  const isDragging = useShellStore((s) => s.isDragging)
+  const layoutRestored = useShellStore((s) => s.layoutRestored)
+
+  // Write actions from store
+  const setRailMode = useShellStore((s) => s.setRailMode)
+  const setMobilePane = useShellStore((s) => s.setMobilePane)
+  const setSidebarOpen = useShellStore((s) => s.setSidebarOpen)
+  const setChatOpen = useShellStore((s) => s.setChatOpen)
+  const setRightPane = useShellStore((s) => s.setRightPane)
+  const setDensity = useShellStore((s) => s.setDensity)
+  const setCanvasProfile = useShellStore((s) => s.setCanvasProfile)
+  const setSidebarWidth = useShellStore((s) => s.setSidebarWidth)
+  const setChatFlex = useShellStore((s) => s.setChatFlex)
+  const setIsDragging = useShellStore((s) => s.setIsDragging)
+  const setLayoutRestored = useShellStore((s) => s.setLayoutRestored)
+
   const editorOpen = rightPane !== null
-  const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
-    DEFAULT_NEURAL_CANVAS_PROFILE,
-  )
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH_DEFAULT)
-  const [chatFlex, setChatFlex] = useState(1)
-  const [isDragging, setIsDragging] = useState(false)
-  const [layoutRestored, setLayoutRestored] = useState(false)
   const sectionRef = useRef<HTMLElement>(null)
 
+  // Restore persisted layout once on mount
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(AXON_MOBILE_PANE_STORAGE_KEY)
-      if (
-        saved === 'sidebar' ||
-        saved === 'chat' ||
-        saved === 'editor' ||
-        saved === 'terminal' ||
-        saved === 'logs' ||
-        saved === 'mcp' ||
-        saved === 'settings' ||
-        saved === 'cortex'
-      ) {
-        setMobilePane(saved as AxonMobilePane)
-      }
-    } catch {
-      /* ignore */
+    const saved = getStorageItem(AXON_MOBILE_PANE_STORAGE_KEY)
+    if (
+      saved === 'sidebar' ||
+      saved === 'chat' ||
+      saved === 'editor' ||
+      saved === 'terminal' ||
+      saved === 'logs' ||
+      saved === 'mcp' ||
+      saved === 'settings' ||
+      saved === 'cortex'
+    ) {
+      setMobilePane(saved as AxonMobilePane)
     }
     setSidebarWidth(
       readStoredFloat(
@@ -121,77 +129,78 @@ export function useAxonShellLayoutControls(): LayoutControls {
       setCanvasProfile(rawProfile as NeuralCanvasProfile)
     }
     setLayoutRestored(true)
-  }, [])
+    // Run once on mount — store setters are stable references, no need in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    setCanvasProfile,
+    setChatFlex,
+    setChatOpen,
+    setDensity,
+    setLayoutRestored,
+    setMobilePane,
+    setRailMode,
+    setRightPane,
+    setSidebarOpen,
+    setSidebarWidth,
+  ])
 
-  const setRailModeTracked = useCallback((mode: RailMode) => {
-    setRailMode(mode)
-    try {
-      window.localStorage.setItem(RAIL_MODE_STORAGE_KEY, mode)
-    } catch {
-      /* ignore */
-    }
-  }, [])
+  const setRailModeTracked = useCallback(
+    (mode: RailMode) => {
+      setRailMode(mode)
+      setStorageItem(RAIL_MODE_STORAGE_KEY, mode)
+    },
+    [setRailMode],
+  )
 
-  const setDensityTracked = useCallback((next: AxonDensity) => {
-    setDensity(next)
-    try {
-      window.localStorage.setItem(DENSITY_STORAGE_KEY, next)
-    } catch {
-      /* ignore */
-    }
-  }, [])
+  const setDensityTracked = useCallback(
+    (next: AxonDensity) => {
+      setDensity(next)
+      setStorageItem(DENSITY_STORAGE_KEY, next)
+    },
+    [setDensity],
+  )
 
-  const setMobilePaneTracked = useCallback((nextPane: AxonMobilePane) => {
-    setMobilePane(nextPane)
-    try {
-      window.localStorage.setItem(AXON_MOBILE_PANE_STORAGE_KEY, nextPane)
-    } catch {
-      /* ignore */
-    }
-  }, [])
+  const setMobilePaneTracked = useCallback(
+    (nextPane: AxonMobilePane) => {
+      setMobilePane(nextPane)
+      setStorageItem(AXON_MOBILE_PANE_STORAGE_KEY, nextPane)
+    },
+    [setMobilePane],
+  )
 
-  const handleCanvasProfileChange = useCallback((profile: NeuralCanvasProfile) => {
-    setCanvasProfile(profile)
-    setStorageItem(CANVAS_PROFILE_STORAGE_KEY, profile)
-  }, [])
+  const handleCanvasProfileChange = useCallback(
+    (profile: NeuralCanvasProfile) => {
+      setCanvasProfile(profile)
+      setStorageItem(CANVAS_PROFILE_STORAGE_KEY, profile)
+    },
+    [setCanvasProfile],
+  )
 
   const persistSidebarOpen = useCallback(
     (open: boolean) => {
       if (!open && !chatOpen && rightPane === null) return
       setSidebarOpen(open)
-      try {
-        window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, String(open))
-      } catch {
-        /* ignore */
-      }
+      setStorageItem(SIDEBAR_OPEN_STORAGE_KEY, String(open))
     },
-    [chatOpen, rightPane],
+    [chatOpen, rightPane, setSidebarOpen],
   )
 
   const persistChatOpen = useCallback(
     (open: boolean) => {
       if (!open && !sidebarOpen && rightPane === null) return
       setChatOpen(open)
-      try {
-        window.localStorage.setItem(CHAT_OPEN_STORAGE_KEY, String(open))
-      } catch {
-        /* ignore */
-      }
+      setStorageItem(CHAT_OPEN_STORAGE_KEY, String(open))
     },
-    [sidebarOpen, rightPane],
+    [sidebarOpen, rightPane, setChatOpen],
   )
 
   const persistRightPane = useCallback(
     (pane: RightPane) => {
       if (pane === null && !sidebarOpen && !chatOpen) return
       setRightPane(pane)
-      try {
-        window.localStorage.setItem(RIGHT_PANE_STORAGE_KEY, pane ?? '')
-      } catch {
-        /* ignore */
-      }
+      setStorageItem(RIGHT_PANE_STORAGE_KEY, pane ?? '')
     },
-    [chatOpen, sidebarOpen],
+    [chatOpen, sidebarOpen, setRightPane],
   )
 
   const startSidebarResize = useCallback(
@@ -212,28 +221,20 @@ export function useAxonShellLayoutControls(): LayoutControls {
         document.body.style.removeProperty('cursor')
         document.body.style.removeProperty('user-select')
         setIsDragging(false)
-        try {
-          window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(lastWidth))
-        } catch {
-          /* ignore */
-        }
+        setStorageItem(SIDEBAR_WIDTH_STORAGE_KEY, String(lastWidth))
       }
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
       document.addEventListener('mousemove', onMove)
       document.addEventListener('mouseup', onUp)
     },
-    [sidebarWidth],
+    [sidebarWidth, setIsDragging, setSidebarWidth],
   )
 
   const resetSidebarWidth = useCallback(() => {
     setSidebarWidth(SIDEBAR_WIDTH_DEFAULT)
-    try {
-      window.localStorage.removeItem(SIDEBAR_WIDTH_STORAGE_KEY)
-    } catch {
-      /* ignore */
-    }
-  }, [])
+    removeStorageItem(SIDEBAR_WIDTH_STORAGE_KEY)
+  }, [setSidebarWidth])
 
   const startChatResize = useCallback(
     (startX: number) => {
@@ -259,40 +260,31 @@ export function useAxonShellLayoutControls(): LayoutControls {
         document.body.style.removeProperty('cursor')
         document.body.style.removeProperty('user-select')
         setIsDragging(false)
-        try {
-          window.localStorage.setItem(CHAT_FLEX_STORAGE_KEY, String(lastFlex))
-        } catch {
-          /* ignore */
-        }
+        setStorageItem(CHAT_FLEX_STORAGE_KEY, String(lastFlex))
       }
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
       document.addEventListener('mousemove', onMove)
       document.addEventListener('mouseup', onUp)
     },
-    [chatFlex, sidebarOpen, sidebarWidth],
+    [chatFlex, sidebarOpen, sidebarWidth, setChatFlex, setIsDragging],
   )
 
   const resetChatFlex = useCallback(() => {
     setChatFlex(1)
-    try {
-      window.localStorage.removeItem(CHAT_FLEX_STORAGE_KEY)
-    } catch {
-      /* ignore */
-    }
-  }, [])
+    removeStorageItem(CHAT_FLEX_STORAGE_KEY)
+  }, [setChatFlex])
 
-  const nudgeSidebar = useCallback((delta: number) => {
-    setSidebarWidth((w) => {
-      const next = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, w + delta))
-      try {
-        window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next))
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
-  }, [])
+  const nudgeSidebar = useCallback(
+    (delta: number) => {
+      setSidebarWidth((w) => {
+        const next = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, w + delta))
+        setStorageItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next))
+        return next
+      })
+    },
+    [setSidebarWidth],
+  )
 
   const nudgeChatFlex = useCallback(
     (delta: number) => {
@@ -307,15 +299,11 @@ export function useAxonShellLayoutControls(): LayoutControls {
           Math.min(available - PANE_WIDTH_MIN, currentChatPx + delta),
         )
         const next = newChatPx / (available - newChatPx)
-        try {
-          window.localStorage.setItem(CHAT_FLEX_STORAGE_KEY, String(next))
-        } catch {
-          /* ignore */
-        }
+        setStorageItem(CHAT_FLEX_STORAGE_KEY, String(next))
         return next
       })
     },
-    [sidebarOpen, sidebarWidth],
+    [sidebarOpen, sidebarWidth, setChatFlex],
   )
 
   const transitionClass = useMemo(

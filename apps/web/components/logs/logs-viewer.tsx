@@ -197,7 +197,8 @@ export function LogsViewer() {
           )}
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const entry = filteredLines[virtualRow.index]
+              // virtualRow.index is always a valid index into filteredLines — guaranteed by the virtualizer
+              const entry = filteredLines[virtualRow.index]!
               return (
                 <div
                   key={virtualRow.key}

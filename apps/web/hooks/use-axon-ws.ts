@@ -19,9 +19,18 @@ interface AxonWsContextValue {
   status: WsStatus
   send: (msg: WsClientMsg) => void
   subscribe: (handler: (msg: WsServerMsg) => void) => () => void
+  subscribeByTypes: (
+    types: ReadonlyArray<WsServerMsg['type']>,
+    handler: (msg: WsServerMsg) => void,
+  ) => () => void
   updateStatusLabel: (label: string) => void
   subscribeStatusLabel: (listener: () => void) => () => void
   getStatusLabel: () => string
+}
+
+interface WsHandlerEntry {
+  handler: (msg: WsServerMsg) => void
+  types: Set<WsServerMsg['type']> | null
 }
 
 export const AxonWsContext = createContext<AxonWsContextValue | null>(null)
@@ -43,7 +52,7 @@ export function useAxonWsProvider() {
   const pendingMessagesRef = useRef<WsClientMsg[]>([])
   const attemptsRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const handlersRef = useRef(new Set<(msg: WsServerMsg) => void>())
+  const handlersRef = useRef(new Set<WsHandlerEntry>())
   const connectRef = useRef<() => void>(() => {})
   const statusLabelRef = useRef('DISCONNECTED')
   const statusLabelListenersRef = useRef(new Set<() => void>())
@@ -108,7 +117,10 @@ export function useAxonWsProvider() {
       ws.onmessage = (event) => {
         try {
           const msg: WsServerMsg = JSON.parse(event.data)
-          for (const handler of handlersRef.current) handler(msg)
+          for (const entry of handlersRef.current) {
+            if (entry.types && !entry.types.has(msg.type)) continue
+            entry.handler(msg)
+          }
         } catch {
           // Ignore malformed WS payloads.
         }
@@ -176,11 +188,23 @@ export function useAxonWsProvider() {
   )
 
   const subscribe = useCallback((handler: (msg: WsServerMsg) => void) => {
-    handlersRef.current.add(handler)
+    const entry: WsHandlerEntry = { handler, types: null }
+    handlersRef.current.add(entry)
     return () => {
-      handlersRef.current.delete(handler)
+      handlersRef.current.delete(entry)
     }
   }, [])
+
+  const subscribeByTypes = useCallback(
+    (types: ReadonlyArray<WsServerMsg['type']>, handler: (msg: WsServerMsg) => void) => {
+      const entry: WsHandlerEntry = { handler, types: new Set(types) }
+      handlersRef.current.add(entry)
+      return () => {
+        handlersRef.current.delete(entry)
+      }
+    },
+    [],
+  )
 
   const updateStatusLabel = useCallback(
     (label: string) => {
@@ -193,6 +217,7 @@ export function useAxonWsProvider() {
     status,
     send,
     subscribe,
+    subscribeByTypes,
     updateStatusLabel,
     subscribeStatusLabel,
     getStatusLabel,

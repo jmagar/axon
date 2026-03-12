@@ -7,12 +7,10 @@
 
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{
-    AcpAdapterCommand, AcpBridgeEvent, AcpPromptTurnRequest, AcpSessionProbeRequest,
-    AcpTurnResultEvent,
+    AcpAdapterCommand, AcpPromptTurnRequest, AcpSessionProbeRequest,
 };
 use agent_client_protocol::{
     Agent, ClientSideConnection, ContentBlock, InitializeRequest, PromptRequest, SessionId,
-    StopReason,
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,7 +18,7 @@ use tokio::sync::mpsc;
 use super::adapters::{
     append_codex_model_override, append_gemini_model_override, is_codex_adapter, is_gemini_adapter,
 };
-use super::bridge::{AcpRuntimeState, stop_reason_to_str};
+use super::bridge::{AcpRuntimeState, finalize_successful_turn};
 use super::session::{
     apply_config_and_model, initialize_connection, setup_session, spawn_adapter_with_io,
 };
@@ -247,47 +245,17 @@ pub(super) async fn run_prompt_turn(
     let prompt_fired = tokio::select! {
         prompt_result = conn.prompt(PromptRequest::new(session_id.clone(), prompt_blocks)) => {
             let prompt_response = prompt_result.map_err(|err| err.to_string())?;
-            let stop_reason = prompt_response.stop_reason;
-            let stop_reason_str = stop_reason_to_str(stop_reason);
-            let log_level = match stop_reason {
-                StopReason::EndTurn => LogLevel::Info,
-                StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
-                _ => LogLevel::Info,
-            };
-            let msg = format!(
-                "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
-            );
-            if log_level == LogLevel::Info {
-                crate::crates::core::logging::log_info(&msg);
-            } else {
-                crate::crates::core::logging::log_warn(&msg);
-            }
-            emit(&tx, ServiceEvent::Log {
-                level: log_level,
-                message: msg,
-            });
-
-            // RefCell + OnceLock — no Mutex lock needed on current_thread runtime.
             let session = runtime_state
                 .current_session_id
                 .borrow()
                 .clone()
                 .unwrap_or_else(|| session_id.0.to_string());
-            let text = runtime_state.assistant_text.borrow().clone();
-
-            emit(&tx, ServiceEvent::AcpBridge {
-                event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
-                    session_id: session.clone(),
-                    stop_reason: stop_reason_str.to_string(),
-                    result: text,
-                }),
-            });
-            let msg = format!("ACP runtime: TurnResult emitted (session_id={session})");
-            crate::crates::core::logging::log_info(&msg);
-            emit(&tx, ServiceEvent::Log {
-                level: LogLevel::Info,
-                message: msg,
-            });
+            finalize_successful_turn(
+                prompt_response.stop_reason,
+                &runtime_state,
+                &tx,
+                &session,
+            )?;
             true
         }
         // FINDING-14: Sender is dropped on clean exit (code 0), so the receiver

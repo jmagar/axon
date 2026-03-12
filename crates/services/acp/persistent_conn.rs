@@ -9,7 +9,7 @@
 //! `spawn_blocking` thread via channel. Zed stores `_io_task` in the connection
 //! struct — here `_join: JoinHandle<()>` plays the same role.
 
-mod editor;
+pub(crate) mod editor;
 mod session_options;
 mod turn;
 
@@ -47,6 +47,14 @@ pub struct AcpConnectionHandle {
 }
 
 impl AcpConnectionHandle {
+    /// Create a no-op handle for testing (no adapter process).
+    #[cfg(test)]
+    pub(crate) fn dummy() -> Self {
+        let (tx, _rx) = mpsc::channel(1);
+        let join = tokio::task::spawn(async {});
+        Self { tx, _join: join }
+    }
+
     /// Spawn the background adapter thread for this WS connection.
     ///
     /// Returns immediately — adapter setup happens on the first `run_turn()`

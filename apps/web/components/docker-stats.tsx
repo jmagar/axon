@@ -18,12 +18,17 @@ interface StatsData {
 
 interface DockerStatsProps {
   onStats?: (data: StatsData) => void
+  /** When false the component skips React state updates (no re-renders) but
+   *  still forwards data via onStats and keeps the status label current. */
+  visible?: boolean
 }
 
-export function DockerStats({ onStats }: DockerStatsProps) {
+export function DockerStats({ onStats, visible = false }: DockerStatsProps) {
   const { subscribe, updateStatusLabel } = useAxonWs()
   const [data, setData] = useState<StatsData | null>(null)
   const lastStatusLabelAtRef = useRef(0)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
 
   const stableOnStats = useCallback((d: StatsData) => onStats?.(d), [onStats])
 
@@ -35,7 +40,13 @@ export function DockerStats({ onStats }: DockerStatsProps) {
         containers: msg.containers,
         container_count: msg.container_count,
       }
-      setData(statsData)
+
+      // Only trigger a React re-render when the panel is actually visible.
+      // The onStats callback and status-label update run regardless so that
+      // the neural canvas and toolbar stay current.
+      if (visibleRef.current) {
+        setData(statsData)
+      }
       stableOnStats(statsData)
 
       // Throttle status-label updates to avoid high-frequency context churn.
@@ -74,7 +85,8 @@ export function DockerStats({ onStats }: DockerStatsProps) {
       {names.length > 0 && (
         <div className="space-y-1 font-mono text-xs">
           {names.map((name) => {
-            const m = containers[name]
+            // name comes from Object.keys(containers), so containers[name] is always defined
+            const m = containers[name]!
             const shortName = name.replace(/^axon-/, '')
             return (
               <div key={name} className="flex items-center gap-3 px-2 py-1 rounded bg-card/30">

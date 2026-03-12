@@ -58,7 +58,7 @@ importers:
         version: 52.0.11(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@platejs/dnd':
         specifier: ^52.0.11
-        version: 52.0.11(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dnd-html5-backend@16.0.1)(react-dnd@16.0.1(@types/node@20.19.33)(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        version: 52.0.11(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dnd-html5-backend@16.0.1)(react-dnd@16.0.1(@types/node@22.19.15)(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@platejs/emoji':
         specifier: ^52.0.15
         version: 52.0.15(@emoji-mart/data@1.2.1)(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -232,7 +232,7 @@ importers:
         version: 9.14.0(react@19.2.4)
       react-dnd:
         specifier: ^16.0.1
-        version: 16.0.1(@types/node@20.19.33)(@types/react@19.2.14)(react@19.2.4)
+        version: 16.0.1(@types/node@22.19.15)(@types/react@19.2.14)(react@19.2.4)
       react-dnd-html5-backend:
         specifier: ^16.0.1
         version: 16.0.1
@@ -287,6 +287,9 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+      zustand:
+        specifier: ^5.0.11
+        version: 5.0.11(@types/react@19.2.14)(immer@10.2.0)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.6
@@ -304,8 +307,8 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       '@types/node':
-        specifier: ^20
-        version: 20.19.33
+        specifier: ^22.19.15
+        version: 22.19.15
       '@types/pg':
         specifier: ^8.18.0
         version: 8.18.0
@@ -320,7 +323,7 @@ importers:
         version: 28.1.0(@noble/hashes@1.8.0)
       shadcn:
         specifier: ^3.8.5
-        version: 3.8.5(@types/node@20.19.33)(babel-plugin-macros@3.1.0)(typescript@5.9.3)
+        version: 3.8.5(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3)
       tailwindcss:
         specifier: ^4
         version: 4.2.1
@@ -332,7 +335,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.31.1)(msw@2.12.10(@types/node@20.19.33)(typescript@5.9.3))
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.31.1)(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))
 
 packages:
 
@@ -2827,6 +2830,9 @@ packages:
 
   '@types/node@20.19.33':
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
+
+  '@types/node@22.19.15':
+    resolution: {integrity: sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==}
 
   '@types/parse-json@4.0.2':
     resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
@@ -7028,31 +7034,31 @@ snapshots:
 
   '@inquirer/ansi@1.0.2': {}
 
-  '@inquirer/confirm@5.1.21(@types/node@20.19.33)':
+  '@inquirer/confirm@5.1.21(@types/node@22.19.15)':
     dependencies:
-      '@inquirer/core': 10.3.2(@types/node@20.19.33)
-      '@inquirer/type': 3.0.10(@types/node@20.19.33)
+      '@inquirer/core': 10.3.2(@types/node@22.19.15)
+      '@inquirer/type': 3.0.10(@types/node@22.19.15)
     optionalDependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
 
-  '@inquirer/core@10.3.2(@types/node@20.19.33)':
+  '@inquirer/core@10.3.2(@types/node@22.19.15)':
     dependencies:
       '@inquirer/ansi': 1.0.2
       '@inquirer/figures': 1.0.15
-      '@inquirer/type': 3.0.10(@types/node@20.19.33)
+      '@inquirer/type': 3.0.10(@types/node@22.19.15)
       cli-width: 4.1.0
       mute-stream: 2.0.0
       signal-exit: 4.1.0
       wrap-ansi: 6.2.0
       yoctocolors-cjs: 2.1.3
     optionalDependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
 
   '@inquirer/figures@1.0.15': {}
 
-  '@inquirer/type@3.0.10(@types/node@20.19.33)':
+  '@inquirer/type@3.0.10(@types/node@22.19.15)':
     optionalDependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -7373,14 +7379,14 @@ snapshots:
       react-compiler-runtime: 1.0.0(react@19.2.4)
       react-dom: 19.2.4(react@19.2.4)
 
-  '@platejs/dnd@52.0.11(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dnd-html5-backend@16.0.1)(react-dnd@16.0.1(@types/node@20.19.33)(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@platejs/dnd@52.0.11(platejs@52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4)))(react-dnd-html5-backend@16.0.1)(react-dnd@16.0.1(@types/node@22.19.15)(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       lodash: 4.17.23
       platejs: 52.3.3(@types/react@19.2.14)(immer@10.2.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.4))
       raf: 3.4.1
       react: 19.2.4
       react-compiler-runtime: 1.0.0(react@19.2.4)
-      react-dnd: 16.0.1(@types/node@20.19.33)(@types/react@19.2.14)(react@19.2.4)
+      react-dnd: 16.0.1(@types/node@22.19.15)(@types/react@19.2.14)(react@19.2.4)
       react-dnd-html5-backend: 16.0.1
       react-dom: 19.2.4(react@19.2.4)
 
@@ -8884,6 +8890,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@22.19.15':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/parse-json@4.0.2': {}
 
   '@types/pg@8.18.0':
@@ -9006,14 +9016,14 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.0.3
 
-  '@vitest/mocker@4.0.18(msw@2.12.10(@types/node@20.19.33)(typescript@5.9.3))(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.31.1))':
+  '@vitest/mocker@4.0.18(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))':
     dependencies:
       '@vitest/spy': 4.0.18
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      msw: 2.12.10(@types/node@20.19.33)(typescript@5.9.3)
-      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.31.1)
+      msw: 2.12.10(@types/node@22.19.15)(typescript@5.9.3)
+      vite: 7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)
 
   '@vitest/pretty-format@4.0.18':
     dependencies:
@@ -11370,9 +11380,9 @@ snapshots:
 
   ms@2.1.3: {}
 
-  msw@2.12.10(@types/node@20.19.33)(typescript@5.9.3):
+  msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3):
     dependencies:
-      '@inquirer/confirm': 5.1.21(@types/node@20.19.33)
+      '@inquirer/confirm': 5.1.21(@types/node@22.19.15)
       '@mswjs/interceptors': 0.41.3
       '@open-draft/deferred-promise': 2.2.0
       '@types/statuses': 2.0.6
@@ -11852,7 +11862,7 @@ snapshots:
     dependencies:
       dnd-core: 16.0.1
 
-  react-dnd@16.0.1(@types/node@20.19.33)(@types/react@19.2.14)(react@19.2.4):
+  react-dnd@16.0.1(@types/node@22.19.15)(@types/react@19.2.14)(react@19.2.4):
     dependencies:
       '@react-dnd/invariant': 4.0.2
       '@react-dnd/shallowequal': 4.0.2
@@ -11861,7 +11871,7 @@ snapshots:
       hoist-non-react-statics: 3.3.2
       react: 19.2.4
     optionalDependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
       '@types/react': 19.2.14
 
   react-dom@19.2.4(react@19.2.4):
@@ -12226,7 +12236,7 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shadcn@3.8.5(@types/node@20.19.33)(babel-plugin-macros@3.1.0)(typescript@5.9.3):
+  shadcn@3.8.5(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3):
     dependencies:
       '@antfu/ni': 25.0.0
       '@babel/core': 7.29.0
@@ -12248,7 +12258,7 @@ snapshots:
       fuzzysort: 3.1.0
       https-proxy-agent: 7.0.6
       kleur: 4.1.5
-      msw: 2.12.10(@types/node@20.19.33)(typescript@5.9.3)
+      msw: 2.12.10(@types/node@22.19.15)(typescript@5.9.3)
       node-fetch: 3.3.2
       open: 11.0.0
       ora: 8.2.0
@@ -12824,7 +12834,7 @@ snapshots:
       '@vimeo/player': 2.29.0
       media-played-ranges-mixin: 0.1.0
 
-  vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.31.1):
+  vite@7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1):
     dependencies:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
@@ -12833,15 +12843,15 @@ snapshots:
       rollup: 4.59.0
       tinyglobby: 0.2.15
     optionalDependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
       fsevents: 2.3.3
       jiti: 2.6.1
       lightningcss: 1.31.1
 
-  vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@20.19.33)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.31.1)(msw@2.12.10(@types/node@20.19.33)(typescript@5.9.3)):
+  vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.31.1)(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3)):
     dependencies:
       '@vitest/expect': 4.0.18
-      '@vitest/mocker': 4.0.18(msw@2.12.10(@types/node@20.19.33)(typescript@5.9.3))(vite@7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.31.1))
+      '@vitest/mocker': 4.0.18(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1))
       '@vitest/pretty-format': 4.0.18
       '@vitest/runner': 4.0.18
       '@vitest/snapshot': 4.0.18
@@ -12858,11 +12868,11 @@ snapshots:
       tinyexec: 1.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.3.1(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.31.1)
+      vite: 7.3.1(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.31.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
-      '@types/node': 20.19.33
+      '@types/node': 22.19.15
       jsdom: 28.1.0(@noble/hashes@1.8.0)
     transitivePeerDependencies:
       - jiti
