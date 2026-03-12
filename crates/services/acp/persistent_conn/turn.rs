@@ -59,6 +59,7 @@ fn prepare_turn_runtime_state(runtime_state: &Arc<AcpRuntimeState>) {
     let new_turn_id = runtime_state.current_turn_id.get().wrapping_add(1);
     runtime_state.current_turn_id.set(new_turn_id);
     *runtime_state.assistant_text.borrow_mut() = String::new();
+    runtime_state.limit_warning_emitted.set(false);
 }
 
 fn build_turn_context(

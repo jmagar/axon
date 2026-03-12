@@ -28,12 +28,12 @@ agent-client-protocol = { version = "0", features = [
 | `unstable_session_close` | `session/close` · `CloseSessionRequest` · `CloseSessionResponse` · `SessionCloseCapabilities` | Unstable |
 | `unstable_session_fork` | `session/fork` · `ForkSessionRequest` · `ForkSessionResponse` · `SessionForkCapabilities` | Unstable |
 | `unstable_session_resume` | `session/resume` · `ResumeSessionRequest` · `ResumeSessionResponse` · `SessionResumeCapabilities` | Unstable |
-| `unstable_session_model` | `session/setModel` · adds `model` to `NewSessionCapabilities` and `LoadSessionCapabilities` | Unstable |
+| `unstable_session_model` | `session/set_model` · adds `model` to `NewSessionCapabilities` and `LoadSessionCapabilities` | Unstable |
 | `unstable_session_usage` | `usage: Option<Usage>` on `PromptResponse` · `UsageUpdate` `SessionUpdate` variant | Unstable |
 | `unstable_message_id` | `message_id: Option<String>` on `PromptRequest` + `user_message_id: Option<String>` on `PromptResponse` (UUID format) | Unstable |
 | `unstable_auth_methods` | Additional `AuthMethodType` variants for richer credential formats | Unstable |
 | `unstable_cancel_request` | `CancelRequestNotification` (cancel-as-request) · error code `-32800` `RequestCancelled` | Unstable |
-| `unstable_boolean_config` | Boolean values in `session/setConfigOption` · `SessionConfigValueBoolean` variant | Unstable |
+| `unstable_boolean_config` | Boolean values in `session/set_config_option` · `SessionConfigValueBoolean` variant | Unstable |
 
 ---
 
@@ -121,7 +121,7 @@ AgentCapabilities {
 
 ### `unstable_session_model`
 
-Allows the client to change the LLM model mid-session via `session/setModel`. Also adds a `model` field to `NewSessionCapabilities` and `LoadSessionCapabilities` so agents can advertise which models they support.
+Allows the client to change the LLM model mid-session via `session/set_model`. Also adds a `model` field to `NewSessionCapabilities` and `LoadSessionCapabilities` so agents can advertise which models they support.
 
 ```rust
 // In new_session or load_session capabilities (unstable_session_model)
@@ -130,7 +130,7 @@ NewSessionCapabilities {
     model: Some("claude-opus-4-5".into()),
 }
 
-// session/setModel request
+// session/set_model request
 SetModelRequest {
     session_id: "uuid-1234".into(),
     model: "claude-sonnet-4-6".into(),
@@ -218,11 +218,11 @@ Without this flag, `session/cancel` is a fire-and-forget notification and there 
 
 ### `unstable_boolean_config`
 
-Extends `session/setConfigOption` to accept boolean values in addition to string values. Adds `SessionConfigValueBoolean` variant to `SessionConfigOptionValue`.
+Extends `session/set_config_option` to accept boolean values in addition to string values. Adds `SessionConfigValueBoolean` variant to `SessionConfigOptionValue`.
 
 ```rust
 // Without unstable_boolean_config: only string values
-session/setConfigOption { id: "some-option", value: "true" }
+session/set_config_option { id: "some-option", value: "true" }
 
 // With unstable_boolean_config: proper boolean values
 SessionConfigOptionValue::Boolean(SessionConfigValueBoolean { value: true })

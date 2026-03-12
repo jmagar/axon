@@ -118,6 +118,7 @@ export function useAxonSession(
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
   const prevSessionIdRef = useRef<string | null>(null)
+  const prevAssistantModeRef = useRef<string | undefined>(undefined)
 
   const reload = useCallback(() => setVersion((v) => v + 1), [])
 
@@ -133,10 +134,12 @@ export function useAxonSession(
     }
 
     const sessionChanged = prevSessionIdRef.current !== sessionId
+    const modeChanged = prevAssistantModeRef.current !== assistantMode
     prevSessionIdRef.current = sessionId
+    prevAssistantModeRef.current = assistantMode
     let cancelled = false
     setLoading(true)
-    if (sessionChanged) {
+    if (sessionChanged || modeChanged) {
       setMessages([])
       setLoaded(false)
     }

@@ -46,6 +46,10 @@ pub struct AcpRuntimeState {
     pub(super) config_options: std::cell::RefCell<Vec<AcpConfigOption>>,
     /// Disabled MCP tool command names for the active session/runtime.
     pub(super) blocked_mcp_tools: std::cell::RefCell<std::collections::HashSet<String>>,
+    /// Overridden timeout for permission requests.
+    pub(super) permission_timeout_secs: std::cell::Cell<Option<u64>>,
+    /// Guard flag: emit the 1 MiB assistant text warning at most once per session.
+    pub(super) limit_warning_emitted: std::cell::Cell<bool>,
 }
 
 // ── Auto-approve helpers ────────────────────────────────────────────────────
@@ -124,6 +128,7 @@ pub(super) async fn handle_interactive_permission(
     args: &RequestPermissionRequest,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
     permission_responders: &PermissionResponderMap,
+    runtime_state: &Arc<AcpRuntimeState>,
     session_id: &str,
     tool_call_id: &str,
 ) -> RequestPermissionOutcome {
@@ -176,8 +181,10 @@ pub(super) async fn handle_interactive_permission(
         },
     );
 
-    // Wait up to 60s for a response from the frontend.
-    match tokio::time::timeout(std::time::Duration::from_secs(60), resp_rx).await {
+    let timeout_secs = runtime_state.permission_timeout_secs.get().unwrap_or(60);
+
+    // Wait up to N seconds for a response from the frontend.
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), resp_rx).await {
         Ok(Ok(option_id)) => {
             // Validate that the chosen option_id exists in the request.
             let matched = args
@@ -327,6 +334,7 @@ impl Client for AcpBridgeClient {
             &args,
             &service_tx,
             &self.permission_responders,
+            &self.runtime_state,
             session_id,
             &tool_call_id,
         )
@@ -378,7 +386,7 @@ impl Client for AcpBridgeClient {
                              further output will be truncated in the final result"
                         );
                         crate::crates::core::logging::log_warn(&msg);
-                        // Access service_tx from the outer scope if needed, 
+                        // Access service_tx from the outer scope if needed,
                         // but here we are in a block that doesn't have it yet.
                         // We'll emit it using the sender we capture later in this function.
                     }
@@ -399,15 +407,20 @@ impl Client for AcpBridgeClient {
         {
             let text = self.runtime_state.assistant_text.borrow();
             if text.len() >= 1024 * 1024 && !text.is_empty() {
-                emit(
-                    &service_tx,
-                    ServiceEvent::Log {
-                        level: LogLevel::Warn,
-                        message: format!(
-                            "Assistant text limit hit (1 MiB); output truncated"
-                        ),
-                    },
-                );
+                // Only emit once: the text accumulation block (above) already stops
+                // appending past the cap, so the len == cap check is stable.  Guard
+                // with a flag so we don't re-emit on every subsequent notification.
+                if !self.runtime_state.limit_warning_emitted.get() {
+                    self.runtime_state.limit_warning_emitted.set(true);
+                    emit(
+                        &service_tx,
+                        ServiceEvent::Log {
+                            level: LogLevel::Warn,
+                            message: "Assistant text limit hit (1 MiB); output truncated"
+                                .to_string(),
+                        },
+                    );
+                }
             }
         }
 
