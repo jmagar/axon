@@ -84,7 +84,7 @@ export const AxonTerminalPane = memo(function AxonTerminalPane() {
           ref={terminalRef}
           onData={handleData}
           onResize={handleResize}
-          className="h-full w-full"
+          className="axon-terminal-container h-full w-full"
         />
       </div>
     </div>

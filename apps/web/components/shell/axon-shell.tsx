@@ -161,6 +161,8 @@ export function AxonShell() {
                   onPermissionTimeoutSecsChange={shell.setPermissionTimeoutSecs}
                   adapterTimeoutSecs={shell.adapterTimeoutSecs}
                   onAdapterTimeoutSecsChange={shell.setAdapterTimeoutSecs}
+                  density={shell.density}
+                  onDensityChange={shell.setDensityTracked}
                 />
               </div>
             ) : shell.mobilePane === 'cortex' ? (
@@ -411,6 +413,8 @@ export function AxonShell() {
                   onPermissionTimeoutSecsChange={shell.setPermissionTimeoutSecs}
                   adapterTimeoutSecs={shell.adapterTimeoutSecs}
                   onAdapterTimeoutSecsChange={shell.setAdapterTimeoutSecs}
+                  density={shell.density}
+                  onDensityChange={shell.setDensityTracked}
                 />
               )}
             </aside>

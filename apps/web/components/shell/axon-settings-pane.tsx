@@ -6,7 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import type { NeuralCanvasProfile } from '@/lib/pulse/neural-canvas-presets'
+import type { AxonDensity } from './axon-shell-state-helpers'
 import { CanvasProfileSelector } from './canvas-profile-selector'
+import { DensitySelector } from './density-selector'
 
 export const AxonSettingsPane = memo(function AxonSettingsPane({
   canvasProfile,
@@ -19,6 +21,8 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
   onPermissionTimeoutSecsChange,
   adapterTimeoutSecs,
   onAdapterTimeoutSecsChange,
+  density,
+  onDensityChange,
 }: {
   canvasProfile: NeuralCanvasProfile
   onCanvasProfileChange: (profile: NeuralCanvasProfile) => void
@@ -30,6 +34,8 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
   onPermissionTimeoutSecsChange: (val: number | null) => void
   adapterTimeoutSecs: number | null
   onAdapterTimeoutSecsChange: (val: number | null) => void
+  density: AxonDensity
+  onDensityChange: (val: AxonDensity) => void
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -44,10 +50,13 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
             <Settings2 className="size-3.5" />
             <h3 className="text-xs font-semibold uppercase tracking-wider">Appearance</h3>
           </div>
-          <CanvasProfileSelector
-            canvasProfile={canvasProfile}
-            onCanvasProfileChange={onCanvasProfileChange}
-          />
+          <div className="space-y-6">
+            <CanvasProfileSelector
+              canvasProfile={canvasProfile}
+              onCanvasProfileChange={onCanvasProfileChange}
+            />
+            <DensitySelector density={density} onDensityChange={onDensityChange} />
+          </div>
         </section>
 
         {/* Agent Capabilities */}

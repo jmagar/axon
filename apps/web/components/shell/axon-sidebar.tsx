@@ -122,8 +122,8 @@ const RailContent = React.memo(function RailContent({
                 type="button"
                 onClick={() => onSelectSession(session.id)}
                 aria-current={isActive ? 'true' : undefined}
-                className={`w-full rounded-md border-l-2 px-0 text-left transition-colors ${rowClass} ${railItemClass(isActive)}`}
-                title={session.preview?.slice(0, 120) ?? title}
+                className={`axon-sidebar-item w-full rounded-md border-l-2 px-0 text-left transition-colors ${rowClass} ${railItemClass(isActive)}`}
+                title={title}
               >
                 <div className="px-3">
                   <div className="flex items-start justify-between gap-2">
@@ -217,7 +217,7 @@ const RailContent = React.memo(function RailContent({
                 type="button"
                 onClick={() => onSelectAssistantSession(session.id)}
                 aria-current={isActive ? 'true' : undefined}
-                className={`w-full rounded-md border-l-2 px-0 text-left transition-colors ${rowClass} ${railItemClass(isActive)}`}
+                className={`axon-sidebar-item w-full rounded-md border-l-2 px-0 text-left transition-colors ${rowClass} ${railItemClass(isActive)}`}
                 title={session.preview ?? title}
               >
                 <div className="px-3">
@@ -327,7 +327,7 @@ export const AxonSidebar = React.memo(function AxonSidebar({
           ) : null}
           {isDesktop ? (
             <span
-              className="select-none pl-1 text-sm font-extrabold tracking-[3px]"
+              className="axon-sidebar-title select-none pl-1 text-sm font-extrabold tracking-[3px]"
               style={{
                 background: 'linear-gradient(135deg, #afd7ff 0%, #ff87af 50%, #8787af 100%)',
                 WebkitBackgroundClip: 'text',
@@ -431,9 +431,9 @@ export const AxonSidebar = React.memo(function AxonSidebar({
         </div>
       ) : null}
 
-      <div className="border-b border-[var(--border-subtle)] px-2 py-1.5">
+      <div className="axon-sidebar-search-container border-b border-[var(--border-subtle)] px-2 py-1.5">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--text-dim)]" />
+          <Search className="axon-sidebar-search-icon pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--text-dim)]" />
           <input
             value={railQuery}
             onChange={(event) => onRailQueryChange(event.target.value)}
@@ -445,7 +445,7 @@ export const AxonSidebar = React.memo(function AxonSidebar({
                   : 'Search files…'
             }
             aria-label={`Search ${activeMode.label.toLowerCase()}`}
-            className={`axon-input ${searchH} w-full rounded-md pl-7 pr-2 font-sans`}
+            className={`axon-sidebar-search-input axon-input ${searchH} w-full rounded-md pl-7 pr-2 font-sans`}
           />
         </div>
       </div>

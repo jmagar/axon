@@ -35,7 +35,7 @@ vi.mock('@/lib/pulse/server-env', () => ({
   ensureRepoRootEnvLoaded: vi.fn(),
 }))
 
-describe('POST /api/pulse/save performance enhancements', () => {
+describe('POST /api/pulse/save performance and density infrastructure', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetEnsuredCollections()
@@ -71,7 +71,7 @@ describe('POST /api/pulse/save performance enhancements', () => {
     await POST(req1)
     await afterPromise
 
-    // Verify GET was called (it should be the second call)
+    // Verify GET was called
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('/collections/cortex'),
       expect.anything(),
@@ -79,12 +79,10 @@ describe('POST /api/pulse/save performance enhancements', () => {
     const firstCallCount = fetchSpy.mock.calls.length
 
     // 2nd call: Should SKIP the GET check for collection
-    // 1. TEI embed
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify([[0.2]]), { status: 200 }))
-    // 2. Qdrant upsert (GET is skipped)
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify([[0.2]]), { status: 200 })) // TEI embed
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ result: { status: 'acknowledged' } }), { status: 200 }),
-    )
+    ) // Qdrant upsert
 
     const req2 = new Request('http://localhost/api/pulse/save', { method: 'POST', body })
     await POST(req2)
@@ -104,7 +102,6 @@ describe('POST /api/pulse/save performance enhancements', () => {
   })
 
   it('offloads embedding to after() allowing immediate response', async () => {
-    // In our mock, after() is synchronous, but we can verify it was called
     const { after } = await import('next/server')
     const { POST } = await import('@/app/api/pulse/save/route')
 

@@ -30,6 +30,9 @@ export const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.shell.sidebar-open'
 export const CHAT_OPEN_STORAGE_KEY = 'axon.web.shell.chat-open'
 export const RIGHT_PANE_STORAGE_KEY = 'axon.web.shell.right-pane'
 export const RAIL_MODE_STORAGE_KEY = 'axon.web.shell.rail-mode'
+export const DENSITY_STORAGE_KEY = 'axon.web.shell.density'
+
+export type AxonDensity = 'comfortable' | 'compact' | 'high'
 
 // Migrate legacy "reboot" keys to "shell" keys so existing users keep their preferences.
 const LEGACY_KEY_MAP: [string, string][] = [
@@ -88,6 +91,16 @@ export function readStoredRailMode(key: string, fallback: RailMode): RailMode {
   try {
     const v = window.localStorage.getItem(key)
     if (v === 'sessions' || v === 'files' || v === 'assistant') return v
+    return fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function readStoredDensity(key: string, fallback: AxonDensity): AxonDensity {
+  try {
+    const v = window.localStorage.getItem(key)
+    if (v === 'comfortable' || v === 'compact' || v === 'high') return v as AxonDensity
     return fallback
   } catch {
     return fallback

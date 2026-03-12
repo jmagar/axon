@@ -23,8 +23,8 @@ interface TerminalToolbarProps {
 // ---------------------------------------------------------------------------
 
 const STATUS_CONFIG: Record<WsStatus, { color: string; label: string }> = {
-  connected: { color: '#82d9a0', label: 'CONNECTED' },
-  reconnecting: { color: '#ffc086', label: 'RECONNECTING...' },
+  connected: { color: 'var(--axon-success)', label: 'CONNECTED' },
+  reconnecting: { color: 'var(--axon-warning)', label: 'RECONNECTING...' },
   disconnected: { color: 'rgba(255,135,175,0.8)', label: 'DISCONNECTED' },
 }
 
@@ -47,9 +47,9 @@ export function TerminalToolbar({
     <div
       className="flex h-10 flex-shrink-0 items-center justify-between px-3"
       style={{
-        background: 'rgba(9,18,37,0.85)',
+        background: 'var(--surface-base)',
         backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255,135,175,0.12)',
+        borderBottom: '1px solid var(--border-accent)',
       }}
     >
       {/* Left: title + status */}
@@ -80,7 +80,7 @@ export function TerminalToolbar({
               className="size-3 animate-spin rounded-full border"
               style={{
                 borderColor: 'rgba(135,175,255,0.25)',
-                borderTopColor: '#87afff',
+                borderTopColor: 'var(--axon-primary)',
               }}
               aria-hidden="true"
             />
