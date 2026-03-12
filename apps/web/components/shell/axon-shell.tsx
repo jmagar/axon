@@ -124,7 +124,7 @@ export function AxonShell() {
                   <EditorPane
                     markdown={shell.editorMarkdown}
                     onMarkdownChange={shell.setEditorMarkdown}
-                    scrollStorageKey="axon.web.reboot.editor-scroll"
+                    scrollStorageKey="axon.web.shell.editor-scroll"
                   />
                 </div>
               </div>
@@ -376,7 +376,7 @@ export function AxonShell() {
                 <EditorPane
                   markdown={shell.editorMarkdown}
                   onMarkdownChange={shell.setEditorMarkdown}
-                  scrollStorageKey="axon.web.reboot.editor-scroll"
+                  scrollStorageKey="axon.web.shell.editor-scroll"
                 />
               )}
               {shell.rightPane === 'cortex' && <AxonCortexPane />}

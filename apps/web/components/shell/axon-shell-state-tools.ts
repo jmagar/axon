@@ -3,7 +3,7 @@ import {
   fetchToolPreferences,
   TOOL_PREFERENCES_LS_KEY,
   type ToolPreset,
-} from '@/lib/reboot/tool-preferences'
+} from '@/lib/shell/tool-preferences'
 
 type UseToolPreferenceStateParams = {
   mcpServerCount: number

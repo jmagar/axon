@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { AxonMobilePaneSwitcher } from '@/components/reboot/axon-mobile-pane-switcher'
+import { AxonMobilePaneSwitcher } from '@/components/shell/axon-mobile-pane-switcher'
 
 describe('pulse mobile pane switcher', () => {
   it('marks chat tab selected when chat is active', () => {
