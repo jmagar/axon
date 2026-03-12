@@ -81,7 +81,7 @@ wss.on('connection', (ws) => {
     cols: 80,
     rows: 24,
     cwd: process.env.HOME ?? '/home/node',
-    env: buildShellEnv(),
+    env: buildShellEnv(process.env),
   })
 
   term.onData((data) => {

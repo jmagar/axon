@@ -46,7 +46,7 @@ const AGENT_OPTIONS: Array<{ value: PulseAgent; label: string }> = [
 ]
 
 const AXON_COMPOSER_PANEL_CLASS =
-  'border-[rgba(175,215,255,0.2)] bg-[linear-gradient(180deg,rgba(10,18,35,0.94),rgba(4,9,20,0.98))] shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl'
+  'border-[rgba(175,215,255,0.2)] bg-[linear-gradient(180deg,rgba(10,18,35,0.94),rgba(4,9,20,0.98))] shadow-[0_14px_34px_rgba(0,0,0,0.3)] backdrop-blur-xl'
 
 function ComposerDropdownTrigger({ children, ...props }: React.ComponentProps<'button'>) {
   return (
@@ -148,7 +148,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [presetDraft, setPresetDraft] = useState('')
   const PermissionIcon = getPermissionIcon(pulsePermissionLevel)
-  const { knownTools, enabledToolCount, toolLabel } = useMemo(() => {
+  const { toolLabel } = useMemo(() => {
     const tools = Object.values(mcpToolsByServer).flat()
     const serverSet = new Set(toolsState.enabledMcpServers)
     const toolSet = new Set(enabledMcpTools)
@@ -159,7 +159,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
     const label = tools.length
       ? formatToolSelectionLabel(count, tools.length)
       : formatToolSelectionLabel(toolsState.enabledMcpServers.length, toolsState.mcpServers.length)
-    return { knownTools: tools, enabledToolCount: count, toolLabel: label }
+    return { toolLabel: label }
   }, [
     mcpToolsByServer,
     toolsState.enabledMcpServers,
@@ -186,7 +186,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
       onSubmit={onSubmit}
       files={files}
       onFilesChange={onFilesChange}
-      className={`w-full rounded-[18px] p-0 ${AXON_COMPOSER_PANEL_CLASS}`}
+      className={`w-full rounded-[16px] p-0 sm:rounded-[14px] ${AXON_COMPOSER_PANEL_CLASS}`}
     >
       <input
         id="axon-prompt-file-input"
@@ -197,7 +197,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
         className="hidden"
         onChange={handleFilePick}
       />
-      <div className="axon-prompt-composer-container px-2.5 pb-2 pt-2">
+      <div className="px-2.5 pb-2.5 pt-2.5 sm:px-2 sm:pb-2 sm:pt-2">
         <PromptInputAttachments>
           {files.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -216,7 +216,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
 
         <PromptInputBody className="items-start gap-2">
           <PromptInputTextarea
-            className={`axon-input ${compact ? 'min-h-14 max-h-52' : 'min-h-16 max-h-64'} rounded-[14px] px-3 py-2 leading-[1.45]`}
+            className={`axon-input ${compact ? 'min-h-10 max-h-40 sm:min-h-9' : 'min-h-14 max-h-56'} rounded-[10px] px-2.5 py-1.5 leading-5`}
             placeholder="Describe what you want to build, edit, or debug…"
           />
         </PromptInputBody>

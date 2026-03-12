@@ -49,6 +49,14 @@ The terminal shell websocket (`/ws/shell`) now enforces auth and origin checks i
 Next.js response hardening is configured in `next.config.ts` with CSP, `X-Frame-Options`, `Referrer-Policy`, and HSTS (non-dev).
 `/api/cortex/*` responses are cache-tuned with `s-maxage=30, stale-while-revalidate=60`.
 
+### Cortex Mission Control
+
+The right-side Cortex pane now renders a unified **Mission Control** surface instead of separate Status/Doctor/Sources/Domains/Stats tabs.
+
+- Aggregated API: `GET /api/cortex/overview`
+- UI root: `components/cortex/mission-control-pane.tsx`
+- Shell integration: `components/shell/axon-cortex-pane.tsx`
+
 ## Performance & Optimization
 
 The web application follows a strict performance-first architecture to ensure a smooth, bioluminescent experience.
@@ -161,6 +169,7 @@ Route safety:
 ## Key Files
 
 - `components/omnibox.tsx`: omnibox interaction/state UI
+- `components/cortex/mission-control-pane.tsx`: unified Cortex Mission Control UI
 - `lib/omnibox.ts`: mention parsing, ranking, phase derivation helpers
 - `app/api/omnibox/files/route.ts`: local docs listing + content fetch for mentions
 - `hooks/use-ws-messages.ts`: split execution/workspace/action contexts + compatibility hook

@@ -26,7 +26,7 @@ export type ConversationContentProps = ComponentProps<typeof StickToBottom.Conte
 export function ConversationContent({ className, ...props }: ConversationContentProps) {
   return (
     <StickToBottom.Content
-      className={cn('ConversationContent flex flex-col gap-6 p-4', className)}
+      className={cn('flex flex-col gap-5 p-3 lg:gap-4 lg:p-2.5', className)}
       {...props}
     />
   )
@@ -47,7 +47,7 @@ export function ConversationEmptyState({
   return (
     <div
       className={cn(
-        'flex size-full flex-col items-center justify-center gap-3 p-8 text-center',
+        'flex size-full flex-col items-center justify-center gap-3 p-6 text-center lg:p-5',
         className,
       )}
       {...props}
@@ -76,7 +76,7 @@ export function ConversationScrollButton({ className, ...props }: ComponentProps
   return (
     <Button
       className={cn(
-        'absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-[rgba(135,175,255,0.2)] bg-[rgba(4,8,20,0.92)]',
+        'absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-[rgba(135,175,255,0.2)] bg-[rgba(4,8,20,0.92)]',
         className,
       )}
       onClick={handleScrollToBottom}

@@ -112,7 +112,7 @@ export function isAuthorized(req, token, allowInsecureLocalDev) {
   return isLoopbackHost(host)
 }
 
-export function buildShellEnv(sourceEnv) {
+export function buildShellEnv(sourceEnv = {}) {
   const env = {}
   for (const key of SAFE_ENV_KEYS) {
     const value = sourceEnv[key]

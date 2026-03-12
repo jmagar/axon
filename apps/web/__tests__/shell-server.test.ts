@@ -208,6 +208,12 @@ describe('buildShellEnv', () => {
     expect(env.COLORTERM).toBe('truecolor')
   })
 
+  it('does not throw when source env is omitted', () => {
+    const env = buildShellEnv(undefined as unknown as Record<string, string>)
+    expect(env.TERM).toBe('xterm-256color')
+    expect(env.COLORTERM).toBe('truecolor')
+  })
+
   it('only contains keys from SAFE_ENV_KEYS plus TERM and COLORTERM', () => {
     const sourceEnv: Record<string, string> = {
       HOME: '/home/user',
