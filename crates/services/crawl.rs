@@ -135,6 +135,32 @@ pub async fn crawl_status(cfg: &Config, job_id: Uuid) -> Result<CrawlJobResult, 
     Ok(map_crawl_job_result(payload))
 }
 
+
+pub async fn crawl_list(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<CrawlJobResult, Box<dyn Error>> {
+    let jobs = crawl::list_jobs(cfg, limit, offset).await?;
+    Ok(map_crawl_job_result(serde_json::to_value(jobs)?))
+}
+
+pub async fn crawl_cancel(cfg: &Config, job_id: Uuid) -> Result<bool, Box<dyn Error>> {
+    crawl::cancel_job(cfg, job_id).await
+}
+
+pub async fn crawl_cleanup(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    crawl::cleanup_jobs(cfg).await
+}
+
+pub async fn crawl_clear(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    crawl::clear_jobs(cfg).await
+}
+
+pub async fn crawl_recover(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    crawl::recover_stale_crawl_jobs(cfg).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{map_crawl_start_result, predict_crawl_output_dir};

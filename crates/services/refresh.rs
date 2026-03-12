@@ -1,16 +1,12 @@
 use crate::crates::core::config::Config;
 use crate::crates::jobs::refresh::{
-    cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs, get_refresh_job,
-    list_refresh_jobs, recover_stale_refresh_jobs, run_refresh_once, run_refresh_worker,
+    cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs, create_refresh_schedule,
+    delete_refresh_schedule, get_refresh_job, list_refresh_jobs, list_refresh_schedules,
+    recover_stale_refresh_jobs, run_refresh_once, run_refresh_worker, set_refresh_schedule_enabled,
     start_refresh_job,
 };
 
-// Re-export schedule primitives so CLI code (and its tests) go through the
-// service layer instead of importing from `jobs::refresh` directly.
-pub use crate::crates::jobs::refresh::{
-    RefreshJob, RefreshScheduleCreate, create_refresh_schedule, delete_refresh_schedule,
-    list_refresh_jobs as schedule_list_jobs,
-};
+pub use crate::crates::jobs::refresh::{RefreshJob, RefreshSchedule, RefreshScheduleCreate};
 use crate::crates::services::types::{RefreshRunResult, RefreshStartResult};
 use std::error::Error;
 use uuid::Uuid;
@@ -73,4 +69,30 @@ pub async fn refresh_recover(cfg: &Config) -> Result<u64, Box<dyn Error>> {
 
 pub async fn refresh_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     run_refresh_worker(cfg).await
+}
+
+pub async fn refresh_schedule_list(
+    cfg: &Config,
+    limit: i64,
+) -> Result<Vec<RefreshSchedule>, Box<dyn Error>> {
+    list_refresh_schedules(cfg, limit).await
+}
+
+pub async fn refresh_schedule_create(
+    cfg: &Config,
+    schedule: &RefreshScheduleCreate,
+) -> Result<RefreshSchedule, Box<dyn Error>> {
+    create_refresh_schedule(cfg, schedule).await
+}
+
+pub async fn refresh_schedule_delete(cfg: &Config, name: &str) -> Result<bool, Box<dyn Error>> {
+    delete_refresh_schedule(cfg, name).await
+}
+
+pub async fn refresh_schedule_enable(cfg: &Config, name: &str) -> Result<bool, Box<dyn Error>> {
+    set_refresh_schedule_enabled(cfg, name, true).await
+}
+
+pub async fn refresh_schedule_disable(cfg: &Config, name: &str) -> Result<bool, Box<dyn Error>> {
+    set_refresh_schedule_enabled(cfg, name, false).await
 }

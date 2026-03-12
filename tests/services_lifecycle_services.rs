@@ -194,3 +194,14 @@ fn maps_screenshot_result_url_field() {
     assert_eq!(result.payload["url"], "https://docs.rust-lang.org");
     assert_eq!(result.payload["size_bytes"], 42000);
 }
+
+#[test]
+fn ingest_service_exposes_start_status_cancel_list_cleanup_clear_recover() {
+    let _ = axon::crates::services::ingest::ingest_start;
+    let _ = axon::crates::services::ingest::ingest_status;
+    let _ = axon::crates::services::ingest::ingest_cancel;
+    let _ = axon::crates::services::ingest::ingest_list;
+    let _ = axon::crates::services::ingest::ingest_cleanup;
+    let _ = axon::crates::services::ingest::ingest_clear;
+    let _ = axon::crates::services::ingest::ingest_recover;
+}

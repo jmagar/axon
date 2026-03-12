@@ -1,10 +1,14 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::embed::start_embed_job;
+use crate::crates::jobs::embed::{
+    cancel_embed_job, cleanup_embed_jobs, clear_embed_jobs, get_embed_job, list_embed_jobs,
+    recover_stale_embed_jobs, start_embed_job,
+};
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{EmbedJobResult, EmbedStartResult};
 use crate::crates::vector::ops::embed_path_native;
 use std::error::Error;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 // --- Pure mapping helpers (no I/O, testable without live services) ---
 
@@ -14,6 +18,40 @@ pub fn map_embed_start_result(job_id: String) -> EmbedStartResult {
 
 pub fn map_embed_job_result(payload: serde_json::Value) -> EmbedJobResult {
     EmbedJobResult { payload }
+}
+
+// --- Service lifecycle wrappers ---
+
+pub async fn embed_status(cfg: &Config, id: Uuid) -> Result<Option<EmbedJobResult>, Box<dyn Error>> {
+    let job = get_embed_job(cfg, id).await?;
+    Ok(job.map(|value| {
+        map_embed_job_result(serde_json::to_value(value).unwrap_or(serde_json::Value::Null))
+    }))
+}
+
+pub async fn embed_list(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<EmbedJobResult, Box<dyn Error>> {
+    let jobs = list_embed_jobs(cfg, limit, offset).await?;
+    Ok(map_embed_job_result(serde_json::to_value(jobs)?))
+}
+
+pub async fn embed_cancel(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {
+    cancel_embed_job(cfg, id).await
+}
+
+pub async fn embed_cleanup(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    cleanup_embed_jobs(cfg).await
+}
+
+pub async fn embed_clear(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    clear_embed_jobs(cfg).await
+}
+
+pub async fn embed_recover(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    recover_stale_embed_jobs(cfg).await
 }
 
 // --- Service functions ---

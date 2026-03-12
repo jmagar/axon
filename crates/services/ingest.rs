@@ -1,14 +1,72 @@
 use crate::crates::core::config::Config;
 use crate::crates::ingest;
+use crate::crates::jobs::ingest::{
+    IngestSource, cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs, get_ingest_job,
+    list_ingest_jobs, recover_stale_ingest_jobs, start_ingest_job,
+};
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
-use crate::crates::services::types::IngestResult;
+use crate::crates::services::types::{IngestJobResult, IngestResult, IngestStartResult};
 use std::error::Error;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 // --- Pure mapping helper (no I/O, testable without live services) ---
 
 pub fn map_ingest_result(payload: serde_json::Value) -> IngestResult {
     IngestResult { payload }
+}
+
+pub fn map_ingest_start_result(job_id: String) -> IngestStartResult {
+    IngestStartResult { job_id }
+}
+
+pub fn map_ingest_job_result(payload: serde_json::Value) -> IngestJobResult {
+    IngestJobResult { payload }
+}
+
+// --- Service lifecycle wrappers ---
+
+pub async fn ingest_start(
+    cfg: &Config,
+    source: IngestSource,
+) -> Result<IngestStartResult, Box<dyn Error>> {
+    let job_id = start_ingest_job(cfg, source).await?;
+    Ok(map_ingest_start_result(job_id.to_string()))
+}
+
+pub async fn ingest_status(
+    cfg: &Config,
+    id: Uuid,
+) -> Result<Option<IngestJobResult>, Box<dyn Error>> {
+    let job = get_ingest_job(cfg, id).await?;
+    Ok(job.map(|value| {
+        map_ingest_job_result(serde_json::to_value(value).unwrap_or(serde_json::Value::Null))
+    }))
+}
+
+pub async fn ingest_list(
+    cfg: &Config,
+    limit: i64,
+    offset: i64,
+) -> Result<IngestResult, Box<dyn Error>> {
+    let jobs = list_ingest_jobs(cfg, limit, offset).await?;
+    Ok(map_ingest_result(serde_json::to_value(jobs)?))
+}
+
+pub async fn ingest_cancel(cfg: &Config, id: Uuid) -> Result<bool, Box<dyn Error>> {
+    cancel_ingest_job(cfg, id).await
+}
+
+pub async fn ingest_cleanup(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    cleanup_ingest_jobs(cfg).await
+}
+
+pub async fn ingest_clear(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    clear_ingest_jobs(cfg).await
+}
+
+pub async fn ingest_recover(cfg: &Config) -> Result<u64, Box<dyn Error>> {
+    recover_stale_ingest_jobs(cfg).await
 }
 
 // --- Service functions ---

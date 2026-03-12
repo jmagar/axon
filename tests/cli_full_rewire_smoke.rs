@@ -326,3 +326,12 @@ fn smoke_search_options_type_is_constructible() {
     assert_eq!(s.limit, 10);
     assert!(s.time_range.is_none());
 }
+
+#[test]
+fn refresh_service_exposes_schedule_lifecycle_wrappers() {
+    let _ = axon::crates::services::refresh::refresh_schedule_list;
+    let _ = axon::crates::services::refresh::refresh_schedule_create;
+    let _ = axon::crates::services::refresh::refresh_schedule_delete;
+    let _ = axon::crates::services::refresh::refresh_schedule_enable;
+    let _ = axon::crates::services::refresh::refresh_schedule_disable;
+}
