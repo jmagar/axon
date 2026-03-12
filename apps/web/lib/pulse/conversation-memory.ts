@@ -1,3 +1,6 @@
+const FAVORITE_COLOR_PATTERN = /\bmy\s+favo(?:u)?rite\s+colou?r\s+is\s+([a-z][a-z\s-]{0,30})\b/i
+const ASKS_FAVORITE_COLOR_PATTERN = /\bwhat(?:'s|\s+is)\s+my\s+favo(?:u)?rite\s+colou?r\b/i
+
 interface ConversationTurn {
   role: 'user' | 'assistant'
   content: string
@@ -10,12 +13,10 @@ function normalizeColor(raw: string): string {
 }
 
 function extractFavoriteColorFromHistory(history: ConversationTurn[]): string | null {
-  const favoriteColorPattern = /\bmy\s+favo(?:u)?rite\s+colou?r\s+is\s+([a-z][a-z\s-]{0,30})\b/i
-
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const turn = history[index]
     if (turn.role !== 'user') continue
-    const match = favoriteColorPattern.exec(turn.content)
+    const match = FAVORITE_COLOR_PATTERN.exec(turn.content)
     if (!match) continue
     const color = normalizeColor(match[1] ?? '')
     if (!color) continue
@@ -29,7 +30,7 @@ export function resolveConversationMemoryAnswer(
   prompt: string,
   history: ConversationTurn[],
 ): string | null {
-  const asksFavoriteColor = /\bwhat(?:'s|\s+is)\s+my\s+favo(?:u)?rite\s+colou?r\b/i.test(prompt)
+  const asksFavoriteColor = ASKS_FAVORITE_COLOR_PATTERN.test(prompt)
   if (!asksFavoriteColor) return null
 
   const color = extractFavoriteColorFromHistory(history)

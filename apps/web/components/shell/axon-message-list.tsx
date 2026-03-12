@@ -23,8 +23,9 @@ function ToolCallCard({ tool, isMobile }: { tool: PulseToolUse; isMobile: boolea
   const { title, description, badges, meta } = buildToolHeader(tool)
 
   return (
-    <Tool defaultOpen={!isDone} className="mt-1.5">
+    <Tool defaultOpen={!isDone} className="axon-tool-card mt-1.5">
       <ToolHeader
+        className="axon-tool-header"
         title={title}
         description={description}
         status={statusLabel}
@@ -32,7 +33,7 @@ function ToolCallCard({ tool, isMobile }: { tool: PulseToolUse; isMobile: boolea
         meta={meta}
         density={isMobile ? 'comfortable' : 'compact'}
       />
-      <ToolContent>
+      <ToolContent className="axon-tool-content">
         <div className={isMobile ? 'space-y-2 px-3 py-2.5' : 'space-y-2 px-3 py-2'}>
           {tool.input && Object.keys(tool.input).length > 0 ? (
             <div>
@@ -201,7 +202,10 @@ export const AxonMessageList = memo(function AxonMessageList({
   const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[240px]'
 
   return (
-    <ConversationContent key={sessionKey} className="animate-crossfade-in px-0 py-0">
+    <ConversationContent
+      key={sessionKey}
+      className="axon-message-list-container animate-crossfade-in px-0 py-0"
+    >
       {loading && messages.length === 0 ? (
         <div className="flex h-full items-center justify-center animate-fade-in">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--text-dim)]" />
@@ -238,15 +242,15 @@ export const AxonMessageList = memo(function AxonMessageList({
       {messages.map((message, index) => (
         <Message
           key={message.id}
-          className={`animate-fade-in-up ${message.role === 'user' ? userMaxWidth : assistantMaxWidth}`}
+          className={`axon-message-container animate-fade-in-up ${message.role === 'user' ? userMaxWidth : assistantMaxWidth}`}
           from={message.role}
           style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
         >
           <div
             className={
               message.role === 'assistant'
-                ? `${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
-                : `${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+                ? `axon-message-bubble ${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+                : `axon-message-bubble ${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
             }
           >
             <div className="mb-1.5 flex items-center gap-2">

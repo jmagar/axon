@@ -1,0 +1,299 @@
+/* High Resolution (Dense) */
+[data-density="high"] {
+  --space-1: 0.075rem;
+  --space-2: 0.15rem;
+  --space-3: 0.25rem;
+  --space-4: 0.35rem;
+  --space-5: 0.5rem;
+  --text-2xs: 0.425rem;
+  --text-xs: 0.475rem;
+  --text-sm: 0.525rem;
+  --text-md: 0.575rem;
+  --text-base: 0.625rem;
+  --leading-tight: 1;
+  --leading-copy: 1.1;
+  --pulse-control-h: 1.05rem;
+  --pulse-pill-pad-x: 0.15rem;
+  --pulse-pill-pad-y: 0.0125rem;
+  --density-compact-row-y: 0.125rem;
+}
+
+[data-density="high"] .axon-toolbar {
+  height: 1.5rem !important;
+}
+
+[data-density="high"] .axon-toolbar .text-\[15px\] {
+  font-size: 0.6875rem !important;
+}
+
+[data-density="high"] .axon-toolbar .text-\[10px\] {
+  font-size: 0.45rem !important;
+}
+
+[data-density="high"] .axon-toolbar button {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+
+[data-density="high"] .axon-toolbar button svg {
+  width: 0.65rem !important;
+  height: 0.65rem !important;
+}
+
+[data-density="high"] .lg\:hidden .axon-toolbar {
+  height: 1.75rem !important;
+}
+
+[data-density="high"] .lg\:hidden .axon-toolbar span {
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .lg\:hidden .axon-toolbar button {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+
+[data-density="high"] .lg\:hidden .axon-toolbar button svg {
+  width: 0.65rem !important;
+  height: 0.65rem !important;
+}
+
+[data-density="high"] .axon-mobile-nav-container {
+  padding: 0.1rem !important;
+}
+
+[data-density="high"] .axon-glass-shell {
+  border-width: 0.2px;
+}
+
+[data-density="high"] .axon-icon-btn {
+  width: 1.15rem !important;
+  height: 1.15rem !important;
+}
+
+[data-density="high"] .axon-icon-btn svg {
+  width: 0.6rem !important;
+  height: 0.6rem !important;
+}
+
+[data-density="high"] .ui-table-dense .ui-table-head {
+  padding-bottom: 0.075rem !important;
+}
+
+[data-density="high"] .ui-table-dense .ui-table-cell {
+  padding-top: 0.075rem;
+  padding-bottom: 0.075rem;
+}
+
+[data-density="high"] .JobRow td {
+  padding-top: 0.075rem !important;
+  padding-bottom: 0.075rem !important;
+}
+
+[data-density="high"] .StatsBar {
+  margin-bottom: 0.1rem !important;
+  padding: 0.1rem 0.25rem !important;
+  gap: 0.35rem !important;
+}
+
+[data-density="high"] .axon-sidebar-item {
+  padding-top: 0.075rem;
+  padding-bottom: 0.075rem;
+  border-radius: 2px !important;
+  margin-bottom: 1px !important;
+}
+
+[data-density="high"] .axon-sidebar-item .px-3 {
+  padding-left: 0.25rem !important;
+  padding-right: 0.25rem !important;
+}
+
+[data-density="high"] .axon-sidebar-item span {
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .axon-sidebar-item .text-\[11px\] {
+  font-size: 0.475rem !important;
+}
+
+[data-density="high"] .axon-sidebar-item .text-\[10px\] {
+  font-size: 0.425rem !important;
+}
+
+[data-density="high"] .axon-message-bubble {
+  padding: 0.2rem 0.35rem !important;
+  font-size: 0.525rem !important;
+  line-height: 1.05 !important;
+  border-radius: 3px !important;
+}
+
+[data-density="high"] .axon-message-container {
+  margin-top: 0.075rem !important;
+  gap: 0.1rem !important;
+  max-width: 99.8% !important;
+}
+
+[data-density="high"] .axon-message-container > div:first-child {
+  margin-bottom: 0.075rem !important;
+}
+
+[data-density="high"] .axon-input {
+  padding-top: 0.075rem !important;
+  padding-bottom: 0.075rem !important;
+  font-size: 0.525rem !important;
+  border-radius: 3px !important;
+}
+
+[data-density="high"] .axon-editor [data-slate-editor] {
+  font-size: 0.575rem !important;
+  line-height: 1.1 !important;
+}
+
+[data-density="high"] .axon-editor [data-slate-editor] p {
+  margin-bottom: 0.1rem !important;
+}
+
+[data-density="high"] h1 {
+  font-size: 0.9rem !important;
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.1rem !important;
+}
+[data-density="high"] h2 {
+  font-size: 0.8rem !important;
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.075rem !important;
+}
+[data-density="high"] h3 {
+  font-size: 0.75rem !important;
+  margin-top: 0.15rem !important;
+  margin-bottom: 0.05rem !important;
+}
+
+[data-density="high"] .axon-prompt-composer-container {
+  padding: 0.15rem 0.2rem !important;
+}
+
+[data-density="high"] .PromptInputTextarea {
+  min-height: 1.15rem !important;
+  font-size: 0.575rem !important;
+  line-height: 1.05 !important;
+}
+
+[data-density="high"] .PromptInputFooter {
+  margin-top: 0.075rem !important;
+}
+
+[data-density="high"] .PromptInputTools {
+  gap: 0.1rem !important;
+}
+
+[data-density="high"] .PromptInputButton {
+  width: 1.15rem !important;
+  height: 1.15rem !important;
+}
+
+[data-density="high"] .axon-terminal-container {
+  font-size: 0.45rem !important;
+}
+
+[data-density="high"] .axon-cortex-tab {
+  padding: 0.1rem 0.25rem !important;
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .axon-cortex-tab svg {
+  width: 0.6rem !important;
+  height: 0.6rem !important;
+}
+
+[data-density="high"] .axon-cortex-container {
+  padding: 0.25rem !important;
+}
+
+[data-density="high"] .axon-jobs-dashboard {
+  padding: 0.25rem !important;
+}
+
+[data-density="high"] .axon-jobs-dashboard .mb-6,
+[data-density="high"] .axon-jobs-dashboard .mb-3 {
+  margin-bottom: 0.1rem !important;
+}
+
+[data-density="high"] .axon-jobs-dashboard .py-3 {
+  padding-top: 0.1rem !important;
+  padding-bottom: 0.1rem !important;
+}
+
+[data-density="high"] .axon-tool-card {
+  margin-top: 0.075rem !important;
+}
+
+[data-density="high"] .axon-tool-header {
+  padding: 0.075rem 0.2rem !important;
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .axon-tool-content {
+  padding: 0.1rem 0.25rem !important;
+}
+
+[data-density="high"] .axon-tool-content pre {
+  max-height: 8rem !important;
+}
+
+[data-density="high"] .ConversationContent {
+  gap: 0.15rem !important;
+  padding: 0.15rem !important;
+}
+
+[data-density="high"] .ConversationContent > div {
+  margin-top: 0.075rem !important;
+}
+
+[data-density="high"] .axon-pane-handle {
+  width: 1rem !important;
+  padding-top: 0.1rem !important;
+}
+
+[data-density="high"] .axon-pane-handle span {
+  width: 0.85rem !important;
+  height: 0.85rem !important;
+}
+
+[data-density="high"] .axon-pane-handle svg {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+}
+
+[data-density="high"] .axon-sidebar-search-container {
+  padding: 0.1rem 0.25rem !important;
+}
+
+[data-density="high"] .axon-sidebar-search-input {
+  height: 1.15rem !important;
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .axon-sidebar-search-icon {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+  left: 0.25rem !important;
+}
+
+[data-density="high"] .axon-rail-item {
+  height: 1.15rem !important;
+  padding: 0 0.2rem !important;
+  font-size: 0.525rem !important;
+}
+
+[data-density="high"] .axon-rail-item svg {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+}
+
+[data-density="high"] pre,
+[data-density="high"] code {
+  font-size: 0.525rem !important;
+  line-height: 1.05 !important;
+  padding: 0.075rem 0.15rem !important;
+}

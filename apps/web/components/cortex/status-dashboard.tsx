@@ -9,11 +9,14 @@ import type { JobEntry, StatusResult } from '@/lib/result-types'
 // ── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_BADGE: Record<string, string> = {
-  running: 'bg-[rgba(56,189,248,0.15)] text-[#38bdf8] border border-[rgba(56,189,248,0.3)]',
+  running:
+    'bg-[var(--status-running-bg)] text-[var(--status-running)] border border-[var(--status-running-border)]',
   pending:
     'bg-[rgba(135,175,255,0.12)] text-[var(--axon-primary)] border border-[rgba(135,175,255,0.25)]',
-  completed: 'bg-[rgba(52,211,153,0.12)] text-[#34d399] border border-[rgba(52,211,153,0.25)]',
-  failed: 'bg-[rgba(251,113,133,0.12)] text-[#fb7185] border border-[rgba(251,113,133,0.25)]',
+  completed:
+    'bg-[var(--status-completed-bg)] text-[var(--status-completed)] border border-[var(--status-completed-border)]',
+  failed:
+    'bg-[var(--status-failed-bg)] text-[var(--status-failed)] border border-[var(--status-failed-border)]',
   canceled:
     'bg-[rgba(156,163,175,0.12)] text-[var(--text-dim)] border border-[rgba(156,163,175,0.2)]',
 }
@@ -90,7 +93,7 @@ function JobCard({ title, jobs, color }: { title: string; jobs: JobEntry[]; colo
           {jobs.length}
         </span>
         {runningCount > 0 && (
-          <span className="rounded-full bg-[rgba(56,189,248,0.12)] px-2 py-0.5 text-[10px] text-[#38bdf8]">
+          <span className="rounded-full bg-[var(--status-running-bg)] px-2 py-0.5 text-[10px] text-[var(--status-running)]">
             {runningCount} running
           </span>
         )}
@@ -136,8 +139,8 @@ function SummaryBar({ data }: { data: StatusResult }) {
         {
           label: 'Running',
           count: counts.running,
-          color: 'text-[#38bdf8]',
-          bg: 'bg-[rgba(56,189,248,0.1)]',
+          color: 'text-[var(--status-running)]',
+          bg: 'bg-[var(--status-running-bg)]',
         },
         {
           label: 'Pending',
@@ -148,14 +151,14 @@ function SummaryBar({ data }: { data: StatusResult }) {
         {
           label: 'Done',
           count: counts.completed,
-          color: 'text-[#34d399]',
-          bg: 'bg-[rgba(52,211,153,0.1)]',
+          color: 'text-[var(--status-completed)]',
+          bg: 'bg-[var(--status-completed-bg)]',
         },
         {
           label: 'Failed',
           count: counts.failed,
-          color: 'text-[#fb7185]',
-          bg: 'bg-[rgba(251,113,133,0.1)]',
+          color: 'text-[var(--status-failed)]',
+          bg: 'bg-[var(--status-failed-bg)]',
         },
       ].map(({ label, count, color, bg }) => (
         <div key={label} className={`flex items-center gap-2 rounded-lg px-3 py-1.5 ${bg}`}>
@@ -255,7 +258,7 @@ export function StatusDashboard() {
       )}
 
       {!loading && error && (
-        <div className="flex items-start gap-3 rounded-xl border border-[rgba(251,113,133,0.3)] bg-[rgba(251,113,133,0.08)] px-4 py-3 text-[12px] text-[#fb7185]">
+        <div className="flex items-start gap-3 rounded-xl border border-[var(--status-failed-border)] bg-[var(--status-failed-bg)] px-4 py-3 text-[12px] text-[var(--status-failed)]">
           <AlertCircle className="mt-0.5 size-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -265,10 +268,18 @@ export function StatusDashboard() {
         <>
           <SummaryBar data={data} />
           <div className="space-y-3">
-            <JobCard title="Crawl" jobs={data.local_crawl_jobs ?? []} color="bg-[#38bdf8]" />
+            <JobCard
+              title="Crawl"
+              jobs={data.local_crawl_jobs ?? []}
+              color="bg-[var(--status-running)]"
+            />
             <JobCard title="Extract" jobs={data.local_extract_jobs ?? []} color="bg-[#a78bfa]" />
             <JobCard title="Embed" jobs={data.local_embed_jobs ?? []} color="bg-[#fbbf24]" />
-            <JobCard title="Ingest" jobs={data.local_ingest_jobs ?? []} color="bg-[#fb7185]" />
+            <JobCard
+              title="Ingest"
+              jobs={data.local_ingest_jobs ?? []}
+              color="bg-[var(--status-failed)]"
+            />
           </div>
         </>
       )}
