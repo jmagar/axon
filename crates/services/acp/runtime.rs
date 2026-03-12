@@ -92,9 +92,9 @@ pub(super) async fn establish_acp_session(
         },
     );
 
-    let spawned = spawn_adapter_with_io(adapter, tx)?;
+    let spawned = spawn_adapter_with_io(adapter.clone(), tx)?;
     let (conn, runtime_state, exit_rx) =
-        initialize_connection(spawned, initialize, tx, permission_responders).await?;
+        initialize_connection(spawned, &adapter, initialize, tx, permission_responders).await?;
     let (session_id, initial_config_options) = setup_session(&conn, session_setup, tx).await?;
     let latest_config_options = apply_config_and_model(
         &conn,

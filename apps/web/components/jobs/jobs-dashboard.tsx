@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertCircle, Loader2, RefreshCw, Zap } from 'lucide-react'
+import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Job, JobStatus, JobType, StatusCounts } from '@/app/api/jobs/route'
 import { apiFetch } from '@/lib/api-fetch'

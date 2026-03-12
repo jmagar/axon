@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Noto_Sans, Noto_Sans_Mono } from 'next/font/google'
+import type React from 'react'
 import { ServiceWorkerRegistration } from '@/components/service-worker'
 import { Providers } from './providers'
 import './globals.css'

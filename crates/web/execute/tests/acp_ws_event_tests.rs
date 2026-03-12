@@ -27,8 +27,7 @@ fn acp_session_update_maps_to_stream_friendly_output_json_payload() {
             tool_content: None,
             tool_input: None,
             tool_locations: None,
-        }
-
+        },
     ));
 
     let event = WsEventV2::CommandOutputJson {
@@ -149,8 +148,7 @@ fn acp_unknown_session_update_serializes_as_unknown_wire_type_in_ws_event() {
             tool_content: None,
             tool_input: None,
             tool_locations: None,
-        }
-,
+        },
     ));
 
     let event = WsEventV2::CommandOutputJson {

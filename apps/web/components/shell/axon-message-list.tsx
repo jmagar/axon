@@ -44,6 +44,24 @@ function ToolCallCard({ tool, isMobile }: { tool: PulseToolUse; isMobile: boolea
               </pre>
             </div>
           ) : null}
+          {tool.locations?.length ? (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
+                Locations
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {tool.locations.map((loc) => (
+                  <span
+                    key={loc}
+                    className="inline-flex items-center gap-1 rounded bg-[var(--axon-primary-bg)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--axon-primary-strong)] border border-[rgba(135,175,255,0.08)]"
+                  >
+                    <FileCode2 className="size-3" />
+                    {loc}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {tool.content ? (
             <div>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
@@ -279,6 +297,33 @@ export const AxonMessageList = memo(function AxonMessageList({
               </div>
             ) : null}
             <ThinkingSection message={message} />
+            {message.usage && message.role === 'assistant' && (
+              <div className="mt-3 flex items-center gap-4 border-t border-[var(--border-subtle)] pt-2.5 text-[10px] tabular-nums text-[var(--text-dim)]">
+                <div className="flex items-center gap-1.5" title="Input tokens">
+                  <span className="font-bold uppercase tracking-widest opacity-60">In</span>
+                  <span className="text-[var(--text-secondary)] font-medium">
+                    {message.usage.input_tokens.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5" title="Output tokens">
+                  <span className="font-bold uppercase tracking-widest opacity-60">Out</span>
+                  <span className="text-[var(--text-secondary)] font-medium">
+                    {message.usage.output_tokens.toLocaleString()}
+                  </span>
+                </div>
+                {message.usage.cache_read_input_tokens ? (
+                  <div
+                    className="flex items-center gap-1.5 text-[var(--axon-success)]"
+                    title="Cached input tokens"
+                  >
+                    <span className="font-bold uppercase tracking-widest opacity-60">Hit</span>
+                    <span className="font-medium">
+                      {message.usage.cache_read_input_tokens.toLocaleString()}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            )}
             {message.files?.length ? (
               <QueueItemAttachment className="mt-3 gap-1.5">
                 {message.files.map((file) => (

@@ -224,7 +224,10 @@ fn extract_tool_details(update: &SessionUpdate) -> (Option<String>, Option<Strin
         ),
         SessionUpdate::ToolCallUpdate(tool_call_update) => {
             let title = tool_call_update.fields.title.clone();
-            let status = tool_call_update.fields.status.map(|s| map_tool_status(s).to_string());
+            let status = tool_call_update
+                .fields
+                .status
+                .map(|s| map_tool_status(s).to_string());
             (title, status)
         }
         _ => (None, None),
@@ -263,31 +266,23 @@ fn map_plan_status(status: agent_client_protocol::PlanEntryStatus) -> &'static s
 
 fn extract_tool_locations(update: &SessionUpdate) -> Option<Vec<String>> {
     match update {
-        SessionUpdate::ToolCall(tc) => {
-            let locations: Vec<String> = tc
-                .locations
+        SessionUpdate::ToolCall(tc) => Some(
+            tc.locations
                 .iter()
-                .map(|l| l.path.to_string_lossy().into_owned())
-                .collect();
-            if locations.is_empty() {
-                None
-            } else {
-                Some(locations)
-            }
-        }
-        SessionUpdate::ToolCallUpdate(tcu) => {
-            tcu.fields.locations.as_ref().and_then(|locs| {
-                let locations: Vec<String> = locs
-                    .iter()
-                    .map(|l| l.path.to_string_lossy().into_owned())
-                    .collect();
-                if locations.is_empty() {
-                    None
-                } else {
-                    Some(locations)
-                }
+                .map(|l| l.path.to_string_lossy().to_string())
+                .collect::<Vec<String>>(),
+        )
+        .filter(|v| !v.is_empty()),
+        SessionUpdate::ToolCallUpdate(tcu) => tcu
+            .fields
+            .locations
+            .as_ref()
+            .map(|locs| {
+                locs.iter()
+                    .map(|l| l.path.to_string_lossy().to_string())
+                    .collect::<Vec<String>>()
             })
-        }
+            .filter(|v| !v.is_empty()),
         _ => None,
     }
 }

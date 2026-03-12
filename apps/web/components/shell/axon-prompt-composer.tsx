@@ -11,7 +11,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { type ChangeEvent, useRef, useState } from 'react'
+import React, { type ChangeEvent, useRef, useState } from 'react'
 import {
   PromptInput,
   PromptInputAttachments,
@@ -92,7 +92,7 @@ function AxonAttachmentPill({ file, onRemove }: { file: PromptInputFile; onRemov
   )
 }
 
-export function AxonPromptComposer({
+export const AxonPromptComposer = React.memo(function AxonPromptComposer({
   files,
   onFilesChange,
   onSubmit,
@@ -209,7 +209,7 @@ export function AxonPromptComposer({
         <PromptInputBody className="items-start gap-2">
           <PromptInputTextarea
             className={`axon-input ${compact ? 'min-h-16 max-h-56' : 'min-h-20 max-h-72'} rounded-[14px] px-3 py-2.5 leading-6`}
-            placeholder="Describe what you want to build, edit, or debug..."
+            placeholder="Describe what you want to build, edit, or debug…"
           />
         </PromptInputBody>
 
@@ -465,4 +465,4 @@ export function AxonPromptComposer({
       </div>
     </PromptInput>
   )
-}
+})

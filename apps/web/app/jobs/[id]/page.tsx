@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import type React from 'react'
 import { use, useCallback, useEffect, useState } from 'react'
 import type { JobDetail } from '@/app/api/jobs/[id]/route'
 import { useAdaptivePolling } from '@/hooks/use-adaptive-polling'

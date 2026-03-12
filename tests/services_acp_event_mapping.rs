@@ -206,7 +206,7 @@ fn unknown_session_update_produces_unknown_wire_type_not_status() {
 
     let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
         session_id: "session-unknown-test".to_string(),
-        kind: AcpSessionUpdateKind::Plan,
+        kind: AcpSessionUpdateKind::Unknown,
         text_delta: None,
         tool_call_id: None,
         tool_name: None,
@@ -215,7 +215,6 @@ fn unknown_session_update_produces_unknown_wire_type_not_status() {
         tool_input: None,
         tool_locations: None,
     });
-
 
     let json = serde_json::to_value(&event).unwrap();
     assert_eq!(
@@ -243,7 +242,6 @@ fn plan_session_update_falls_through_as_status_wire_type() {
         tool_input: None,
         tool_locations: None,
     });
-
 
     let json = serde_json::to_value(&event).unwrap();
     // Plan falls through Display to "status" — distinct from Unknown's "unknown".
