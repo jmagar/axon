@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
 import type { SavedDocMeta } from '@/lib/pulse/storage'
 import { savePulseDoc, updatePulseDoc } from '@/lib/pulse/storage'
-import { logError } from '@/lib/server/logger'
+import { logError, logInfo } from '@/lib/server/logger'
 import { enforceRateLimit } from '@/lib/server/rate-limit'
 
 /**
@@ -54,14 +54,27 @@ const SaveRequestSchema = z.object({
   updatedAt: z.string().optional(),
 })
 
+const ensuredCollections = new Set<string>()
+
+/** @internal Exposed for testing only. */
+export function resetEnsuredCollections() {
+  ensuredCollections.clear()
+}
+
 /** GET first; only PUT on 404 — safe to call on existing collections. */
 async function ensureCollection(
   qdrantUrl: string,
   collection: string,
   vectorSize: number,
 ): Promise<void> {
+  const cacheKey = `${qdrantUrl}|${collection}|${vectorSize}`
+  if (ensuredCollections.has(cacheKey)) return
+
   const getRes = await fetch(`${qdrantUrl}/collections/${encodeURIComponent(collection)}`)
-  if (getRes.ok) return
+  if (getRes.ok) {
+    ensuredCollections.add(cacheKey)
+    return
+  }
   if (getRes.status !== 404) {
     throw new Error(`Qdrant collection check failed: ${getRes.status}`)
   }
@@ -75,6 +88,7 @@ async function ensureCollection(
       `Qdrant collection create failed: ${createRes.status} ${await createRes.text().catch(() => '')}`,
     )
   }
+  ensuredCollections.add(cacheKey)
 }
 
 function chunkText(text: string, size: number, overlap: number): string[] {
@@ -128,83 +142,98 @@ export async function POST(request: Request) {
     const { filename } = meta
 
     if (embed) {
-      const isLocalDev =
-        process.env.NODE_ENV === 'development' || process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
-      const teiUrl = process.env.TEI_URL
-      const qdrantUrl = isLocalDev
-        ? resolveLocalUrl(process.env.QDRANT_URL)
-        : process.env.QDRANT_URL
-      const collection = collections?.[0] ?? process.env.AXON_COLLECTION ?? 'cortex'
+      after(async () => {
+        const start = Date.now()
+        const isLocalDev =
+          process.env.NODE_ENV === 'development' ||
+          process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
+        const teiUrl = process.env.TEI_URL
+        const qdrantUrl = isLocalDev
+          ? resolveLocalUrl(process.env.QDRANT_URL)
+          : process.env.QDRANT_URL
+        const collection = collections?.[0] ?? process.env.AXON_COLLECTION ?? 'cortex'
 
-      if (teiUrl && qdrantUrl && markdown.trim()) {
-        try {
-          // Pre-delete existing vectors before re-embedding to prevent accumulation.
-          // ?wait=true ensures delete is applied before the upsert begins.
-          if (incomingFilename) {
-            await fetch(
-              `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
-              {
+        if (teiUrl && qdrantUrl && markdown.trim()) {
+          try {
+            // Run pre-delete and TEI embedding in parallel — both are independent.
+            // Pre-delete removes existing vectors; ?wait=true ensures Qdrant applies
+            // the delete before we upsert (the await on Promise.all handles ordering).
+            const chunks = chunkText(markdown, 2000, 200)
+            const [, embedResponse] = await Promise.all([
+              incomingFilename
+                ? fetch(
+                    `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
+                    {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        filter: {
+                          must: [{ key: 'url', match: { value: `pulse://${filename}` } }],
+                        },
+                      }),
+                    },
+                  ).catch((err) => console.error('[Pulse] Pre-delete failed (continuing):', err))
+                : Promise.resolve(),
+              fetch(`${teiUrl}/embed`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  filter: { must: [{ key: 'url', match: { value: `pulse://${filename}` } }] },
-                }),
-              },
-            ).catch((err) => console.error('[Pulse] Pre-delete failed (continuing):', err))
-          }
+                body: JSON.stringify({ inputs: chunks }),
+              }),
+            ])
 
-          const chunks = chunkText(markdown, 2000, 200)
-          const embedResponse = await fetch(`${teiUrl}/embed`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inputs: chunks }),
-          })
+            if (!embedResponse.ok) {
+              const body = await embedResponse.text().catch(() => '')
+              logError('api.pulse.save.tei_embed_failed', { status: embedResponse.status, body })
+            } else {
+              const vectors = (await embedResponse.json()) as number[][]
+              const vectorSize = vectors[0]?.length
+              if (!vectorSize) {
+                throw new Error('[Pulse] Embed response returned no vectors')
+              }
+              await ensureCollection(qdrantUrl, collection, vectorSize)
+              const points = vectors.map((vector, i) => ({
+                id: randomUUID(),
+                vector,
+                payload: {
+                  text: chunks[i],
+                  url: `pulse://${filename}`,
+                  title,
+                  doc_type: 'pulse_note',
+                  chunk_index: i,
+                },
+              }))
 
-          if (!embedResponse.ok) {
-            const body = await embedResponse.text().catch(() => '')
-            logError('api.pulse.save.tei_embed_failed', { status: embedResponse.status, body })
-          } else {
-            const vectors = (await embedResponse.json()) as number[][]
-            const vectorSize = vectors[0]?.length
-            if (!vectorSize) {
-              throw new Error('[Pulse] Embed response returned no vectors')
+              const qdrantRes = await fetch(
+                `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points?wait=true`,
+                {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ points }),
+                },
+              )
+              if (!qdrantRes.ok) {
+                logError('api.pulse.save.qdrant_upsert_failed', {
+                  collection,
+                  filename,
+                  status: qdrantRes.status,
+                  body: await qdrantRes.text().catch(() => ''),
+                })
+              } else {
+                const elapsed = Date.now() - start
+                logInfo('api.pulse.save.embedded', {
+                  filename,
+                  chunks: chunks.length,
+                  elapsedMs: elapsed,
+                })
+              }
             }
-            await ensureCollection(qdrantUrl, collection, vectorSize)
-            const points = vectors.map((vector, i) => ({
-              id: randomUUID(),
-              vector,
-              payload: {
-                text: chunks[i],
-                url: `pulse://${filename}`,
-                title,
-                doc_type: 'pulse_note',
-                chunk_index: i,
-              },
-            }))
-
-            const qdrantRes = await fetch(
-              `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points?wait=true`,
-              {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ points }),
-              },
-            )
-            if (!qdrantRes.ok) {
-              logError('api.pulse.save.qdrant_upsert_failed', {
-                collection,
-                filename,
-                status: qdrantRes.status,
-                body: await qdrantRes.text().catch(() => ''),
-              })
-            }
+          } catch (err) {
+            logError('api.pulse.save.embed_failed', {
+              message: err instanceof Error ? err.message : String(err),
+            })
           }
-        } catch (err) {
-          logError('api.pulse.save.embed_failed', {
-            message: err instanceof Error ? err.message : String(err),
-          })
         }
-      }
+      })
     }
 
     return NextResponse.json({

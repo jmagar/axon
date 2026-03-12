@@ -99,7 +99,10 @@ const ACP_ADAPTER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// directly on the Axon multi-thread runtime.  This helper encapsulates that
 /// boilerplate once so `start_prompt_turn` and `start_session_probe` do not
 /// duplicate the identical setup.
-async fn run_acp_event_loop<F, Fut>(fut: F) -> Result<(), Box<dyn std::error::Error>>
+async fn run_acp_event_loop<F, Fut>(
+    timeout: std::time::Duration,
+    fut: F,
+) -> Result<(), Box<dyn std::error::Error>>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = Result<(), String>>,
@@ -111,9 +114,12 @@ where
             .map_err(|err| format!("failed to create ACP tokio runtime: {err}"))?;
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async {
-            match tokio::time::timeout(ACP_ADAPTER_TIMEOUT, fut()).await {
+            match tokio::time::timeout(timeout, fut()).await {
                 Ok(result) => result,
-                Err(_) => Err("ACP adapter timed out after 5 minutes".into()),
+                Err(_) => Err(format!(
+                    "ACP adapter timed out after {} seconds",
+                    timeout.as_secs()
+                )),
             }
         })
     })
@@ -289,9 +295,20 @@ impl AcpClientScaffold {
 
     pub fn prepare_initialize(&self) -> Result<InitializeRequest, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
-        Ok(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
+        let mut req = InitializeRequest::new(ProtocolVersion::V1).client_info(
             agent_client_protocol::Implementation::new("axon", env!("CARGO_PKG_VERSION")),
-        ))
+        );
+
+        let mut caps = agent_client_protocol::ClientCapabilities::default();
+        if self.adapter.enable_fs {
+            caps.fs = agent_client_protocol::FileSystemCapabilities::new()
+                .read_text_file(true)
+                .write_text_file(true);
+        }
+        caps.terminal = self.adapter.enable_terminal;
+        req.client_capabilities = caps;
+
+        Ok(req)
     }
 
     pub fn prepare_session_setup(
@@ -337,10 +354,16 @@ impl AcpClientScaffold {
         let adapter = self.adapter.clone();
         let req_owned = req.clone();
 
+        let timeout = self
+            .adapter
+            .adapter_timeout_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(ACP_ADAPTER_TIMEOUT);
+
         // ACP SDK futures are !Send (uses ?Send traits) — delegate to the shared
         // `run_acp_event_loop` helper which provides a dedicated `current_thread`
-        // runtime + LocalSet with a 5-minute timeout.
-        run_acp_event_loop(move || {
+        // runtime + LocalSet with a configurable timeout.
+        run_acp_event_loop(timeout, move || {
             run_prompt_turn(
                 adapter,
                 initialize,
@@ -376,7 +399,13 @@ impl AcpClientScaffold {
         let adapter = self.adapter.clone();
         let req_owned = req.clone();
 
-        run_acp_event_loop(move || {
+        let timeout = self
+            .adapter
+            .adapter_timeout_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(ACP_ADAPTER_TIMEOUT);
+
+        run_acp_event_loop(timeout, move || {
             run_session_probe(
                 adapter,
                 initialize,

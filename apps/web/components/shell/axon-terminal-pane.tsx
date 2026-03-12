@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { TerminalHandle } from '@/components/terminal/terminal-emulator'
 import { TerminalEmulatorWrapper } from '@/components/terminal/terminal-emulator-wrapper'
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar'
 import { useShellSession } from '@/hooks/use-shell-session'
 
-export function AxonTerminalPane() {
+export const AxonTerminalPane = memo(function AxonTerminalPane() {
   const terminalRef = useRef<TerminalHandle | null>(null)
   const [searchVisible, setSearchVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -61,7 +61,7 @@ export function AxonTerminalPane() {
                 setSearchQuery(event.target.value)
                 if (event.target.value) terminalRef.current?.search(event.target.value)
               }}
-              placeholder="Search..."
+              placeholder="Search…"
               className="w-40 bg-transparent font-mono text-xs text-[var(--text-primary)] outline-none"
               aria-label="Terminal search"
             />
@@ -89,4 +89,4 @@ export function AxonTerminalPane() {
       </div>
     </div>
   )
-}
+})

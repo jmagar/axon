@@ -1,7 +1,7 @@
 //! ACP preflight checks and repairs (symlink fixes, etc.).
 
-use std::path::Path;
 use super::config;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SymlinkRepairStats {

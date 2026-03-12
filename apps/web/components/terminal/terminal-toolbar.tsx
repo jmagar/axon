@@ -1,6 +1,7 @@
 'use client'
 
 import { Search } from 'lucide-react'
+import type React from 'react'
 import type { WsStatus } from '@/lib/ws-protocol'
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 import { SiAnthropic, SiGoogle } from '@icons-pack/react-simple-icons'
 import { ChevronDown, PanelLeft, Plus, Search } from 'lucide-react'
+import React from 'react'
 import { SiOpenai } from 'react-icons/si'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,7 +45,7 @@ function railItemClass(isActive: boolean) {
     : 'border-transparent bg-[rgba(6,11,24,0.34)] text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.24)] hover:bg-[rgba(175,215,255,0.08)] hover:text-[var(--text-primary)]'
 }
 
-function RailContent({
+const RailContent = React.memo(function RailContent({
   mode,
   sessions,
   activeSessionId,
@@ -162,7 +163,7 @@ function RailContent({
       : fileEntries.filter((entry) => entry.path.toLowerCase().includes(normalizedQuery))
 
     if (fileLoading) {
-      return <div className="px-3 py-4 text-xs text-[var(--text-dim)]">Loading workspace...</div>
+      return <div className="px-3 py-4 text-xs text-[var(--text-dim)]">Loading workspace…</div>
     }
 
     return (
@@ -252,9 +253,9 @@ function RailContent({
   }
 
   return null
-}
+})
 
-export function AxonSidebar({
+export const AxonSidebar = React.memo(function AxonSidebar({
   variant,
   sessions,
   railMode,
@@ -438,10 +439,10 @@ export function AxonSidebar({
             onChange={(event) => onRailQueryChange(event.target.value)}
             placeholder={
               railMode === 'sessions'
-                ? 'Search sessions...'
+                ? 'Search sessions…'
                 : railMode === 'assistant'
-                  ? 'Search assistant chats...'
-                  : 'Search files...'
+                  ? 'Search assistant chats…'
+                  : 'Search files…'
             }
             aria-label={`Search ${activeMode.label.toLowerCase()}`}
             className={`axon-input ${searchH} w-full rounded-md pl-7 pr-2 font-sans`}
@@ -469,4 +470,4 @@ export function AxonSidebar({
       </ScrollArea>
     </div>
   )
-}
+})

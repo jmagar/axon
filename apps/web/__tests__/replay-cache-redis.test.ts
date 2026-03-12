@@ -24,22 +24,30 @@ describe('replay-cache redis persistence', () => {
   it('debounces redis writes and persists latest payload', async () => {
     const module = await import('@/app/api/pulse/chat/replay-cache')
 
-    module.upsertReplayEntry('k1', [{ type: 'status', phase: 'started', event_id: '1' }], 10)
-    module.upsertReplayEntry('k1', [{ type: 'status', phase: 'thinking', event_id: '2' }], 11)
+    module.upsertReplayEntry(
+      'k1',
+      [{ type: 'status', phase: 'started', event_id: '1', protocol_version: 1 }],
+      10,
+    )
+    module.upsertReplayEntry(
+      'k1',
+      [{ type: 'status', phase: 'thinking', event_id: '2', protocol_version: 1 }],
+      11,
+    )
 
     vi.advanceTimersByTime(200)
     await Promise.resolve()
 
     expect(redisSetMock).toHaveBeenCalledTimes(1)
-    const [key, value] = redisSetMock.mock.calls[0] as [string, string]
+    const [key, value] = redisSetMock.mock.calls[0] as unknown as [string, string]
     expect(key).toContain('axon:web:replay:k1')
     expect(value).toContain('thinking')
   })
 
   it('loads replay entry from redis when memory miss occurs', async () => {
-    redisGetMock.mockResolvedValueOnce(
+    vi.mocked(redisGetMock).mockImplementationOnce(async () =>
       JSON.stringify({
-        events: [{ type: 'status', phase: 'started', event_id: 'x' }],
+        events: [{ type: 'status', phase: 'started', event_id: 'x', protocol_version: 1 }],
         sizeBytes: 12,
         updatedAt: Date.now(),
       }),

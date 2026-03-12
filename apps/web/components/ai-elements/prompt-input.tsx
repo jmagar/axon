@@ -193,13 +193,14 @@ export function PromptInputSubmit({
   return (
     <Button
       className={cn(
-        'bg-[var(--axon-primary)] text-[#04111f] hover:bg-[var(--axon-primary-strong)] transition-all duration-200',
+        'bg-[var(--axon-primary)] text-[#04111f] hover:bg-[var(--axon-primary-strong)] transition-colors duration-200',
         shouldPulse && 'animate-submit-ready',
         className,
       )}
       disabled={disabled ?? (!text.trim() && !hasFiles)}
       size="icon"
       type="submit"
+      aria-label="Send message"
       {...props}
     >
       {children ?? <ArrowUpIcon className="size-4" />}

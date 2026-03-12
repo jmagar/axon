@@ -6,11 +6,7 @@ use axon::crates::services::types::{AcpAdapterCommand, AcpPromptTurnRequest};
 use std::path::Path;
 
 fn test_scaffold() -> AcpClientScaffold {
-    AcpClientScaffold::new(AcpAdapterCommand {
-        program: "cat".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    })
+    AcpClientScaffold::new(AcpAdapterCommand::new("cat", vec!["--stdio".to_string()]))
 }
 
 #[test]
@@ -24,11 +20,7 @@ fn prepare_initialize_builds_latest_protocol_request() {
 
 #[test]
 fn prepare_initialize_fails_for_invalid_adapter() {
-    let scaffold = AcpClientScaffold::new(AcpAdapterCommand {
-        program: "   ".to_string(),
-        args: vec![],
-        cwd: None,
-    });
+    let scaffold = AcpClientScaffold::new(AcpAdapterCommand::new("   ", vec![]));
     let err = scaffold
         .prepare_initialize()
         .expect_err("invalid adapter should fail");
@@ -146,11 +138,7 @@ fn validate_session_cwd_rejects_relative_path() {
 
 #[test]
 fn prepare_initialize_rejects_empty_adapter_program() {
-    let scaffold = AcpClientScaffold::new(AcpAdapterCommand {
-        program: String::new(),
-        args: vec![],
-        cwd: None,
-    });
+    let scaffold = AcpClientScaffold::new(AcpAdapterCommand::new("", vec![]));
     let err = scaffold
         .prepare_initialize()
         .expect_err("empty adapter program should fail at prepare_initialize");
@@ -165,11 +153,8 @@ fn prepare_session_setup_rejects_empty_adapter_program() {
     // Adapter validation is enforced by prepare_initialize, which always
     // precedes prepare_session_setup in the real flow.  Verify that calling
     // prepare_initialize on a whitespace-only program triggers that rejection.
-    let scaffold = AcpClientScaffold::new(AcpAdapterCommand {
-        program: "  ".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    });
+    let scaffold =
+        AcpClientScaffold::new(AcpAdapterCommand::new("  ", vec!["--stdio".to_string()]));
     let err = scaffold
         .prepare_initialize()
         .expect_err("whitespace-only adapter program should fail at prepare_initialize");

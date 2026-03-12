@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { PromptInputFile, PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import type { AxonMessage } from '@/hooks/use-axon-session'
@@ -321,74 +321,125 @@ export function useAxonShellActions(params: Params) {
     [setToolPresets],
   )
 
-  const sidebarProps = {
-    sessions,
-    railMode,
-    onRailModeChange: setRailModeTracked,
-    railQuery,
-    onRailQueryChange: setRailQuery,
-    activeSessionId,
-    activeSessionRepo,
-    assistantSessions,
-    activeAssistantSessionId,
-    onSelectAssistantSession: handleSelectAssistantSession,
-    fileEntries: workspace.fileEntries,
-    fileLoading: workspace.fileLoading,
-    selectedFilePath: workspace.selectedFilePath,
-    onNewSession: handleDesktopNewSession,
-  } as const
+  const sidebarProps = useMemo(
+    () => ({
+      sessions,
+      railMode,
+      onRailModeChange: setRailModeTracked,
+      railQuery,
+      onRailQueryChange: setRailQuery,
+      activeSessionId,
+      activeSessionRepo,
+      assistantSessions,
+      activeAssistantSessionId,
+      onSelectAssistantSession: handleSelectAssistantSession,
+      fileEntries: workspace.fileEntries,
+      fileLoading: workspace.fileLoading,
+      selectedFilePath: workspace.selectedFilePath,
+      onNewSession: handleDesktopNewSession,
+    }),
+    [
+      sessions,
+      railMode,
+      setRailModeTracked,
+      railQuery,
+      setRailQuery,
+      activeSessionId,
+      activeSessionRepo,
+      assistantSessions,
+      activeAssistantSessionId,
+      handleSelectAssistantSession,
+      workspace.fileEntries,
+      workspace.fileLoading,
+      workspace.selectedFilePath,
+      handleDesktopNewSession,
+    ],
+  )
 
-  const composerProps = {
-    files: composerFiles,
-    onFilesChange: setComposerFiles,
-    onSubmit: handlePromptSubmit,
-    modelOptions,
-    permissionOptions,
-    pulseModel: pulseModel ?? 'sonnet',
-    pulsePermissionLevel: sessionMode,
-    onModelChange: (value: string) => setPulseModel(value),
-    onPermissionChange: (value: string) => {
-      setSessionMode(value)
-      if (value === 'plan' || value === 'accept-edits' || value === 'bypass-permissions') {
-        setPulsePermissionLevel(value)
-      }
-    },
-    toolsState: {
-      mcpServers: mcp.mcpServers,
-      enabledMcpServers: mcp.enabledMcpServers,
-      mcpStatusByServer: mcp.mcpStatusByServer,
-    },
-    onToggleMcpServer: mcp.toggleMcpServer,
-    mcpToolsByServer,
-    enabledMcpTools: effectiveEnabledMcpTools,
-    onEnableServerTools: handleEnableServerTools,
-    onDisableServerTools: handleDisableServerTools,
-    onToggleMcpTool: (toolName: string) => {
-      setEnabledMcpTools((current) => {
-        const knownTools = Object.values(mcpToolsByServer).flat()
-        const base = current ?? knownTools
-        return base.includes(toolName)
-          ? base.filter((name) => name !== toolName)
-          : [...base, toolName]
-      })
-    },
-    toolPresets: toolPresets.map((preset) => ({ id: preset.id, name: preset.name })),
-    onApplyToolPreset: handleApplyToolPreset,
-    onDeleteToolPreset: handleDeleteToolPreset,
-    onSaveToolPreset: handleSaveToolPreset,
-    pulseAgent: (pulseAgent ?? 'claude') as PulseAgent,
-    onAgentChange: (value: PulseAgent) => {
-      const fromAgent = pulseAgent ?? 'claude'
-      if (value !== fromAgent) {
-        const handoff = buildAgentHandoffContext(liveMessages, fromAgent, value)
-        setPendingHandoffContext(handoff || null)
-      }
-      setPulseAgent(value)
-      setPulseModel('default')
-    },
-    isStreaming,
-    connected,
-  } as const
+  const composerProps = useMemo(
+    () => ({
+      files: composerFiles,
+      onFilesChange: setComposerFiles,
+      onSubmit: handlePromptSubmit,
+      modelOptions,
+      permissionOptions,
+      pulseModel: pulseModel ?? 'sonnet',
+      pulsePermissionLevel: sessionMode,
+      onModelChange: (value: string) => setPulseModel(value),
+      onPermissionChange: (value: string) => {
+        setSessionMode(value)
+        if (value === 'plan' || value === 'accept-edits' || value === 'bypass-permissions') {
+          setPulsePermissionLevel(value)
+        }
+      },
+      toolsState: {
+        mcpServers: mcp.mcpServers,
+        enabledMcpServers: mcp.enabledMcpServers,
+        mcpStatusByServer: mcp.mcpStatusByServer,
+      },
+      onToggleMcpServer: mcp.toggleMcpServer,
+      mcpToolsByServer,
+      enabledMcpTools: effectiveEnabledMcpTools,
+      onEnableServerTools: handleEnableServerTools,
+      onDisableServerTools: handleDisableServerTools,
+      onToggleMcpTool: (toolName: string) => {
+        setEnabledMcpTools((current) => {
+          const knownTools = Object.values(mcpToolsByServer).flat()
+          const base = current ?? knownTools
+          return base.includes(toolName)
+            ? base.filter((name) => name !== toolName)
+            : [...base, toolName]
+        })
+      },
+      toolPresets: toolPresets.map((preset) => ({ id: preset.id, name: preset.name })),
+      onApplyToolPreset: handleApplyToolPreset,
+      onDeleteToolPreset: handleDeleteToolPreset,
+      onSaveToolPreset: handleSaveToolPreset,
+      pulseAgent: (pulseAgent ?? 'claude') as PulseAgent,
+      onAgentChange: (value: PulseAgent) => {
+        const fromAgent = pulseAgent ?? 'claude'
+        if (value !== fromAgent) {
+          const handoff = buildAgentHandoffContext(liveMessages, fromAgent, value)
+          setPendingHandoffContext(handoff || null)
+        }
+        setPulseAgent(value)
+        setPulseModel('default')
+      },
+      isStreaming,
+      connected,
+    }),
+    [
+      composerFiles,
+      setComposerFiles,
+      handlePromptSubmit,
+      modelOptions,
+      permissionOptions,
+      pulseModel,
+      sessionMode,
+      setPulseModel,
+      setSessionMode,
+      setPulsePermissionLevel,
+      mcp.mcpServers,
+      mcp.enabledMcpServers,
+      mcp.mcpStatusByServer,
+      mcp.toggleMcpServer,
+      mcpToolsByServer,
+      effectiveEnabledMcpTools,
+      handleEnableServerTools,
+      handleDisableServerTools,
+      setEnabledMcpTools,
+      toolPresets,
+      handleApplyToolPreset,
+      handleDeleteToolPreset,
+      handleSaveToolPreset,
+      pulseAgent,
+      liveMessages,
+      setPendingHandoffContext,
+      setPulseAgent,
+      isStreaming,
+      connected,
+    ],
+  )
 
   return {
     composerProps,

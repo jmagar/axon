@@ -57,6 +57,11 @@ impl AcpConnectionHandle {
         session_setup: AcpSessionSetupRequest,
         permission_responders: PermissionResponderMap,
     ) -> Self {
+        let timeout = adapter
+            .adapter_timeout_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(std::time::Duration::from_secs(3600)); // Default 1h for persistent
+
         let (tx, rx) = mpsc::channel(16);
         let join = tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -64,16 +69,28 @@ impl AcpConnectionHandle {
                 .build()
                 .expect("[acp_conn] failed to build tokio runtime");
             let local = tokio::task::LocalSet::new();
-            local.block_on(
-                &rt,
-                adapter_loop(
-                    adapter,
-                    initialize,
-                    session_setup,
-                    permission_responders,
-                    rx,
-                ),
-            );
+            local.block_on(&rt, async {
+                match tokio::time::timeout(
+                    timeout,
+                    adapter_loop(
+                        adapter,
+                        initialize,
+                        session_setup,
+                        permission_responders,
+                        rx,
+                    ),
+                )
+                .await
+                {
+                    Ok(_) => {}
+                    Err(_) => {
+                        log::warn!(
+                            "[acp_conn] adapter loop timed out after {} seconds",
+                            timeout.as_secs()
+                        );
+                    }
+                }
+            });
         });
         Self { tx, _join: join }
     }

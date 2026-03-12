@@ -32,9 +32,31 @@ pub(super) fn gemini_config_dir() -> Option<PathBuf> {
 /// FIX L-5: Uses the `toml` crate for proper TOML parsing instead of naive
 /// line-by-line scanning that could match commented-out or nested keys.
 pub(super) async fn read_codex_default_model() -> Option<String> {
-    let config_path = codex_config_dir()?.join("config.toml");
-    let content = tokio::fs::read_to_string(config_path).await.ok()?;
-    let value: toml::Value = content.parse().ok()?;
+    let config_dir = codex_config_dir()?;
+    let config_path = config_dir.join("config.toml");
+    if !config_path.exists() {
+        return None;
+    }
+    let content = match tokio::fs::read_to_string(&config_path).await {
+        Ok(c) => c,
+        Err(err) => {
+            crate::crates::core::logging::log_warn(&format!(
+                "ACP config: failed to read Codex config at {}: {err}",
+                config_path.display()
+            ));
+            return None;
+        }
+    };
+    let value: toml::Value = match content.parse() {
+        Ok(v) => v,
+        Err(err) => {
+            crate::crates::core::logging::log_warn(&format!(
+                "ACP config: malformed Codex TOML at {}: {err}",
+                config_path.display()
+            ));
+            return None;
+        }
+    };
     value
         .get("model")?
         .as_str()
@@ -43,9 +65,31 @@ pub(super) async fn read_codex_default_model() -> Option<String> {
 }
 
 pub(super) async fn read_gemini_default_model() -> Option<String> {
-    let config_path = gemini_config_dir()?.join("settings.json");
-    let raw = tokio::fs::read_to_string(config_path).await.ok()?;
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let config_dir = gemini_config_dir()?;
+    let config_path = config_dir.join("settings.json");
+    if !config_path.exists() {
+        return None;
+    }
+    let raw = match tokio::fs::read_to_string(&config_path).await {
+        Ok(r) => r,
+        Err(err) => {
+            crate::crates::core::logging::log_warn(&format!(
+                "ACP config: failed to read Gemini config at {}: {err}",
+                config_path.display()
+            ));
+            return None;
+        }
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(err) => {
+            crate::crates::core::logging::log_warn(&format!(
+                "ACP config: malformed Gemini JSON at {}: {err}",
+                config_path.display()
+            ));
+            return None;
+        }
+    };
     parsed
         .pointer("/model/name")
         .or_else(|| parsed.get("selectedModel"))

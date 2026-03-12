@@ -26,7 +26,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { Plate, usePlateEditor } from 'platejs/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import {
@@ -67,7 +67,7 @@ interface PulseEditorPaneProps {
   scrollStorageKey?: string
 }
 
-export function PulseEditorPane({
+export const PulseEditorPane = memo(function PulseEditorPane({
   markdown,
   onMarkdownChange,
   scrollStorageKey = 'axon.web.pulse.editor-scroll',
@@ -429,4 +429,4 @@ export function PulseEditorPane({
       </Plate>
     </DndProvider>
   )
-}
+})
