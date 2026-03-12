@@ -88,4 +88,76 @@ describe('parseCodexJsonl', () => {
     expect(result[1]?.role).toBe('assistant')
     expect(result[2]?.role).toBe('user')
   })
+
+  it('parses modern response_item message payloads', () => {
+    const raw = JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [
+          { type: 'output_text', text: 'Step one.' },
+          { type: 'output_text', text: 'Step two.' },
+        ],
+      },
+    })
+
+    const result = parseCodexJsonl(raw)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.role).toBe('assistant')
+    expect(result[0]?.content).toContain('Step one.')
+    expect(result[0]?.content).toContain('Step two.')
+  })
+
+  it('parses legacy root message records', () => {
+    const raw = JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'input_text', text: 'Legacy assistant output' }],
+    })
+
+    const result = parseCodexJsonl(raw)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ role: 'assistant', content: 'Legacy assistant output' })
+  })
+
+  it('captures function calls and outputs into toolUses/blocks', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Working on it...' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'exec_command',
+          arguments: '{"cmd":"pwd"}',
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call_1',
+          output: '/home/jmagar/workspace/axon_rust',
+        },
+      }),
+    ].join('\n')
+
+    const result = parseCodexJsonl(raw)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.toolUses?.[0]).toMatchObject({
+      name: 'exec_command',
+      toolCallId: 'call_1',
+      status: 'completed',
+    })
+    expect(result[0]?.toolUses?.[0]?.content).toContain('/home/jmagar/workspace/axon_rust')
+    expect(result[0]?.blocks?.some((b) => b.type === 'tool_use')).toBe(true)
+  })
 })

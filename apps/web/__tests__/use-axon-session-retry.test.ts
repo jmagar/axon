@@ -48,4 +48,24 @@ describe('fetchSessionWithRetry', () => {
     // A non-404 error must not trigger any retry — exactly one call.
     expect(fetch).toHaveBeenCalledTimes(1)
   })
+
+  it('adds assistant_mode=1 when assistant mode is requested', async () => {
+    const sessionData = {
+      project: 'assistant',
+      filename: 'session-abc',
+      sessionId: 'abc',
+      messages: [],
+    }
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => sessionData,
+    } as Response)
+
+    const result = await fetchSessionWithRetry('abc', () => false, { assistantMode: true })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/sessions/abc?assistant_mode=1')
+    expect(result).toEqual(sessionData)
+  })
 })

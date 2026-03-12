@@ -178,7 +178,7 @@ cd apps/web && pnpm dev
 just dev
 ```
 
-> **Note:** `axon-workers` publishes the MCP HTTP port and WS bridge; `axon-web` publishes the Next.js UI. Omitting them from the Compose command means those ports are never published.
+`just dev` now builds `axon` first and only starts services on successful build. It then runs serve/MCP/workers from `target/debug/axon` (instead of parallel `cargo run` invocations) plus the shell server and Next.js dev server.
 
 4. Verify health:
 
@@ -268,6 +268,7 @@ If deploying Next.js:
 - Ensure web runtime sees required env vars (`OPENAI_*`, `TEI_URL`, `QDRANT_URL` as needed).
 - Validate `/api/pulse/chat` and `/api/omnibox/files` responses.
 - MCP servers configured in Web UI are stored in `${AXON_DATA_DIR}/axon/mcp.json` (fallback: `~/.config/axon/mcp.json`) and consumed by Pulse ACP.
+- Agent selection is strict in Pulse ACP. Adapter failures for a selected agent surface as errors (no silent fallback to another agent).
 
 ## Source Map
 

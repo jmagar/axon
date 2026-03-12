@@ -1,6 +1,6 @@
 'use client'
 
-import { Network, Plus, Trash2 } from 'lucide-react'
+import { Network, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   configToForm,
@@ -13,6 +13,7 @@ import {
   type McpServerStatus,
 } from '@/app/settings/mcp/components'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { useAxonWs } from '@/hooks/use-axon-ws'
 import { apiFetch } from '@/lib/api-fetch'
 import { McpIcon } from './mcp-config'
 
@@ -83,8 +84,10 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 function McpPaneContent() {
+  const { send } = useAxonWs()
   const [config, setConfig] = useState<McpConfig>({ mcpServers: {} })
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<string | null>(null)
@@ -117,7 +120,7 @@ function McpPaneContent() {
             Object.keys(data.mcpServers).map((k) => [k, 'checking' as McpServerStatus]),
           ),
         )
-        void loadStatus(signal)
+        await loadStatus(signal)
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Failed to load')
@@ -127,6 +130,22 @@ function McpPaneContent() {
     },
     [loadStatus],
   )
+
+  const refreshConnections = useCallback(async () => {
+    setRefreshing(true)
+    // 1. Tell the backend to clear active connections
+    send({
+      type: 'execute',
+      mode: 'mcp_refresh',
+      input: '',
+      flags: {},
+    })
+
+    // 2. Refresh the status UI
+    const controller = new AbortController()
+    await loadConfig(controller.signal)
+    setRefreshing(false)
+  }, [send, loadConfig])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -185,7 +204,21 @@ function McpPaneContent() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="axon-toolbar flex shrink-0 items-center justify-between px-4 py-2.5">
-        {error ? <span className="text-xs text-red-400">{error}</span> : <span />}
+        <div className="flex items-center gap-2">
+          {error && <span className="text-xs text-red-400">{error}</span>}
+          {!error && (
+            <button
+              type="button"
+              disabled={refreshing || loading}
+              onClick={refreshConnections}
+              className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.1)] bg-[var(--surface-float)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:bg-[var(--surface-base)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              title="Refresh and reconnect MCP servers"
+            >
+              <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={openAdd}

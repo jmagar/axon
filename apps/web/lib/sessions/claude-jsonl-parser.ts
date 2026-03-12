@@ -1,6 +1,12 @@
+import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
+
 export interface ParsedMessage {
   role: 'user' | 'assistant'
   content: string
+  sourceMessageId?: string
+  blocks?: PulseMessageBlock[]
+  toolUses?: PulseToolUse[]
+  chainOfThought?: string[]
 }
 
 /** Maximum byte length of a single JSONL line we are willing to parse. */
@@ -40,19 +46,47 @@ export function parseClaudeJsonl(raw: string): ParsedMessage[] {
     const msgContent = msg?.content
 
     let text = ''
+    const blocks: PulseMessageBlock[] = []
+    const toolUses: PulseToolUse[] = []
+    const chainOfThought: string[] = []
     if (typeof msgContent === 'string') {
       text = msgContent
     } else if (Array.isArray(msgContent)) {
       for (const block of msgContent) {
-        const blockText = (block as Record<string, unknown>).text
+        const blockObj = block as Record<string, unknown>
+        const blockType = typeof blockObj.type === 'string' ? blockObj.type : ''
+        const blockText = blockObj.text
         if (typeof blockText === 'string') text += `${blockText}\n`
+        if (blockType === 'thinking' && typeof blockText === 'string' && blockText.trim()) {
+          chainOfThought.push(blockText)
+          blocks.push({ type: 'thinking', content: blockText })
+        }
+        if (blockType === 'tool_use') {
+          const name = typeof blockObj.name === 'string' ? blockObj.name : 'tool'
+          const toolCallId = typeof blockObj.id === 'string' ? blockObj.id : undefined
+          const input =
+            blockObj.input && typeof blockObj.input === 'object' && !Array.isArray(blockObj.input)
+              ? (blockObj.input as Record<string, unknown>)
+              : {}
+          toolUses.push({ name, input, toolCallId, status: 'running' })
+          blocks.push({ type: 'tool_use', name, input, toolCallId, status: 'running' })
+        }
       }
     } else {
       continue
     }
 
     if (text.trim()) {
-      messages.push({ role, content: text.trim() })
+      const sourceMessageId =
+        typeof val.id === 'string' ? val.id : typeof val.uuid === 'string' ? val.uuid : undefined
+      messages.push({
+        role,
+        content: text.trim(),
+        ...(sourceMessageId ? { sourceMessageId } : {}),
+        ...(blocks.length > 0 ? { blocks } : {}),
+        ...(toolUses.length > 0 ? { toolUses } : {}),
+        ...(chainOfThought.length > 0 ? { chainOfThought } : {}),
+      })
     }
   }
 

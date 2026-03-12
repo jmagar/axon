@@ -181,11 +181,30 @@ async function readFirstLine(filePath: string): Promise<string | null> {
   try {
     const fd = await fs.open(filePath, 'r')
     try {
-      const buf = Buffer.allocUnsafe(1024)
-      const { bytesRead } = await fd.read(buf, 0, 1024, 0)
-      const chunk = buf.subarray(0, bytesRead).toString('utf8')
-      const nl = chunk.indexOf('\n')
-      return nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim()
+      const chunkSize = 4096
+      const maxBytes = 1024 * 1024
+      const parts: string[] = []
+      let offset = 0
+
+      while (offset < maxBytes) {
+        const toRead = Math.min(chunkSize, maxBytes - offset)
+        const buf = Buffer.allocUnsafe(toRead)
+        const { bytesRead } = await fd.read(buf, 0, toRead, offset)
+        if (bytesRead <= 0) break
+
+        const chunk = buf.subarray(0, bytesRead).toString('utf8')
+        const nl = chunk.indexOf('\n')
+        if (nl !== -1) {
+          parts.push(chunk.slice(0, nl))
+          return parts.join('').trim()
+        }
+
+        parts.push(chunk)
+        offset += bytesRead
+      }
+
+      const line = parts.join('').trim()
+      return line.length > 0 ? line : null
     } finally {
       await fd.close()
     }

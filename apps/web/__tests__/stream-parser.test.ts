@@ -7,6 +7,7 @@ describe('createStreamParserState', () => {
     expect(state.blocks).toEqual([])
     expect(state.toolUseIdToIdx.size).toBe(0)
     expect(state.toolUses).toEqual([])
+    expect(state.nextToolSequence).toBe(1)
     expect(state.result).toBe('')
     expect(state.sessionId).toBeNull()
     expect(state.firstDeltaMs).toBeNull()

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { shouldSyncHistoricalMessages } from '@/components/reboot/live-message-sync'
+import {
+  mergeHistoricalMessages,
+  shouldSyncHistoricalMessages,
+} from '@/components/reboot/live-message-sync'
 
 describe('shouldSyncHistoricalMessages', () => {
   it('blocks sync while streaming/loading/error', () => {
@@ -96,5 +99,80 @@ describe('shouldSyncHistoricalMessages', () => {
         liveCount: 3,
       }),
     ).toBe(true)
+  })
+})
+
+describe('mergeHistoricalMessages', () => {
+  it('matches by sourceMessageId before index/content fallback', () => {
+    const historical = [
+      {
+        id: 'h1',
+        sourceMessageId: 'msg-2',
+        role: 'assistant' as const,
+        content: 'Second',
+        timestamp: 1,
+      },
+      {
+        id: 'h2',
+        sourceMessageId: 'msg-1',
+        role: 'assistant' as const,
+        content: 'First',
+        timestamp: 1,
+      },
+    ]
+    const live = [
+      {
+        id: 'l1',
+        sourceMessageId: 'msg-1',
+        role: 'assistant' as const,
+        content: 'First',
+        timestamp: 1,
+      },
+      {
+        id: 'l2',
+        sourceMessageId: 'msg-2',
+        role: 'assistant' as const,
+        content: 'Second',
+        timestamp: 1,
+        toolUses: [{ name: 'exec_command', input: {}, toolCallId: 't2' }],
+      },
+    ]
+
+    const merged = mergeHistoricalMessages(historical, live)
+    expect(merged[0]?.toolUses?.[0]?.toolCallId).toBe('t2')
+  })
+
+  it('preserves richer live metadata when text differs only by whitespace', () => {
+    const historical = [
+      { id: 'h1', role: 'assistant' as const, content: 'Hello world', timestamp: 1 },
+    ]
+    const live = [
+      {
+        id: 'l1',
+        role: 'assistant' as const,
+        content: 'Hello   world',
+        timestamp: 1,
+        toolUses: [{ name: 'exec_command', input: {}, toolCallId: 't1', status: 'completed' }],
+      },
+    ]
+
+    const merged = mergeHistoricalMessages(historical, live)
+    expect(merged[0]?.toolUses?.[0]?.name).toBe('exec_command')
+  })
+
+  it('does not attach metadata across role mismatch', () => {
+    const historical = [{ id: 'h1', role: 'assistant' as const, content: 'Done', timestamp: 1 }]
+    const live = [
+      {
+        id: 'l1',
+        role: 'user' as const,
+        content: 'Done',
+        timestamp: 1,
+        toolUses: [{ name: 'exec_command', input: {} }],
+      },
+    ]
+
+    const merged = mergeHistoricalMessages(historical, live)
+    expect(merged[0]?.toolUses).toBeUndefined()
   })
 })

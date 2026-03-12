@@ -17,6 +17,7 @@ import {
 import Link from 'next/link'
 import { use, useCallback, useEffect, useState } from 'react'
 import type { JobDetail } from '@/app/api/jobs/[id]/route'
+import { useAdaptivePolling } from '@/hooks/use-adaptive-polling'
 import { apiFetch } from '@/lib/api-fetch'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -344,12 +345,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     void fetchJob(true)
   }, [fetchJob])
 
-  // Poll every 3s while running
-  useEffect(() => {
-    if (!job || job.status !== 'running') return
-    const interval = setInterval(() => void fetchJob(false), 3000)
-    return () => clearInterval(interval)
-  }, [job, fetchJob])
+  useAdaptivePolling(() => fetchJob(false), 3000, {
+    enabled: job?.status === 'running',
+    pauseWhenHidden: true,
+    jitterRatio: 0.1,
+  })
 
   if (loading) {
     return (

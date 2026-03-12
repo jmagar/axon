@@ -13,29 +13,33 @@ import { Message, MessageAction, MessageActions } from '@/components/ai-elements
 import { QueueItemAttachment } from '@/components/ai-elements/queue'
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
 import { AssistantMessageBody } from '@/components/reboot/axon-editor-artifact'
+import { buildToolHeader, toolStatusText } from '@/components/reboot/tool-call-metadata'
 import type { AxonMessage } from '@/hooks/use-axon-session'
 import type { PulseToolUse } from '@/lib/pulse/types'
 
-function toolStatusText(status?: string): string {
-  if (status === 'completed' || status === 'success') return 'Completed'
-  if (status === 'failed' || status === 'error') return 'Error'
-  return 'Running'
-}
-
-function ToolCallCard({ tool }: { tool: PulseToolUse }) {
+function ToolCallCard({ tool, isMobile }: { tool: PulseToolUse; isMobile: boolean }) {
   const isDone = tool.status === 'completed' || tool.status === 'success'
+  const statusLabel = toolStatusText(tool.status)
+  const { title, description, badges, meta } = buildToolHeader(tool)
 
   return (
-    <Tool defaultOpen={!isDone} className="mt-2">
-      <ToolHeader title={tool.name} description={toolStatusText(tool.status)} />
+    <Tool defaultOpen={!isDone} className="mt-1.5">
+      <ToolHeader
+        title={title}
+        description={description}
+        status={statusLabel}
+        badges={badges}
+        meta={meta}
+        density={isMobile ? 'comfortable' : 'compact'}
+      />
       <ToolContent>
-        <div className="space-y-2 px-4 py-3">
+        <div className={isMobile ? 'space-y-2 px-3 py-2.5' : 'space-y-2 px-3 py-2'}>
           {tool.input && Object.keys(tool.input).length > 0 ? (
             <div>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
                 Parameters
               </p>
-              <pre className="overflow-x-auto rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">
+              <pre className="overflow-x-auto rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[10px] leading-relaxed text-[var(--text-secondary)] md:text-[11px]">
                 {JSON.stringify(tool.input, null, 2)}
               </pre>
             </div>
@@ -45,7 +49,7 @@ function ToolCallCard({ tool }: { tool: PulseToolUse }) {
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)]">
                 Output
               </p>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]">
+              <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[10px] leading-relaxed text-[var(--text-secondary)] md:max-h-52 md:text-[11px]">
                 {tool.content}
               </pre>
             </div>
@@ -73,7 +77,7 @@ function ThinkingSection({ message }: { message: AxonMessage }) {
   if (!hasChainOfThought) return null
   return (
     <ChainOfThought
-      className="mt-3 rounded-2xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] p-3"
+      className="mt-2.5 rounded-xl border border-[rgba(135,175,255,0.12)] bg-[rgba(7,12,26,0.6)] px-2.5 py-2"
       defaultOpen={false}
     >
       <ChainOfThoughtHeader>Chain of thought</ChainOfThoughtHeader>
@@ -132,9 +136,9 @@ function formatTimestamp(ts: number | string | undefined): string | null {
 }
 
 const AXON_USER_BUBBLE_CLASS =
-  'rounded-xl border border-[rgba(175,215,255,0.44)] bg-[linear-gradient(150deg,rgba(135,175,255,0.3),rgba(135,175,255,0.11))] px-4 py-3 shadow-[0_10px_30px_rgba(6,14,32,0.38)] text-[var(--text-primary)] text-sm'
+  'rounded-xl border border-[rgba(175,215,255,0.44)] bg-[linear-gradient(150deg,rgba(135,175,255,0.3),rgba(135,175,255,0.11))] shadow-[0_10px_30px_rgba(6,14,32,0.38)] text-[var(--text-primary)]'
 const AXON_ASSISTANT_BUBBLE_CLASS =
-  'rounded-xl border border-[rgba(255,135,175,0.28)] bg-[linear-gradient(150deg,rgba(255,135,175,0.13),rgba(10,18,35,0.62))] px-4 py-3 shadow-[0_10px_30px_rgba(3,7,18,0.34)] text-[var(--text-secondary)] text-sm'
+  'rounded-xl border border-[rgba(255,135,175,0.28)] bg-[linear-gradient(150deg,rgba(255,135,175,0.13),rgba(10,18,35,0.62))] shadow-[0_10px_30px_rgba(3,7,18,0.34)] text-[var(--text-secondary)]'
 
 export { AXON_ASSISTANT_BUBBLE_CLASS }
 
@@ -170,12 +174,13 @@ export const AxonMessageList = memo(function AxonMessageList({
   onRetryMessage?: (messageId: string) => void
 }) {
   const isMobile = variant === 'mobile'
-  const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[80%]'
-  const assistantMaxWidth = isMobile ? 'max-w-[96%]' : 'max-w-[88%]'
-  const bubbleRounding = isMobile ? 'rounded-[18px]' : 'rounded-[22px]'
+  const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[68ch]'
+  const assistantMaxWidth = isMobile ? 'max-w-[96%]' : 'max-w-[78ch]'
+  const bubbleRounding = isMobile ? 'rounded-[18px]' : 'rounded-[16px]'
+  const bubblePadding = isMobile ? 'px-4 py-3 text-sm' : 'px-3 py-2.5 text-[13px] leading-relaxed'
   const emptyStatePadding = isMobile ? 'py-16' : 'py-24'
   const botIconSize = isMobile ? 'size-8' : 'size-10'
-  const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[180px]'
+  const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[240px]'
 
   return (
     <ConversationContent key={sessionKey} className="animate-crossfade-in px-0 py-0">
@@ -222,8 +227,8 @@ export const AxonMessageList = memo(function AxonMessageList({
           <div
             className={
               message.role === 'assistant'
-                ? `${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
-                : `${AXON_USER_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`
+                ? `${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+                : `${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
             }
           >
             <div className="mb-1.5 flex items-center gap-2">
@@ -269,7 +274,7 @@ export const AxonMessageList = memo(function AxonMessageList({
             {message.toolUses?.length ? (
               <div className="space-y-2">
                 {message.toolUses.map((tool, i) => (
-                  <ToolCallCard key={tool.toolCallId ?? i} tool={tool} />
+                  <ToolCallCard key={tool.toolCallId ?? i} isMobile={isMobile} tool={tool} />
                 ))}
               </div>
             ) : null}
@@ -335,7 +340,9 @@ export const AxonMessageList = memo(function AxonMessageList({
       ))}
       {isTyping && !messages.some((m) => m.streaming) ? (
         <Message from="assistant" className={`animate-fade-in-up ${assistantMaxWidth}`}>
-          <div className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubbleRounding} space-y-1.5`}>
+          <div
+            className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`}
+          >
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--axon-secondary-strong)]">
                 <span className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)]" />

@@ -113,6 +113,11 @@ just dev
 
 Starts infra, all workers, the axum serve process, MCP server, shell server, and Next.js dev server. `Ctrl+C` cleanly stops all spawned processes.
 
+Current `just dev` behavior:
+- Runs `cargo build --locked --bin axon` first (hard gate).
+- If build fails, none of serve/MCP/workers/web processes are started.
+- On success, all Rust processes run from the built `target/debug/axon` binary to reduce Cargo lock contention and startup noise.
+
 ### Verify service reachability
 
 ```bash
@@ -247,6 +252,7 @@ Check:
 
 - `AXON_ACP_MAX_CONCURRENT_SESSIONS` — if at limit (default 8), sessions will be rejected until existing ones complete
 - Adapter resolution order is: `AXON_ACP_<AGENT>_ADAPTER_*` → `AXON_ACP_ADAPTER_*` → built-in defaults (`claude-agent-acp`, `codex-acp`, `gemini --experimental-acp`)
+- Selected agent is strict: failures surface as errors; Axon does not silently switch to another agent.
 - `AXON_ACP_AUTO_APPROVE` — if `false`, tool calls require explicit approval; unexpected for automated flows
 
 ## Job Queue Operations

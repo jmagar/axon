@@ -231,11 +231,15 @@ Dropdown button in toolbar area — switches between 4 modes:
 |------|------|---------|
 | `sessions` | `MessageSquareText` | Flat session list with unread indicators |
 | `files` | `FolderOpen` | FileTree component with count label |
-| `assistant` | `Bot` | Assistant-only chat session list (`/api/assistant/sessions`) |
+| `assistant` | `Bot` | Assistant-scoped view powered by the unified sessions endpoint (`/api/sessions/list?assistant_mode=true`) across Claude/Codex/Gemini stores |
 
 Assistant mode sends `assistant_mode: true` in the `pulse_chat` WS flags. The backend resolves
 assistant turns to `$AXON_DATA_DIR/axon/assistant` (fallback:
 `~/.local/share/axon/axon/assistant`) and scopes ACP connection reuse by agent+mode.
+
+Assistant session title/preview hygiene:
+- Sidebars prefer substantive user prompts (adaptive first-vs-latest heuristic).
+- `[System context ...][User message]` wrappers are stripped from both chat display and sidebar previews.
 
 ### Rail Item Active State
 
@@ -601,7 +605,7 @@ Shell-specific animation usage (keyframes defined in `globals.css`):
 | Split sessions into "active" / "recent" sections | Use flat list with `hasUnread` dot indicator |
 | Use `<button>` for non-interactive elements | Use `<div>` for display-only items (agents) |
 | Use `animate-pulse` for typing indicator | Use custom `animate-typing-dot` (800ms, scale transform) |
-| Use `Date.now()` for message IDs | Use `crypto.randomUUID()` |
+| Assume `crypto.randomUUID()` is always available | Use `createClientMessageId()` with secure-context fallback |
 | Duplicate mobile/desktop sidebar code | Use single component with `variant` prop |
 | Use inline `style` objects for terminal search | Use Tailwind classes |
 | Use `--axon-accent-*` or `--axon-text-*` tokens | Use v2 tokens (`--axon-primary`, `--text-primary`, etc.) |

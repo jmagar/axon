@@ -6,8 +6,7 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::crates::core::config::Config;
-use crate::crates::services::acp as acp_svc;
-use crate::crates::services::acp::AcpConnectionHandle;
+use crate::crates::services::acp::{self as acp_svc, AcpConnectionHandle};
 use crate::crates::services::events::{LogLevel, ServiceEvent};
 use crate::crates::services::types::AcpPromptTurnRequest;
 

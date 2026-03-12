@@ -73,7 +73,9 @@ export function useShellSession({ onOutput }: UseShellSessionOptions): UseShellS
     } else {
       base = `${proto}//${loc?.host ?? 'localhost'}`
     }
-    const token = process.env.NEXT_PUBLIC_SHELL_WS_TOKEN ?? process.env.NEXT_PUBLIC_AXON_API_TOKEN
+    const token =
+      process.env.NEXT_PUBLIC_SHELL_WS_TOKEN ??
+      (process.env.NODE_ENV !== 'production' ? process.env.NEXT_PUBLIC_AXON_API_TOKEN : undefined)
     const wsUrl = token ? `${base}/ws/shell?token=${encodeURIComponent(token)}` : `${base}/ws/shell`
 
     try {

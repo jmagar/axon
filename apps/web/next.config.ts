@@ -4,6 +4,33 @@ const axonBackendUrl =
   process.env.AXON_BACKEND_URL || `http://localhost:${process.env.NEXT_PUBLIC_AXON_PORT || '49000'}`
 const isDev = process.env.NODE_ENV !== 'production'
 
+function buildConnectSources(): string[] {
+  const sources = new Set<string>(["'self'"])
+  const urls = [axonBackendUrl, process.env.NEXT_PUBLIC_AXON_WS_URL].filter(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  )
+
+  for (const raw of urls) {
+    try {
+      const parsed = new URL(raw)
+      sources.add(parsed.origin)
+      const wsScheme = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+      sources.add(`${wsScheme}//${parsed.host}`)
+    } catch {
+      // Ignore malformed URLs.
+    }
+  }
+
+  if (isDev) {
+    sources.add('http://localhost:*')
+    sources.add('http://127.0.0.1:*')
+    sources.add('ws://localhost:*')
+    sources.add('ws://127.0.0.1:*')
+  }
+
+  return Array.from(sources)
+}
+
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -21,7 +48,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https: http: ws: wss:",
+      `connect-src ${buildConnectSources().join(' ')}`,
     ].join('; '),
   },
   ...(isDev

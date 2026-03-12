@@ -1,6 +1,7 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
-use crate::crates::vector::ops::embed_text_with_extra_payload;
+use crate::crates::ingest::embed_pipeline::embed_documents_in_batches;
+use crate::crates::vector::ops::{EmbedDocument, embed_text_with_extra_payload};
 use octocrab::Octocrab;
 use std::error::Error;
 
@@ -153,7 +154,38 @@ async fn embed_repo_metadata(
         is_archived: repo.archived,
         ..Default::default()
     });
-    embed_text_with_extra_payload(cfg, &content, &url, "github", Some(owner_name), &extra).await
+    let docs = vec![EmbedDocument {
+        content,
+        url,
+        source_type: "github".to_string(),
+        title: Some(owner_name.to_string()),
+        extra: Some(extra),
+        file_extension: None,
+    }];
+    let result = embed_documents_in_batches(
+        cfg,
+        &docs,
+        1,
+        "ingest_github",
+        |cfg, doc| {
+            Box::pin(async move {
+                let extra_owned = doc.extra.clone().unwrap_or_default();
+                embed_text_with_extra_payload(
+                    cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                    &extra_owned,
+                )
+                .await
+                .map_err(|err| err.to_string())
+            })
+        },
+        |_| {},
+    )
+    .await;
+    Ok(result.chunks_embedded)
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────────
@@ -200,13 +232,30 @@ pub async fn ingest_github(
         is_private: repo_info.private,
     };
 
+    async fn send_ingest_progress(
+        tx: &Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
+        progress: serde_json::Value,
+    ) {
+        if let Some(tx) = tx
+            && let Err(err) = tx.send(progress).await
+        {
+            log_warn(&format!(
+                "command=ingest_github progress_send_failed err={err}"
+            ));
+        }
+    }
+
     // Send initial progress so status shows activity immediately
     if let Some(ref tx) = progress_tx {
-        let _ = tx.try_send(serde_json::json!({
-            "phase": "ingesting",
-            "tasks_total": 5,
-            "tasks_done": 0,
-        }));
+        send_ingest_progress(
+            &Some(tx.clone()),
+            serde_json::json!({
+                "phase": "ingesting",
+                "tasks_total": 5,
+                "tasks_done": 0,
+            }),
+        )
+        .await;
     }
 
     let (files_result, metadata_result, issues_result, prs_result, wiki_result) = tokio::join!(
@@ -250,11 +299,16 @@ pub async fn ingest_github(
 
     // Send final progress so completed state shows accurate task counts
     if let Some(ref tx) = progress_tx {
-        let _ = tx.try_send(serde_json::json!({
-            "tasks_done": 5,
-            "tasks_total": 5,
-            "chunks_embedded": total,
-        }));
+        send_ingest_progress(
+            &Some(tx.clone()),
+            serde_json::json!({
+                "tasks_done": 5,
+                "tasks_total": 5,
+                "chunks_embedded": total,
+                "phase": "completed",
+            }),
+        )
+        .await;
     }
 
     log_info(&format!(

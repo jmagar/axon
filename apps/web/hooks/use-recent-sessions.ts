@@ -17,6 +17,10 @@ export interface SessionSummary {
   agent?: AgentKind
 }
 
+interface UseRecentSessionsOptions {
+  assistantMode?: boolean
+}
+
 interface ParsedMessage {
   role: 'user' | 'assistant'
   content: string
@@ -32,7 +36,7 @@ interface SessionContentResponse {
 function dedupeSessions(list: SessionSummary[]): SessionSummary[] {
   const seen = new Map<string, SessionSummary>()
   for (const session of list) {
-    const key = session.filename
+    const key = session.id
     const existing = seen.get(key)
     if (!existing) {
       seen.set(key, session)
@@ -51,7 +55,8 @@ function dedupeSessions(list: SessionSummary[]): SessionSummary[] {
   return Array.from(seen.values()).sort((a, b) => b.mtimeMs - a.mtimeMs)
 }
 
-export function useRecentSessions() {
+export function useRecentSessions(options: UseRecentSessionsOptions = {}) {
+  const { assistantMode = false } = options
   const { resumeWorkspaceSession } = useWsMessageActions()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -63,7 +68,8 @@ export function useRecentSessions() {
     setIsLoading(true)
     setError(null)
     try {
-      const response = await apiFetch('/api/sessions/list', {
+      const endpoint = assistantMode ? '/api/sessions/list?assistant_mode=1' : '/api/sessions/list'
+      const response = await apiFetch(endpoint, {
         signal: controller.signal,
       })
       if (!response.ok) {
@@ -80,7 +86,7 @@ export function useRecentSessions() {
       clearTimeout(timeout)
       setIsLoading(false)
     }
-  }, [])
+  }, [assistantMode])
 
   useEffect(() => {
     void reload()

@@ -58,13 +58,22 @@ async fn load_playlist_progress_with_pool(pool: &PgPool, job_id: Uuid) -> (usize
 
 /// Persist ingest progress to the DB. Used by both YouTube playlist and GitHub progress tracking.
 /// Logs a warning on failure so errors are observable.
+///
+/// Safety: each ingest job is processed by a single worker task, so concurrent writes to the
+/// same `job_id` do not happen. The JSONB `||` merge is therefore safe from lost-update races.
+/// YouTube playlist progress funnels through `drain_playlist_videos_with_pool` (sequential after
+/// each `FuturesUnordered::next`). GitHub file progress funnels through a single `mpsc` receiver
+/// task (see `process_ingest_job` GitHub branch).
 async fn update_ingest_progress(pool: &PgPool, job_id: Uuid, progress: &serde_json::Value) {
-    if let Err(e) =
-        sqlx::query("UPDATE axon_ingest_jobs SET result_json=$1, updated_at=NOW() WHERE id=$2")
-            .bind(progress)
-            .bind(job_id)
-            .execute(pool)
-            .await
+    if let Err(e) = sqlx::query(
+        "UPDATE axon_ingest_jobs \
+         SET result_json=COALESCE(result_json,'{}'::jsonb)||$1, updated_at=NOW() \
+         WHERE id=$2",
+    )
+    .bind(progress)
+    .bind(job_id)
+    .execute(pool)
+    .await
     {
         log_warn(&format!(
             "command=ingest progress_update_failed job_id={job_id} err={e}"
