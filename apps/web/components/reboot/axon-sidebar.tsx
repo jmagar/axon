@@ -122,7 +122,7 @@ function RailContent({
                 onClick={() => onSelectSession(session.id)}
                 aria-current={isActive ? 'true' : undefined}
                 className={`w-full rounded-md border-l-2 px-0 text-left transition-colors ${rowClass} ${railItemClass(isActive)}`}
-                title={session.preview ?? title}
+                title={session.preview?.slice(0, 120) ?? title}
               >
                 <div className="px-3">
                   <div className="flex items-start justify-between gap-2">

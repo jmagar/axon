@@ -52,7 +52,7 @@ Source:
 - `apps/web/lib/api-fetch.ts`
 - `apps/web/proxy.ts`
 
-### Downloads and output files
+### Downloads (`/download/*`) and output files (`/output/*`)
 
 These Rust endpoints accept the shared token from:
 

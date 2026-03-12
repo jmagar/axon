@@ -82,9 +82,10 @@ export function LogsViewer() {
     },
   })
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: compact/wrapLines drive row-height estimation; re-measure is intentional
   useEffect(() => {
     rowVirtualizer.measure()
-  }, [rowVirtualizer])
+  }, [rowVirtualizer, compact, wrapLines])
 
   useEffect(() => {
     if (autoScrollRef.current && filteredLines.length > 0) {

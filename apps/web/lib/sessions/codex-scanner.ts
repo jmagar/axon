@@ -185,6 +185,8 @@ async function readFirstLine(filePath: string): Promise<string | null> {
       const maxBytes = 1024 * 1024
       const parts: string[] = []
       let offset = 0
+      // Use TextDecoder with streaming to safely handle multibyte chars at chunk boundaries
+      const decoder = new TextDecoder('utf-8', { fatal: false })
 
       while (offset < maxBytes) {
         const toRead = Math.min(chunkSize, maxBytes - offset)
@@ -192,7 +194,7 @@ async function readFirstLine(filePath: string): Promise<string | null> {
         const { bytesRead } = await fd.read(buf, 0, toRead, offset)
         if (bytesRead <= 0) break
 
-        const chunk = buf.subarray(0, bytesRead).toString('utf8')
+        const chunk = decoder.decode(buf.subarray(0, bytesRead), { stream: true })
         const nl = chunk.indexOf('\n')
         if (nl !== -1) {
           parts.push(chunk.slice(0, nl))

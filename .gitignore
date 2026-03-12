@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 
+.pnpm-store*
+
 container/.env
 container/.env.*
 !container/.env.example

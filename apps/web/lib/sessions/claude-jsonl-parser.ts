@@ -53,6 +53,7 @@ export function parseClaudeJsonl(raw: string): ParsedMessage[] {
       text = msgContent
     } else if (Array.isArray(msgContent)) {
       for (const block of msgContent) {
+        if (!block || typeof block !== 'object' || Array.isArray(block)) continue
         const blockObj = block as Record<string, unknown>
         const blockType = typeof blockObj.type === 'string' ? blockObj.type : ''
         const blockText = blockObj.text
@@ -76,7 +77,7 @@ export function parseClaudeJsonl(raw: string): ParsedMessage[] {
       continue
     }
 
-    if (text.trim()) {
+    if (text.trim() || toolUses.length > 0) {
       const sourceMessageId =
         typeof val.id === 'string' ? val.id : typeof val.uuid === 'string' ? val.uuid : undefined
       messages.push({

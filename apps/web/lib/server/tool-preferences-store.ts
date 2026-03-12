@@ -36,7 +36,11 @@ async function ensureTable(): Promise<void> {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `)
-    })()
+    })().catch((err) => {
+      // Reset so transient DB errors don't permanently brick the store
+      initPromise = null
+      throw err
+    })
   }
   await initPromise
 }

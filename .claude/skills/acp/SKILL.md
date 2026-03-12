@@ -261,7 +261,7 @@ These reference files contain detail beyond the core guide above:
 - [ ] Use `#[async_trait::async_trait(?Send)]` — NOT `#[async_trait]`; the SDK uses Rc internally
 - [ ] Run `AgentSideConnection` inside `tokio::task::LocalSet` — required for `!Send` types
 - [ ] Use `#[tokio::main(flavor = "current_thread")]` — matches the `?Send` trait requirement
-- [ ] Use `.compat()` / `.compat_write()` from `tokio-util` — tokio IO types do NOT implement `futures::AsyncRead/Write`
+- [ ] Add `use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt}` — then call `.compat()` / `.compat_write()` on tokio IO types (they do NOT implement `futures::AsyncRead/Write` natively)
 - [ ] `AgentSideConnection::new` returns `(conn, io_task)` — **use `conn`** for `session_notification`; don't discard it
 - [ ] Store an `mpsc::UnboundedSender<NotifMsg>` in the agent — this is how `prompt()` sends streaming updates
 - [ ] Spawn a background task that drains the channel and calls `conn.session_notification()`
@@ -280,7 +280,7 @@ These reference files contain detail beyond the core guide above:
 - [ ] `ClientSideConnection::new` arg order: `(client, outgoing→agent_stdin, incoming←agent_stdout, spawner)`
 - [ ] `ClientSideConnection::new` returns `(conn, io_task)` — use `conn.initialize()` etc. to drive the session
 - [ ] Implement `session_notification` — **required**; route `SessionUpdate` variants to render in UI
-- [ ] Implement `request_permission` — **required**; show user dialog, return `Approved`/`Denied`/`Cancelled`
+- [ ] Implement `request_permission` — **required**; show user dialog, return `Cancelled` or `Selected(SelectedPermissionOutcome::new(option_id))`
 - [ ] Implement `read_text_file`/`write_text_file` only if you advertise `fs` capability in `InitializeRequest`
 - [ ] Handle all `SessionUpdate` variants (chunk, tool_call, tool_call_update, thought)
 - [ ] Send `session/cancel` via `conn.cancel(CancelNotification::new(session_id))` on user interrupt

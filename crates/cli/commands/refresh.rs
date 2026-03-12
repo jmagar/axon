@@ -300,8 +300,9 @@ mod tests {
         handle_refresh_schedule_run_due, refresh_schedule_tick_secs_default, tier_to_seconds,
     };
     use crate::crates::jobs::common::{make_pool, test_config};
-    use crate::crates::jobs::refresh::{
-        RefreshScheduleCreate, create_refresh_schedule, delete_refresh_schedule, list_refresh_jobs,
+    use crate::crates::services::refresh::{
+        RefreshScheduleCreate, create_refresh_schedule, delete_refresh_schedule,
+        schedule_list_jobs as list_refresh_jobs,
     };
     use chrono::{Duration, Utc};
     use std::env;

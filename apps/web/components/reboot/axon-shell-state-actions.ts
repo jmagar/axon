@@ -17,8 +17,8 @@ type WorkspaceSummary = {
 
 type McpSummary = {
   enabledMcpServers: string[]
-  mcpServers: unknown[]
-  mcpStatusByServer: Record<string, string>
+  mcpServers: string[]
+  mcpStatusByServer: Record<string, 'online' | 'offline' | 'unknown'>
   toggleMcpServer: (serverName: string) => void
   setEnabledMcpServers: (servers: string[]) => void
 }
