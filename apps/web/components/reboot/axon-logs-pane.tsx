@@ -72,6 +72,10 @@ export function AxonLogsPane() {
     getScrollElement: () => scrollAreaRef.current,
     estimateSize: () => (wrapLines ? 36 : 20),
     overscan: 30,
+    measureElement: (el) => {
+      if (!el) return 0
+      return el.getBoundingClientRect().height
+    },
   })
 
   useEffect(() => {
@@ -145,6 +149,8 @@ export function AxonLogsPane() {
             return (
               <div
                 key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
                 style={{
                   position: 'absolute',
                   top: 0,

@@ -13,19 +13,23 @@ function makeUserLine(content: string): string {
 
 describe('scanSessions assistantMode', () => {
   let tmpRoot: string
-  let origHome: string
+  let origHome: string | undefined
   let origDataDir: string | undefined
 
   beforeEach(async () => {
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'axon-assistant-scan-test-'))
-    origHome = process.env.HOME ?? ''
+    origHome = process.env.HOME
     origDataDir = process.env.AXON_DATA_DIR
     process.env.HOME = tmpRoot
     process.env.AXON_DATA_DIR = path.join(tmpRoot, 'data')
   })
 
   afterEach(async () => {
-    process.env.HOME = origHome
+    if (origHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = origHome
+    }
     if (origDataDir === undefined) {
       delete process.env.AXON_DATA_DIR
     } else {

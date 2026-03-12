@@ -82,11 +82,13 @@ pub(super) async fn establish_acp_session(
     let codex_adapter = is_codex_adapter(&adapter);
     let gemini_adapter = is_gemini_adapter(&adapter);
 
+    let msg = "ACP runtime: spawning adapter process".to_string();
+    crate::crates::core::logging::log_info(&msg);
     emit(
         tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: "ACP runtime: spawning adapter process".to_string(),
+            message: msg,
         },
     );
 
@@ -133,49 +135,57 @@ async fn wait_for_adapter_exit(
     drop(conn);
     drop(runtime_state);
 
+    let msg = format!(
+        "ACP runtime: connection closed; waiting up to 10 s for adapter to exit \
+         and write session file (session_id={session_id_str})"
+    );
+    crate::crates::core::logging::log_info(&msg);
     emit(
         tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!(
-                "ACP runtime: connection closed; waiting up to 10 s for adapter to exit \
-                 and write session file (session_id={session_id_str})"
-            ),
+            message: msg,
         },
     );
 
     match tokio::time::timeout(std::time::Duration::from_secs(10), exit_rx).await {
         Ok(Ok(crash_msg)) => {
+            let msg = format!("ACP adapter exited with error after turn: {crash_msg}");
+            crate::crates::core::logging::log_warn(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Warn,
-                    message: format!("ACP adapter exited with error after turn: {crash_msg}"),
+                    message: msg,
                 },
             );
         }
         Ok(Err(_)) => {
             // oneshot sender dropped = process exited with status 0
+            let msg = format!(
+                "ACP adapter exited cleanly; session file should be on disk \
+                 (session_id={session_id_str})"
+            );
+            crate::crates::core::logging::log_info(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Info,
-                    message: format!(
-                        "ACP adapter exited cleanly; session file should be on disk \
-                         (session_id={session_id_str})"
-                    ),
+                    message: msg,
                 },
             );
         }
         Err(_) => {
+            let msg = format!(
+                "ACP adapter did not exit within 10 s after connection close \
+                 (session_id={session_id_str}); forcing kill via kill_on_drop"
+            );
+            crate::crates::core::logging::log_warn(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Warn,
-                    message: format!(
-                        "ACP adapter did not exit within 10 s after connection close \
-                         (session_id={session_id_str}); forcing kill via kill_on_drop"
-                    ),
+                    message: msg,
                 },
             );
         }
@@ -244,11 +254,17 @@ pub(super) async fn run_prompt_turn(
                 StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
                 _ => LogLevel::Info,
             };
+            let msg = format!(
+                "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
+            );
+            if log_level == LogLevel::Info {
+                crate::crates::core::logging::log_info(&msg);
+            } else {
+                crate::crates::core::logging::log_warn(&msg);
+            }
             emit(&tx, ServiceEvent::Log {
                 level: log_level,
-                message: format!(
-                    "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
-                ),
+                message: msg,
             });
 
             // RefCell + OnceLock — no Mutex lock needed on current_thread runtime.
@@ -266,11 +282,11 @@ pub(super) async fn run_prompt_turn(
                     result: text,
                 }),
             });
+            let msg = format!("ACP runtime: TurnResult emitted (session_id={session})");
+            crate::crates::core::logging::log_info(&msg);
             emit(&tx, ServiceEvent::Log {
                 level: LogLevel::Info,
-                message: format!(
-                    "ACP runtime: TurnResult emitted (session_id={session})"
-                ),
+                message: msg,
             });
             true
         }

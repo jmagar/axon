@@ -30,8 +30,13 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  let body: unknown
   try {
-    const body = (await request.json()) as unknown
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  try {
     const parsed = ToolPreferencesSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(

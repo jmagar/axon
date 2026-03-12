@@ -179,7 +179,7 @@ workers:
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
     cargo build --locked --bin axon
-    AXON_BIN="$(pwd)/target/debug/axon"
+    AXON_BIN="${CARGO_TARGET_DIR:-$(pwd)/target}/debug/axon"
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
     trap cleanup INT TERM EXIT
@@ -202,7 +202,7 @@ dev:
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
     cargo build --locked --bin axon
-    AXON_BIN="$(pwd)/target/debug/axon"
+    AXON_BIN="${CARGO_TARGET_DIR:-$(pwd)/target}/debug/axon"
     docker compose up -d --wait axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }

@@ -202,9 +202,11 @@ fn truncate_title(raw: &str) -> String {
 }
 
 async fn list_sessions(&self, cursor: Option<&str>, limit: usize) -> Vec<SessionSummary> {
-    let all = self.sessions.iter()
+    let mut all = self.sessions.iter()
         .map(|e| e.key().clone())
         .collect::<Vec<_>>();
+    // DashMap iteration order is non-deterministic — sort for stable pagination.
+    all.sort();
 
     let start = match cursor {
         None => 0,
@@ -243,7 +245,8 @@ cancel_rx: watch::Receiver<bool>,
 // In Agent::cancel():
 async fn cancel(&self, notification: CancelNotification) -> acp::Result<()> {
     if let Some(state) = self.sessions.get(&notification.session_id) {
-        let _ = state.cancel_tx.send(true);
+        let lock = state.cancel_tx.lock().await;
+        let _ = lock.send(true);
     }
     Ok(())
 }
@@ -251,9 +254,10 @@ async fn cancel(&self, notification: CancelNotification) -> acp::Result<()> {
 // In Agent::prompt() — race LLM chunks vs cancel:
 async fn prompt(&self, req: PromptRequest) -> acp::Result<PromptResponse> {
     let client = SessionClient::new(req.session_id.clone().into());
-    let mut cancel = self.sessions.get(&req.session_id)
-        .map(|s| s.cancel_rx.clone())
+    let cancel_rx = self.sessions.get(&req.session_id)
+        .map(|s| s.cancel_rx.lock().await.clone())
         .ok_or_else(acp::Error::internal_error)?;
+    let mut cancel = cancel_rx;
 
     loop {
         tokio::select! {

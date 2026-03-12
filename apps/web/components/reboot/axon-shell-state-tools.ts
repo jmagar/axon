@@ -75,6 +75,8 @@ export function useToolPreferenceState({
     if (mcpServerCount > 0) {
       setEnabledMcpServers(pendingToolPrefs.enabledMcpServers)
     }
+    // Always complete hydration even when mcpServerCount === 0.
+    // The server list will be applied once servers are discovered.
     setToolPrefsHydrated(true)
     setPendingToolPrefs(null)
   }, [mcpServerCount, pendingToolPrefs, setEnabledMcpServers])

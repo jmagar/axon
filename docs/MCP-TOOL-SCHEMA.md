@@ -9,7 +9,7 @@ Last Modified: 2026-03-11
 - Tool name: `axon`
 - Primary route field: `action`
 - Canonical route form: `action` + optional `subaction`
-- Response control field: `response_mode` (`path|inline|both`, default `path`)
+- Response control field: `response_mode` (`path|inline|both|auto-inline`, default `path`; `auto-inline` is returned when the caller omits `response_mode` and the payload is small enough to inline)
 
 Code references:
 - `crates/mcp/schema.rs`
@@ -95,7 +95,7 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 For scheduled refreshes: `{ "action": "refresh", "subaction": "schedule", "schedule_subaction": "list|create|delete|enable|disable", "schedule_name": "..." }`
 
 ## Lifecycle Action Families
-- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- requires `path`; `pattern` for grep
+- `artifacts`: `head|grep|wc|read|list|delete|clean|search` -- `path` required for `head|grep|wc|read|delete`; `pattern` required for `grep`; `list|clean|search` do not require `path`
 - `crawl`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
 - `embed`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `input` (string)
 - `extract`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
@@ -125,14 +125,14 @@ When `source_type` is `sessions`, the optional `sessions` object accepts:
 Subactions: `head|grep|wc|read|list|delete|clean|search`
 
 `artifacts` fields:
-- `path` (required)
-- `pattern` (required for `grep`)
+- `path` (required for `head|grep|wc|read|delete`; optional for `list|clean|search`)
+- `pattern` (required for `grep` and `search`)
 - `limit` and `offset` for paginated inspection
 
 ## Enum Values
 
 ### `ResponseMode`
-Values: `path|inline|both`
+Values: `path|inline|both` (client-specified); `auto-inline` (server-returned when mode is omitted and payload fits threshold)
 
 ### `McpRenderMode`
 Values: `http|chrome|auto_switch`

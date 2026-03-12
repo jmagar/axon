@@ -124,7 +124,10 @@ export function useAxonShellState() {
     let timer: number | null = null
     try {
       const raw = window.sessionStorage.getItem(LIVE_MESSAGES_STORAGE_KEY)
-      if (!raw) return
+      if (!raw) {
+        setLiveMessagesHydrated(true)
+        return
+      }
       const parsed = JSON.parse(raw) as { messages?: AxonMessage[] }
       if (Array.isArray(parsed.messages)) {
         setLiveMessages(parsed.messages)
