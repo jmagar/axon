@@ -66,7 +66,7 @@ export function PromptInput({
     <PromptInputContext.Provider value={value}>
       <form
         className={cn(
-          'rounded-[22px] border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] p-3',
+          'rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] p-2.5 sm:rounded-lg sm:p-2',
           className,
         )}
         onSubmit={async (event) => {
@@ -87,7 +87,7 @@ export function PromptInput({
 }
 
 export function PromptInputBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex items-end gap-3', className)} {...props} />
+  return <div className={cn('flex items-end gap-2.5 sm:gap-2', className)} {...props} />
 }
 
 export function PromptInputTextarea({
@@ -119,7 +119,7 @@ export function PromptInputTextarea({
       name={name ?? 'prompt_input'}
       ref={textareaRef}
       className={cn(
-        'PromptInputTextarea min-h-20 flex-1 resize-none bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:outline-none transition-[height] duration-100',
+        'min-h-14 sm:min-h-12 flex-1 resize-none bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:outline-none transition-[height] duration-100',
         className,
       )}
       onChange={(event) => {
@@ -142,15 +142,12 @@ export function PromptInputTextarea({
 
 export function PromptInputFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div
-      className={cn('PromptInputFooter mt-3 flex items-center justify-between gap-3', className)}
-      {...props}
-    />
+    <div className={cn('mt-2 flex items-center justify-between gap-2', className)} {...props} />
   )
 }
 
 export function PromptInputTools({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('PromptInputTools flex items-center gap-2', className)} {...props} />
+  return <div className={cn('flex items-center gap-2', className)} {...props} />
 }
 
 export function PromptInputButton({
@@ -161,7 +158,7 @@ export function PromptInputButton({
   return (
     <Button
       className={cn(
-        'PromptInputButton border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.45)] text-[var(--text-secondary)] hover:bg-[rgba(135,175,255,0.08)] hover:text-[var(--text-primary)]',
+        'border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.45)] text-[var(--text-secondary)] hover:bg-[rgba(135,175,255,0.08)] hover:text-[var(--text-primary)]',
         className,
       )}
       size="icon-sm"
@@ -224,5 +221,5 @@ export function PromptInputHeader({
 }
 
 export function PromptInputAttachments({ children }: { children?: ReactNode }) {
-  return children ? <div className="mb-3">{children}</div> : null
+  return children ? <div className="mb-2">{children}</div> : null
 }

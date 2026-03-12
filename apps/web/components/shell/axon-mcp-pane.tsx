@@ -28,14 +28,14 @@ function DeleteConfirmModal({
 }) {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-[rgba(3,7,18,0.75)] backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-xl border border-[var(--border-standard)] bg-[var(--surface-base)] p-5 shadow-[var(--shadow-xl)]">
+      <div className="w-full max-w-sm rounded-xl border border-[var(--border-standard)] bg-[var(--surface-base)] p-4 shadow-[var(--shadow-xl)]">
         <div className="mb-1 flex items-center gap-2">
           <Trash2 className="size-4 text-[var(--axon-secondary)]" />
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
             Delete &ldquo;{name}&rdquo;?
           </h3>
         </div>
-        <p className="mb-4 text-xs text-[var(--text-muted)]">
+        <p className="mb-3 text-xs text-[var(--text-muted)]">
           This MCP server configuration will be permanently removed.
         </p>
         <div className="flex justify-end gap-2">
@@ -61,7 +61,7 @@ function DeleteConfirmModal({
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-float)] p-8 text-center">
+    <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-float)] p-6 text-center">
       <Network className="size-8 text-[var(--axon-primary)]" />
       <div className="space-y-1">
         <p className="text-sm font-semibold text-[var(--text-primary)]">
@@ -74,7 +74,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <button
         type="button"
         onClick={onAdd}
-        className="flex items-center gap-1.5 rounded-lg border border-[var(--border-standard)] bg-[rgba(135,175,255,0.15)] px-4 py-2 text-[12px] font-semibold text-[var(--axon-primary)] transition-colors hover:bg-[rgba(135,175,255,0.25)]"
+        className="flex items-center gap-1.5 rounded-lg border border-[var(--border-standard)] bg-[rgba(135,175,255,0.15)] px-3 py-1.5 text-[12px] font-semibold text-[var(--axon-primary)] transition-colors hover:bg-[rgba(135,175,255,0.25)]"
       >
         <Plus className="size-3.5" />
         Add your first server
@@ -203,7 +203,7 @@ function McpPaneContent() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="axon-toolbar flex shrink-0 items-center justify-between px-4 py-2.5">
+      <div className="axon-toolbar flex shrink-0 items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
           {error && <span className="text-xs text-red-400">{error}</span>}
           <button
@@ -227,9 +227,9 @@ function McpPaneContent() {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {formOpen && (
-          <div className="mb-6">
+          <div className="mb-4">
             <McpServerForm
               key={editTarget ?? '__new__'}
               initial={formInitial}
@@ -286,9 +286,9 @@ function McpPaneContent() {
 export function AxonMcpPane() {
   return (
     <div className="flex h-full flex-col">
-      <div className="axon-toolbar flex shrink-0 items-center gap-2 px-4 py-3">
+      <div className="axon-toolbar flex shrink-0 items-center gap-2 px-3 py-2.5">
         <McpIcon className="size-4 text-[var(--axon-primary-strong)]" />
-        <span className="text-[14px] font-semibold text-[var(--text-primary)]">MCP Servers</span>
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">MCP Servers</span>
       </div>
       <ErrorBoundary>
         <McpPaneContent />

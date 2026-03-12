@@ -33,7 +33,7 @@ export function MessageContent({ children, className, ...props }: HTMLAttributes
     <div
       className={cn(
         'flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm',
-        'group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-[rgba(255,135,175,0.14)] group-[.is-user]:px-4 group-[.is-user]:py-3',
+        'group-[.is-user]:ml-auto group-[.is-user]:rounded-xl group-[.is-user]:bg-[rgba(255,135,175,0.14)] group-[.is-user]:px-3.5 group-[.is-user]:py-2.5 lg:group-[.is-user]:px-3 lg:group-[.is-user]:py-2',
         'group-[.is-assistant]:text-foreground',
         className,
       )}
@@ -291,7 +291,7 @@ export function MessageAttachments({ children, className, ...props }: ComponentP
 export function MessageToolbar({ className, children, ...props }: ComponentProps<'div'>) {
   return (
     <div
-      className={cn('mt-4 flex w-full items-center justify-between gap-4', className)}
+      className={cn('mt-3 flex w-full items-center justify-between gap-3', className)}
       {...props}
     >
       {children}

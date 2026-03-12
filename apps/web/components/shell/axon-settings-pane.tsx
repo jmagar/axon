@@ -6,9 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import type { NeuralCanvasProfile } from '@/lib/pulse/neural-canvas-presets'
-import type { AxonDensity } from './axon-shell-state-helpers'
 import { CanvasProfileSelector } from './canvas-profile-selector'
-import { DensitySelector } from './density-selector'
 
 export const AxonSettingsPane = memo(function AxonSettingsPane({
   canvasProfile,
@@ -21,8 +19,6 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
   onPermissionTimeoutSecsChange,
   adapterTimeoutSecs,
   onAdapterTimeoutSecsChange,
-  density,
-  onDensityChange,
 }: {
   canvasProfile: NeuralCanvasProfile
   onCanvasProfileChange: (profile: NeuralCanvasProfile) => void
@@ -34,33 +30,30 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
   onPermissionTimeoutSecsChange: (val: number | null) => void
   adapterTimeoutSecs: number | null
   onAdapterTimeoutSecsChange: (val: number | null) => void
-  density: AxonDensity
-  onDensityChange: (val: AxonDensity) => void
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2.5">
         <Settings2 className="size-4 text-[var(--axon-primary-strong)]" />
-        <span className="text-[14px] font-semibold text-[var(--text-primary)]">Settings</span>
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">Settings</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-8">
+      <div className="flex-1 space-y-6 overflow-y-auto px-3 py-3">
         {/* Appearance */}
-        <section className="space-y-4">
+        <section className="space-y-3">
           <div className="flex items-center gap-2 text-[var(--text-muted)]">
             <Settings2 className="size-3.5" />
             <h3 className="text-xs font-semibold uppercase tracking-wider">Appearance</h3>
           </div>
-          <div className="space-y-6">
+          <div className="space-y-4">
             <CanvasProfileSelector
               canvasProfile={canvasProfile}
               onCanvasProfileChange={onCanvasProfileChange}
             />
-            <DensitySelector density={density} onDensityChange={onDensityChange} />
           </div>
         </section>
 
         {/* Agent Capabilities */}
-        <section className="space-y-4">
+        <section className="space-y-3">
           <div className="flex items-center gap-2 text-[var(--text-muted)]">
             <Shield className="size-3.5" />
             <h3 className="text-xs font-semibold uppercase tracking-wider">Capabilities</h3>
@@ -68,7 +61,7 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 pr-2">
-                <Label htmlFor="enable-fs" className="text-sm cursor-pointer">
+                <Label htmlFor="enable-fs" className="cursor-pointer text-[13px]">
                   Filesystem Access
                 </Label>
                 <p className="text-[11px] text-[var(--text-dim)]">
@@ -84,7 +77,7 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 pr-2">
-                <Label htmlFor="enable-terminal" className="text-sm cursor-pointer">
+                <Label htmlFor="enable-terminal" className="cursor-pointer text-[13px]">
                   Terminal Access
                 </Label>
                 <p className="text-[11px] text-[var(--text-dim)]">
@@ -102,14 +95,14 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
         </section>
 
         {/* Timeouts */}
-        <section className="space-y-4">
+        <section className="space-y-3">
           <div className="flex items-center gap-2 text-[var(--text-muted)]">
             <Timer className="size-3.5" />
             <h3 className="text-xs font-semibold uppercase tracking-wider">Timeouts</h3>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="space-y-2">
-              <Label htmlFor="permission-timeout" className="text-sm">
+              <Label htmlFor="permission-timeout" className="text-[13px]">
                 Permission Timeout (seconds)
               </Label>
               <Input
@@ -132,7 +125,7 @@ export const AxonSettingsPane = memo(function AxonSettingsPane({
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="adapter-timeout" className="text-sm">
+              <Label htmlFor="adapter-timeout" className="text-[13px]">
                 Adapter Timeout (seconds)
               </Label>
               <Input

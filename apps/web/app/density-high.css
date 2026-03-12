@@ -210,6 +210,19 @@
   padding: 0.25rem;
 }
 
+[data-density="high"] .axon-mission-control {
+  padding: 0.35rem;
+}
+
+[data-density="high"] .axon-mission-card {
+  border-radius: 0.35rem;
+  padding: 0.35rem;
+}
+
+[data-density="high"] .axon-mission-card h2 {
+  font-size: 0.55rem;
+}
+
 [data-density="high"] .axon-jobs-dashboard {
   padding: 0.25rem;
 }
