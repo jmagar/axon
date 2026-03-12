@@ -298,6 +298,7 @@ export function useAxonAcp({
           // onTurnComplete/onSessionIdChange to prevent a late result from a
           // slow agent (e.g. Gemini) polluting the next turn's session state.
           const wasActiveTurn = streamingIdRef.current !== null
+          const resultSid = streamingIdRef.current
           const newSessionId = msg.session_id as string | undefined
           if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current)
           if (process.env.NODE_ENV !== 'production' && turnStartAtRef.current !== null) {
@@ -326,6 +327,13 @@ export function useAxonAcp({
           turnStartAtRef.current = null
           firstDeltaAtRef.current = null
           streamedCharsRef.current = 0
+          // Mark the message as no longer streaming so the typing-dots indicator
+          // is removed even if no deltas were received (e.g. lost events).
+          if (resultSid) {
+            onMessagesChange((prev) =>
+              prev.map((m) => (m.id === resultSid ? { ...m, streaming: false } : m)),
+            )
+          }
           if (wasActiveTurn) {
             onTurnComplete?.()
             // With the persistent adapter, session data is written incrementally —
