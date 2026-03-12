@@ -86,7 +86,7 @@ const RailContent = React.memo(function RailContent({
   compact?: boolean
 }) {
   const normalizedQuery = query.trim().toLowerCase()
-  const rowClass = compact ? 'py-1' : 'py-1.5'
+  const rowClass = compact ? 'py-1.5' : 'py-2'
 
   if (mode === 'sessions') {
     const filteredSessions = sessions.filter((session) => {

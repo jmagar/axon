@@ -1,3 +1,4 @@
+use super::helpers::normalize_loopback_redirect_uri;
 use super::types::{GoogleOAuthConfig, RedirectPolicy};
 
 impl GoogleOAuthConfig {
@@ -35,6 +36,7 @@ impl GoogleOAuthConfig {
 
         let redirect_uri = std::env::var("GOOGLE_OAUTH_REDIRECT_URI")
             .unwrap_or_else(|_| format!("http://{redirect_host}:{mcp_port}{redirect_path}"));
+        let redirect_uri = normalize_loopback_redirect_uri(&redirect_uri).unwrap_or(redirect_uri);
         let resource_server_url = format!("{broker_issuer}/mcp");
         let resource_metadata_url = format!("{broker_issuer}/.well-known/oauth-protected-resource");
         let authorization_endpoint = format!("{broker_issuer}/oauth/authorize");

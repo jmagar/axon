@@ -30,12 +30,14 @@ pub(crate) async fn oauth_google_status(
     Ok(Json(match state.inner.config.as_ref() {
         Some(cfg) => OAuthStatus {
             configured: true,
+            api_key_configured: state.api_key_configured(),
             authenticated,
             redirect_uri: Some(cfg.redirect_uri.clone()),
             scopes: cfg.scopes.clone(),
         },
         None => OAuthStatus {
             configured: false,
+            api_key_configured: state.api_key_configured(),
             authenticated: false,
             redirect_uri: None,
             scopes: vec![],

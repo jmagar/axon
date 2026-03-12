@@ -238,6 +238,18 @@ pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::e
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server_metadata),
         )
+        .route(
+            "/.well-known/oauth-authorization-server/mcp",
+            get(oauth_authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/openid-configuration",
+            get(oauth_authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/openid-configuration/mcp",
+            get(oauth_authorization_server_metadata),
+        )
         .route("/oauth/register", post(oauth_register_client))
         .route("/oauth/authorize", get(oauth_authorize))
         .route("/oauth/token", post(oauth_token))

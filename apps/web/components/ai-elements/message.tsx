@@ -217,7 +217,10 @@ export const MessageResponse = memo(
   function MessageResponse(props: ComponentProps<typeof Streamdown>) {
     return (
       <Streamdown
-        className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', props.className)}
+        className={cn(
+          'size-full min-w-0 break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-inside [&_ol]:list-decimal [&_ol]:pl-1 [&_ul]:my-1.5 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:pl-1 [&_li]:ml-0 [&_li]:leading-[1.4] [&_li+li]:mt-0.5 [&_ol_ol]:pl-4 [&_ul_ul]:list-[circle] [&_ul_ul]:pl-4',
+          props.className,
+        )}
         {...props}
       />
     )
