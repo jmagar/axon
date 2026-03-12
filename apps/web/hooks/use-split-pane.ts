@@ -9,7 +9,7 @@ const SHOW_CHAT_STORAGE_KEY = 'axon.web.pulse.show-chat'
 const RIGHT_PANEL_STORAGE_KEY = 'axon.web.pulse.right-panel'
 export const MOBILE_PANE_STORAGE_KEY = 'axon.web.pulse.mobile-pane'
 
-const VALID_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings', 'cortex']
+const VALID_PANELS = new Set<string>(['editor', 'terminal', 'logs', 'mcp', 'settings', 'cortex'])
 export type MobilePane = 'chat' | RightPanelId
 
 export function useSplitPane() {
@@ -87,11 +87,11 @@ export function useSplitPane() {
         setMobileSplitPercent(parsedMobile)
       }
       const pane = window.localStorage.getItem(MOBILE_PANE_STORAGE_KEY)
-      if (pane === 'chat' || VALID_PANELS.includes(pane ?? '')) {
+      if (pane === 'chat' || VALID_PANELS.has(pane ?? '')) {
         setMobilePane((pane as MobilePane) ?? 'chat')
       }
       const panel = window.localStorage.getItem(RIGHT_PANEL_STORAGE_KEY)
-      if (panel && VALID_PANELS.includes(panel)) {
+      if (panel && VALID_PANELS.has(panel)) {
         rightPanelRef.current = panel as RightPanelId
         setRightPanelState(panel as RightPanelId)
       }

@@ -46,7 +46,7 @@ function OptionControl({
             role="checkbox"
             aria-checked={!!value}
             onClick={() => onUpdate(optionKey, !value)}
-            className={`flex size-4 shrink-0 items-center justify-center rounded border transition-all focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] ${
+            className={`flex size-4 shrink-0 items-center justify-center rounded border transition-colors focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] ${
               value
                 ? 'border-[var(--axon-secondary)] bg-[rgba(255,135,175,0.18)]'
                 : 'border-[var(--border-accent)] bg-transparent hover:border-[var(--border-strong)]'

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./density-high.css";
 
 @plugin "tailwind-scrollbar-hide";
 
@@ -53,39 +54,6 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.08 0.02 250);
-  --foreground: oklch(0.9 0.01 250);
-  --card: oklch(0.12 0.02 250);
-  --card-foreground: oklch(0.9 0.01 250);
-  --popover: oklch(0.12 0.02 250);
-  --popover-foreground: oklch(0.9 0.01 250);
-  --primary: oklch(0.7 0.15 200);
-  --primary-foreground: oklch(0.08 0.02 250);
-  --secondary: oklch(0.15 0.02 250);
-  --secondary-foreground: oklch(0.85 0.01 250);
-  --muted: oklch(0.15 0.02 250);
-  --muted-foreground: oklch(0.55 0.02 250);
-  --accent: oklch(0.18 0.03 250);
-  --accent-foreground: oklch(0.9 0.01 250);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.2 0.03 250);
-  --input: oklch(0.2 0.03 250);
-  --ring: oklch(0.6 0.12 200);
-  --chart-1: oklch(0.7 0.15 200);
-  --chart-2: oklch(0.65 0.18 160);
-  --chart-3: oklch(0.6 0.12 280);
-  --chart-4: oklch(0.75 0.15 140);
-  --chart-5: oklch(0.55 0.2 300);
-  --sidebar: oklch(0.1 0.02 250);
-  --sidebar-foreground: oklch(0.9 0.01 250);
-  --sidebar-primary: oklch(0.7 0.15 200);
-  --sidebar-primary-foreground: oklch(0.9 0.01 250);
-  --sidebar-accent: oklch(0.15 0.02 250);
-  --sidebar-accent-foreground: oklch(0.9 0.01 250);
-  --sidebar-border: oklch(0.2 0.03 250);
-  --sidebar-ring: oklch(0.6 0.12 200);
-  --brand: oklch(0.7 0.15 200);
-  --highlight: oklch(0.8 0.18 160);
   --axon-bg: #030712;
   --axon-bg-elevated: #091225;
   --axon-surface-1: rgba(10, 18, 35, 0.62);
@@ -100,6 +68,20 @@
   --axon-warning-bg: rgba(255, 192, 134, 0.14);
   --axon-error: var(--axon-secondary-strong);
   --axon-error-bg: rgba(255, 135, 175, 0.12);
+  --axon-info: #38bdf8;
+  --axon-info-bg: rgba(56, 189, 248, 0.15);
+  --axon-info-border: rgba(56, 189, 248, 0.3);
+
+  /* Status semantic aliases */
+  --status-running: var(--axon-info);
+  --status-running-bg: var(--axon-info-bg);
+  --status-running-border: var(--axon-info-border);
+  --status-completed: #34d399;
+  --status-completed-bg: rgba(52, 211, 153, 0.12);
+  --status-completed-border: rgba(52, 211, 153, 0.25);
+  --status-failed: #fb7185;
+  --status-failed-bg: rgba(251, 113, 133, 0.12);
+  --status-failed-border: rgba(251, 113, 133, 0.25);
   --axon-danger-bg: rgba(255, 135, 175, 0.1);
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -122,6 +104,26 @@
   --density-compact-cell-x: 0.5rem;
   --density-comfortable-cell-x: 0.75rem;
 
+  /* ── Density Overrides ── */
+}
+
+/* Compact Density */
+[data-density="compact"] {
+  --space-1: 0.2rem;
+  --space-2: 0.4rem;
+  --space-3: 0.6rem;
+  --space-4: 0.8rem;
+  --space-5: 1rem;
+  --text-xs: 0.625rem;
+  --text-sm: 0.6875rem;
+  --text-md: 0.75rem;
+  --text-base: 0.8125rem;
+  --leading-tight: 1.25;
+  --leading-copy: 1.4;
+  --pulse-control-h: 1.5rem;
+}
+
+:root {
   /* ── Axon Design Tokens v2 ── */
 
   /* Typography semantic mapping */
@@ -216,8 +218,10 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
   }
   body {
     background:

@@ -6,16 +6,19 @@ import {
 import { getStorageItem, setStorageItem } from '@/lib/storage'
 import {
   AXON_MOBILE_PANE_STORAGE_KEY,
+  type AxonDensity,
   type AxonMobilePane,
   CANVAS_PROFILE_STORAGE_KEY,
   CANVAS_PROFILES,
   CHAT_FLEX_STORAGE_KEY,
   CHAT_OPEN_STORAGE_KEY,
+  DENSITY_STORAGE_KEY,
   PANE_WIDTH_MIN,
   RAIL_MODE_STORAGE_KEY,
   RIGHT_PANE_STORAGE_KEY,
   type RightPane,
   readStoredBool,
+  readStoredDensity,
   readStoredFloat,
   readStoredRailMode,
   SIDEBAR_OPEN_STORAGE_KEY,
@@ -53,6 +56,8 @@ type LayoutControls = {
   startSidebarResize: (startX: number) => void
   transitionClass: string
   canvasProfile: NeuralCanvasProfile
+  density: AxonDensity
+  setDensityTracked: (density: AxonDensity) => void
 }
 
 export function useAxonShellLayoutControls(): LayoutControls {
@@ -61,6 +66,7 @@ export function useAxonShellLayoutControls(): LayoutControls {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [chatOpen, setChatOpen] = useState(true)
   const [rightPane, setRightPane] = useState<RightPane>('editor')
+  const [density, setDensity] = useState<AxonDensity>('comfortable')
   const editorOpen = rightPane !== null
   const [canvasProfile, setCanvasProfile] = useState<NeuralCanvasProfile>(
     DEFAULT_NEURAL_CANVAS_PROFILE,
@@ -109,6 +115,7 @@ export function useAxonShellLayoutControls(): LayoutControls {
       setRightPane('editor')
     }
     setRailMode(readStoredRailMode(RAIL_MODE_STORAGE_KEY, 'sessions'))
+    setDensity(readStoredDensity(DENSITY_STORAGE_KEY, 'comfortable'))
     const rawProfile = getStorageItem(CANVAS_PROFILE_STORAGE_KEY)
     if (rawProfile && CANVAS_PROFILES.includes(rawProfile as NeuralCanvasProfile)) {
       setCanvasProfile(rawProfile as NeuralCanvasProfile)
@@ -120,6 +127,15 @@ export function useAxonShellLayoutControls(): LayoutControls {
     setRailMode(mode)
     try {
       window.localStorage.setItem(RAIL_MODE_STORAGE_KEY, mode)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const setDensityTracked = useCallback((next: AxonDensity) => {
+    setDensity(next)
+    try {
+      window.localStorage.setItem(DENSITY_STORAGE_KEY, next)
     } catch {
       /* ignore */
     }
@@ -333,5 +349,7 @@ export function useAxonShellLayoutControls(): LayoutControls {
     startChatResize,
     startSidebarResize,
     transitionClass,
+    density,
+    setDensityTracked,
   }
 }

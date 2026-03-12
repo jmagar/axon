@@ -11,7 +11,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import React, { type ChangeEvent, useRef, useState } from 'react'
+import React, { type ChangeEvent, useMemo, useRef, useState } from 'react'
 import {
   PromptInput,
   PromptInputAttachments,
@@ -148,16 +148,24 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [presetDraft, setPresetDraft] = useState('')
   const PermissionIcon = getPermissionIcon(pulsePermissionLevel)
-  const knownTools = Object.values(mcpToolsByServer).flat()
-  const enabledServerSet = new Set(toolsState.enabledMcpServers)
-  const enabledToolSet = new Set(enabledMcpTools)
-  const enabledToolCount = knownTools.filter((tool) => {
-    const server = tool.split('__')[1] ?? ''
-    return enabledServerSet.has(server) && enabledToolSet.has(tool)
-  }).length
-  const toolLabel = knownTools.length
-    ? formatToolSelectionLabel(enabledToolCount, knownTools.length)
-    : formatToolSelectionLabel(toolsState.enabledMcpServers.length, toolsState.mcpServers.length)
+  const { knownTools, enabledToolCount, toolLabel } = useMemo(() => {
+    const tools = Object.values(mcpToolsByServer).flat()
+    const serverSet = new Set(toolsState.enabledMcpServers)
+    const toolSet = new Set(enabledMcpTools)
+    const count = tools.filter((tool) => {
+      const server = tool.split('__')[1] ?? ''
+      return serverSet.has(server) && toolSet.has(tool)
+    }).length
+    const label = tools.length
+      ? formatToolSelectionLabel(count, tools.length)
+      : formatToolSelectionLabel(toolsState.enabledMcpServers.length, toolsState.mcpServers.length)
+    return { knownTools: tools, enabledToolCount: count, toolLabel: label }
+  }, [
+    mcpToolsByServer,
+    toolsState.enabledMcpServers,
+    toolsState.mcpServers.length,
+    enabledMcpTools,
+  ])
 
   function handleFilePick(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? [])
@@ -189,7 +197,7 @@ export const AxonPromptComposer = React.memo(function AxonPromptComposer({
         className="hidden"
         onChange={handleFilePick}
       />
-      <div className="px-3 pb-3 pt-3">
+      <div className="axon-prompt-composer-container px-3 pb-3 pt-3">
         <PromptInputAttachments>
           {files.length > 0 ? (
             <div className="flex flex-wrap gap-2">

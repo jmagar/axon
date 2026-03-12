@@ -55,7 +55,7 @@ function InlineCopyButton({ text }: { text: string }) {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
       }}
-      className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs transition-all duration-200 ${
+      className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs transition-colors duration-200 ${
         copied
           ? 'border-[rgba(130,217,160,0.4)] bg-[rgba(130,217,160,0.12)] text-[var(--axon-success)]'
           : 'border-[var(--border-subtle)] bg-[var(--surface-float)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'

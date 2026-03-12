@@ -48,7 +48,7 @@ function DownloadButton({
     <a
       href={href}
       download
-      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] font-medium text-[var(--axon-secondary)] transition-all hover:border-[rgba(175,215,255,0.3)] hover:text-[var(--axon-primary-strong)]"
+      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] font-medium text-[var(--axon-secondary)] transition-colors hover:border-[rgba(175,215,255,0.3)] hover:text-[var(--axon-primary-strong)]"
       style={{ background: 'rgba(10, 18, 35, 0.4)' }}
     >
       <svg
