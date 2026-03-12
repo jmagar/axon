@@ -24,7 +24,7 @@ export async function GET() {
     const prefs = await loadToolPreferences()
     return NextResponse.json(prefs)
   } catch (error) {
-    console.error('[reboot-tool-preferences] GET failed:', error)
+    console.error('[tool-preferences] GET failed:', error)
     return NextResponse.json({ error: 'failed_to_load' }, { status: 500 })
   }
 }
@@ -50,7 +50,7 @@ export async function PUT(request: Request) {
     } satisfies ToolPreferencesRecord)
     return NextResponse.json(saved)
   } catch (error) {
-    console.error('[reboot-tool-preferences] PUT failed:', error)
+    console.error('[tool-preferences] PUT failed:', error)
     return NextResponse.json({ error: 'failed_to_save' }, { status: 500 })
   }
 }

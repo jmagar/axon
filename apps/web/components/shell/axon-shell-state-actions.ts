@@ -4,7 +4,7 @@ import type { FileEntry } from '@/components/workspace/file-tree'
 import type { AxonMessage } from '@/hooks/use-axon-session'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
 import type { PulseAgent, PulseModel, PulsePermissionLevel } from '@/lib/pulse/types'
-import type { ToolPreset } from '@/lib/reboot/tool-preferences'
+import type { ToolPreset } from '@/lib/shell/tool-preferences'
 import { buildAgentHandoffContext, createClientId } from './axon-shell-state-helpers'
 import type { RailMode } from './axon-ui-config'
 

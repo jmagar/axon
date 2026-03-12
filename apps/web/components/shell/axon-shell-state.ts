@@ -14,7 +14,7 @@ import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
 import { getAcpModeConfigOption, getAcpModelConfigOption } from '@/lib/pulse/acp-config'
-import { persistToolPreferences, TOOL_PREFERENCES_LS_KEY } from '@/lib/reboot/tool-preferences'
+import { persistToolPreferences, TOOL_PREFERENCES_LS_KEY } from '@/lib/shell/tool-preferences'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { useAxonShellActions } from './axon-shell-state-actions'
 import {

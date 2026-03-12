@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildToolHeader, toolStatusText } from '@/components/reboot/tool-call-metadata'
+import { buildToolHeader, toolStatusText } from '@/components/shell/tool-call-metadata'
 
 describe('tool-call-metadata', () => {
   it('builds dense metadata for MCP tool names', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stripEditorBlocks } from '@/components/reboot/axon-editor-artifact'
+import { stripEditorBlocks } from '@/components/shell/axon-editor-artifact'
 
 describe('stripEditorBlocks', () => {
   it('strips a basic editor block leaving an empty string', () => {
