@@ -38,6 +38,10 @@ mod acp_ws_event_tests;
 #[path = "execute/tests/ws_protocol_tests.rs"]
 mod ws_protocol_tests;
 
+#[cfg(test)]
+#[path = "execute/tests/async_ingest_routing_tests.rs"]
+mod async_ingest_routing_tests;
+
 pub(crate) use files::handle_read_file;
 
 #[cfg(test)]
