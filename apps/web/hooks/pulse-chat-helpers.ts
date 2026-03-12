@@ -59,16 +59,24 @@ export async function handleSourceIntent(
   const result = await runSourcePrompt(urls, signal)
   if (inFlightRef.current !== promptId) return
   setIndexedSources((prev) => {
+    const seen = new Set(prev)
     const next = [...prev]
     for (const url of result.indexed) {
-      if (!next.includes(url)) next.push(url)
+      if (!seen.has(url)) {
+        seen.add(url)
+        next.push(url)
+      }
     }
     return next.slice(-200)
   })
   setActiveThreadSources((prev) => {
+    const seen = new Set(prev)
     const merged = [...prev]
     for (const url of result.indexed) {
-      if (!merged.includes(url)) merged.push(url)
+      if (!seen.has(url)) {
+        seen.add(url)
+        merged.push(url)
+      }
     }
     return merged.slice(-200)
   })

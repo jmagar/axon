@@ -66,7 +66,7 @@ export const AxonCortexPane = memo(function AxonCortexPane() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`flex items-center gap-1 border-b-2 px-2.5 py-2 text-[11px] font-medium transition-colors ${
+              className={`axon-cortex-tab flex items-center gap-1 border-b-2 px-2.5 py-2 text-[11px] font-medium transition-colors ${
                 isActive
                   ? 'border-[var(--axon-primary)] text-[var(--axon-primary)]'
                   : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -80,7 +80,7 @@ export const AxonCortexPane = memo(function AxonCortexPane() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-5xl p-4">
+        <div className="axon-cortex-container mx-auto max-w-5xl p-4">
           <TabContent tab={activeTab} />
         </div>
       </div>

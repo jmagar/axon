@@ -441,6 +441,10 @@ export function useAxonShellActions(params: Params) {
     ],
   )
 
+  const handleStats = useCallback((_data: unknown) => {
+    // DockerStats manages its own state; this hook is reserved for future use
+  }, [])
+
   return {
     composerProps,
     handleEditMessage,
@@ -451,6 +455,7 @@ export function useAxonShellActions(params: Params) {
     handleRetryMessage,
     handleSelectSession,
     handleSidebarFileSelect,
+    handleStats,
     openFile,
     sidebarProps,
   }

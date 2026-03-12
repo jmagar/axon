@@ -118,7 +118,7 @@ function FilterPill({
       type="button"
       onClick={onClick}
       className={[
-        'rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-all duration-150',
+        'rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest transition-colors duration-150',
         'focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1',
         active
           ? 'bg-[rgba(135,175,255,0.18)] text-[var(--axon-primary)] shadow-[0_0_8px_rgba(135,175,255,0.15)]'
@@ -239,7 +239,7 @@ export function JobsDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-6 animate-fade-in">
+    <div className="axon-jobs-dashboard mx-auto max-w-6xl p-6 animate-fade-in">
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <div className="flex items-center gap-2">
@@ -322,7 +322,7 @@ export function JobsDashboard() {
 
       {/* Table */}
       <div
-        className="overflow-hidden rounded-xl border"
+        className="axon-jobs-container overflow-hidden rounded-xl border"
         style={{
           background: 'var(--surface-base)',
           backdropFilter: 'blur(12px)',
@@ -396,7 +396,7 @@ export function JobsDashboard() {
             type="button"
             onClick={handleLoadMore}
             disabled={loadingMore}
-            className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-float)] px-5 py-2 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-standard)] hover:text-[var(--axon-primary)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1"
+            className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-float)] px-5 py-2 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-standard)] hover:text-[var(--axon-primary)] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-[var(--focus-ring-color)] focus-visible:outline-offset-1"
           >
             {loadingMore ? <Loader2 className="size-3 animate-spin" /> : null}
             Load More

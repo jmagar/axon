@@ -4,12 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PromptInputFile } from '@/components/ai-elements/prompt-input'
 import type { NeuralCanvasHandle } from '@/components/neural-canvas'
 import { useAxonAcp } from '@/hooks/use-axon-acp'
-import type { AxonMessage } from '@/hooks/use-axon-session'
-import { useAxonSession } from '@/hooks/use-axon-session'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
-import { useRecentSessions } from '@/hooks/use-recent-sessions'
 import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
 import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
@@ -22,12 +19,14 @@ import {
   type AxonMobilePane,
   agentDisplayName,
   buildEditorMarkdown,
-  LIVE_MESSAGES_STORAGE_KEY,
   RIGHT_PANE_STORAGE_KEY,
   type RightPane,
   shouldReloadSessionOnTurnComplete,
 } from './axon-shell-state-helpers'
 import { useAxonShellLayoutControls } from './axon-shell-state-layout'
+import { useAxonShellMessages } from './axon-shell-state-messages'
+import { useAxonShellSession } from './axon-shell-state-session'
+import { useAxonShellSettings } from './axon-shell-state-settings'
 import { useToolPreferenceState } from './axon-shell-state-tools'
 import { AXON_PERMISSION_OPTIONS } from './axon-ui-config'
 import { mergeHistoricalMessages, shouldSyncHistoricalMessages } from './live-message-sync'
@@ -43,39 +42,18 @@ export function useAxonShellState() {
   const mcp = useMcpServers()
   const workspace = useWorkspaceFiles()
   const layout = useAxonShellLayoutControls()
+  const session = useAxonShellSession(layout.railMode)
+  const messages = useAxonShellMessages()
+  const settings = useAxonShellSettings()
 
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [activeAssistantSessionId, setActiveAssistantSessionId] = useState<string | null>(null)
   const [railQuery, setRailQuery] = useState('')
   const [sessionKey, setSessionKey] = useState(0)
-  const [liveMessages, setLiveMessages] = useState<AxonMessage[]>([])
-  const [liveMessagesHydrated, setLiveMessagesHydrated] = useState(false)
   const [pendingHandoffContext, setPendingHandoffContext] = useState<string | null>(null)
   const [sessionMode, setSessionMode] = useState<string>(pulsePermissionLevel)
   const [activeFile, setActiveFile] = useState('')
   const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
-  const [enableFs, setEnableFs] = useState(true)
-  const [enableTerminal, setEnableTerminal] = useState(true)
-  const [permissionTimeoutSecs, setPermissionTimeoutSecs] = useState<number | null>(null)
-  const [adapterTimeoutSecs, setAdapterTimeoutSecs] = useState<number | null>(null)
   const canvasRef = useRef<NeuralCanvasHandle>(null)
-
-  const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
-  const { sessions: assistantSessions, reload: reloadAssistantSessions } = useRecentSessions({
-    assistantMode: true,
-  })
-  const chatSessionId = layout.railMode === 'assistant' ? activeAssistantSessionId : activeSessionId
-
-  const {
-    messages: historicalMessages,
-    loading: sessionLoadingBase,
-    loaded: sessionLoaded,
-    error: sessionError,
-    reload: reloadSession,
-  } = useAxonSession(chatSessionId, { assistantMode: layout.railMode === 'assistant' })
-
-  const sessionLoading = sessionLoadingBase || (chatSessionId !== null && !sessionLoaded)
 
   const {
     enabledMcpTools,
@@ -111,51 +89,15 @@ export function useAxonShellState() {
     return Array.from(blocked)
   }, [effectiveEnabledMcpTools, mcp.enabledMcpServers, mcpToolsByServer])
 
-  const onSessionIdChange = useCallback(
-    (newId: string) => {
-      if (layout.railMode === 'assistant') {
-        setActiveAssistantSessionId(newId)
-        return
-      }
-      setActiveSessionId(newId)
-    },
-    [layout.railMode],
-  )
-
-  const onMessagesChange = useCallback((updater: (prev: AxonMessage[]) => AxonMessage[]) => {
-    setLiveMessages(updater)
-  }, [])
-
-  useEffect(() => {
-    let timer: number | null = null
-    try {
-      const raw = window.sessionStorage.getItem(LIVE_MESSAGES_STORAGE_KEY)
-      if (!raw) {
-        setLiveMessagesHydrated(true)
-        return
-      }
-      const parsed = JSON.parse(raw) as { messages?: AxonMessage[] }
-      if (Array.isArray(parsed.messages)) {
-        setLiveMessages(parsed.messages)
-      }
-    } catch {
-      // Ignore malformed cached messages.
-    }
-    timer = window.setTimeout(() => setLiveMessagesHydrated(true), 0)
-    return () => {
-      if (timer !== null) window.clearTimeout(timer)
-    }
-  }, [])
-
   const onTurnComplete = useCallback(() => {
-    reloadSessions()
-    if (shouldReloadSessionOnTurnComplete(chatSessionId)) {
-      reloadSession()
+    session.reloadSessions()
+    if (shouldReloadSessionOnTurnComplete(session.chatSessionId)) {
+      session.reloadSession()
     }
     if (layout.railMode === 'assistant') {
-      reloadAssistantSessions()
+      session.reloadAssistantSessions()
     }
-  }, [reloadSessions, chatSessionId, reloadSession, layout.railMode, reloadAssistantSessions])
+  }, [session, layout.railMode])
 
   const onEditorUpdate = useCallback(
     (content: string, operation: 'replace' | 'append') => {
@@ -177,7 +119,7 @@ export function useAxonShellState() {
   )
 
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
-    activeSessionId: chatSessionId,
+    activeSessionId: session.chatSessionId,
     agent: pulseAgent ?? 'claude',
     model: pulseModel,
     sessionMode,
@@ -185,18 +127,18 @@ export function useAxonShellState() {
     blockedMcpTools,
     assistantMode: layout.railMode === 'assistant',
     handoffContext: pendingHandoffContext,
-    onSessionIdChange,
+    onSessionIdChange: session.onSessionIdChange,
     onSessionFallback: undefined,
-    onMessagesChange,
+    onMessagesChange: messages.onMessagesChange,
     onAcpConfigOptionsUpdate: setAcpConfigOptions,
     onCommandsUpdate: handleCommandsUpdate,
     onHandoffConsumed: () => setPendingHandoffContext(null),
     onTurnComplete,
     onEditorUpdate,
-    enableFs,
-    enableTerminal,
-    permissionTimeoutSecs,
-    adapterTimeoutSecs,
+    enableFs: settings.enableFs,
+    enableTerminal: settings.enableTerminal,
+    permissionTimeoutSecs: settings.permissionTimeoutSecs,
+    adapterTimeoutSecs: settings.adapterTimeoutSecs,
   })
 
   const isStreamingRef = useRef(false)
@@ -256,39 +198,52 @@ export function useAxonShellState() {
   }, [effectiveEnabledMcpTools, mcp.enabledMcpServers, toolPrefsHydrated, toolPresets])
 
   useEffect(() => {
-    if (!liveMessagesHydrated) return
-    const sessionChanged = lastSyncedSessionIdRef.current !== chatSessionId
-    if (sessionChanged && !isStreamingRef.current && !sessionLoading && !sessionError) {
-      setLiveMessages(historicalMessages)
-      lastSyncedSessionIdRef.current = chatSessionId
+    if (!messages.liveMessagesHydrated) return
+    const sessionChanged = lastSyncedSessionIdRef.current !== session.chatSessionId
+    if (
+      sessionChanged &&
+      !isStreamingRef.current &&
+      !session.sessionLoading &&
+      !session.sessionError
+    ) {
+      messages.setLiveMessages(session.historicalMessages)
+      lastSyncedSessionIdRef.current = session.chatSessionId
       return
     }
     const shouldSync = shouldSyncHistoricalMessages({
       isStreaming: isStreamingRef.current,
-      sessionLoading,
-      sessionError,
+      sessionLoading: session.sessionLoading,
+      sessionError: session.sessionError,
       sessionChanged,
-      historicalCount: historicalMessages.length,
-      liveCount: liveMessages.length,
+      historicalCount: session.historicalMessages.length,
+      liveCount: messages.liveMessages.length,
     })
     if (!shouldSync) return
-    setLiveMessages((prev) => mergeHistoricalMessages(historicalMessages, prev))
-    lastSyncedSessionIdRef.current = chatSessionId
+    messages.setLiveMessages((prev) => mergeHistoricalMessages(session.historicalMessages, prev))
+    lastSyncedSessionIdRef.current = session.chatSessionId
   }, [
-    chatSessionId,
-    historicalMessages,
-    liveMessages.length,
-    liveMessagesHydrated,
-    sessionLoading,
-    sessionError,
+    session.chatSessionId,
+    session.historicalMessages,
+    messages.liveMessages.length,
+    messages.liveMessagesHydrated,
+    session.sessionLoading,
+    session.sessionError,
   ])
 
   const activeSession = useMemo(() => {
     if (layout.railMode === 'assistant') {
-      return assistantSessions.find((s) => s.id === activeAssistantSessionId) ?? null
+      return (
+        session.assistantSessions.find((s) => s.id === session.activeAssistantSessionId) ?? null
+      )
     }
-    return rawSessions.find((s) => s.id === activeSessionId) ?? null
-  }, [layout.railMode, assistantSessions, activeAssistantSessionId, rawSessions, activeSessionId])
+    return session.rawSessions.find((s) => s.id === session.activeSessionId) ?? null
+  }, [
+    layout.railMode,
+    session.assistantSessions,
+    session.activeAssistantSessionId,
+    session.rawSessions,
+    session.activeSessionId,
+  ])
 
   const modelOptions = useMemo(() => {
     const modelOption = getAcpModelConfigOption(acpConfigOptions)
@@ -355,15 +310,15 @@ export function useAxonShellState() {
     openFile,
     sidebarProps,
   } = useAxonShellActions({
-    activeAssistantSessionId,
-    activeSessionId,
+    activeAssistantSessionId: session.activeAssistantSessionId,
+    activeSessionId: session.activeSessionId,
     activeSessionRepo: activeSession?.project ?? '',
-    assistantSessions,
+    assistantSessions: session.assistantSessions,
     composerFiles,
     connected,
     effectiveEnabledMcpTools,
     isStreaming,
-    liveMessages,
+    liveMessages: messages.liveMessages,
     mcp: {
       enabledMcpServers: mcp.enabledMcpServers,
       mcpServers: mcp.mcpServers,
@@ -378,14 +333,14 @@ export function useAxonShellState() {
     pulseModel,
     railMode: layout.railMode,
     railQuery,
-    sessions: rawSessions,
+    sessions: session.rawSessions,
     sessionMode,
-    setActiveAssistantSessionId,
+    setActiveAssistantSessionId: session.setActiveAssistantSessionId,
     setActiveFile,
-    setActiveSessionId,
+    setActiveSessionId: session.setActiveSessionId,
     setComposerFiles,
     setEnabledMcpTools,
-    setLiveMessages,
+    setLiveMessages: messages.setLiveMessages,
     setPendingHandoffContext,
     setPulseAgent,
     setPulseModel,
@@ -409,29 +364,14 @@ export function useAxonShellState() {
   })
 
   const displayMessages =
-    chatSessionId !== null && liveMessages.length === 0 ? historicalMessages : liveMessages
+    session.chatSessionId !== null && messages.liveMessages.length === 0
+      ? session.historicalMessages
+      : messages.liveMessages
 
   useEffect(() => {
-    if (!liveMessagesHydrated) return
-    if (!connected && chatSessionId === null && liveMessages.length === 0) return
-    if (chatSessionId === null && liveMessages.length === 0) {
-      try {
-        const existingRaw = window.sessionStorage.getItem(LIVE_MESSAGES_STORAGE_KEY)
-        if (existingRaw) {
-          const existing = JSON.parse(existingRaw) as { messages?: AxonMessage[] }
-          if (Array.isArray(existing.messages) && existing.messages.length > 0) return
-        }
-      } catch {
-        // Ignore malformed cache and continue writing.
-      }
-    }
-    const payload = { messages: liveMessages.slice(-200) }
-    try {
-      window.sessionStorage.setItem(LIVE_MESSAGES_STORAGE_KEY, JSON.stringify(payload))
-    } catch {
-      // Ignore sessionStorage quota/private mode failures.
-    }
-  }, [chatSessionId, connected, liveMessages, liveMessagesHydrated])
+    if (!messages.liveMessagesHydrated) return
+    messages.persistMessages(connected, session.chatSessionId, messages.liveMessages)
+  }, [session.chatSessionId, connected, messages])
 
   const chatTitle = activeSession?.preview?.slice(0, 60) ?? activeSession?.project ?? 'New chat'
   const agentLabel = agentDisplayName(pulseAgent ?? 'claude')
@@ -463,7 +403,7 @@ export function useAxonShellState() {
     isDragging: layout.isDragging,
     isStreaming,
     layoutRestored: layout.layoutRestored,
-    liveMessages,
+    liveMessages: messages.liveMessages,
     mobilePane: layout.mobilePane,
     nudgeChatFlex: layout.nudgeChatFlex,
     nudgeSidebar: layout.nudgeSidebar,
@@ -473,14 +413,14 @@ export function useAxonShellState() {
     persistRightPane: layout.persistRightPane,
     persistSidebarOpen: layout.persistSidebarOpen,
     railMode: layout.railMode,
-    reloadSession,
+    reloadSession: session.reloadSession,
     resetChatFlex: layout.resetChatFlex,
     resetSidebarWidth: layout.resetSidebarWidth,
     rightPane: layout.rightPane,
     sectionRef: layout.sectionRef,
-    sessionError,
+    sessionError: session.sessionError,
     sessionKey,
-    sessionLoading,
+    sessionLoading: session.sessionLoading,
     setEditorMarkdown,
     setMobilePaneTracked: layout.setMobilePaneTracked,
     setRailModeTracked: layout.setRailModeTracked,
@@ -490,13 +430,15 @@ export function useAxonShellState() {
     startChatResize: layout.startChatResize,
     startSidebarResize: layout.startSidebarResize,
     transitionClass: layout.transitionClass,
-    enableFs,
-    setEnableFs,
-    enableTerminal,
-    setEnableTerminal,
-    permissionTimeoutSecs,
-    setPermissionTimeoutSecs,
-    adapterTimeoutSecs,
-    setAdapterTimeoutSecs,
+    density: layout.density,
+    setDensityTracked: layout.setDensityTracked,
+    enableFs: settings.enableFs,
+    setEnableFs: settings.setEnableFs,
+    enableTerminal: settings.enableTerminal,
+    setEnableTerminal: settings.setEnableTerminal,
+    permissionTimeoutSecs: settings.permissionTimeoutSecs,
+    setPermissionTimeoutSecs: settings.setPermissionTimeoutSecs,
+    adapterTimeoutSecs: settings.adapterTimeoutSecs,
+    setAdapterTimeoutSecs: settings.setAdapterTimeoutSecs,
   }
 }

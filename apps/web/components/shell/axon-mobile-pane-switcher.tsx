@@ -91,7 +91,7 @@ export function AxonMobilePaneSwitcher({
           aria-selected={mobilePane === id}
           aria-label={label}
           onClick={() => onMobilePaneChange(id)}
-          className={`inline-flex size-6 items-center justify-center rounded border transition-all duration-200 backdrop-blur-sm ${
+          className={`inline-flex size-6 items-center justify-center rounded border transition-colors duration-200 backdrop-blur-sm ${
             mobilePane === id ? activeClass : INACTIVE_CLASS
           }`}
         >
