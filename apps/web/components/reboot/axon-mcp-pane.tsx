@@ -206,18 +206,16 @@ function McpPaneContent() {
       <div className="axon-toolbar flex shrink-0 items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-2">
           {error && <span className="text-xs text-red-400">{error}</span>}
-          {!error && (
-            <button
-              type="button"
-              disabled={refreshing || loading}
-              onClick={refreshConnections}
-              className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.1)] bg-[var(--surface-float)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:bg-[var(--surface-base)] hover:text-[var(--text-primary)] disabled:opacity-50"
-              title="Refresh and reconnect MCP servers"
-            >
-              <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
-              <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={refreshing || loading}
+            onClick={refreshConnections}
+            className="flex items-center gap-1.5 rounded-lg border border-[rgba(175,215,255,0.1)] bg-[var(--surface-float)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:bg-[var(--surface-base)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            title="Refresh and reconnect MCP servers"
+          >
+            <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
         </div>
         <button
           type="button"

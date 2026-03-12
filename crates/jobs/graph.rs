@@ -66,12 +66,13 @@ pub async fn enqueue_graph_job(
     tx.commit().await?;
 
     if let Err(err) = enqueue_job(cfg, &cfg.graph_queue, id).await {
-        sqlx::query("UPDATE axon_graph_jobs SET status = $1, error_text = $2 WHERE id = $3")
-            .bind(JobStatus::Failed.as_str())
-            .bind(err.to_string())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        crate::crates::jobs::common::mark_job_failed(
+            pool,
+            crate::crates::jobs::common::JobTable::Graph,
+            id,
+            &err.to_string(),
+        )
+        .await?;
         return Err(format!("graph enqueue failed for {id}: {err}").into());
     }
 

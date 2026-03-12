@@ -53,7 +53,7 @@ async function buildGeminiProjectMap(): Promise<Map<string, string>> {
         const dir =
           typeof label === 'string' && label.trim() ? label.trim() : path.basename(absPath)
         if (!dir) continue
-        map.set(dir, dir)
+        map.set(path.basename(absPath), dir)
       }
       return map
     }

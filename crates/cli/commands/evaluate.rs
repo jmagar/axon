@@ -10,6 +10,10 @@ pub async fn run_evaluate(cfg: &Config) -> Result<(), Box<dyn Error>> {
         .or_else(|| (!cfg.positional.is_empty()).then(|| cfg.positional.join(" ")))
         .ok_or("evaluate requires a question")?;
     let result = query_service::evaluate(cfg, &question).await?;
-    println!("{}", serde_json::to_string_pretty(&result.payload)?);
+    if cfg.json_output {
+        println!("{}", serde_json::to_string_pretty(&result.payload)?);
+    } else {
+        println!("{}", serde_json::to_string_pretty(&result.payload)?);
+    }
     Ok(())
 }

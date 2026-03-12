@@ -30,7 +30,7 @@ agent-client-protocol = { version = "0", features = [
 | `unstable_session_resume` | `session/resume` · `ResumeSessionRequest` · `ResumeSessionResponse` · `SessionResumeCapabilities` | Unstable |
 | `unstable_session_model` | `session/setModel` · adds `model` to `NewSessionCapabilities` and `LoadSessionCapabilities` | Unstable |
 | `unstable_session_usage` | `usage: Option<Usage>` on `PromptResponse` · `UsageUpdate` `SessionUpdate` variant | Unstable |
-| `unstable_message_id` | `message_id: Option<String>` on `PromptRequest` + `PromptResponse` (UUID format) | Unstable |
+| `unstable_message_id` | `message_id: Option<String>` on `PromptRequest` + `user_message_id: Option<String>` on `PromptResponse` (UUID format) | Unstable |
 | `unstable_auth_methods` | Additional `AuthMethodType` variants for richer credential formats | Unstable |
 | `unstable_cancel_request` | `CancelRequestNotification` (cancel-as-request) · error code `-32800` `RequestCancelled` | Unstable |
 | `unstable_boolean_config` | Boolean values in `session/setConfigOption` · `SessionConfigValueBoolean` variant | Unstable |
@@ -174,7 +174,7 @@ Adds stable identifiers to individual messages, enabling clients and agents to r
 ```rust
 // PromptRequest — client sets a UUID to track this message
 PromptRequest::new("uuid-1234", messages)
-    .message_id("msg-uuid-abcd")  // unstable_message_id
+    .set_message_id("msg-uuid-abcd")  // unstable_message_id
 
 // PromptResponse — agent echoes it back (or assigns one if client didn't)
 PromptResponse {

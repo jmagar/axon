@@ -104,7 +104,7 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
 
     let bytes = output.len();
     if cfg.json_output {
-        println!("{}", serde_json::to_string(&result.payload)?);
+        println!("{}", serde_json::to_string_pretty(&result.payload)?);
         log_done(&format!(
             "command=scrape url={normalized} bytes={bytes} format={:?}",
             cfg.format

@@ -318,13 +318,19 @@ fn finalize_successful_turn(
         StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
         _ => LogLevel::Info,
     };
+    let msg = format!(
+        "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
+    );
+    if log_level == LogLevel::Info {
+        crate::crates::core::logging::log_info(&msg);
+    } else {
+        crate::crates::core::logging::log_warn(&msg);
+    }
     emit(
         service_tx,
         ServiceEvent::Log {
             level: log_level,
-            message: format!(
-                "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
-            ),
+            message: msg,
         },
     );
 
@@ -350,11 +356,13 @@ fn finalize_successful_turn(
             }),
         },
     );
+    let msg = format!("ACP runtime: TurnResult emitted (session_id={session})");
+    crate::crates::core::logging::log_info(&msg);
     emit(
         service_tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!("ACP runtime: TurnResult emitted (session_id={session})"),
+            message: msg,
         },
     );
     Ok(())

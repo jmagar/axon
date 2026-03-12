@@ -53,11 +53,13 @@ export function useAdaptivePolling(
       if (document.visibilityState === 'visible') {
         if (timer) clearTimeout(timer)
         timer = null
-        try {
-          void callbackRef.current()
-        } catch {
-          // Swallow — same rationale as above.
-        }
+        void (async () => {
+          try {
+            await callbackRef.current()
+          } catch {
+            // Swallow — same rationale as above.
+          }
+        })()
         schedule()
       }
     }

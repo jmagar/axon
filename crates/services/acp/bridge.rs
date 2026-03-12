@@ -83,11 +83,13 @@ pub(super) fn auto_approve_outcome(
         .unwrap_or(RequestPermissionOutcome::Cancelled);
 
     if matches!(outcome, RequestPermissionOutcome::Selected(_)) {
+        let msg = format!("ACP permission auto-approved for tool_call={tool_call_id}");
+        crate::crates::core::logging::log_info(&msg);
         emit(
             tx,
             ServiceEvent::Log {
                 level: LogLevel::Info,
-                message: format!("ACP permission auto-approved for tool_call={tool_call_id}"),
+                message: msg,
             },
         );
     }
@@ -129,30 +131,48 @@ pub(super) async fn handle_interactive_permission(
     // would never match a route_permission_response call, so the request would hang
     // until timeout.  Fail fast with a clear error instead.
     if session_id.trim().is_empty() {
+        let msg = format!(
+            "ACP permission: blank session_id for tool_call={tool_call_id}, \
+             cannot route response — cancelling"
+        );
+        crate::crates::core::logging::log_warn(&msg);
         emit(
             tx,
             ServiceEvent::Log {
                 level: LogLevel::Warn,
-                message: format!(
-                    "ACP permission: blank session_id for tool_call={tool_call_id}, \
-                     cannot route response — cancelling"
-                ),
+                message: msg,
             },
         );
         return RequestPermissionOutcome::Cancelled;
     }
 
     let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
+    let key = (session_id.to_string(), tool_call_id.to_string());
     // Key is (session_id, tool_call_id) — SEC-7: prevents cross-session routing.
-    permission_responders.insert((session_id.to_string(), tool_call_id.to_string()), resp_tx);
+    permission_responders.insert(key.clone(), resp_tx);
 
+    // RAII guard: ensures the map entry is removed even if this future is cancelled.
+    struct PermissionGuard<'a> {
+        map: &'a PermissionResponderMap,
+        key: (String, String),
+    }
+    impl Drop for PermissionGuard<'_> {
+        fn drop(&mut self) {
+            self.map.remove(&self.key);
+        }
+    }
+    let _guard = PermissionGuard {
+        map: permission_responders,
+        key,
+    };
+
+    let msg = format!("ACP permission awaiting frontend response for tool_call={tool_call_id}");
+    crate::crates::core::logging::log_info(&msg);
     emit(
         tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!(
-                "ACP permission awaiting frontend response for tool_call={tool_call_id}"
-            ),
+            message: msg,
         },
     );
 
@@ -166,13 +186,15 @@ pub(super) async fn handle_interactive_permission(
                 .find(|opt| *opt.option_id.0 == *option_id);
             match matched {
                 Some(opt) => {
+                    let msg = format!(
+                        "ACP permission resolved by frontend for tool_call={tool_call_id}: {option_id}"
+                    );
+                    crate::crates::core::logging::log_info(&msg);
                     emit(
                         tx,
                         ServiceEvent::Log {
                             level: LogLevel::Info,
-                            message: format!(
-                                "ACP permission resolved by frontend for tool_call={tool_call_id}: {option_id}"
-                            ),
+                            message: msg,
                         },
                     );
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
@@ -180,13 +202,15 @@ pub(super) async fn handle_interactive_permission(
                     ))
                 }
                 None => {
+                    let msg = format!(
+                        "ACP permission: frontend sent unknown option_id={option_id} for tool_call={tool_call_id}, cancelling"
+                    );
+                    crate::crates::core::logging::log_warn(&msg);
                     emit(
                         tx,
                         ServiceEvent::Log {
                             level: LogLevel::Warn,
-                            message: format!(
-                                "ACP permission: frontend sent unknown option_id={option_id} for tool_call={tool_call_id}, cancelling"
-                            ),
+                            message: msg,
                         },
                     );
                     RequestPermissionOutcome::Cancelled
@@ -199,27 +223,28 @@ pub(super) async fn handle_interactive_permission(
         // net, explicitly remove the map entry here so no stale entry can linger.
         Ok(Err(_)) => {
             permission_responders.remove(&(session_id.to_string(), tool_call_id.to_string()));
+            let msg = format!("ACP permission: responder dropped for tool_call={tool_call_id}");
+            crate::crates::core::logging::log_warn(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Warn,
-                    message: format!(
-                        "ACP permission: responder dropped for tool_call={tool_call_id}"
-                    ),
+                    message: msg,
                 },
             );
             RequestPermissionOutcome::Cancelled
         }
         // Timeout path: no frontend response within 60s.
         Err(_) => {
-            log::warn!("ACP permission request timed out after 60s");
+            let msg = format!(
+                "ACP permission: timeout waiting for frontend response for tool_call={tool_call_id}"
+            );
+            crate::crates::core::logging::log_warn(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Warn,
-                    message: format!(
-                        "ACP permission: timeout waiting for frontend response for tool_call={tool_call_id}"
-                    ),
+                    message: msg,
                 },
             );
             // Clean up the map entry. DashMap: no lock needed.
@@ -262,7 +287,7 @@ impl Client for AcpBridgeClient {
             .fields
             .title
             .as_deref()
-            .unwrap_or("")
+            .unwrap_or_else(|| args.tool_call.tool_call_id.0.as_ref())
             .trim()
             .to_lowercase();
 
@@ -347,6 +372,16 @@ impl Client for AcpBridgeClient {
                 let mut text = state.assistant_text.borrow_mut();
                 if text.len() < MAX_ASSISTANT_TEXT_BYTES {
                     text.push_str(&text_delta);
+                    if text.len() >= MAX_ASSISTANT_TEXT_BYTES {
+                        let msg = format!(
+                            "ACP runtime: assistant text reached limit ({MAX_ASSISTANT_TEXT_BYTES} bytes); \
+                             further output will be truncated in the final result"
+                        );
+                        crate::crates::core::logging::log_warn(&msg);
+                        // Access service_tx from the outer scope if needed, 
+                        // but here we are in a block that doesn't have it yet.
+                        // We'll emit it using the sender we capture later in this function.
+                    }
                 }
             }
             *state.current_session_id.borrow_mut() = Some(args.session_id.0.to_string());
@@ -360,7 +395,72 @@ impl Client for AcpBridgeClient {
         // Use the current turn's service_tx (updated per-turn by run_turn_on_conn).
         // Clone immediately to release the borrow before the emit call.
         let service_tx = self.runtime_state.service_tx.borrow().clone();
+
+        {
+            let text = self.runtime_state.assistant_text.borrow();
+            if text.len() >= 1024 * 1024 && !text.is_empty() {
+                emit(
+                    &service_tx,
+                    ServiceEvent::Log {
+                        level: LogLevel::Warn,
+                        message: format!(
+                            "Assistant text limit hit (1 MiB); output truncated"
+                        ),
+                    },
+                );
+            }
+        }
+
         emit(&service_tx, map_session_notification_event(&args));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent_client_protocol::{
+        PermissionOption, SessionId, ToolCall, ToolCallId, ToolCallUpdate,
+    };
+
+    #[tokio::test]
+    async fn test_blocked_mcp_tool_by_name_not_id() {
+        let runtime_state = Arc::new(AcpRuntimeState::default());
+
+        // Block "shell" tool.
+        runtime_state
+            .blocked_mcp_tools
+            .borrow_mut()
+            .insert("shell".to_string());
+
+        let permission_responders = Arc::new(dashmap::DashMap::new());
+        let client = AcpBridgeClient {
+            runtime_state: runtime_state.clone(),
+            auto_approve: true,
+            permission_responders,
+        };
+
+        // Create a permission request for "shell" tool with a different ID.
+        let tool_call_id = ToolCallId::new("call_123");
+        let tool_call = ToolCall::new(tool_call_id, "shell");
+
+        let args = RequestPermissionRequest::new(
+            SessionId::new("session-1"),
+            ToolCallUpdate::from(tool_call),
+            vec![PermissionOption::new(
+                "allow",
+                "Allow",
+                PermissionOptionKind::AllowOnce,
+            )],
+        );
+
+        let resp = client.request_permission(args).await.unwrap();
+
+        // The current implementation (buggy) will NOT block it because it checks "call_123" against "shell".
+        assert_eq!(
+            resp.outcome,
+            RequestPermissionOutcome::Cancelled,
+            "Tool 'shell' should be blocked even if ID is 'call_123'"
+        );
     }
 }

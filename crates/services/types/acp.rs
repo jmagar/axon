@@ -152,6 +152,9 @@ pub struct AcpSessionUpdateEvent {
     /// Raw JSON input to the tool call.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_input: Option<serde_json::Value>,
+    /// File paths or URIs associated with the tool call (e.g. read/write targets).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_locations: Option<Vec<String>>,
 }
 
 // ── Permission request ───────────────────────────────────────────────────────
@@ -276,6 +279,9 @@ fn serialize_session_update<S: serde::Serializer>(
     }
     if let Some(ref input) = update.tool_input {
         map.serialize_entry("tool_input", input)?;
+    }
+    if let Some(ref locations) = update.tool_locations {
+        map.serialize_entry("tool_locations", locations)?;
     }
     map.end()
 }

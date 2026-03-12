@@ -42,6 +42,7 @@ pub fn map_session_notification(notification: &SessionNotification) -> AcpSessio
     let (tool_name, tool_status) = extract_tool_details(&notification.update);
     let tool_content = extract_tool_content(&notification.update);
     let tool_input = extract_tool_input(&notification.update);
+    let tool_locations = extract_tool_locations(&notification.update);
     AcpSessionUpdateEvent {
         session_id: notification.session_id.0.to_string(),
         kind,
@@ -51,6 +52,7 @@ pub fn map_session_notification(notification: &SessionNotification) -> AcpSessio
         tool_status,
         tool_content,
         tool_input,
+        tool_locations,
     }
 }
 
@@ -171,8 +173,8 @@ pub fn map_session_notification_event(notification: &SessionNotification) -> Ser
                     .iter()
                     .map(|e| AcpPlanEntry {
                         content: e.content.clone(),
-                        priority: format!("{:?}", e.priority).to_lowercase(),
-                        status: format!("{:?}", e.status).to_lowercase(),
+                        priority: map_plan_priority(e.priority).to_string(),
+                        status: map_plan_status(e.status).to_string(),
                     })
                     .collect(),
             }),
@@ -218,18 +220,64 @@ fn extract_tool_details(update: &SessionUpdate) -> (Option<String>, Option<Strin
     match update {
         SessionUpdate::ToolCall(tool_call) => (
             Some(tool_call.title.clone()),
-            Some(format!("{:?}", tool_call.status)),
+            Some(map_tool_status(tool_call.status).to_string()),
         ),
         SessionUpdate::ToolCallUpdate(tool_call_update) => {
             let title = tool_call_update.fields.title.clone();
-            let status = tool_call_update
-                .fields
-                .status
-                .as_ref()
-                .map(|s| format!("{s:?}"));
+            let status = tool_call_update.fields.status.map(|s| map_tool_status(s).to_string());
             (title, status)
         }
         _ => (None, None),
+    }
+}
+
+fn map_tool_status(status: agent_client_protocol::ToolCallStatus) -> &'static str {
+    use agent_client_protocol::ToolCallStatus;
+    match status {
+        ToolCallStatus::InProgress => "in_progress",
+        ToolCallStatus::Completed => "completed",
+        ToolCallStatus::Failed => "failed",
+        ToolCallStatus::Cancelled => "cancelled",
+        _ => "unknown",
+    }
+}
+
+fn map_plan_priority(priority: agent_client_protocol::PlanPriority) -> &'static str {
+    use agent_client_protocol::PlanPriority;
+    match priority {
+        PlanPriority::Low => "low",
+        PlanPriority::Medium => "medium",
+        PlanPriority::High => "high",
+        _ => "unknown",
+    }
+}
+
+fn map_plan_status(status: agent_client_protocol::PlanStatus) -> &'static str {
+    use agent_client_protocol::PlanStatus;
+    match status {
+        PlanStatus::Todo => "todo",
+        PlanStatus::InProgress => "in_progress",
+        PlanStatus::Completed => "completed",
+        _ => "unknown",
+    }
+}
+
+fn extract_tool_locations(update: &SessionUpdate) -> Option<Vec<String>> {
+    match update {
+        SessionUpdate::ToolCall(tc) => Some(
+            tc.locations
+                .iter()
+                .map(|l| l.uri.0.to_string())
+                .collect::<Vec<_>>(),
+        )
+        .filter(|v| !v.is_empty()),
+        SessionUpdate::ToolCallUpdate(tcu) => tcu
+            .fields
+            .locations
+            .as_ref()
+            .map(|locs| locs.iter().map(|l| l.uri.0.to_string()).collect::<Vec<_>>())
+            .filter(|v| !v.is_empty()),
+        _ => None,
     }
 }
 

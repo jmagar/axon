@@ -158,13 +158,14 @@ pub(super) async fn initialize_connection(
         permission_responders: permission_responders.clone(),
     };
 
+    let msg =
+        format!("ACP runtime: transport ready, starting initialize (auto_approve={auto_approve})");
+    crate::crates::core::logging::log_info(&msg);
     emit(
         tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!(
-                "ACP runtime: transport ready, starting initialize (auto_approve={auto_approve})"
-            ),
+            message: msg,
         },
     );
 
@@ -257,11 +258,13 @@ pub(super) async fn setup_session(
     match session_setup {
         AcpSessionSetupRequest::New(new_session) => {
             validate_cwd_usable(&new_session.cwd)?;
+            let msg = "ACP runtime: creating new session".to_string();
+            crate::crates::core::logging::log_info(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Info,
-                    message: "ACP runtime: creating new session".to_string(),
+                    message: msg,
                 },
             );
             let r = conn
@@ -272,11 +275,13 @@ pub(super) async fn setup_session(
         }
         AcpSessionSetupRequest::Load(load_session) => {
             validate_cwd_usable(&load_session.cwd)?;
+            let msg = "ACP runtime: loading existing session".to_string();
+            crate::crates::core::logging::log_info(&msg);
             emit(
                 tx,
                 ServiceEvent::Log {
                     level: LogLevel::Info,
-                    message: "ACP runtime: loading existing session".to_string(),
+                    message: msg,
                 },
             );
             let requested_id = load_session.session_id.clone();
@@ -284,11 +289,13 @@ pub(super) async fn setup_session(
             match conn.load_session(load_session).await {
                 Ok(r) => Ok((requested_id, r.config_options)),
                 Err(err) => {
+                    let msg = format!("ACP load_session failed, falling back: {err}");
+                    crate::crates::core::logging::log_warn(&msg);
                     emit(
                         tx,
                         ServiceEvent::Log {
                             level: LogLevel::Warn,
-                            message: format!("ACP load_session failed, falling back: {err}"),
+                            message: msg,
                         },
                     );
                     let r = conn
@@ -403,11 +410,13 @@ async fn apply_model_config(
     };
 
     if value_allowed {
+        let msg = format!("ACP runtime: setting model to {requested_model}");
+        crate::crates::core::logging::log_info(&msg);
         emit(
             tx,
             ServiceEvent::Log {
                 level: LogLevel::Info,
-                message: format!("ACP runtime: setting model to {requested_model}"),
+                message: msg,
             },
         );
         let set_resp = conn
@@ -434,13 +443,13 @@ async fn apply_model_config(
     } else {
         // Use the already-computed `requested_model` rather than recomputing
         // `normalized_requested_model(model)` — they produce the same value.
+        let msg = format!("ACP runtime: skipping unsupported model value '{requested_model}'");
+        crate::crates::core::logging::log_warn(&msg);
         emit(
             tx,
             ServiceEvent::Log {
                 level: LogLevel::Warn,
-                message: format!(
-                    "ACP runtime: skipping unsupported model value '{requested_model}'"
-                ),
+                message: msg,
             },
         );
     }

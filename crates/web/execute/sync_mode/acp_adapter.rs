@@ -151,6 +151,7 @@ pub(super) fn resolve_acp_adapter_command(
             .or(Some(default_cmd)),
         args_override
             .as_deref()
+            .filter(|v| !v.trim().is_empty())
             .or(cfg.acp_adapter_args.as_deref())
             .or(default_args),
     )?;
