@@ -1,5 +1,5 @@
 # Changelog
-Last Modified: 2026-03-11 (session: v0.19.0 — ACP persistence + settings/sessions hardening)
+Last Modified: 2026-03-12 (session: v0.19.1 — web performance hardening + shell state split)
 
 ## [Unreleased] — feat/github-code-aware-chunking
 
@@ -7,6 +7,7 @@ This section documents commits on `feat/github-code-aware-chunking` relative to 
 
 ### Highlights
 
+- **Branch head sync (post-`5682daa2`)** — documented two previously missing branch-head commits: ACP session/config persistence hardening (`bbc1684b`) and GitHub TEI batch embedding performance improvements (`e1e612c6`).
 - **Assistant mode in Reboot sidebar and ACP path isolation (v0.18.0)** — added `assistant` rail mode with dedicated session list (`/api/assistant/sessions`), `useAssistantSessions` hook, and shell wiring for separate assistant session continuity; pulse chat now accepts `assistant_mode` and resolves CWD to `$AXON_DATA_DIR/axon/assistant` (fallback `~/.local/share/axon/axon/assistant`) with per-agent+mode ACP connection scoping.
 - **MCP config path alignment (v0.18.1 window)** — normalized config-path expectations to `mcp.json` across web/server/docs flows to remove path drift between UI settings and backend resolution.
 
@@ -126,6 +127,8 @@ This section documents commits on `feat/github-code-aware-chunking` relative to 
 
 | Commit | Type | Message |
 |---|---|---|
+| `e1e612c6` | perf(ingest) | batch GitHub TEI embeddings across documents |
+| `bbc1684b` | feat(acp) | persist MCP config and harden session scanning |
 | `5682daa2` | fix(mcp) | align config path to mcp.json across web/api/docs |
 | `98e7b96e` | feat(release) | ship assistant mode and stabilize verification gates (v0.18.0) |
 | `93537231` | feat(web) | wire assistant mode sessions through shell and ACP |

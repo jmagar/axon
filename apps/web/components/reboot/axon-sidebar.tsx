@@ -1,6 +1,8 @@
 'use client'
 
+import { SiAnthropic, SiGoogle } from '@icons-pack/react-simple-icons'
 import { ChevronDown, PanelLeft, Plus, Search } from 'lucide-react'
+import { SiOpenai } from 'react-icons/si'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -12,12 +14,28 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import type { FileEntry } from '@/components/workspace/file-tree'
 import { FileTree } from '@/components/workspace/file-tree'
 import type { SessionSummary } from '@/hooks/use-recent-sessions'
+import {
+  formatLastMessageTime,
+  formatSessionSubtitle,
+  formatSessionTitle,
+} from './axon-sidebar-utils'
 import { RAIL_MODES, type RailMode } from './axon-ui-config'
 
 const AGENT_BADGE: Record<string, { label: string; colorClass: string }> = {
-  claude: { label: 'C', colorClass: 'text-[#afd7ff]' },
-  codex: { label: 'Cx', colorClass: 'text-[#7dda7d]' },
+  claude: { label: 'C', colorClass: 'text-[#d4b07a]' },
+  codex: { label: 'O', colorClass: 'text-[#9ad1ff]' },
   gemini: { label: 'G', colorClass: 'text-[#7db8f7]' },
+}
+
+function AgentLogo({ agent }: { agent?: string }) {
+  const normalized = (agent ?? 'claude').toLowerCase()
+  if (normalized === 'gemini') {
+    return <SiGoogle className="size-3.5 text-[#8ab4f8]" title="Google (Gemini)" />
+  }
+  if (normalized === 'codex') {
+    return <SiOpenai className="size-3.5 text-[#9ad1ff]" title="OpenAI (Codex)" />
+  }
+  return <SiAnthropic className="size-3.5 text-[#d4b07a]" title="Anthropic (Claude)" />
 }
 
 function railItemClass(isActive: boolean) {
@@ -110,13 +128,12 @@ function RailContent({
                   <div className="flex items-start justify-between gap-2">
                     <span className="max-w-[78%] truncate text-[13px] font-medium">{title}</span>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      {session.agent && session.agent !== 'claude' ? (
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent]?.colorClass ?? ''}`}
-                        >
-                          {AGENT_BADGE[session.agent]?.label}
-                        </span>
-                      ) : null}
+                      <AgentLogo agent={session.agent} />
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent ?? 'claude']?.colorClass ?? ''}`}
+                      >
+                        {AGENT_BADGE[session.agent ?? 'claude']?.label ?? 'C'}
+                      </span>
                       <span className="text-[11px] text-[var(--text-dim)]">
                         {formatLastMessageTime(session.mtimeMs)}
                       </span>
@@ -205,9 +222,17 @@ function RailContent({
                 <div className="px-3">
                   <div className="flex items-start justify-between gap-2">
                     <span className="max-w-[80%] truncate text-[13px] font-medium">{title}</span>
-                    <span className="text-[11px] text-[var(--text-dim)]">
-                      {formatLastMessageTime(session.mtimeMs)}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <AgentLogo agent={session.agent} />
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent ?? 'claude']?.colorClass ?? ''}`}
+                      >
+                        {AGENT_BADGE[session.agent ?? 'claude']?.label ?? 'C'}
+                      </span>
+                      <span className="text-[11px] text-[var(--text-dim)]">
+                        {formatLastMessageTime(session.mtimeMs)}
+                      </span>
+                    </div>
                   </div>
                   {meta ? (
                     <div
@@ -444,46 +469,4 @@ export function AxonSidebar({
       </ScrollArea>
     </div>
   )
-}
-
-function formatLastMessageTime(ms: number): string {
-  const date = new Date(ms)
-  const now = new Date()
-  const sameDay = date.toDateString() === now.toDateString()
-  if (sameDay) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  }
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
-
-function formatSessionSubtitle(repo?: string, project?: string, branch?: string): string {
-  const location = repo?.trim() || project?.trim() || ''
-  const branchText = branch?.trim() || ''
-  if (location && branchText) return `${location} • ${branchText}`
-  if (location) return location
-  if (branchText) return branchText
-  return ''
-}
-
-function sanitizePreviewForTitle(text: string): string {
-  return text
-    .replace(/^<system-handoff>[\s\S]*?<\/system-handoff>\s*/i, '')
-    .replace(/^#+\s*/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function formatSessionTitle(preview?: string, project?: string): string {
-  const raw = sanitizePreviewForTitle(preview?.trim() || '')
-  if (raw && raw.toLowerCase() !== 'axon' && raw.toLowerCase() !== 'local command caveat') {
-    if (raw.startsWith('rollout-')) return 'Rollout session'
-    if (raw.startsWith('<local-command-caveat>')) return 'Local command caveat'
-    if (raw.length > 72) return `${raw.slice(0, 69)}...`
-    return raw
-  }
-  const fallback = (project?.trim() || 'Untitled session').replace(/\s+/g, ' ')
-  if (fallback.startsWith('rollout-')) return 'Rollout session'
-  if (fallback.startsWith('<local-command-caveat>')) return 'Local command caveat'
-  if (fallback.length > 72) return `${fallback.slice(0, 69)}...`
-  return fallback
 }

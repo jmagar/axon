@@ -97,4 +97,47 @@ describe('useAxonSession', () => {
     expect(result.current.error).not.toBeNull()
     expect(result.current.messages).toEqual([])
   })
+
+  it('clears stale messages immediately when sessionId changes', async () => {
+    let resolveSecond: ((value: Response) => void) | null = null
+    const secondResponse = new Promise<Response>((resolve) => {
+      resolveSecond = resolve
+    })
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          project: 'assistant',
+          filename: 'session-1',
+          sessionId: 'session-1',
+          messages: [{ role: 'assistant', content: 'from first session' }],
+        }),
+      } as Response)
+      .mockImplementationOnce(() => secondResponse)
+
+    const { result, rerender } = renderHook(({ sessionId }) => useAxonSession(sessionId), {
+      initialProps: { sessionId: 'session-1' },
+    })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.messages.map((m) => m.content)).toEqual(['from first session'])
+
+    rerender({ sessionId: 'session-2' })
+    expect(result.current.loading).toBe(true)
+    expect(result.current.messages).toEqual([])
+
+    resolveSecond?.({
+      ok: true,
+      json: async () => ({
+        project: 'assistant',
+        filename: 'session-2',
+        sessionId: 'session-2',
+        messages: [{ role: 'assistant', content: 'from second session' }],
+      }),
+    } as Response)
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.messages.map((m) => m.content)).toEqual(['from second session'])
+  })
 })

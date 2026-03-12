@@ -178,14 +178,16 @@ workers:
     set -euo pipefail
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    cargo build --locked --bin axon
+    AXON_BIN="$(pwd)/target/debug/axon"
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
     trap cleanup INT TERM EXIT
-    cargo run --locked --bin axon -- crawl worker & PIDS+=($!)
-    cargo run --locked --bin axon -- embed worker & PIDS+=($!)
-    cargo run --locked --bin axon -- extract worker & PIDS+=($!)
-    cargo run --locked --bin axon -- ingest worker & PIDS+=($!)
-    cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
+    "$AXON_BIN" crawl worker & PIDS+=($!)
+    "$AXON_BIN" embed worker & PIDS+=($!)
+    "$AXON_BIN" extract worker & PIDS+=($!)
+    "$AXON_BIN" ingest worker & PIDS+=($!)
+    "$AXON_BIN" refresh worker & PIDS+=($!)
     EXIT=0
     for pid in "${PIDS[@]}"; do wait "$pid" || EXIT=$?; done
     exit "$EXIT"
@@ -197,19 +199,21 @@ dev:
     set -euo pipefail
     just stop
     sleep 1
-    docker compose up -d --wait axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
     if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
     if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    cargo build --locked --bin axon
+    AXON_BIN="$(pwd)/target/debug/axon"
+    docker compose up -d --wait axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
     PIDS=()
     cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
     trap cleanup INT TERM EXIT
-    AXON_SERVE_HOST=0.0.0.0 cargo run --locked --bin axon -- serve --port 49000 & PIDS+=($!)
-    AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp & PIDS+=($!)
-    cargo run --locked --bin axon -- crawl worker & PIDS+=($!)
-    cargo run --locked --bin axon -- embed worker & PIDS+=($!)
-    cargo run --locked --bin axon -- extract worker & PIDS+=($!)
-    cargo run --locked --bin axon -- ingest worker & PIDS+=($!)
-    cargo run --locked --bin axon -- refresh worker & PIDS+=($!)
+    AXON_SERVE_HOST=0.0.0.0 "$AXON_BIN" serve --port 49000 & PIDS+=($!)
+    AXON_MCP_HTTP_PORT=8001 "$AXON_BIN" mcp & PIDS+=($!)
+    "$AXON_BIN" crawl worker & PIDS+=($!)
+    "$AXON_BIN" embed worker & PIDS+=($!)
+    "$AXON_BIN" extract worker & PIDS+=($!)
+    "$AXON_BIN" ingest worker & PIDS+=($!)
+    "$AXON_BIN" refresh worker & PIDS+=($!)
     (cd apps/web && node shell-server.mjs) & PIDS+=($!)
     (cd apps/web && pnpm dev) & PIDS+=($!)
     EXIT=0

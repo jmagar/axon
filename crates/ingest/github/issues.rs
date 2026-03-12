@@ -1,8 +1,6 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::{
-    EmbedDocument, embed_documents_batch, embed_text_with_extra_payload,
-};
+use crate::crates::ingest::embed_pipeline::embed_documents_in_batches;
+use crate::crates::vector::ops::{EmbedDocument, embed_text_with_extra_payload};
 use octocrab::Octocrab;
 use octocrab::{models, params};
 use std::error::Error;
@@ -20,7 +18,6 @@ pub async fn ingest_issues(
     common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
     let mut docs = Vec::new();
-    let mut total = 0usize;
     let mut page = octo
         .issues(&common.owner, &common.name)
         .list()
@@ -88,37 +85,7 @@ pub async fn ingest_issues(
         };
     }
 
-    match embed_documents_batch(cfg, &docs).await {
-        Ok(summary) => total += summary.chunks_embedded,
-        Err(err) => {
-            log_warn(&format!(
-                "command=ingest_github embed_issue_batch_failed docs={} err={err}; falling_back_to_per_issue_embedding",
-                docs.len()
-            ));
-            for doc in docs {
-                if let Some(extra) = doc.extra.as_ref() {
-                    match embed_text_with_extra_payload(
-                        cfg,
-                        &doc.content,
-                        &doc.url,
-                        &doc.source_type,
-                        doc.title.as_deref(),
-                        extra,
-                    )
-                    .await
-                    {
-                        Ok(n) => total += n,
-                        Err(e) => log_warn(&format!(
-                            "command=ingest_github embed_issue_fallback_failed url={} err={e}",
-                            doc.url
-                        )),
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(total)
+    Ok(embed_github_docs(cfg, &docs, "ingest_github").await)
 }
 
 /// Ingest all pull requests (open + closed) from a repository.
@@ -128,7 +95,6 @@ pub async fn ingest_pull_requests(
     common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
     let mut docs = Vec::new();
-    let mut total = 0usize;
     let mut page = octo
         .pulls(&common.owner, &common.name)
         .list()
@@ -196,35 +162,32 @@ pub async fn ingest_pull_requests(
         };
     }
 
-    match embed_documents_batch(cfg, &docs).await {
-        Ok(summary) => total += summary.chunks_embedded,
-        Err(err) => {
-            log_warn(&format!(
-                "command=ingest_github embed_pr_batch_failed docs={} err={err}; falling_back_to_per_pr_embedding",
-                docs.len()
-            ));
-            for doc in docs {
-                if let Some(extra) = doc.extra.as_ref() {
-                    match embed_text_with_extra_payload(
-                        cfg,
-                        &doc.content,
-                        &doc.url,
-                        &doc.source_type,
-                        doc.title.as_deref(),
-                        extra,
-                    )
-                    .await
-                    {
-                        Ok(n) => total += n,
-                        Err(e) => log_warn(&format!(
-                            "command=ingest_github embed_pr_fallback_failed url={} err={e}",
-                            doc.url
-                        )),
-                    }
-                }
-            }
-        }
-    }
+    Ok(embed_github_docs(cfg, &docs, "ingest_github").await)
+}
 
-    Ok(total)
+async fn embed_github_docs(cfg: &Config, docs: &[EmbedDocument], command: &str) -> usize {
+    let result = embed_documents_in_batches(
+        cfg,
+        docs,
+        64,
+        command,
+        |cfg, doc| {
+            Box::pin(async move {
+                let extra_owned = doc.extra.clone().unwrap_or_default();
+                embed_text_with_extra_payload(
+                    cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                    &extra_owned,
+                )
+                .await
+                .map_err(|err| err.to_string())
+            })
+        },
+        |_| {},
+    )
+    .await;
+    result.chunks_embedded
 }

@@ -1,7 +1,8 @@
 'use client'
 
 import { Activity, AlertCircle, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAdaptivePolling } from '@/hooks/use-adaptive-polling'
 import { apiFetch } from '@/lib/api-fetch'
 import type { JobEntry, StatusResult } from '@/lib/result-types'
 
@@ -178,7 +179,7 @@ export function StatusDashboard() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  async function load(isManual = false) {
+  const load = useCallback(async (isManual = false) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -197,21 +198,24 @@ export function StatusDashboard() {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (abortRef.current === controller) {
+        abortRef.current = null
         setLoading(false)
         setSpinning(false)
       }
     }
-  }
+  }, [])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load intentionally captured at mount; abortRef cleanup handles unmount race
   useEffect(() => {
     void load()
-    const id = setInterval(() => void load(), 5_000)
     return () => {
-      clearInterval(id)
       abortRef.current?.abort()
     }
-  }, [])
+  }, [load])
+  useAdaptivePolling(() => load(), 5_000, {
+    enabled: true,
+    pauseWhenHidden: true,
+    jitterRatio: 0.15,
+  })
 
   return (
     <div className="animate-fade-in space-y-4">

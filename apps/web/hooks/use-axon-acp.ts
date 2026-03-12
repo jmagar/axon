@@ -133,7 +133,16 @@ export function useAxonAcp({
               ...m,
               content: delta ? m.content + delta : m.content,
               chainOfThought:
-                thoughts.length > 0 ? [...(m.chainOfThought ?? []), ...thoughts] : m.chainOfThought,
+                thoughts.length > 0
+                  ? (() => {
+                      const thoughtDelta = thoughts.join('')
+                      if (!thoughtDelta) return m.chainOfThought
+                      if (!m.chainOfThought || m.chainOfThought.length === 0) return [thoughtDelta]
+                      const next = [...m.chainOfThought]
+                      next[next.length - 1] = `${next[next.length - 1] ?? ''}${thoughtDelta}`
+                      return next
+                    })()
+                  : m.chainOfThought,
             }
           : m,
       ),
@@ -261,6 +270,7 @@ export function useAxonAcp({
           const toolCallId = (msg.tool_call_id as string) ?? ''
           const toolName = (msg.tool_name as string) ?? 'unknown'
           const toolInput = (msg.tool_input as Record<string, unknown>) ?? {}
+          const now = Date.now()
           const sid = streamingIdRef.current
           if (!sid) return
           onMessagesChange((prev) =>
@@ -270,7 +280,15 @@ export function useAxonAcp({
                     ...m,
                     toolUses: [
                       ...(m.toolUses ?? []),
-                      { name: toolName, input: toolInput, toolCallId, status: 'running' },
+                      {
+                        name: toolName,
+                        input: toolInput,
+                        toolCallId,
+                        status: 'running',
+                        sequence: (m.toolUses?.length ?? 0) + 1,
+                        startedAtMs: now,
+                        updatedAtMs: now,
+                      },
                     ],
                   }
                 : m,
@@ -283,6 +301,7 @@ export function useAxonAcp({
           const toolCallId = (msg.tool_call_id as string) ?? ''
           const toolStatus = (msg.tool_status as string) ?? ''
           const toolContent = (msg.tool_content as string) ?? ''
+          const now = Date.now()
           const sid = streamingIdRef.current
           if (!sid) return
           onMessagesChange((prev) =>
@@ -300,6 +319,15 @@ export function useAxonAcp({
                                 ? `${tu.content}${toolContent}`
                                 : toolContent
                               : tu.content,
+                            updatedAtMs: now,
+                            ...(toolStatus === 'completed' || toolStatus === 'success'
+                              ? {
+                                  completedAtMs: now,
+                                  durationMs: tu.startedAtMs
+                                    ? Math.max(0, now - tu.startedAtMs)
+                                    : undefined,
+                                }
+                              : {}),
                           }
                         : tu,
                     ),

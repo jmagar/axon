@@ -1,9 +1,10 @@
 'use client'
 
-import { useAxonWs } from '@/hooks/use-axon-ws'
+import { useAxonWs, useWsStatusLabel } from '@/hooks/use-axon-ws'
 
 export function WsIndicator() {
-  const { status, statusLabel } = useAxonWs()
+  const { status } = useAxonWs()
+  const statusLabel = useWsStatusLabel()
 
   return (
     <div

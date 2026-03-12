@@ -9,6 +9,10 @@ type WsScenario = (args: {
 
 let pendingScenario: WsScenario | null = null
 let wsRunSpy = vi.fn()
+let logInfoSpy = vi.fn()
+let logWarnSpy = vi.fn()
+let logErrorSpy = vi.fn()
+let ragErrorMessage: string | null = null
 
 async function readNdjsonEvents(response: Response): Promise<PulseChatStreamEvent[]> {
   if (!response.body) return []
@@ -52,6 +56,10 @@ describe('pulse chat route streaming (e2e-like via Vitest; browser e2e harness u
     vi.resetModules()
     pendingScenario = null
     wsRunSpy = vi.fn()
+    logInfoSpy = vi.fn()
+    logWarnSpy = vi.fn()
+    logErrorSpy = vi.fn()
+    ragErrorMessage = null
 
     vi.doMock('@/lib/axon-ws-exec', () => ({
       runAxonCommandWsStream: (
@@ -69,8 +77,16 @@ describe('pulse chat route streaming (e2e-like via Vitest; browser e2e harness u
     }))
 
     vi.doMock('@/lib/pulse/rag', () => ({
-      retrieveFromCollections: vi.fn(async () => []),
+      retrieveFromCollections: vi.fn(async () => {
+        if (ragErrorMessage) throw new Error(ragErrorMessage)
+        return []
+      }),
       buildPulseSystemPrompt: vi.fn(() => 'system prompt'),
+    }))
+    vi.doMock('@/lib/server/logger', () => ({
+      logInfo: logInfoSpy,
+      logWarn: logWarnSpy,
+      logError: logErrorSpy,
     }))
     vi.doMock('@/lib/pulse/server-env', () => ({
       ensureRepoRootEnvLoaded: vi.fn(),
@@ -422,5 +438,38 @@ describe('pulse chat route streaming (e2e-like via Vitest; browser e2e harness u
     expect(replayEvents.some((event) => event.type === 'done')).toBe(true)
     expect(replayEvents.some((event) => event.type === 'assistant_delta')).toBe(true)
     expect(replayEvents.every((event) => event.event_id !== midStreamEvent?.event_id)).toBe(true)
+  })
+
+  it('continues streaming when result payload is not serializable and logs structured warning', async () => {
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+
+    queueScenario(({ options }) => {
+      queueMicrotask(() => {
+        options.onJson?.({ type: 'assistant_delta', delta: 'Partial output' })
+        options.onJson?.({ type: 'result', result: circular })
+        options.onDone?.({ exit_code: 0 })
+      })
+    })
+
+    const response = await post(makeRequest())
+    const events = await readNdjsonEvents(response)
+
+    expect(events.some((event) => event.type === 'done')).toBe(true)
+    expect(logWarnSpy).toHaveBeenCalledWith(
+      'api.pulse.chat.result_serialize_failed',
+      expect.objectContaining({ resultType: 'object' }),
+    )
+  })
+
+  it('logs structured error for unhandled route failures', async () => {
+    ragErrorMessage = 'rag unavailable'
+    const response = await post(makeRequest())
+
+    expect(response.status).toBe(500)
+    expect(logErrorSpy).toHaveBeenCalledWith(
+      'api.pulse.chat.unhandled_error',
+      expect.objectContaining({ message: 'rag unavailable' }),
+    )
   })
 })

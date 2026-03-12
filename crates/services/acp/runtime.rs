@@ -207,11 +207,10 @@ pub(super) async fn run_prompt_turn(
     )
     .await?;
 
-    // OnceLock: set once. If bridge already set it during session setup, this is a no-op.
+    // Keep the current session id in runtime state so bridge/session callbacks
+    // can resolve it without relying on request-local variables.
     let session_id_str = session_id.0.to_string();
-    runtime_state
-        .session_id
-        .get_or_init(|| session_id_str.clone());
+    *runtime_state.current_session_id.borrow_mut() = Some(session_id_str.clone());
 
     emit(
         &tx,
@@ -254,9 +253,9 @@ pub(super) async fn run_prompt_turn(
 
             // RefCell + OnceLock — no Mutex lock needed on current_thread runtime.
             let session = runtime_state
-                .session_id
-                .get()
-                .cloned()
+                .current_session_id
+                .borrow()
+                .clone()
                 .unwrap_or_else(|| session_id.0.to_string());
             let text = runtime_state.assistant_text.borrow().clone();
 

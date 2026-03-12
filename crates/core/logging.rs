@@ -366,7 +366,7 @@ pub fn init_tracing() {
     // updates that Claude Code sends. The deserialization error is logged at ERROR
     // but is non-fatal — the session continues normally. Suppress until the crate
     // adds the variant upstream.
-    const SUPPRESS_ACP_DECODE_NOISE: &str = "agent_client_protocol::rpc=warn";
+    const SUPPRESS_ACP_DECODE_NOISE: &str = "agent_client_protocol::rpc=off";
 
     let noise_directives = [SUPPRESS_CDP_NOISE, SUPPRESS_ACP_DECODE_NOISE];
 

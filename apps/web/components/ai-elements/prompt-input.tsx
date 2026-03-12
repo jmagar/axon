@@ -2,7 +2,16 @@
 
 import { ArrowUpIcon } from 'lucide-react'
 import type { FormEvent, HTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -85,9 +94,12 @@ export function PromptInputTextarea({
   className,
   onChange,
   onKeyDown,
+  id,
+  name,
   ...props
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const { text, setText } = usePromptInputContext()
+  const generatedId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const autoResize = useCallback(() => {
@@ -103,6 +115,8 @@ export function PromptInputTextarea({
 
   return (
     <textarea
+      id={id ?? `prompt-input-${generatedId}`}
+      name={name ?? 'prompt_input'}
       ref={textareaRef}
       className={cn(
         'min-h-20 flex-1 resize-none bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:outline-none transition-[height] duration-100',

@@ -45,6 +45,7 @@ pub(crate) const DIRECT_SYNC_MODES: &[&str] = &[
     "screenshot",
     "debug",
     "sessions",
+    "mcp_refresh",
     "pulse_chat",
     "pulse_chat_probe",
 ];
@@ -123,6 +124,7 @@ pub(super) enum ServiceMode {
     Screenshot,
     Debug,
     Sessions,
+    McpRefresh,
     PulseChat,
     PulseChatProbe,
 }
@@ -149,6 +151,7 @@ impl ServiceMode {
             "screenshot" => Some(Self::Screenshot),
             "debug" => Some(Self::Debug),
             "sessions" => Some(Self::Sessions),
+            "mcp_refresh" => Some(Self::McpRefresh),
             "pulse_chat" => Some(Self::PulseChat),
             "pulse_chat_probe" => Some(Self::PulseChatProbe),
             _ => None,
