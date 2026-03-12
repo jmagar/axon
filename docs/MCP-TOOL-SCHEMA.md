@@ -177,6 +177,7 @@ Server reads existing Axon stack vars:
 MCP transport env vars:
 - `AXON_MCP_HTTP_HOST`
 - `AXON_MCP_HTTP_PORT`
+- `AXON_MCP_API_KEY` (optional static bearer token for `/mcp`)
 
 Optional OAuth broker env vars:
 - `GOOGLE_OAUTH_CLIENT_ID`

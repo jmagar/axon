@@ -26,6 +26,10 @@ const MAX_OAUTH_STATE_ENTRIES: usize = 10_000;
 impl GoogleOAuthState {
     pub(crate) fn from_env(mcp_host: &str, mcp_port: u16) -> Self {
         let config = GoogleOAuthConfig::from_env(mcp_host, mcp_port);
+        let mcp_api_key = std::env::var("AXON_MCP_API_KEY")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
         let redis_client = std::env::var("GOOGLE_OAUTH_REDIS_URL")
             .ok()
             .or_else(|| std::env::var("AXON_REDIS_URL").ok())
@@ -41,6 +45,7 @@ impl GoogleOAuthState {
         let state = Self {
             inner: std::sync::Arc::new(GoogleOAuthInner {
                 config,
+                mcp_api_key,
                 http_client: reqwest::Client::new(),
                 redis_client,
                 pending_state: Mutex::new(HashMap::new()),
@@ -68,6 +73,10 @@ impl GoogleOAuthState {
 
     pub(crate) fn configured(&self) -> bool {
         self.inner.config.is_some()
+    }
+
+    pub(crate) fn api_key_configured(&self) -> bool {
+        self.inner.mcp_api_key.is_some()
     }
 
     #[allow(clippy::result_large_err)]

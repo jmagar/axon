@@ -13,6 +13,7 @@ pub(crate) struct GoogleOAuthState {
 
 pub(crate) struct GoogleOAuthInner {
     pub(crate) config: Option<GoogleOAuthConfig>,
+    pub(crate) mcp_api_key: Option<String>,
     pub(crate) http_client: reqwest::Client,
     pub(crate) redis_client: Option<redis::Client>,
     pub(crate) pending_state: Mutex<HashMap<String, PendingStateRecord>>,
@@ -67,6 +68,7 @@ pub(crate) struct LoginQuery {
 #[derive(Debug, Serialize)]
 pub(crate) struct OAuthStatus {
     pub(crate) configured: bool,
+    pub(crate) api_key_configured: bool,
     pub(crate) authenticated: bool,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) scopes: Vec<String>,

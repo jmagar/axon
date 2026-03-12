@@ -1,7 +1,7 @@
 use axum::{
     Form, Json,
     extract::State,
-    http::{StatusCode, header},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -11,8 +11,9 @@ use tracing::info;
 use uuid::Uuid;
 
 use super::helpers::{
-    is_allowed_redirect_uri, normalize_loopback_redirect_uri, request_identity_from_headers,
-    required_scopes, token_error_response, unauthorized_response, unix_now_secs,
+    bearer_token_from_headers, constant_time_eq, is_allowed_redirect_uri,
+    normalize_loopback_redirect_uri, request_identity_from_headers, required_scopes,
+    token_error_response, unauthorized_response, unix_now_secs,
 };
 use super::types::{
     AccessTokenRecord, GoogleOAuthState, OAUTH_REFRESH_TTL_SECS, OAuthTokenResponse,
@@ -298,49 +299,55 @@ pub(crate) async fn require_google_auth(
         return next.run(req).await;
     }
 
-    if !state.configured() {
-        return unauthorized_response(
-            &state,
-            serde_json::json!({
-                "error": "google oauth is not configured on this server"
-            }),
-        );
-    }
-
-    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
-        && let Ok(auth_value) = auth_header.to_str()
-        && let Some(token) = auth_value.strip_prefix("Bearer ")
-    {
-        let record = state.get_access_token(token).await;
-
-        if let Some(record) = record
-            && unix_now_secs() <= record.expires_at_unix
+    if let Some(token) = bearer_token_from_headers(req.headers()) {
+        if let Some(expected_api_key) = state.inner.mcp_api_key.as_ref()
+            && constant_time_eq(token.as_bytes(), expected_api_key.as_bytes())
         {
-            let token_scopes = record
-                .scope
-                .split_whitespace()
-                .map(ToString::to_string)
-                .collect::<std::collections::HashSet<String>>();
-            let needed_scopes = required_scopes(&state);
-            if needed_scopes
-                .iter()
-                .all(|scope| token_scopes.contains(scope))
+            return next.run(req).await;
+        }
+
+        if state.configured() {
+            let record = state.get_access_token(&token).await;
+
+            if let Some(record) = record
+                && unix_now_secs() <= record.expires_at_unix
             {
-                return next.run(req).await;
+                let token_scopes = record
+                    .scope
+                    .split_whitespace()
+                    .map(ToString::to_string)
+                    .collect::<std::collections::HashSet<String>>();
+                let needed_scopes = required_scopes(&state);
+                if needed_scopes
+                    .iter()
+                    .all(|scope| token_scopes.contains(scope))
+                {
+                    return next.run(req).await;
+                }
+                return unauthorized_response(
+                    &state,
+                    serde_json::json!({
+                        "error": "insufficient_scope",
+                        "required_scopes": needed_scopes,
+                    }),
+                );
             }
-            return unauthorized_response(
-                &state,
-                serde_json::json!({
-                    "error": "insufficient_scope",
-                    "required_scopes": needed_scopes,
-                }),
-            );
         }
 
         return unauthorized_response(
             &state,
             serde_json::json!({
                 "error": "invalid_token"
+            }),
+        );
+    }
+
+    if !state.configured() && !state.api_key_configured() {
+        return unauthorized_response(
+            &state,
+            serde_json::json!({
+                "error": "authorization_unavailable",
+                "error_description": "configure GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET or AXON_MCP_API_KEY"
             }),
         );
     }
