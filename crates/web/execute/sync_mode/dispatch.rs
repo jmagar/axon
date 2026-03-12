@@ -14,7 +14,7 @@ use super::service_calls::{
     call_query, call_research, call_retrieve, call_scrape, call_screenshot, call_search,
     call_sessions, call_sources, call_stats, call_status, call_suggest, send_json_owned,
 };
-use super::types::{AcpConn, DirectParams, ServiceMode, SvcError};
+use super::types::{DirectParams, ServiceMode, SvcError};
 
 fn format_sources_payload(result: SourcesResult) -> serde_json::Value {
     let urls_json: Vec<serde_json::Value> = result
@@ -239,7 +239,6 @@ pub(super) async fn dispatch_service(
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
-    acp_connection: AcpConn,
 ) -> Result<(), SvcError> {
     let DirectParams {
         mode,
@@ -303,7 +302,6 @@ pub(super) async fn dispatch_service(
                 tx,
                 ws_ctx,
                 permission_responders,
-                acp_connection,
             )
             .await?;
         }
@@ -320,10 +318,10 @@ pub(super) async fn dispatch_service(
             .await?;
         }
         ServiceMode::McpRefresh => {
-            log::info!("[mcp_refresh] clearing active ACP connection handle");
-            {
-                let mut guard = acp_connection.lock().await;
-                *guard = None;
+            use crate::crates::services::acp::SESSION_CACHE;
+            log::info!("[mcp_refresh] clearing ACP session cache");
+            for key in SESSION_CACHE.agent_keys() {
+                SESSION_CACHE.remove(&key);
             }
             send_json_owned(
                 tx,
