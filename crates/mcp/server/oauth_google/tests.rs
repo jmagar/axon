@@ -2,6 +2,9 @@
 
 use super::helpers::{is_allowed_redirect_uri, normalize_loopback_redirect_uri};
 use super::types::RedirectPolicy;
+use std::sync::Mutex;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn normalize_loopback_redirect_uri_prefers_localhost_http() {
@@ -13,6 +16,13 @@ fn normalize_loopback_redirect_uri_prefers_localhost_http() {
 fn normalize_loopback_redirect_uri_accepts_ipv6_loopback() {
     let uri = normalize_loopback_redirect_uri("https://[::1]:34543/callback")
         .expect("ipv6 loopback uri should normalize");
+    assert_eq!(uri, "http://localhost:34543/callback");
+}
+
+#[test]
+fn normalize_loopback_redirect_uri_accepts_localhost_with_trailing_dot() {
+    let uri = normalize_loopback_redirect_uri("https://localhost.:34543/callback")
+        .expect("localhost with trailing dot should normalize");
     assert_eq!(uri, "http://localhost:34543/callback");
 }
 
@@ -117,4 +127,85 @@ fn oauth_redis_url_docker_hostname_is_normalized_to_localhost() {
         Some("secret"),
         "credentials must be preserved after rewrite"
     );
+}
+
+#[allow(unsafe_code)]
+#[tokio::test]
+async fn mcp_api_key_is_loaded_from_env() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    const API_KEY: &str = "AXON_MCP_API_KEY";
+    let prev = std::env::var(API_KEY).ok();
+
+    unsafe {
+        std::env::set_var(API_KEY, "  test-mcp-key  ");
+    }
+
+    let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+    assert!(state.api_key_configured());
+    assert_eq!(state.inner.mcp_api_key.as_deref(), Some("test-mcp-key"));
+
+    match prev {
+        Some(v) => unsafe { std::env::set_var(API_KEY, v) },
+        None => unsafe { std::env::remove_var(API_KEY) },
+    }
+}
+
+#[allow(unsafe_code)]
+#[tokio::test]
+async fn empty_mcp_api_key_is_treated_as_unconfigured() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    const API_KEY: &str = "AXON_MCP_API_KEY";
+    let prev = std::env::var(API_KEY).ok();
+
+    unsafe {
+        std::env::set_var(API_KEY, "   ");
+    }
+
+    let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+    assert!(!state.api_key_configured());
+    assert!(state.inner.mcp_api_key.is_none());
+
+    match prev {
+        Some(v) => unsafe { std::env::set_var(API_KEY, v) },
+        None => unsafe { std::env::remove_var(API_KEY) },
+    }
+}
+
+#[allow(unsafe_code)]
+#[test]
+fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let vars = [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_REDIRECT_URI",
+        "GOOGLE_OAUTH_REDIRECT_HOST",
+        "GOOGLE_OAUTH_BROKER_ISSUER",
+    ];
+    let prev = vars
+        .iter()
+        .map(|k| ((*k).to_string(), std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+        std::env::set_var(
+            "GOOGLE_OAUTH_REDIRECT_URI",
+            "https://localhost:8001/oauth/google/callback",
+        );
+        std::env::remove_var("GOOGLE_OAUTH_REDIRECT_HOST");
+        std::env::remove_var("GOOGLE_OAUTH_BROKER_ISSUER");
+    }
+
+    let cfg = super::types::GoogleOAuthConfig::from_env("0.0.0.0", 8001)
+        .expect("oauth config should load with test credentials");
+    assert_eq!(cfg.redirect_uri, "http://localhost:8001/oauth/google/callback");
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
 }

@@ -197,7 +197,7 @@ export const useShellStore = create<ShellStore>()(
     sidebarOpen: true,
     chatOpen: true,
     rightPane: 'editor',
-    density: 'comfortable',
+    density: 'high',
     canvasProfile: DEFAULT_NEURAL_CANVAS_PROFILE,
     sidebarWidth: 260,
     chatFlex: 1,
