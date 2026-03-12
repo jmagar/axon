@@ -193,10 +193,12 @@ export const AxonMessageList = memo(function AxonMessageList({
   onRetryMessage?: (messageId: string) => void
 }) {
   const isMobile = variant === 'mobile'
-  const userMaxWidth = isMobile ? 'max-w-[92%]' : 'max-w-[68ch]'
-  const assistantMaxWidth = isMobile ? 'max-w-[96%]' : 'max-w-[78ch]'
+  const userMaxWidth = isMobile ? 'max-w-[94%]' : 'max-w-[72ch]'
+  const assistantMaxWidth = isMobile ? 'max-w-[97%]' : 'max-w-[80ch]'
   const bubbleRounding = isMobile ? 'rounded-[18px]' : 'rounded-[16px]'
-  const bubblePadding = isMobile ? 'px-4 py-3 text-sm' : 'px-3 py-2.5 text-[13px] leading-relaxed'
+  const bubblePadding = isMobile
+    ? 'px-3 py-2.5 text-[13px]'
+    : 'px-2.5 py-2 text-[12px] leading-relaxed'
   const emptyStatePadding = isMobile ? 'py-16' : 'py-24'
   const botIconSize = isMobile ? 'size-8' : 'size-10'
   const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[240px]'
@@ -204,7 +206,7 @@ export const AxonMessageList = memo(function AxonMessageList({
   return (
     <ConversationContent
       key={sessionKey}
-      className="axon-message-list-container animate-crossfade-in px-0 py-0"
+      className="axon-message-list-container animate-crossfade-in gap-3 px-0 py-0"
     >
       {loading && messages.length === 0 ? (
         <div className="flex h-full items-center justify-center animate-fade-in">
@@ -239,154 +241,160 @@ export const AxonMessageList = memo(function AxonMessageList({
           </div>
         </div>
       ) : null}
-      {messages.map((message, index) => (
-        <Message
-          key={message.id}
-          className={`axon-message-container animate-fade-in-up ${message.role === 'user' ? userMaxWidth : assistantMaxWidth}`}
-          from={message.role}
-          style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
-        >
-          <div
-            className={
-              message.role === 'assistant'
-                ? `axon-message-bubble ${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
-                : `axon-message-bubble ${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
-            }
+      {messages.map((message, index) => {
+        // Only animate the last 3 messages to prevent 10s+ delays on long sessions
+        const ANIMATION_WINDOW = 3
+        const animationIndex = Math.max(0, index - (messages.length - ANIMATION_WINDOW))
+        const animationDelay = animationIndex * 50
+        return (
+          <Message
+            key={message.id}
+            className={`axon-message-container animate-fade-in-up ${message.role === 'user' ? userMaxWidth : assistantMaxWidth}`}
+            from={message.role}
+            style={{ animationDelay: `${animationDelay}ms`, animationFillMode: 'both' }}
           >
-            <div className="mb-1.5 flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] ${
-                  message.role === 'user'
-                    ? 'text-[var(--axon-primary)]'
-                    : 'text-[var(--axon-secondary-strong)]'
-                }`}
-              >
+            <div
+              className={
+                message.role === 'assistant'
+                  ? `axon-message-bubble ${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+                  : `axon-message-bubble ${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+              }
+            >
+              <div className="mb-1 flex items-center gap-1.5">
                 <span
-                  className={`inline-block size-1.5 rounded-full ${
+                  className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.1em] ${
                     message.role === 'user'
-                      ? 'bg-[var(--axon-primary-strong)]'
-                      : 'bg-[var(--axon-secondary)]'
+                      ? 'text-[var(--axon-primary)]'
+                      : 'text-[var(--axon-secondary-strong)]'
                   }`}
-                />
-                {message.role === 'user' ? 'You' : agentName}
-              </span>
-            </div>
-            {message.streaming && !message.content ? (
-              <div className="flex items-center gap-1.5 py-1">
-                <span
-                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
-                  style={{ animationDelay: '0ms' }}
-                />
-                <span
-                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
-                  style={{ animationDelay: '200ms' }}
-                />
-                <span
-                  className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
-                  style={{ animationDelay: '400ms' }}
-                />
+                >
+                  <span
+                    className={`inline-block size-1.5 rounded-full ${
+                      message.role === 'user'
+                        ? 'bg-[var(--axon-primary-strong)]'
+                        : 'bg-[var(--axon-secondary)]'
+                    }`}
+                  />
+                  {message.role === 'user' ? 'You' : agentName}
+                </span>
               </div>
-            ) : (
-              <AssistantMessageBody
-                content={message.content}
-                onEditorContent={onEditorContent}
-                variant={variant}
-              />
-            )}
-            {message.toolUses?.length ? (
-              <div className="space-y-2">
-                {message.toolUses.map((tool, i) => (
-                  <ToolCallCard key={tool.toolCallId ?? i} isMobile={isMobile} tool={tool} />
-                ))}
-              </div>
-            ) : null}
-            <ThinkingSection message={message} />
-            {message.usage && message.role === 'assistant' && (
-              <div className="mt-3 flex items-center gap-4 border-t border-[var(--border-subtle)] pt-2.5 text-[10px] tabular-nums text-[var(--text-dim)]">
-                <div className="flex items-center gap-1.5" title="Input tokens">
-                  <span className="font-bold uppercase tracking-widest opacity-60">In</span>
-                  <span className="text-[var(--text-secondary)] font-medium">
-                    {message.usage.input_tokens.toLocaleString()}
-                  </span>
+              {message.streaming && !message.content ? (
+                <div className="flex items-center gap-1.5 py-1">
+                  <span
+                    className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <span
+                    className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                    style={{ animationDelay: '200ms' }}
+                  />
+                  <span
+                    className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)] animate-typing-dot"
+                    style={{ animationDelay: '400ms' }}
+                  />
                 </div>
-                <div className="flex items-center gap-1.5" title="Output tokens">
-                  <span className="font-bold uppercase tracking-widest opacity-60">Out</span>
-                  <span className="text-[var(--text-secondary)] font-medium">
-                    {message.usage.output_tokens.toLocaleString()}
-                  </span>
+              ) : (
+                <AssistantMessageBody
+                  content={message.content}
+                  onEditorContent={onEditorContent}
+                  variant={variant}
+                />
+              )}
+              {message.toolUses?.length ? (
+                <div className="space-y-2">
+                  {message.toolUses.map((tool, i) => (
+                    <ToolCallCard key={tool.toolCallId ?? i} isMobile={isMobile} tool={tool} />
+                  ))}
                 </div>
-                {message.usage.cache_read_input_tokens ? (
-                  <div
-                    className="flex items-center gap-1.5 text-[var(--axon-success)]"
-                    title="Cached input tokens"
-                  >
-                    <span className="font-bold uppercase tracking-widest opacity-60">Hit</span>
-                    <span className="font-medium">
-                      {message.usage.cache_read_input_tokens.toLocaleString()}
+              ) : null}
+              <ThinkingSection message={message} />
+              {message.usage && message.role === 'assistant' && (
+                <div className="mt-3 flex items-center gap-4 border-t border-[var(--border-subtle)] pt-2.5 text-[10px] tabular-nums text-[var(--text-dim)]">
+                  <div className="flex items-center gap-1.5" title="Input tokens">
+                    <span className="font-bold uppercase tracking-widest opacity-60">In</span>
+                    <span className="text-[var(--text-secondary)] font-medium">
+                      {message.usage.input_tokens.toLocaleString()}
                     </span>
                   </div>
-                ) : null}
-              </div>
-            )}
-            {message.files?.length ? (
-              <QueueItemAttachment className="mt-3 gap-1.5">
-                {message.files.map((file) => (
-                  <button
-                    key={file}
-                    type="button"
-                    onClick={() => onOpenFile(file)}
-                    aria-label={`Open ${file} in editor`}
-                  >
-                    <span className="inline-flex items-center gap-1.5 rounded border border-[rgba(135,175,255,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-1 font-mono text-xs leading-none text-[var(--text-secondary)]">
-                      <FileCode2 className="size-3.5 shrink-0" />
-                      <span className={`${fileTruncate} truncate`}>{file}</span>
+                  <div className="flex items-center gap-1.5" title="Output tokens">
+                    <span className="font-bold uppercase tracking-widest opacity-60">Out</span>
+                    <span className="text-[var(--text-secondary)] font-medium">
+                      {message.usage.output_tokens.toLocaleString()}
                     </span>
-                  </button>
-                ))}
-              </QueueItemAttachment>
-            ) : null}
-          </div>
-          <div
-            className={`mt-1 flex translate-y-1 items-center gap-1 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            {formatTimestamp(message.timestamp as number | string | undefined) ? (
-              <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">
-                {formatTimestamp(message.timestamp as number | string | undefined)}
-              </span>
-            ) : null}
-            <MessageActions className="gap-0.5">
-              <MessageAction
-                label="Copy message"
-                tooltip={copiedId === message.id ? 'Copied!' : 'Copy'}
-                onClick={() => copyMessage(message.id, message.content)}
-              >
-                {copiedId === message.id ? (
-                  <Check className="size-3.5 animate-check-bounce text-green-400" />
-                ) : (
-                  <Copy className="size-3.5" />
-                )}
-              </MessageAction>
-              {message.role === 'user' ? (
-                <MessageAction
-                  label="Edit message"
-                  tooltip="Edit"
-                  onClick={() => onEdit?.(message.id, message.content)}
-                >
-                  <Pencil className="size-3.5" />
-                </MessageAction>
-              ) : (
-                <MessageAction
-                  label="Retry"
-                  tooltip="Retry"
-                  onClick={() => onRetryMessage?.(message.id)}
-                >
-                  <RotateCcw className="size-3.5" />
-                </MessageAction>
+                  </div>
+                  {message.usage.cache_read_input_tokens ? (
+                    <div
+                      className="flex items-center gap-1.5 text-[var(--axon-success)]"
+                      title="Cached input tokens"
+                    >
+                      <span className="font-bold uppercase tracking-widest opacity-60">Hit</span>
+                      <span className="font-medium">
+                        {message.usage.cache_read_input_tokens.toLocaleString()}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               )}
-            </MessageActions>
-          </div>
-        </Message>
-      ))}
+              {message.files?.length ? (
+                <QueueItemAttachment className="mt-3 gap-1.5">
+                  {message.files.map((file) => (
+                    <button
+                      key={file}
+                      type="button"
+                      onClick={() => onOpenFile(file)}
+                      aria-label={`Open ${file} in editor`}
+                    >
+                      <span className="inline-flex items-center gap-1.5 rounded border border-[rgba(135,175,255,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-1 font-mono text-xs leading-none text-[var(--text-secondary)]">
+                        <FileCode2 className="size-3.5 shrink-0" />
+                        <span className={`${fileTruncate} truncate`}>{file}</span>
+                      </span>
+                    </button>
+                  ))}
+                </QueueItemAttachment>
+              ) : null}
+            </div>
+            <div
+              className={`mt-0.5 flex translate-y-1 items-center gap-1 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {formatTimestamp(message.timestamp as number | string | undefined) ? (
+                <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">
+                  {formatTimestamp(message.timestamp as number | string | undefined)}
+                </span>
+              ) : null}
+              <MessageActions className="gap-0.5">
+                <MessageAction
+                  label="Copy message"
+                  tooltip={copiedId === message.id ? 'Copied!' : 'Copy'}
+                  onClick={() => copyMessage(message.id, message.content)}
+                >
+                  {copiedId === message.id ? (
+                    <Check className="size-3.5 animate-check-bounce text-green-400" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </MessageAction>
+                {message.role === 'user' ? (
+                  <MessageAction
+                    label="Edit message"
+                    tooltip="Edit"
+                    onClick={() => onEdit?.(message.id, message.content)}
+                  >
+                    <Pencil className="size-3.5" />
+                  </MessageAction>
+                ) : (
+                  <MessageAction
+                    label="Retry"
+                    tooltip="Retry"
+                    onClick={() => onRetryMessage?.(message.id)}
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </MessageAction>
+                )}
+              </MessageActions>
+            </div>
+          </Message>
+        )
+      })}
       {isTyping && !messages.some((m) => m.streaming) ? (
         <Message from="assistant" className={`animate-fade-in-up ${assistantMaxWidth}`}>
           <div

@@ -162,7 +162,8 @@ export type PulseSourceRequest = z.infer<typeof PulseSourceRequestSchema>
 export interface PulseSourceResponse {
   indexed: string[]
   command: string
-  output: string
+  /** @deprecated Raw subprocess output is no longer returned to avoid leaking internals. */
+  output?: string
   /** Scraped markdown keyed by URL — available when a single URL is indexed. */
   markdownBySrc?: Record<string, string>
 }

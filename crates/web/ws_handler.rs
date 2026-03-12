@@ -221,8 +221,8 @@ async fn handle_acp_resume(conn: &WsConnState, session_id: &str) {
             .await;
         return;
     }
-    if let Some(cached) = SESSION_CACHE.get_by_session_id(session_id).await {
-        let buffered = cached.drain_replay_buffer().await;
+    if let Some(cached) = SESSION_CACHE.get_by_session_id(session_id) {
+        let buffered = cached.drain_replay_buffer();
         let replayed = buffered.len();
         for msg in buffered {
             let _ = tx.send(msg).await;
@@ -284,4 +284,55 @@ fn route_permission_response(
         "permission_response for unknown key: session_id={session_id} \
          tool_call_id={tool_call_id} (already responded or wrong session)"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permission_response_cross_session_isolation() {
+        let map: PermissionResponderMap = Arc::new(dashmap::DashMap::new());
+
+        let shared_tool_call_id = "tc-shared";
+
+        // Insert two entries with different session_ids but the same tool_call_id.
+        let (tx_a, mut rx_a) = tokio::sync::oneshot::channel::<String>();
+        let (tx_b, _rx_b) = tokio::sync::oneshot::channel::<String>();
+        map.insert(
+            ("session-A".to_string(), shared_tool_call_id.to_string()),
+            tx_a,
+        );
+        map.insert(
+            ("session-B".to_string(), shared_tool_call_id.to_string()),
+            tx_b,
+        );
+
+        assert_eq!(map.len(), 2, "Both entries should exist before routing");
+
+        // Route a response targeting session A only.
+        route_permission_response(
+            &map,
+            shared_tool_call_id.to_string(),
+            "allow".to_string(),
+            "session-A".to_string(),
+        );
+
+        // Session A's entry should be consumed and the value received.
+        assert_eq!(map.len(), 1, "Only session A's entry should be consumed");
+        assert!(
+            !map.contains_key(&("session-A".to_string(), shared_tool_call_id.to_string())),
+            "Session A entry should be removed"
+        );
+        assert!(
+            map.contains_key(&("session-B".to_string(), shared_tool_call_id.to_string())),
+            "Session B entry must remain untouched"
+        );
+
+        // Verify session A received the correct value.
+        let received = rx_a
+            .try_recv()
+            .expect("Session A should have received the response");
+        assert_eq!(received, "allow");
+    }
 }

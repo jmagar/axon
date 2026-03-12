@@ -7,6 +7,10 @@ export async function GET(request: Request) {
     const filename = url.searchParams.get('filename')
 
     if (filename) {
+      const SAFE_FILENAME = /^[\w.-]{1,100}$/
+      if (!SAFE_FILENAME.test(filename)) {
+        return NextResponse.json({ error: 'Invalid filename' }, { status: 400 })
+      }
       const doc = await loadPulseDoc(filename)
       if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       return NextResponse.json(doc)

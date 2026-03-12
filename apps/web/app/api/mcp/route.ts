@@ -1,7 +1,8 @@
+import { timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { validateStatusUrl } from './status/route'
 
@@ -24,6 +25,34 @@ const McpConfigSchema = z.object({
 })
 
 type McpConfig = z.infer<typeof McpConfigSchema>
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+function extractToken(request: NextRequest): string {
+  const authHeader = request.headers.get('authorization')
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim()
+  }
+  const key = request.headers.get('x-api-key')
+  if (key?.trim()) return key.trim()
+  return ''
+}
+
+/**
+ * Returns true when the request carries a valid API token.
+ * Reads AXON_WEB_API_TOKEN at call time (not module-init) so that
+ * tests can set/change the env var between calls.
+ * Uses constant-time comparison to prevent timing side-channels.
+ */
+function isAuthorized(request: NextRequest): boolean {
+  const apiToken = process.env.AXON_WEB_API_TOKEN?.trim() || null
+  if (!apiToken) return false
+  const token = extractToken(request)
+  if (token.length === 0 || token.length !== apiToken.length) return false
+  return timingSafeEqual(Buffer.from(token, 'utf-8'), Buffer.from(apiToken, 'utf-8'))
+}
+
+// ── Config path ───────────────────────────────────────────────────────────────
 
 const MCP_JSON_PATH = process.env.AXON_DATA_DIR
   ? path.join(process.env.AXON_DATA_DIR, 'axon', 'mcp.json')
@@ -63,10 +92,9 @@ export async function GET() {
   }
 }
 
-export async function PUT(request: Request) {
-  // Requires X-Pulse-Request: 1 header — added by mcp/page.tsx fetch calls
-  if (request.headers.get('X-Pulse-Request') !== '1') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+export async function PUT(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
     const body = (await request.json()) as unknown
@@ -97,10 +125,9 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
-  // Requires X-Pulse-Request: 1 header — added by mcp/page.tsx fetch calls
-  if (request.headers.get('X-Pulse-Request') !== '1') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+export async function DELETE(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
     const body = (await request.json()) as unknown

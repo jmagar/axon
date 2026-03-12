@@ -110,7 +110,8 @@ export const fakeStreamText = ({
         await new Promise((resolve) => setTimeout(resolve, 10))
 
         for (let i = 0; i < blocks.length; i++) {
-          const block = blocks[i]
+          // i is always a valid index — loop bounds ensure it
+          const block = blocks[i]!
 
           // Stream the block content
           for (const chunk of block) {

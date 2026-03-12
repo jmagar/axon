@@ -231,7 +231,8 @@ export function makeStreamEventHandler(
         (b) => b.type === 'tool_use' && 'toolCallId' in b && b.toolCallId === event.toolCallId,
       )
       if (blockIdx >= 0) {
-        const block = acc.partialBlocks[blockIdx]
+        // blockIdx is a valid index — findLastIndex only returns >= 0 for real matches
+        const block = acc.partialBlocks[blockIdx]!
         if (block.type === 'tool_use') {
           acc.partialBlocks[blockIdx] = {
             ...block,
@@ -249,7 +250,8 @@ export function makeStreamEventHandler(
       }
       const toolIdx = acc.partialTools.findLastIndex((t) => t.toolCallId === event.toolCallId)
       if (toolIdx >= 0) {
-        const tool = acc.partialTools[toolIdx]
+        // toolIdx is a valid index — findLastIndex only returns >= 0 for real matches
+        const tool = acc.partialTools[toolIdx]!
         acc.partialTools[toolIdx] = {
           ...tool,
           status: event.status ?? tool.status,

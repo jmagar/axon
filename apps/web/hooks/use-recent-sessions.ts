@@ -19,6 +19,8 @@ export interface SessionSummary {
 
 interface UseRecentSessionsOptions {
   assistantMode?: boolean
+  /** When false, skip the fetch entirely and return empty state. Default: true. */
+  enabled?: boolean
 }
 
 interface ParsedMessage {
@@ -59,12 +61,12 @@ function dedupeSessions(list: SessionSummary[]): SessionSummary[] {
 const RELOAD_DEBOUNCE_MS = 300
 
 export function useRecentSessions(options: UseRecentSessionsOptions = {}) {
-  const { assistantMode = false } = options
+  const { assistantMode = false, enabled = true } = options
   const { resumeWorkspaceSession } = useWsMessageActions()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   // Start true only for the initial mount load. Subsequent reloads keep
   // stale data visible (no "Loading…" flash) by not toggling isLoading.
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(enabled)
   const [error, setError] = useState<string | null>(null)
   const mountedRef = useRef(true)
   const hasFetchedRef = useRef(false)
@@ -73,6 +75,7 @@ export function useRecentSessions(options: UseRecentSessionsOptions = {}) {
   // Core fetch — never sets isLoading after the initial load, preserving
   // stale data in the UI while the fetch is in-flight.
   const doFetch = useCallback(async () => {
+    if (!enabled) return
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 8_000)
     // Only show the loading state on the very first fetch (cold start).
@@ -103,17 +106,18 @@ export function useRecentSessions(options: UseRecentSessionsOptions = {}) {
         setIsLoading(false)
       }
     }
-  }, [assistantMode])
+  }, [assistantMode, enabled])
 
   // Debounced reload — collapses rapid successive calls (e.g. onTurnComplete
   // triggers both reloadSessions and reloadAssistantSessions at once).
   const reload = useCallback(() => {
+    if (!enabled) return
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
     debounceTimerRef.current = setTimeout(() => {
       debounceTimerRef.current = null
       void doFetch()
     }, RELOAD_DEBOUNCE_MS)
-  }, [doFetch])
+  }, [doFetch, enabled])
 
   // Initial fetch on mount (immediate, not debounced)
   useEffect(() => {

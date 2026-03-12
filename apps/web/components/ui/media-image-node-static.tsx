@@ -28,7 +28,8 @@ export function ImageElementStatic(
               className="mx-auto mt-2 h-[24px] max-w-full"
               style={{ textAlign: 'center' }}
             >
-              {NodeApi.string(caption[0])}
+              {/* caption existence checked by the outer `caption &&` guard */}
+              {NodeApi.string(caption[0]!)}
             </figcaption>
           )}
         </div>

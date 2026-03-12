@@ -87,6 +87,18 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 | `render_mode` | McpRenderMode | `auto_switch` | `http`, `chrome`, `auto_switch` |
 | `delay_ms` | u64 | 0 | Per-request delay ms |
 
+## Crawl Response Shape
+
+`crawl.start` response data includes:
+- `job_ids` (string[]) -- enqueued job IDs
+- `output_dir` (string|null) -- predicted output directory for the first enqueued URL
+- `predicted_paths` (string[]) -- predicted output paths for the first enqueued URL
+- `jobs` (object[]) -- per-URL entries with `{ job_id, url, output_dir, predicted_paths }`
+
+`crawl.status` response data includes:
+- `job` (object) -- canonical crawl job payload
+- `output_files` (string[]|null) -- output file paths extracted from `job.result_json.output_files` when present
+
 ## Refresh Start Parameters
 `refresh` accepts either form:
 - `url` (string) -- single URL refresh

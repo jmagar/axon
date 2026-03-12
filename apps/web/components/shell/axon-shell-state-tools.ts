@@ -109,7 +109,8 @@ export function useToolPreferenceState({
     const allTools = Object.values(next).flat()
     setEnabledMcpTools((current) => {
       if (current === null) return allTools
-      return current.filter((toolName) => allTools.includes(toolName))
+      const allToolsSet = new Set(allTools)
+      return current.filter((toolName) => allToolsSet.has(toolName))
     })
   }, [])
 

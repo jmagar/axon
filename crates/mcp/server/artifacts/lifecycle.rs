@@ -2,51 +2,99 @@ use super::super::common::{internal_error, invalid_params};
 use super::path::ensure_artifact_root;
 use regex::Regex;
 use rmcp::ErrorData;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::task::JoinSet;
+
+#[derive(Debug, Clone)]
+struct ArtifactFile {
+    name: String,
+    relative_path: String,
+    path: PathBuf,
+    bytes: u64,
+    modified_secs_ago: u64,
+}
+
+async fn collect_artifact_files(root: &Path) -> Result<Vec<ArtifactFile>, ErrorData> {
+    let now = SystemTime::now();
+    let mut files: Vec<ArtifactFile> = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+
+    while let Some(dir) = dirs.pop() {
+        let mut entries = tokio::fs::read_dir(&dir)
+            .await
+            .map_err(|e| internal_error(format!("failed to read artifact dir: {e}")))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| internal_error(e.to_string()))?
+        {
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .await
+                .map_err(|e| internal_error(e.to_string()))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+            let meta = entry
+                .metadata()
+                .await
+                .map_err(|e| internal_error(e.to_string()))?;
+            let modified_secs_ago = meta
+                .modified()
+                .ok()
+                .and_then(|m| now.duration_since(m).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let relative_path = path
+                .strip_prefix(root)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            files.push(ArtifactFile {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                relative_path,
+                path,
+                bytes: meta.len(),
+                modified_secs_ago,
+            });
+        }
+    }
+
+    Ok(files)
+}
 
 pub async fn list_artifact_files(
     limit: usize,
     offset: usize,
 ) -> Result<serde_json::Value, ErrorData> {
     let root = ensure_artifact_root().await?;
-    let now = SystemTime::now();
-    let mut entries = tokio::fs::read_dir(&root)
-        .await
-        .map_err(|e| internal_error(format!("failed to read artifact dir: {e}")))?;
-    let mut files: Vec<serde_json::Value> = Vec::new();
-    let mut total_bytes = 0u64;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| internal_error(e.to_string()))?
-    {
-        let meta = entry
-            .metadata()
-            .await
-            .map_err(|e| internal_error(e.to_string()))?;
-        if meta.is_dir() {
-            continue;
-        }
-        let bytes = meta.len();
-        total_bytes += bytes;
-        let modified_secs_ago = meta
-            .modified()
-            .ok()
-            .and_then(|m| now.duration_since(m).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        files.push(serde_json::json!({
-            "name": entry.file_name().to_string_lossy(),
-            "bytes": bytes,
-            "modified_secs_ago": modified_secs_ago,
-            "path": entry.path(),
-        }));
-    }
-    files.sort_by_key(|f| f["modified_secs_ago"].as_u64().unwrap_or(u64::MAX));
+    let mut files = collect_artifact_files(&root).await?;
+    files.sort_by_key(|f| f.modified_secs_ago);
+    let total_bytes: u64 = files.iter().map(|f| f.bytes).sum();
     let total_count = files.len();
-    let page: Vec<_> = files.into_iter().skip(offset).take(limit).collect();
+    let page: Vec<_> = files
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|file| {
+            serde_json::json!({
+                "name": file.name,
+                "relative_path": file.relative_path,
+                "bytes": file.bytes,
+                "modified_secs_ago": file.modified_secs_ago,
+                "path": file.path,
+            })
+        })
+        .collect();
     Ok(serde_json::json!({
         "artifact_dir": root,
         "total_count": total_count,
@@ -58,7 +106,7 @@ pub async fn list_artifact_files(
     }))
 }
 
-pub async fn delete_artifact_file(path: &std::path::Path) -> Result<u64, ErrorData> {
+pub async fn delete_artifact_file(path: &Path) -> Result<u64, ErrorData> {
     let meta = tokio::fs::metadata(path)
         .await
         .map_err(|e| internal_error(format!("failed to stat artifact: {e}")))?;
@@ -74,40 +122,20 @@ pub async fn clean_artifact_files(
     dry_run: bool,
 ) -> Result<serde_json::Value, ErrorData> {
     let root = ensure_artifact_root().await?;
-    let now = SystemTime::now();
     let cutoff_secs = max_age_hours * 3600;
-    let mut entries = tokio::fs::read_dir(&root)
-        .await
-        .map_err(|e| internal_error(format!("failed to read artifact dir: {e}")))?;
-    let mut scanned = 0usize;
+    let all_files = collect_artifact_files(&root).await?;
+    let scanned = all_files.len();
     let mut candidates: Vec<serde_json::Value> = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| internal_error(e.to_string()))?
-    {
-        let meta = entry
-            .metadata()
-            .await
-            .map_err(|e| internal_error(e.to_string()))?;
-        // Never recurse into subdirs (screenshots/ etc.)
-        if meta.is_dir() {
-            continue;
-        }
-        scanned += 1;
-        let age_secs = meta
-            .modified()
-            .ok()
-            .and_then(|m| now.duration_since(m).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+    for file in all_files {
+        let age_secs = file.modified_secs_ago;
         if age_secs >= cutoff_secs {
             let age_hours = (age_secs as f64 / 3600.0 * 10.0).round() / 10.0;
             candidates.push(serde_json::json!({
-                "name": entry.file_name().to_string_lossy(),
-                "path": entry.path(),
+                "name": file.name,
+                "relative_path": file.relative_path,
+                "path": file.path,
                 "age_hours": age_hours,
-                "bytes": meta.len(),
+                "bytes": file.bytes,
             }));
         }
     }
@@ -154,34 +182,16 @@ pub async fn search_artifact_files(
         Regex::new(pattern).map_err(|e| invalid_params(format!("invalid regex pattern: {e}")))?,
     );
     let root = ensure_artifact_root().await?;
-    let mut entries = tokio::fs::read_dir(&root)
-        .await
-        .map_err(|e| internal_error(format!("failed to read artifact dir: {e}")))?;
-
-    // Collect all file paths first, then fan-out reads concurrently.
-    let mut paths: Vec<(String, std::path::PathBuf)> = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| internal_error(e.to_string()))?
-    {
-        let meta = entry
-            .metadata()
-            .await
-            .map_err(|e| internal_error(e.to_string()))?;
-        if meta.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        paths.push((name, entry.path()));
-    }
-    let files_scanned = paths.len();
+    let files = collect_artifact_files(&root).await?;
+    let files_scanned = files.len();
 
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
     let mut set: JoinSet<Vec<serde_json::Value>> = JoinSet::new();
-    for (name, path) in paths {
+    for file in files {
         let re = Arc::clone(&re);
         let sem = Arc::clone(&sem);
+        let relative_path = file.relative_path;
+        let path = file.path;
         set.spawn(async move {
             let _permit = match sem.acquire_owned().await {
                 Ok(p) => p,
@@ -196,7 +206,7 @@ pub async fn search_artifact_files(
                 .filter(|(_, line)| re.is_match(line))
                 .map(|(idx, line)| {
                     serde_json::json!({
-                        "file": name,
+                        "file": relative_path,
                         "line": idx + 1,
                         "text": line,
                     })

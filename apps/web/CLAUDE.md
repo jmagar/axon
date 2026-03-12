@@ -26,34 +26,45 @@ App-level navigation buttons (`/mcp`, `/agents`, `/settings`) are hosted in `App
 
 ### Pages
 
+There are only **two Next.js page routes**:
+
 | Route | Component | Purpose |
 |-------|-----------|---------|
-| `/` | `DashboardPage` | Omnibox + results + Pulse workspace |
-| `/editor` | `EditorPage` | Pulse AI editor (Plate.js) |
-| `/mcp` | `McpPage` | MCP server management |
-| `/agents` | `AgentsPage` | Available Claude agents |
-| `/jobs` | `JobsPage` | Async job dashboard |
-| `/terminal` | `TerminalPage` | xterm.js shell via node-pty |
-| `/cortex` | cortex layout | RAG dashboards (stats/domains/sources/doctor/status) |
-| `/settings` | `SettingsPage` | App configuration |
+| `/` | `AxonShell` (via `app/page.tsx`) | Single-page shell — all pane content lives here |
+| `/jobs/[id]` | `JobDetailPage` | Job detail view (standalone page, links back to shell) |
+
+**Panes are not page routes.** Shell, Pulse editor, terminal, MCP, cortex, settings, and logs are all rendered as right-pane panels inside `AxonShell`. Pane switching is **client-side state** managed by `axon-shell-state.ts` (`rightPane` state: `'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | 'cortex' | null`). Mobile pane switching uses `mobilePane` state (`'chat' | 'sidebar' | 'pane'`). No page navigation occurs when switching panes.
 
 ### API Routes
 
-| Route | Purpose |
-|-------|---------|
-| `/api/pulse/chat` | Stream chat turns via WebSocket to the Rust ACP bridge (`runAxonCommandWsStream`) |
-| `/api/pulse/source` | Fetch and sanitize remote source text (SSRF-guarded) |
-| `/api/pulse/save` | Create/update Pulse docs (`.cache/pulse/*.md`) |
-| `/api/pulse/doc` | Load a Pulse doc by filename |
-| `/api/cortex/stats` | Qdrant + Postgres metrics |
-| `/api/cortex/domains` | Indexed domain list |
-| `/api/cortex/sources` | Indexed URL list |
-| `/api/cortex/doctor` | Service health check |
-| `/api/cortex/status` | Job queue status |
-| `/api/mcp` | MCP server config (read/write) |
-| `/api/ai/command` | Plate.js AI editor commands (edit/generate/comment) |
-| `/api/ai/copilot` | Plate.js ghost-text copilot |
-| `/api/jobs` | Job list + job detail (strict validated filters) |
+| Route | Methods | Auth | Purpose |
+|-------|---------|------|---------|
+| `/api/agents` | GET | Yes | List available Claude agents via `claude agents` CLI subprocess |
+| `/api/ai/chat` | POST | Yes | Generic SSE chat stream via LLM (prompt → `OPENAI_BASE_URL`) |
+| `/api/ai/command` | POST | Yes | Plate.js AI editor commands (edit/generate/comment) |
+| `/api/ai/copilot` | POST | Yes | Plate.js ghost-text copilot completions |
+| `/api/cortex/doctor` | GET | Yes | Service health check (proxied from Rust backend) |
+| `/api/cortex/domains` | GET | Yes | Indexed domain list (proxied from Rust backend) |
+| `/api/cortex/sources` | GET | Yes | Indexed URL list (proxied from Rust backend) |
+| `/api/cortex/stats` | GET | Yes | Qdrant + Postgres metrics (proxied from Rust backend) |
+| `/api/cortex/status` | GET | Yes | Job queue status (proxied from Rust backend) |
+| `/api/cortex/suggest` | GET | Yes | Suggest new URLs to crawl based on optional `?q=` focus query |
+| `/api/docs` | GET | Yes | List/read crawl output docs from `AXON_OUTPUT_DIR`; `?action=list` or `?action=read&path=<rel>` |
+| `/api/jobs` | GET | Yes | Job list with strict filter validation (`type`, `status`) |
+| `/api/jobs/[id]` | GET | Yes | Job detail — searches all job tables in parallel; `?includeArtifacts=1` for manifest files |
+| `/api/logs` | GET | Yes | SSE stream of Docker container logs; `?service=<name>` or `?service=all`, `?tail=N` (max 1000) |
+| `/api/mcp` | GET, POST | Yes | MCP server config read/write (`mcp.json`); hot-reloaded by ACP |
+| `/api/mcp/status` | GET | Yes | Probe reachability of each configured MCP server (HTTP ping or `which` check for stdio) |
+| `/api/omnibox/files` | GET | Yes | List/read local doc files (Pulse docs + `docs/` dir) for omnibox completion; `?id=<source:path>` to read one |
+| `/api/pulse/chat` | POST | Yes | Stream ACP chat turns via WebSocket to the Rust bridge (`runAxonCommandWsStream`) |
+| `/api/pulse/config` | POST | Yes | Probe ACP config options for an agent (cached 60s, coalesced in-flight) |
+| `/api/pulse/doc` | GET | Yes | Load a Pulse doc by filename |
+| `/api/pulse/save` | POST | Yes | Create/update Pulse docs (`.cache/pulse/*.md`) |
+| `/api/pulse/source` | GET | Yes | Fetch and sanitize remote source text (SSRF-guarded; blocks private IPs) |
+| `/api/sessions/list` | GET | Yes | List recent AI sessions (Claude/Codex/Gemini); `?assistant_mode=1` for assistant view |
+| `/api/sessions/[id]` | GET | Yes | Fetch and parse a session file by ID (Claude JSONL / Codex JSONL / Gemini JSON) |
+| `/api/shell/tool-preferences` | GET, PUT | Yes | Load/save MCP tool enablement state and named presets (Zod-validated) |
+| `/api/workspace` | GET | Yes | Browse workspace filesystem (`?action=list&path=<p>`) or read a file (`?action=read&path=<p>`); also exposes `__claude` prefix for Claude config dir |
 
 ### WebSocket Proxy (next.config.ts)
 

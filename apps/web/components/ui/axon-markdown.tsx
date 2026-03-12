@@ -148,8 +148,9 @@ function renderLines(lines: string[]): ReactNode[] {
     if (heading) {
       flushList()
       flushBlockquote()
-      const level = heading[1].length
-      const text = heading[2]
+      // Groups 1 and 2 are always defined when the regex matches
+      const level = heading[1]!.length
+      const text = heading[2]!
       const cls =
         level === 1
           ? 'mt-3 mb-1 text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]'
@@ -168,7 +169,8 @@ function renderLines(lines: string[]): ReactNode[] {
     const bqMatch = /^>\s?(.*)$/.exec(line)
     if (bqMatch) {
       flushList()
-      blockquoteLines.push(bqMatch[1])
+      // Group 1 is always defined when the regex matches
+      blockquoteLines.push(bqMatch[1]!)
       continue
     }
     flushBlockquote()
@@ -178,8 +180,9 @@ function renderLines(lines: string[]): ReactNode[] {
     if (ulItem) {
       if (listItems.length > 0 && listOrdered) flushList()
       listOrdered = false
-      const depth = ulItem[1].length >= 2 ? 1 : 0
-      listItems.push({ text: ulItem[2], depth })
+      // Groups 1 and 2 are always defined when the regex matches
+      const depth = ulItem[1]!.length >= 2 ? 1 : 0
+      listItems.push({ text: ulItem[2]!, depth })
       continue
     }
 
@@ -188,8 +191,9 @@ function renderLines(lines: string[]): ReactNode[] {
     if (olItem) {
       if (listItems.length > 0 && !listOrdered) flushList()
       listOrdered = true
-      const depth = olItem[1].length >= 2 ? 1 : 0
-      listItems.push({ text: olItem[2], depth })
+      // Groups 1 and 2 are always defined when the regex matches
+      const depth = olItem[1]!.length >= 2 ? 1 : 0
+      listItems.push({ text: olItem[2]!, depth })
       continue
     }
 
@@ -236,7 +240,8 @@ export const AxonMarkdown = memo(function AxonMarkdown({ content }: { content: s
       {segments.map((seg, i) => {
         const fenced = /^```([\w]*)\n([\s\S]*?)\n```$/.exec(seg)
         if (fenced) {
-          return <CodeBlock key={i} lang={fenced[1]} code={fenced[2]} />
+          // Groups 1 and 2 are always defined when the regex matches
+          return <CodeBlock key={i} lang={fenced[1]!} code={fenced[2]!} />
         }
         return <div key={i}>{renderLines(seg.split('\n'))}</div>
       })}

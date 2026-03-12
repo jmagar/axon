@@ -96,7 +96,8 @@ export async function loadToolPreferences(): Promise<ToolPreferencesRecord> {
     updated_at: string
   }>('SELECT payload, updated_at FROM axon_web_tool_preferences WHERE key = $1', [SETTINGS_KEY])
   if (result.rowCount === 0) return DEFAULT_TOOL_PREFERENCES
-  const row = result.rows[0]
+  // rowCount > 0 is guaranteed — early return above handles 0 case
+  const row = result.rows[0]!
   const normalized = normalizePayload(row.payload)
   return {
     ...normalized,

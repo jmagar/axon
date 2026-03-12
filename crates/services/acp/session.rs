@@ -17,9 +17,10 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use super::adapters::normalized_requested_model;
-use super::bridge::{AcpBridgeClient, AcpRuntimeState, resolve_acp_auto_approve};
+use super::bridge::{AcpBridgeClient, AcpRuntimeState};
 use super::config::{read_codex_cached_model_options, read_gemini_cached_model_options};
 use super::mapping::{map_config_options, select_options_contains_value};
+use super::permission::resolve_acp_auto_approve;
 use super::runtime::AdapterGuard;
 use super::{AcpClientScaffold, AcpSessionSetupRequest, PermissionResponderMap};
 

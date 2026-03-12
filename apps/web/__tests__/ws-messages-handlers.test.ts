@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageHandlerRefs, MessageHandlerSetters } from '@/hooks/ws-messages/handlers'
 import { handleWsMessage } from '@/hooks/ws-messages/handlers'
-import { MAX_STDOUT_ITEMS } from '@/hooks/ws-messages/runtime'
+import { MAX_STDOUT_ITEMS, makeInitialRuntimeState } from '@/hooks/ws-messages/runtime'
 import type { WsServerMsg } from '@/lib/ws-protocol'
 
 function makeRefs(overrides: Partial<MessageHandlerRefs> = {}): MessageHandlerRefs {
@@ -15,6 +15,7 @@ function makeRefs(overrides: Partial<MessageHandlerRefs> = {}): MessageHandlerRe
     currentOutputDirRef: { current: null },
     virtualFileContentByPathRef: { current: {} },
     runIdCounter: { current: 0 },
+    runtimeStateRef: { current: makeInitialRuntimeState() },
     ...overrides,
   }
 }
