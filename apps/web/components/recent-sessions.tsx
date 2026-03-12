@@ -78,7 +78,10 @@ function SessionCard({
 export function RecentSessions() {
   const { sessions, isLoading, loadSession } = useRecentSessions()
 
-  if (isLoading) {
+  // Only show "Loading…" on the very first cold load (no sessions yet).
+  // Once sessions are available, always render them — the hook keeps stale
+  // data visible during background refreshes.
+  if (isLoading && sessions.length === 0) {
     return <div className="mt-3 text-center text-xs text-[var(--text-dim)]">Loading sessions…</div>
   }
 
