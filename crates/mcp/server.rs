@@ -17,6 +17,10 @@ mod handlers_system;
 #[path = "server/oauth_google.rs"]
 mod oauth_google;
 
+#[cfg(test)]
+#[path = "server/services_migration_tests.rs"]
+mod services_migration_tests;
+
 use super::config::load_mcp_config;
 use super::schema::{AxonRequest, parse_axon_request};
 use crate::crates::core::config::Config;

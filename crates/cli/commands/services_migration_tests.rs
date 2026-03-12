@@ -53,3 +53,58 @@ fn migrated_cli_commands_do_not_import_raw_business_logic_layers() {
         }
     }
 }
+
+#[test]
+fn migrated_cli_commands_do_not_import_raw_business_logic_layers_v2() {
+    let checks = [
+        (
+            "embed.rs",
+            include_str!("embed.rs"),
+            &["jobs::embed::{"][..],
+        ),
+        (
+            "extract.rs",
+            include_str!("extract.rs"),
+            &["jobs::extract::{"][..],
+        ),
+        (
+            "ingest.rs",
+            include_str!("ingest.rs"),
+            &["ingest::classify::classify_target"][..],
+        ),
+        (
+            "ingest_common.rs",
+            include_str!("ingest_common.rs"),
+            &["jobs::ingest::{"][..],
+        ),
+        (
+            "watch.rs",
+            include_str!("watch.rs"),
+            &["jobs::watch::{"][..],
+        ),
+        (
+            "domains.rs",
+            include_str!("domains.rs"),
+            &["vector::ops::qdrant::domains_payload"][..],
+        ),
+        (
+            "sources.rs",
+            include_str!("sources.rs"),
+            &["vector::ops::qdrant::sources_payload"][..],
+        ),
+        (
+            "stats.rs",
+            include_str!("stats.rs"),
+            &["vector::ops::stats::stats_payload"][..],
+        ),
+    ];
+
+    for (file, source, forbidden_fragments) in checks {
+        for forbidden in forbidden_fragments {
+            assert!(
+                !source.contains(forbidden),
+                "{file} still contains forbidden direct-layer reference: {forbidden}"
+            );
+        }
+    }
+}
