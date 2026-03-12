@@ -29,7 +29,7 @@ struct WsClientMsg {
     input: String,
     #[serde(default)]
     flags: serde_json::Value,
-    #[serde(default)]
+    #[serde(default, alias = "exec_id")]
     id: String,
     #[serde(default)]
     path: String,
@@ -151,7 +151,14 @@ async fn handle_ws_message(conn: &WsConnState, client_msg: WsClientMsg) {
             let exec_flags = client_msg.flags;
             tokio::spawn(async move {
                 execute::handle_command(
-                    exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
+                    exec_mode,
+                    exec_input,
+                    exec_flags,
+                    client_msg.id,
+                    tx,
+                    job_id,
+                    cmd_cfg,
+                    perm_map,
                 )
                 .await;
             });
@@ -334,5 +341,29 @@ mod tests {
             .try_recv()
             .expect("Session A should have received the response");
         assert_eq!(received, "allow");
+    }
+
+    #[test]
+    fn execute_message_accepts_exec_id_alias() {
+        let parsed: WsClientMsg = serde_json::from_str(
+            r#"{"type":"execute","mode":"query","input":"rust","exec_id":"ws-exec-42"}"#,
+        )
+        .expect("execute message should deserialize");
+
+        assert_eq!(parsed.msg_type, "execute");
+        assert_eq!(parsed.mode, "query");
+        assert_eq!(parsed.input, "rust");
+        assert_eq!(parsed.id, "ws-exec-42");
+    }
+
+    #[test]
+    fn cancel_message_still_accepts_id_field() {
+        let parsed: WsClientMsg =
+            serde_json::from_str(r#"{"type":"cancel","mode":"crawl","id":"job-123"}"#)
+                .expect("cancel message should deserialize");
+
+        assert_eq!(parsed.msg_type, "cancel");
+        assert_eq!(parsed.mode, "crawl");
+        assert_eq!(parsed.id, "job-123");
     }
 }

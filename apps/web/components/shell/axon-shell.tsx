@@ -47,6 +47,9 @@ const EditorPane = dynamic(
   },
 )
 
+const DESKTOP_TOOL_BUTTON_CLASS =
+  'h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.26)] hover:bg-[rgba(175,215,255,0.08)] data-[active=true]:border-[rgba(175,215,255,0.46)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.28),rgba(135,175,255,0.1))] data-[active=true]:text-[var(--text-primary)]'
+
 export { shouldReloadSessionOnTurnComplete }
 
 export function AxonShell() {
@@ -168,8 +171,6 @@ export function AxonShell() {
                     onPermissionTimeoutSecsChange={shell.setPermissionTimeoutSecs}
                     adapterTimeoutSecs={shell.adapterTimeoutSecs}
                     onAdapterTimeoutSecsChange={shell.setAdapterTimeoutSecs}
-                    density={shell.density}
-                    onDensityChange={shell.setDensityTracked}
                   />
                 </div>
               ) : shell.mobilePane === 'cortex' ? (
@@ -195,12 +196,12 @@ export function AxonShell() {
                 />
               </aside>
             ) : (
-              <div className="flex h-full w-10 shrink-0 flex-col items-center border-r border-[var(--border-subtle)] bg-[linear-gradient(180deg,rgba(9,17,35,0.82),rgba(6,12,26,0.9))] pt-1">
+              <div className="flex h-full w-11 shrink-0 flex-col items-center border-r border-[var(--border-subtle)] bg-[linear-gradient(180deg,rgba(9,17,35,0.82),rgba(6,12,26,0.9))] pt-2">
                 <button
                   type="button"
                   onClick={() => shell.persistSidebarOpen(true)}
                   aria-label="Expand sidebar"
-                  className="axon-icon-btn flex size-7 items-center justify-center"
+                  className="axon-icon-btn flex size-8 items-center justify-center"
                 >
                   <PanelLeft className="size-3.5" />
                 </button>
@@ -246,12 +247,12 @@ export function AxonShell() {
                 className={`axon-glass-shell h-full min-h-0 overflow-hidden rounded-none border-0 animate-fade-in ${shell.transitionClass}`}
                 style={{ flex: `${shell.chatFlex} ${shell.chatFlex} 0%`, minWidth: PANE_WIDTH_MIN }}
               >
-                <div className="axon-toolbar flex h-12 items-center justify-between px-3">
+                <div className="axon-toolbar flex h-12 items-center justify-between px-3 xl:px-4">
                   <div className="min-w-0">
-                    <div className="truncate text-[15px] font-semibold leading-snug tracking-[-0.01em] text-[var(--text-primary)]">
+                    <div className="truncate text-[14px] font-semibold leading-snug tracking-[-0.01em] text-[var(--text-primary)] xl:text-[15px]">
                       {shell.chatTitle}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                    <div className="mt-0.5 flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.09em] text-[var(--text-dim)]">
                       <span>{shell.agentLabel}</span>
                       <span className="opacity-40">·</span>
                       <span>{shell.liveMessages.length} msg</span>
@@ -268,96 +269,96 @@ export function AxonShell() {
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'cortex'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'cortex' ? null : 'cortex')
                       }
                     >
-                      <Brain className="size-4" />
+                      <Brain className="size-3.5" />
                       <span className="sr-only">Toggle cortex</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'terminal'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'terminal' ? null : 'terminal')
                       }
                     >
-                      <TerminalSquare className="size-4" />
+                      <TerminalSquare className="size-3.5" />
                       <span className="sr-only">Toggle terminal</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'logs'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'logs' ? null : 'logs')
                       }
                     >
-                      <ScrollText className="size-4" />
+                      <ScrollText className="size-3.5" />
                       <span className="sr-only">Toggle logs</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'mcp'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'mcp' ? null : 'mcp')
                       }
                     >
-                      <McpIcon className="size-4" />
+                      <McpIcon className="size-3.5" />
                       <span className="sr-only">Toggle MCP servers</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'settings'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'settings' ? null : 'settings')
                       }
                     >
-                      <Settings2 className="size-4" />
+                      <Settings2 className="size-3.5" />
                       <span className="sr-only">Toggle settings</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.chatOpen}
                       onClick={() => shell.persistChatOpen(!shell.chatOpen)}
                     >
-                      <MessageSquareText className="size-4" />
+                      <MessageSquareText className="size-3.5" />
                       <span className="sr-only">Toggle chat</span>
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.22)] hover:bg-[rgba(175,215,255,0.07)] data-[active=true]:border-[rgba(175,215,255,0.42)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] data-[active=true]:text-[var(--text-primary)]"
+                      className={DESKTOP_TOOL_BUTTON_CLASS}
                       data-active={shell.rightPane === 'editor'}
                       onClick={() =>
                         shell.persistRightPane(shell.rightPane === 'editor' ? null : 'editor')
                       }
                     >
-                      <PanelRight className="size-4" />
+                      <PanelRight className="size-3.5" />
                       <span className="sr-only">Toggle editor</span>
                     </Button>
                   </div>
                 </div>
 
-                <div className="flex h-[calc(100%-56px)] min-h-0 flex-col">
-                  <Conversation className="w-full flex-1 px-3 py-2">
+                <div className="flex h-[calc(100%-48px)] min-h-0 flex-col">
+                  <Conversation className="w-full flex-1 px-3 py-2.5 xl:px-4">
                     <AxonMessageList
                       messages={shell.displayMessages}
                       agentName={shell.agentLabel}
@@ -377,7 +378,7 @@ export function AxonShell() {
                     <ConversationScrollButton className="animate-scale-in" />
                   </Conversation>
 
-                  <div className="axon-toolbar border-t border-b-0 px-3 py-2">
+                  <div className="axon-toolbar border-t border-b-0 px-3 py-2 xl:px-4">
                     <AxonPromptComposer compact {...shell.composerProps} />
                   </div>
                 </div>
@@ -426,8 +427,6 @@ export function AxonShell() {
                     onPermissionTimeoutSecsChange={shell.setPermissionTimeoutSecs}
                     adapterTimeoutSecs={shell.adapterTimeoutSecs}
                     onAdapterTimeoutSecsChange={shell.setAdapterTimeoutSecs}
-                    density={shell.density}
-                    onDensityChange={shell.setDensityTracked}
                   />
                 )}
               </aside>

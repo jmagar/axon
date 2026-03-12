@@ -165,6 +165,7 @@ pub(super) async fn handle_command(
     mode: String,
     input: String,
     flags: serde_json::Value,
+    client_exec_id: String,
     tx: mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
     cfg: Arc<Config>,
@@ -174,7 +175,11 @@ pub(super) async fn handle_command(
     // owned values.  These borrows live only within their enclosing expressions
     // and never cross an `.await` point, so the future remains `Send + 'static`.
     let context = ExecCommandContext {
-        exec_id: format!("exec-{}", Uuid::new_v4()),
+        exec_id: if client_exec_id.trim().is_empty() {
+            format!("exec-{}", Uuid::new_v4())
+        } else {
+            client_exec_id
+        },
         mode: mode.clone(),
         input: input.clone(),
         flags: flags.clone(),

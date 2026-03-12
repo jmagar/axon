@@ -59,7 +59,7 @@ describe('ToolHeader', () => {
   it('renders dense metadata badges', () => {
     render(
       <Tool defaultOpen>
-        <ToolHeader title="exec_command" badges={['shell', '#1', '22 ms']} density="compact" />
+        <ToolHeader title="exec_command" badges={['shell', '#1', '22 ms']} />
         <ToolContent>body</ToolContent>
       </Tool>,
     )

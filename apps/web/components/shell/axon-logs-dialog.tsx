@@ -110,14 +110,14 @@ export function AxonLogsDialog({
         className="flex max-h-[85dvh] w-full max-w-5xl flex-col gap-0 overflow-hidden border-[var(--border-subtle)] bg-[var(--glass-overlay)] p-0 text-[var(--text-primary)] backdrop-blur-xl sm:max-w-5xl"
         showCloseButton
       >
-        <DialogHeader className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-3">
-          <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold text-[var(--text-primary)]">
+        <DialogHeader className="shrink-0 border-b border-[var(--border-subtle)] px-3 py-2.5">
+          <DialogTitle className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
             <ScrollText className="size-4 text-[var(--axon-primary-strong)]" />
             Docker Logs
           </DialogTitle>
         </DialogHeader>
 
-        <div className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2.5">
+        <div className="shrink-0 border-b border-[var(--border-subtle)] px-3 py-2">
           <LogsToolbar
             service={service}
             tailLines={tailLines}
@@ -139,7 +139,7 @@ export function AxonLogsDialog({
         <div
           ref={scrollAreaRef}
           onScroll={handleScroll}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-xs"
+          className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-xs"
           style={{ background: 'rgba(3,7,18,0.6)' }}
           role="log"
           aria-live="polite"
@@ -175,7 +175,7 @@ export function AxonLogsDialog({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 border-t border-[var(--border-subtle)] px-4 py-2">
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-[var(--border-subtle)] px-3 py-1.5">
           <span className="text-[10px] text-[var(--text-dim)]">
             {filteredLines.length.toLocaleString()} line{filteredLines.length !== 1 ? 's' : ''}
             {filter ? ' (filtered)' : ''}
