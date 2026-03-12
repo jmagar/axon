@@ -1,9 +1,8 @@
 'use client'
 
-import { SiAnthropic, SiGoogle } from '@icons-pack/react-simple-icons'
 import { ChevronDown, PanelLeft, Plus, Search } from 'lucide-react'
+import Image from 'next/image'
 import React from 'react'
-import { SiOpenai } from 'react-icons/si'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -22,21 +21,31 @@ import {
 } from './axon-sidebar-utils'
 import { RAIL_MODES, type RailMode } from './axon-ui-config'
 
-const AGENT_BADGE: Record<string, { label: string; colorClass: string }> = {
-  claude: { label: 'C', colorClass: 'text-[#d4b07a]' },
-  codex: { label: 'O', colorClass: 'text-[#9ad1ff]' },
-  gemini: { label: 'G', colorClass: 'text-[#7db8f7]' },
+const AGENT_LOGO: Record<string, { src: string; alt: string; title: string }> = {
+  claude: { src: '/logos/anthropic.svg', alt: 'Anthropic logo', title: 'Anthropic (Claude)' },
+  codex: { src: '/logos/openai.svg', alt: 'OpenAI logo', title: 'OpenAI (Codex)' },
+  gemini: { src: '/logos/google.svg', alt: 'Google logo', title: 'Google (Gemini)' },
 }
 
 function AgentLogo({ agent }: { agent?: string }) {
   const normalized = (agent ?? 'claude').toLowerCase()
-  if (normalized === 'gemini') {
-    return <SiGoogle className="size-3.5 text-[#8ab4f8]" title="Google (Gemini)" />
-  }
-  if (normalized === 'codex') {
-    return <SiOpenai className="size-3.5 text-[#9ad1ff]" title="OpenAI (Codex)" />
-  }
-  return <SiAnthropic className="size-3.5 text-[#d4b07a]" title="Anthropic (Claude)" />
+  const logo = AGENT_LOGO[normalized] ?? AGENT_LOGO.claude
+  return (
+    <span
+      className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-[rgba(255,255,255,0.94)] ring-1 ring-[rgba(5,10,20,0.3)] shadow-[0_1px_4px_rgba(0,0,0,0.2)]"
+      title={logo.title}
+    >
+      <Image
+        src={logo.src}
+        alt={logo.alt}
+        width={12}
+        height={12}
+        className="h-3 w-3 object-contain"
+        draggable={false}
+        unoptimized
+      />
+    </span>
+  )
 }
 
 function railItemClass(isActive: boolean) {
@@ -77,7 +86,7 @@ const RailContent = React.memo(function RailContent({
   compact?: boolean
 }) {
   const normalizedQuery = query.trim().toLowerCase()
-  const rowClass = compact ? 'py-1.5' : 'py-2'
+  const rowClass = compact ? 'py-1' : 'py-1.5'
 
   if (mode === 'sessions') {
     const filteredSessions = sessions.filter((session) => {
@@ -126,28 +135,27 @@ const RailContent = React.memo(function RailContent({
                 title={title}
               >
                 <div className="px-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="max-w-[78%] truncate text-[13px] font-medium">{title}</span>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
+                    <div className="pt-0.5">
                       <AgentLogo agent={session.agent} />
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent ?? 'claude']?.colorClass ?? ''}`}
-                      >
-                        {AGENT_BADGE[session.agent ?? 'claude']?.label ?? 'C'}
-                      </span>
-                      <span className="text-[11px] text-[var(--text-dim)]">
-                        {formatLastMessageTime(session.mtimeMs)}
-                      </span>
                     </div>
+                    <div className="min-w-0">
+                      <span className="block truncate text-[12px] leading-tight font-medium">
+                        {title}
+                      </span>
+                      {meta ? (
+                        <div
+                          className="mt-px truncate text-[10px] leading-tight text-[var(--text-dim)]"
+                          title={`Workspace context: ${meta}`}
+                        >
+                          {meta}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className="whitespace-nowrap pt-px text-[9px] tabular-nums text-[rgba(175,215,255,0.54)]">
+                      {formatLastMessageTime(session.mtimeMs)}
+                    </span>
                   </div>
-                  {meta ? (
-                    <div
-                      className="mt-0.5 truncate text-[11px] text-[var(--text-dim)]"
-                      title={`Workspace context: ${meta}`}
-                    >
-                      {meta}
-                    </div>
-                  ) : null}
                 </div>
               </button>
             </li>
@@ -221,28 +229,27 @@ const RailContent = React.memo(function RailContent({
                 title={session.preview ?? title}
               >
                 <div className="px-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="max-w-[80%] truncate text-[13px] font-medium">{title}</span>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
+                    <div className="pt-0.5">
                       <AgentLogo agent={session.agent} />
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-[0.1em] ${AGENT_BADGE[session.agent ?? 'claude']?.colorClass ?? ''}`}
-                      >
-                        {AGENT_BADGE[session.agent ?? 'claude']?.label ?? 'C'}
-                      </span>
-                      <span className="text-[11px] text-[var(--text-dim)]">
-                        {formatLastMessageTime(session.mtimeMs)}
-                      </span>
                     </div>
+                    <div className="min-w-0">
+                      <span className="block truncate text-[12px] leading-tight font-medium">
+                        {title}
+                      </span>
+                      {meta ? (
+                        <div
+                          className="mt-px truncate text-[10px] leading-tight text-[var(--text-dim)]"
+                          title={`Workspace context: ${meta}`}
+                        >
+                          {meta}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className="whitespace-nowrap pt-px text-[9px] tabular-nums text-[rgba(175,215,255,0.54)]">
+                      {formatLastMessageTime(session.mtimeMs)}
+                    </span>
                   </div>
-                  {meta ? (
-                    <div
-                      className="mt-0.5 truncate text-[11px] text-[var(--text-dim)]"
-                      title={`Workspace context: ${meta}`}
-                    >
-                      {meta}
-                    </div>
-                  ) : null}
                 </div>
               </button>
             </li>

@@ -179,6 +179,12 @@
   --surface-input-strong: rgba(10, 18, 35, 0.45);
   --axon-glow-blue: 0 0 24px rgba(135, 175, 255, 0.25);
   --axon-glow-pink: 0 0 24px rgba(255, 135, 175, 0.16);
+
+  /* Mission Control tokens */
+  --mc-hero-bg: linear-gradient(145deg, rgba(18, 34, 68, 0.88), rgba(10, 18, 35, 0.9));
+  --mc-accent-cyan: #66d9ff;
+  --mc-accent-gold: #ffd166;
+  --mc-accent-coral: #ff8a7a;
 }
 
 .dark {
@@ -215,6 +221,18 @@
   --sidebar-ring: oklch(0.6 0.12 200);
   --brand: oklch(0.7 0.15 200);
   --highlight: oklch(0.8 0.18 160);
+}
+
+.axon-mission-control {
+  container-type: inline-size;
+}
+
+.axon-mission-card {
+  border-radius: 1rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-base);
+  padding: 1rem;
+  box-shadow: var(--shadow-md);
 }
 
 @layer base {

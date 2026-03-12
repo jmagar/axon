@@ -64,8 +64,8 @@ if (typeof window !== 'undefined') {
 
 export const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 export const LIVE_MESSAGES_STORAGE_KEY = 'axon.web.shell.live-messages.v1'
-export const SIDEBAR_WIDTH_DEFAULT = 260
-export const SIDEBAR_WIDTH_MIN = 180
+export const SIDEBAR_WIDTH_DEFAULT = 264
+export const SIDEBAR_WIDTH_MIN = 192
 export const SIDEBAR_WIDTH_MAX = 520
 export const PANE_WIDTH_MIN = 240
 

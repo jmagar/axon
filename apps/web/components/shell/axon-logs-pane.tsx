@@ -103,12 +103,12 @@ export const AxonLogsPane = memo(function AxonLogsPane() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2.5">
         <ScrollText className="size-4 text-[var(--axon-primary-strong)]" />
-        <span className="text-[14px] font-semibold text-[var(--text-primary)]">Docker Logs</span>
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">Docker Logs</span>
       </div>
 
-      <div className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2.5">
+      <div className="shrink-0 border-b border-[var(--border-subtle)] px-3 py-2">
         <LogsToolbar
           service={service}
           tailLines={tailLines}
@@ -130,7 +130,7 @@ export const AxonLogsPane = memo(function AxonLogsPane() {
       <div
         ref={scrollAreaRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-2 font-mono text-xs"
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5 font-mono text-xs"
         style={{ background: 'rgba(3,7,18,0.6)' }}
         role="log"
         aria-live="polite"
@@ -166,7 +166,7 @@ export const AxonLogsPane = memo(function AxonLogsPane() {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 border-t border-[var(--border-subtle)] px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2.5 border-t border-[var(--border-subtle)] px-3 py-1.5">
         <span className="text-[10px] text-[var(--text-dim)]">
           {filteredLines.length.toLocaleString()} line{filteredLines.length !== 1 ? 's' : ''}
           {filter ? ' (filtered)' : ''}

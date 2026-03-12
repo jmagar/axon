@@ -69,7 +69,7 @@ export function Tool({
   return (
     <Collapsible
       className={cn(
-        'overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[rgba(7,12,26,0.8)] shadow-[var(--shadow-lg)]',
+        'overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[rgba(7,12,26,0.8)] shadow-[var(--shadow-md)]',
         className,
       )}
       defaultOpen={defaultOpen}
@@ -86,7 +86,6 @@ export function ToolHeader({
   status,
   meta,
   badges,
-  density = 'comfortable',
   ...props
 }: ComponentProps<'button'> & {
   title: string
@@ -95,11 +94,9 @@ export function ToolHeader({
   status?: string
   meta?: string
   badges?: string[]
-  density?: 'compact' | 'comfortable'
 }) {
   const [open, setOpen] = useState(true)
   const displayKind = kind ?? inferToolKind(title)
-  const isCompact = density === 'compact'
   const normalizedStatus = (status ?? '').toLowerCase()
   const statusTone =
     normalizedStatus === 'completed' || normalizedStatus === 'success'
@@ -112,8 +109,7 @@ export function ToolHeader({
     <CollapsibleTrigger asChild>
       <button
         className={cn(
-          'flex w-full items-center justify-between gap-3 border-b border-[var(--border-subtle)] text-left',
-          isCompact ? 'px-3 py-2.5' : 'px-4 py-3',
+          'flex w-full items-center justify-between gap-2 border-b border-[var(--border-subtle)] text-left px-3 py-2',
           className,
         )}
         type="button"
@@ -123,16 +119,11 @@ export function ToolHeader({
           props.onClick?.(event)
         }}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <ToolKindIcon kind={displayKind} />
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <p
-                className={cn(
-                  'truncate font-medium text-[var(--text-primary)]',
-                  isCompact ? 'text-[13px]' : 'text-sm',
-                )}
-              >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className={cn('truncate font-medium text-[var(--text-primary)] text-[13px]')}>
                 {title}
               </p>
               <span className="shrink-0 rounded border border-[var(--border-subtle)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-dim)]">

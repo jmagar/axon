@@ -182,13 +182,13 @@ export const PulseEditorPane = memo(function PulseEditorPane({
         <div className="axon-editor flex h-full min-h-0 flex-col">
           {/* ── Desktop toolbar (hidden on mobile) ─────────────────────────────── */}
           <div
-            className="bg-[rgba(10,18,35,0.32)] px-1.5 py-1"
+            className="bg-[rgba(10,18,35,0.32)] px-1 py-1 sm:py-0.5"
             style={{
               backdropFilter: 'blur(8px) saturate(180%)',
               boxShadow: '0 1px 0 rgba(135, 175, 255, 0.07)',
             }}
           >
-            <div className="mb-1 flex items-center justify-between px-1.5">
+            <div className="mb-0.5 flex items-center justify-between px-1">
               <p className="ui-label flex-none">Editor</p>
             </div>
 
@@ -372,7 +372,7 @@ export const PulseEditorPane = memo(function PulseEditorPane({
 
           {/* ── Desktop footer ──────────────────────────────────────────────────── */}
           <div
-            className="hidden shrink-0 items-center gap-2 px-2.5 py-1 sm:flex"
+            className="hidden shrink-0 items-center gap-2 px-2 py-0.5 sm:flex"
             style={{ boxShadow: '0 -1px 0 rgba(135, 175, 255, 0.07)' }}
           >
             <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-dim)]">
