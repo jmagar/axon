@@ -10,6 +10,9 @@ use std::error::Error;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+pub mod classify;
+pub use classify::classify_target;
+
 // --- Pure mapping helper (no I/O, testable without live services) ---
 
 pub fn map_ingest_result(payload: serde_json::Value) -> IngestResult {
