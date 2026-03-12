@@ -130,6 +130,7 @@ fn acp_bridge_event_unknown_session_update_wire_type() {
         tool_status: None,
         tool_content: None,
         tool_input: None,
+        tool_locations: None,
     });
 
     let json = serde_json::to_value(&event).unwrap();
@@ -148,11 +149,7 @@ fn acp_bridge_event_unknown_session_update_wire_type() {
 
 #[test]
 fn validate_adapter_rejects_empty_program() {
-    let adapter = AcpAdapterCommand {
-        program: String::new(),
-        args: vec![],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("", vec![]);
     let err = validate_adapter_command(&adapter).expect_err("empty program should fail");
     assert!(
         err.to_string().contains("cannot be empty"),
@@ -162,11 +159,7 @@ fn validate_adapter_rejects_empty_program() {
 
 #[test]
 fn validate_adapter_rejects_whitespace_only_program() {
-    let adapter = AcpAdapterCommand {
-        program: "   \t  ".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("   \t  ", vec!["--stdio".to_string()]);
     let err = validate_adapter_command(&adapter).expect_err("whitespace-only program should fail");
     assert!(
         err.to_string().contains("cannot be empty"),
@@ -178,11 +171,7 @@ fn validate_adapter_rejects_whitespace_only_program() {
 fn validate_adapter_accepts_bare_adapter_name() {
     // A bare name like "claude" should pass validation even if it doesn't exist
     // on this system — validation only checks for empty/whitespace.
-    let adapter = AcpAdapterCommand {
-        program: "claude".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("claude", vec!["--stdio".to_string()]);
     validate_adapter_command(&adapter).expect("bare adapter name should pass validation");
 }
 
@@ -191,11 +180,8 @@ fn validate_adapter_rejects_bare_shell_name() {
     // Bare names that are known shells must be rejected unconditionally —
     // not just when the program contains a path separator.
     for shell in &["sh", "bash", "zsh", "fish", "dash", "powershell", "pwsh"] {
-        let adapter = AcpAdapterCommand {
-            program: shell.to_string(),
-            args: vec![],
-            cwd: None,
-        };
+        let adapter = AcpAdapterCommand::new(*shell, vec![]);
+
         let err = validate_adapter_command(&adapter)
             .expect_err(&format!("bare shell '{shell}' should be rejected"));
         assert!(
@@ -208,11 +194,7 @@ fn validate_adapter_rejects_bare_shell_name() {
 #[test]
 fn validate_adapter_accepts_absolute_path() {
     // Absolute paths pass validation regardless of whether the file exists.
-    let adapter = AcpAdapterCommand {
-        program: "/usr/bin/claude-agent-acp".to_string(),
-        args: vec![],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("/usr/bin/claude-agent-acp", vec![]);
     validate_adapter_command(&adapter).expect("absolute path should pass validation");
 }
 
@@ -255,11 +237,7 @@ async fn spawn_adapter_does_not_pass_proxy_vars() {
         .join("");
     let cmd = format!("printf '%s' {args_inner}");
 
-    let adapter = AcpAdapterCommand {
-        program: "sh".to_string(),
-        args: vec!["-c".to_string(), cmd],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("sh", vec!["-c".to_string(), cmd]);
     let scaffold = AcpClientScaffold::new(adapter);
     // Use skip_validation variant: "sh" is a blocked shell in production but is
     // needed here to probe env var inheritance inside the env_clear allowlist.
@@ -295,11 +273,10 @@ async fn spawn_adapter_does_not_pass_claudecode() {
     // SAFETY: ENV_LOCK is held for this entire test; single-threaded env access.
     let _guard = unsafe { EnvVarGuard::set("CLAUDECODE", "poison_nested_session") };
 
-    let adapter = AcpAdapterCommand {
-        program: "sh".to_string(),
-        args: vec!["-c".to_string(), "printf '%s' \"$CLAUDECODE\"".to_string()],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new(
+        "sh",
+        vec!["-c".to_string(), "printf '%s' \"$CLAUDECODE\"".to_string()],
+    );
     let scaffold = AcpClientScaffold::new(adapter);
     // Use skip_validation variant: "sh" is a blocked shell in production but is
     // needed here to probe env var inheritance inside the env_clear allowlist.
@@ -383,11 +360,10 @@ fn permission_responder_map_composite_key_isolates_sessions() {
 async fn spawn_adapter_passes_through_path() {
     let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
-    let adapter = AcpAdapterCommand {
-        program: "sh".to_string(),
-        args: vec!["-c".to_string(), "printf '%s' \"$PATH\"".to_string()],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new(
+        "sh",
+        vec!["-c".to_string(), "printf '%s' \"$PATH\"".to_string()],
+    );
     let scaffold = AcpClientScaffold::new(adapter);
     // Use skip_validation variant: "sh" is a blocked shell in production but is
     // needed here to probe env var inheritance inside the env_clear allowlist.

@@ -42,7 +42,15 @@ export type WsServerMsg =
   | WsV2ArtifactListMsg
   | WsV2ArtifactContentMsg
   | WsV2JobCancelResponseMsg
-  | { type: 'assistant_delta'; session_id?: string; delta: string; tool_call_id?: string | null }
+  | {
+      type: 'assistant_delta'
+      session_id?: string
+      delta: string
+      tool_call_id?: string | null
+      tool_locations?: string[]
+      usage?: WsUsageStats
+    }
+  | { type: 'usage_update'; session_id: string; usage: WsUsageStats }
   | { type: 'thinking_content'; session_id?: string; content: string; tool_call_id?: string | null }
   | { type: 'session_fallback'; old_session_id: string; new_session_id: string }
   | { type: 'result'; session_id?: string; result?: string; [key: string]: unknown }
@@ -255,6 +263,14 @@ export interface ContainerStats {
   memory_limit_mb: number
   net_rx_rate: number
   net_tx_rate: number
+}
+
+export interface WsUsageStats {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cache_creation_input_tokens?: number
+  cache_read_input_tokens?: number
 }
 
 export type WsStatus = 'connected' | 'reconnecting' | 'disconnected'

@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ScrollText } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LogLine } from '@/components/logs/log-line'
 import {
   type IndividualService,
@@ -18,7 +18,7 @@ const MAX_LINES = 1200
 const LOGS_SERVICE_KEY = 'axon.web.logs.service'
 const DEFAULT_SERVICE: ServiceName = 'all'
 
-export function AxonLogsPane() {
+export const AxonLogsPane = memo(function AxonLogsPane() {
   const [service, setService] = useState<ServiceName>(DEFAULT_SERVICE)
   const [tailLines, setTailLines] = useState<TailLines>(TAIL_OPTIONS[1])
   const [filter, setFilter] = useState('')
@@ -182,4 +182,4 @@ export function AxonLogsPane() {
       </div>
     </div>
   )
-}
+})

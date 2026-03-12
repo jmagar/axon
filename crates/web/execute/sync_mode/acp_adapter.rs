@@ -41,6 +41,10 @@ fn resolve_acp_adapter_command_from_values(
         program,
         args,
         cwd: None,
+        enable_fs: true,
+        enable_terminal: true,
+        permission_timeout_secs: None,
+        adapter_timeout_secs: None,
     })
 }
 

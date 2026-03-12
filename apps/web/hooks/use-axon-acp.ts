@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import type { AcpConfigOption } from '@/lib/pulse/types'
+import type { WsUsageStats } from '@/lib/ws-protocol'
 import type { AxonMessage } from './use-axon-session'
 import { useAxonWs } from './use-axon-ws'
 
@@ -80,15 +81,22 @@ interface UseAxonAcpOptions {
   /** Called when an `editor_update` message is received. Use this to make the editor
    * pane visible on mobile viewports when the agent writes to the document. */
   onShowEditor?: () => void
+  enableFs?: boolean
+  enableTerminal?: boolean
+  permissionTimeoutSecs?: number | null
+  adapterTimeoutSecs?: number | null
 }
+
+const EMPTY_SERVERS: string[] = []
+const EMPTY_TOOLS: string[] = []
 
 export function useAxonAcp({
   activeSessionId,
   agent = 'claude',
   model,
   sessionMode,
-  enabledMcpServers = [],
-  blockedMcpTools = [],
+  enabledMcpServers = EMPTY_SERVERS,
+  blockedMcpTools = EMPTY_TOOLS,
   assistantMode = false,
   handoffContext = null,
   onSessionIdChange,
@@ -100,6 +108,10 @@ export function useAxonAcp({
   onTurnComplete,
   onEditorUpdate,
   onShowEditor,
+  enableFs = true,
+  enableTerminal = true,
+  permissionTimeoutSecs = null,
+  adapterTimeoutSecs = null,
 }: UseAxonAcpOptions) {
   const [isStreaming, setIsStreaming] = useState(false)
   const streamingIdRef = useRef<string | null>(null)
@@ -174,11 +186,61 @@ export function useAxonAcp({
         case 'assistant_delta': {
           const delta = (msg.delta as string) ?? ''
           const sid = streamingIdRef.current
-          if (!sid || !delta) return
-          if (firstDeltaAtRef.current === null) firstDeltaAtRef.current = Date.now()
-          streamedCharsRef.current += delta.length
-          pendingDeltaRef.current += delta
-          scheduleFlushBufferedStream()
+          if (!sid) return
+
+          // Update usage if provided in delta
+          const usage = msg.usage as WsUsageStats | undefined
+          const locations = msg.tool_locations as string[] | undefined
+
+          if (delta) {
+            if (firstDeltaAtRef.current === null) firstDeltaAtRef.current = Date.now()
+            streamedCharsRef.current += delta.length
+            pendingDeltaRef.current += delta
+            scheduleFlushBufferedStream()
+          }
+
+          if (usage || locations) {
+            onMessagesChange((prev) =>
+              prev.map((m) =>
+                m.id === sid
+                  ? {
+                      ...m,
+                      ...(usage ? { usage } : {}),
+                      ...(locations
+                        ? {
+                            toolUses: (m.toolUses ?? []).map((tu, idx, arr) =>
+                              // If this delta came with a tool_call_id, update that specific tool.
+                              // Otherwise, if it's the last tool in the list, update it.
+                              tu.toolCallId === msg.tool_call_id ||
+                              (!msg.tool_call_id && idx === arr.length - 1)
+                                ? { ...tu, locations }
+                                : tu,
+                            ),
+                          }
+                        : {}),
+                    }
+                  : m,
+              ),
+            )
+          }
+          break
+        }
+
+        case 'usage_update': {
+          const usage = msg.usage as WsUsageStats | undefined
+          if (!usage) break
+          const sid = streamingIdRef.current
+          if (!sid) return
+          onMessagesChange((prev) =>
+            prev.map((m) =>
+              m.id === sid
+                ? ({
+                    ...m,
+                    usage: m.usage ? { ...m.usage, ...usage } : usage,
+                  } as AxonMessage)
+                : m,
+            ),
+          )
           break
         }
 
@@ -464,6 +526,10 @@ export function useAxonAcp({
           ...(enabledMcpServers.length > 0 ? { mcp_servers: enabledMcpServers } : {}),
           ...(blockedMcpTools.length > 0 ? { blocked_mcp_tools: blockedMcpTools } : {}),
           ...(assistantMode ? { assistant_mode: true } : {}),
+          enable_fs: enableFs,
+          enable_terminal: enableTerminal,
+          ...(permissionTimeoutSecs ? { permission_timeout_secs: permissionTimeoutSecs } : {}),
+          ...(adapterTimeoutSecs ? { adapter_timeout_secs: adapterTimeoutSecs } : {}),
         },
       })
       if (handoffContext) onHandoffConsumed?.()
@@ -482,6 +548,10 @@ export function useAxonAcp({
       onHandoffConsumed,
       send,
       onMessagesChange,
+      adapterTimeoutSecs,
+      enableFs,
+      enableTerminal,
+      permissionTimeoutSecs,
     ],
   )
 

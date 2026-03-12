@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import type { DedupeResult, NormalizedResult, StatsResult } from '@/lib/result-types'
 import { fmtNum } from './shared'
 

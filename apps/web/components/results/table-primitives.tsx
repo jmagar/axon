@@ -1,6 +1,7 @@
 'use client'
 
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type React from 'react'
 import { useState } from 'react'
 import { fmtNum } from './shared'
 

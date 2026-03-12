@@ -55,6 +55,10 @@ export function useAxonShellState() {
   const [activeFile, setActiveFile] = useState('')
   const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
+  const [enableFs, setEnableFs] = useState(true)
+  const [enableTerminal, setEnableTerminal] = useState(true)
+  const [permissionTimeoutSecs, setPermissionTimeoutSecs] = useState<number | null>(null)
+  const [adapterTimeoutSecs, setAdapterTimeoutSecs] = useState<number | null>(null)
   const canvasRef = useRef<NeuralCanvasHandle>(null)
 
   const { sessions: rawSessions, reload: reloadSessions } = useRecentSessions()
@@ -93,11 +97,13 @@ export function useAxonShellState() {
   }, [enabledMcpTools, mcpToolsByServer])
 
   const blockedMcpTools = useMemo(() => {
+    const enabledSet = new Set(effectiveEnabledMcpTools)
+    const enabledServersSet = new Set(mcp.enabledMcpServers)
     const blocked = new Set<string>()
     for (const [serverName, tools] of Object.entries(mcpToolsByServer)) {
-      const serverEnabled = mcp.enabledMcpServers.includes(serverName)
+      const serverEnabled = enabledServersSet.has(serverName)
       for (const toolName of tools) {
-        if (!serverEnabled || !effectiveEnabledMcpTools.includes(toolName)) {
+        if (!serverEnabled || !enabledSet.has(toolName)) {
           blocked.add(toolName)
         }
       }
@@ -187,6 +193,10 @@ export function useAxonShellState() {
     onHandoffConsumed: () => setPendingHandoffContext(null),
     onTurnComplete,
     onEditorUpdate,
+    enableFs,
+    enableTerminal,
+    permissionTimeoutSecs,
+    adapterTimeoutSecs,
   })
 
   const isStreamingRef = useRef(false)
@@ -480,5 +490,13 @@ export function useAxonShellState() {
     startChatResize: layout.startChatResize,
     startSidebarResize: layout.startSidebarResize,
     transitionClass: layout.transitionClass,
+    enableFs,
+    setEnableFs,
+    enableTerminal,
+    setEnableTerminal,
+    permissionTimeoutSecs,
+    setPermissionTimeoutSecs,
+    adapterTimeoutSecs,
+    setAdapterTimeoutSecs,
   }
 }

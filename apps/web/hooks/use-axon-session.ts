@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-fetch'
 import type { PulseMessageBlock, PulseToolUse } from '@/lib/pulse/types'
+import type { WsUsageStats } from '@/lib/ws-protocol'
 
 export type ReasoningStep = {
   label: string
@@ -20,6 +21,7 @@ export interface AxonMessage {
   blocks?: PulseMessageBlock[]
   toolUses?: PulseToolUse[]
   steps?: ReasoningStep[]
+  usage?: WsUsageStats
 }
 
 /** @deprecated Use AxonMessage */
@@ -118,7 +120,7 @@ export function useAxonSession(
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
   const prevSessionIdRef = useRef<string | null>(null)
-  const prevAssistantModeRef = useRef<string | undefined>(undefined)
+  const prevAssistantModeRef = useRef<boolean | undefined>(undefined)
 
   const reload = useCallback(() => setVersion((v) => v + 1), [])
 
