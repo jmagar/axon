@@ -205,15 +205,17 @@ fn unknown_session_update_produces_unknown_wire_type_not_status() {
     use axon::crates::services::types::AcpSessionUpdateEvent;
 
     let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
-        session_id: "sess-unknown-wire".to_string(),
-        kind: AcpSessionUpdateKind::Unknown,
+        session_id: "session-unknown-test".to_string(),
+        kind: AcpSessionUpdateKind::Plan,
         text_delta: None,
         tool_call_id: None,
         tool_name: None,
         tool_status: None,
         tool_content: None,
         tool_input: None,
+        tool_locations: None,
     });
+
 
     let json = serde_json::to_value(&event).unwrap();
     assert_eq!(
@@ -231,7 +233,7 @@ fn plan_session_update_falls_through_as_status_wire_type() {
     // normally intercepted by the AcpBridgeEvent custom Serialize. If they
     // somehow fall through to the SessionUpdate path, they produce "status".
     let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
-        session_id: "sess-plan-fallthrough".to_string(),
+        session_id: "session-unknown-test".to_string(),
         kind: AcpSessionUpdateKind::Plan,
         text_delta: None,
         tool_call_id: None,
@@ -239,7 +241,9 @@ fn plan_session_update_falls_through_as_status_wire_type() {
         tool_status: None,
         tool_content: None,
         tool_input: None,
+        tool_locations: None,
     });
+
 
     let json = serde_json::to_value(&event).unwrap();
     // Plan falls through Display to "status" — distinct from Unknown's "unknown".
