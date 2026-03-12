@@ -123,7 +123,7 @@ export function useAxonShellLayoutControls(): LayoutControls {
       setRightPane('editor')
     }
     setRailMode(readStoredRailMode(RAIL_MODE_STORAGE_KEY, 'sessions'))
-    setDensity(readStoredDensity(DENSITY_STORAGE_KEY, 'comfortable'))
+    setDensity(readStoredDensity(DENSITY_STORAGE_KEY, 'high'))
     const rawProfile = getStorageItem(CANVAS_PROFILE_STORAGE_KEY)
     if (rawProfile && CANVAS_PROFILES.includes(rawProfile as NeuralCanvasProfile)) {
       setCanvasProfile(rawProfile as NeuralCanvasProfile)

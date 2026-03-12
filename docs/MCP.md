@@ -37,7 +37,10 @@ MCP transport env vars:
 - `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
 - `AXON_MCP_HTTP_PORT` (default `8001`)
 
-OAuth broker env vars (required for protected `/mcp` access):
+MCP HTTP auth env vars:
+- `AXON_MCP_API_KEY` (optional static bearer token for `/mcp`)
+
+OAuth broker env vars (optional; enables OAuth bearer tokens for `/mcp`):
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 
@@ -59,7 +62,7 @@ Optional OAuth overrides:
 - `loopback_only`: allow only loopback HTTP callbacks
 - `any`: allow any HTTP/HTTPS callback URI
 
-If OAuth is not configured, requests to `/mcp` return unauthorized.
+`/mcp` accepts either `Authorization: Bearer <AXON_MCP_API_KEY>` or a valid OAuth bearer token (`atk_...`). If neither auth mode is configured, requests to `/mcp` return unauthorized.
 
 ## Transport Notes
 `axon mcp` supports three transport modes:
@@ -119,7 +122,22 @@ HTTP MCP server example:
     "axon-http": {
       "url": "https://axon.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer atk_your_token_here"
+        "Authorization": "Bearer <AXON_MCP_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+OAuth bearer token is also accepted on `/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "axon-http": {
+      "url": "https://axon.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer atk_your_oauth_token_here"
       }
     }
   }
@@ -165,6 +183,11 @@ High-level flow:
 3. User authenticates via Google (`/oauth/google/login` -> Google -> `/oauth/google/callback`).
 4. Authorization code flow completes via `/oauth/authorize` and `/oauth/token`.
 5. Client calls `/mcp` with bearer token.
+
+Static API key alternative:
+- Clients can call `/mcp` directly with `Authorization: Bearer <AXON_MCP_API_KEY>`.
+- API key auth is full `/mcp` access and does not apply OAuth scope checks.
+- OAuth discovery endpoints remain available unchanged.
 
 ## Token Persistence
 OAuth state is persisted in Redis when available; otherwise in-memory fallback is used.

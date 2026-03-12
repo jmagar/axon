@@ -39,7 +39,9 @@ pub(crate) fn normalize_loopback_redirect_uri(uri: &str) -> Option<String> {
 }
 
 fn is_loopback_host(host: &str) -> bool {
-    let normalized_host = host.trim_matches(['[', ']']);
+    let normalized_host = host
+        .trim_matches(['[', ']'])
+        .trim_end_matches('.');
     normalized_host.eq_ignore_ascii_case("localhost")
         || normalized_host
             .parse::<std::net::IpAddr>()
@@ -116,6 +118,16 @@ pub(crate) fn request_identity_from_headers(headers: &axum::http::HeaderMap) -> 
 pub(crate) fn bearer_token_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
     let auth = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     auth.strip_prefix("Bearer ").map(|s| s.to_string())
+}
+
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 pub(crate) fn unauthorized_response(state: &GoogleOAuthState, body: serde_json::Value) -> Response {

@@ -1,4 +1,4 @@
-# MCP OAuth — Axon
+# MCP Auth — Axon
 Last Modified: 2026-03-10
 
 ## Table of Contents
@@ -19,12 +19,12 @@ Last Modified: 2026-03-10
 
 ## Overview
 
-`axon mcp` supports `http`, `stdio`, and `both` transport modes. This document covers the HTTP transport only: the separate HTTP server (default port `8001`) exposes a single MCP tool (`axon`) over streamable HTTP (`/mcp`). Access to that HTTP surface requires OAuth — handled by the built-in Google OAuth broker.
+`axon mcp` supports `http`, `stdio`, and `both` transport modes. This document covers the HTTP transport only: the separate HTTP server (default port `8001`) exposes a single MCP tool (`axon`) over streamable HTTP (`/mcp`). Access to that HTTP surface supports dual auth modes: OAuth (Google broker) or a static MCP API key.
 
 **Key facts:**
 - `atk_` tokens issued by this broker are scoped to `/mcp` **only**. They have no effect on the WebSocket gate (`/ws`) or `/api/*` routes.
 - `stdio` transport does not use this OAuth broker. It is a separate local-process transport choice.
-- If `GOOGLE_OAUTH_CLIENT_ID` is not configured, all requests to `/mcp` return unauthorized.
+- `/mcp` accepts either `Authorization: Bearer atk_...` (OAuth) or `Authorization: Bearer <AXON_MCP_API_KEY>` (static API key).
 - OAuth state is persisted in Redis when available; in-memory fallback is used otherwise.
 - MCP clients that support dynamic client registration (DCR) — Claude Desktop, mcporter, etc. — auto-register via `/oauth/register`.
 
@@ -141,7 +141,7 @@ All endpoints are on the MCP server (default `http://localhost:8001`), not on th
 | `/oauth/google/callback` | GET | Google redirect callback |
 | `/oauth/google/token` | GET | Current session token info |
 | `/oauth/google/logout` | GET, POST | Invalidate session |
-| `/mcp` | POST | MCP tool endpoint (requires `Authorization: Bearer atk_...`) |
+| `/mcp` | POST | MCP tool endpoint (requires `Authorization: Bearer atk_...` **or** `Authorization: Bearer <AXON_MCP_API_KEY>`) |
 
 ---
 
@@ -199,6 +199,7 @@ When Redis is unavailable, the in-memory fallback is used. Tokens are lost when 
 | `GOOGLE_OAUTH_REDIRECT_POLICY` | `loopback_or_https` | Callback URI policy (see below) |
 | `GOOGLE_OAUTH_REDIS_URL` | `AXON_REDIS_URL` | Redis URL for OAuth state (falls back to `AXON_REDIS_URL`) |
 | `GOOGLE_OAUTH_REDIS_PREFIX` | `axon:oauth:` | Key prefix in Redis |
+| `AXON_MCP_API_KEY` | None | Optional static bearer token accepted on `/mcp` as an alternative to OAuth tokens |
 
 ### `GOOGLE_OAUTH_REDIRECT_POLICY` modes
 
@@ -228,6 +229,22 @@ Add to your Claude Desktop MCP config (`~/.claude/mcp.json` or the path given by
 ```
 
 Claude Desktop supports OAuth out of the box — it will open a browser window for Google sign-in on first connection.
+
+If you want static API key auth instead of OAuth, use:
+
+```json
+{
+  "mcpServers": {
+    "axon": {
+      "type": "http",
+      "url": "http://localhost:8001/mcp",
+      "headers": {
+        "Authorization": "Bearer <AXON_MCP_API_KEY>"
+      }
+    }
+  }
+}
+```
 
 If you instead configure Claude Desktop to use `stdio` mode (`axon mcp --transport stdio`), this OAuth flow does not apply because there is no HTTP `/mcp` endpoint in that mode.
 
@@ -283,6 +300,8 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8001/mcp
 
 **`atk_` tokens are scoped to `/mcp` only.** They cannot be used for `/ws`, `/api/*`, or any other Axon endpoint. The MCP server and the main Axon server (`axon serve`) are separate processes on separate ports — they share no token state.
 
+**Static MCP API key is an alternative auth mode for `/mcp`.** When `AXON_MCP_API_KEY` is set, the MCP server accepts `Authorization: Bearer <AXON_MCP_API_KEY>` for full `/mcp` access.
+
 **Google is the identity provider.** Axon does not manage passwords or user accounts. Authentication is delegated entirely to Google. Only Google-authenticated users receive `atk_` tokens.
 
 **Dynamic Client Registration can be open or gated.** By default, any MCP client can register via `/oauth/register`. Set `GOOGLE_OAUTH_DCR_TOKEN` to require a static bearer token for registration — prevents unknown clients from registering.
@@ -297,7 +316,10 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8001/mcp
 
 ### `/mcp` returns `401 Unauthorized`
 
-`GOOGLE_OAUTH_CLIENT_ID` is not set. Configure the Google OAuth credentials in `.env` and restart `axon mcp`.
+Neither OAuth nor API key auth is configured, or the provided bearer token is invalid.
+
+1. Configure Google OAuth credentials (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`) **or** set `AXON_MCP_API_KEY`.
+2. Restart `axon mcp`.
 
 ### OAuth redirect fails after Google sign-in
 
