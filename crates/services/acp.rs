@@ -21,6 +21,7 @@ pub(super) mod persistent_conn;
 pub(super) mod preflight;
 pub(super) mod runtime;
 pub(super) mod session;
+pub mod session_cache;
 
 use std::future::Future;
 use std::path::Path;
@@ -49,6 +50,7 @@ pub use mapping::{
     validate_session_cwd,
 };
 pub use persistent_conn::{AcpConnectionHandle, TurnRequest};
+pub use session_cache::SESSION_CACHE;
 
 // ── PermissionResponderMap ───────────────────────────────────────────────────
 

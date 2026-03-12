@@ -6,21 +6,25 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::crates::core::config::Config;
-use crate::crates::services::acp::{self as acp_svc, AcpConnectionHandle};
+use crate::crates::services::acp::{self as acp_svc, AcpConnectionHandle, SESSION_CACHE};
 use crate::crates::services::events::{LogLevel, ServiceEvent};
-use crate::crates::services::types::AcpPromptTurnRequest;
+use crate::crates::services::types::{AcpBridgeEvent, AcpPromptTurnRequest};
 
 use super::super::events::{CommandContext, acp_bridge_event_json, serialize_raw_output_event};
 use super::super::mcp_config::read_axon_mcp_servers;
 use super::acp_adapter::resolve_acp_adapter_command;
 use super::service_calls::send_json_owned;
-use super::types::{AcpConn, PulseChatAgent};
+use super::types::PulseChatAgent;
 
 /// Send a single ACP `ServiceEvent` to the WS channel.
+///
+/// When the WS is disconnected (`tx.send()` fails), the serialized message is
+/// buffered in the global session cache so it can be replayed on reconnect.
 async fn dispatch_acp_event(
     event: ServiceEvent,
     tx: &mpsc::Sender<String>,
     ws_ctx: &CommandContext,
+    agent_key: &str,
 ) {
     match event {
         ServiceEvent::Log { level, message } => {
@@ -38,6 +42,10 @@ async fn dispatch_acp_event(
             .await;
         }
         ServiceEvent::AcpBridge { event } => {
+            // Capture session_id from TurnResult for the session cache index.
+            if let AcpBridgeEvent::TurnResult(ref result) = event {
+                SESSION_CACHE.register_session_id(result.session_id.clone(), agent_key.to_string());
+            }
             let raw_json = acp_bridge_event_json(&event);
             let event_type = raw_json
                 .strip_prefix(r#"{"type":""#)
@@ -52,7 +60,7 @@ async fn dispatch_acp_event(
                 );
             }
             if let Some(envelope) = serialize_raw_output_event(ws_ctx, &raw_json) {
-                let _ = tx.send(envelope).await;
+                send_or_buffer(tx, envelope, agent_key).await;
             }
         }
         ServiceEvent::EditorWrite { content, operation } => {
@@ -60,18 +68,24 @@ async fn dispatch_acp_event(
                 "[pulse_chat] editor_update: op={operation} content_len={}",
                 content.len()
             );
-            // `editor_update` is a standalone top-level WS message per the protocol
-            // contract in docs/WS-PROTOCOL.md — it is NOT wrapped in command.output.json.
-            // Wrapping it would mismatch the documented shape:
-            //   { "type": "editor_update", "content": "...", "operation": "replace"|"append" }
             let standalone = json!({
                 "type": "editor_update",
                 "content": content,
                 "operation": operation,
             })
             .to_string();
-            let _ = tx.send(standalone).await;
+            send_or_buffer(tx, standalone, agent_key).await;
         }
+    }
+}
+
+/// Try to send a WS message. On failure (WS disconnected), buffer it in the
+/// global session cache so it can be replayed when the client reconnects.
+async fn send_or_buffer(tx: &mpsc::Sender<String>, msg: String, agent_key: &str) {
+    if tx.send(msg.clone()).await.is_err()
+        && let Some(cached) = SESSION_CACHE.get_sync(agent_key)
+    {
+        cached.buffer_event(msg).await;
     }
 }
 
@@ -85,15 +99,15 @@ async fn drive_turn_events(
     mut event_rx: mpsc::Receiver<ServiceEvent>,
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
+    agent_key: &str,
 ) -> Result<(), String> {
     loop {
         tokio::select! {
             biased;
             maybe_event = event_rx.recv() => {
                 match maybe_event {
-                    Some(event) => dispatch_acp_event(event, &tx, &ws_ctx).await,
+                    Some(event) => dispatch_acp_event(event, &tx, &ws_ctx, agent_key).await,
                     None => {
-                        // Event channel closed — drain complete.
                         let run_result = result_rx
                             .try_recv()
                             .map_err(|_| "ACP turn result unavailable after channel close")?;
@@ -103,9 +117,8 @@ async fn drive_turn_events(
             }
             result = &mut result_rx => {
                 let run_result = result.map_err(|_| "ACP turn result channel dropped".to_string())?;
-                // Drain any remaining events.
                 while let Ok(event) = event_rx.try_recv() {
-                    dispatch_acp_event(event, &tx, &ws_ctx).await;
+                    dispatch_acp_event(event, &tx, &ws_ctx, agent_key).await;
                 }
                 return run_result;
             }
@@ -113,23 +126,17 @@ async fn drive_turn_events(
     }
 }
 
-/// Get the existing `AcpConnectionHandle` for this WS connection, or create
-/// one by spawning a fresh adapter process.
+/// Get or create the persistent ACP adapter connection from the global cache.
 ///
-/// If the requested agent differs from the stored agent, the old adapter is
-/// dropped (killing the process) and a new one is spawned. This prevents
-/// Gemini sessions from reusing a Claude adapter (and vice-versa).
+/// If the requested agent+MCP config (agent_key) matches a cached entry, it is
+/// reused. Otherwise a fresh adapter subprocess is spawned and cached.
 async fn get_or_create_acp_connection(
-    acp_connection: &AcpConn,
     req: &AcpPromptTurnRequest,
     agent: PulseChatAgent,
     assistant_mode: bool,
     cfg: &Arc<Config>,
     permission_responders: &acp_svc::PermissionResponderMap,
-) -> Result<Arc<AcpConnectionHandle>, String> {
-    let mut guard = acp_connection.lock().await; // MutexGuard<Option<(String, Arc<AcpConnectionHandle>)>>
-    // Include MCP server fingerprint in the connection key so edits to mcp.json
-    // hot-reload by forcing a fresh ACP session setup with updated MCP servers.
+) -> Result<(String, Arc<AcpConnectionHandle>), String> {
     let mcp_fingerprint = fingerprint_mcp_servers(&req.mcp_servers);
     let agent_key = if assistant_mode {
         format!("{agent:?}:assistant:mcp={mcp_fingerprint}")
@@ -137,18 +144,13 @@ async fn get_or_create_acp_connection(
         format!("{agent:?}:mcp={mcp_fingerprint}")
     };
 
-    if let Some((stored_agent, existing)) = guard.as_ref() {
-        if stored_agent == &agent_key {
-            return Ok(Arc::clone(existing));
-        }
-        // Agent changed — drop old adapter so its process is killed.
-        log::info!("[pulse_chat] agent changed {stored_agent} → {agent_key}, respawning adapter");
-        *guard = None;
+    // Check global cache first.
+    if let Some(cached) = SESSION_CACHE.get(&agent_key).await {
+        return Ok((agent_key, Arc::clone(&cached.handle)));
     }
 
-    // First turn or agent change — spawn the persistent adapter.
+    // Spawn a new adapter subprocess.
     let adapter = resolve_acp_adapter_command(cfg, agent)?;
-    // Log the basename only — avoid leaking full filesystem paths (e.g. /home/user/...).
     let adapter_name = std::path::Path::new(&adapter.program)
         .file_name()
         .and_then(|n| n.to_str())
@@ -159,21 +161,7 @@ async fn get_or_create_acp_connection(
     );
     let scaffold = acp_svc::AcpClientScaffold::new(adapter.clone());
     let initialize = scaffold.prepare_initialize().map_err(|e| e.to_string())?;
-    let cwd = if assistant_mode {
-        let base = env::var("AXON_DATA_DIR").unwrap_or_else(|_| {
-            let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            format!("{home}/.local/share")
-        });
-        let assistant_path = std::path::PathBuf::from(base)
-            .join("axon")
-            .join("assistant");
-        tokio::fs::create_dir_all(&assistant_path)
-            .await
-            .map_err(|e| format!("failed to create assistant dir: {e}"))?;
-        assistant_path
-    } else {
-        env::current_dir().map_err(|e| e.to_string())?
-    };
+    let cwd = resolve_working_dir(assistant_mode).await?;
     let session_setup = scaffold
         .prepare_session_setup(req, cwd)
         .map_err(|e| e.to_string())?;
@@ -184,8 +172,33 @@ async fn get_or_create_acp_connection(
         session_setup,
         permission_responders.clone(),
     ));
-    *guard = Some((agent_key, Arc::clone(&handle)));
-    Ok(handle)
+
+    let cached = SESSION_CACHE.insert(
+        agent_key.clone(),
+        Arc::clone(&handle),
+        permission_responders.clone(),
+    );
+    let _ = cached; // ensure insert result is used (for reaper start)
+    Ok((agent_key, handle))
+}
+
+/// Resolve the working directory for the adapter subprocess.
+async fn resolve_working_dir(assistant_mode: bool) -> Result<std::path::PathBuf, String> {
+    if assistant_mode {
+        let base = env::var("AXON_DATA_DIR").unwrap_or_else(|_| {
+            let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            format!("{home}/.local/share")
+        });
+        let path = std::path::PathBuf::from(base)
+            .join("axon")
+            .join("assistant");
+        tokio::fs::create_dir_all(&path)
+            .await
+            .map_err(|e| format!("failed to create assistant dir: {e}"))?;
+        Ok(path)
+    } else {
+        env::current_dir().map_err(|e| e.to_string())
+    }
 }
 
 fn fingerprint_mcp_servers(
@@ -213,7 +226,6 @@ pub(super) async fn handle_pulse_chat(
     tx: mpsc::Sender<String>,
     ws_ctx: CommandContext,
     permission_responders: acp_svc::PermissionResponderMap,
-    acp_connection: AcpConn,
 ) -> Result<(), String> {
     log::info!(
         "[pulse_chat] starting: agent={:?} assistant_mode={} session_id={:?} model={:?} input_len={}",
@@ -243,14 +255,6 @@ pub(super) async fn handle_pulse_chat(
         );
     }
 
-    // For new sessions (no session_id), inject the <axon:editor> syntax guide
-    // as a preamble so agents know they can write directly to the editor.
-    //
-    // IMPORTANT: Do NOT include literal <axon:editor>…</axon:editor> example
-    // blocks in this preamble. The parser in persistent_conn.rs scans the
-    // agent's full response text for those tags, so any example blocks in the
-    // system preamble that an agent might echo back would be misinterpreted as
-    // real editor-write commands and incorrectly modify the editor state.
     let prompt_input = if session_id.is_none() {
         format!(
             "[System context — Axon editor integration]\n\
@@ -278,15 +282,9 @@ pub(super) async fn handle_pulse_chat(
         mcp_servers,
     };
 
-    let conn_handle = get_or_create_acp_connection(
-        &acp_connection,
-        &req,
-        agent,
-        assistant_mode,
-        &cfg,
-        &permission_responders,
-    )
-    .await?;
+    let (agent_key, conn_handle) =
+        get_or_create_acp_connection(&req, agent, assistant_mode, &cfg, &permission_responders)
+            .await?;
 
     let (event_tx, event_rx) = mpsc::channel::<ServiceEvent>(256);
     let (result_tx, result_rx) = oneshot::channel::<Result<(), String>>();
@@ -299,11 +297,10 @@ pub(super) async fn handle_pulse_chat(
         })
         .await?;
 
-    drive_turn_events(result_rx, event_rx, tx, ws_ctx).await
+    drive_turn_events(result_rx, event_rx, tx, ws_ctx, &agent_key).await
 }
 
-/// Handle the `pulse_chat_probe` service mode: probe an existing session and
-/// stream events back over the WS channel.
+/// Handle the `pulse_chat_probe` service mode.
 pub(super) async fn handle_pulse_chat_probe(
     cfg: Arc<Config>,
     session_id: Option<String>,
@@ -332,9 +329,6 @@ pub(super) async fn handle_pulse_chat_probe(
 }
 
 /// Drive the ACP event loop for a non-persistent path (pulse_chat_probe).
-///
-/// Polls `task` and `event_rx` concurrently; forwards each `ServiceEvent` to
-/// the WS channel as it arrives.
 async fn run_acp_event_loop(
     mut task: tokio::task::JoinHandle<Result<(), String>>,
     mut event_rx: mpsc::Receiver<ServiceEvent>,
@@ -347,7 +341,7 @@ async fn run_acp_event_loop(
             biased;
             maybe_event = event_rx.recv() => {
                 match maybe_event {
-                    Some(event) => dispatch_acp_event(event, &tx, &ws_ctx).await,
+                    Some(event) => dispatch_acp_event(event, &tx, &ws_ctx, "").await,
                     None => {
                         let run_result = (&mut task)
                             .await
@@ -362,7 +356,7 @@ async fn run_acp_event_loop(
                     .map_err(|e| format!("failed to join {task_name} task: {e}"))?;
                 run_result?;
                 while let Ok(event) = event_rx.try_recv() {
-                    dispatch_acp_event(event, &tx, &ws_ctx).await;
+                    dispatch_acp_event(event, &tx, &ws_ctx, "").await;
                 }
                 break;
             }

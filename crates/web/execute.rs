@@ -169,7 +169,6 @@ pub(super) async fn handle_command(
     crawl_job_id: Arc<Mutex<Option<String>>>,
     cfg: Arc<Config>,
     permission_responders: crate::crates::services::acp::PermissionResponderMap,
-    acp_connection: sync_mode::AcpConn,
 ) {
     // All mode/input/flags checks below use `.as_str()` / `.as_ref()` on the
     // owned values.  These borrows live only within their enclosing expressions
@@ -227,9 +226,9 @@ pub(super) async fn handle_command(
             Err(()) => return, // error already sent to client
         };
         ws_send::send_command_start(&tx, &context).await;
-        sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders, acp_connection)
-            .await;
+        sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders).await;
         drop(_acp_permit); // explicit drop for clarity — permit held for full command duration
+
         return;
     }
 

@@ -1,18 +1,9 @@
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::crates::core::config::Config;
-use crate::crates::services::acp::AcpConnectionHandle;
 
 /// Typed error alias for service call wrappers — erased to `String` only at the WS boundary.
-pub(super) type SvcError = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-/// Shared ACP connection state threaded through the sync-mode pipeline.
-///
-/// The tuple `(session_id, handle)` is populated on first ACP turn and reused
-/// for the lifetime of the WS connection. Wrapped in `Arc<Mutex<Option<…>>>`
-/// so it can be cloned cheaply into `async move` blocks.
-pub(crate) type AcpConn = Arc<Mutex<Option<(String, Arc<AcpConnectionHandle>)>>>;
+pub(crate) type SvcError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 // ACP session concurrency is enforced by crate::crates::web::ACP_SESSION_SEMAPHORE
 // (acquired in execute.rs before calling handle_sync_direct).  Do NOT add a second
