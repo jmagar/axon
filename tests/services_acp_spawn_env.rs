@@ -51,11 +51,7 @@ async fn run_env_probe() -> String {
         .join("");
     let cmd = format!("printf '%s' {args_inner}");
 
-    let adapter = AcpAdapterCommand {
-        program: "sh".to_string(),
-        args: vec!["-c".to_string(), cmd],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("sh", vec!["-c".to_string(), cmd]);
     let scaffold = AcpClientScaffold::new(adapter);
     // Use skip_validation variant: "sh" is a blocked shell in production but is
     // needed here to probe env var inheritance inside the env_clear allowlist.
@@ -147,11 +143,7 @@ async fn spawn_adapter_passes_through_gemini_auth_vars() {
         .join("");
     let cmd = format!("printf '%s' {args_inner}");
 
-    let adapter = AcpAdapterCommand {
-        program: "sh".to_string(),
-        args: vec!["-c".to_string(), cmd],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("sh", vec!["-c".to_string(), cmd]);
     let scaffold = AcpClientScaffold::new(adapter);
     // Use skip_validation variant: "sh" is a blocked shell in production but is
     // needed here to probe env var inheritance inside the env_clear allowlist.

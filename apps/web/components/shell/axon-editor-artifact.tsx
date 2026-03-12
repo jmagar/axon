@@ -69,10 +69,7 @@ export function parseEditorArtifacts(content: string): {
   // Collect all match offsets from the masked string so that tags inside
   // code fences or inline-code spans are silently ignored.
   const matchRanges: Array<{ start: number; end: number }> = []
-  let m: RegExpExecArray | null
-  const re = new RegExp(EDITOR_BLOCK_RE.source, 'g')
-  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
-  while ((m = re.exec(masked)) !== null) {
+  for (const m of masked.matchAll(EDITOR_BLOCK_RE)) {
     matchRanges.push({ start: m.index, end: m.index + m[0].length })
   }
 

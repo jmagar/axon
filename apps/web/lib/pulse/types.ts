@@ -106,6 +106,7 @@ export interface PulseToolUse {
   sequence?: number
   status?: string
   content?: string
+  locations?: string[]
   startedAtMs?: number
   updatedAtMs?: number
   completedAtMs?: number
@@ -123,6 +124,7 @@ export type PulseMessageBlock =
       sequence?: number
       status?: string
       content?: string
+      locations?: string[]
       startedAtMs?: number
       updatedAtMs?: number
       completedAtMs?: number

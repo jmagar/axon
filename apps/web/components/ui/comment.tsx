@@ -221,6 +221,7 @@ export function Comment(props: CommentProps) {
                   size="icon"
                   variant="ghost"
                   className="size-[28px]"
+                  aria-label="Cancel editing"
                   onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                     e.stopPropagation()
                     void onCancel()
@@ -234,6 +235,7 @@ export function Comment(props: CommentProps) {
                 <Button
                   size="icon"
                   variant="ghost"
+                  aria-label="Save comment"
                   onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                     e.stopPropagation()
                     void onSave()

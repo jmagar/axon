@@ -119,12 +119,16 @@ function SummaryBar({ data }: { data: StatusResult }) {
     ...(data.local_embed_jobs ?? []),
     ...(data.local_ingest_jobs ?? []),
   ]
-  const counts = {
-    running: all.filter((j) => j.status === 'running').length,
-    pending: all.filter((j) => j.status === 'pending').length,
-    completed: all.filter((j) => j.status === 'completed').length,
-    failed: all.filter((j) => j.status === 'failed' || j.status === 'canceled').length,
-  }
+  const counts = all.reduce(
+    (acc, j) => {
+      if (j.status === 'running') acc.running++
+      else if (j.status === 'pending') acc.pending++
+      else if (j.status === 'completed') acc.completed++
+      else if (j.status === 'failed' || j.status === 'canceled') acc.failed++
+      return acc
+    },
+    { running: 0, pending: 0, completed: 0, failed: 0 },
+  )
 
   return (
     <div className="flex flex-wrap gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 py-3">

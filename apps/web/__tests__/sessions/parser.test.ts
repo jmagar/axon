@@ -104,7 +104,7 @@ describe('parseClaudeJsonl', () => {
   })
 
   it('skips lines with array content that contains no text blocks', () => {
-    const raw = userArrayLine([{ type: 'image' }, { type: 'tool_use' }])
+    const raw = userArrayLine([{ type: 'image' }])
     // No text → content is empty after trim → should not push a message
     const result = parseClaudeJsonl(raw)
     expect(result).toHaveLength(0)

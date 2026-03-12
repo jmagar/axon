@@ -30,12 +30,12 @@ export function formatSessionTitle(preview?: string, project?: string): string {
   if (raw && raw.toLowerCase() !== 'axon' && raw.toLowerCase() !== 'local command caveat') {
     if (raw.startsWith('rollout-')) return 'Rollout session'
     if (raw.startsWith('<local-command-caveat>')) return 'Local command caveat'
-    if (raw.length > 72) return `${raw.slice(0, 69)}...`
+    if (raw.length > 72) return `${raw.slice(0, 69)}…`
     return raw
   }
   const fallback = (project?.trim() || 'Untitled session').replace(/\s+/g, ' ')
   if (fallback.startsWith('rollout-')) return 'Rollout session'
   if (fallback.startsWith('<local-command-caveat>')) return 'Local command caveat'
-  if (fallback.length > 72) return `${fallback.slice(0, 69)}...`
+  if (fallback.length > 72) return `${fallback.slice(0, 69)}…`
   return fallback
 }

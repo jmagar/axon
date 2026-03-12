@@ -8,6 +8,62 @@ pub struct AcpAdapterCommand {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: Option<String>,
+    /// When true (default), advertise filesystem capability during initialize.
+    pub enable_fs: bool,
+    /// When true (default), advertise terminal capability during initialize.
+    pub enable_terminal: bool,
+    /// Timeout for frontend to respond to permission requests (seconds).
+    pub permission_timeout_secs: Option<u64>,
+    /// Overall process execution timeout (seconds).
+    pub adapter_timeout_secs: Option<u64>,
+}
+
+impl AcpAdapterCommand {
+    pub fn new(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            program: program.into(),
+            args,
+            cwd: None,
+            enable_fs: true,
+            enable_terminal: true,
+            permission_timeout_secs: None,
+            adapter_timeout_secs: None,
+        }
+    }
+
+    pub fn new_full(
+        program: impl Into<String>,
+        args: Vec<String>,
+        cwd: Option<String>,
+        enable_fs: bool,
+        enable_terminal: bool,
+        permission_timeout_secs: Option<u64>,
+        adapter_timeout_secs: Option<u64>,
+    ) -> Self {
+        Self {
+            program: program.into(),
+            args,
+            cwd,
+            enable_fs,
+            enable_terminal,
+            permission_timeout_secs,
+            adapter_timeout_secs,
+        }
+    }
+}
+
+impl Default for AcpAdapterCommand {
+    fn default() -> Self {
+        Self {
+            program: String::new(),
+            args: Vec::new(),
+            cwd: None,
+            enable_fs: true,
+            enable_terminal: true,
+            permission_timeout_secs: None,
+            adapter_timeout_secs: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -99,7 +99,7 @@ describe('useAxonSession', () => {
   })
 
   it('clears stale messages immediately when sessionId changes', async () => {
-    let resolveSecond: ((value: Response) => void) | null = null
+    let resolveSecond: ((value: any) => void) | null = null
     const secondResponse = new Promise<Response>((resolve) => {
       resolveSecond = resolve
     })
@@ -127,7 +127,7 @@ describe('useAxonSession', () => {
     expect(result.current.loading).toBe(true)
     expect(result.current.messages).toEqual([])
 
-    resolveSecond?.({
+    ;(resolveSecond as any)?.({
       ok: true,
       json: async () => ({
         project: 'assistant',
@@ -135,7 +135,7 @@ describe('useAxonSession', () => {
         sessionId: 'session-2',
         messages: [{ role: 'assistant', content: 'from second session' }],
       }),
-    } as Response)
+    } as any as Response)
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.messages.map((m) => m.content)).toEqual(['from second session'])

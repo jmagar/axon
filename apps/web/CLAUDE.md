@@ -257,3 +257,12 @@ MCP OAuth `atk_` tokens do **not** work for `/ws`. MCP clients use the MCP tool 
 
 ### Qdrant Pre-Delete Race (Pulse Source Updates)
 When updating a Pulse doc's Qdrant embedding, always use `?wait=true` on the delete endpoint before upsert. Without it, the upsert can race the delete and stale vectors accumulate.
+
+## Performance Patterns
+
+- **Background Work (`after`)**: Offload non-critical side effects (like vector embedding) using Next.js `after()` to return HTTP responses immediately.
+- **Component Memoization**: Wrap heavy UI components (`AxonSidebar`, `AxonPromptComposer`, `PulseEditorPane`, etc.) in `React.memo()`.
+- **Action Memoization**: Use `useMemo` for complex prop objects passed to memoized children (see `useAxonShellActions`).
+- **Fetch Caching**: Next.js 15+ doesn't cache `fetch` by default. Use in-memory caches or `React.cache()` for idempotent network checks (e.g., `ensuredCollections` in save route).
+- **Image Optimization**: Use `next/image` instead of raw `<img>` tags for native lazy-loading and optimization.
+- **Dynamic Imports**: Use `next/dynamic` with `loading` skeletons to prevent layout shift (CLS).

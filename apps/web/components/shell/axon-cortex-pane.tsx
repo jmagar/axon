@@ -2,7 +2,7 @@
 
 import { Activity, BarChart2, Brain, Globe, Layers, Library, Stethoscope } from 'lucide-react'
 import type { ComponentType } from 'react'
-import { Suspense, useState } from 'react'
+import { memo, Suspense, useState } from 'react'
 import { DoctorDashboard } from '@/components/cortex/doctor-dashboard'
 import { DomainsDashboard } from '@/components/cortex/domains-dashboard'
 import { SourcesDashboard } from '@/components/cortex/sources-dashboard'
@@ -34,7 +34,7 @@ function TabContent({ tab }: { tab: CortexTab }) {
     case 'sources':
       return (
         <Suspense
-          fallback={<div className="p-6 text-sm text-[var(--text-dim)]">Loading sources...</div>}
+          fallback={<div className="p-6 text-sm text-[var(--text-dim)]">Loading sources…</div>}
         >
           <SourcesDashboard />
         </Suspense>
@@ -48,7 +48,7 @@ function TabContent({ tab }: { tab: CortexTab }) {
   }
 }
 
-export function AxonCortexPane() {
+export const AxonCortexPane = memo(function AxonCortexPane() {
   const [activeTab, setActiveTab] = useState<CortexTab>('status')
 
   return (
@@ -86,4 +86,4 @@ export function AxonCortexPane() {
       </div>
     </div>
   )
-}
+})

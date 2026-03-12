@@ -131,7 +131,8 @@ export function SourcesDashboard() {
           placeholder="Filter URLs…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] py-2 pl-8 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:border-[rgba(135,175,255,0.4)] focus:outline-none"
+          aria-label="Filter URLs"
+          className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] py-2 pl-8 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:border-[rgba(135,175,255,0.4)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(135,175,255,0.4)]"
         />
       </div>
 

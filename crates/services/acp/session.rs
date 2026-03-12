@@ -136,6 +136,7 @@ pub(super) fn spawn_adapter_with_io(
 /// the initialize request.
 pub(super) async fn initialize_connection(
     spawned: SpawnedAdapter,
+    adapter_cmd: &AcpAdapterCommand,
     initialize: InitializeRequest,
     tx: &Option<mpsc::Sender<ServiceEvent>>,
     permission_responders: &PermissionResponderMap,
@@ -151,6 +152,9 @@ pub(super) async fn initialize_connection(
     // exclusively on a current_thread tokio runtime inside a LocalSet.
     #[expect(clippy::arc_with_non_send_sync)]
     let runtime_state = Arc::new(AcpRuntimeState::default());
+    runtime_state
+        .permission_timeout_secs
+        .set(adapter_cmd.permission_timeout_secs);
     let auto_approve = resolve_acp_auto_approve();
     let bridge = AcpBridgeClient {
         runtime_state: runtime_state.clone(),
