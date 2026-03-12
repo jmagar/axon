@@ -103,8 +103,13 @@ export interface PulseToolUse {
   name: string
   input: Record<string, unknown>
   toolCallId?: string
+  sequence?: number
   status?: string
   content?: string
+  startedAtMs?: number
+  updatedAtMs?: number
+  completedAtMs?: number
+  durationMs?: number
 }
 
 export type PulseMessageBlock =
@@ -115,8 +120,13 @@ export type PulseMessageBlock =
       input: Record<string, unknown>
       result?: string
       toolCallId?: string
+      sequence?: number
       status?: string
       content?: string
+      startedAtMs?: number
+      updatedAtMs?: number
+      completedAtMs?: number
+      durationMs?: number
     }
   | { type: 'thinking'; content: string }
 

@@ -23,6 +23,8 @@ All `app/api/*` routes are now protected by `apps/web/proxy.ts`.
   - `x-api-key: <token>`
 - Required server env:
   - `AXON_WEB_API_TOKEN`
+- Required browser env (only for client-initiated `/api/*` calls):
+  - `NEXT_PUBLIC_AXON_API_TOKEN` (must match `AXON_WEB_API_TOKEN`)
 - Origin enforcement:
   - `AXON_WEB_ALLOWED_ORIGINS` (comma-separated), or same-origin fallback if unset
 - Local-only bypass (development only):
@@ -36,6 +38,13 @@ The terminal shell websocket (`/ws/shell`) now enforces auth and origin checks i
   - `NEXT_PUBLIC_SHELL_WS_TOKEN` (preferred)
   - `NEXT_PUBLIC_AXON_API_TOKEN` (fallback)
 - Pulse beta allowlist is controlled by `AXON_ALLOWED_CLAUDE_BETAS` (see root README env table).
+
+### Redis Cache Runtime Note
+
+`apps/web` API routes run in the Next.js process rooted at `apps/web`, so they do not automatically inherit root repo `.env` values.
+
+- If you enable Redis-backed web caching, set `AXON_REDIS_URL` in `apps/web/.env.local`.
+- This is the only required duplicated setting for web cache runtime scope isolation.
 
 Next.js response hardening is configured in `next.config.ts` with CSP, `X-Frame-Options`, `Referrer-Policy`, and HSTS (non-dev).
 `/api/cortex/*` responses are cache-tuned with `s-maxage=30, stale-while-revalidate=60`.

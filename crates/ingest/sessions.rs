@@ -1,6 +1,8 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_done, log_info, log_warn};
+use crate::crates::ingest::embed_pipeline::embed_documents_in_batches;
 use crate::crates::jobs::common::make_pool;
+use crate::crates::vector::ops::{EmbedDocument, embed_text_with_metadata};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::{PgPool, Row};
 use std::error::Error;
@@ -199,4 +201,48 @@ pub(crate) fn matches_project_filter(cfg: &Config, name: &str) -> bool {
     } else {
         true
     }
+}
+
+pub(crate) async fn embed_session_text(
+    cfg: &Config,
+    session_text: String,
+    url: String,
+    source_type: &str,
+    title: Option<&str>,
+) -> IngestResult<usize> {
+    if session_text.trim().is_empty() {
+        return Ok(0);
+    }
+
+    let docs = vec![EmbedDocument {
+        content: session_text,
+        url,
+        source_type: source_type.to_string(),
+        title: title.map(str::to_string),
+        extra: None,
+        file_extension: None,
+    }];
+
+    let result = embed_documents_in_batches(
+        cfg,
+        &docs,
+        64,
+        "ingest_sessions",
+        |cfg, doc| {
+            Box::pin(async move {
+                embed_text_with_metadata(
+                    cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                )
+                .await
+                .map_err(|err| err.to_string())
+            })
+        },
+        |_| {},
+    )
+    .await;
+    Ok(result.chunks_embedded)
 }

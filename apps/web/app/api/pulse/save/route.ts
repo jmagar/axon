@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
 import type { SavedDocMeta } from '@/lib/pulse/storage'
 import { savePulseDoc, updatePulseDoc } from '@/lib/pulse/storage'
+import { logError } from '@/lib/server/logger'
+import { enforceRateLimit } from '@/lib/server/rate-limit'
 
 /**
  * Rewrite Docker-internal hostnames to localhost with mapped ports when
@@ -90,6 +92,9 @@ function chunkText(text: string, size: number, overlap: number): string[] {
 
 export async function POST(request: Request) {
   try {
+    const limited = enforceRateLimit('api.pulse.save', request, { max: 20, windowMs: 60_000 })
+    if (limited) return limited
+
     ensureRepoRootEnvLoaded()
     const body = await request.json()
     const parsed = SaveRequestSchema.safeParse(body)
@@ -157,7 +162,7 @@ export async function POST(request: Request) {
 
           if (!embedResponse.ok) {
             const body = await embedResponse.text().catch(() => '')
-            console.error('[Pulse] TEI embed failed:', embedResponse.status, body)
+            logError('api.pulse.save.tei_embed_failed', { status: embedResponse.status, body })
           } else {
             const vectors = (await embedResponse.json()) as number[][]
             const vectorSize = vectors[0]?.length
@@ -186,17 +191,18 @@ export async function POST(request: Request) {
               },
             )
             if (!qdrantRes.ok) {
-              console.error(
-                '[Pulse] Qdrant upsert failed:',
+              logError('api.pulse.save.qdrant_upsert_failed', {
                 collection,
                 filename,
-                qdrantRes.status,
-                await qdrantRes.text().catch(() => ''),
-              )
+                status: qdrantRes.status,
+                body: await qdrantRes.text().catch(() => ''),
+              })
             }
           }
         } catch (err) {
-          console.error('[Pulse] Embed failed (save succeeded):', err)
+          logError('api.pulse.save.embed_failed', {
+            message: err instanceof Error ? err.message : String(err),
+          })
         }
       }
     }
@@ -210,7 +216,9 @@ export async function POST(request: Request) {
       collections: meta.collections,
     })
   } catch (err) {
-    console.error('[Pulse] Save route error:', err)
+    logError('api.pulse.save.route_error', {
+      message: err instanceof Error ? err.message : String(err),
+    })
     return NextResponse.json({ error: 'Save failed' }, { status: 500 })
   }
 }

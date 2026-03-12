@@ -130,12 +130,14 @@ export function upsertToolUse(
   name: string,
   input: Record<string, unknown>,
 ): void {
+  const now = Date.now()
   if (id) {
     const existingIdx = parserState.toolUseIdToIdx.get(id)
     if (existingIdx !== undefined) {
       const existingBlock = parserState.blocks[existingIdx]
       if (existingBlock?.type === 'tool_use') {
         existingBlock.input = input
+        existingBlock.updatedAtMs = now
       }
       const toolIdx = parserState.blocks
         .slice(0, existingIdx)
@@ -143,15 +145,34 @@ export function upsertToolUse(
       const existingTool = parserState.toolUses[toolIdx]
       if (existingTool) {
         existingTool.input = input
+        existingTool.updatedAtMs = now
       }
       return
     }
   }
 
   const idx = parserState.blocks.length
-  parserState.blocks.push({ type: 'tool_use', name, input })
+  const sequence = parserState.nextToolSequence++
+  parserState.blocks.push({
+    type: 'tool_use',
+    name,
+    input,
+    toolCallId: id,
+    sequence,
+    status: 'running',
+    startedAtMs: now,
+    updatedAtMs: now,
+  })
   if (id) parserState.toolUseIdToIdx.set(id, idx)
-  parserState.toolUses.push({ name, input })
+  parserState.toolUses.push({
+    name,
+    input,
+    toolCallId: id,
+    sequence,
+    status: 'running',
+    startedAtMs: now,
+    updatedAtMs: now,
+  })
 }
 
 export function patchToolResult(
@@ -159,11 +180,24 @@ export function patchToolResult(
   toolUseId: string,
   resultText: string,
 ): void {
+  const now = Date.now()
   const idx = parserState.toolUseIdToIdx.get(toolUseId)
   if (idx === undefined) return
   const block = parserState.blocks[idx]
   if (block?.type !== 'tool_use') return
   block.result = resultText.slice(0, 600)
+  block.status = 'completed'
+  block.updatedAtMs = now
+  block.completedAtMs = now
+  if (block.startedAtMs) block.durationMs = Math.max(0, now - block.startedAtMs)
+
+  const toolIdx = parserState.blocks.slice(0, idx).filter((b) => b.type === 'tool_use').length
+  const tool = parserState.toolUses[toolIdx]
+  if (!tool) return
+  tool.status = 'completed'
+  tool.updatedAtMs = now
+  tool.completedAtMs = now
+  if (tool.startedAtMs) tool.durationMs = Math.max(0, now - tool.startedAtMs)
 }
 
 export function truncateForLog(input: string, max = 400): string {

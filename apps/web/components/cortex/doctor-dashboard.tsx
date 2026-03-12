@@ -1,7 +1,8 @@
 'use client'
 
 import { AlertCircle, CheckCircle2, RefreshCw, Stethoscope, XCircle } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAdaptivePolling } from '@/hooks/use-adaptive-polling'
 import { apiFetch } from '@/lib/api-fetch'
 import type { DoctorResult, DoctorServiceStatus } from '@/lib/result-types'
 
@@ -51,7 +52,7 @@ export function DoctorDashboard() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  async function load(isManual = false) {
+  const load = useCallback(async (isManual = false) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -75,17 +76,19 @@ export function DoctorDashboard() {
         setSpinning(false)
       }
     }
-  }
+  }, [])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load intentionally captured at mount; abortRef cleanup handles unmount race
   useEffect(() => {
     void load()
-    const id = setInterval(() => void load(), 15_000)
     return () => {
-      clearInterval(id)
       abortRef.current?.abort()
     }
-  }, [])
+  }, [load])
+  useAdaptivePolling(() => load(), 15_000, {
+    enabled: true,
+    pauseWhenHidden: true,
+    jitterRatio: 0.15,
+  })
 
   const allOk = data?.all_ok ?? false
   const services = data ? Object.entries(data.services ?? {}) : []

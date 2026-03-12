@@ -74,11 +74,27 @@ pub(super) fn spawn_adapter_with_io(
                     if trimmed.is_empty() {
                         continue;
                     }
+                    // Known non-fatal SDK chatter for quota/rate telemetry.
+                    let level = if trimmed.contains("Unexpected case:")
+                        && trimmed.contains("\"rate_limit_event\"")
+                    {
+                        LogLevel::Info
+                    } else {
+                        LogLevel::Warn
+                    };
                     emit(
                         &stderr_tx,
                         ServiceEvent::Log {
-                            level: LogLevel::Warn,
-                            message: format!("ACP adapter stderr: {trimmed}"),
+                            level,
+                            message: if trimmed.len() > 500 {
+                                format!(
+                                    "ACP adapter stderr: {}… (truncated, {} bytes total)",
+                                    &trimmed[..500],
+                                    trimmed.len()
+                                )
+                            } else {
+                                format!("ACP adapter stderr: {trimmed}")
+                            },
                         },
                     );
                 }

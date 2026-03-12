@@ -22,6 +22,7 @@ pub(super) mod runtime;
 pub(super) mod session;
 
 use std::future::Future;
+use std::path::Path;
 use std::sync::Arc;
 
 use agent_client_protocol::{
@@ -47,6 +48,63 @@ pub use mapping::{
     validate_session_cwd,
 };
 pub use persistent_conn::{AcpConnectionHandle, TurnRequest};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct SymlinkRepairStats {
+    scanned_symlinks: usize,
+    removed_dangling_symlinks: usize,
+    failed_removals: usize,
+}
+
+fn repair_dangling_symlinks(dir: &Path) -> std::io::Result<SymlinkRepairStats> {
+    let mut stats = SymlinkRepairStats::default();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                stats.failed_removals += 1;
+                continue;
+            }
+        };
+        let path = entry.path();
+        let meta = match std::fs::symlink_metadata(&path) {
+            Ok(meta) => meta,
+            Err(_) => {
+                stats.failed_removals += 1;
+                continue;
+            }
+        };
+        if !meta.file_type().is_symlink() {
+            continue;
+        }
+        stats.scanned_symlinks += 1;
+        match std::fs::metadata(&path) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                if std::fs::remove_file(&path).is_ok() {
+                    stats.removed_dangling_symlinks += 1;
+                } else {
+                    stats.failed_removals += 1;
+                }
+            }
+            Err(_) => {
+                stats.failed_removals += 1;
+            }
+        }
+    }
+    Ok(stats)
+}
+
+fn repair_codex_skill_symlinks() -> Result<Option<SymlinkRepairStats>, std::io::Error> {
+    let Some(codex_dir) = config::codex_config_dir() else {
+        return Ok(None);
+    };
+    let skills_dir = codex_dir.join("skills");
+    if !skills_dir.exists() {
+        return Ok(None);
+    }
+    repair_dangling_symlinks(&skills_dir).map(Some)
+}
 
 // ── PermissionResponderMap ───────────────────────────────────────────────────
 
@@ -145,6 +203,30 @@ impl AcpClientScaffold {
     /// and needs no restoration.
     pub fn spawn_adapter(&self) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
+        if adapters::is_codex_adapter(&self.adapter) {
+            match repair_codex_skill_symlinks() {
+                Ok(Some(stats)) if stats.removed_dangling_symlinks > 0 => {
+                    log::warn!(
+                        "ACP codex preflight: removed {} dangling skill symlink(s) (scanned={}, failed={})",
+                        stats.removed_dangling_symlinks,
+                        stats.scanned_symlinks,
+                        stats.failed_removals
+                    );
+                }
+                Ok(Some(stats)) if stats.failed_removals > 0 => {
+                    log::warn!(
+                        "ACP codex preflight: failed to inspect/remove {} skill symlink entry(ies) (scanned={}, removed={})",
+                        stats.failed_removals,
+                        stats.scanned_symlinks,
+                        stats.removed_dangling_symlinks
+                    );
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    log::warn!("ACP codex preflight: skill symlink repair failed: {err}");
+                }
+            }
+        }
         let mut command = tokio::process::Command::new(&self.adapter.program);
         command.args(&self.adapter.args);
         if let Some(cwd) = &self.adapter.cwd {
@@ -271,7 +353,7 @@ impl AcpClientScaffold {
     pub fn prepare_session_setup(
         &self,
         req: &AcpPromptTurnRequest,
-        cwd: impl AsRef<std::path::Path>,
+        cwd: impl AsRef<Path>,
     ) -> Result<AcpSessionSetupRequest, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
         validate_prompt_turn_request(req)?;
@@ -281,7 +363,7 @@ impl AcpClientScaffold {
     pub fn prepare_session_probe_setup(
         &self,
         req: &AcpSessionProbeRequest,
-        cwd: impl AsRef<std::path::Path>,
+        cwd: impl AsRef<Path>,
     ) -> Result<AcpSessionSetupRequest, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
         validate_probe_request(req)?;
@@ -291,7 +373,7 @@ impl AcpClientScaffold {
     pub async fn start_prompt_turn(
         &self,
         req: &AcpPromptTurnRequest,
-        cwd: impl AsRef<std::path::Path>,
+        cwd: impl AsRef<Path>,
         tx: Option<mpsc::Sender<ServiceEvent>>,
         permission_responders: PermissionResponderMap,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -330,7 +412,7 @@ impl AcpClientScaffold {
     pub async fn start_session_probe(
         &self,
         req: &AcpSessionProbeRequest,
-        cwd: impl AsRef<std::path::Path>,
+        cwd: impl AsRef<Path>,
         tx: Option<mpsc::Sender<ServiceEvent>>,
         permission_responders: PermissionResponderMap,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -361,5 +443,44 @@ impl AcpClientScaffold {
             )
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repair_dangling_symlinks;
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+    use tempfile::tempdir;
+
+    #[test]
+    #[cfg(unix)]
+    fn removes_only_dangling_symlinks() {
+        let tmp = tempdir().expect("tempdir");
+        let dir = tmp.path();
+        let existing_target = dir.join("existing-skill");
+        fs::create_dir_all(&existing_target).expect("create existing target");
+        let alive_link = dir.join("alive-link");
+        symlink(&existing_target, &alive_link).expect("create alive symlink");
+        let broken_link = dir.join("broken-link");
+        symlink(dir.join("missing-target"), &broken_link).expect("create broken symlink");
+        let regular = dir.join("regular-file");
+        fs::write(&regular, "ok").expect("create regular file");
+
+        let stats = repair_dangling_symlinks(dir).expect("repair");
+        assert_eq!(stats.scanned_symlinks, 2);
+        assert_eq!(stats.removed_dangling_symlinks, 1);
+        assert_eq!(stats.failed_removals, 0);
+        assert!(alive_link.exists());
+        assert!(!broken_link.exists());
+        assert!(regular.exists());
+    }
+
+    #[test]
+    fn repair_dangling_symlinks_returns_error_for_missing_dir() {
+        let tmp = tempdir().expect("tempdir");
+        let missing = tmp.path().join("missing");
+        assert!(repair_dangling_symlinks(&missing).is_err());
     }
 }

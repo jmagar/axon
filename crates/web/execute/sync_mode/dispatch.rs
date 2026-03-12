@@ -319,6 +319,23 @@ pub(super) async fn dispatch_service(
             )
             .await?;
         }
+        ServiceMode::McpRefresh => {
+            log::info!("[mcp_refresh] clearing active ACP connection handle");
+            {
+                let mut guard = acp_connection.lock().await;
+                *guard = None;
+            }
+            send_json_owned(
+                tx,
+                ws_ctx,
+                json!({
+                    "type": "status",
+                    "level": "info",
+                    "message": "MCP servers connection handles cleared. They will be re-established on the next turn."
+                }),
+            )
+            .await;
+        }
         _ => {}
     }
 

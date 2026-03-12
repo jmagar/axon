@@ -17,6 +17,17 @@ function looksLikeModelConfig(option: AcpConfigOption): boolean {
   return name.includes('model')
 }
 
+const KNOWN_AGENTS = new Set(['claude', 'codex', 'gemini'])
+
+function looksLikeAgentPicker(option: AcpConfigOption): boolean {
+  const id = toLower(option.id)
+  const name = toLower(option.name)
+  if (id.includes('agent') || name.includes('agent')) return true
+  if (option.options.length === 0) return false
+  const values = option.options.map((opt) => toLower(opt.value))
+  return values.every((value) => KNOWN_AGENTS.has(value))
+}
+
 function looksLikeModeConfig(option: AcpConfigOption): boolean {
   const category = toLower(option.category)
   if (category === 'mode') {
@@ -32,7 +43,11 @@ function looksLikeModeConfig(option: AcpConfigOption): boolean {
 
 export function getAcpModelConfigOption(options: AcpConfigOption[]): AcpConfigOption | undefined {
   if (options.length === 0) return undefined
-  return options.find((o) => toLower(o.category) === 'model') ?? options.find(looksLikeModelConfig)
+  const categoryMatches = options.filter((o) => toLower(o.category) === 'model')
+  const nonAgentCategory = categoryMatches.find((option) => !looksLikeAgentPicker(option))
+  if (nonAgentCategory) return nonAgentCategory
+  const fallbackMatches = options.filter(looksLikeModelConfig)
+  return fallbackMatches.find((option) => !looksLikeAgentPicker(option))
 }
 
 export function getAcpModeConfigOption(options: AcpConfigOption[]): AcpConfigOption | undefined {

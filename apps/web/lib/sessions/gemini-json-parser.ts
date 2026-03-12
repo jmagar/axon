@@ -3,7 +3,8 @@ import type { ParsedMessage } from './claude-jsonl-parser'
 interface GeminiRawMessage {
   type?: string
   role?: string
-  content?: string
+  id?: string
+  content?: string | Array<Record<string, unknown>>
 }
 
 /**
@@ -26,10 +27,22 @@ export function parseGeminiJson(raw: string): ParsedMessage[] {
   for (const msg of data.messages) {
     const role = (msg.type ?? msg.role ?? '') as string
     if (role !== 'user' && role !== 'assistant') continue
-    if (typeof msg.content !== 'string') continue
-    const content = msg.content.trim()
+    const content =
+      typeof msg.content === 'string'
+        ? msg.content.trim()
+        : Array.isArray(msg.content)
+          ? msg.content
+              .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+              .filter((part) => part.length > 0)
+              .join('\n')
+              .trim()
+          : ''
     if (content) {
-      messages.push({ role: role as 'user' | 'assistant', content })
+      messages.push({
+        role: role as 'user' | 'assistant',
+        content,
+        ...(typeof msg.id === 'string' && msg.id ? { sourceMessageId: msg.id } : {}),
+      })
     }
   }
 

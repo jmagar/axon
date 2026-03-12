@@ -10,6 +10,7 @@ export type ReasoningStep = {
 
 export interface AxonMessage {
   id: string
+  sourceMessageId?: string
   role: 'user' | 'assistant'
   content: string
   timestamp: number
@@ -27,6 +28,10 @@ export type MessageItem = AxonMessage
 interface ParsedMessage {
   role: 'user' | 'assistant'
   content: string
+  sourceMessageId?: string
+  chainOfThought?: string[]
+  blocks?: PulseMessageBlock[]
+  toolUses?: PulseToolUse[]
 }
 
 interface SessionResponse {
@@ -45,6 +50,9 @@ interface UseAxonSessionResult {
   loaded: boolean
   error: string | null
   reload: () => void
+}
+interface UseAxonSessionOptions {
+  assistantMode?: boolean
 }
 
 // The Rust ACP adapter prepends a system context block to the first user prompt
@@ -77,10 +85,13 @@ export const RETRY_DELAYS_MS = [200, 400, 800, 1600, 3200, 5000]
 export async function fetchSessionWithRetry(
   sessionId: string,
   isCancelled: () => boolean,
+  options: UseAxonSessionOptions = {},
 ): Promise<SessionResponse> {
+  const { assistantMode = false } = options
+  const query = assistantMode ? '?assistant_mode=1' : ''
   for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
     if (isCancelled()) throw new Error('cancelled')
-    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}${query}`)
     if (res.ok) return res.json() as Promise<SessionResponse>
     if (res.status !== 404 || i === RETRY_DELAYS_MS.length) {
       throw new Error(`Failed to load session: ${res.status}`)
@@ -92,7 +103,11 @@ export async function fetchSessionWithRetry(
   throw new Error('Session not found after retries')
 }
 
-export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
+export function useAxonSession(
+  sessionId: string | null,
+  options: UseAxonSessionOptions = {},
+): UseAxonSessionResult {
+  const { assistantMode = false } = options
   const [messages, setMessages] = useState<AxonMessage[]>([])
   const [loading, setLoading] = useState(false)
   // `loaded` is set to true once any fetch completes (success or error), and reset
@@ -122,19 +137,24 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     let cancelled = false
     setLoading(true)
     if (sessionChanged) {
+      setMessages([])
       setLoaded(false)
     }
     setError(null)
 
-    fetchSessionWithRetry(sessionId, () => cancelled)
+    fetchSessionWithRetry(sessionId, () => cancelled, { assistantMode })
       .then((data) => {
         if (cancelled) return
         setMessages(
           data.messages.map((msg, i) => ({
-            id: `${sessionId}-${i}`,
+            id: msg.sourceMessageId ? `${sessionId}-${msg.sourceMessageId}` : `${sessionId}-${i}`,
+            ...(msg.sourceMessageId ? { sourceMessageId: msg.sourceMessageId } : {}),
             role: msg.role,
             content: msg.role === 'user' ? stripEditorPreamble(msg.content) : msg.content,
             timestamp: Date.now(),
+            ...(msg.chainOfThought?.length ? { chainOfThought: msg.chainOfThought } : {}),
+            ...(msg.blocks?.length ? { blocks: msg.blocks } : {}),
+            ...(msg.toolUses?.length ? { toolUses: msg.toolUses } : {}),
           })),
         )
       })
@@ -155,7 +175,7 @@ export function useAxonSession(sessionId: string | null): UseAxonSessionResult {
     return () => {
       cancelled = true
     }
-  }, [sessionId, version])
+  }, [assistantMode, sessionId, version])
 
   return { messages, loading, loaded, error, reload }
 }

@@ -4,6 +4,7 @@ export type StreamParserState = {
   blocks: PulseMessageBlock[]
   toolUseIdToIdx: Map<string, number>
   toolUses: PulseToolUse[]
+  nextToolSequence: number
   result: string
   sessionId: string | null
   firstDeltaMs: number | null
@@ -15,6 +16,7 @@ export function createStreamParserState(): StreamParserState {
     blocks: [],
     toolUseIdToIdx: new Map<string, number>(),
     toolUses: [],
+    nextToolSequence: 1,
     result: '',
     sessionId: null,
     firstDeltaMs: null,

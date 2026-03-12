@@ -190,12 +190,22 @@ export function makeStreamEventHandler(
       // Flush any pending text delta before adding tool use
       flush()
       ensureDraftAdded()
-      acc.partialTools.push({ ...event.tool })
+      const now = Date.now()
+      acc.partialTools.push({
+        ...event.tool,
+        sequence: (acc.partialTools.at(-1)?.sequence ?? 0) + 1,
+        startedAtMs: event.tool.startedAtMs ?? now,
+        updatedAtMs: now,
+      })
       acc.partialBlocks.push({
         type: 'tool_use',
         name: event.tool.name,
         input: event.tool.input,
         toolCallId: event.tool.toolCallId,
+        status: event.tool.status ?? 'running',
+        sequence: acc.partialTools.at(-1)?.sequence,
+        startedAtMs: event.tool.startedAtMs ?? now,
+        updatedAtMs: now,
       })
       setLiveToolUses([...acc.partialTools])
       updateChatMessage(assistantDraft.id!, (m) => ({
@@ -208,6 +218,7 @@ export function makeStreamEventHandler(
 
     if (event.type === 'tool_use_update' && event.toolCallId) {
       ensureDraftAdded()
+      const now = Date.now()
       const blockIdx = acc.partialBlocks.findLastIndex(
         (b) => b.type === 'tool_use' && 'toolCallId' in b && b.toolCallId === event.toolCallId,
       )
@@ -218,6 +229,13 @@ export function makeStreamEventHandler(
             ...block,
             status: event.status ?? block.status,
             content: event.content ? (block.content ?? '') + event.content : block.content,
+            updatedAtMs: now,
+            ...(event.status === 'completed' || event.status === 'success'
+              ? {
+                  completedAtMs: now,
+                  durationMs: block.startedAtMs ? Math.max(0, now - block.startedAtMs) : undefined,
+                }
+              : {}),
           }
         }
       }
@@ -228,6 +246,13 @@ export function makeStreamEventHandler(
           ...tool,
           status: event.status ?? tool.status,
           content: event.content ? (tool.content ?? '') + event.content : tool.content,
+          updatedAtMs: now,
+          ...(event.status === 'completed' || event.status === 'success'
+            ? {
+                completedAtMs: now,
+                durationMs: tool.startedAtMs ? Math.max(0, now - tool.startedAtMs) : undefined,
+              }
+            : {}),
         }
       }
       setLiveToolUses([...acc.partialTools])
