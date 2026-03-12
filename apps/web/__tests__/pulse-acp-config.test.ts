@@ -37,6 +37,52 @@ describe('getAcpModelConfigOption', () => {
     const picked = getAcpModelConfigOption(options)
     expect(picked?.id).toBe('choice')
   })
+
+  it('ignores agent picker options when selecting model config', () => {
+    const options: AcpConfigOption[] = [
+      makeOption({
+        id: 'agent',
+        name: 'Agent',
+        category: 'model',
+        currentValue: 'claude',
+        options: [
+          { value: 'claude', name: 'Claude' },
+          { value: 'codex', name: 'Codex' },
+          { value: 'gemini', name: 'Gemini' },
+        ],
+      }),
+      makeOption({
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        currentValue: 'sonnet',
+        options: [
+          { value: 'sonnet', name: 'Sonnet' },
+          { value: 'opus', name: 'Opus' },
+        ],
+      }),
+    ]
+    const picked = getAcpModelConfigOption(options)
+    expect(picked?.id).toBe('model')
+  })
+
+  it('returns undefined when only agent-like model options are present', () => {
+    const options: AcpConfigOption[] = [
+      makeOption({
+        id: 'agent',
+        name: 'Agent',
+        category: 'model',
+        currentValue: 'claude',
+        options: [
+          { value: 'claude', name: 'Claude' },
+          { value: 'codex', name: 'Codex' },
+          { value: 'gemini', name: 'Gemini' },
+        ],
+      }),
+    ]
+    const picked = getAcpModelConfigOption(options)
+    expect(picked).toBeUndefined()
+  })
 })
 
 describe('getAcpModeConfigOption', () => {

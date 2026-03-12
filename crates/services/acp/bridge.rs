@@ -26,7 +26,7 @@ use super::mapping::{
 /// `current_thread` tokio runtime inside `LocalSet` (all tasks on one thread).
 #[derive(Debug, Default)]
 pub struct AcpRuntimeState {
-    pub(super) session_id: std::sync::OnceLock<String>,
+    pub(super) current_session_id: std::cell::RefCell<Option<String>>,
     pub(super) assistant_text: std::cell::RefCell<String>,
     /// Current turn's service event sender — updated per-turn by `run_turn_on_conn`
     /// so bridge callbacks (session_notification, request_permission) always route
@@ -232,9 +232,11 @@ pub(super) async fn handle_interactive_permission(
 // ── Bridge client ───────────────────────────────────────────────────────────
 
 /// FINDING-2: `Arc<AcpRuntimeState>` — no Mutex wrapper needed because
-/// `AcpRuntimeState` uses `OnceLock` + `RefCell` internally. Cloning
+/// `AcpRuntimeState` uses `RefCell` internally (not thread-safe).  Cloning
 /// `AcpBridgeClient` shares the same state across spawned tasks safely
-/// within the single-threaded current_thread + LocalSet runtime.
+/// because the ACP runtime runs on a `current_thread` tokio runtime inside
+/// a `LocalSet`, guaranteeing single-threaded access.  The `?Send` bound on
+/// the `Client` trait impl enforces this at compile time.
 #[derive(Clone)]
 pub struct AcpBridgeClient {
     pub(super) runtime_state: Arc<AcpRuntimeState>,
@@ -295,12 +297,7 @@ impl Client for AcpBridgeClient {
 
         // Interactive mode: delegate to helper which manages oneshot registration,
         // timeout, and map cleanup.
-        let session_id = self
-            .runtime_state
-            .session_id
-            .get()
-            .map(|s| s.as_str())
-            .unwrap_or("");
+        let session_id = args.session_id.0.as_ref();
         let outcome = handle_interactive_permission(
             &args,
             &service_tx,
@@ -352,10 +349,7 @@ impl Client for AcpBridgeClient {
                     text.push_str(&text_delta);
                 }
             }
-            // OnceLock: set once; no cost after first initialization.
-            state
-                .session_id
-                .get_or_init(|| args.session_id.0.to_string());
+            *state.current_session_id.borrow_mut() = Some(args.session_id.0.to_string());
 
             if let SessionUpdate::ConfigOptionUpdate(update) = &args.update {
                 let mapped = super::mapping::map_config_options(&update.config_options);

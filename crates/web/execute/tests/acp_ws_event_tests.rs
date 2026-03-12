@@ -343,6 +343,106 @@ fn acp_session_fallback_in_ws_pipeline() {
     );
 }
 
+/// Regression: preserve session-switch event semantics across a realistic
+/// multi-turn sequence (`new -> existing -> fallback`) in WS envelopes.
+#[test]
+fn acp_multi_turn_session_switch_sequence_in_ws_pipeline() {
+    let sequence = [
+        AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
+            session_id: "session-new".to_string(),
+            stop_reason: "end_turn".to_string(),
+            result: "new session turn".to_string(),
+        }),
+        AcpBridgeEvent::SessionFallback {
+            old_session_id: "session-existing".to_string(),
+            new_session_id: "session-fallback".to_string(),
+        },
+        AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
+            session_id: "session-fallback".to_string(),
+            stop_reason: "end_turn".to_string(),
+            result: "fallback session turn".to_string(),
+        }),
+    ];
+
+    let envelopes: Vec<Value> = sequence
+        .iter()
+        .map(|event| {
+            let payload = super::events::acp_bridge_event_payload(event);
+            serde_json::to_value(WsEventV2::CommandOutputJson {
+                ctx: sample_ctx(),
+                data: payload,
+            })
+            .expect("event should serialize")
+        })
+        .collect();
+
+    assert_eq!(
+        envelopes[0]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("type"))
+            .and_then(Value::as_str),
+        Some("result"),
+        "first turn must emit result for newly-created session"
+    );
+    assert_eq!(
+        envelopes[0]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("session_id"))
+            .and_then(Value::as_str),
+        Some("session-new"),
+        "first turn should retain new-session id"
+    );
+
+    assert_eq!(
+        envelopes[1]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("type"))
+            .and_then(Value::as_str),
+        Some("session_fallback"),
+        "load failure must emit session_fallback bridge event"
+    );
+    assert_eq!(
+        envelopes[1]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("old_session_id"))
+            .and_then(Value::as_str),
+        Some("session-existing"),
+        "fallback event must carry the requested existing session id"
+    );
+    assert_eq!(
+        envelopes[1]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("new_session_id"))
+            .and_then(Value::as_str),
+        Some("session-fallback"),
+        "fallback event must carry replacement session id"
+    );
+
+    assert_eq!(
+        envelopes[2]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("type"))
+            .and_then(Value::as_str),
+        Some("result"),
+        "post-fallback turn must still emit a normal result event"
+    );
+    assert_eq!(
+        envelopes[2]
+            .get("data")
+            .and_then(|d| d.get("data"))
+            .and_then(|d| d.get("session_id"))
+            .and_then(Value::as_str),
+        Some("session-fallback"),
+        "post-fallback result must use fallback session id"
+    );
+}
+
 // ── Step 7: insta snapshot for EditorWrite WS output ─────────────────────────
 
 /// Snapshot test for the exact JSON the frontend receives for an `editor_update`.

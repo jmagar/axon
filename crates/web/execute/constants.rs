@@ -27,6 +27,7 @@ pub(super) const ALLOWED_MODES: &[&str] = &[
     "youtube",
     "sessions",
     "screenshot",
+    "mcp_refresh",
     "pulse_chat",
     "pulse_chat_probe",
 ];

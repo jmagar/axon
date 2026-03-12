@@ -4,7 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { ScrollText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type LogEntry, LogLine } from './log-line'
+import { useLogStream } from '@/hooks/use-log-stream'
+import { LogLine } from './log-line'
 import {
   type IndividualService,
   LogsToolbar,
@@ -15,20 +16,29 @@ import {
 } from './logs-toolbar'
 
 const MAX_LINES = 1200
-const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
 const LOGS_SERVICE_KEY = 'axon.web.logs.service'
 const DEFAULT_SERVICE: ServiceName = 'all'
 
 export function LogsViewer() {
   const router = useRouter()
   const [service, setService] = useState<ServiceName>(DEFAULT_SERVICE)
-  const [tailLines, setTailLines] = useState<TailLines>(TAIL_OPTIONS[1]) // 100
-  const [lines, setLines] = useState<LogEntry[]>([])
+  const [tailLines, setTailLines] = useState<TailLines>(TAIL_OPTIONS[1])
   const [filter, setFilter] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   const [compact, setCompact] = useState(true)
   const [wrapLines, setWrapLines] = useState(false)
-  const [isConnected, setIsConnected] = useState(false)
+
+  const {
+    lines,
+    isConnected,
+    clear: clearLines,
+  } = useLogStream({
+    service,
+    tail: tailLines,
+    enabled: true,
+    reconnect: true,
+    maxLines: MAX_LINES,
+  })
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const autoScrollRef = useRef(autoScroll)
@@ -44,111 +54,10 @@ export function LogsViewer() {
         setService(saved as ServiceName)
       }
     } catch {
-      /* ignore */
+      // Ignore localStorage read failures.
     }
   }, [])
 
-  // SSE connection via fetch so we can send Authorization header
-  // (EventSource does not support custom headers).
-  // Reconnects with exponential backoff (1s → 2s → 4s … max 30s) when the
-  // stream ends unexpectedly. Aborted by the cleanup function.
-  useEffect(() => {
-    setLines([])
-    setIsConnected(false)
-
-    const params = new URLSearchParams({ service, tail: String(tailLines) })
-    const abortCtrl = new AbortController()
-    let alive = true
-    let backoffMs = 1000
-
-    async function connect() {
-      while (alive) {
-        try {
-          const headers: Record<string, string> = { Accept: 'text/event-stream' }
-          if (API_TOKEN) headers.Authorization = `Bearer ${API_TOKEN}`
-
-          const res = await fetch(`/api/logs?${params.toString()}`, {
-            headers,
-            signal: abortCtrl.signal,
-          })
-
-          if (!res.ok || !res.body) {
-            setIsConnected(false)
-            // Server error — wait before retrying
-            await new Promise((r) => setTimeout(r, backoffMs))
-            backoffMs = Math.min(backoffMs * 2, 30_000)
-            continue
-          }
-
-          setIsConnected(true)
-          backoffMs = 1000 // reset backoff on successful connection
-
-          const reader = res.body.getReader()
-          const decoder = new TextDecoder()
-          let buf = ''
-
-          while (alive) {
-            const { done, value } = await reader.read()
-            if (done) break
-            buf += decoder.decode(value, { stream: true })
-            const parts = buf.split('\n\n')
-            buf = parts.pop() ?? ''
-            for (const part of parts) {
-              const dataLine = part.split('\n').find((l) => l.startsWith('data: '))
-              if (!dataLine) continue
-              try {
-                const {
-                  line,
-                  ts,
-                  service: svc,
-                } = JSON.parse(dataLine.slice(6)) as {
-                  line: string
-                  ts: number
-                  service?: string
-                }
-                const entry: LogEntry = { text: line, ts, ...(svc ? { service: svc } : {}) }
-                setLines((prev) => {
-                  if (prev.length >= MAX_LINES) {
-                    const trimmed = prev.slice(prev.length - MAX_LINES + 1)
-                    trimmed.push(entry)
-                    return trimmed
-                  }
-                  return [...prev, entry]
-                })
-              } catch {
-                // malformed SSE data — ignore
-              }
-            }
-          }
-
-          // Stream ended without error — reconnect after backoff
-          if (alive) {
-            setIsConnected(false)
-            await new Promise((r) => setTimeout(r, backoffMs))
-            backoffMs = Math.min(backoffMs * 2, 30_000)
-          }
-        } catch (err) {
-          // AbortError means the cleanup function ran — stop reconnecting
-          if (err instanceof DOMException && err.name === 'AbortError') return
-          if (alive) {
-            setIsConnected(false)
-            await new Promise((r) => setTimeout(r, backoffMs))
-            backoffMs = Math.min(backoffMs * 2, 30_000)
-          }
-        }
-      }
-    }
-
-    void connect()
-
-    return () => {
-      alive = false
-      abortCtrl.abort()
-      setIsConnected(false)
-    }
-  }, [service, tailLines])
-
-  // Pause auto-scroll when user manually scrolls up
   const handleScroll = useCallback(() => {
     const el = scrollAreaRef.current
     if (!el) return
@@ -159,7 +68,7 @@ export function LogsViewer() {
   const filteredLines = useMemo(() => {
     if (!filter.trim()) return lines
     const lower = filter.toLowerCase()
-    return lines.filter((l) => l.text.toLowerCase().includes(lower))
+    return lines.filter((line) => line.text.toLowerCase().includes(lower))
   }, [lines, filter])
 
   const rowVirtualizer = useVirtualizer({
@@ -173,31 +82,27 @@ export function LogsViewer() {
     },
   })
 
-  // Reset measurements when density or wrapping changes
   useEffect(() => {
     rowVirtualizer.measure()
   }, [rowVirtualizer])
 
-  // Auto-scroll when new lines arrive. Depend on filteredLines (array ref)
-  // instead of filteredLines.length so the effect fires even when length is
-  // constant (entries rotating at MAX_LINES — useMemo produces a new ref).
   useEffect(() => {
     if (autoScrollRef.current && filteredLines.length > 0) {
       rowVirtualizer.scrollToIndex(filteredLines.length - 1)
     }
   }, [filteredLines, rowVirtualizer])
 
-  function handleServiceChange(s: ServiceName) {
-    setService(s)
+  function handleServiceChange(next: ServiceName) {
+    setService(next)
     try {
-      window.localStorage.setItem(LOGS_SERVICE_KEY, s)
+      window.localStorage.setItem(LOGS_SERVICE_KEY, next)
     } catch {
-      /* ignore */
+      // Ignore localStorage write failures.
     }
   }
 
-  function handleTailChange(t: TailLines) {
-    setTailLines(t)
+  function handleTailChange(next: TailLines) {
+    setTailLines(next)
   }
 
   function handleAutoScrollToggle() {
@@ -216,7 +121,6 @@ export function LogsViewer() {
           'radial-gradient(ellipse at 14% 10%, rgba(175,215,255,0.08), transparent 34%), radial-gradient(ellipse at 82% 16%, rgba(255,135,175,0.07), transparent 38%), linear-gradient(180deg,#02040b 0%,#030712 60%,#040a14 100%)',
       }}
     >
-      {/* Top bar */}
       <header
         className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b px-4"
         style={{
@@ -241,9 +145,7 @@ export function LogsViewer() {
         </div>
       </header>
 
-      {/* Main content */}
       <main className="relative z-10 flex flex-1 flex-col gap-3 p-4" style={{ minHeight: 0 }}>
-        {/* Toolbar */}
         <div
           className="shrink-0 rounded-xl border p-3"
           style={{
@@ -266,11 +168,10 @@ export function LogsViewer() {
             onAutoScrollToggle={handleAutoScrollToggle}
             onCompactToggle={() => setCompact((prev) => !prev)}
             onWrapToggle={() => setWrapLines((prev) => !prev)}
-            onClear={() => setLines([])}
+            onClear={clearLines}
           />
         </div>
 
-        {/* Log area */}
         <div
           ref={scrollAreaRef}
           onScroll={handleScroll}
@@ -316,7 +217,6 @@ export function LogsViewer() {
           </div>
         </div>
 
-        {/* Footer meta */}
         <div className="flex shrink-0 items-center gap-3">
           <span className="text-[10px] text-[var(--text-dim)]">
             {filteredLines.length.toLocaleString()} line{filteredLines.length !== 1 ? 's' : ''}

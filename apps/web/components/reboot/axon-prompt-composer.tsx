@@ -180,7 +180,15 @@ export function AxonPromptComposer({
       onFilesChange={onFilesChange}
       className={`w-full rounded-[18px] p-0 ${AXON_COMPOSER_PANEL_CLASS}`}
     >
-      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilePick} />
+      <input
+        id="axon-prompt-file-input"
+        name="axon_prompt_files"
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFilePick}
+      />
       <div className="px-3 pb-3 pt-3">
         <PromptInputAttachments>
           {files.length > 0 ? (
@@ -308,6 +316,8 @@ export function AxonPromptComposer({
                   <div className="space-y-2 px-2 pb-2">
                     <div className="flex items-center gap-1">
                       <input
+                        id="axon-tool-preset-name"
+                        name="axon_tool_preset_name"
                         value={presetDraft}
                         onChange={(event) => setPresetDraft(event.target.value)}
                         placeholder="Preset name"

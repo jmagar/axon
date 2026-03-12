@@ -21,22 +21,50 @@ interface GeminiSessionJson {
   messages?: GeminiMessage[]
 }
 
+function looksLikeHashedProjectDir(name: string): boolean {
+  return /^[a-f0-9]{9,}$/i.test(name)
+}
+
 /**
- * Build a SHA256-hash → projectName lookup from ~/.gemini/projects.json.
- * Format: { [hash: string]: string } (hash → absolute path).
+ * Build projectDir → projectName lookup from ~/.gemini/projects.json.
+ * Supports both formats:
+ * 1) legacy: { [hash: string]: absolutePath }
+ * 2) current: { projects: { [absolutePath: string]: projectLabel } }
  * Never throws — returns empty map on any error.
  */
 async function buildGeminiProjectMap(): Promise<Map<string, string>> {
   const projectsPath = path.join(os.homedir(), '.gemini', 'projects.json')
   try {
     const raw = await fs.readFile(projectsPath, 'utf-8')
-    const obj = JSON.parse(raw) as Record<string, string>
     const map = new Map<string, string>()
-    for (const [hash, absPath] of Object.entries(obj)) {
-      if (typeof absPath === 'string') {
+
+    const parsed = JSON.parse(raw) as unknown
+    const asRecord = (value: unknown): Record<string, unknown> | null =>
+      typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+
+    const top = asRecord(parsed)
+    if (!top) return map
+
+    // Current format: { projects: { "/abs/path": "project-label" } }
+    const projectsObj = asRecord(top.projects)
+    if (projectsObj) {
+      for (const [absPath, label] of Object.entries(projectsObj)) {
+        if (typeof absPath !== 'string' || !absPath) continue
+        const dir =
+          typeof label === 'string' && label.trim() ? label.trim() : path.basename(absPath)
+        if (!dir) continue
+        map.set(dir, dir)
+      }
+      return map
+    }
+
+    // Legacy format: { "hash": "/abs/path" }
+    for (const [hash, absPath] of Object.entries(top)) {
+      if (typeof absPath === 'string' && hash) {
         map.set(hash, path.basename(absPath))
       }
     }
+
     return map
   } catch {
     return new Map()
@@ -69,7 +97,9 @@ export async function scanGeminiSessions(limit = Number.MAX_SAFE_INTEGER): Promi
         (f) => f.startsWith('session-') && f.endsWith('.json'),
       )
 
-      const projectName = projectMap.get(hashDir) ?? hashDir.slice(0, 8)
+      const projectName =
+        projectMap.get(hashDir) ??
+        (looksLikeHashedProjectDir(hashDir) ? hashDir.slice(0, 8) : hashDir)
 
       for (const fileName of sessionFiles) {
         const absolutePath = path.join(chatsPath, fileName)

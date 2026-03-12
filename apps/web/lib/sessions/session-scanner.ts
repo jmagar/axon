@@ -12,6 +12,9 @@ import {
 } from './session-utils'
 
 export type AgentKind = 'claude' | 'codex' | 'gemini'
+export interface ScanSessionsOptions {
+  assistantMode?: boolean
+}
 
 /**
  * Validated wrapper around `mapWithConcurrency` that throws if `concurrency <= 0`.
@@ -160,6 +163,104 @@ async function isDirEntry(entryPath: string): Promise<boolean> {
   }
 }
 
+function encodePathToProjectName(absPath: string): string {
+  return absPath.replace(/\//g, '-')
+}
+
+function resolveAssistantCwd(): string {
+  const dataDir = process.env.AXON_DATA_DIR
+  if (dataDir) {
+    return path.join(dataDir, 'axon', 'assistant')
+  }
+  return path.join(os.homedir(), '.local', 'share', 'axon', 'axon', 'assistant')
+}
+
+async function scanAssistantSessions(limit: number): Promise<SessionFile[]> {
+  const assistantCwd = resolveAssistantCwd()
+  const assistantProject = path.basename(assistantCwd)
+  const projectName = encodePathToProjectName(assistantCwd)
+  const projectRoot = path.join(os.homedir(), '.claude', 'projects')
+  const primaryProjectPath = path.join(projectRoot, projectName)
+  const projectPaths = new Set<string>([primaryProjectPath])
+
+  try {
+    const entries = await fs.readdir(projectRoot, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const name = entry.name
+      if (name === projectName || name.endsWith('-assistant')) {
+        projectPaths.add(path.join(projectRoot, name))
+      }
+    }
+  } catch {
+    // Project root may not exist yet; continue with explicit primary path.
+  }
+
+  const claudeResultsNested = await mapWithConcurrency(
+    Array.from(projectPaths),
+    async (projectPath) => {
+      const fileNames = await readDirEntries(projectPath)
+      const jsonlFiles = fileNames.filter((name) => name.endsWith('.jsonl'))
+      const scanned = await mapWithConcurrency<string, SessionFile | null>(
+        jsonlFiles,
+        async (fileName) => {
+          const absolutePath = path.join(projectPath, fileName)
+          try {
+            const [stat, preview] = await Promise.all([
+              fs.stat(absolutePath),
+              extractPreview(absolutePath),
+            ])
+            if (!stat.isFile()) return null
+            return {
+              id: sessionId(absolutePath),
+              absolutePath,
+              project: 'assistant',
+              filename: fileName.slice(0, -'.jsonl'.length),
+              mtimeMs: stat.mtimeMs,
+              sizeBytes: stat.size,
+              preview,
+              repo: undefined,
+              branch: undefined,
+              agent: 'claude',
+            } satisfies SessionFile
+          } catch {
+            return null
+          }
+        },
+        8,
+      )
+      return scanned.filter((r): r is SessionFile => r !== null)
+    },
+    4,
+  )
+  const claudeResults = claudeResultsNested.flat()
+
+  const [{ scanCodexSessions }, { scanGeminiSessions }] = await Promise.all([
+    import('./codex-scanner'),
+    import('./gemini-scanner'),
+  ])
+  const [codexSessions, geminiSessions] = await Promise.all([
+    scanCodexSessions(),
+    scanGeminiSessions(),
+  ])
+  const filteredCodex = codexSessions.filter((s) => s.project === assistantProject)
+  const filteredGemini = geminiSessions.filter((s) => s.project === assistantProject)
+
+  const merged = [...claudeResults, ...filteredCodex, ...filteredGemini]
+  const deduped = new Map<string, SessionFile>()
+  for (const session of merged) {
+    const key = `${session.agent}:${session.absolutePath}`
+    const existing = deduped.get(key)
+    if (!existing || session.mtimeMs > existing.mtimeMs) {
+      deduped.set(key, session)
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, limit)
+}
+
 /**
  * Scan all agent session stores (Claude + Codex + Gemini), return up to `limit` sessions
  * sorted by mtime desc. Guarantees representation from each agent by pre-sampling up to
@@ -172,7 +273,7 @@ async function isDirEntry(entryPath: string): Promise<boolean> {
  *
  * Never throws — returns [] on any filesystem error.
  */
-export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<SessionFile[]> {
+async function scanAllSessions(limit: number, perAgentLimit: number): Promise<SessionFile[]> {
   const root = path.join(os.homedir(), '.claude', 'projects')
 
   try {
@@ -292,4 +393,15 @@ export async function scanSessions(limit = 20, perAgentLimit = 30): Promise<Sess
       ? allSorted.filter((s) => !guaranteedKeys.has(`${s.agent}:${s.filename}`)).slice(0, remaining)
       : []
   return [...guaranteed, ...filler].sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+export async function scanSessions(
+  limit = 20,
+  perAgentLimit = 30,
+  options: ScanSessionsOptions = {},
+): Promise<SessionFile[]> {
+  if (options.assistantMode) {
+    return scanAssistantSessions(limit)
+  }
+  return scanAllSessions(limit, perAgentLimit)
 }

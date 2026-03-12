@@ -9,6 +9,8 @@ import { buildPulseSystemPrompt, retrieveFromCollections } from '@/lib/pulse/rag
 import { ensureRepoRootEnvLoaded } from '@/lib/pulse/server-env'
 import { PulseChatRequestSchema } from '@/lib/pulse/types'
 import { apiError, makeErrorId } from '@/lib/server/api-error'
+import { logError, logInfo, logWarn } from '@/lib/server/logger'
+import { enforceRateLimit } from '@/lib/server/rate-limit'
 import {
   CLAUDE_TIMEOUT_MS,
   computeContextCharsTotal,
@@ -18,6 +20,7 @@ import {
 } from './claude-stream-types'
 import {
   computeReplayKey,
+  estimateEventBytes,
   pruneReplayCache,
   REPLAY_BUFFER_LIMIT,
   replayCache,
@@ -45,6 +48,9 @@ function resolvePulseChatTimeoutMs(): number {
 }
 
 export async function POST(request: Request) {
+  const limited = enforceRateLimit('api.pulse.chat', request, { max: 40, windowMs: 60_000 })
+  if (limited) return limited
+
   ensureRepoRootEnvLoaded()
   const startedAt = Date.now()
 
@@ -100,6 +106,9 @@ export async function POST(request: Request) {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const replayBuffer = cachedReplay?.events ? [...cachedReplay.events] : []
+        let replayBufferBytes =
+          cachedReplay?.sizeBytes ??
+          replayBuffer.reduce((total, event) => total + estimateEventBytes(event), 0)
         let lastEmitAt = Date.now()
         let aborted = request.signal.aborted
 
@@ -125,14 +134,17 @@ export async function POST(request: Request) {
         }
 
         const persistReplay = () => {
-          upsertReplayEntry(replayKey, replayBuffer, Date.now())
+          upsertReplayEntry(replayKey, replayBuffer, replayBufferBytes, Date.now())
         }
 
         const emit = (event: Parameters<typeof createPulseChatStreamEvent>[0]) => {
           const normalized = createPulseChatStreamEvent(event)
+          const eventBytes = estimateEventBytes(normalized)
           replayBuffer.push(normalized)
+          replayBufferBytes += eventBytes
           if (replayBuffer.length > REPLAY_BUFFER_LIMIT) {
-            replayBuffer.shift()
+            const removed = replayBuffer.shift()
+            if (removed) replayBufferBytes -= estimateEventBytes(removed)
           }
           persistReplay()
           enqueueEvent(normalized)
@@ -317,7 +329,14 @@ export async function POST(request: Request) {
                 return
               }
               if (data.result && typeof data.result === 'object') {
-                parserState.result = JSON.stringify(data.result)
+                try {
+                  parserState.result = JSON.stringify(data.result)
+                } catch (error: unknown) {
+                  logWarn('api.pulse.chat.result_serialize_failed', {
+                    resultType: Array.isArray(data.result) ? 'array' : typeof data.result,
+                    message: error instanceof Error ? error.message : String(error),
+                  })
+                }
               }
               return
             }
@@ -344,12 +363,11 @@ export async function POST(request: Request) {
             handlePulsePayload(payload)
           },
           onDone: ({ exit_code }) => {
-            console.log(
-              '[pulse/chat] onDone: exit_code=%d parserResult=%dchars deltaCount=%d',
-              exit_code,
-              parserState.result.length,
-              parserState.deltaCount,
-            )
+            logInfo('api.pulse.chat.done', {
+              exitCode: exit_code,
+              resultChars: parserState.result.length,
+              deltaCount: parserState.deltaCount,
+            })
             if (terminalHandled || closed) return
             terminalHandled = true
             cleanup()
@@ -375,7 +393,7 @@ export async function POST(request: Request) {
             safeClose()
           },
           onError: ({ message }) => {
-            console.error('[pulse/chat] onError:', message)
+            logError('api.pulse.chat.worker_error', { message })
             if (terminalHandled || closed) return
             terminalHandled = true
             cleanup()
@@ -386,10 +404,9 @@ export async function POST(request: Request) {
             )
           },
         }).catch((error: unknown) => {
-          console.error(
-            '[pulse/chat] WS transport catch:',
-            error instanceof Error ? error.message : String(error),
-          )
+          logError('api.pulse.chat.ws_transport_error', {
+            message: error instanceof Error ? error.message : String(error),
+          })
           if (terminalHandled || closed) return
           terminalHandled = true
           cleanup()
@@ -420,7 +437,7 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const errorId = makeErrorId('pulse-chat')
     const message = error instanceof Error ? error.message : String(error)
-    console.error('[pulse/chat] unhandled error', { errorId, message, error })
+    logError('api.pulse.chat.unhandled_error', { errorId, message })
     return apiError(500, 'Chat request failed', { code: 'pulse_chat_internal', errorId })
   }
 }

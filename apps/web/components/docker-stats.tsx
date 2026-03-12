@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAxonWs } from '@/hooks/use-axon-ws'
 import type { AggregateStats, ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 
@@ -23,6 +23,7 @@ interface DockerStatsProps {
 export function DockerStats({ onStats }: DockerStatsProps) {
   const { subscribe, updateStatusLabel } = useAxonWs()
   const [data, setData] = useState<StatsData | null>(null)
+  const lastStatusLabelAtRef = useRef(0)
 
   const stableOnStats = useCallback((d: StatsData) => onStats?.(d), [onStats])
 
@@ -37,10 +38,14 @@ export function DockerStats({ onStats }: DockerStatsProps) {
       setData(statsData)
       stableOnStats(statsData)
 
-      // Update WS indicator label with live stats
-      updateStatusLabel(
-        `LIVE ${msg.container_count}\u00d7 CPU ${msg.aggregate.cpu_percent.toFixed(0)}%`,
-      )
+      // Throttle status-label updates to avoid high-frequency context churn.
+      const now = Date.now()
+      if (now - lastStatusLabelAtRef.current >= 1000) {
+        lastStatusLabelAtRef.current = now
+        updateStatusLabel(
+          `LIVE ${msg.container_count}\u00d7 CPU ${msg.aggregate.cpu_percent.toFixed(0)}%`,
+        )
+      }
     })
   }, [subscribe, stableOnStats, updateStatusLabel])
 

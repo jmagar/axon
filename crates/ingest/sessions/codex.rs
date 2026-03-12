@@ -1,7 +1,8 @@
-use super::{IngestResult, SessionStateTracker, handle_spawn_result, resolve_collection};
+use super::{
+    IngestResult, SessionStateTracker, embed_session_text, handle_spawn_result, resolve_collection,
+};
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use indicatif::MultiProgress;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -121,19 +122,19 @@ async fn process_codex_file(
         }
     }
 
-    if session_text.trim().is_empty() {
-        return Ok(0);
-    }
-
     let url = format!("file://{}", path.display());
     let title = path.file_name().and_then(|n| n.to_str());
 
     let mut attempt = 0;
     loop {
-        let res =
-            embed_text_with_metadata(&session_cfg, &session_text, &url, "codex_session", title)
-                .await
-                .map_err(|e| anyhow::anyhow!(e.to_string()));
+        let res = embed_session_text(
+            &session_cfg,
+            session_text.clone(),
+            url.clone(),
+            "codex_session",
+            title,
+        )
+        .await;
         match res {
             Ok(n) => return Ok(n),
             Err(e) => {
