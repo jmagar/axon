@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   mergeHistoricalMessages,
   shouldSyncHistoricalMessages,
-} from '@/components/reboot/live-message-sync'
+} from '@/components/shell/live-message-sync'
 
 describe('shouldSyncHistoricalMessages', () => {
   it('blocks sync while streaming/loading/error', () => {

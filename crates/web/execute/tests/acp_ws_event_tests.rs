@@ -18,7 +18,7 @@ fn sample_ctx() -> CommandContext {
 fn acp_session_update_maps_to_stream_friendly_output_json_payload() {
     let payload = super::events::acp_bridge_event_payload(&AcpBridgeEvent::SessionUpdate(
         AcpSessionUpdateEvent {
-            session_id: "session-123".to_string(),
+            session_id: "sess-1".to_string(),
             kind: AcpSessionUpdateKind::AssistantDelta,
             text_delta: Some("hello".to_string()),
             tool_call_id: None,
@@ -26,7 +26,9 @@ fn acp_session_update_maps_to_stream_friendly_output_json_payload() {
             tool_status: None,
             tool_content: None,
             tool_input: None,
-        },
+            tool_locations: None,
+        }
+
     ));
 
     let event = WsEventV2::CommandOutputJson {
@@ -146,7 +148,9 @@ fn acp_unknown_session_update_serializes_as_unknown_wire_type_in_ws_event() {
             tool_status: None,
             tool_content: None,
             tool_input: None,
-        },
+            tool_locations: None,
+        }
+,
     ));
 
     let event = WsEventV2::CommandOutputJson {
@@ -185,6 +189,7 @@ fn acp_bridge_event_payload_does_not_silently_fail() {
             tool_status: None,
             tool_content: None,
             tool_input: None,
+            tool_locations: None,
         }),
         AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
             session_id: "s".to_string(),
@@ -195,6 +200,7 @@ fn acp_bridge_event_payload_does_not_silently_fail() {
             tool_status: None,
             tool_content: None,
             tool_input: None,
+            tool_locations: None,
         }),
         AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
             session_id: "s".to_string(),

@@ -23,15 +23,15 @@ export type AxonMobilePane =
   | 'settings'
   | 'cortex'
 
-export const AXON_MOBILE_PANE_STORAGE_KEY = 'axon.web.reboot.mobile-pane'
-export const SIDEBAR_WIDTH_STORAGE_KEY = 'axon.web.reboot.sidebar-width'
-export const CHAT_FLEX_STORAGE_KEY = 'axon.web.reboot.chat-flex'
-export const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.reboot.sidebar-open'
-export const CHAT_OPEN_STORAGE_KEY = 'axon.web.reboot.chat-open'
-export const RIGHT_PANE_STORAGE_KEY = 'axon.web.reboot.right-pane'
-export const RAIL_MODE_STORAGE_KEY = 'axon.web.reboot.rail-mode'
+export const AXON_MOBILE_PANE_STORAGE_KEY = 'axon.web.shell.mobile-pane'
+export const SIDEBAR_WIDTH_STORAGE_KEY = 'axon.web.shell.sidebar-width'
+export const CHAT_FLEX_STORAGE_KEY = 'axon.web.shell.chat-flex'
+export const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.shell.sidebar-open'
+export const CHAT_OPEN_STORAGE_KEY = 'axon.web.shell.chat-open'
+export const RIGHT_PANE_STORAGE_KEY = 'axon.web.shell.right-pane'
+export const RAIL_MODE_STORAGE_KEY = 'axon.web.shell.rail-mode'
 export const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
-export const LIVE_MESSAGES_STORAGE_KEY = 'axon.web.reboot.live-messages.v1'
+export const LIVE_MESSAGES_STORAGE_KEY = 'axon.web.shell.live-messages.v1'
 export const SIDEBAR_WIDTH_DEFAULT = 260
 export const SIDEBAR_WIDTH_MIN = 180
 export const SIDEBAR_WIDTH_MAX = 520
