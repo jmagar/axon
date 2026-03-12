@@ -79,15 +79,18 @@ describe('useAxonAcp editor_update handling', () => {
 describe('createClientMessageId', () => {
   it('falls back when randomUUID is unavailable', () => {
     const originalCrypto = globalThis.crypto
-    Object.defineProperty(globalThis, 'crypto', {
-      value: {},
-      configurable: true,
-    })
-    const id = createClientMessageId('user')
-    expect(id.startsWith('user-')).toBe(true)
-    Object.defineProperty(globalThis, 'crypto', {
-      value: originalCrypto,
-      configurable: true,
-    })
+    try {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: {},
+        configurable: true,
+      })
+      const id = createClientMessageId('user')
+      expect(id.startsWith('user-')).toBe(true)
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        value: originalCrypto,
+        configurable: true,
+      })
+    }
   })
 })

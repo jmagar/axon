@@ -18,6 +18,7 @@ pub(super) mod bridge;
 pub(super) mod config;
 pub mod mapping;
 pub(super) mod persistent_conn;
+pub(super) mod preflight;
 pub(super) mod runtime;
 pub(super) mod session;
 
@@ -48,63 +49,6 @@ pub use mapping::{
     validate_session_cwd,
 };
 pub use persistent_conn::{AcpConnectionHandle, TurnRequest};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct SymlinkRepairStats {
-    scanned_symlinks: usize,
-    removed_dangling_symlinks: usize,
-    failed_removals: usize,
-}
-
-fn repair_dangling_symlinks(dir: &Path) -> std::io::Result<SymlinkRepairStats> {
-    let mut stats = SymlinkRepairStats::default();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => {
-                stats.failed_removals += 1;
-                continue;
-            }
-        };
-        let path = entry.path();
-        let meta = match std::fs::symlink_metadata(&path) {
-            Ok(meta) => meta,
-            Err(_) => {
-                stats.failed_removals += 1;
-                continue;
-            }
-        };
-        if !meta.file_type().is_symlink() {
-            continue;
-        }
-        stats.scanned_symlinks += 1;
-        match std::fs::metadata(&path) {
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                if std::fs::remove_file(&path).is_ok() {
-                    stats.removed_dangling_symlinks += 1;
-                } else {
-                    stats.failed_removals += 1;
-                }
-            }
-            Err(_) => {
-                stats.failed_removals += 1;
-            }
-        }
-    }
-    Ok(stats)
-}
-
-fn repair_codex_skill_symlinks() -> Result<Option<SymlinkRepairStats>, std::io::Error> {
-    let Some(codex_dir) = config::codex_config_dir() else {
-        return Ok(None);
-    };
-    let skills_dir = codex_dir.join("skills");
-    if !skills_dir.exists() {
-        return Ok(None);
-    }
-    repair_dangling_symlinks(&skills_dir).map(Some)
-}
 
 // ── PermissionResponderMap ───────────────────────────────────────────────────
 
@@ -204,7 +148,7 @@ impl AcpClientScaffold {
     pub fn spawn_adapter(&self) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
         self.validate_adapter()?;
         if adapters::is_codex_adapter(&self.adapter) {
-            match repair_codex_skill_symlinks() {
+            match preflight::repair_codex_skill_symlinks() {
                 Ok(Some(stats)) if stats.removed_dangling_symlinks > 0 => {
                     log::warn!(
                         "ACP codex preflight: removed {} dangling skill symlink(s) (scanned={}, failed={})",
@@ -448,7 +392,7 @@ impl AcpClientScaffold {
 
 #[cfg(test)]
 mod tests {
-    use super::repair_dangling_symlinks;
+    use super::preflight::repair_dangling_symlinks;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::symlink;

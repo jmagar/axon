@@ -29,25 +29,29 @@ pub(super) async fn apply_requested_model_before_prompt(
     let known_options = runtime_state.config_options.borrow().clone();
     let (option_id, value_allowed) = resolve_model_option_for_request(&known_options, requested);
     if !value_allowed {
+        let msg = format!(
+            "ACP runtime: requested model '{requested}' is not in ACP config options; keeping current model"
+        );
+        crate::crates::core::logging::log_warn(&msg);
         emit(
             service_tx,
             ServiceEvent::Log {
                 level: LogLevel::Warn,
-                message: format!(
-                    "ACP runtime: requested model '{requested}' is not in ACP config options; keeping current model"
-                ),
+                message: msg,
             },
         );
         return Ok(());
     }
 
+    let msg = format!(
+        "ACP runtime: applying model change mid-session (option_id={option_id}, value={requested})"
+    );
+    crate::crates::core::logging::log_info(&msg);
     emit(
         service_tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: format!(
-                "ACP runtime: applying model change mid-session (option_id={option_id}, value={requested})"
-            ),
+            message: msg,
         },
     );
 
@@ -100,13 +104,15 @@ pub(super) async fn apply_requested_mode_before_prompt(
     let known_options = runtime_state.config_options.borrow().clone();
     let (option_id, value_allowed) = resolve_mode_option_for_request(&known_options, requested);
     if !value_allowed {
+        let msg = format!(
+            "ACP runtime: requested session_mode '{requested}' is not in ACP mode options; keeping current value"
+        );
+        crate::crates::core::logging::log_warn(&msg);
         emit(
             service_tx,
             ServiceEvent::Log {
                 level: LogLevel::Warn,
-                message: format!(
-                    "ACP runtime: requested session_mode '{requested}' is not in ACP mode options; keeping current value"
-                ),
+                message: msg,
             },
         );
         return Ok(());

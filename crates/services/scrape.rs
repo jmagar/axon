@@ -33,6 +33,7 @@ pub fn map_scrape_payload(payload: serde_json::Value) -> Result<ScrapeResult, Bo
 /// JSON value into the typed service result.
 pub async fn scrape(cfg: &Config, url: &str) -> Result<ScrapeResult, Box<dyn Error>> {
     let normalized = normalize_url(url);
+    crate::crates::core::http::validate_url(&normalized)?;
     let mut website = build_scrape_website(cfg, &normalized)?;
     let page = fetch_single_page(cfg, &mut website, &normalized).await?;
     let status_code = page.status_code;

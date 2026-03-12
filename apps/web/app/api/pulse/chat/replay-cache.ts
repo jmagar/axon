@@ -117,8 +117,8 @@ export function upsertReplayEntry(
 ): void {
   const entry: ReplayCacheEntry = { events, sizeBytes, updatedAt: now }
   upsertMemoryEntry(key, entry)
-  pendingPersist.set(key, entry)
   schedulePersist(key)
+  pendingPersist.set(key, entry)
 }
 
 export async function getReplayEntry(key: string): Promise<ReplayCacheEntry | null> {

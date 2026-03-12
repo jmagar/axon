@@ -244,5 +244,12 @@ pub(crate) async fn embed_session_text(
         |_| {},
     )
     .await;
+    if result.fallback_failures > 0 {
+        return Err(anyhow::anyhow!(
+            "embed batch had {} fallback failures out of {} chunks",
+            result.fallback_failures,
+            result.chunks_embedded + result.fallback_failures
+        ));
+    }
     Ok(result.chunks_embedded)
 }

@@ -42,7 +42,9 @@ fn migrated_cli_commands_do_not_import_raw_business_logic_layers() {
     ];
 
     for (file, source, forbidden_fragments) in checks {
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        // Scan the whole file — forbidden imports should not appear anywhere,
+        // including test modules (tests should use service layer too).
+        let production_source = source;
         for forbidden in forbidden_fragments {
             assert!(
                 !production_source.contains(forbidden),

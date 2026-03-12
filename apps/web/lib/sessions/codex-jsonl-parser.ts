@@ -53,6 +53,7 @@ function upsertAssistantMessage(messages: ParsedMessage[], next: MutableParsedMe
     ...(next.blocks.length > 0 ? { blocks: next.blocks } : {}),
     ...(next.toolUses.length > 0 ? { toolUses: next.toolUses } : {}),
     ...(next.chainOfThought.length > 0 ? { chainOfThought: next.chainOfThought } : {}),
+    ...(next.sourceMessageId ? { sourceMessageId: next.sourceMessageId } : {}),
   }
   const last = messages[messages.length - 1]
   if (last && last.role === 'assistant') {
@@ -137,6 +138,7 @@ export function parseCodexJsonl(raw: string): ParsedMessage[] {
 
     if (payloadType === 'function_call_output') {
       const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : undefined
+      if (!toolCallId) continue
       const output = typeof payload.output === 'string' ? payload.output : ''
       const assistant = ensureAssistantMessage(messages)
       const idx = assistant.toolUses.findLastIndex((tool) => tool.toolCallId === toolCallId)

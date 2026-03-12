@@ -162,7 +162,7 @@ async fn get_or_create_acp_connection(
     let cwd = if assistant_mode {
         let base = env::var("AXON_DATA_DIR").unwrap_or_else(|_| {
             let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            format!("{home}/.local/share/axon")
+            format!("{home}/.local/share")
         });
         let assistant_path = std::path::PathBuf::from(base)
             .join("axon")

@@ -302,8 +302,13 @@ pub async fn embed_documents_batch(
         }
     }
     qdrant_store::qdrant_upsert(cfg, &points).await?;
-    for doc in &prepared {
-        qdrant_delete_stale_tail(cfg, &doc.url, doc.chunks.len()).await?;
+    // Deduplicate URLs before stale-tail deletion to avoid redundant deletes
+    let unique_urls: std::collections::HashMap<&str, usize> = prepared
+        .iter()
+        .map(|doc| (doc.url.as_str(), doc.chunks.len()))
+        .collect();
+    for (url, chunk_count) in unique_urls {
+        qdrant_delete_stale_tail(cfg, url, chunk_count).await?;
     }
 
     Ok(EmbedSummary {

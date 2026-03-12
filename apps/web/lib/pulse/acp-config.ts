@@ -34,7 +34,7 @@ function looksLikeModeConfig(option: AcpConfigOption): boolean {
     return true
   }
   const id = toLower(option.id)
-  if (id.includes('mode') || id.includes('permission')) {
+  if ((id.includes('mode') && !id.includes('model')) || id.includes('permission')) {
     return true
   }
   const name = toLower(option.name)
