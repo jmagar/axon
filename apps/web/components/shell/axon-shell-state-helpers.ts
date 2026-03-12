@@ -30,6 +30,32 @@ export const SIDEBAR_OPEN_STORAGE_KEY = 'axon.web.shell.sidebar-open'
 export const CHAT_OPEN_STORAGE_KEY = 'axon.web.shell.chat-open'
 export const RIGHT_PANE_STORAGE_KEY = 'axon.web.shell.right-pane'
 export const RAIL_MODE_STORAGE_KEY = 'axon.web.shell.rail-mode'
+
+// Migrate legacy "reboot" keys to "shell" keys so existing users keep their preferences.
+const LEGACY_KEY_MAP: [string, string][] = [
+  ['axon.web.reboot.chat-open', CHAT_OPEN_STORAGE_KEY],
+  ['axon.web.reboot.right-pane', RIGHT_PANE_STORAGE_KEY],
+  ['axon.web.reboot.rail-mode', RAIL_MODE_STORAGE_KEY],
+]
+
+function migrateShellStorageKeys(): void {
+  try {
+    for (const [legacy, current] of LEGACY_KEY_MAP) {
+      const old = window.localStorage.getItem(legacy)
+      if (old !== null && window.localStorage.getItem(current) === null) {
+        window.localStorage.setItem(current, old)
+        window.localStorage.removeItem(legacy)
+      }
+    }
+  } catch {
+    // localStorage may be unavailable (SSR / private browsing)
+  }
+}
+
+if (typeof window !== 'undefined') {
+  migrateShellStorageKeys()
+}
+
 export const CANVAS_PROFILE_STORAGE_KEY = 'axon.web.neural-canvas.profile'
 export const LIVE_MESSAGES_STORAGE_KEY = 'axon.web.shell.live-messages.v1'
 export const SIDEBAR_WIDTH_DEFAULT = 260
