@@ -213,6 +213,16 @@ pub struct IngestResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IngestStartResult {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IngestJobResult {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefreshStartResult {
     pub job_id: String,
     pub urls: Vec<String>,
