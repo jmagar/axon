@@ -20,7 +20,7 @@ mod oauth_google;
 use super::config::load_mcp_config;
 use super::schema::{AxonRequest, parse_axon_request};
 use crate::crates::core::config::Config;
-use crate::crates::web::cors_middleware;
+use crate::crates::web::cors::cors_middleware;
 use axum::{
     Router,
     body::Body,
