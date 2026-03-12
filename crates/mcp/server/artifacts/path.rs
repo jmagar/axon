@@ -110,7 +110,37 @@ pub async fn ensure_artifact_root() -> Result<PathBuf, ErrorData> {
 
 pub async fn build_artifact_path(stem: &str, ext: &str) -> Result<PathBuf, ErrorData> {
     let root = ensure_artifact_root().await?;
-    Ok(root.join(format!("{stem}.{ext}")))
+    let (action, name) = split_artifact_stem(stem);
+    Ok(root.join(action).join(format!("{name}.{ext}")))
+}
+
+fn split_artifact_stem(stem: &str) -> (String, String) {
+    let mut parts = stem.splitn(2, '-');
+    let action_raw = parts.next().unwrap_or("misc");
+    let name_raw = parts.next().unwrap_or(stem);
+    let action = sanitize_segment(action_raw, "misc");
+    let name = sanitize_segment(name_raw, "artifact");
+    (action, name)
+}
+
+fn sanitize_segment(raw: &str, fallback: &str) -> String {
+    let sanitized = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if sanitized.is_empty() {
+        fallback.to_string()
+    } else {
+        sanitized
+    }
 }
 
 pub async fn validate_artifact_path(raw: &str) -> Result<PathBuf, ErrorData> {
@@ -244,6 +274,29 @@ mod tests {
         let expected_fallback = fallback_artifact_root();
         assert_eq!(root, expected_fallback);
         assert!(root.exists());
+        // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
+        unsafe {
+            env::remove_var(MCP_ARTIFACT_DIR_ENV);
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn build_artifact_path_uses_action_subdirectory() {
+        let _guard = ENV_CWD_LOCK.lock().expect("lock poisoned");
+        let tmp = tempdir().expect("tempdir");
+        // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
+        unsafe {
+            env::set_var(MCP_ARTIFACT_DIR_ENV, tmp.path());
+        }
+
+        let path = build_artifact_path("crawl-status-1234", "json")
+            .await
+            .expect("artifact path");
+        let root = ensure_artifact_root().await.expect("artifact root");
+        assert_eq!(path, root.join("crawl").join("status-1234.json"));
+
         // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
         unsafe {
             env::remove_var(MCP_ARTIFACT_DIR_ENV);

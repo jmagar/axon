@@ -8,18 +8,16 @@ import { useAxonWs } from '@/hooks/use-axon-ws'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
 import { useWorkspaceFiles } from '@/hooks/use-workspace-files'
-import { useWsMessageActions, useWsWorkspaceState } from '@/hooks/use-ws-messages'
 import { apiFetch } from '@/lib/api-fetch'
 import { getAcpModeConfigOption, getAcpModelConfigOption } from '@/lib/pulse/acp-config'
 import { persistToolPreferences, TOOL_PREFERENCES_LS_KEY } from '@/lib/shell/tool-preferences'
+import { useShellStore } from '@/lib/shell-store'
 import type { ContainerStats, WsServerMsg } from '@/lib/ws-protocol'
 import { useAxonShellActions } from './axon-shell-state-actions'
 import {
-  AXON_MOBILE_PANE_STORAGE_KEY,
   type AxonMobilePane,
   agentDisplayName,
   buildEditorMarkdown,
-  RIGHT_PANE_STORAGE_KEY,
   type RightPane,
   shouldReloadSessionOnTurnComplete,
 } from './axon-shell-state-helpers'
@@ -35,9 +33,6 @@ export type { AxonMobilePane, RightPane }
 export { PANE_WIDTH_MIN, shouldReloadSessionOnTurnComplete } from './axon-shell-state-helpers'
 
 export function useAxonShellState() {
-  const { pulseModel, pulsePermissionLevel, acpConfigOptions, pulseAgent } = useWsWorkspaceState()
-  const { setPulseModel, setPulsePermissionLevel, setPulseAgent, setAcpConfigOptions } =
-    useWsMessageActions()
   const { copiedId, copy: copyMessage } = useCopyFeedback()
   const mcp = useMcpServers()
   const workspace = useWorkspaceFiles()
@@ -46,14 +41,41 @@ export function useAxonShellState() {
   const messages = useAxonShellMessages()
   const settings = useAxonShellSettings()
 
-  const [railQuery, setRailQuery] = useState('')
-  const [sessionKey, setSessionKey] = useState(0)
-  const [pendingHandoffContext, setPendingHandoffContext] = useState<string | null>(null)
-  const [sessionMode, setSessionMode] = useState<string>(pulsePermissionLevel)
-  const [activeFile, setActiveFile] = useState('')
-  const [editorMarkdown, setEditorMarkdown] = useState('# New document\n')
+  // composerFiles: local state — file attachments are rare and not a re-render bottleneck
   const [composerFiles, setComposerFiles] = useState<PromptInputFile[]>([])
+
   const canvasRef = useRef<NeuralCanvasHandle>(null)
+
+  // Fields migrated to Zustand store (session / editor slices)
+  const sessionKey = useShellStore((s) => s.sessionKey)
+  const pendingHandoffContext = useShellStore((s) => s.pendingHandoffContext)
+  const setPendingHandoffContext = useShellStore((s) => s.setPendingHandoffContext)
+  const sessionMode = useShellStore((s) => s.sessionMode)
+  const setSessionMode = useShellStore((s) => s.setSessionMode)
+  const pulseAgent = useShellStore((s) => s.pulseAgent)
+  const pulseModel = useShellStore((s) => s.pulseModel)
+  const _pulsePermissionLevel = useShellStore((s) => s.pulsePermissionLevel)
+  const acpConfigOptions = useShellStore((s) => s.acpConfigOptions)
+  const setPulseAgent = useShellStore((s) => s.setPulseAgent)
+  const setPulseModel = useShellStore((s) => s.setPulseModel)
+  const setPulsePermissionLevel = useShellStore((s) => s.setPulsePermissionLevel)
+  const setAcpConfigOptions = useShellStore((s) => s.setAcpConfigOptions)
+  const editorMarkdown = useShellStore((s) => s.editorMarkdown)
+  const setEditorMarkdown = useShellStore((s) => s.setEditorMarkdown)
+  const setActiveFile = useShellStore((s) => s.setActiveFile)
+  const activeFile = useShellStore((s) => s.activeFile)
+  const railQuery = useShellStore((s) => s.railQuery)
+  const setRailQuery = useShellStore((s) => s.setRailQuery)
+
+  // setSessionKey compatible with React.Dispatch<SetStateAction<number>>
+  const setSessionKey = useCallback((updater: number | ((prev: number) => number)) => {
+    if (typeof updater === 'function') {
+      const next = updater(useShellStore.getState().sessionKey)
+      useShellStore.setState({ sessionKey: next })
+    } else {
+      useShellStore.setState({ sessionKey: updater })
+    }
+  }, [])
 
   const {
     enabledMcpTools,
@@ -103,19 +125,9 @@ export function useAxonShellState() {
     (content: string, operation: 'replace' | 'append') => {
       setEditorMarkdown((prev) => (operation === 'append' ? `${prev}\n${content}` : content))
       layout.persistRightPane('editor')
-      try {
-        window.localStorage.setItem(RIGHT_PANE_STORAGE_KEY, 'editor')
-      } catch {
-        /* ignore */
-      }
       layout.setMobilePaneTracked('editor')
-      try {
-        window.localStorage.setItem(AXON_MOBILE_PANE_STORAGE_KEY, 'editor')
-      } catch {
-        /* ignore */
-      }
     },
-    [layout],
+    [layout, setEditorMarkdown],
   )
 
   const { submitPrompt, isStreaming, connected } = useAxonAcp({
@@ -147,15 +159,15 @@ export function useAxonShellState() {
     isStreamingRef.current = isStreaming
   }, [isStreaming])
 
-  const { subscribe: subscribeWs } = useAxonWs()
+  const { subscribeByTypes: subscribeWsByTypes } = useAxonWs()
   useEffect(() => {
-    return subscribeWs((msg: WsServerMsg) => {
+    return subscribeWsByTypes(['command.done', 'command.error'], (msg: WsServerMsg) => {
       if (msg.type === 'command.done' || msg.type === 'command.error') {
         canvasRef.current?.setIntensity(0.15)
         setTimeout(() => canvasRef.current?.setIntensity(0), 3000)
       }
     })
-  }, [subscribeWs])
+  }, [subscribeWsByTypes])
 
   useEffect(() => {
     if (isStreaming) {
@@ -228,6 +240,7 @@ export function useAxonShellState() {
     messages.liveMessagesHydrated,
     session.sessionLoading,
     session.sessionError,
+    messages.setLiveMessages,
   ])
 
   const activeSession = useMemo(() => {
@@ -264,7 +277,7 @@ export function useAxonShellState() {
     if (!permissionOptions.some((opt) => opt.value === sessionMode)) {
       setSessionMode(permissionOptions[0]?.value ?? '')
     }
-  }, [permissionOptions, sessionMode])
+  }, [permissionOptions, sessionMode, setSessionMode])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: railMode is intentional trigger
   useEffect(() => {
@@ -295,7 +308,7 @@ export function useAxonShellState() {
     return () => {
       cancelled = true
     }
-  }, [activeFile])
+  }, [activeFile, setEditorMarkdown])
 
   const {
     composerProps,
@@ -347,7 +360,7 @@ export function useAxonShellState() {
     setPulsePermissionLevel,
     setRailModeTracked: layout.setRailModeTracked,
     setRailQuery,
-    setSessionKey,
+    setSessionKey: setSessionKey as React.Dispatch<React.SetStateAction<number>>,
     setSessionMode,
     setToolPresets,
     submitPrompt,
@@ -371,6 +384,11 @@ export function useAxonShellState() {
   useEffect(() => {
     if (!messages.liveMessagesHydrated) return
     messages.persistMessages(connected, session.chatSessionId, messages.liveMessages)
+    return () => {
+      // Flush any pending debounced write immediately on unmount so messages
+      // are never lost when the component tears down mid-stream.
+      messages.persistMessages(connected, session.chatSessionId, messages.liveMessages, true)
+    }
   }, [session.chatSessionId, connected, messages])
 
   const chatTitle = activeSession?.preview?.slice(0, 60) ?? activeSession?.project ?? 'New chat'

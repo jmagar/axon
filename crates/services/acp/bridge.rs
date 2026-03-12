@@ -2,13 +2,13 @@
 //! forwarding session notifications and permission requests through the
 //! service event channel.
 
-use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
+use crate::crates::services::events::{EditorOperation, LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::AcpConfigOption;
 use crate::crates::services::types::AcpSessionUpdateKind;
+use crate::crates::services::types::{AcpBridgeEvent, AcpTurnResultEvent};
 use agent_client_protocol::{
-    Client, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
-    StopReason,
+    Client, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SessionNotification, SessionUpdate, StopReason,
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -18,6 +18,8 @@ use super::mapping::{
     extract_text_delta, map_permission_request_event, map_session_notification_event,
     map_session_update_kind,
 };
+use super::permission::{auto_approve_outcome, handle_interactive_permission};
+use super::persistent_conn::editor::parse_editor_blocks;
 
 // ── Runtime state ───────────────────────────────────────────────────────────
 
@@ -52,55 +54,6 @@ pub struct AcpRuntimeState {
     pub(super) limit_warning_emitted: std::cell::Cell<bool>,
 }
 
-// ── Auto-approve helpers ────────────────────────────────────────────────────
-
-/// Resolve whether ACP permissions should be auto-approved.
-///
-/// Returns `true` (auto-approve) unless `AXON_ACP_AUTO_APPROVE` is explicitly
-/// set to `"false"`. Default is `true` for containerized deployments.
-pub(super) fn resolve_acp_auto_approve() -> bool {
-    std::env::var("AXON_ACP_AUTO_APPROVE")
-        .map(|v| v != "false")
-        .unwrap_or(true)
-}
-
-/// Select the best auto-approve outcome from the permission request options.
-pub(super) fn auto_approve_outcome(
-    args: &RequestPermissionRequest,
-    tx: &Option<mpsc::Sender<ServiceEvent>>,
-    tool_call_id: &str,
-) -> RequestPermissionOutcome {
-    let outcome = args
-        .options
-        .iter()
-        .find(|opt| matches!(opt.kind, PermissionOptionKind::AllowAlways))
-        .or_else(|| {
-            args.options
-                .iter()
-                .find(|opt| matches!(opt.kind, PermissionOptionKind::AllowOnce))
-        })
-        .map(|opt| {
-            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                opt.option_id.clone(),
-            ))
-        })
-        .unwrap_or(RequestPermissionOutcome::Cancelled);
-
-    if matches!(outcome, RequestPermissionOutcome::Selected(_)) {
-        let msg = format!("ACP permission auto-approved for tool_call={tool_call_id}");
-        crate::crates::core::logging::log_info(&msg);
-        emit(
-            tx,
-            ServiceEvent::Log {
-                level: LogLevel::Info,
-                message: msg,
-            },
-        );
-    }
-
-    outcome
-}
-
 // ── FIX L-1: return &'static str instead of String ──────────────────────────
 
 pub(super) fn stop_reason_to_str(reason: StopReason) -> &'static str {
@@ -114,151 +67,75 @@ pub(super) fn stop_reason_to_str(reason: StopReason) -> &'static str {
     }
 }
 
-// ── Interactive permission helper ───────────────────────────────────────────
+// ── Turn finalization (shared by one-shot and persistent paths) ─────────────
 
-/// Wait for the frontend to respond to a permission request.
+/// Finalize a successful prompt turn: log the stop reason, emit `EditorWrite`
+/// events for any `<axon:editor>` blocks in the assistant text, and emit the
+/// `TurnResult` event.
 ///
-/// Inserts the oneshot sender into `permission_responders`, logs that we are
-/// waiting, then races the channel receive against a 60-second timeout.
-/// On timeout the map entry is cleaned up before returning `Cancelled`.
-///
-/// Returns `Cancelled` immediately with a warning if `session_id` is blank —
-/// a blank key would prevent the WS router from ever routing the response.
-pub(super) async fn handle_interactive_permission(
-    args: &RequestPermissionRequest,
-    tx: &Option<mpsc::Sender<ServiceEvent>>,
-    permission_responders: &PermissionResponderMap,
+/// Called from both `runtime.rs` (one-shot path) and `persistent_conn/turn.rs`
+/// (persistent-connection path) to ensure consistent behavior — especially
+/// `EditorWrite` emission, which was previously missing in the one-shot path.
+pub(super) fn finalize_successful_turn(
+    stop_reason: StopReason,
     runtime_state: &Arc<AcpRuntimeState>,
-    session_id: &str,
-    tool_call_id: &str,
-) -> RequestPermissionOutcome {
-    // Reject blank session_id early — the composite (session_id, tool_call_id) key
-    // would never match a route_permission_response call, so the request would hang
-    // until timeout.  Fail fast with a clear error instead.
-    if session_id.trim().is_empty() {
-        let msg = format!(
-            "ACP permission: blank session_id for tool_call={tool_call_id}, \
-             cannot route response — cancelling"
-        );
-        crate::crates::core::logging::log_warn(&msg);
-        emit(
-            tx,
-            ServiceEvent::Log {
-                level: LogLevel::Warn,
-                message: msg,
-            },
-        );
-        return RequestPermissionOutcome::Cancelled;
-    }
-
-    let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
-    let key = (session_id.to_string(), tool_call_id.to_string());
-    // Key is (session_id, tool_call_id) — SEC-7: prevents cross-session routing.
-    permission_responders.insert(key.clone(), resp_tx);
-
-    // RAII guard: ensures the map entry is removed even if this future is cancelled.
-    struct PermissionGuard<'a> {
-        map: &'a PermissionResponderMap,
-        key: (String, String),
-    }
-    impl Drop for PermissionGuard<'_> {
-        fn drop(&mut self) {
-            self.map.remove(&self.key);
-        }
-    }
-    let _guard = PermissionGuard {
-        map: permission_responders,
-        key,
+    service_tx: &Option<mpsc::Sender<ServiceEvent>>,
+    session_id_str: &str,
+) -> Result<(), String> {
+    let stop_reason_str = stop_reason_to_str(stop_reason);
+    let log_level = match stop_reason {
+        StopReason::EndTurn => LogLevel::Info,
+        StopReason::MaxTokens | StopReason::Refusal | StopReason::Cancelled => LogLevel::Warn,
+        _ => LogLevel::Info,
     };
+    let msg = format!(
+        "ACP runtime: prompt turn completed (stop_reason={stop_reason_str}, session_id={session_id_str})"
+    );
+    if log_level == LogLevel::Info {
+        crate::crates::core::logging::log_info(&msg);
+    } else {
+        crate::crates::core::logging::log_warn(&msg);
+    }
+    emit(
+        service_tx,
+        ServiceEvent::Log {
+            level: log_level,
+            message: msg,
+        },
+    );
 
-    let msg = format!("ACP permission awaiting frontend response for tool_call={tool_call_id}");
+    let session = session_id_str.to_string();
+    let text = runtime_state.assistant_text.borrow().clone();
+
+    for (content, op_str) in parse_editor_blocks(&text) {
+        let operation = if op_str == "append" {
+            EditorOperation::Append
+        } else {
+            EditorOperation::Replace
+        };
+        emit(service_tx, ServiceEvent::EditorWrite { content, operation });
+    }
+
+    emit(
+        service_tx,
+        ServiceEvent::AcpBridge {
+            event: AcpBridgeEvent::TurnResult(AcpTurnResultEvent {
+                session_id: session.clone(),
+                stop_reason: stop_reason_str.to_string(),
+                result: text,
+            }),
+        },
+    );
+    let msg = format!("ACP runtime: TurnResult emitted (session_id={session})");
     crate::crates::core::logging::log_info(&msg);
     emit(
-        tx,
+        service_tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
             message: msg,
         },
     );
-
-    let timeout_secs = runtime_state.permission_timeout_secs.get().unwrap_or(60);
-
-    // Wait up to N seconds for a response from the frontend.
-    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), resp_rx).await {
-        Ok(Ok(option_id)) => {
-            // Validate that the chosen option_id exists in the request.
-            let matched = args
-                .options
-                .iter()
-                .find(|opt| *opt.option_id.0 == *option_id);
-            match matched {
-                Some(opt) => {
-                    let msg = format!(
-                        "ACP permission resolved by frontend for tool_call={tool_call_id}: {option_id}"
-                    );
-                    crate::crates::core::logging::log_info(&msg);
-                    emit(
-                        tx,
-                        ServiceEvent::Log {
-                            level: LogLevel::Info,
-                            message: msg,
-                        },
-                    );
-                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        opt.option_id.clone(),
-                    ))
-                }
-                None => {
-                    let msg = format!(
-                        "ACP permission: frontend sent unknown option_id={option_id} for tool_call={tool_call_id}, cancelling"
-                    );
-                    crate::crates::core::logging::log_warn(&msg);
-                    emit(
-                        tx,
-                        ServiceEvent::Log {
-                            level: LogLevel::Warn,
-                            message: msg,
-                        },
-                    );
-                    RequestPermissionOutcome::Cancelled
-                }
-            }
-        }
-        // Disconnect path: the oneshot sender was dropped without being sent.
-        // This can happen if the DashMap entry was removed by an external cleanup
-        // path that discarded the sender rather than calling send().  As a safety
-        // net, explicitly remove the map entry here so no stale entry can linger.
-        Ok(Err(_)) => {
-            permission_responders.remove(&(session_id.to_string(), tool_call_id.to_string()));
-            let msg = format!("ACP permission: responder dropped for tool_call={tool_call_id}");
-            crate::crates::core::logging::log_warn(&msg);
-            emit(
-                tx,
-                ServiceEvent::Log {
-                    level: LogLevel::Warn,
-                    message: msg,
-                },
-            );
-            RequestPermissionOutcome::Cancelled
-        }
-        // Timeout path: no frontend response within 60s.
-        Err(_) => {
-            let msg = format!(
-                "ACP permission: timeout waiting for frontend response for tool_call={tool_call_id}"
-            );
-            crate::crates::core::logging::log_warn(&msg);
-            emit(
-                tx,
-                ServiceEvent::Log {
-                    level: LogLevel::Warn,
-                    message: msg,
-                },
-            );
-            // Clean up the map entry. DashMap: no lock needed.
-            permission_responders.remove(&(session_id.to_string(), tool_call_id.to_string()));
-            RequestPermissionOutcome::Cancelled
-        }
-    }
+    Ok(())
 }
 
 // ── Bridge client ───────────────────────────────────────────────────────────
@@ -386,9 +263,6 @@ impl Client for AcpBridgeClient {
                              further output will be truncated in the final result"
                         );
                         crate::crates::core::logging::log_warn(&msg);
-                        // Access service_tx from the outer scope if needed,
-                        // but here we are in a block that doesn't have it yet.
-                        // We'll emit it using the sender we capture later in this function.
                     }
                 }
             }
@@ -430,10 +304,11 @@ impl Client for AcpBridgeClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::arc_with_non_send_sync)]
 mod tests {
     use super::*;
     use agent_client_protocol::{
-        PermissionOption, SessionId, ToolCall, ToolCallId, ToolCallUpdate,
+        PermissionOption, PermissionOptionKind, SessionId, ToolCall, ToolCallId, ToolCallUpdate,
     };
 
     #[tokio::test]
@@ -469,11 +344,48 @@ mod tests {
 
         let resp = client.request_permission(args).await.unwrap();
 
-        // The current implementation (buggy) will NOT block it because it checks "call_123" against "shell".
+        // Tool should be blocked by name ("shell"), not by call ID ("call_123").
         assert_eq!(
             resp.outcome,
             RequestPermissionOutcome::Cancelled,
             "Tool 'shell' should be blocked even if ID is 'call_123'"
         );
+    }
+
+    #[test]
+    fn finalize_emits_editor_write_events() {
+        let runtime_state = Arc::new(AcpRuntimeState::default());
+        let (tx, mut rx) = mpsc::channel(32);
+        let service_tx = Some(tx);
+
+        // Seed assistant text with an editor block.
+        *runtime_state.assistant_text.borrow_mut() = concat!(
+            "Some preamble.\n",
+            "<axon:editor op=\"replace\">\n",
+            "# Hello World\n",
+            "</axon:editor>\n",
+            "trailing text"
+        )
+        .to_string();
+
+        let result = finalize_successful_turn(
+            StopReason::EndTurn,
+            &runtime_state,
+            &service_tx,
+            "test-session-123",
+        );
+        assert!(result.is_ok());
+
+        // Drain events and check for EditorWrite.
+        drop(service_tx);
+        let mut found_editor_write = false;
+        while let Ok(event) = rx.try_recv() {
+            if let ServiceEvent::EditorWrite { content, operation } = event {
+                assert_eq!(content, "# Hello World");
+                assert!(matches!(operation, EditorOperation::Replace));
+                found_editor_write = true;
+            }
+        }
+        assert!(found_editor_write, "Expected an EditorWrite event");
     }
 }

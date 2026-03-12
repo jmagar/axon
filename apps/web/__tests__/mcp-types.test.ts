@@ -172,19 +172,19 @@ describe('configToForm', () => {
   it('maps env entries to kvPairs', () => {
     const form = configToForm('s', { command: 'x', env: { FOO: 'bar', BAZ: 'qux' } })
     expect(form.envPairs).toHaveLength(2)
-    expect(form.envPairs[0].key).toBe('FOO')
-    expect(form.envPairs[0].value).toBe('bar')
-    expect(form.envPairs[1].key).toBe('BAZ')
-    expect(form.envPairs[1].value).toBe('qux')
+    expect(form.envPairs[0]!.key).toBe('FOO')
+    expect(form.envPairs[0]!.value).toBe('bar')
+    expect(form.envPairs[1]!.key).toBe('BAZ')
+    expect(form.envPairs[1]!.value).toBe('qux')
     // each pair should have a unique id
-    expect(form.envPairs[0].id).not.toBe(form.envPairs[1].id)
+    expect(form.envPairs[0]!.id).not.toBe(form.envPairs[1]!.id)
   })
 
   it('maps header entries to kvPairs', () => {
     const form = configToForm('s', { url: 'http://x', headers: { Auth: 'Bearer t' } })
     expect(form.headerPairs).toHaveLength(1)
-    expect(form.headerPairs[0].key).toBe('Auth')
-    expect(form.headerPairs[0].value).toBe('Bearer t')
+    expect(form.headerPairs[0]!.key).toBe('Auth')
+    expect(form.headerPairs[0]!.value).toBe('Bearer t')
   })
 
   it('defaults missing fields', () => {

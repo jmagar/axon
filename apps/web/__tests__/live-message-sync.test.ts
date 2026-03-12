@@ -142,7 +142,7 @@ describe('mergeHistoricalMessages', () => {
     expect(merged[0]?.toolUses?.[0]?.toolCallId).toBe('t2')
   })
 
-  it('preserves richer live metadata when text differs only by whitespace', () => {
+  it('does not fuzzy-match by whitespace-normalized content', () => {
     const historical = [
       { id: 'h1', role: 'assistant' as const, content: 'Hello world', timestamp: 1 },
     ]
@@ -157,7 +157,7 @@ describe('mergeHistoricalMessages', () => {
     ]
 
     const merged = mergeHistoricalMessages(historical, live)
-    expect(merged[0]?.toolUses?.[0]?.name).toBe('exec_command')
+    expect(merged[0]?.toolUses).toBeUndefined()
   })
 
   it('does not attach metadata across role mismatch', () => {

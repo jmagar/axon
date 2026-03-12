@@ -26,6 +26,11 @@ try {
 import { createServer } from 'node:http'
 import pty from 'node-pty'
 import { WebSocketServer } from 'ws'
+import {
+  isAllowedOrigin as _isAllowedOrigin,
+  isAuthorized as _isAuthorized,
+  buildShellEnv,
+} from './lib/server/shell-auth.mjs'
 
 const PORT = Number(process.env.SHELL_SERVER_PORT ?? 49011)
 const SHELL = process.env.SHELL ?? '/bin/bash'
@@ -39,102 +44,13 @@ const ALLOWED_ORIGINS = (
   .map((value) => value.trim())
   .filter(Boolean)
 const ALLOW_INSECURE_LOCAL_DEV = process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
-const SAFE_ENV_KEYS = [
-  'HOME',
-  'PATH',
-  'SHELL',
-  'LANG',
-  'LC_ALL',
-  'LC_CTYPE',
-  'TZ',
-  'TMPDIR',
-  'PWD',
-  'USER',
-  'USERNAME',
-]
 
-function isLoopbackHost(host) {
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    host === '[::1]' ||
-    host === '0.0.0.0'
-  )
-}
-
-function parseOrigin(originHeader) {
-  if (!originHeader) return null
-  try {
-    return new URL(originHeader)
-  } catch {
-    return null
-  }
-}
-
+// Bind module-level config into the pure functions from shell-auth.mjs
 function isAllowedOrigin(req) {
-  const parsedOrigin = parseOrigin(req.headers.origin)
-  if (!parsedOrigin) return true
-
-  const normalizedOrigin = parsedOrigin.origin.toLowerCase()
-  if (ALLOWED_ORIGINS.length > 0) {
-    return ALLOWED_ORIGINS.some((allowed) => allowed.toLowerCase() === normalizedOrigin)
-  }
-
-  if (ALLOW_INSECURE_LOCAL_DEV) {
-    return isLoopbackHost(parsedOrigin.hostname)
-  }
-
-  const forwardedHostRaw = String(req.headers['x-forwarded-host'] ?? '')
-    .split(',')[0]
-    .trim()
-  // Strip port from forwarded host so it matches parsedOrigin.hostname
-  const forwardedHost = forwardedHostRaw.split(':')[0].toLowerCase()
-  const directHost = String(req.headers.host ?? '')
-    .split(':')[0]
-    .toLowerCase()
-  const requestHost = forwardedHost || directHost
-  return parsedOrigin.hostname.toLowerCase() === requestHost
+  return _isAllowedOrigin(req, ALLOWED_ORIGINS, ALLOW_INSECURE_LOCAL_DEV)
 }
-
-function getAuthToken(req) {
-  const authHeader = req.headers.authorization
-  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-    return authHeader.slice('Bearer '.length).trim()
-  }
-
-  const apiKey = req.headers['x-api-key']
-  if (typeof apiKey === 'string' && apiKey.trim()) {
-    return apiKey.trim()
-  }
-
-  try {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-    return url.searchParams.get('token')?.trim() ?? ''
-  } catch {
-    return ''
-  }
-}
-
 function isAuthorized(req) {
-  if (TOKEN) return getAuthToken(req) === TOKEN
-  if (!ALLOW_INSECURE_LOCAL_DEV) return false
-
-  const host = (req.headers.host ?? '').split(':')[0] ?? ''
-  return isLoopbackHost(host)
-}
-
-function buildShellEnv() {
-  const env = {}
-  for (const key of SAFE_ENV_KEYS) {
-    const value = process.env[key]
-    if (typeof value === 'string' && value.length > 0) {
-      env[key] = value
-    }
-  }
-  env.TERM = 'xterm-256color'
-  env.COLORTERM = 'truecolor'
-  return env
+  return _isAuthorized(req, TOKEN, ALLOW_INSECURE_LOCAL_DEV)
 }
 
 const server = createServer((_req, res) => {

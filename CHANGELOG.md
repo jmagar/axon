@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-12 (session: v0.19.1 — web performance hardening + shell state split)
+Last Modified: 2026-03-12 (session: v0.20.0 — quick-win hardening + release prep)
 
 ## [Unreleased] — feat/github-code-aware-chunking
 
 This section documents commits on `feat/github-code-aware-chunking` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Web performance/a11y hardening + ACP reliability follow-through (post-`e1e612c6`)** — landed five branch-head commits: web performance and accessibility improvements (`fb7a9f87`, `14d8edd3`), ACP session persistence through WebSocket disconnects (`4663ce65`), and shell/session UX reliability fixes for streaming/session list behavior (`80a7e21d`, `356ea87a`).
 
 - **Branch head sync (post-`5682daa2`)** — documented two previously missing branch-head commits: ACP session/config persistence hardening (`bbc1684b`) and GitHub TEI batch embedding performance improvements (`e1e612c6`).
 - **Assistant mode in Reboot sidebar and ACP path isolation (v0.18.0)** — added `assistant` rail mode with dedicated session list (`/api/assistant/sessions`), `useAssistantSessions` hook, and shell wiring for separate assistant session continuity; pulse chat now accepts `assistant_mode` and resolves CWD to `$AXON_DATA_DIR/axon/assistant` (fallback `~/.local/share/axon/axon/assistant`) with per-agent+mode ACP connection scoping.
@@ -127,6 +129,11 @@ This section documents commits on `feat/github-code-aware-chunking` relative to 
 
 | Commit | Type | Message |
 |---|---|---|
+| `356ea87a` | fix(web) | make session list loading reliable |
+| `80a7e21d` | fix(web) | clear streaming flag on message when result arrives |
+| `14d8edd3` | feat(web) | performance/accessibility audit fixes + density feature + state split |
+| `4663ce65` | feat | ACP session persistence — survive WebSocket disconnects |
+| `fb7a9f87` | perf | web performance & accessibility improvements |
 | `e1e612c6` | perf(ingest) | batch GitHub TEI embeddings across documents |
 | `bbc1684b` | feat(acp) | persist MCP config and harden session scanning |
 | `5682daa2` | fix(mcp) | align config path to mcp.json across web/api/docs |

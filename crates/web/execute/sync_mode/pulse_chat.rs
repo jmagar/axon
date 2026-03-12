@@ -85,7 +85,7 @@ async fn send_or_buffer(tx: &mpsc::Sender<String>, msg: String, agent_key: &str)
     if tx.send(msg.clone()).await.is_err()
         && let Some(cached) = SESSION_CACHE.get_sync(agent_key)
     {
-        cached.buffer_event(msg).await;
+        cached.buffer_event(msg);
     }
 }
 
@@ -145,7 +145,7 @@ async fn get_or_create_acp_connection(
     };
 
     // Check global cache first.
-    if let Some(cached) = SESSION_CACHE.get(&agent_key).await {
+    if let Some(cached) = SESSION_CACHE.get(&agent_key) {
         return Ok((agent_key, Arc::clone(&cached.handle)));
     }
 

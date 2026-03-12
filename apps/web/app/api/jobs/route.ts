@@ -20,16 +20,17 @@ export interface Job {
 }
 
 async function queryRefresh(statusFilter: StatusFilter, limit: number, offset: number) {
-  const where = statusWhere(statusFilter)
+  const { clause, params } = statusClause(statusFilter, 1)
+  const n = params.length
   const rows = await getJobsPgPool().query(
     `SELECT id, urls_json, status, created_at, started_at, finished_at, error_text,
             config_json->>'collection' AS collection,
             COUNT(*) OVER() AS total
      FROM axon_refresh_jobs
-     WHERE ${where}
+     WHERE ${clause}
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $${n + 1} OFFSET $${n + 2}`,
+    [...params, limit, offset],
   )
   return {
     jobs: rows.rows.map((r) => {
@@ -77,36 +78,57 @@ function truncate(s: string | null | undefined, max = 120): string {
 
 type StatusFilter = 'all' | 'active' | 'pending' | 'running' | 'completed' | 'failed' | 'canceled'
 
-function statusWhere(filter: StatusFilter): string {
+/**
+ * Returns the list of status values that match the filter, or null for "all".
+ * Used to build parameterized WHERE clauses — never interpolate status strings directly.
+ */
+function statusValues(filter: StatusFilter): string[] | null {
   switch (filter) {
     case 'active':
-      return `status IN ('pending','running')`
+      return ['pending', 'running']
     case 'pending':
-      return `status = 'pending'`
+      return ['pending']
     case 'running':
-      return `status = 'running'`
+      return ['running']
     case 'completed':
-      return `status = 'completed'`
+      return ['completed']
     case 'failed':
-      return `status IN ('failed','canceled')`
+      return ['failed', 'canceled']
     case 'canceled':
-      return `status = 'canceled'`
+      return ['canceled']
     default:
-      return '1=1'
+      return null
   }
 }
 
+/**
+ * Returns a parameterized WHERE clause fragment and the values array.
+ * @param filter  the status filter
+ * @param startAt the $N index where the status param should be bound (1-based)
+ */
+function statusClause(
+  filter: StatusFilter,
+  startAt: number,
+): { clause: string; params: unknown[] } {
+  const vals = statusValues(filter)
+  if (!vals) return { clause: '1=1', params: [] }
+  // Pass the string[] as a single $N binding — pg driver serialises JS arrays
+  // to Postgres array literals when the param type is text[].
+  return { clause: `status = ANY($${startAt}::text[])`, params: [vals] }
+}
+
 async function queryCrawl(statusFilter: StatusFilter, limit: number, offset: number) {
-  const where = statusWhere(statusFilter)
+  const { clause, params } = statusClause(statusFilter, 1)
+  const n = params.length
   const rows = await getJobsPgPool().query(
     `SELECT id, url, status, created_at, started_at, finished_at, error_text,
             config_json->>'collection' AS collection,
             COUNT(*) OVER() AS total
      FROM axon_crawl_jobs
-     WHERE ${where}
+     WHERE ${clause}
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $${n + 1} OFFSET $${n + 2}`,
+    [...params, limit, offset],
   )
   return {
     jobs: rows.rows.map((r) => ({
@@ -125,15 +147,16 @@ async function queryCrawl(statusFilter: StatusFilter, limit: number, offset: num
 }
 
 async function queryExtract(statusFilter: StatusFilter, limit: number, offset: number) {
-  const where = statusWhere(statusFilter)
+  const { clause, params } = statusClause(statusFilter, 1)
+  const n = params.length
   const rows = await getJobsPgPool().query(
     `SELECT id, urls_json, status, created_at, started_at, finished_at, error_text,
             COUNT(*) OVER() AS total
      FROM axon_extract_jobs
-     WHERE ${where}
+     WHERE ${clause}
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $${n + 1} OFFSET $${n + 2}`,
+    [...params, limit, offset],
   )
   return {
     jobs: rows.rows.map((r) => {
@@ -157,16 +180,17 @@ async function queryExtract(statusFilter: StatusFilter, limit: number, offset: n
 }
 
 async function queryEmbed(statusFilter: StatusFilter, limit: number, offset: number) {
-  const where = statusWhere(statusFilter)
+  const { clause, params } = statusClause(statusFilter, 1)
+  const n = params.length
   const rows = await getJobsPgPool().query(
     `SELECT id, input_text, status, created_at, started_at, finished_at, error_text,
             config_json->>'collection' AS collection,
             COUNT(*) OVER() AS total
      FROM axon_embed_jobs
-     WHERE ${where}
+     WHERE ${clause}
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $${n + 1} OFFSET $${n + 2}`,
+    [...params, limit, offset],
   )
   return {
     jobs: rows.rows.map((r) => ({
@@ -185,15 +209,16 @@ async function queryEmbed(statusFilter: StatusFilter, limit: number, offset: num
 }
 
 async function queryIngest(statusFilter: StatusFilter, limit: number, offset: number) {
-  const where = statusWhere(statusFilter)
+  const { clause, params } = statusClause(statusFilter, 1)
+  const n = params.length
   const rows = await getJobsPgPool().query(
     `SELECT id, source_type, target, status, created_at, started_at, finished_at, error_text,
             COUNT(*) OVER() AS total
      FROM axon_ingest_jobs
-     WHERE ${where}
+     WHERE ${clause}
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT $${n + 1} OFFSET $${n + 2}`,
+    [...params, limit, offset],
   )
   return {
     jobs: rows.rows.map((r) => ({
@@ -213,7 +238,12 @@ async function queryIngest(statusFilter: StatusFilter, limit: number, offset: nu
 
 // ── Status counts (all tables, all statuses, unfiltered) ─────────────────────
 
-async function getStatusCounts(): Promise<StatusCounts> {
+// Module-level cache: status counts change infrequently; 5 s TTL avoids
+// 5 parallel COUNT(*) queries on every /api/jobs poll.
+const STATUS_COUNTS_TTL_MS = 5_000
+let statusCountsCache: { data: StatusCounts; expiresAt: number } | null = null
+
+async function fetchStatusCounts(): Promise<StatusCounts> {
   const countSql = (table: string) =>
     getJobsPgPool().query<{ running: string; pending: string; completed: string; failed: string }>(
       `SELECT
@@ -241,6 +271,16 @@ async function getStatusCounts(): Promise<StatusCounts> {
     completed: sum('completed'),
     failed: sum('failed'),
   }
+}
+
+async function getStatusCounts(): Promise<StatusCounts> {
+  const now = Date.now()
+  if (statusCountsCache && statusCountsCache.expiresAt > now) {
+    return statusCountsCache.data
+  }
+  const data = await fetchStatusCounts()
+  statusCountsCache = { data, expiresAt: now + STATUS_COUNTS_TTL_MS }
+  return data
 }
 
 // ── GET /api/jobs ──────────────────────────────────────────────────────────────
@@ -286,31 +326,48 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const counts = await getStatusCounts()
 
     if (type === 'all') {
-      const where = statusWhere(safeStatusFilter)
-      const unionResult = await getJobsPgPool().query(
-        `WITH combined AS (
-          SELECT id, 'crawl' AS type, url AS target, config_json->>'collection' AS collection_val, status, created_at, started_at, finished_at, error_text
-            FROM axon_crawl_jobs WHERE ${where}
-          UNION ALL
-          SELECT id, 'extract', urls_json::text, NULL, status, created_at, started_at, finished_at, error_text
-            FROM axon_extract_jobs WHERE ${where}
-          UNION ALL
-          SELECT id, 'embed', input_text, config_json->>'collection', status, created_at, started_at, finished_at, error_text
-            FROM axon_embed_jobs WHERE ${where}
-          UNION ALL
-          SELECT id, 'ingest', source_type || ': ' || target, NULL, status, created_at, started_at, finished_at, error_text
-            FROM axon_ingest_jobs WHERE ${where}
-          UNION ALL
-          SELECT id, 'refresh', urls_json::text, config_json->>'collection', status, created_at, started_at, finished_at, error_text
-            FROM axon_refresh_jobs WHERE ${where}
-        )
-        SELECT *, COUNT(*) OVER() AS total
-        FROM combined
-        ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2`,
-        [limit, offset],
-      )
-      total = Number((unionResult.rows[0] as { total?: string } | undefined)?.total ?? 0)
+      const { clause, params } = statusClause(safeStatusFilter, 1)
+      const n = params.length
+      // Run the paged result and the total count in parallel.
+      // A separate COUNT avoids the COUNT(*) OVER() window function which
+      // materialises the full result set before applying LIMIT — this lets
+      // Postgres push the LIMIT into each UNION ALL branch instead.
+      const [unionResult, countResult] = await Promise.all([
+        getJobsPgPool().query(
+          `SELECT id, 'crawl' AS type, url AS target, config_json->>'collection' AS collection_val, status, created_at, started_at, finished_at, error_text
+             FROM axon_crawl_jobs WHERE ${clause}
+           UNION ALL
+           SELECT id, 'extract', urls_json::text, NULL, status, created_at, started_at, finished_at, error_text
+             FROM axon_extract_jobs WHERE ${clause}
+           UNION ALL
+           SELECT id, 'embed', input_text, config_json->>'collection', status, created_at, started_at, finished_at, error_text
+             FROM axon_embed_jobs WHERE ${clause}
+           UNION ALL
+           SELECT id, 'ingest', source_type || ': ' || target, NULL, status, created_at, started_at, finished_at, error_text
+             FROM axon_ingest_jobs WHERE ${clause}
+           UNION ALL
+           SELECT id, 'refresh', urls_json::text, config_json->>'collection', status, created_at, started_at, finished_at, error_text
+             FROM axon_refresh_jobs WHERE ${clause}
+           ORDER BY created_at DESC
+           LIMIT $${n + 1} OFFSET $${n + 2}`,
+          [...params, limit, offset],
+        ),
+        getJobsPgPool().query<{ count: string }>(
+          `SELECT COUNT(*) AS count FROM (
+             SELECT id FROM axon_crawl_jobs WHERE ${clause}
+             UNION ALL
+             SELECT id FROM axon_extract_jobs WHERE ${clause}
+             UNION ALL
+             SELECT id FROM axon_embed_jobs WHERE ${clause}
+             UNION ALL
+             SELECT id FROM axon_ingest_jobs WHERE ${clause}
+             UNION ALL
+             SELECT id FROM axon_refresh_jobs WHERE ${clause}
+           ) t`,
+          params,
+        ),
+      ])
+      total = Number((countResult.rows[0] as { count?: string } | undefined)?.count ?? 0)
       jobs = unionResult.rows.map((r) => ({
         id: r.id as string,
         type: r.type as JobType,

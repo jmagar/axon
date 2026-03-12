@@ -78,13 +78,13 @@ describe('pulse chat stream parser', () => {
     const parsed = parsePulseChatStreamChunk(legacy, '')
 
     expect(parsed.events).toHaveLength(1)
-    expect(parsed.events[0]).toMatchObject({
+    expect(parsed.events[0]!).toMatchObject({
       type: 'assistant_delta',
       delta: 'hello',
       protocol_version: 1,
     })
-    expect(typeof parsed.events[0].event_id).toBe('string')
-    expect(parsed.events[0].event_id.length).toBeGreaterThan(0)
+    expect(typeof parsed.events[0]!.event_id).toBe('string')
+    expect(parsed.events[0]!.event_id.length).toBeGreaterThan(0)
   })
 
   it('preserves existing protocol metadata when present', () => {

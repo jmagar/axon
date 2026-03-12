@@ -92,7 +92,7 @@ pub fn is_valid_cancel_job_id_pub(job_id: &str) -> bool {
 
 use crate::crates::core::config::Config;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
 use uuid::Uuid;
@@ -241,19 +241,39 @@ pub(super) async fn handle_command(
 /// Returns `Ok(Some(permit))` when a permit is available, `Ok(None)` for non-ACP
 /// modes, and `Err(())` when the semaphore is exhausted — in that case an error
 /// event has already been sent to the client.
+///
+/// Waits up to 30 seconds for a slot to open before failing, so bursts of
+/// concurrent ACP requests queue briefly instead of being rejected immediately.
 async fn acquire_acp_permit(
     mode: &str,
     tx: &mpsc::Sender<String>,
     ws_ctx: &events::CommandContext,
 ) -> Result<Option<tokio::sync::SemaphorePermit<'static>>, ()> {
     if matches!(mode, "pulse_chat" | "pulse_chat_probe") {
-        match crate::crates::web::ACP_SESSION_SEMAPHORE.try_acquire() {
-            Ok(permit) => Ok(Some(permit)),
+        const ACP_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(30);
+        match tokio::time::timeout(
+            ACP_ACQUIRE_TIMEOUT,
+            crate::crates::web::ACP_SESSION_SEMAPHORE.acquire(),
+        )
+        .await
+        {
+            Ok(Ok(permit)) => Ok(Some(permit)),
+            Ok(Err(_)) => {
+                // Semaphore closed — should never happen with a static semaphore.
+                send_error_dual(
+                    tx,
+                    ws_ctx,
+                    "ACP session semaphore closed unexpectedly".to_string(),
+                    None,
+                )
+                .await;
+                Err(())
+            }
             Err(_) => {
                 send_error_dual(
                     tx,
                     ws_ctx,
-                    "too many concurrent ACP sessions — try again shortly".to_string(),
+                    "ACP session queue full — timed out after 30s waiting for a slot".to_string(),
                     None,
                 )
                 .await;

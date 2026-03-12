@@ -371,7 +371,8 @@ export const useResolveSuggestion = (
 
       if (entries.length === 0) return
 
-      const nodeData = api.suggestion.suggestionData(entries[0][0])
+      // entries.length > 0 is guaranteed by the check above (length === 0 returns early)
+      const nodeData = api.suggestion.suggestionData(entries[0]![0])
 
       if (!nodeData) return
 

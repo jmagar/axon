@@ -11,6 +11,11 @@ pub async fn write_json_artifact(
 ) -> Result<serde_json::Value, ErrorData> {
     let text = serde_json::to_string_pretty(payload).map_err(|e| internal_error(e.to_string()))?;
     let path = build_artifact_path(stem, "json").await?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| internal_error(format!("failed to create artifact directory: {e}")))?;
+    }
 
     // Write to a sibling temp file first, then rename atomically.
     // This ensures that if the write fails, the original file (if any) is preserved.

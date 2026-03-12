@@ -1,5 +1,7 @@
 import type { AxonMessage } from '@/hooks/use-axon-session'
+import { createClientId as _createClientId } from '@/lib/client-id'
 import type { NeuralCanvasProfile } from '@/lib/pulse/neural-canvas-presets'
+import { getStorageItem } from '@/lib/storage'
 import type { RailMode } from './axon-ui-config'
 
 export type RightPane = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | 'cortex' | null
@@ -42,6 +44,7 @@ const LEGACY_KEY_MAP: [string, string][] = [
 ]
 
 function migrateShellStorageKeys(): void {
+  if (typeof window === 'undefined') return
   try {
     for (const [legacy, current] of LEGACY_KEY_MAP) {
       const old = window.localStorage.getItem(legacy)
@@ -67,44 +70,28 @@ export const SIDEBAR_WIDTH_MAX = 520
 export const PANE_WIDTH_MIN = 240
 
 export function readStoredFloat(key: string, fallback: number, min?: number, max?: number): number {
-  try {
-    const n = Number(window.localStorage.getItem(key))
-    if (!Number.isFinite(n) || n <= 0) return fallback
-    if (min !== undefined && max !== undefined) return Math.max(min, Math.min(max, n))
-    return n
-  } catch {
-    return fallback
-  }
+  const n = Number(getStorageItem(key))
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  if (min !== undefined && max !== undefined) return Math.max(min, Math.min(max, n))
+  return n
 }
 
 export function readStoredBool(key: string, fallback: boolean): boolean {
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (raw === null) return fallback
-    return raw === 'true'
-  } catch {
-    return fallback
-  }
+  const raw = getStorageItem(key)
+  if (raw === null) return fallback
+  return raw === 'true'
 }
 
 export function readStoredRailMode(key: string, fallback: RailMode): RailMode {
-  try {
-    const v = window.localStorage.getItem(key)
-    if (v === 'sessions' || v === 'files' || v === 'assistant') return v
-    return fallback
-  } catch {
-    return fallback
-  }
+  const v = getStorageItem(key)
+  if (v === 'sessions' || v === 'files' || v === 'assistant') return v
+  return fallback
 }
 
 export function readStoredDensity(key: string, fallback: AxonDensity): AxonDensity {
-  try {
-    const v = window.localStorage.getItem(key)
-    if (v === 'comfortable' || v === 'compact' || v === 'high') return v as AxonDensity
-    return fallback
-  } catch {
-    return fallback
-  }
+  const v = getStorageItem(key)
+  if (v === 'comfortable' || v === 'compact' || v === 'high') return v as AxonDensity
+  return fallback
 }
 
 export function buildEditorMarkdown(path: string) {
@@ -117,15 +104,9 @@ export function agentDisplayName(agent: string): string {
   return agent.charAt(0).toUpperCase() + agent.slice(1)
 }
 
+/** @deprecated Use {@link createClientId} from `@/lib/client-id` directly. */
 export function createClientId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID()
-    }
-  } catch {
-    // Fall through to deterministic fallback for non-secure origins.
-  }
-  return `preset-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+  return _createClientId()
 }
 
 export function buildAgentHandoffContext(

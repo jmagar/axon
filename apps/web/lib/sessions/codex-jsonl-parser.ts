@@ -143,7 +143,8 @@ export function parseCodexJsonl(raw: string): ParsedMessage[] {
       const assistant = ensureAssistantMessage(messages)
       const idx = assistant.toolUses.findLastIndex((tool) => tool.toolCallId === toolCallId)
       if (idx >= 0) {
-        const existing = assistant.toolUses[idx]
+        // idx is a valid index — findLastIndex only returns >= 0 for real matches
+        const existing = assistant.toolUses[idx]!
         assistant.toolUses[idx] = {
           ...existing,
           status: 'completed',
@@ -158,7 +159,8 @@ export function parseCodexJsonl(raw: string): ParsedMessage[] {
         (block) => block.type === 'tool_use' && block.toolCallId === toolCallId,
       )
       if (blockIdx >= 0) {
-        const block = assistant.blocks[blockIdx]
+        // blockIdx is a valid index — findLastIndex only returns >= 0 for real matches
+        const block = assistant.blocks[blockIdx]!
         if (block.type === 'tool_use') {
           assistant.blocks[blockIdx] = {
             ...block,

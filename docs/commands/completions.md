@@ -34,4 +34,4 @@ axon completions fish > ~/.config/fish/completions/axon.fish
 ## Notes
 
 - Completion generation is local-only and does not require Axon service env vars.
-- The generated scripts cover top-level commands, the `completion`/`completions` shell selector, and global long flags.
+- Scripts are generated from the canonical clap CLI definition, so command trees, flags, and value-enum options stay in sync with runtime parsing.

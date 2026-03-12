@@ -69,10 +69,14 @@ impl AxonMcpServer {
                 let result = crawl_svc::crawl_status(&cfg, id)
                     .await
                     .map_err(|e| logged_internal_error("operation", e))?;
+                let output_files = result.output_files;
                 Ok(AxonToolResponse::ok(
                     "crawl",
                     "status",
-                    serde_json::json!({ "job": result.payload }),
+                    serde_json::json!({
+                        "job": result.payload,
+                        "output_files": output_files,
+                    }),
                 ))
             }
             CrawlSubaction::Cancel => {

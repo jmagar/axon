@@ -34,7 +34,8 @@ export interface EditorArtifact {
 
 function extractTitle(md: string): string {
   const m = md.match(/^#{1,3}\s+(.+)$/m)
-  return m ? m[1].trim() : 'Document'
+  // m[1] is always defined when the match succeeds (capture group 1)
+  return m ? m[1]!.trim() : 'Document'
 }
 
 /** Body text with headings and blank lines stripped, up to `limit` chars. */

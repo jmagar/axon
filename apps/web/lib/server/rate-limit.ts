@@ -24,14 +24,72 @@ function evictExpired(now: number): void {
   }
 }
 
+/**
+ * Resolve the client IP address for rate-limit keying.
+ *
+ * TRUST MODEL — read before modifying:
+ *
+ * x-forwarded-for is a client-controlled header. Any client can set it to an
+ * arbitrary value, making IP-based rate limiting trivially bypassable if this
+ * header is blindly trusted without verifying the request path through a
+ * trusted proxy.
+ *
+ * Deployment scenarios and their security posture:
+ *
+ *   1. Direct access (no reverse proxy, default self-hosted setup):
+ *      x-forwarded-for is fully spoofable. A single attacker can impersonate
+ *      thousands of IPs by rotating the header. The MAX_COUNTER_KEYS cap is
+ *      the primary DoS defense: once 10 000 keys are tracked, new spoofed IPs
+ *      are immediately rate-limited (count > max, synthetic counter returned).
+ *
+ *   2. Behind a trusted reverse proxy (nginx, Caddy, Traefik):
+ *      The proxy overwrites or appends to x-forwarded-for with the real client
+ *      IP before forwarding. Set AXON_TRUST_PROXY=true in the environment to
+ *      opt into header-based IP extraction. Ensure the proxy strips any
+ *      client-supplied x-forwarded-for before adding its own.
+ *
+ *   3. Socket IP fallback (AXON_TRUST_PROXY unset or falsy):
+ *      Falls back to request.socket?.remoteAddress, which reflects the TCP
+ *      peer address and cannot be spoofed. In a direct-access deployment this
+ *      is the attacker's real IP. In a proxy deployment this would be the
+ *      proxy's IP (collapsing all clients to one key) — which is why the env
+ *      var opt-in exists.
+ *
+ * If you add a reverse proxy to this deployment, set AXON_TRUST_PROXY=true
+ * and configure the proxy to sanitize x-forwarded-for headers.
+ */
 function getClientIp(request: Request): string {
+  const trustProxy = process.env.AXON_TRUST_PROXY === 'true'
+
+  if (trustProxy) {
+    // Proxy is trusted: use the leftmost (client) IP from x-forwarded-for.
+    // The proxy must sanitize this header before forwarding.
+    const forwarded = request.headers.get('x-forwarded-for')
+    if (forwarded) {
+      const first = forwarded.split(',')[0]?.trim()
+      if (first) return first
+    }
+    const real = request.headers.get('x-real-ip')?.trim()
+    if (real) return real
+  }
+
+  // No trusted proxy: use socket remoteAddress (TCP peer, cannot be spoofed).
+  // In direct-access deployments this is the true client IP.
+  // Cast needed: Next.js Request wraps the Web API Request and exposes socket
+  // on the underlying IncomingMessage via the node:http adapter.
+  const socketIp = (request as unknown as { socket?: { remoteAddress?: string } }).socket
+    ?.remoteAddress
+  if (socketIp) return socketIp
+
+  // Last resort: fall back to x-forwarded-for even without proxy trust,
+  // so the rate limiter degrades gracefully rather than keying everything
+  // on 'unknown'. MAX_COUNTER_KEYS still caps spoofing damage.
   const forwarded = request.headers.get('x-forwarded-for')
   if (forwarded) {
     const first = forwarded.split(',')[0]?.trim()
     if (first) return first
   }
-  const real = request.headers.get('x-real-ip')?.trim()
-  if (real) return real
+
   return 'unknown'
 }
 

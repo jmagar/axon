@@ -5,7 +5,7 @@ use crate::crates::services::events::ServiceEvent;
 use crate::crates::services::types::{
     AcpAvailableCommand, AcpBridgeEvent, AcpCommandsUpdate, AcpConfigOption, AcpConfigSelectValue,
     AcpMcpServerConfig, AcpModeUpdate, AcpPermissionRequestEvent, AcpPlanEntry, AcpPlanUpdate,
-    AcpPromptTurnRequest, AcpSessionProbeRequest, AcpSessionUpdateEvent, AcpSessionUpdateKind,
+    AcpSessionUpdateEvent, AcpSessionUpdateKind,
 };
 use agent_client_protocol::{
     ContentBlock, EnvVariable, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
@@ -14,7 +14,7 @@ use agent_client_protocol::{
     SessionUpdate, ToolCallContent,
 };
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::AcpSessionSetupRequest;
 
@@ -327,128 +327,13 @@ fn extract_tool_input(update: &SessionUpdate) -> Option<serde_json::Value> {
     }
 }
 
-// ── Validation helpers ──────────────────────────────────────────────────────
+// ── Validation (extracted to mapping/validation.rs) ─────────────────────────
 
-pub fn validate_adapter_command(
-    adapter: &crate::crates::services::types::AcpAdapterCommand,
-) -> Result<(), Box<dyn Error>> {
-    let program = adapter.program.trim();
-    if program.is_empty() {
-        return Err("ACP adapter command cannot be empty".into());
-    }
-
-    // If the program looks like a path (contains separator), verify it resolves
-    // to a real file. Bare names (e.g. "claude") are resolved by execvp via PATH.
-    let path = Path::new(program);
-    // The nested if is intentional: outer guards path-like programs, inner is
-    // a fallible canonicalize with a meaningful "allow" comment after the block.
-    #[expect(clippy::collapsible_if)]
-    if program.contains(std::path::MAIN_SEPARATOR) || program.contains('/') {
-        if let Ok(canonical) = std::fs::canonicalize(path) {
-            if !canonical.is_file() {
-                return Err(format!(
-                    "ACP adapter path exists but is not a file: {}",
-                    canonical.display()
-                )
-                .into());
-            }
-        }
-        // If canonicalize fails (file doesn't exist), allow it -- the caller may
-        // install the binary before spawn. execvp will fail with a clear error.
-    }
-
-    // Reject known shell interpreters by basename to prevent command injection.
-    // The check is unconditional — bare names like "sh" or "bash" must be
-    // blocked just as firmly as full paths like "/bin/sh".
-    const BLOCKED_SHELLS: &[&str] = &[
-        "sh",
-        "bash",
-        "zsh",
-        "fish",
-        "dash",
-        "ksh",
-        "csh",
-        "tcsh",
-        "cmd",
-        "powershell",
-        "pwsh",
-    ];
-
-    // Derive the basename from the program string (handles both bare names and paths).
-    let basename = Path::new(program)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(program);
-    let basename_lower = basename.to_ascii_lowercase();
-    let stem = basename_lower
-        .strip_suffix(".exe")
-        .unwrap_or(&basename_lower);
-    if BLOCKED_SHELLS.contains(&stem) {
-        return Err(
-            format!("ACP adapter command must not be a shell interpreter: {basename}").into(),
-        );
-    }
-
-    // For path-style programs also check the resolved canonical path to catch
-    // symlinks like /tmp/safe_name -> /bin/bash.
-    if (program.contains('/') || program.contains('\\'))
-        && let Ok(canonical) = std::fs::canonicalize(path)
-        && let Some(canon_name) = canonical.file_name().and_then(|n| n.to_str())
-    {
-        let lower = canon_name.to_ascii_lowercase();
-        let canon_stem = lower.strip_suffix(".exe").unwrap_or(&lower);
-        if BLOCKED_SHELLS.contains(&canon_stem) {
-            return Err(format!(
-                "ACP adapter command resolves to a shell interpreter: {canon_name}"
-            )
-            .into());
-        }
-    }
-
-    Ok(())
-}
-
-pub fn validate_prompt_turn_request(req: &AcpPromptTurnRequest) -> Result<(), Box<dyn Error>> {
-    if req.prompt.is_empty() {
-        return Err("ACP prompt turn requires at least one prompt block".into());
-    }
-    if req
-        .session_id
-        .as_deref()
-        .is_some_and(|session_id| session_id.trim().is_empty())
-    {
-        return Err("ACP session_id cannot be blank when provided".into());
-    }
-    Ok(())
-}
-
-pub fn validate_probe_request(req: &AcpSessionProbeRequest) -> Result<(), Box<dyn Error>> {
-    if req
-        .session_id
-        .as_deref()
-        .is_some_and(|session_id| session_id.trim().is_empty())
-    {
-        return Err("ACP session_id cannot be blank when provided".into());
-    }
-    Ok(())
-}
-
-pub fn validate_session_cwd(cwd: &Path) -> Result<PathBuf, Box<dyn Error>> {
-    if !cwd.is_absolute() {
-        return Err("ACP session cwd must be an absolute path".into());
-    }
-    if !cwd.exists() {
-        return Err(format!("ACP session cwd does not exist: {}", cwd.display()).into());
-    }
-    if !cwd.is_dir() {
-        return Err(format!(
-            "ACP session cwd exists but is not a directory: {}",
-            cwd.display()
-        )
-        .into());
-    }
-    Ok(cwd.to_path_buf())
-}
+mod validation;
+pub use validation::{
+    validate_adapter_command, validate_probe_request, validate_prompt_turn_request,
+    validate_session_cwd,
+};
 
 // ── Session setup builder ───────────────────────────────────────────────────
 
