@@ -3,22 +3,14 @@ use axon::crates::services::types::{AcpAdapterCommand, AcpPromptTurnRequest};
 
 #[test]
 fn acp_scaffold_is_constructible() {
-    let adapter = AcpAdapterCommand {
-        program: "cat".to_string(),
-        args: vec![],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("cat", vec![]);
     let scaffold = AcpClientScaffold::new(adapter.clone());
     assert_eq!(scaffold.adapter(), &adapter);
 }
 
 #[test]
 fn acp_adapter_validation_rejects_empty_program() {
-    let adapter = AcpAdapterCommand {
-        program: "   ".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    };
+    let adapter = AcpAdapterCommand::new("   ", vec!["--stdio".to_string()]);
     let err = validate_adapter_command(&adapter).expect_err("empty command should fail");
     assert!(err.to_string().contains("cannot be empty"));
 }
@@ -29,6 +21,8 @@ fn acp_prompt_turn_request_is_constructible() {
         session_id: Some("session-1".to_string()),
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     assert_eq!(req.session_id.as_deref(), Some("session-1"));

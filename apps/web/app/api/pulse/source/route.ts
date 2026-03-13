@@ -22,10 +22,25 @@ function runAxonScrape(urls: string[]): Promise<CommandResult> {
     const commandPath = path.join(repoRoot, 'scripts', 'axon')
     // --json: emit structured JSON per URL (includes markdown field)
     // --embed is true by default, so content is indexed into Qdrant
+    const ALLOWED_ENV_KEYS = [
+      'HOME',
+      'PATH',
+      'SHELL',
+      'LANG',
+      'LC_ALL',
+      'USER',
+      'TERM',
+      'TMPDIR',
+      'TMP',
+      'TEMP',
+    ] as const
+    const safeEnv: NodeJS.ProcessEnv = Object.fromEntries(
+      ALLOWED_ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]!]),
+    ) as NodeJS.ProcessEnv
     const args = ['scrape', ...urls, '--json']
     const child = spawn(commandPath, args, {
       cwd: repoRoot,
-      env: process.env,
+      env: safeEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -114,15 +129,12 @@ export async function POST(request: Request) {
 
   const result = await runAxonScrape(urls)
   if (!result.ok) {
-    return apiError(502, 'Source indexing failed', {
-      detail: result.output.slice(0, 6000),
-    })
+    return apiError(502, 'Source indexing failed')
   }
 
   return NextResponse.json({
     indexed: urls,
     command: `./scripts/axon scrape ${urls.join(' ')} --json`,
-    output: result.output.slice(0, 6000),
     markdownBySrc: result.markdownBySrc,
   } satisfies PulseSourceResponse)
 }

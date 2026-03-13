@@ -1,6 +1,8 @@
 import { PassThrough, type Readable } from 'node:stream'
 import Dockerode from 'dockerode'
 import type { NextRequest } from 'next/server'
+import { logError, logWarn } from '@/lib/server/logger'
+import { enforceRateLimit } from '@/lib/server/rate-limit'
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI escape sequence stripping
 const ANSI_RE = /\x1b\[[0-9;]*[mGKHFJABCDfnsuhl]/g
@@ -56,6 +58,7 @@ function attachContainerStream(
         }
       })
       pt.on('error', (err: Error) => {
+        logError('api.logs.stream_error', { service: svc, message: err.message })
         sendLine(`[stream error] ${err.message}`, svc)
         onEnd()
       })
@@ -64,12 +67,19 @@ function attachContainerStream(
       })
     })
     .catch((err: unknown) => {
+      logError('api.logs.attach_failed', {
+        service: svc,
+        message: err instanceof Error ? err.message : String(err),
+      })
       sendLine(`[stream error] ${err instanceof Error ? err.message : String(err)}`, svc)
       onEnd()
     })
 }
 
 export async function GET(req: NextRequest) {
+  const limited = enforceRateLimit('api.logs', req, { max: 30, windowMs: 60_000 })
+  if (limited) return limited
+
   const service = req.nextUrl.searchParams.get('service') ?? 'axon-workers'
   const tail = Math.min(Number(req.nextUrl.searchParams.get('tail') ?? '200'), 1000)
   const isAll = service === 'all'
@@ -116,6 +126,7 @@ export async function GET(req: NextRequest) {
       }
 
       req.signal.addEventListener('abort', () => {
+        logWarn('api.logs.stream_aborted', { service, targetCount: targets.length })
         for (const s of logStreams) s.destroy()
         close()
       })

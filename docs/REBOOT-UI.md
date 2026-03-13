@@ -1,9 +1,10 @@
-# Reboot Shell — UI Design Language
-Last updated: 2026-03-07
+# Axon Shell — UI Design Language
 
-Canonical source of truth for the Reboot Shell's visual design language, component patterns, and layout architecture. The Reboot Shell is a three-pane IDE-like conversation workspace built on the Axon design system (`docs/UI-DESIGN-SYSTEM.md`). This document extends that foundation with shell-specific conventions.
+Last updated: 2026-03-09
 
-> **Relationship to `UI-DESIGN-SYSTEM.md`:** That document defines the global token system (colors, typography, surfaces, borders, shadows, motion). This document defines how the Reboot Shell *applies* those tokens, plus shell-specific patterns not covered by the global system.
+Canonical source of truth for the Axon Shell's visual design language, component patterns, and layout architecture. The Axon Shell is a three-pane IDE-like conversation workspace built on the Axon design system (`docs/UI-DESIGN-SYSTEM.md`). This document extends that foundation with shell-specific conventions.
+
+> **Relationship to `UI-DESIGN-SYSTEM.md`:** That document defines the global token system (colors, typography, surfaces, borders, shadows, motion). This document defines how the Axon Shell *applies* those tokens, plus shell-specific patterns not covered by the global system.
 
 ---
 
@@ -36,19 +37,19 @@ Canonical source of truth for the Reboot Shell's visual design language, compone
 ### Component Tree
 
 ```
-RebootFrame
+AxonFrame
   ├── NeuralCanvas (profile="current")
   ├── Atmospheric gradient overlays (2 layers)
-  └── RebootShell (orchestrator — 555 lines)
+  └── AxonShell (orchestrator — 555 lines)
         ├── [Mobile] Header bar + PulseMobilePaneSwitcher
-        ├── [Mobile] RebootSidebar (variant="mobile")
-        ├── [Mobile] Chat pane (Conversation + RebootMessageList + RebootPromptComposer)
+        ├── [Mobile] AxonSidebar (variant="mobile")
+        ├── [Mobile] Chat pane (Conversation + AxonMessageList + AxonPromptComposer)
         ├── [Mobile] Editor pane (PulseEditorPane, dynamic import, ssr: false)
         ├── [Mobile] Terminal drawer (absolute positioned)
         ├── [Desktop] CSS Grid (3 columns, animated transitions)
-        │     ├── RebootSidebar (variant="desktop") | RebootPaneHandle
-        │     ├── Chat pane | RebootPaneHandle
-        │     └── Editor pane | RebootPaneHandle
+        │     ├── AxonSidebar (variant="desktop") | AxonPaneHandle
+        │     ├── Chat pane | AxonPaneHandle
+        │     └── Editor pane | AxonPaneHandle
         └── [Desktop] Terminal strip (border-top, below grid)
 ```
 
@@ -56,20 +57,20 @@ RebootFrame
 
 | File | Lines | Responsibility |
 |------|-------|---------------|
-| `reboot-shell.tsx` | ~555 | Orchestrator — state, layout, event wiring |
-| `reboot-sidebar.tsx` | ~393 | Unified sidebar (mobile + desktop via `variant` prop) |
-| `reboot-message-list.tsx` | ~205 | `React.memo` message list + bubble constants |
-| `reboot-prompt-composer.tsx` | ~304 | Composer + model/permission/tools dropdowns |
-| `reboot-terminal-pane.tsx` | ~95 | Terminal emulator wrapper |
-| `reboot-pane-handle.tsx` | ~27 | Collapsed pane handle |
-| `reboot-frame.tsx` | ~15 | Background frame (NeuralCanvas + gradients) |
-| `reboot-mock-data.ts` | ~280 | Types + mock data constants |
+| `axon-shell.tsx` | ~555 | Orchestrator — state, layout, event wiring |
+| `axon-sidebar.tsx` | ~393 | Unified sidebar (mobile + desktop via `variant` prop) |
+| `axon-message-list.tsx` | ~205 | `React.memo` message list + bubble constants |
+| `axon-prompt-composer.tsx` | ~304 | Composer + model/permission/tools dropdowns |
+| `axon-terminal-pane.tsx` | ~95 | Terminal emulator wrapper |
+| `axon-pane-handle.tsx` | ~27 | Collapsed pane handle |
+| `axon-frame.tsx` | ~15 | Background frame (NeuralCanvas + gradients) |
+| `axon-ui-config.ts` | ~280 | Types + UI configuration constants |
 
 ---
 
 ## 2. Visual Identity
 
-The Reboot Shell sits on top of the Axon design system but adds its own atmosphere:
+The Axon Shell sits on top of the Axon design system but adds its own atmosphere:
 
 - **Background**: NeuralCanvas (bioluminescent animated particles) at z-0
 - **Gradient overlay 1**: `radial-gradient(circle_at_top, rgba(135,175,255,0.16), transparent 26%), radial-gradient(circle_at_80%_15%, rgba(255,135,175,0.12), transparent 20%), linear-gradient(180deg, rgba(3,8,23,0.2), rgba(3,8,23,0.55))`
@@ -153,7 +154,7 @@ Shell-specific glass tokens (defined in `globals.css`):
 ### User Bubble
 
 ```tsx
-const REBOOT_USER_BUBBLE_CLASS =
+const AXON_USER_BUBBLE_CLASS =
   'rounded-xl border border-[var(--border-standard)] ' +
   'bg-[linear-gradient(140deg,rgba(135,175,255,0.28),rgba(135,175,255,0.12))] ' +
   'px-4 py-3 shadow-[var(--shadow-md)] text-[var(--text-primary)] text-sm'
@@ -166,7 +167,7 @@ const REBOOT_USER_BUBBLE_CLASS =
 ### Agent Bubble
 
 ```tsx
-const REBOOT_ASSISTANT_BUBBLE_CLASS =
+const AXON_ASSISTANT_BUBBLE_CLASS =
   'rounded-xl border border-[rgba(255,135,175,0.18)] ' +
   'bg-[linear-gradient(140deg,rgba(255,135,175,0.1),rgba(10,18,35,0.55))] ' +
   'px-4 py-3 shadow-[0_6px_18px_rgba(3,7,18,0.3)] text-[var(--text-secondary)] text-sm'
@@ -210,7 +211,7 @@ style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
 
 ## 6. Sidebar Rail
 
-Unified component: `RebootSidebar` with `variant: 'mobile' | 'desktop'`.
+Unified component: `AxonSidebar` with `variant: 'mobile' | 'desktop'`.
 
 ### Variant Sizing
 
@@ -230,8 +231,15 @@ Dropdown button in toolbar area — switches between 4 modes:
 |------|------|---------|
 | `sessions` | `MessageSquareText` | Flat session list with unread indicators |
 | `files` | `FolderOpen` | FileTree component with count label |
-| `pages` | `PanelLeft` | App navigation links with `aria-current="page"` |
-| `agents` | `Bot` | Agent status list (non-interactive `<div>`, not `<button>`) |
+| `assistant` | `Bot` | Assistant-scoped view powered by the unified sessions endpoint (`/api/sessions/list?assistant_mode=true`) across Claude/Codex/Gemini stores |
+
+Assistant mode sends `assistant_mode: true` in the `pulse_chat` WS flags. The backend resolves
+assistant turns to `$AXON_DATA_DIR/axon/assistant` (fallback:
+`~/.local/share/axon/axon/assistant`) and scopes ACP connection reuse by agent+mode.
+
+Assistant session title/preview hygiene:
+- Sidebars prefer substantive user prompts (adaptive first-vs-latest heuristic).
+- `[System context ...][User message]` wrappers are stripped from both chat display and sidebar previews.
 
 ### Rail Item Active State
 
@@ -261,7 +269,7 @@ Top-left of sidebar:
 ### Panel Surface
 
 ```tsx
-const REBOOT_COMPOSER_PANEL_CLASS =
+const AXON_COMPOSER_PANEL_CLASS =
   'border-[rgba(175,215,255,0.14)] ' +
   'bg-[linear-gradient(180deg,rgba(10,18,35,0.92),rgba(5,10,22,0.98))] ' +
   'shadow-[0_14px_40px_rgba(0,0,0,0.34)] backdrop-blur-xl'
@@ -536,7 +544,7 @@ className="bg-[var(--axon-primary)] text-[#04111f] hover:bg-[var(--axon-primary-
 - Chat header: `h-14`, `px-4`
 - Chat content: `px-4 py-4`
 - Composer: full-size (no `compact` prop)
-- Sidebar has collapse button → `RebootPaneHandle`
+- Sidebar has collapse button → `AxonPaneHandle`
 - Minimum pane heights: `min-h-[420px]`
 
 ---
@@ -597,7 +605,7 @@ Shell-specific animation usage (keyframes defined in `globals.css`):
 | Split sessions into "active" / "recent" sections | Use flat list with `hasUnread` dot indicator |
 | Use `<button>` for non-interactive elements | Use `<div>` for display-only items (agents) |
 | Use `animate-pulse` for typing indicator | Use custom `animate-typing-dot` (800ms, scale transform) |
-| Use `Date.now()` for message IDs | Use `crypto.randomUUID()` |
+| Assume `crypto.randomUUID()` is always available | Use `createClientMessageId()` with secure-context fallback |
 | Duplicate mobile/desktop sidebar code | Use single component with `variant` prop |
 | Use inline `style` objects for terminal search | Use Tailwind classes |
 | Use `--axon-accent-*` or `--axon-text-*` tokens | Use v2 tokens (`--axon-primary`, `--text-primary`, etc.) |

@@ -1,5 +1,5 @@
 # axon_cli — Axon CLI (Rust + Spider.rs)
-Last Modified: 2026-03-06
+Last Modified: 2026-03-10
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 
@@ -19,6 +19,7 @@ docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chr
 cargo run --bin axon -- crawl worker
 cargo run --bin axon -- embed worker
 cargo run --bin axon -- extract worker
+cargo run --bin axon -- graph worker
 
 # 4. Run the web frontend locally
 cd apps/web && pnpm dev    # → http://localhost:49010
@@ -62,12 +63,10 @@ MCP docs:
 | `embed [input]` | Embed file/dir/URL into Qdrant | Yes (default) |
 | `query <text>` | Semantic vector search | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
-| `ask <question>` | RAG: search + LLM answer | No |
+| `ask <question>` | RAG: search + LLM answer. Use `--graph` to inject Neo4j graph context when configured. | No |
 | `evaluate <question>` | RAG vs baseline + independent LLM judge (accuracy, relevance, completeness, specificity, verdict) | No |
 | `suggest [focus]` | Suggest new docs URLs to crawl | No |
-| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
-| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
-| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `ingest <target>` | Ingest external source (GitHub repo, Reddit subreddit/thread, YouTube video/playlist/channel) — auto-detects source type from target. GitHub: source code indexed by default with tree-sitter AST chunking; use `--no-source` to skip. | Yes (default) |
 | `sessions [format]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
@@ -76,7 +75,8 @@ MCP docs:
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `mcp` | Start MCP stdio server | No |
-| `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list) | Yes (default) |
+| `refresh <url>` | Periodic URL re-indexing (schedule, status, cancel, list). Supports `github:owner/repo` schedules with `pushed_at` gating. | Yes (default) |
+| `graph <sub>` | Knowledge graph operations: `build`, `status`, `explore`, `stats`, `worker`. Requires `AXON_NEO4J_URL`. | Depends |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
 
 ### Job Subcommands (for crawl / extract / embed / refresh)
@@ -103,6 +103,7 @@ All flags are `--global` (usable with any subcommand).
 | `--wait <bool>` | bool | `false` | Run synchronously and block until completion. Without this, async commands enqueue and return immediately. |
 | `--yes` | flag | `false` | Skip confirmation prompts (non-interactive mode). |
 | `--json` | flag | `false` | Machine-readable JSON output on stdout. |
+| `--graph` | flag | `false` | Enable graph-enhanced retrieval for `ask` (requires Neo4j). |
 
 #### Crawl & Scrape
 
@@ -197,6 +198,12 @@ High-level subsystem map:
   - job states in `crates/jobs/status.rs`
 - Vector + RAG:
   - `crates/vector/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
+- Services layer (services-first contract):
+  - `crates/services/` — typed entry points consumed by both CLI handlers and MCP/web routes
+  - CLI commands call `crates/services::{query,retrieve,ask,sources,domains,stats,system}` — **not** raw `run_*_native()` functions (those are removed)
+  - Each service function returns a typed `ServiceResult` struct (defined in `crates/services/types/service.rs`) — no raw JSON printing or stdout side-effects
+  - MCP handlers and web routes call the same service functions, mapping typed results to wire format
+  - ACP orchestration lives in `crates/services/acp/` (session lifecycle, permission bridge, adapter subprocess)
 - MCP server:
   - `crates/mcp/` (schema, server routing, handler modules, config)
   - Single `axon` tool with `action`/`subaction` routing
@@ -283,15 +290,28 @@ AXON_CRAWL_QUEUE=axon.crawl.jobs
 AXON_EXTRACT_QUEUE=axon.extract.jobs
 AXON_EMBED_QUEUE=axon.embed.jobs
 AXON_INGEST_QUEUE=axon.ingest.jobs
+AXON_GRAPH_QUEUE=axon.graph.jobs
 AXON_COLLECTION=cortex              # Qdrant collection (default: cortex)
+
+# Neo4j / GraphRAG (optional — graph features are disabled when AXON_NEO4J_URL is empty)
+AXON_NEO4J_URL=bolt://localhost:7687
+AXON_NEO4J_USER=neo4j
+AXON_NEO4J_PASSWORD=
+AXON_GRAPH_CONCURRENCY=4
+AXON_GRAPH_LLM_URL=http://localhost:11434
+AXON_GRAPH_LLM_MODEL=qwen3.5:2b
+AXON_GRAPH_SIMILARITY_THRESHOLD=0.75
+AXON_GRAPH_SIMILARITY_LIMIT=20
+AXON_GRAPH_CONTEXT_MAX_CHARS=2000
+AXON_GRAPH_TAXONOMY_PATH=
 
 # Search and research (required for search/research commands)
 TAVILY_API_KEY=your-tavily-api-key
 
-# Ingest credentials (required for github/reddit/youtube commands)
+# Ingest credentials (Reddit required; GitHub optional for higher rate limits)
 GITHUB_TOKEN=                       # optional — raises GitHub rate limits
-REDDIT_CLIENT_ID=                   # required for reddit command
-REDDIT_CLIENT_SECRET=               # required for reddit command
+REDDIT_CLIENT_ID=                   # required for Reddit ingest targets
+REDDIT_CLIENT_SECRET=               # required for Reddit ingest targets
 
 # Worker tuning (optional, defaults shown)
 AXON_INGEST_LANES=2                 # parallel ingest worker lanes
@@ -343,7 +363,7 @@ The CLI auto-detects whether it's running inside Docker:
 ## Gotchas
 
 ### `--wait false` (default) = fire-and-forget
-By default, `crawl`, `extract`, `embed`, `github`, `reddit`, and `youtube` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
+By default, `crawl`, `extract`, `embed`, and `ingest` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
 
 ### `render-mode auto-switch`
 The default mode. Runs an HTTP crawl first; if >60% of pages are thin (<200 chars) or total coverage is too low, automatically retries with Chrome. Chrome requires a running Chrome instance — if none is available, the HTTP result is kept.
@@ -531,3 +551,24 @@ All tables share: `created_at`, `updated_at`, `started_at`, `finished_at` (TIMES
 - Errors bubble via `Box<dyn Error>` at command boundaries; internal helpers return typed errors
 - Structured log output via `log_info` / `log_warn` (not `println!` in library code)
 - `--json` flag enables machine-readable output on all commands that print results
+
+### Module Layout — Modern Rust Convention (ENFORCED)
+
+**Never use `mod.rs`.** Use the Rust 2018+ file-per-module layout:
+
+```plaintext
+# WRONG — do not do this
+foo/
+└── mod.rs      ← forbidden
+
+# CORRECT
+foo.rs          ← module root lives here
+foo/
+├── bar.rs      ← submodule
+└── baz.rs      ← submodule
+```
+
+- Module root always lives in `foo.rs`, never `foo/mod.rs`
+- Submodules live in `foo/bar.rs`, declared with `mod bar;` inside `foo.rs`
+- When splitting an existing `foo/mod.rs`: copy it to `foo.rs`, delete `foo/mod.rs` — the submodule files stay in `foo/` unchanged
+- This applies everywhere: `crates/`, `crates/*/`, nested modules — no exceptions

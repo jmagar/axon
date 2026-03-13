@@ -2,16 +2,13 @@
 
 import type { Dispatch, SetStateAction } from 'react'
 import type { CrawlFile, WsLifecycleEntry, WsServerMsg } from '@/lib/ws-protocol'
-import { lifecycleFromJobProgress, lifecycleFromJobStatus } from '@/lib/ws-protocol'
 import {
   buildWorkspaceHandoffPrompt,
   MAX_LOG_LINES,
   pushCapped,
+  reduceRuntimeState,
   setStatusResultLine,
   summarizeJsonValue,
-  toCancelResponse,
-  toCrawlProgress,
-  toScreenshotFiles,
 } from './runtime'
 import type {
   CancelResponseState,
@@ -19,6 +16,7 @@ import type {
   LogLine,
   RecentRun,
   ScreenshotFile,
+  WsMessagesRuntimeState,
 } from './types'
 
 export interface MessageHandlerRefs {
@@ -31,6 +29,8 @@ export interface MessageHandlerRefs {
   currentOutputDirRef: React.RefObject<string | null>
   virtualFileContentByPathRef: React.RefObject<Record<string, string>>
   runIdCounter: React.RefObject<number>
+  /** Current snapshot of WsMessagesRuntimeState — kept in sync by the hook. */
+  runtimeStateRef: React.RefObject<WsMessagesRuntimeState>
 }
 
 export interface MessageHandlerSetters {
@@ -55,6 +55,72 @@ export interface MessageHandlerSetters {
   setWorkspacePrompt: Dispatch<SetStateAction<string | null>>
   setWorkspacePromptVersion: Dispatch<SetStateAction<number>>
   setCurrentJobIdTracked: (jobId: string | null) => void
+}
+
+const RUNTIME_MESSAGE_TYPES = new Set<WsServerMsg['type']>([
+  'log',
+  'file_content',
+  'crawl_files',
+  'crawl_progress',
+  'command.start',
+  'command.output.line',
+  'command.output.json',
+  'command.done',
+  'command.error',
+  'job.status',
+  'job.progress',
+  'artifact.list',
+  'artifact.content',
+  'job.cancel.response',
+])
+
+export function isRuntimeRelevantWsMessage(msg: WsServerMsg): boolean {
+  return RUNTIME_MESSAGE_TYPES.has(msg.type)
+}
+
+// ── Runtime state flush ──────────────────────────────────────────────────────
+
+/**
+ * Apply the fields from a WsMessagesRuntimeState snapshot to the individual React
+ * state setters. Called after reduceRuntimeState() produces a new snapshot so
+ * that handleWsMessage delegates runtime-slice logic to the reducer rather than
+ * duplicating it.
+ *
+ * Only fields that actually changed are dispatched to avoid extra re-renders.
+ */
+function flushRuntimeState(
+  prev: WsMessagesRuntimeState,
+  next: WsMessagesRuntimeState,
+  setters: MessageHandlerSetters,
+  refs: MessageHandlerRefs,
+): void {
+  if (next.currentJobId !== prev.currentJobId) {
+    setters.setCurrentJobIdTracked(next.currentJobId)
+  }
+  if (next.commandMode !== prev.commandMode) {
+    setters.setCommandMode(next.commandMode)
+  }
+  if (next.markdownContent !== prev.markdownContent) {
+    setters.setMarkdownContent(next.markdownContent)
+  }
+  if (next.crawlProgress !== prev.crawlProgress) {
+    setters.setCrawlProgress(next.crawlProgress)
+  }
+  if (next.screenshotFiles !== prev.screenshotFiles) {
+    setters.setScreenshotFiles(next.screenshotFiles)
+  }
+  if (next.lifecycleEntries !== prev.lifecycleEntries) {
+    setters.setLifecycleEntries(next.lifecycleEntries)
+  }
+  if (next.stdoutJson !== prev.stdoutJson) {
+    setters.setStdoutJson(next.stdoutJson)
+    // Note: stdoutJsonRef.current is also updated by setStdoutJsonTracked in the hook.
+  }
+  if (next.cancelResponse !== prev.cancelResponse) {
+    setters.setCancelResponse(next.cancelResponse)
+  }
+  // Keep runtimeStateRef in sync so subsequent messages see updated state.
+  refs.runtimeStateRef.current = next
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -88,25 +154,15 @@ function handleCommandOutputJson(
   refs: MessageHandlerRefs,
   setters: MessageHandlerSetters,
 ) {
+  // currentJobId and stdoutJson are already flushed via reduceRuntimeState in
+  // handleWsMessage before this function is called — do not duplicate them here.
   const { currentInputRef, virtualFileContentByPathRef } = refs
-  const {
-    setCrawlFiles,
-    setCurrentOutputDir,
-    setHasResults,
-    setStdoutJson,
-    setVirtualFileContentByPath,
-    setCurrentJobIdTracked,
-  } = setters
+  const { setCrawlFiles, setCurrentOutputDir, setHasResults, setVirtualFileContentByPath } = setters
 
   const maybeJobData =
     msg.data.data && typeof msg.data.data === 'object' && !Array.isArray(msg.data.data)
       ? (msg.data.data as Record<string, unknown>)
       : null
-  const maybeJobId =
-    maybeJobData && typeof maybeJobData.job_id === 'string' ? maybeJobData.job_id : null
-  if (maybeJobId) {
-    setCurrentJobIdTracked(maybeJobId)
-  }
   if (maybeJobData && typeof maybeJobData.output_dir === 'string') {
     setCurrentOutputDir(maybeJobData.output_dir)
   }
@@ -152,7 +208,6 @@ function handleCommandOutputJson(
       ]
     })
   }
-  setStdoutJson((prev) => pushCapped(prev, msg.data.data))
   setHasResults(true)
 }
 
@@ -238,6 +293,22 @@ export function handleWsMessage(
 ): void {
   if (msg.type === 'stats') return
 
+  // Delegate runtime-slice state to reduceRuntimeState, then flush changes.
+  // This keeps reduceRuntimeState as the single source of truth for the fields
+  // in WsMessagesRuntimeState — no logic is duplicated here.
+  //
+  // Exception: artifact.content has a handler-level guard (skip auto-set when
+  // in scrape/crawl/extract mode without an explicit file selection) that cannot
+  // be expressed in the pure reducer without access to refs, so it is handled
+  // inline below and the reducer case is bypassed for that message type.
+  if (msg.type !== 'artifact.content') {
+    const prev = refs.runtimeStateRef.current
+    const next = reduceRuntimeState(prev, msg)
+    if (next !== prev) {
+      flushRuntimeState(prev, next, setters, refs)
+    }
+  }
+
   switch (msg.type) {
     case 'log':
       setters.setLogLines((prev) =>
@@ -245,58 +316,62 @@ export function handleWsMessage(
       )
       break
     case 'file_content':
+      // file_content is a legacy message type not handled by reduceRuntimeState.
+      // Sync runtimeStateRef manually so subsequent messages see up-to-date markdownContent.
       setters.setMarkdownContent(msg.content)
+      refs.runtimeStateRef.current = {
+        ...refs.runtimeStateRef.current,
+        markdownContent: msg.content,
+      }
       setters.setHasResults(true)
       break
     case 'crawl_files':
       setters.setCrawlFiles(msg.files)
       setters.setCurrentOutputDir(msg.output_dir)
       setters.setHasResults(true)
+      // job_id and selectedFile guards are outside the runtime slice — stay here.
       setters.setCurrentJobIdTracked(msg.job_id ?? null)
       setters.setSelectedFile((prev) =>
         prev && msg.files.some((file) => file.relative_path === prev) ? prev : null,
       )
       break
     case 'crawl_progress':
-      setters.setCrawlProgress(toCrawlProgress(msg))
+      // crawl_progress runtime fields (crawlProgress) are handled via reduceRuntimeState above.
+      // currentJobId from msg.job_id is outside the reducer path for this message type.
       if (msg.job_id) setters.setCurrentJobIdTracked(msg.job_id)
       break
     case 'command.start':
-      setters.setCommandMode(msg.data.ctx.mode)
+      // commandMode and stdoutJson are flushed via reduceRuntimeState above.
+      // stdoutLines is outside the runtime slice — clear it here.
       setters.setStdoutLines([])
-      setters.setStdoutJson([])
       break
     case 'command.output.json':
+      // currentJobId and stdoutJson are flushed via reduceRuntimeState above.
+      // scrape/extract virtual file handling, output_dir, and hasResults are
+      // outside the runtime slice — delegate to the dedicated handler.
       handleCommandOutputJson(msg, refs, setters)
       break
     case 'command.output.line':
       setters.setStdoutLines((prev) => pushCapped(prev, msg.data.line))
       setters.setHasResults(true)
       break
-    case 'job.status': {
-      const lifecycle = lifecycleFromJobStatus(msg, refs.currentJobIdRef.current)
-      if (lifecycle) {
-        setters.setCurrentJobIdTracked(lifecycle.job_id)
-        setters.setLifecycleEntries((prev) => pushCapped(prev, lifecycle))
-        setters.setStdoutJson((prev) => pushCapped(prev, lifecycle))
-      }
+    case 'job.status':
+      // currentJobId, lifecycleEntries, stdoutJson flushed via reduceRuntimeState above.
       setters.setHasResults(true)
       break
-    }
-    case 'job.progress': {
-      const lifecycle = lifecycleFromJobProgress(msg, refs.currentJobIdRef.current)
-      if (lifecycle) {
-        setters.setLifecycleEntries((prev) => pushCapped(prev, lifecycle))
-        setters.setStdoutJson((prev) => pushCapped(prev, lifecycle))
-      }
+    case 'job.progress':
+      // lifecycleEntries, stdoutJson flushed via reduceRuntimeState above.
       setters.setHasResults(true)
       break
-    }
     case 'artifact.list':
-      setters.setScreenshotFiles(toScreenshotFiles(msg.data.artifacts))
+      // screenshotFiles flushed via reduceRuntimeState above.
       setters.setHasResults(true)
       break
-    case 'artifact.content':
+    case 'artifact.content': {
+      // Handler-level guard: in scrape/crawl/extract mode, only set markdownContent
+      // when the user has explicitly selected a file. The pure reducer cannot express
+      // this without access to refs, so we bypass the reducer for this message type
+      // (see the pre-switch block above) and handle it inline.
       if (
         (refs.currentModeRef.current === 'scrape' ||
           refs.currentModeRef.current === 'crawl' ||
@@ -306,10 +381,16 @@ export function handleWsMessage(
         break
       }
       setters.setMarkdownContent(msg.data.content)
+      refs.runtimeStateRef.current = {
+        ...refs.runtimeStateRef.current,
+        markdownContent: msg.data.content,
+      }
       setters.setHasResults(true)
       break
+    }
     case 'job.cancel.response':
-      setters.setCancelResponse(toCancelResponse(msg.data.payload))
+      // cancelResponse flushed via reduceRuntimeState above.
+      // Log line side-effect is outside the runtime slice — stays here.
       setStatusResultLine(setters.setLogLines, msg.data.payload.ok, msg.data.payload.message)
       break
     case 'command.done':

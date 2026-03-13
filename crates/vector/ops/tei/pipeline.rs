@@ -1,6 +1,6 @@
 use super::{EmbedProgress, EmbedSummary, PreparedDoc, qdrant_store, tei_client::tei_embed};
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::vector::ops::qdrant::{env_usize_clamped, qdrant_delete_by_url_filter};
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -51,6 +51,11 @@ async fn embed_prepared_doc(
         )
         .into());
     }
+    log_debug(&format!(
+        "embed_doc url={} chunk_count={}",
+        doc.url,
+        doc.chunks.len()
+    ));
     let dim = vectors[0].len();
     let timestamp = Utc::now().to_rfc3339();
     let mut points = Vec::with_capacity(vectors.len());
@@ -105,6 +110,7 @@ pub(super) async fn run_embed_pipeline(
     progress_tx: Option<tokio::sync::mpsc::Sender<EmbedProgress>>,
 ) -> Result<EmbedSummary, Box<dyn Error>> {
     let docs_embedded = prepared.len();
+    log_info(&format!("embed_pipeline docs={}", docs_embedded));
     let doc_timeout_secs = env_usize_clamped("AXON_EMBED_DOC_TIMEOUT_SECS", 300, 10, 7200) as u64;
     let doc_concurrency = env_usize_clamped(
         "AXON_EMBED_DOC_CONCURRENCY",

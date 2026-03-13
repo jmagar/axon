@@ -121,12 +121,100 @@ async fn apply_browser_settings(
                 true,
                 Some(std::path::PathBuf::from(&cfg.output_dir)),
             )));
+        } else {
+            // spider 2.46.0 has a default screenshot save path when screenshot
+            // config is None. Explicitly set save=false/bytes=false to avoid
+            // unintended filesystem writes (and noisy filename-too-long errors
+            // from malformed discovered URLs).
+            website.with_screenshot(Some(ScreenShotConfig::new(
+                ScreenshotParams::default(),
+                false,
+                false,
+                None,
+            )));
         }
         website = website
             .build()
             .map_err(|e| format!("failed to build website with chrome settings: {e}"))?;
     }
     Ok(website)
+}
+
+fn apply_limit_and_behavior_settings(cfg: &Config, website: &mut Website, start_url: &str) {
+    website.with_depth(cfg.max_depth);
+    website.with_subdomains(cfg.include_subdomains);
+    website.with_tld(false);
+    if cfg.max_pages > 0 {
+        website.with_limit(cfg.max_pages);
+    }
+    if cfg.respect_robots {
+        website.with_respect_robots_txt(true);
+    }
+    if let Some(limit) = cfg.crawl_concurrency_limit {
+        website.with_concurrency_limit(Some(limit.max(1)));
+    }
+    if cfg.delay_ms > 0 {
+        website.with_delay(cfg.delay_ms);
+    }
+    if cfg.shared_queue {
+        website.with_shared_queue(true);
+    }
+    let mut blacklist_patterns: Vec<spider::compact_str::CompactString> = ssrf_blacklist_patterns()
+        .iter()
+        .copied()
+        .map(Into::into)
+        .collect();
+    if !cfg.exclude_path_prefix.is_empty() {
+        blacklist_patterns.extend(
+            build_exclude_blacklist_patterns(start_url, &cfg.exclude_path_prefix)
+                .into_iter()
+                .map(Into::into),
+        );
+    }
+    website.with_blacklist_url(Some(blacklist_patterns));
+}
+
+fn apply_request_and_identity_settings(cfg: &Config, website: &mut Website) {
+    website.set_on_link_find(|url, html| {
+        if is_junk_discovered_url(url.as_ref()) {
+            (CaseInsensitiveString::default(), None)
+        } else {
+            (url, html)
+        }
+    });
+    if let Some(timeout_ms) = cfg.request_timeout_ms {
+        website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
+    }
+    if cfg.fetch_retries > 0 {
+        website.with_retry(cfg.fetch_retries.min(u8::MAX as usize) as u8);
+    }
+    website.with_normalize(cfg.normalize);
+    if let Some(ref proxy) = cfg.chrome_proxy {
+        website.with_proxies(Some(vec![proxy.clone()]));
+    }
+    if let Some(ref ua) = cfg.chrome_user_agent {
+        website.with_user_agent(Some(ua.as_str()));
+    }
+}
+
+fn apply_custom_headers(cfg: &Config, website: &mut Website) {
+    if cfg.custom_headers.is_empty() {
+        return;
+    }
+    let mut map = reqwest::header::HeaderMap::new();
+    for raw in &cfg.custom_headers {
+        if let Some((k, v)) = raw.split_once(": ")
+            && let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                reqwest::header::HeaderValue::from_str(v),
+            )
+        {
+            map.insert(name, val);
+        }
+    }
+    if !map.is_empty() {
+        website.with_headers(Some(map));
+    }
 }
 
 pub(super) async fn configure_website(
@@ -150,92 +238,9 @@ pub(super) async fn configure_website_with_crawl_id(
     if let Some(id) = crawl_id {
         website.with_crawl_id(id.to_string());
     }
-    website.with_depth(cfg.max_depth);
-    website.with_subdomains(cfg.include_subdomains);
-    // Disable TLD crawling unconditionally — we don't want to silently expand
-    // example.com into example.co.uk, example.de, etc. If TLD-scope crawling
-    // is ever needed, add an explicit --include-tld flag.
-    website.with_tld(false);
-
-    if cfg.max_pages > 0 {
-        website.with_limit(cfg.max_pages);
-    }
-
-    if cfg.respect_robots {
-        website.with_respect_robots_txt(true);
-    }
-    if let Some(limit) = cfg.crawl_concurrency_limit {
-        website.with_concurrency_limit(Some(limit.max(1)));
-    }
-    if cfg.delay_ms > 0 {
-        website.with_delay(cfg.delay_ms);
-    }
-    if cfg.shared_queue {
-        website.with_shared_queue(true);
-    }
-    // Always apply SSRF protection. Append path exclusions if configured.
-    let mut blacklist_patterns: Vec<spider::compact_str::CompactString> = ssrf_blacklist_patterns()
-        .iter()
-        .copied()
-        .map(Into::into)
-        .collect();
-    if !cfg.exclude_path_prefix.is_empty() {
-        blacklist_patterns.extend(
-            build_exclude_blacklist_patterns(start_url, &cfg.exclude_path_prefix)
-                .into_iter()
-                .map(Into::into),
-        );
-    }
-    website.with_blacklist_url(Some(blacklist_patterns));
-
-    // Drop junk URLs that spider's link extractor pulls from minified JS/CSS.
-    // Fires on every discovered link BEFORE it's enqueued for fetching.
-    website.set_on_link_find(|url, html| {
-        if is_junk_discovered_url(url.as_ref()) {
-            (CaseInsensitiveString::default(), None)
-        } else {
-            (url, html)
-        }
-    });
-
-    if let Some(timeout_ms) = cfg.request_timeout_ms {
-        website.with_request_timeout(Some(Duration::from_millis(timeout_ms)));
-    }
-    // Wire retry count from config / performance profile.
-    // with_retry takes u8; cfg.fetch_retries is usize — clamp to u8::MAX.
-    if cfg.fetch_retries > 0 {
-        website.with_retry(cfg.fetch_retries.min(u8::MAX as usize) as u8);
-    }
-    // Deduplicate trailing-slash URL variants when requested.
-    website.with_normalize(cfg.normalize);
-
-    if let Some(ref proxy) = cfg.chrome_proxy {
-        website.with_proxies(Some(vec![proxy.clone()]));
-    }
-    if let Some(ref ua) = cfg.chrome_user_agent {
-        // Explicit UA override takes precedence over the ua_generator feature.
-        website.with_user_agent(Some(ua.as_str()));
-    }
-    // When no explicit UA is set and the `ua_generator` feature is compiled in,
-    // spider::configuration::get_ua() automatically returns a randomised browser
-    // UA string on each call — no explicit wiring needed here.
-
-    if !cfg.custom_headers.is_empty() {
-        let mut map = reqwest::header::HeaderMap::new();
-        for raw in &cfg.custom_headers {
-            if let Some((k, v)) = raw.split_once(": ")
-                && let (Ok(name), Ok(val)) = (
-                    reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                    reqwest::header::HeaderValue::from_str(v),
-                )
-            {
-                map.insert(name, val);
-            }
-        }
-        if !map.is_empty() {
-            website.with_headers(Some(map));
-        }
-    }
+    apply_limit_and_behavior_settings(cfg, &mut website, start_url);
+    apply_request_and_identity_settings(cfg, &mut website);
+    apply_custom_headers(cfg, &mut website);
 
     // Enable the spider control thread so in-process shutdown() can signal an
     // immediate stop. The crawl worker calls spider::utils::shutdown() when a

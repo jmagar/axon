@@ -36,13 +36,10 @@ cli/
     ├── research.rs               # Tavily AI research + LLM synthesis
     ├── screenshot.rs             # Screenshot entry: URL loop, Chrome requirement check
     ├── screenshot/
-    │   ├── spider_capture.rs     # Spider-based screenshot capture (replaced raw CDP client)
-    │   └── util.rs               # Filename generation, require_chrome(), JSON formatting
-    ├── github.rs                 # Ingest GitHub repos (code, issues, PRs, wiki)
-    ├── reddit.rs                 # Ingest subreddit posts/comments
-    ├── youtube.rs                # Ingest YouTube video transcripts via yt-dlp
+    │   ├── screenshot_migration_tests.rs  # Migration tests for screenshot command refactor
+    │   └── util.rs               # Filename generation, require_chrome()
     ├── sessions.rs               # Ingest AI session exports (Claude/Codex/Gemini)
-    ├── ingest.rs                 # Ingest entry point: dispatches github/reddit/youtube
+    ├── ingest.rs                 # Unified ingest: classify_target → enqueue or run_ingest_sync
     ├── status/
     │   ├── metrics.rs            # Postgres metrics: job counts, rates, stale jobs
     │   └── presentation.rs       # Status output rendering (JSON + human text)
@@ -61,7 +58,7 @@ cli/
 ```rust
 match cfg.command {
     CommandKind::Crawl => run_crawl(cfg).await?,
-    CommandKind::Ask   => run_ask_native(cfg).await?,   // delegates to crates/vector
+    CommandKind::Ask   => run_ask(cfg).await?,   // delegates to crates/services::query
     // ...
 }
 ```

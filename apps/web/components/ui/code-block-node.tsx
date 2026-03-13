@@ -49,6 +49,7 @@ export function CodeBlockElement(props: PlateElementProps<TCodeBlockElement>) {
               variant="ghost"
               className="size-6 text-xs"
               onClick={() => formatCodeBlock(editor, { element })}
+              aria-label="Format code"
               title="Format code"
             >
               <BracesIcon className="!size-3.5 text-muted-foreground" />

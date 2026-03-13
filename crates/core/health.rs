@@ -1,5 +1,11 @@
+pub mod doctor;
+
+pub use doctor::build_doctor_report;
+
+use crate::crates::core::logging::log_info;
 use std::env;
 use std::time::Duration;
+use std::time::Instant;
 use tokio;
 
 const DIAGNOSTICS_DIR_DEFAULT: &str = ".cache/chrome-diagnostics";
@@ -13,9 +19,26 @@ pub struct BrowserDiagnosticsPattern {
 }
 
 pub async fn redis_healthy(redis_url: &str) -> bool {
-    let client = match redis::Client::open(redis_url) {
+    let _probe_start = Instant::now();
+    let url =
+        crate::crates::core::config::parse::normalize_local_service_url(redis_url.to_string());
+    // Redact credentials — the raw URL may contain a password; log only host:port.
+    let host_label = reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u: reqwest::Url| {
+            u.host_str()
+                .map(|h| format!("{}:{}", h, u.port().unwrap_or(6379)))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    let client = match redis::Client::open(url.as_str()) {
         Ok(client) => client,
-        Err(_) => return false,
+        Err(_) => {
+            log_info(&format!(
+                "health_probe service=redis host={host_label} result=false duration_ms={}",
+                _probe_start.elapsed().as_millis()
+            ));
+            return false;
+        }
     };
 
     let ping = async {
@@ -26,10 +49,15 @@ pub async fn redis_healthy(redis_url: &str) -> bool {
             .map(|_| ())
     };
 
-    matches!(
+    let result = matches!(
         tokio::time::timeout(Duration::from_secs(5), ping).await,
         Ok(Ok(()))
-    )
+    );
+    log_info(&format!(
+        "health_probe service=redis host={host_label} result={result} duration_ms={}",
+        _probe_start.elapsed().as_millis()
+    ));
+    result
 }
 
 pub fn browser_diagnostics_pattern() -> BrowserDiagnosticsPattern {
@@ -90,7 +118,7 @@ mod tests {
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     fn with_env_lock<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().expect("env test lock should not poison");
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         f()
     }
 
@@ -109,10 +137,16 @@ mod tests {
         with_env_lock(|| {
             reset_env();
             let pattern = browser_diagnostics_pattern();
+            let expected_output_dir = env::var("AXON_DATA_DIR")
+                .ok()
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .map(|d| format!("{d}/axon/chrome-diagnostics"))
+                .unwrap_or_else(|| ".cache/chrome-diagnostics".to_string());
             assert!(!pattern.enabled);
             assert!(!pattern.screenshot);
             assert!(!pattern.events);
-            assert_eq!(pattern.output_dir, ".cache/chrome-diagnostics");
+            assert_eq!(pattern.output_dir, expected_output_dir);
             reset_env();
         });
     }

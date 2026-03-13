@@ -174,7 +174,7 @@ export function StatsBar({ counts }: { counts: StatusCounts | undefined }) {
   const total = counts.running + counts.pending + counts.completed + counts.failed
   if (total === 0) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-5 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.4)] px-4 py-2.5">
+    <div className="StatsBar mb-3 flex flex-wrap items-center gap-5 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.4)] px-4 py-2.5">
       <StatPip color="#38bdf8" label="active" count={counts.running} pulse />
       <StatPip color="var(--text-dim)" label="pending" count={counts.pending} />
       <StatPip color="var(--axon-success)" label="done" count={counts.completed} />
@@ -258,7 +258,7 @@ export function JobRow({ job }: { job: Job }) {
 
   return (
     <tr
-      className="group border-b border-[var(--border-subtle)] transition-colors duration-100 hover:bg-[rgba(135,175,255,0.04)]"
+      className="JobRow group border-b border-[var(--border-subtle)] transition-colors duration-100 hover:bg-[rgba(135,175,255,0.04)]"
       title={job.errorText ?? undefined}
     >
       <td className="px-3 py-2.5">
@@ -291,6 +291,7 @@ export function JobRow({ job }: { job: Job }) {
       <td
         className="whitespace-nowrap px-3 py-2.5 font-mono text-[10px] text-[var(--text-dim)]"
         title={absolute}
+        suppressHydrationWarning
       >
         {relative}
       </td>

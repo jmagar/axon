@@ -88,7 +88,8 @@ export const insertBlock = (
     }
 
     if (type in insertBlockMap) {
-      insertBlockMap[type](editor, type)
+      // `type in insertBlockMap` guard ensures the key exists
+      insertBlockMap[type]!(editor, type)
     } else {
       editor.tf.insertNodes(editor.api.create.block({ type }), {
         at: PathApi.next(path),
@@ -142,7 +143,8 @@ export const setBlockType = (editor: PlateEditor, type: string, { at }: { at?: P
         editor.tf.unsetNodes([KEYS.listType, 'indent'], { at: path })
       }
       if (type in setBlockMap) {
-        return setBlockMap[type](editor, type, entry)
+        // `type in setBlockMap` guard ensures the key exists
+        return setBlockMap[type]!(editor, type, entry)
       }
       if (node.type !== type) {
         editor.tf.setNodes({ type }, { at: path })
@@ -150,7 +152,7 @@ export const setBlockType = (editor: PlateEditor, type: string, { at }: { at?: P
     }
 
     if (at) {
-      const entry = editor.api.node<TElement>(at)
+      const entry = editor.api.node(at) as NodeEntry<TElement> | undefined
 
       if (entry) {
         setEntry(entry)
@@ -161,7 +163,7 @@ export const setBlockType = (editor: PlateEditor, type: string, { at }: { at?: P
 
     const entries = editor.api.blocks({ mode: 'lowest' })
 
-    entries.forEach((entry) => {
+    entries.forEach((entry: NodeEntry<TElement>) => {
       setEntry(entry)
     })
   })

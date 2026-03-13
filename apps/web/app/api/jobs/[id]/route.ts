@@ -471,13 +471,15 @@ export async function GET(
   }
 
   try {
-    // Search all tables — first match wins
-    const job =
-      (await findCrawlJob(id, includeArtifacts)) ??
-      (await findEmbedJob(id)) ??
-      (await findExtractJob(id)) ??
-      (await findIngestJob(id)) ??
-      (await findRefreshJob(id))
+    // Search all tables in parallel — first non-null wins
+    const [crawl, embed, extract, ingest, refresh] = await Promise.all([
+      findCrawlJob(id, includeArtifacts),
+      findEmbedJob(id),
+      findExtractJob(id),
+      findIngestJob(id),
+      findRefreshJob(id),
+    ])
+    const job = crawl ?? embed ?? extract ?? ingest ?? refresh
 
     if (!job) {
       return apiError(404, 'Job not found')

@@ -3,10 +3,8 @@
 //! async jobs with fire-and-forget semantics, and streams output over WebSocket.
 //!
 //! # Execution paths
-//! - **Async direct modes** (`crawl`, `extract`, `embed`):
+//! - **Async direct modes** (`crawl`, `extract`, `embed`, `github`, `reddit`, `youtube`):
 //!   `async_mode::handle_async_command` — direct service enqueue, fire-and-forget.
-//! - **Async subprocess modes** (`github`, `reddit`, `youtube`):
-//!   subprocess fallback — ingest service functions are `!Send`, so the binary is spawned.
 //! - **Sync direct modes** (scrape, map, query, retrieve, ask, search, research,
 //!   stats, sources, domains, doctor, status, pulse_chat):
 //!   `sync_mode::handle_sync_direct` — direct service call, awaited inline.
@@ -20,7 +18,9 @@ mod context;
 pub(crate) mod events;
 mod exe;
 pub(crate) mod files;
+pub(crate) mod mcp_config;
 pub mod overrides;
+pub(crate) mod session_guard;
 mod sync_mode;
 mod ws_send;
 
@@ -29,8 +29,16 @@ mod ws_send;
 mod ws_event_v2_tests;
 
 #[cfg(test)]
+#[path = "execute/tests/acp_ws_event_tests.rs"]
+mod acp_ws_event_tests;
+
+#[cfg(test)]
 #[path = "execute/tests/ws_protocol_tests.rs"]
 mod ws_protocol_tests;
+
+#[cfg(test)]
+#[path = "execute/tests/async_ingest_routing_tests.rs"]
+mod async_ingest_routing_tests;
 
 pub(crate) use files::handle_read_file;
 
@@ -86,12 +94,12 @@ pub fn is_valid_cancel_job_id_pub(job_id: &str) -> bool {
 
 use crate::crates::core::config::Config;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
 use uuid::Uuid;
 
-use constants::{ALLOWED_FLAGS, ALLOWED_MODES, ASYNC_MODES, ASYNC_SUBPROCESS_MODES};
+use constants::{ALLOWED_FLAGS, ALLOWED_MODES, ASYNC_MODES};
 use context::ExecCommandContext;
 
 fn resolve_exe() -> Result<std::path::PathBuf, String> {
@@ -154,10 +162,12 @@ pub(super) async fn handle_cancel(
     cancel::handle_cancel(mode, job_id, tx, cfg).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_command(
     mode: String,
     input: String,
     flags: serde_json::Value,
+    client_exec_id: String,
     tx: mpsc::Sender<String>,
     crawl_job_id: Arc<Mutex<Option<String>>>,
     cfg: Arc<Config>,
@@ -167,7 +177,11 @@ pub(super) async fn handle_command(
     // owned values.  These borrows live only within their enclosing expressions
     // and never cross an `.await` point, so the future remains `Send + 'static`.
     let context = ExecCommandContext {
-        exec_id: format!("exec-{}", Uuid::new_v4()),
+        exec_id: if client_exec_id.trim().is_empty() {
+            format!("exec-{}", Uuid::new_v4())
+        } else {
+            client_exec_id
+        },
         mode: mode.clone(),
         input: input.clone(),
         flags: flags.clone(),
@@ -199,7 +213,7 @@ pub(super) async fn handle_command(
         }
     }
 
-    // Async direct modes (crawl, extract, embed) — fire-and-forget direct service dispatch:
+    // Async direct modes (crawl, extract, embed, github, reddit, youtube) — fire-and-forget direct service dispatch:
     // enqueue the job and return immediately with the job ID.
     // No subprocess is spawned; no polling loop is run.
     if ASYNC_MODES.contains(&mode.as_str()) {
@@ -210,19 +224,86 @@ pub(super) async fn handle_command(
 
     // Sync direct modes (scrape, map, query, retrieve, ask, search, research,
     // stats, sources, domains, doctor, status, pulse_chat) — call services directly.
-    if let Some(params) = sync_mode::classify_sync_direct(&mode, &input, &flags, cfg, &ws_ctx) {
+    if let Some(params) = sync_mode::classify_sync_direct(&context) {
+        // SEC-8 / PERF-1 / PERF-10: acquire ACP session permit for pulse_chat and
+        // pulse_chat_probe to bound concurrent spawn_blocking threads.
+        let permit_result = acquire_acp_permit(&mode, &tx, &ws_ctx).await;
+        let _acp_permit = match permit_result {
+            Ok(p) => p,
+            Err(()) => return, // error already sent to client
+        };
         ws_send::send_command_start(&tx, &context).await;
         sync_mode::handle_sync_direct(params, tx, ws_ctx, permission_responders).await;
+        drop(_acp_permit); // explicit drop for clarity — permit held for full command duration
+
         return;
     }
 
     ws_send::send_command_start(&tx, &context).await;
+    dispatch_subprocess_fallback(context, &mode, &input, &flags, tx, ws_ctx).await;
+}
 
-    // Subprocess fallback.  Covers:
-    // - github, reddit, youtube (ingest — !Send service functions, run to completion)
-    // - suggest, screenshot, evaluate, sessions, dedupe, debug, refresh (not yet direct)
-    // TODO: direct dispatch for remaining modes once !Send constraints are resolved
-    let _ = ASYNC_SUBPROCESS_MODES; // used in routing comment above; suppress dead_code lint
+/// Acquire a semaphore permit for ACP sessions (`pulse_chat` / `pulse_chat_probe`).
+///
+/// Returns `Ok(Some(permit))` when a permit is available, `Ok(None)` for non-ACP
+/// modes, and `Err(())` when the semaphore is exhausted — in that case an error
+/// event has already been sent to the client.
+///
+/// Waits up to 30 seconds for a slot to open before failing, so bursts of
+/// concurrent ACP requests queue briefly instead of being rejected immediately.
+async fn acquire_acp_permit(
+    mode: &str,
+    tx: &mpsc::Sender<String>,
+    ws_ctx: &events::CommandContext,
+) -> Result<Option<tokio::sync::SemaphorePermit<'static>>, ()> {
+    if matches!(mode, "pulse_chat" | "pulse_chat_probe") {
+        const ACP_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(30);
+        match tokio::time::timeout(
+            ACP_ACQUIRE_TIMEOUT,
+            crate::crates::web::ACP_SESSION_SEMAPHORE.acquire(),
+        )
+        .await
+        {
+            Ok(Ok(permit)) => Ok(Some(permit)),
+            Ok(Err(_)) => {
+                // Semaphore closed — should never happen with a static semaphore.
+                send_error_dual(
+                    tx,
+                    ws_ctx,
+                    "ACP session semaphore closed unexpectedly".to_string(),
+                    None,
+                )
+                .await;
+                Err(())
+            }
+            Err(_) => {
+                send_error_dual(
+                    tx,
+                    ws_ctx,
+                    "ACP session queue full — timed out after 30s waiting for a slot".to_string(),
+                    None,
+                )
+                .await;
+                Err(())
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+/// Subprocess fallback for modes not yet wired to direct dispatch.
+///
+/// Covers suggest, screenshot, evaluate, sessions, dedupe, debug, refresh.
+/// TODO: direct dispatch for remaining modes once `!Send` constraints are resolved.
+async fn dispatch_subprocess_fallback(
+    context: ExecCommandContext,
+    mode: &str,
+    input: &str,
+    flags: &serde_json::Value,
+    tx: mpsc::Sender<String>,
+    ws_ctx: events::CommandContext,
+) {
     let exe = match resolve_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -230,7 +311,7 @@ pub(super) async fn handle_command(
             return;
         }
     };
-    let args = args::build_args(&mode, &input, &flags);
+    let args = args::build_args(mode, input, flags);
     let start = Instant::now();
     let child = Command::new(&exe)
         .args(&args)

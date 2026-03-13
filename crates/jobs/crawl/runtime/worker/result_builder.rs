@@ -1,4 +1,5 @@
 use crate::crates::crawl::engine::CrawlSummary;
+use crate::crates::crawl::manifest::read_manifest_data;
 use std::error::Error;
 use std::path::Path;
 
@@ -10,6 +11,27 @@ fn sorted_vec(values: &std::collections::HashSet<String>) -> Vec<String> {
     let mut out: Vec<String> = values.iter().cloned().collect();
     out.sort();
     out
+}
+
+fn build_output_files(
+    output_dir: &Path,
+    manifest_path: &Path,
+    audit_report_path: &Path,
+    manifest_relative_paths: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut files = vec![
+        manifest_path.to_string_lossy().into_owned(),
+        audit_report_path.to_string_lossy().into_owned(),
+    ];
+    files.extend(manifest_relative_paths.into_iter().map(|relative_path| {
+        output_dir
+            .join(relative_path)
+            .to_string_lossy()
+            .into_owned()
+    }));
+    files.sort();
+    files.dedup();
+    files
 }
 
 pub(super) struct CompletedResultContext {
@@ -32,6 +54,7 @@ pub(super) async fn build_completed_result(
         pages_discovered.saturating_sub(result_ctx.final_summary.markdown_files as u64);
     let pages_crawled = result_ctx.summary.pages_seen as u64;
     let current_urls = read_manifest_urls(manifest_path).await?;
+    let manifest_entries = read_manifest_data(manifest_path).await?;
     let (report_path, diff_report) = write_audit_diff(
         &ctx.job_cfg.output_dir,
         &ctx.url,
@@ -41,6 +64,14 @@ pub(super) async fn build_completed_result(
         ctx.cache_source.clone(),
     )
     .await?;
+    let output_files = build_output_files(
+        &ctx.job_cfg.output_dir,
+        manifest_path,
+        &report_path,
+        manifest_entries
+            .into_values()
+            .map(|entry| entry.relative_path),
+    );
 
     Ok(serde_json::json!({
         "phase": "completed",
@@ -65,6 +96,7 @@ pub(super) async fn build_completed_result(
         "robots_filtered_existing": result_ctx.robots_backfill_stats.filtered_existing,
         "elapsed_ms": result_ctx.final_summary.elapsed_ms,
         "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
+        "output_files": output_files,
         "audit_diff": diff_report,
         "audit_report_path": report_path.to_string_lossy(),
         "extraction_prompt": result_ctx.final_prompt,
@@ -84,7 +116,7 @@ mod tests {
         let manifest_path = temp.path().join("manifest.jsonl");
         tokio::fs::write(
             &manifest_path,
-            "{\"url\":\"https://example.com/a\",\"file_path\":\"markdown/a.md\",\"markdown_chars\":123,\"changed\":true}\n",
+            "{\"url\":\"https://example.com/a\",\"relative_path\":\"markdown/a.md\",\"markdown_chars\":123,\"changed\":true}\n",
         )
         .await
         .expect("write manifest");
@@ -152,5 +184,23 @@ mod tests {
         assert!(obj.contains_key("waf_blocked_urls"));
         assert!(obj.contains_key("error_pages"));
         assert!(obj.contains_key("waf_blocked_pages"));
+        let output_files = obj["output_files"].as_array().expect("output_files array");
+        assert_eq!(output_files.len(), 3);
+        assert_eq!(
+            output_files[0],
+            temp.path()
+                .join("audit")
+                .join("example-com-diff-report.json")
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(output_files[1], manifest_path.to_string_lossy().to_string());
+        assert_eq!(
+            output_files[2],
+            temp.path()
+                .join("markdown/a.md")
+                .to_string_lossy()
+                .to_string()
+        );
     }
 }

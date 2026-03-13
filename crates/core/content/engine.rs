@@ -64,6 +64,54 @@ struct PageCollectResult {
     parser_hits: HashMap<String, usize>,
 }
 
+fn apply_deterministic_results(
+    deterministic: super::deterministic::PageExtraction,
+    metrics: &mut ExtractionMetrics,
+    pages_with_data: &mut usize,
+    all_results: &mut Vec<serde_json::Value>,
+    parser_hits: &mut HashMap<String, usize>,
+) -> bool {
+    if deterministic.items.is_empty() {
+        return false;
+    }
+    metrics.deterministic_pages += 1;
+    *pages_with_data += 1;
+    all_results.extend(deterministic.items);
+    for hit in deterministic.parser_hits {
+        *parser_hits.entry(hit).or_insert(0) += 1;
+    }
+    true
+}
+
+fn queue_fallback_extraction(
+    fallback_tasks: &mut JoinSet<(String, Result<FallbackResponse, String>)>,
+    fallback_limiter: Arc<Semaphore>,
+    client: reqwest::Client,
+    cfg: &FallbackConfig,
+    page_url: String,
+    html: String,
+) {
+    let api_url_c = cfg.api_url.clone();
+    let api_key_c = cfg.api_key.clone();
+    let model_c = cfg.model.clone();
+    let prompt_c = cfg.prompt_text.clone();
+    fallback_tasks.spawn(async move {
+        let _permit = match fallback_limiter.acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                return (page_url, Err("fallback limiter closed".to_string()));
+            }
+        };
+        let markdown = to_markdown(&html, None);
+        let res = extract_items_fallback(
+            &client, &api_url_c, &api_key_c, &model_c, &prompt_c, &page_url, &markdown,
+        )
+        .await
+        .map_err(|e| e.to_string());
+        (page_url, res)
+    });
+}
+
 async fn collect_page_results(
     mut rx: tokio::sync::broadcast::Receiver<spider::page::Page>,
     client: reqwest::Client,
@@ -96,13 +144,13 @@ async fn collect_page_results(
             continue;
         }
         let deterministic = engine.extract(&page_url, &html);
-        if !deterministic.items.is_empty() {
-            metrics.deterministic_pages += 1;
-            pages_with_data += 1;
-            all_results.extend(deterministic.items);
-            for hit in deterministic.parser_hits {
-                *parser_hits.entry(hit).or_insert(0) += 1;
-            }
+        if apply_deterministic_results(
+            deterministic,
+            &mut metrics,
+            &mut pages_with_data,
+            &mut all_results,
+            &mut parser_hits,
+        ) {
             continue;
         }
         if !cfg.has_fallback {
@@ -110,28 +158,14 @@ async fn collect_page_results(
         }
         metrics.llm_fallback_pages += 1;
         metrics.llm_requests += 1;
-        let api_url_c = cfg.api_url.clone();
-        let api_key_c = cfg.api_key.clone();
-        let model_c = cfg.model.clone();
-        let prompt_c = cfg.prompt_text.clone();
-        let client_c = client.clone();
-        let limiter = Arc::clone(&fallback_limiter);
-        let html_owned = html.to_string();
-        fallback_tasks.spawn(async move {
-            let _permit = match limiter.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
-                    return (page_url, Err("fallback limiter closed".to_string()));
-                }
-            };
-            let markdown = to_markdown(&html_owned, None);
-            let res = extract_items_fallback(
-                &client_c, &api_url_c, &api_key_c, &model_c, &prompt_c, &page_url, &markdown,
-            )
-            .await
-            .map_err(|e| e.to_string());
-            (page_url, res)
-        });
+        queue_fallback_extraction(
+            &mut fallback_tasks,
+            Arc::clone(&fallback_limiter),
+            client.clone(),
+            &cfg,
+            page_url,
+            html.to_string(),
+        );
         while let Some(joined) = fallback_tasks.try_join_next() {
             drain_fallback_result(joined, &mut pages_with_data, &mut all_results, &mut metrics);
         }

@@ -10,26 +10,60 @@ mod archive;
 mod manifest;
 mod validation;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use dashmap::DashMap;
+use serde::Deserialize;
 
 use self::archive::build_zip;
 use self::manifest::load_all_files;
 use self::validation::{sanitize_filename, validate_job_dir};
-
+use super::DownloadAuthState;
 use super::pack;
+use super::tailscale_auth::{AuthOutcome, check_auth};
+
+/// Query parameters for download routes — mirrors `WsQuery` in `web.rs`.
+#[derive(Deserialize)]
+pub(crate) struct DownloadQuery {
+    token: Option<String>,
+}
+
+/// Authenticate a download request with the shared API token.
+fn auth_download(
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+    state: &DownloadAuthState,
+) -> AuthOutcome {
+    // Extract token from x-api-key or Authorization: Bearer header, falling
+    // back to `?token=` query parameter for browser-initiated downloads that
+    // cannot set custom headers.
+    let header_token = headers
+        .get("x-api-key")
+        .or_else(|| headers.get("authorization"))
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim_start_matches("Bearer ").trim())
+        .filter(|s| !s.is_empty());
+    let token = header_token.or(query_token);
+    check_auth(headers, token, state.api_token.as_deref())
+}
 
 /// `GET /download/{job_id}/pack.md`
 pub async fn serve_pack_md(
     AxumPath(job_id): AxumPath<String>,
-    State(job_dirs): State<Arc<DashMap<String, PathBuf>>>,
+    headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
+    State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    let job_dir = match validate_job_dir(&job_dirs, &job_id).await {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let job_dir = match validate_job_dir(&state.job_dirs, &job_id).await {
         Ok(d) => d,
         Err((status, msg)) => return (status, msg).into_response(),
     };
@@ -42,12 +76,12 @@ pub async fn serve_pack_md(
     let body = pack::build_pack_md(&domain, &entries);
     let safe_filename = sanitize_filename(&format!("{domain}-pack.md"));
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
         header::CONTENT_TYPE,
         header::HeaderValue::from_static("text/markdown; charset=utf-8"),
     );
-    headers.insert(
+    resp_headers.insert(
         header::CONTENT_DISPOSITION,
         format!("attachment; filename=\"{safe_filename}\"")
             .parse::<header::HeaderValue>()
@@ -56,15 +90,24 @@ pub async fn serve_pack_md(
             }),
     );
 
-    (headers, body).into_response()
+    (resp_headers, body).into_response()
 }
 
 /// `GET /download/{job_id}/pack.xml`
 pub async fn serve_pack_xml(
     AxumPath(job_id): AxumPath<String>,
-    State(job_dirs): State<Arc<DashMap<String, PathBuf>>>,
+    headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
+    State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    let job_dir = match validate_job_dir(&job_dirs, &job_id).await {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let job_dir = match validate_job_dir(&state.job_dirs, &job_id).await {
         Ok(d) => d,
         Err((status, msg)) => return (status, msg).into_response(),
     };
@@ -77,12 +120,12 @@ pub async fn serve_pack_xml(
     let body = pack::build_pack_xml(&domain, &entries);
     let safe_filename = sanitize_filename(&format!("{domain}-pack.xml"));
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
         header::CONTENT_TYPE,
         header::HeaderValue::from_static("application/xml; charset=utf-8"),
     );
-    headers.insert(
+    resp_headers.insert(
         header::CONTENT_DISPOSITION,
         format!("attachment; filename=\"{safe_filename}\"")
             .parse::<header::HeaderValue>()
@@ -91,15 +134,24 @@ pub async fn serve_pack_xml(
             }),
     );
 
-    (headers, body).into_response()
+    (resp_headers, body).into_response()
 }
 
 /// `GET /download/{job_id}/archive.zip`
 pub async fn serve_zip(
     AxumPath(job_id): AxumPath<String>,
-    State(job_dirs): State<Arc<DashMap<String, PathBuf>>>,
+    headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
+    State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    let job_dir = match validate_job_dir(&job_dirs, &job_id).await {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let job_dir = match validate_job_dir(&state.job_dirs, &job_id).await {
         Ok(d) => d,
         Err((status, msg)) => return (status, msg).into_response(),
     };
@@ -115,13 +167,13 @@ pub async fn serve_zip(
 
     match zip_result {
         Ok(Ok(bytes)) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(
+            let mut resp_headers = HeaderMap::new();
+            resp_headers.insert(
                 header::CONTENT_TYPE,
                 header::HeaderValue::from_static("application/zip"),
             );
             let safe_filename = sanitize_filename(&filename);
-            headers.insert(
+            resp_headers.insert(
                 header::CONTENT_DISPOSITION,
                 format!("attachment; filename=\"{safe_filename}\"")
                     .parse::<header::HeaderValue>()
@@ -129,7 +181,7 @@ pub async fn serve_zip(
                         header::HeaderValue::from_static("attachment; filename=\"download\"")
                     }),
             );
-            (headers, bytes).into_response()
+            (resp_headers, bytes).into_response()
         }
         Ok(Err(e)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -147,9 +199,18 @@ pub async fn serve_zip(
 /// `GET /download/{job_id}/file/{path}`
 pub async fn serve_file(
     AxumPath((job_id, file_path)): AxumPath<(String, String)>,
-    State(job_dirs): State<Arc<DashMap<String, PathBuf>>>,
+    headers: HeaderMap,
+    Query(params): Query<DownloadQuery>,
+    State(state): State<Arc<DownloadAuthState>>,
 ) -> Response {
-    let job_dir = match validate_job_dir(&job_dirs, &job_id).await {
+    if matches!(
+        auth_download(&headers, params.token.as_deref(), &state),
+        AuthOutcome::Denied(_)
+    ) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let job_dir = match validate_job_dir(&state.job_dirs, &job_id).await {
         Ok(d) => d,
         Err((status, msg)) => return (status, msg).into_response(),
     };
@@ -183,13 +244,13 @@ pub async fn serve_file(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "download.md".to_string());
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
         header::CONTENT_TYPE,
         header::HeaderValue::from_static("text/markdown; charset=utf-8"),
     );
     let safe_filename = sanitize_filename(&filename);
-    headers.insert(
+    resp_headers.insert(
         header::CONTENT_DISPOSITION,
         format!("attachment; filename=\"{safe_filename}\"")
             .parse::<header::HeaderValue>()
@@ -198,5 +259,5 @@ pub async fn serve_file(
             }),
     );
 
-    (headers, content).into_response()
+    (resp_headers, content).into_response()
 }

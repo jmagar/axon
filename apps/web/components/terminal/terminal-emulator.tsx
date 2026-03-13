@@ -310,7 +310,12 @@ export const TerminalEmulator = forwardRef<TerminalHandle, TerminalEmulatorProps
         // Dispose in the next microtask so any in-flight writes complete first
         const term = terminal ?? termRef.current
         if (term) {
-          term.dispose()
+          try {
+            term.dispose()
+          } catch {
+            // xterm.js addons (e.g. WebLinksAddon) can throw during dispose
+            // if their internal references are already torn down
+          }
         }
         termRef.current = null
         fitAddonRef.current = null

@@ -155,7 +155,8 @@ export class Dendrite {
     if (this.branches.length === 0) {
       return { x: this.endX, y: this.endY }
     }
-    return this.branches[Math.floor(Math.random() * this.branches.length)].getTip()
+    // branches.length > 0 is checked above — this index is always valid
+    return this.branches[Math.floor(Math.random() * this.branches.length)]!.getTip()
   }
 
   updatePosition(newStartX: number, newStartY: number) {

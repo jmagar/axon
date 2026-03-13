@@ -1,5 +1,5 @@
 # ⚡ **Axon**
-Last Modified: 2026-03-03
+Last Modified: 2026-03-11
 
 Self-hosted web crawling and RAG pipeline powered by Spider.rs. Single binary (`axon`) backed by a local Docker stack.
 
@@ -16,7 +16,7 @@ Axon is a single CLI for crawl/scrape/extract plus local vector retrieval and Q&
 
 ## Features
 
-- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `github`, `ingest`, `reddit`, `youtube`, `sessions`, `screenshot`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
+- Commands: `scrape`, `crawl`, `watch`, `refresh`, `map`, `search`, `research`, `extract`, `embed`, `query`, `retrieve`, `ask`, `evaluate`, `suggest`, `ingest`, `sessions`, `screenshot`, `completions`, `sources`, `domains`, `stats`, `status`, `doctor`, `dedupe`, `debug`, `mcp`, `serve`
 - Async queue-backed jobs for `crawl`/`extract`/`embed`/`refresh`/ingest
 - **Surgical Incremental Crawling**: SHA-256 content hashing, Reflink/Hardlink storage reuse, and smart embedding skips for unchanged pages.
 - TEI embeddings + Qdrant vector storage
@@ -71,9 +71,16 @@ Documentation:
 - Design/runtime guide: `docs/MCP.md`
 - Wire contract/schema source of truth: `docs/MCP-TOOL-SCHEMA.md`
 
-Transport status:
-- `axon mcp` is intentionally HTTP-only via container/s6-managed `mcp-http`.
-- Stdio transport is not exposed.
+Transport modes:
+- `axon mcp` defaults to HTTP transport on `/mcp`.
+- `axon mcp --transport stdio` starts stdio transport only.
+- `axon mcp --transport both` starts stdio and HTTP concurrently.
+- `AXON_MCP_TRANSPORT=stdio|http|both` provides the equivalent env override.
+
+ACP MCP server store (used by Pulse ACP and Web UI `/api/mcp`):
+- `${AXON_DATA_DIR}/axon/mcp.json` when `AXON_DATA_DIR` is set
+- `~/.config/axon/mcp.json` fallback
+- ACP hot-reloads MCP config changes from this file and reapplies them on the next turn.
 
 MCP defaults are context-safe:
 - Artifact-first responses (`response_mode=path`) written to `.cache/axon-mcp/` inside the running process/container (override with `AXON_MCP_ARTIFACT_DIR`; in Docker this is typically bind-mounted to `${AXON_DATA_DIR}/axon/artifacts`)
@@ -201,6 +208,8 @@ Copy `.env.example` to `.env`. At minimum set the `[REQUIRED]` vars:
 
 ### Web App Security (`apps/web`)
 
+Full auth documentation (API token, shell token, MCP OAuth): **[`docs/auth/`](docs/auth/README.md)**
+
 Auth is enforced by `apps/web/proxy.ts` on all `/api/*` routes. Token required in `Authorization: Bearer <token>` or `x-api-key` header.
 
 | Variable | Description |
@@ -288,12 +297,10 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `ask <question>` | RAG: search + LLM answer | No |
 | `evaluate <question>` | RAG vs baseline + LLM judge (accuracy · relevance · completeness · verdict) | No |
 | `suggest [focus]` | Suggest complementary docs URLs not already indexed | No |
-| `github <repo>` | Ingest GitHub repo (code, issues, PRs, wiki) into Qdrant | Yes (default) |
-| `ingest <subcommand>` | Shared ingest worker/job control (`worker`, `status`, `list`, etc.) | No |
-| `reddit <target>` | Ingest subreddit posts/comments into Qdrant | Yes (default) |
-| `youtube <url>` | Ingest YouTube video transcript via yt-dlp into Qdrant | Yes (default) |
+| `ingest <target>` | Ingest GitHub, Reddit, or YouTube — source type auto-detected from target (slug, URL, @handle, r/name) | Yes (default) |
 | `sessions [--claude] [--codex] [--gemini] [--project <name>]` | Ingest AI session exports (Claude/Codex/Gemini) into Qdrant | No |
 | `screenshot <url>...` | Capture page screenshot(s) via Chrome | No |
+| `completions <bash|zsh|fish>` | Generate shell completion scripts (`completion` alias also works) | No |
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
@@ -301,8 +308,18 @@ Axon implements a multi-layered incremental crawl mechanism to minimize network 
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
 | `dedupe` | Remove duplicate vectors from Qdrant collection | No |
-| `mcp` | Start MCP HTTP server runtime (`mcp-http`, no stdio transport) | No |
+| `mcp` | Start MCP server runtime (`http`, `stdio`, or `both`) | No |
 | `serve` | Start web UI server (axum + WebSocket + Docker stats) | No |
+
+### Shell Completions
+
+```bash
+axon completions bash > ~/.local/share/bash-completion/completions/axon
+axon completions zsh > ~/.zfunc/_axon
+axon completions fish > ~/.config/fish/completions/axon.fish
+```
+
+See `docs/SHELL-COMPLETIONS.md` and `docs/commands/completions.md` for installation details.
 
 ### Freshness Strategy (Tiered Refresh + Discovery Crawl)
 
@@ -369,9 +386,7 @@ axon watch history <watch_id> [--limit <n>]
 
 Current dispatch support in the worker loop is `task_type=refresh` (payload shape: `{"urls":["https://..."]}`).
 
-### Job Subcommands (for github / reddit / youtube)
-
-The ingest commands share the same subcommand routing:
+### Job Subcommands (for ingest)
 
 ```bash
 axon ingest status <job_id>
@@ -380,21 +395,9 @@ axon ingest errors <job_id>
 axon ingest list
 axon ingest cleanup
 axon ingest clear
-axon ingest recover
-axon ingest worker
-
-# source-specific aliases (equivalent worker path):
-axon github status <job_id>
-axon github cancel <job_id>
-axon github errors <job_id>
-axon github list
-axon github cleanup
-axon github clear
-axon github recover    # reclaim stale/interrupted jobs
-axon github worker     # run an ingest worker inline
+axon ingest recover    # reclaim stale/interrupted jobs
+axon ingest worker     # run an ingest worker inline
 ```
-
-The same subcommands work with `axon reddit ...` and `axon youtube ...`.
 
 ### Global Flags Reference
 
@@ -645,7 +648,7 @@ Differs from the other three tables: uses `source_type` + `target` instead of `u
 ## Gotchas
 
 ### `--wait false` (default) = fire-and-forget
-By default, `crawl`, `refresh`, `extract`, `embed`, and ingest commands (`github`, `reddit`, `youtube`) enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
+By default, `crawl`, `refresh`, `extract`, `embed`, and `ingest` enqueue jobs and return immediately. Use `--wait true` to block until completion. Without workers running, enqueued jobs will pend forever.
 
 ### Armory Structure: Domain-Grouped
 Axon now organizes its spoils by domain to make the armory more browseable.

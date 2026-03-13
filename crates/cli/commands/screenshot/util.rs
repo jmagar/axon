@@ -1,8 +1,9 @@
 use crate::crates::core::config::Config;
 use std::error::Error;
 
-// Re-export from crawl module; the canonical implementation lives there so both
-// CLI and the services layer share the same logic without a CLI dependency.
+// Re-export for tests only — canonical implementation lives in crates/crawl/screenshot.rs.
+// Services/MCP import from there directly; only test modules in this subtree use the re-export.
+#[cfg(test)]
 pub(crate) use crate::crates::crawl::screenshot::url_to_screenshot_filename;
 
 /// Validate that Chrome is configured before attempting a screenshot.
@@ -17,6 +18,7 @@ pub(super) fn require_chrome(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 /// Format screenshot result as JSON for `--json` mode.
+#[cfg(test)]
 pub(super) fn format_screenshot_json(url: &str, path: &str, size_bytes: u64) -> String {
     serde_json::to_string_pretty(&serde_json::json!({
         "url": url,

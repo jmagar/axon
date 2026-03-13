@@ -22,6 +22,7 @@ For branding, theme, layout, and frontend UX decisions: `apps/web`.
 - `crates/web/docker_stats.rs`: container stats streaming
 - `crates/web/download.rs`: HTTP endpoints for crawl artifact downloads (individual files + zip archives)
 - `crates/web/pack.rs`: output packaging helpers — assembles crawl results into downloadable bundles
+- `crates/web/tailscale_auth.rs`: shared token auth + `check_auth()` entry point
 - `crates/web/logs/`: log streaming support
 - `crates/web/snapshots/`: insta snapshot files for integration tests (committed; update with `cargo insta review`)
 
@@ -48,6 +49,16 @@ ANSI codes are stripped from log output via `console::strip_ansi_codes()`.
 - **`ALLOWED_FLAGS`**: set of permitted CLI flags — rejects unknown flags
 
 Unknown modes or flags return an error WS event without spawning a process. Do not bypass these whitelists when adding new execute routes.
+
+### Auth Stack (`web.rs` + `tailscale_auth.rs`)
+
+| Layer | Env var | Default | Notes |
+|-------|---------|---------|-------|
+| **API token** | `AXON_WEB_API_TOKEN` | — | Bearer / x-api-key / `?token=` query param. |
+
+### `DownloadAuthState`
+
+Download routes use a lighter state struct (`DownloadAuthState`) that carries `job_dirs` and `api_token` — same shared token gate as `AppState` without WS/stats overhead.
 
 ## Docker Stats Caveat
 
@@ -88,3 +99,41 @@ cargo insta review              # approve/reject each diff interactively
 ```
 
 Snapshot files live in `crates/web/snapshots/` and are committed to git.
+
+## ACP Architecture: One-Shot vs Persistent Connection
+
+Two complete code paths exist for ACP (Adapter Control Protocol) prompt execution, with different lifecycle and timeout semantics.
+
+### One-Shot Mode (`crates/services/acp/runtime.rs`)
+
+Spawns a fresh adapter subprocess per prompt turn. Each call to `run_acp_turn()` goes through: spawn adapter, initialize connection, set up session, apply config/model, execute prompt, tear down. After a successful turn, the runtime awaits the adapter's exit with a **10-second timeout** (`tokio::time::timeout(Duration::from_secs(10), exit_rx)`) to let it flush its session file before the child handle is dropped (which triggers `kill_on_drop` SIGKILL).
+
+**Trade-off:** Clean state each turn (no leaked context), but higher latency due to process spawn overhead.
+
+### Persistent-Connection Mode (`crates/services/acp/persistent_conn.rs`)
+
+Keeps a single adapter process alive for the entire WebSocket connection lifetime. Turns are dispatched via an `mpsc` channel to the long-lived process. The adapter is set up lazily on the first turn. Timeout: **3600 seconds (1 hour)** for the overall connection (configurable via `adapter_timeout_secs` on the adapter config, defaulting to 3600s when unset).
+
+**Trade-off:** Lower latency on subsequent turns (reuses `ClientSideConnection`, session state preserved), but adapter process must be managed across the full WS connection lifetime.
+
+### Shared Finalization
+
+Both paths call `finalize_successful_turn()` from `bridge.rs` for consistent turn completion behavior: logging, `EditorWrite` emission, and `TurnResult` event dispatch. This ensures the WS client sees identical event shapes regardless of which code path executed the turn.
+
+## ACP Session Cache Parameters
+
+Hardcoded constants in `crates/services/acp/session_cache.rs` govern session caching for WebSocket reconnect replay:
+
+| Parameter | Value | Location | Description |
+|-----------|-------|----------|-------------|
+| `SESSION_TTL` | 30 minutes | `session_cache.rs:19` | Time before an idle cached session is reaped |
+| `MAX_REPLAY_BUFFER` | 4096 messages | `session_cache.rs:23` | Message-count cap on replay buffer per session |
+| `MAX_REPLAY_BUFFER_BYTES` | 4 MiB | `session_cache.rs:28` | Byte-based cap on replay buffer per session |
+| Reaper interval | 60 seconds | `session_cache.rs:233` | How often the background task checks for expired sessions |
+| `AXON_ACP_MAX_CONCURRENT_SESSIONS` | 8 (default) | `web.rs:36` | Semaphore-based limit on concurrent ACP sessions |
+
+The replay buffer enforces both limits: a message is only appended if the buffer has fewer than `MAX_REPLAY_BUFFER` entries **and** the cumulative byte size stays within `MAX_REPLAY_BUFFER_BYTES`.
+
+The reaper is started lazily via `std::sync::Once` on the first session insertion (`ensure_reaper()`). It runs `reap_expired()` every 60 seconds, evicting any session whose last activity exceeds `SESSION_TTL`.
+
+All parameters except `AXON_ACP_MAX_CONCURRENT_SESSIONS` are hardcoded constants, not configurable via environment variables.

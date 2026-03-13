@@ -1,10 +1,14 @@
 use super::thin_refetch::{
     RefetchResult, THIN_REFETCH_CONCURRENCY, render_html_with_chrome, write_refetch_results,
 };
-use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
-use crate::crates::core::content::clean_markdown_whitespace;
-use crate::crates::core::content::url_to_filename;
-use crate::crates::core::logging::{log_info, log_warn};
+use super::{
+    CrawlSummary, MapScope, canonicalize_url_for_dedupe, is_excluded_url_path,
+    normalize_map_candidate_url,
+};
+use crate::crates::core::content::{
+    BOILERPLATE_SELECTORS, clean_markdown_whitespace, url_to_filename,
+};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use sha2::{Digest, Sha256};
 use spider_transformations::transformation::content::{
@@ -24,6 +28,7 @@ pub(super) struct CollectorConfig {
     pub min_chars: usize,
     pub drop_thin: bool,
     pub exclude_path_prefix: Vec<String>,
+    pub scope: Option<MapScope>,
     pub transform_cfg: &'static spider_transformations::transformation::content::TransformConfig,
     pub progress_tx: Option<Sender<CrawlSummary>>,
     pub previous_manifest: HashMap<String, ManifestEntry>,
@@ -75,13 +80,17 @@ pub(super) fn process_page(
         screenshot_bytes: None,
         encoding: None,
         selector_config: col.selector_config.as_ref(),
-        ignore_tags: None,
+        ignore_tags: Some(BOILERPLATE_SELECTORS),
     };
     let markdown = transform_content_input(input, col.transform_cfg);
     let trimmed = clean_markdown_whitespace(markdown.trim());
     let chars = trimmed.len();
 
     if chars < col.min_chars {
+        log_debug(&format!(
+            "content thin_page url={url} chars={chars} min={}",
+            col.min_chars
+        ));
         return PageOutcome::Thin;
     }
     if trimmed.is_empty() {
@@ -250,81 +259,129 @@ async fn apply_page_outcome(
 ) -> Result<bool, String> {
     match outcome {
         PageOutcome::Thin => {
-            summary.thin_pages += 1;
-            summary.thin_urls.insert(url.to_string());
-            if let Some(ref ws_url) = col.chrome_ws_url {
-                log_info(&format!(
-                    "thin_refetch: inline Chrome render spawned for {url}"
-                ));
-                spawn_chrome_render(
-                    chrome_tasks,
-                    chrome_semaphore,
-                    ws_url.clone(),
-                    html_bytes.to_vec(),
-                    url.to_string(),
-                    col.min_chars,
-                    col.chrome_timeout_secs,
-                );
-            }
-            if col.drop_thin {
-                return Ok(true);
-            }
-            // drop_thin is false — still write the thin page to disk + manifest.
-            // Re-process to get a Write outcome with the actual content.
-            let input = TransformInput {
-                url: None,
-                content: html_bytes,
-                screenshot_bytes: None,
-                encoding: None,
-                selector_config: col.selector_config.as_ref(),
-                ignore_tags: None,
-            };
-            let markdown = transform_content_input(input, col.transform_cfg);
-            let trimmed = clean_markdown_whitespace(markdown.trim());
-            if !trimmed.is_empty() {
-                let mut hasher = Sha256::new();
-                hasher.update(trimmed.as_bytes());
-                let content_hash = hex::encode(hasher.finalize());
-                let filename = url_to_filename(url, summary.markdown_files + 1);
-                let entry = ManifestEntry {
-                    url: url.to_string(),
-                    relative_path: format!("markdown/{filename}"),
-                    markdown_chars: trimmed.len(),
-                    content_hash: Some(content_hash),
-                    changed: true,
-                };
-                let thin_write = PageOutcome::Write {
-                    filename,
-                    trimmed,
-                    entry,
-                };
-                let wrote = write_page_to_manifest(
-                    manifest,
-                    &thin_write,
-                    &col.markdown_dir,
-                    &col.previous_manifest,
-                    url,
-                )
-                .await?;
-                if wrote {
-                    summary.markdown_files += 1;
-                }
-            }
+            return apply_thin_page_outcome(
+                html_bytes,
+                url,
+                col,
+                summary,
+                manifest,
+                chrome_tasks,
+                chrome_semaphore,
+            )
+            .await;
         }
         PageOutcome::Empty => return Ok(true),
         ref w @ (PageOutcome::Reused { .. } | PageOutcome::Write { .. }) => {
-            let wrote =
-                write_page_to_manifest(manifest, w, &col.markdown_dir, &col.previous_manifest, url)
-                    .await?;
-            if wrote {
-                summary.markdown_files += 1;
-                if matches!(w, PageOutcome::Reused { .. }) {
-                    summary.reused_pages += 1;
-                }
-            }
+            apply_written_page_outcome(w, url, col, summary, manifest).await?;
         }
     }
     Ok(false)
+}
+
+async fn apply_thin_page_outcome(
+    html_bytes: &[u8],
+    url: &str,
+    col: &CollectorConfig,
+    summary: &mut CrawlSummary,
+    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
+    chrome_tasks: &mut JoinSet<RefetchResult>,
+    chrome_semaphore: Arc<Semaphore>,
+) -> Result<bool, String> {
+    summary.thin_pages += 1;
+    summary.thin_urls.insert(url.to_string());
+    if let Some(ref ws_url) = col.chrome_ws_url {
+        log_info(&format!(
+            "thin_refetch: inline Chrome render spawned for {url}"
+        ));
+        spawn_chrome_render(
+            chrome_tasks,
+            chrome_semaphore,
+            ws_url.clone(),
+            html_bytes.to_vec(),
+            url.to_string(),
+            col.min_chars,
+            col.chrome_timeout_secs,
+        );
+    }
+    if col.drop_thin {
+        return Ok(true);
+    }
+    write_thin_page_if_needed(html_bytes, url, col, summary, manifest).await?;
+    Ok(false)
+}
+
+async fn write_thin_page_if_needed(
+    html_bytes: &[u8],
+    url: &str,
+    col: &CollectorConfig,
+    summary: &mut CrawlSummary,
+    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
+) -> Result<(), String> {
+    let input = TransformInput {
+        url: None,
+        content: html_bytes,
+        screenshot_bytes: None,
+        encoding: None,
+        selector_config: col.selector_config.as_ref(),
+        ignore_tags: Some(BOILERPLATE_SELECTORS),
+    };
+    let markdown = transform_content_input(input, col.transform_cfg);
+    let trimmed = clean_markdown_whitespace(markdown.trim());
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(trimmed.as_bytes());
+    let content_hash = hex::encode(hasher.finalize());
+    let filename = url_to_filename(url, summary.markdown_files + 1);
+    let entry = ManifestEntry {
+        url: url.to_string(),
+        relative_path: format!("markdown/{filename}"),
+        markdown_chars: trimmed.len(),
+        content_hash: Some(content_hash),
+        changed: true,
+    };
+    let thin_write = PageOutcome::Write {
+        filename,
+        trimmed,
+        entry,
+    };
+    let wrote = write_page_to_manifest(
+        manifest,
+        &thin_write,
+        &col.markdown_dir,
+        &col.previous_manifest,
+        url,
+    )
+    .await?;
+    if wrote {
+        summary.markdown_files += 1;
+    }
+    Ok(())
+}
+
+async fn apply_written_page_outcome(
+    outcome: &PageOutcome,
+    url: &str,
+    col: &CollectorConfig,
+    summary: &mut CrawlSummary,
+    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
+) -> Result<(), String> {
+    let wrote = write_page_to_manifest(
+        manifest,
+        outcome,
+        &col.markdown_dir,
+        &col.previous_manifest,
+        url,
+    )
+    .await?;
+    if wrote {
+        summary.markdown_files += 1;
+        if matches!(outcome, PageOutcome::Reused { .. }) {
+            summary.reused_pages += 1;
+        }
+    }
+    Ok(())
 }
 
 /// Drives the spider broadcast subscription to collect, filter, render, and
@@ -369,66 +426,17 @@ pub(super) async fn collect_crawl_pages(
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
         };
-
-        let raw_url = page.get_url().to_string();
-        if is_excluded_url_path(&raw_url, &col.exclude_path_prefix) {
-            continue;
-        }
-        let Some(url) = canonicalize_url_for_dedupe(&raw_url) else {
-            continue;
-        };
-        if !seen_canonical.insert(url.clone()) {
-            continue;
-        }
-        summary.pages_seen += 1;
-        urls.insert(url.clone());
-        if let Some(links) = &page.page_links {
-            summary.pages_discovered = summary
-                .pages_discovered
-                .max(seen_canonical.len() as u32 + links.len() as u32);
-        }
-
-        // Skip non-2xx pages — don't save or Chrome-refetch them.
-        if !page.status_code.is_success() {
-            log_info(&format!(
-                "skip: {} (HTTP {})",
-                url,
-                page.status_code.as_u16()
-            ));
-            summary.error_pages += 1;
-            if let Some(tx) = col.progress_tx.as_ref() {
-                tx.send(summary.clone()).await.ok();
-            }
-            continue;
-        }
-
-        // Track WAF/bot-blocked pages for reporting and targeted Chrome retry.
-        if page.waf_check || page.blocked_crawl {
-            log_warn(&format!("waf: {} blocked by {:?}", url, page.anti_bot_tech));
-            summary.waf_blocked_pages += 1;
-            summary.waf_blocked_urls.insert(url.clone());
-        }
-
-        let html_bytes: Vec<u8> = page.get_html_bytes_u8().to_vec();
-        let outcome = process_page(&html_bytes, &url, &col, summary.markdown_files + 1);
-
-        let skip = apply_page_outcome(
-            outcome,
-            &html_bytes,
-            &url,
+        process_received_page(
+            page,
             &col,
             &mut summary,
+            &mut urls,
+            &mut seen_canonical,
             &mut manifest,
             &mut chrome_tasks,
             chrome_semaphore.clone(),
         )
         .await?;
-        if let Some(tx) = col.progress_tx.as_ref() {
-            tx.send(summary.clone()).await.ok();
-        }
-        if skip {
-            continue;
-        }
     }
 
     drain_chrome_tasks(&mut chrome_tasks, &mut chrome_results).await;
@@ -443,4 +451,182 @@ pub(super) async fn collect_crawl_pages(
         tx.send(summary.clone()).await.ok();
     }
     Ok((summary, urls))
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Collector step threads mutable crawl state and async task handles; kept explicit for clarity"
+)]
+async fn process_received_page(
+    page: spider::page::Page,
+    col: &CollectorConfig,
+    summary: &mut CrawlSummary,
+    urls: &mut HashSet<String>,
+    seen_canonical: &mut HashSet<String>,
+    manifest: &mut tokio::io::BufWriter<tokio::fs::File>,
+    chrome_tasks: &mut JoinSet<RefetchResult>,
+    chrome_semaphore: Arc<Semaphore>,
+) -> Result<(), String> {
+    let Some(url) = canonicalize_and_track_page(page.get_url(), col, summary, urls, seen_canonical)
+    else {
+        return Ok(());
+    };
+    // Restore pages_discovered tracking: track the running maximum of
+    // (seen URLs so far + outbound links on this page) to give the UI a
+    // realistic "total discovered" count in live progress updates.
+    if let Some(links) = &page.page_links {
+        summary.pages_discovered = summary
+            .pages_discovered
+            .max(seen_canonical.len() as u32 + links.len() as u32);
+    }
+    if !page.status_code.is_success() {
+        log_info(&format!(
+            "skip: {} (HTTP {})",
+            url,
+            page.status_code.as_u16()
+        ));
+        summary.error_pages += 1;
+        emit_progress(col, summary).await;
+        return Ok(());
+    }
+    track_waf_block(
+        page.waf_check,
+        page.blocked_crawl,
+        &url,
+        &page.anti_bot_tech,
+        summary,
+    );
+
+    let html_bytes: Vec<u8> = page.get_html_bytes_u8().to_vec();
+    let outcome = process_page(&html_bytes, &url, col, summary.markdown_files + 1);
+    let _skip = apply_page_outcome(
+        outcome,
+        &html_bytes,
+        &url,
+        col,
+        summary,
+        manifest,
+        chrome_tasks,
+        chrome_semaphore,
+    )
+    .await?;
+    emit_progress(col, summary).await;
+    Ok(())
+}
+
+fn canonicalize_and_track_page(
+    raw_url: &str,
+    col: &CollectorConfig,
+    summary: &mut CrawlSummary,
+    urls: &mut HashSet<String>,
+    seen_canonical: &mut HashSet<String>,
+) -> Option<String> {
+    let raw_url = raw_url.to_string();
+    if is_excluded_url_path(&raw_url, &col.exclude_path_prefix) {
+        return None;
+    }
+    let url = match col.scope.as_ref() {
+        Some(scope) => normalize_map_candidate_url(&raw_url, scope, false)?,
+        None => canonicalize_url_for_dedupe(&raw_url)?,
+    };
+    if !seen_canonical.insert(url.clone()) {
+        return None;
+    }
+    summary.pages_seen += 1;
+    urls.insert(url.clone());
+    Some(url)
+}
+
+fn track_waf_block(
+    waf_check: bool,
+    blocked_crawl: bool,
+    url: &str,
+    anti_bot_tech: &impl std::fmt::Debug,
+    summary: &mut CrawlSummary,
+) {
+    if !(waf_check || blocked_crawl) {
+        return;
+    }
+    log_warn(&format!("waf: {} blocked by {:?}", url, anti_bot_tech));
+    summary.waf_blocked_pages += 1;
+    summary.waf_blocked_urls.insert(url.to_string());
+}
+
+async fn emit_progress(col: &CollectorConfig, summary: &CrawlSummary) {
+    if let Some(tx) = col.progress_tx.as_ref() {
+        tx.send(summary.clone()).await.ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::content::build_transform_config;
+
+    fn test_collector_config(scope: Option<MapScope>) -> CollectorConfig {
+        CollectorConfig {
+            markdown_dir: std::env::temp_dir(),
+            manifest_path: std::env::temp_dir().join("collector-manifest.jsonl"),
+            min_chars: 10,
+            drop_thin: false,
+            exclude_path_prefix: Vec::new(),
+            scope,
+            transform_cfg: build_transform_config(),
+            progress_tx: None,
+            previous_manifest: HashMap::new(),
+            selector_config: None,
+            chrome_ws_url: None,
+            chrome_timeout_secs: 1,
+            output_dir: std::env::temp_dir(),
+        }
+    }
+
+    #[test]
+    fn canonicalize_and_track_page_rejects_same_host_root_outside_project_scope() {
+        let col = test_collector_config(Some(MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        }));
+        let mut summary = CrawlSummary::default();
+        let mut urls = HashSet::new();
+        let mut seen = HashSet::new();
+
+        let url = canonicalize_and_track_page(
+            "https://example.github.io/",
+            &col,
+            &mut summary,
+            &mut urls,
+            &mut seen,
+        );
+
+        assert!(url.is_none());
+        assert_eq!(summary.pages_seen, 0);
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn canonicalize_and_track_page_accepts_in_scope_project_page() {
+        let col = test_collector_config(Some(MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        }));
+        let mut summary = CrawlSummary::default();
+        let mut urls = HashSet::new();
+        let mut seen = HashSet::new();
+
+        let url = canonicalize_and_track_page(
+            "https://example.github.io/project/docs/",
+            &col,
+            &mut summary,
+            &mut urls,
+            &mut seen,
+        );
+
+        assert_eq!(
+            url.as_deref(),
+            Some("https://example.github.io/project/docs")
+        );
+        assert_eq!(summary.pages_seen, 1);
+        assert!(urls.contains("https://example.github.io/project/docs"));
+    }
 }

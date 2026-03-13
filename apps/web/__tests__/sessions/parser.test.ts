@@ -75,8 +75,36 @@ describe('parseClaudeJsonl', () => {
     expect(result[0]!.content).toContain('Second block.')
   })
 
+  it('captures assistant tool_use blocks from array content', () => {
+    const raw = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'Let me check that.' },
+          {
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'exec_command',
+            input: { cmd: 'pwd' },
+          },
+        ],
+      },
+    })
+
+    const result = parseClaudeJsonl(raw)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.role).toBe('assistant')
+    expect(result[0]?.content).toContain('Let me check that.')
+    expect(result[0]?.toolUses?.[0]).toMatchObject({
+      name: 'exec_command',
+      toolCallId: 'toolu_1',
+      status: 'running',
+    })
+    expect(result[0]?.blocks?.some((b) => b.type === 'tool_use')).toBe(true)
+  })
+
   it('skips lines with array content that contains no text blocks', () => {
-    const raw = userArrayLine([{ type: 'image' }, { type: 'tool_use' }])
+    const raw = userArrayLine([{ type: 'image' }])
     // No text → content is empty after trim → should not push a message
     const result = parseClaudeJsonl(raw)
     expect(result).toHaveLength(0)

@@ -9,38 +9,3 @@
 # Format:
 #   crates/core/massive_module.rs  # expires: 2026-03-09
 
-# expires: 2026-03-10 — OAuth handler functions (91-244L, need splitting)
-crates/mcp/server/oauth_google/handlers_broker.rs  # expires: 2026-03-11
-crates/mcp/server/oauth_google/handlers_google.rs  # expires: 2026-03-11
-crates/mcp/server/oauth_google/handlers_protected.rs  # expires: 2026-03-11
-crates/mcp/server/oauth_google/helpers.rs  # expires: 2026-03-11
-
-# expires: 2026-03-11 — evaluate.rs 901L: run_parallel_answers_streaming (188L) needs splitting
-crates/vector/ops/commands/evaluate.rs  # expires: 2026-03-11
-
-# expires: 2026-03-12 — ACP rollout; split pending in follow-up.
-crates/services/acp.rs  # expires: 2026-03-12
-crates/web/execute/sync_mode.rs  # expires: 2026-03-12
-
-# expires: 2026-03-12 — pre-existing size from services-layer-refactor PR; split pending.
-apps/web/app/jobs/[id]/page.tsx  # expires: 2026-03-12
-apps/web/hooks/use-ws-messages.ts  # expires: 2026-03-12
-apps/web/components/pulse/pulse-chat-pane.tsx  # expires: 2026-03-12
-
-# expires: 2026-03-14 — Zed alignment: reboot shell + WS handler; split pending.
-apps/web/components/reboot/axon-shell.tsx  # expires: 2026-03-14
-crates/web.rs  # expires: 2026-03-14
-apps/web/components/reboot/lobe-shell.tsx  # expires: 2026-03-14
-apps/web/components/reboot/workflow-shell.tsx  # expires: 2026-03-14
-
-# expires: 2026-03-15 — shadcn generated sidebar; not hand-written.
-reboot/components/ui/sidebar.tsx  # expires: 2026-03-15
-
-# expires: 2026-03-15 — Pulse editor pane grew with align/copilot kit additions; split pending.
-apps/web/components/pulse/pulse-editor-pane.tsx  # expires: 2026-03-15
-
-# expires: 2026-03-15 — stream_container_stats grew with multi-stat broadcast; split pending.
-crates/web/docker_stats.rs  # expires: 2026-03-15
-
-# expires: 2026-03-15 — init_tracing() (137L) pre-existing on services-layer-refactor; split pending.
-crates/core/logging.rs  # expires: 2026-03-15

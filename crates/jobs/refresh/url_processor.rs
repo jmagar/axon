@@ -88,14 +88,19 @@ pub(crate) async fn process_single_refresh_url(
             if result.status_code >= 400 {
                 summary.failed += 1;
                 let error_text = format!("HTTP {}", result.status_code);
-                let _ = upsert_target_state(ctx.pool, url, &result, Some(&error_text)).await;
+                if let Err(e) = upsert_target_state(ctx.pool, url, &result, Some(&error_text)).await
+                {
+                    log_warn(&format!("state_upsert_failed url={url} error={e}"));
+                }
                 return;
             }
 
             if result.not_modified {
                 summary.not_modified += 1;
                 summary.unchanged += 1;
-                let _ = upsert_target_state(ctx.pool, url, &result, None).await;
+                if let Err(e) = upsert_target_state(ctx.pool, url, &result, None).await {
+                    log_warn(&format!("state_upsert_failed url={url} error={e}"));
+                }
                 return;
             }
 
@@ -108,13 +113,16 @@ pub(crate) async fn process_single_refresh_url(
                     let file_path = ctx.markdown_dir.join(&filename);
                     if let Err(err) = tokio::fs::write(&file_path, markdown.as_bytes()).await {
                         summary.failed += 1;
-                        let _ = upsert_target_state(
+                        if let Err(e) = upsert_target_state(
                             ctx.pool,
                             url,
                             &result,
                             Some(&format!("write markdown failed: {err}")),
                         )
-                        .await;
+                        .await
+                        {
+                            log_warn(&format!("state_upsert_failed url={url} error={e}"));
+                        }
                         return;
                     }
 
@@ -127,7 +135,9 @@ pub(crate) async fn process_single_refresh_url(
                     };
                     if let Ok(mut line) = serde_json::to_string(&entry) {
                         line.push('\n');
-                        let _ = ctx.manifest.write_all(line.as_bytes()).await;
+                        if let Err(e) = ctx.manifest.write_all(line.as_bytes()).await {
+                            log_warn(&format!("manifest_write_failed url={url} error={e}"));
+                        }
                     }
 
                     if ctx.embed {
@@ -150,7 +160,9 @@ pub(crate) async fn process_single_refresh_url(
                 summary.unchanged += 1;
             }
 
-            let _ = upsert_target_state(ctx.pool, url, &result, None).await;
+            if let Err(e) = upsert_target_state(ctx.pool, url, &result, None).await {
+                log_warn(&format!("state_upsert_failed url={url} error={e}"));
+            }
         }
         Err(err) => {
             summary.failed += 1;
@@ -164,7 +176,11 @@ pub(crate) async fn process_single_refresh_url(
                 changed: false,
                 not_modified: false,
             };
-            let _ = upsert_target_state(ctx.pool, url, &fallback, Some(&err.to_string())).await;
+            if let Err(e) =
+                upsert_target_state(ctx.pool, url, &fallback, Some(&err.to_string())).await
+            {
+                log_warn(&format!("state_upsert_failed url={url} error={e}"));
+            }
         }
     }
 }

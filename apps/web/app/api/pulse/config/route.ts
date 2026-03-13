@@ -22,6 +22,10 @@ const CONFIG_CACHE = new Map<
 >()
 const CONFIG_CACHE_TTL = 60_000 // 60 seconds
 
+// In-flight probe coalescing: parallel requests for the same agent skip the
+// duplicate ACP lifecycle and share the result of the first in-flight probe.
+const IN_FLIGHT = new Map<string, Promise<z.infer<typeof AcpConfigOption>[]>>()
+
 function normalizeConfigOptionsPayload(payload: unknown) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
   const record = payload as Record<string, unknown>
@@ -57,17 +61,31 @@ export async function POST(request: Request) {
     return Response.json({ configOptions: cached.options })
   }
 
-  let configOptions = [] as z.infer<typeof AcpConfigOption>[]
-  let probeErrorMessage: string | null = null
+  // Coalesce: if there's already an in-flight probe for this cache key, wait for it
+  // instead of spawning a duplicate ACP adapter lifecycle.
+  const existing = IN_FLIGHT.get(cacheKey)
+  if (existing) {
+    try {
+      const configOptions = await existing
+      return Response.json({ configOptions })
+    } catch (error: unknown) {
+      const errorId = makeErrorId('pulse-config')
+      const message = error instanceof Error ? error.message : String(error)
+      return apiError(502, 'ACP config probe failed', {
+        code: 'pulse_config_probe_failed',
+        errorId,
+        detail: message,
+      })
+    }
+  }
 
-  try {
+  const probePromise = (async (): Promise<z.infer<typeof AcpConfigOption>[]> => {
+    let configOptions = [] as z.infer<typeof AcpConfigOption>[]
+    let probeErrorMessage: string | null = null
+
     const flags: Record<string, string> = { agent: req.agent }
-    if (req.sessionId) {
-      flags.session_id = req.sessionId
-    }
-    if (req.model && req.model !== 'default') {
-      flags.model = req.model
-    }
+    if (req.sessionId) flags.session_id = req.sessionId
+    if (req.model && req.model !== 'default') flags.model = req.model
 
     await runAxonCommandWsStream('pulse_chat_probe', {
       timeoutMs: 60_000,
@@ -75,9 +93,7 @@ export async function POST(request: Request) {
       flags,
       onJson: (payload) => {
         const parsedOptions = normalizeConfigOptionsPayload(payload)
-        if (parsedOptions) {
-          configOptions = parsedOptions
-        }
+        if (parsedOptions) configOptions = parsedOptions
       },
       onError: (payload) => {
         probeErrorMessage = payload.message
@@ -85,19 +101,7 @@ export async function POST(request: Request) {
     })
 
     if (probeErrorMessage) {
-      const errorId = makeErrorId('pulse-config')
-      console.error('[pulse/config] probe command failed', {
-        errorId,
-        message: probeErrorMessage,
-        agent: req.agent,
-        sessionId: req.sessionId ?? null,
-        model: req.model ?? null,
-      })
-      return apiError(502, 'ACP config probe failed', {
-        code: 'pulse_config_probe_failed',
-        errorId,
-        detail: probeErrorMessage,
-      })
+      throw new Error(probeErrorMessage)
     }
 
     const now = Date.now()
@@ -105,6 +109,13 @@ export async function POST(request: Request) {
       if (value.expires <= now) CONFIG_CACHE.delete(key)
     }
     CONFIG_CACHE.set(cacheKey, { options: configOptions, expires: now + CONFIG_CACHE_TTL })
+    return configOptions
+  })()
+
+  IN_FLIGHT.set(cacheKey, probePromise)
+
+  try {
+    const configOptions = await probePromise
     return Response.json({ configOptions })
   } catch (error: unknown) {
     const errorId = makeErrorId('pulse-config')
@@ -122,5 +133,7 @@ export async function POST(request: Request) {
       errorId,
       detail: message,
     })
+  } finally {
+    IN_FLIGHT.delete(cacheKey)
   }
 }

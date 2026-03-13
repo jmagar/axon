@@ -125,7 +125,7 @@ function TreeNode({
         type="button"
         onClick={toggle}
         className={[
-          'flex w-full min-h-[44px] items-center gap-1.5 rounded px-2 py-2 text-left',
+          'axon-sidebar-item flex w-full min-h-[44px] items-center gap-1.5 rounded px-2 py-2 text-left',
           isVirtualRoot ? 'sm:min-h-0 sm:py-1.5' : 'sm:min-h-0 sm:py-[3px]',
           isVirtualRoot ? 'text-[11px] font-medium tracking-wide font-mono' : 'text-xs font-mono',
           'transition-colors duration-150',

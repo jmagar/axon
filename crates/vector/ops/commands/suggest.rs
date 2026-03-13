@@ -1,6 +1,5 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::{http_client, normalize_url};
-use crate::crates::core::ui::{muted, primary};
 use crate::crates::vector::ops::{input, qdrant};
 use spider::url::Url;
 use std::collections::HashSet;
@@ -134,18 +133,18 @@ fn host_of(url: &str) -> String {
         .unwrap_or_default()
 }
 
+#[allow(dead_code)]
 struct SuggestPromptContext {
     desired: usize,
+    /// How many URLs to request from the LLM. Over-samples relative to `desired`
+    /// so that after filtering already-indexed URLs the output still reaches `desired`.
+    llm_request: usize,
     indexed_urls: Vec<String>,
     indexed_lookup: HashSet<String>,
     ranked_base_urls: Vec<(String, usize)>,
     focus: String,
     base_context: String,
     existing_url_context: String,
-}
-
-fn suggestion_focus(cfg: &Config) -> String {
-    super::resolve_query_text(cfg).unwrap_or_default()
 }
 
 async fn build_suggest_prompt_context(
@@ -192,8 +191,14 @@ async fn build_suggest_prompt_context(
         .cloned()
         .collect::<Vec<_>>()
         .join("\n");
+    // Over-sample by 3× so that post-filter rejections (already-indexed URLs the LLM
+    // couldn't see) don't reduce the final output below `desired`. Capped at 100 to
+    // stay within reasonable LLM context limits.
+    let llm_request = (desired * 3).min(100);
+
     Ok(SuggestPromptContext {
         desired,
+        llm_request,
         indexed_urls,
         indexed_lookup,
         ranked_base_urls,
@@ -212,12 +217,14 @@ Rules:\n\
 - Provide exactly {} suggestions.\n\
 - Suggest docs/reference/changelog/API/help URLs likely to complement the indexed base URLs.\n\
 - Do not suggest any URL from ALREADY_INDEXED_URLS.\n\
+- Do not suggest any URL whose domain is already well-covered (high page count in INDEXED_BASE_URLS_WITH_PAGE_COUNTS) unless you are confident the specific path is not yet indexed.\n\
+- Prefer new domains or deeply nested sections not represented in ALREADY_INDEXED_URLS.\n\
 - Prefer URLs likely to be crawl entrypoints or high-value docs pages.\n\
 - Use only absolute http/https URLs.\n\n\
 Focus (optional): {}\n\n\
 INDEXED_BASE_URLS_WITH_PAGE_COUNTS:\n{}\n\n\
-ALREADY_INDEXED_URLS:\n{}",
-        ctx.desired, ctx.focus, ctx.base_context, ctx.existing_url_context
+ALREADY_INDEXED_URLS (sample — more may be indexed):\n{}",
+        ctx.llm_request, ctx.focus, ctx.base_context, ctx.existing_url_context
     );
     user_prompt
 }
@@ -298,63 +305,6 @@ fn filter_new_suggestions(
         }
     }
     (diversified, rejected_existing)
-}
-
-fn emit_suggest_output(
-    cfg: &Config,
-    ctx: &SuggestPromptContext,
-    accepted: &[Suggestion],
-    rejected_existing: &[String],
-    content: &str,
-) -> Result<(), Box<dyn Error>> {
-    if cfg.json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "collection": cfg.collection,
-                "requested": ctx.desired,
-                "indexed_urls_count": ctx.indexed_urls.len(),
-                "indexed_base_urls_count": ctx.ranked_base_urls.len(),
-                "suggestions": accepted.iter().map(|s| serde_json::json!({"url": s.url, "reason": s.reason})).collect::<Vec<_>>(),
-                "rejected_existing": rejected_existing,
-                "raw_model_output": content,
-            }))?
-        );
-        return Ok(());
-    }
-
-    println!("{}", primary("Suggested Crawl Targets"));
-    println!(
-        "  {} requested={} accepted={} filtered_existing={}",
-        muted("Summary:"),
-        ctx.desired,
-        accepted.len(),
-        rejected_existing.len()
-    );
-    for (idx, suggestion) in accepted.iter().enumerate() {
-        println!("  {}. {}", idx + 1, suggestion.url);
-        println!("     {}", muted(&suggestion.reason));
-    }
-    if accepted.is_empty() {
-        println!(
-            "  {}",
-            muted(
-                "No new URLs survived filtering. Retry with a different focus or higher model temperature."
-            )
-        );
-    }
-    Ok(())
-}
-
-pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.openai_base_url.trim().is_empty() || cfg.openai_model.trim().is_empty() {
-        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for suggest".into());
-    }
-    let desired = cfg.search_limit.clamp(1, 100);
-    let focus = suggestion_focus(cfg);
-    let (accepted, rejected_existing, content, ctx) =
-        discover_suggestions_with_context(cfg, &focus, desired).await?;
-    emit_suggest_output(cfg, &ctx, &accepted, &rejected_existing, &content)
 }
 
 async fn discover_suggestions_with_context(

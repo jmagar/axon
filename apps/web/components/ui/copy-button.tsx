@@ -20,9 +20,10 @@ export function CopyButton({ text, className }: CopyButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
+      aria-label={copied ? 'Copied to clipboard' : 'Copy to clipboard'}
       className={
         className ??
-        'absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] transition-all duration-200 hover:border-[var(--border-standard)] hover:bg-[var(--surface-float)] hover:text-[var(--axon-secondary)]'
+        'absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] transition-[color,background-color,border-color] duration-200 hover:border-[var(--border-standard)] hover:bg-[var(--surface-float)] hover:text-[var(--axon-secondary)]'
       }
       style={{ background: 'rgba(10, 18, 35, 0.8)', backdropFilter: 'blur(4px)' }}
     >

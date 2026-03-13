@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { forwardRef, useEffect, useState } from 'react'
 import type { TerminalEmulatorProps, TerminalHandle } from './terminal-emulator'
 
@@ -49,13 +50,13 @@ function TerminalLoadingPlaceholder() {
   return (
     <div
       className="flex h-full w-full items-center justify-center"
-      style={{ background: '#030712' }}
+      style={{ background: 'var(--axon-bg)' }}
     >
       <div
         className="h-4 w-4 animate-spin rounded-full border-2"
         style={{
           borderColor: 'rgba(135,175,255,0.3)',
-          borderTopColor: '#87afff',
+          borderTopColor: 'var(--axon-primary)',
         }}
       />
     </div>

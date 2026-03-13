@@ -3,23 +3,53 @@ use axon::crates::services::embed::{map_embed_job_result, map_embed_start_result
 use axon::crates::services::extract::{map_extract_job_result, map_extract_start_result};
 use axon::crates::services::ingest::map_ingest_result;
 use axon::crates::services::screenshot::map_screenshot_result;
+use std::path::Path;
 
 // --- crawl mapping helpers ---
 
 #[test]
 fn maps_crawl_start_job_ids() {
-    let ids = vec![
-        "550e8400-e29b-41d4-a716-446655440000".to_string(),
-        "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string(),
+    let jobs = vec![
+        (
+            "https://docs.example.com".to_string(),
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+        ),
+        (
+            "https://api.example.com".to_string(),
+            "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string(),
+        ),
     ];
-    let result = map_crawl_start_result(ids.clone());
-    assert_eq!(result.job_ids, ids);
+    let result = map_crawl_start_result(Path::new("/tmp/axon-output"), &jobs);
+    assert_eq!(
+        result.job_ids,
+        vec![
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string(),
+        ]
+    );
+    assert_eq!(result.jobs.len(), 2);
+    assert_eq!(result.jobs[0].url, "https://docs.example.com");
+    assert_eq!(
+        result.jobs[0].output_dir,
+        "/tmp/axon-output/domains/docs.example.com/550e8400-e29b-41d4-a716-446655440000"
+    );
+    assert_eq!(
+        result.jobs[0].predicted_paths,
+        vec![
+            "/tmp/axon-output/domains/docs.example.com/550e8400-e29b-41d4-a716-446655440000/manifest.jsonl".to_string(),
+            "/tmp/axon-output/domains/docs.example.com/550e8400-e29b-41d4-a716-446655440000/markdown".to_string(),
+            "/tmp/axon-output/domains/docs.example.com/550e8400-e29b-41d4-a716-446655440000/audit/docs-example-com-diff-report.json".to_string(),
+        ]
+    );
 }
 
 #[test]
 fn maps_crawl_start_empty_ids() {
-    let result = map_crawl_start_result(vec![]);
+    let result = map_crawl_start_result(Path::new("/tmp/axon-output"), &[]);
     assert!(result.job_ids.is_empty());
+    assert!(result.jobs.is_empty());
+    assert_eq!(result.output_dir, None);
+    assert!(result.predicted_paths.is_empty());
 }
 
 #[test]
@@ -163,4 +193,31 @@ fn maps_screenshot_result_url_field() {
     let result = map_screenshot_result(payload.clone());
     assert_eq!(result.payload["url"], "https://docs.rust-lang.org");
     assert_eq!(result.payload["size_bytes"], 42000);
+}
+
+#[test]
+fn ingest_service_exposes_start_status_cancel_list_cleanup_clear_recover() {
+    let _ = axon::crates::services::ingest::ingest_start;
+    let _ = axon::crates::services::ingest::ingest_status;
+    let _ = axon::crates::services::ingest::ingest_cancel;
+    let _ = axon::crates::services::ingest::ingest_list;
+    let _ = axon::crates::services::ingest::ingest_cleanup;
+    let _ = axon::crates::services::ingest::ingest_clear;
+    let _ = axon::crates::services::ingest::ingest_recover;
+}
+
+#[test]
+fn classify_target_returns_ingest_source_for_github_slug() {
+    let src =
+        axon::crates::services::ingest::classify_target("owner/repo", true).expect("must classify");
+    assert!(matches!(
+        src,
+        axon::crates::jobs::ingest::IngestSource::Github { .. }
+    ));
+}
+
+#[test]
+fn classify_target_rejects_unknown_target() {
+    let err = axon::crates::services::ingest::classify_target("not-a-target", false).unwrap_err();
+    assert!(err.to_string().contains("cannot determine ingest source"));
 }

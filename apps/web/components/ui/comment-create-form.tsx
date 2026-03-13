@@ -195,6 +195,7 @@ export function CommentCreateForm({
               variant="ghost"
               className="absolute right-0.5 bottom-0.5 ml-auto size-6 shrink-0"
               disabled={commentContent.trim().length === 0}
+              aria-label="Submit reply"
               onClick={(e) => {
                 e.stopPropagation()
                 onAddComment()

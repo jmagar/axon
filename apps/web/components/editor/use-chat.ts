@@ -137,7 +137,8 @@ export const useChat = () => {
               const focusPath = selection.focus?.path
 
               if (anchorPath && anchorPath.length >= 3) {
-                const rootIndex = anchorPath[0]
+                // anchorPath.length >= 3 guard ensures index 0 is valid
+                const rootIndex = anchorPath[0]!
                 const rootNode = children[rootIndex]
 
                 if (rootNode?.type === 'table') {

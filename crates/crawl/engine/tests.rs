@@ -168,6 +168,25 @@ fn test_canonicalize_url_root_and_default_port() {
     assert_eq!(a.as_deref(), Some("https://example.com/"));
 }
 
+#[test]
+fn test_map_seed_scope_uses_resolved_project_prefix() {
+    let seed = "https://example.github.io/project";
+    let resolved = "https://example.github.io/project/";
+
+    let scope = derive_map_scope(seed, resolved).expect("scope");
+
+    assert_eq!(scope.host, "example.github.io");
+    assert_eq!(scope.path_prefix.as_deref(), Some("/project"));
+}
+
+#[test]
+fn test_map_scope_allows_root_seed_without_path_filter() {
+    let scope = derive_map_scope("https://example.github.io/", "https://example.github.io/")
+        .expect("scope");
+
+    assert_eq!(scope.path_prefix, None);
+}
+
 // Coverage checks are skipped when max_pages == 0 (uncapped), so this verifies
 // the explicit single-page fallback rule rather than the coverage heuristic.
 #[test]
@@ -175,6 +194,26 @@ fn test_fallback_uncapped_small_but_complete_site() {
     // 1-page site, healthy content, no thin pages, max_pages uncapped (0)
     assert!(should_fallback_to_chrome(
         &summary(1, 0, 1),
+        0,
+        &default_cfg()
+    ));
+}
+
+#[test]
+fn test_fallback_uncapped_two_pages_still_retries_chrome() {
+    // 2-page sites are also too small to trust as "complete" in HTTP mode.
+    assert!(should_fallback_to_chrome(
+        &summary(2, 0, 2),
+        0,
+        &default_cfg()
+    ));
+}
+
+#[test]
+fn test_no_fallback_uncapped_three_pages_healthy() {
+    // 3+ pages should use normal thin-ratio checks when uncapped.
+    assert!(!should_fallback_to_chrome(
+        &summary(3, 0, 3),
         0,
         &default_cfg()
     ));
@@ -238,6 +277,49 @@ fn test_fallback_custom_min_pages() {
         80,
         &default_cfg()
     ));
+}
+
+#[test]
+fn test_map_retry_gate_low_coverage() {
+    assert!(should_retry_map_with_chrome(&summary(0, 0, 0)));
+    assert!(should_retry_map_with_chrome(&summary(1, 0, 1)));
+    assert!(should_retry_map_with_chrome(&summary(2, 0, 2)));
+    assert!(!should_retry_map_with_chrome(&summary(3, 0, 3)));
+}
+
+#[test]
+fn test_should_retry_map_with_html_fallback_for_two_or_fewer_urls() {
+    assert!(should_retry_map_with_html_fallback(0));
+    assert!(should_retry_map_with_html_fallback(1));
+    assert!(should_retry_map_with_html_fallback(2));
+    assert!(!should_retry_map_with_html_fallback(3));
+}
+
+#[test]
+fn test_merge_map_candidate_urls_adds_only_new_scoped_urls() {
+    let scope = MapScope {
+        host: "example.github.io".to_string(),
+        path_prefix: Some("/project".to_string()),
+    };
+
+    let merged = merge_map_candidate_urls(
+        vec!["https://example.github.io/project/overview".to_string()],
+        vec![
+            "https://example.github.io/project/overview/".to_string(),
+            "https://example.github.io/project/api".to_string(),
+            "https://example.github.io/other/out-of-scope".to_string(),
+        ],
+        &scope,
+        true,
+    );
+
+    assert_eq!(
+        merged,
+        vec![
+            "https://example.github.io/project/overview".to_string(),
+            "https://example.github.io/project/api".to_string(),
+        ]
+    );
 }
 
 #[test]

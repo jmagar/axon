@@ -103,6 +103,7 @@ mod tests {
 
     fn make_point(chunk_text: &str, text: &str, chunk_index: Option<i64>) -> QdrantPoint {
         QdrantPoint {
+            id: serde_json::Value::Null,
             payload: QdrantPayload {
                 url: String::new(),
                 chunk_text: chunk_text.to_string(),

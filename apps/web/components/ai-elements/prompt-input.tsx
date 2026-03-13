@@ -2,7 +2,16 @@
 
 import { ArrowUpIcon } from 'lucide-react'
 import type { FormEvent, HTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -57,7 +66,7 @@ export function PromptInput({
     <PromptInputContext.Provider value={value}>
       <form
         className={cn(
-          'rounded-[22px] border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] p-3',
+          'rounded-xl border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] p-2.5 sm:rounded-lg sm:p-2',
           className,
         )}
         onSubmit={async (event) => {
@@ -78,16 +87,19 @@ export function PromptInput({
 }
 
 export function PromptInputBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex items-end gap-3', className)} {...props} />
+  return <div className={cn('flex items-end gap-2.5 sm:gap-2', className)} {...props} />
 }
 
 export function PromptInputTextarea({
   className,
   onChange,
   onKeyDown,
+  id,
+  name,
   ...props
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const { text, setText } = usePromptInputContext()
+  const generatedId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const autoResize = useCallback(() => {
@@ -103,9 +115,11 @@ export function PromptInputTextarea({
 
   return (
     <textarea
+      id={id ?? `prompt-input-${generatedId}`}
+      name={name ?? 'prompt_input'}
       ref={textareaRef}
       className={cn(
-        'min-h-20 flex-1 resize-none bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:outline-none transition-[height] duration-100',
+        'min-h-14 sm:min-h-12 flex-1 resize-none bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:outline-none transition-[height] duration-100',
         className,
       )}
       onChange={(event) => {
@@ -128,7 +142,7 @@ export function PromptInputTextarea({
 
 export function PromptInputFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('mt-3 flex items-center justify-between gap-3', className)} {...props} />
+    <div className={cn('mt-2 flex items-center justify-between gap-2', className)} {...props} />
   )
 }
 
@@ -179,13 +193,14 @@ export function PromptInputSubmit({
   return (
     <Button
       className={cn(
-        'bg-[var(--axon-primary)] text-[#04111f] hover:bg-[var(--axon-primary-strong)] transition-all duration-200',
+        'bg-[var(--axon-primary)] text-[#04111f] hover:bg-[var(--axon-primary-strong)] transition-colors duration-200',
         shouldPulse && 'animate-submit-ready',
         className,
       )}
       disabled={disabled ?? (!text.trim() && !hasFiles)}
       size="icon"
       type="submit"
+      aria-label="Send message"
       {...props}
     >
       {children ?? <ArrowUpIcon className="size-4" />}
@@ -206,5 +221,5 @@ export function PromptInputHeader({
 }
 
 export function PromptInputAttachments({ children }: { children?: ReactNode }) {
-  return children ? <div className="mb-3">{children}</div> : null
+  return children ? <div className="mb-2">{children}</div> : null
 }

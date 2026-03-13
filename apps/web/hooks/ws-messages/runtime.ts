@@ -105,9 +105,13 @@ export function reduceRuntimeState(
   state: WsMessagesRuntimeState,
   msg: WsServerMsg,
 ): WsMessagesRuntimeState {
-  const next = { ...state }
+  // IMPORTANT: no-op cases MUST return `state` (not a spread copy) so the
+  // identity check `if (next !== prev)` in handlers.ts correctly short-circuits
+  // and avoids a spurious flushRuntimeState call on every no-op message.
+  // Only cases that actually mutate fields should spread and return `next`.
   switch (msg.type) {
     case 'command.output.json': {
+      const next = { ...state }
       const maybeJobData =
         msg.data.data && typeof msg.data.data === 'object' && !Array.isArray(msg.data.data)
           ? (msg.data.data as Record<string, unknown>)
@@ -118,15 +122,19 @@ export function reduceRuntimeState(
       next.stdoutJson = pushCapped(state.stdoutJson, msg.data.data)
       return next
     }
-    case 'command.start':
+    case 'command.start': {
+      const next = { ...state }
       next.commandMode = msg.data.ctx.mode
       next.stdoutJson = []
       return next
+    }
     case 'command.output.line':
-      return next
+      // No runtime-slice fields changed — return original state to allow identity check.
+      return state
     case 'job.status': {
       const lifecycle = lifecycleFromJobStatus(msg, state.currentJobId)
-      if (!lifecycle) return next
+      if (!lifecycle) return state
+      const next = { ...state }
       next.currentJobId = lifecycle.job_id
       next.lifecycleEntries = pushCapped(state.lifecycleEntries, lifecycle)
       next.stdoutJson = pushCapped(state.stdoutJson, lifecycle)
@@ -134,25 +142,39 @@ export function reduceRuntimeState(
     }
     case 'job.progress': {
       const lifecycle = lifecycleFromJobProgress(msg, state.currentJobId)
-      if (!lifecycle) return next
+      if (!lifecycle) return state
+      const next = { ...state }
       next.lifecycleEntries = pushCapped(state.lifecycleEntries, lifecycle)
       next.stdoutJson = pushCapped(state.stdoutJson, lifecycle)
       return next
     }
-    case 'artifact.list':
+    case 'artifact.list': {
+      const next = { ...state }
       next.screenshotFiles = toScreenshotFiles(msg.data.artifacts)
       return next
-    case 'artifact.content':
+    }
+    case 'artifact.content': {
+      const next = { ...state }
       next.markdownContent = msg.data.content
       return next
-    case 'job.cancel.response':
+    }
+    case 'job.cancel.response': {
+      const next = { ...state }
       next.cancelResponse = toCancelResponse(msg.data.payload)
       return next
-    case 'crawl_progress':
+    }
+    case 'crawl_progress': {
+      const next = { ...state }
       next.crawlProgress = toCrawlProgress(msg)
       return next
+    }
+    case 'command.done':
+      // command.done has no effect on WsMessagesRuntimeState fields —
+      // isProcessing, recentRuns, workspace state are managed outside the runtime slice.
+      return state
     default:
-      return next
+      // Unknown/unhandled messages (e.g. 'log', 'stats') have no runtime-slice effect.
+      return state
   }
 }
 

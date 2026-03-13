@@ -11,26 +11,21 @@ use uuid::Uuid;
 use super::helpers::{
     append_query_pairs, bearer_token_from_headers, extract_cookie_value, is_allowed_redirect_uri,
     normalize_loopback_redirect_uri, request_identity, request_identity_from_headers,
-    unix_now_secs,
+    session_cookie_name, unix_now_secs,
 };
 use super::types::{
     AuthCodeRecord, AuthorizeErrorResponse, AuthorizeParams, DynamicClientRegistrationRequest,
-    DynamicClientRegistrationResponse, GoogleOAuthState, OAUTH_SESSION_COOKIE, RegisteredClient,
+    DynamicClientRegistrationResponse, GoogleOAuthState, RegisteredClient,
 };
 
-pub(crate) async fn oauth_register_client(
-    State(state): State<GoogleOAuthState>,
-    headers: axum::http::HeaderMap,
-    Json(payload): Json<DynamicClientRegistrationRequest>,
-) -> Result<Json<DynamicClientRegistrationResponse>, Response> {
-    let cfg = state.config()?;
-    let identity = request_identity_from_headers(&headers);
-    state
-        .check_rate_limit(&format!("register:{identity}"), 20, 60)
-        .await?;
-
-    if let Some(expected) = &cfg.dcr_token {
-        let provided = bearer_token_from_headers(&headers);
+#[allow(clippy::result_large_err)]
+fn validate_registration_auth_token(
+    expected_token: Option<&String>,
+    headers: &axum::http::HeaderMap,
+    identity: &str,
+) -> Result<(), Response> {
+    if let Some(expected) = expected_token {
+        let provided = bearer_token_from_headers(headers);
         if provided.as_deref() != Some(expected.as_str()) {
             warn!(
                 target: "axon.mcp.oauth",
@@ -47,20 +42,14 @@ pub(crate) async fn oauth_register_client(
                 .into_response());
         }
     }
+    Ok(())
+}
 
-    if let Some(method) = payload.token_endpoint_auth_method.as_deref()
-        && method != "none"
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "invalid_client_metadata",
-                "error_description": "only token_endpoint_auth_method=none is supported"
-            })),
-        )
-            .into_response());
-    }
-
+#[allow(clippy::result_large_err)]
+fn extract_valid_redirect_uris(
+    payload: DynamicClientRegistrationRequest,
+    redirect_policy: super::types::RedirectPolicy,
+) -> Result<Vec<String>, Response> {
     let redirect_uris = payload
         .redirect_uris
         .filter(|uris| !uris.is_empty())
@@ -76,9 +65,8 @@ pub(crate) async fn oauth_register_client(
         })?
         .into_iter()
         .filter_map(|uri| normalize_loopback_redirect_uri(&uri))
-        .filter(|uri| is_allowed_redirect_uri(uri, cfg.redirect_policy))
+        .filter(|uri| is_allowed_redirect_uri(uri, redirect_policy))
         .collect::<Vec<_>>();
-
     if redirect_uris.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -89,6 +77,36 @@ pub(crate) async fn oauth_register_client(
         )
             .into_response());
     }
+    Ok(redirect_uris)
+}
+
+pub(crate) async fn oauth_register_client(
+    State(state): State<GoogleOAuthState>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<DynamicClientRegistrationRequest>,
+) -> Result<Json<DynamicClientRegistrationResponse>, Response> {
+    let cfg = state.config()?;
+    let identity = request_identity_from_headers(&headers);
+    state
+        .check_rate_limit(&format!("register:{identity}"), 20, 60)
+        .await?;
+
+    validate_registration_auth_token(cfg.dcr_token.as_ref(), &headers, &identity)?;
+
+    if let Some(method) = payload.token_endpoint_auth_method.as_deref()
+        && method != "none"
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "invalid_client_metadata",
+                "error_description": "only token_endpoint_auth_method=none is supported"
+            })),
+        )
+            .into_response());
+    }
+
+    let redirect_uris = extract_valid_redirect_uris(payload, cfg.redirect_policy)?;
 
     let client_id = format!("axon-{}", Uuid::new_v4());
     let client = RegisteredClient {
@@ -229,6 +247,69 @@ fn validate_scope(
     Ok(scope)
 }
 
+fn redirect_to_login(req: &axum::extract::Request) -> Response {
+    let return_to = req.uri().to_string();
+    let mut login_url = Url::parse("http://localhost/oauth/google/login")
+        .unwrap_or_else(|_| Url::parse("http://localhost/").expect("localhost parse must succeed"));
+    login_url
+        .query_pairs_mut()
+        .append_pair("return_to", &return_to);
+    let redirect = format!(
+        "/oauth/google/login?{}",
+        login_url.query().unwrap_or_default()
+    );
+    Redirect::temporary(&redirect).into_response()
+}
+
+fn unauthorized_client_response() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(AuthorizeErrorResponse {
+            error: "unauthorized_client".to_string(),
+            error_description: "unknown client_id".to_string(),
+        }),
+    )
+        .into_response()
+}
+
+#[allow(clippy::result_large_err)]
+async fn load_authorize_context(
+    state: &GoogleOAuthState,
+    params: AuthorizeParams,
+) -> Result<(String, Option<String>, AuthCodeRecord), Response> {
+    let registered = state
+        .get_client(&params.client_id)
+        .await
+        .ok_or_else(unauthorized_client_response)?;
+    let redirect_uri = validate_authorize_redirect_uri(state, &params, &registered)?;
+    if params.response_type != "code" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(AuthorizeErrorResponse {
+                error: "unsupported_response_type".to_string(),
+                error_description: "only response_type=code is supported".to_string(),
+            }),
+        )
+            .into_response());
+    }
+    validate_pkce_params(&params)?;
+    let cfg = state.config()?;
+    let scope = validate_scope(params.scope, &cfg.scopes)?;
+    let state_param = params.state;
+    Ok((
+        redirect_uri.clone(),
+        state_param,
+        AuthCodeRecord {
+            client_id: params.client_id,
+            redirect_uri,
+            scope,
+            code_challenge: params.code_challenge,
+            code_challenge_method: Some("S256".to_string()),
+            expires_at_unix: unix_now_secs() + 600,
+        },
+    ))
+}
+
 pub(crate) async fn oauth_authorize(
     State(state): State<GoogleOAuthState>,
     Query(params): Query<AuthorizeParams>,
@@ -242,80 +323,20 @@ pub(crate) async fn oauth_authorize(
         return resp;
     }
 
-    let session_id = extract_cookie_value(&req, OAUTH_SESSION_COOKIE);
+    let session_id = extract_cookie_value(&req, session_cookie_name(&state));
     let authenticated = match session_id.as_deref() {
         Some(id) => state.is_authenticated(id).await,
         None => false,
     };
     if !authenticated {
-        let return_to = req.uri().to_string();
-        let mut login_url =
-            Url::parse("http://localhost/oauth/google/login").unwrap_or_else(|_| {
-                Url::parse("http://localhost/").expect("localhost parse must succeed")
-            });
-        login_url
-            .query_pairs_mut()
-            .append_pair("return_to", &return_to);
-        let redirect = format!(
-            "/oauth/google/login?{}",
-            login_url.query().unwrap_or_default()
-        );
-        return Redirect::temporary(&redirect).into_response();
+        return redirect_to_login(&req);
     }
 
-    let registered = match state.get_client(&params.client_id).await {
-        Some(client) => client,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(AuthorizeErrorResponse {
-                    error: "unauthorized_client".to_string(),
-                    error_description: "unknown client_id".to_string(),
-                }),
-            )
-                .into_response();
-        }
-    };
-
-    let redirect_uri = match validate_authorize_redirect_uri(&state, &params, &registered) {
-        Ok(uri) => uri,
+    let (redirect_uri, state_param, record) = match load_authorize_context(&state, params).await {
+        Ok(v) => v,
         Err(resp) => return resp,
     };
-
-    // redirect_uri is now validated — safe to use for error redirects below
-    if params.response_type != "code" {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(AuthorizeErrorResponse {
-                error: "unsupported_response_type".to_string(),
-                error_description: "only response_type=code is supported".to_string(),
-            }),
-        )
-            .into_response();
-    }
-
-    if let Err(resp) = validate_pkce_params(&params) {
-        return resp;
-    }
-
-    let cfg = match state.config() {
-        Ok(cfg) => cfg,
-        Err(resp) => return resp,
-    };
-    let scope = match validate_scope(params.scope, &cfg.scopes) {
-        Ok(s) => s,
-        Err(resp) => return resp,
-    };
-
     let auth_code = Uuid::new_v4().to_string();
-    let record = AuthCodeRecord {
-        client_id: params.client_id,
-        redirect_uri: redirect_uri.clone(),
-        scope,
-        code_challenge: params.code_challenge,
-        code_challenge_method: Some("S256".to_string()),
-        expires_at_unix: unix_now_secs() + 600,
-    };
     if let Err(resp) = state.put_auth_code(&auth_code, &record).await {
         return resp;
     }
@@ -327,7 +348,7 @@ pub(crate) async fn oauth_authorize(
     );
 
     let mut query = vec![("code", auth_code)];
-    if let Some(state_param) = params.state {
+    if let Some(state_param) = state_param {
         query.push(("state", state_param));
     }
 
