@@ -1,6 +1,7 @@
 'use client'
 
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type React from 'react'
 import { useState } from 'react'
 import { fmtNum } from './shared'
 
@@ -179,7 +180,8 @@ export function VirtualTableBody<T>({
           }}
           className="border-b border-[var(--border-subtle)] hover:bg-[var(--surface-float)]"
         >
-          {renderRow(rows[virtualRow.index], virtualRow.index)}
+          {/* virtualRow.index is always a valid index into rows — guaranteed by the virtualizer */}
+          {renderRow(rows[virtualRow.index]!, virtualRow.index)}
         </tr>
       ))}
     </tbody>

@@ -27,6 +27,7 @@ pub(super) const ALLOWED_MODES: &[&str] = &[
     "youtube",
     "sessions",
     "screenshot",
+    "mcp_refresh",
     "pulse_chat",
     "pulse_chat_probe",
 ];
@@ -66,18 +67,22 @@ pub(super) const ALLOWED_FLAGS: &[(&str, &str)] = &[
     ("responses_mode", "--responses-mode"),
     ("agent", "--agent"),
     ("model", "--model"),
+    ("session_mode", "--session-mode"),
+    ("mcp_servers", "--mcp-servers"),
+    ("blocked_mcp_tools", "--blocked-mcp-tools"),
     ("session_id", "--session-id"),
+    ("assistant_mode", "--assistant-mode"),
 ];
 
 /// Modes that use fire-and-forget direct service enqueue.
 /// These produce job IDs and return immediately without polling.
-/// Note: github/reddit/youtube are NOT here — their ingest functions are !Send
-/// due to `Box<dyn Error>` in sub-futures; they use the subprocess fallback.
-pub(super) const ASYNC_MODES: &[&str] = &["crawl", "extract", "embed"];
+pub(super) const ASYNC_MODES: &[&str] =
+    &["crawl", "extract", "embed", "github", "reddit", "youtube"];
 
 /// Modes whose operations produce async job IDs but are handled via subprocess.
-/// These are distinct from ASYNC_MODES because their service functions are !Send.
-pub(super) const ASYNC_SUBPROCESS_MODES: &[&str] = &["github", "reddit", "youtube"];
+/// Kept as an empty marker list while direct async routing is authoritative.
+#[allow(dead_code)]
+pub(super) const ASYNC_SUBPROCESS_MODES: &[&str] = &[];
 
 /// Commands that produce streaming/non-JSON output and must NOT receive --json.
 /// When adding a new command, the default is to receive --json. Add here only if

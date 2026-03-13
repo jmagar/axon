@@ -122,10 +122,62 @@ pub enum WsEventV2 {
 }
 
 pub(super) fn serialize_v2_event(event: WsEventV2) -> Option<String> {
-    serde_json::to_string(&event).ok()
+    serde_json::to_string(&event)
+        .map_err(|e| log::error!("failed to serialize WsEventV2: {e}"))
+        .ok()
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn acp_bridge_event_payload(event: &AcpBridgeEvent) -> Value {
-    serde_json::to_value(event)
-        .unwrap_or_else(|e| serde_json::json!({ "error": format!("serialization failed: {}", e) }))
+    serde_json::to_value(event).unwrap_or_else(|e| {
+        log::error!("failed to serialize ACP bridge event payload, sending error placeholder: {e}");
+        serde_json::json!({ "error": format!("serialization failed: {e}") })
+    })
+}
+
+/// Serialize an [`AcpBridgeEvent`] directly to a JSON string, skipping the
+/// intermediate [`Value`] allocation used by [`acp_bridge_event_payload`].
+///
+/// This is the hot path for streaming tokens: one `serde_json::to_string` call
+/// instead of two (`to_value` + `to_string`).
+pub(super) fn acp_bridge_event_json(event: &AcpBridgeEvent) -> String {
+    serde_json::to_string(event).unwrap_or_else(|e| {
+        log::error!("failed to serialize ACP bridge event: {e}");
+        // Use serde_json to properly escape the error message — a raw format!()
+        // produces invalid JSON if the error contains quotes, backslashes, or newlines.
+        serde_json::json!({"type": "error", "message": format!("serialization failed: {e}")})
+            .to_string()
+    })
+}
+
+/// Build a `command.output.json` WS envelope around a pre-serialized data
+/// payload.  This avoids double serialization on the streaming hot path
+/// (PERF-4): the `data_json` string is embedded verbatim into the envelope
+/// rather than being parsed into `Value` and re-serialized.
+///
+/// # Wire type: `"command.output.json"`
+///
+/// This function intentionally uses `"command.output.json"` rather than the
+/// basic `"output"` type from the legacy 5-type WS contract.  The legacy table
+/// (`output`, `log`, `done`, `error`, `stats`) covers subprocess-backed modes;
+/// direct-dispatch (ACP/pulse_chat) uses the richer `WsEventV2` protocol which
+/// adds `"command.output.json"` for structured JSON payloads with execution
+/// context.  Both names remain in use — `"output"` for raw subprocess lines,
+/// `"command.output.json"` for typed service-layer results.
+///
+/// See `WsEventV2::CommandOutputJson` for the canonical definition.
+///
+/// The output matches the wire format of `WsEventV2::CommandOutputJson`:
+/// ```json
+/// {"type":"command.output.json","data":{"ctx":{...},"data":<data_json>}}
+/// ```
+pub(super) fn serialize_raw_output_event(ctx: &CommandContext, data_json: &str) -> Option<String> {
+    let ctx_json = serde_json::to_string(ctx)
+        .map_err(|e| log::error!("failed to serialize CommandContext: {e}"))
+        .ok()?;
+    // Build the envelope by string concatenation — `data_json` is already valid
+    // JSON from `acp_bridge_event_json`, so no second serialization pass.
+    Some(format!(
+        r#"{{"type":"command.output.json","data":{{"ctx":{ctx_json},"data":{data_json}}}}}"#
+    ))
 }

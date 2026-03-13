@@ -23,6 +23,8 @@ All `app/api/*` routes are now protected by `apps/web/proxy.ts`.
   - `x-api-key: <token>`
 - Required server env:
   - `AXON_WEB_API_TOKEN`
+- Required browser env (only for client-initiated `/api/*` calls):
+  - `NEXT_PUBLIC_AXON_API_TOKEN` (must match `AXON_WEB_API_TOKEN`)
 - Origin enforcement:
   - `AXON_WEB_ALLOWED_ORIGINS` (comma-separated), or same-origin fallback if unset
 - Local-only bypass (development only):
@@ -37,8 +39,39 @@ The terminal shell websocket (`/ws/shell`) now enforces auth and origin checks i
   - `NEXT_PUBLIC_AXON_API_TOKEN` (fallback)
 - Pulse beta allowlist is controlled by `AXON_ALLOWED_CLAUDE_BETAS` (see root README env table).
 
+### Redis Cache Runtime Note
+
+`apps/web` API routes run in the Next.js process rooted at `apps/web`, so they do not automatically inherit root repo `.env` values.
+
+- If you enable Redis-backed web caching, set `AXON_REDIS_URL` in `apps/web/.env.local`.
+- This is the only required duplicated setting for web cache runtime scope isolation.
+
 Next.js response hardening is configured in `next.config.ts` with CSP, `X-Frame-Options`, `Referrer-Policy`, and HSTS (non-dev).
 `/api/cortex/*` responses are cache-tuned with `s-maxage=30, stale-while-revalidate=60`.
+
+### Cortex Mission Control
+
+The right-side Cortex pane now renders a unified **Mission Control** surface instead of separate Status/Doctor/Sources/Domains/Stats tabs.
+
+- Aggregated API: `GET /api/cortex/overview`
+- UI root: `components/cortex/mission-control-pane.tsx`
+- Shell integration: `components/shell/axon-cortex-pane.tsx`
+
+## Performance & Optimization
+
+The web application follows a strict performance-first architecture to ensure a smooth, bioluminescent experience.
+
+### React Rendering
+- **God Hook Memoization**: `useAxonShellState` manages global shell state. To prevent re-render cascades, child components like `AxonSidebar`, `AxonPromptComposer`, and `PulseEditorPane` are wrapped in `React.memo`.
+- **Prop Stability**: High-frequency state changes (typing, streaming) are isolated. Shared prop objects are stabilized via `useMemo` in `useAxonShellActions`.
+
+### Server Side
+- **Immediate Response**: The `/api/pulse/save` route uses Next.js `after()` to offload vector embedding and Qdrant operations. Users receive a save confirmation immediately, while heavy inference runs in the background.
+- **Idempotent Caching**: Repetitive network checks (like verifying if a Qdrant collection exists) are cached in-memory to eliminate redundant RTTs.
+
+### UI & Assets
+- **Image Optimization**: All images use `next/image` for automatic format conversion, resizing, and lazy loading.
+- **Dynamic Skeletons**: Heavy components (like the rich-text editor) use dynamic imports with tailored loading fallbacks to eliminate Cumulative Layout Shift (CLS).
 
 ## API Contracts
 
@@ -136,6 +169,7 @@ Route safety:
 ## Key Files
 
 - `components/omnibox.tsx`: omnibox interaction/state UI
+- `components/cortex/mission-control-pane.tsx`: unified Cortex Mission Control UI
 - `lib/omnibox.ts`: mention parsing, ranking, phase derivation helpers
 - `app/api/omnibox/files/route.ts`: local docs listing + content fetch for mentions
 - `hooks/use-ws-messages.ts`: split execution/workspace/action contexts + compatibility hook

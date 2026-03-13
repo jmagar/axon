@@ -2,6 +2,7 @@
 
 import type { FileUIPart, UIMessage } from 'ai'
 import { ChevronLeftIcon, ChevronRightIcon, PaperclipIcon, XIcon } from 'lucide-react'
+import Image from 'next/image'
 import type { ComponentProps, HTMLAttributes, ReactElement } from 'react'
 import { createContext, memo, useContext, useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
@@ -32,7 +33,7 @@ export function MessageContent({ children, className, ...props }: HTMLAttributes
     <div
       className={cn(
         'flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm',
-        'group-[.is-user]:ml-auto group-[.is-user]:rounded-2xl group-[.is-user]:bg-[rgba(255,135,175,0.14)] group-[.is-user]:px-4 group-[.is-user]:py-3',
+        'group-[.is-user]:ml-auto group-[.is-user]:rounded-xl group-[.is-user]:bg-[rgba(255,135,175,0.14)] group-[.is-user]:px-3.5 group-[.is-user]:py-2.5 lg:group-[.is-user]:px-3 lg:group-[.is-user]:py-2',
         'group-[.is-assistant]:text-foreground',
         className,
       )}
@@ -216,7 +217,10 @@ export const MessageResponse = memo(
   function MessageResponse(props: ComponentProps<typeof Streamdown>) {
     return (
       <Streamdown
-        className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', props.className)}
+        className={cn(
+          'size-full min-w-0 break-words text-[10px] leading-[1.4] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-1 [&_p]:text-[10px] [&_p]:leading-[1.4] [&_h1]:mt-1.5 [&_h1]:mb-0.5 [&_h1]:text-[12px] [&_h1]:font-semibold [&_h1]:leading-[1.25] [&_h2]:mt-1.5 [&_h2]:mb-0.5 [&_h2]:text-[11px] [&_h2]:font-semibold [&_h2]:leading-[1.25] [&_h3]:mt-1 [&_h3]:mb-0.5 [&_h3]:text-[10px] [&_h3]:font-semibold [&_h3]:leading-[1.25] [&_ol]:my-1 [&_ol]:list-inside [&_ol]:list-decimal [&_ol]:pl-2 [&_ul]:my-1 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:pl-2 [&_li]:ml-0 [&_li]:text-[10px] [&_li]:leading-[1.4] [&_li+li]:mt-0.5 [&_ol_ol]:pl-3 [&_ul_ul]:list-[circle] [&_ul_ul]:pl-3 [&_pre]:my-1 [&_pre]:text-[9px] [&_code]:text-[9px]',
+          props.className,
+        )}
         {...props}
       />
     )
@@ -238,7 +242,13 @@ export function MessageAttachment({
     <div className={cn('group relative size-24 overflow-hidden rounded-lg', className)} {...props}>
       {isImage ? (
         <>
-          <img alt={filename || 'attachment'} className="size-full object-cover" src={data.url} />
+          <Image
+            alt={filename || 'attachment'}
+            className="size-full object-cover"
+            src={data.url}
+            width={96}
+            height={96}
+          />
           {onRemove ? (
             <Button
               aria-label="Remove attachment"
@@ -284,7 +294,7 @@ export function MessageAttachments({ children, className, ...props }: ComponentP
 export function MessageToolbar({ className, children, ...props }: ComponentProps<'div'>) {
   return (
     <div
-      className={cn('mt-4 flex w-full items-center justify-between gap-4', className)}
+      className={cn('mt-3 flex w-full items-center justify-between gap-3', className)}
       {...props}
     >
       {children}

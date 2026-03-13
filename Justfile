@@ -1,4 +1,5 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set dotenv-load
 rust_dev_env := "if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi; if command -v mold >/dev/null 2>&1; then export RUSTFLAGS=\"${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold\"; fi"
 
 default:
@@ -173,25 +174,49 @@ stop:
 
 # Start workers only (crawl, embed, extract, ingest, refresh)
 workers:
-    {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
-    wait
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
+    if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    cargo build --locked --bin axon
+    AXON_BIN="${CARGO_TARGET_DIR:-$(pwd)/target}/debug/axon"
+    PIDS=()
+    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
+    trap cleanup INT TERM EXIT
+    "$AXON_BIN" crawl worker & PIDS+=($!)
+    "$AXON_BIN" embed worker & PIDS+=($!)
+    "$AXON_BIN" extract worker & PIDS+=($!)
+    "$AXON_BIN" ingest worker & PIDS+=($!)
+    "$AXON_BIN" refresh worker & PIDS+=($!)
+    EXIT=0
+    for pid in "${PIDS[@]}"; do wait "$pid" || EXIT=$?; done
+    exit "$EXIT"
 
 # Start infra, axum server, MCP server, workers, shell server, and Next.js dev server
+# Ctrl+C cleanly stops all spawned processes via the EXIT trap.
 dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just stop
     sleep 1
-    docker compose up -d axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
-    {{rust_dev_env}}; AXON_SERVE_HOST=0.0.0.0 cargo run --locked --bin axon -- serve --port 49000 &
-    {{rust_dev_env}}; AXON_MCP_HTTP_PORT=8001 cargo run --locked --bin axon -- mcp &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- crawl worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- embed worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- extract worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- ingest worker &
-    {{rust_dev_env}}; cargo run --locked --bin axon -- refresh worker &
-    cd apps/web && node shell-server.mjs &
-    cd apps/web && pnpm dev &
-    wait
+    export RUST_LOG="${RUST_LOG:-warn,axon.mcp.oauth=info,axon::crates::mcp=info}"
+    if command -v sccache >/dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
+    if command -v mold >/dev/null 2>&1; then export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"; fi
+    cargo build --locked --bin axon
+    AXON_BIN="${CARGO_TARGET_DIR:-$(pwd)/target}/debug/axon"
+    docker compose up -d --wait axon-postgres axon-redis axon-rabbitmq axon-qdrant axon-chrome
+    PIDS=()
+    cleanup() { kill "${PIDS[@]}" 2>/dev/null || true; }
+    trap cleanup INT TERM EXIT
+    AXON_SERVE_HOST=0.0.0.0 "$AXON_BIN" serve --port 49000 & PIDS+=($!)
+    AXON_MCP_HTTP_PORT=8001 "$AXON_BIN" mcp & PIDS+=($!)
+    "$AXON_BIN" crawl worker & PIDS+=($!)
+    "$AXON_BIN" embed worker & PIDS+=($!)
+    "$AXON_BIN" extract worker & PIDS+=($!)
+    "$AXON_BIN" ingest worker & PIDS+=($!)
+    "$AXON_BIN" refresh worker & PIDS+=($!)
+    (cd apps/web && node shell-server.mjs) & PIDS+=($!)
+    (cd apps/web && pnpm dev) & PIDS+=($!)
+    EXIT=0
+    for pid in "${PIDS[@]}"; do wait "$pid" || EXIT=$?; done
+    exit "$EXIT"

@@ -27,6 +27,7 @@ mod state;
 pub(crate) mod url_processor;
 mod worker;
 
+use crate::crates::core::logging::log_warn;
 use crate::crates::jobs::common::{
     JobTable, cancel_pending_or_running_job, make_pool, purge_queue_safe,
 };
@@ -44,7 +45,7 @@ pub use schedule::{
 };
 pub(crate) use schedule::{
     claim_due_refresh_schedules_with_pool, mark_refresh_schedule_ran_with_pool,
-    start_refresh_job_with_pool,
+    should_reingest_github, start_refresh_job_with_pool,
 };
 pub use worker::{recover_stale_refresh_jobs_startup, run_refresh_once, run_refresh_worker};
 
@@ -130,6 +131,10 @@ pub struct RefreshSchedule {
     pub last_run_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// `None` = URL refresh (default), `Some("github")` = GitHub repo re-ingest.
+    pub source_type: Option<String>,
+    /// For GitHub schedules: `"owner/repo"`.
+    pub target: Option<String>,
 }
 
 pub(crate) async fn ensure_schema_once(pool: &PgPool) -> Result<(), sqlx::Error> {
@@ -209,6 +214,15 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    // Schema evolution: add source_type + target columns for non-URL refresh schedules (e.g. GitHub repos).
+    sqlx::query("ALTER TABLE axon_refresh_schedules ADD COLUMN IF NOT EXISTS source_type TEXT")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("ALTER TABLE axon_refresh_schedules ADD COLUMN IF NOT EXISTS target TEXT")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }
 
@@ -283,7 +297,12 @@ pub async fn clear_refresh_jobs(
         .execute(&pool)
         .await?
         .rows_affected();
-    let _ = purge_queue_safe(cfg, &cfg.refresh_queue).await;
+    if let Err(e) = purge_queue_safe(cfg, &cfg.refresh_queue).await {
+        log_warn(&format!(
+            "queue_purge_failed queue={} error={e}",
+            cfg.refresh_queue
+        ));
+    }
     Ok(rows)
 }
 
@@ -372,6 +391,8 @@ mod tests {
                 every_seconds: 60,
                 enabled: true,
                 next_run_at: now - Duration::minutes(1),
+                source_type: None,
+                target: None,
             },
         )
         .await?;
@@ -385,6 +406,8 @@ mod tests {
                 every_seconds: 60,
                 enabled: true,
                 next_run_at: now + Duration::minutes(10),
+                source_type: None,
+                target: None,
             },
         )
         .await?;
@@ -398,6 +421,8 @@ mod tests {
                 every_seconds: 60,
                 enabled: false,
                 next_run_at: now - Duration::minutes(2),
+                source_type: None,
+                target: None,
             },
         )
         .await?;
@@ -464,6 +489,8 @@ mod tests {
                 every_seconds: 120,
                 enabled: true,
                 next_run_at: before_create - Duration::minutes(2),
+                source_type: None,
+                target: None,
             },
         )
         .await?;

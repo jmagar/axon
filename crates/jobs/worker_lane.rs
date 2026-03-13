@@ -3,10 +3,11 @@ mod delivery;
 mod poll;
 
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::{
-    JobTable, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
+    JobTable, batch_enqueue_jobs, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
 };
+use crate::crates::jobs::status::JobStatus;
 use sqlx::PgPool;
 use std::future::Future;
 use std::pin::Pin;
@@ -99,6 +100,17 @@ pub(crate) async fn sweep_stale_jobs(
                     stats.marked_candidates,
                     stats.reclaimed_jobs
                 ));
+                for id in &stats.reclaimed_ids {
+                    log_warn(&format!(
+                        "watchdog stale_{}_job job_id={id} reclaimed=true",
+                        wc.job_kind
+                    ));
+                }
+            } else {
+                log_debug(&format!(
+                    "watchdog poll_clean worker={} lane={lane}",
+                    wc.job_kind
+                ));
             }
         }
         Err(e) => {
@@ -110,11 +122,140 @@ pub(crate) async fn sweep_stale_jobs(
     }
 }
 
+async fn probe_amqp_available(cfg: &Config, wc: &WorkerConfig) -> bool {
+    match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
+        Ok((conn, ch)) => {
+            if let Err(e) = ch.close(0, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp ch_close failed queue={} error={e}",
+                    wc.queue_name
+                ));
+            }
+            if let Err(e) = conn.close(200, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp conn_close failed queue={} error={e}",
+                    wc.queue_name
+                ));
+            }
+            true
+        }
+        Err(e) => {
+            log_warn(&format!(
+                "{} worker: AMQP probe failed ({}), falling back to polling: {e}",
+                wc.job_kind, wc.queue_name
+            ));
+            false
+        }
+    }
+}
+
+async fn run_amqp_reconnect_loop(
+    cfg: &Config,
+    pool: PgPool,
+    wc: &WorkerConfig,
+    process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
+) {
+    let mut reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
+    loop {
+        let lane_start = tokio::time::Instant::now();
+        let futs: Vec<_> = (1..=wc.lane_count)
+            .map(|lane| {
+                amqp::run_amqp_lane(cfg, pool.clone(), wc, lane, process_fn, semaphore.clone())
+            })
+            .collect();
+        let results = futures_util::future::join_all(futs).await;
+        let ran_for_secs = lane_start.elapsed().as_secs();
+        let mut any_unexpected = false;
+        for result in results {
+            if let Err(err) = result {
+                log_warn(&format!(
+                    "{} worker lane terminated unexpectedly: {err}",
+                    wc.job_kind
+                ));
+                any_unexpected = true;
+            }
+        }
+        if any_unexpected {
+            if ran_for_secs >= AMQP_RECONNECT_MAX_SECS {
+                reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
+            }
+            log_warn(&format!(
+                "{} worker restarting AMQP lanes in {reconnect_delay_secs}s",
+                wc.job_kind
+            ));
+            tokio::time::sleep(Duration::from_secs(reconnect_delay_secs)).await;
+            reconnect_delay_secs = (reconnect_delay_secs * 2).min(AMQP_RECONNECT_MAX_SECS);
+        }
+    }
+}
+
+async fn run_polling_lanes(
+    cfg: &Config,
+    pool: PgPool,
+    wc: &WorkerConfig,
+    process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    log_warn(&format!(
+        "amqp unavailable; running {} worker in postgres polling mode",
+        wc.job_kind
+    ));
+    let futs: Vec<_> = (1..=wc.lane_count)
+        .map(|lane| {
+            poll::run_polling_lane(cfg, pool.clone(), wc, lane, process_fn, semaphore.clone())
+        })
+        .collect();
+    let results = futures_util::future::join_all(futs).await;
+    for result in results {
+        result?;
+    }
+    Ok(())
+}
+
 /// Generic top-level worker: startup sweep, probe AMQP, then run `lane_count` lanes
 /// (AMQP or polling fallback) using `futures_util::future::join_all` for dynamic concurrency.
 ///
 /// A shared `Semaphore` limits total in-flight spawned tasks to `lane_count`.
 ///
+/// How long a pending job must sit unprocessed before we consider it orphaned.
+/// Using `watchdog_stale_timeout_secs` as a proxy: if a pending job is older
+/// than the stale threshold it was never picked up after a broker restart.
+fn orphaned_pending_threshold_secs(stale_timeout_secs: i64) -> i32 {
+    stale_timeout_secs.max(60) as i32
+}
+
+fn orphaned_pending_select_query(table: JobTable) -> String {
+    format!(
+        "SELECT id FROM {} WHERE status = $1 AND created_at < NOW() - ($2 || ' seconds')::INTERVAL",
+        table.as_str()
+    )
+}
+
+/// At AMQP worker startup, re-enqueue any jobs that are stuck in `pending`
+/// state longer than the stale threshold. These are jobs that were enqueued
+/// before a broker restart — the AMQP message was lost but the DB row remains.
+async fn reenqueue_orphaned_pending_jobs(
+    cfg: &Config,
+    pool: &PgPool,
+    wc: &WorkerConfig,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let threshold = orphaned_pending_threshold_secs(cfg.watchdog_stale_timeout_secs);
+    let query = orphaned_pending_select_query(wc.table);
+    let rows: Vec<(uuid::Uuid,)> = sqlx::query_as(&query)
+        .bind(JobStatus::Pending.as_str())
+        .bind(threshold.to_string())
+        .fetch_all(pool)
+        .await?;
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let ids: Vec<uuid::Uuid> = rows.into_iter().map(|(id,)| id).collect();
+    let count = ids.len() as u64;
+    batch_enqueue_jobs(cfg, &wc.queue_name, &ids).await?;
+    Ok(count)
+}
+
 /// Callers must call `make_pool` and `ensure_schema` before invoking this.
 pub(crate) async fn run_job_worker(
     cfg: &Config,
@@ -130,58 +271,21 @@ pub(crate) async fn run_job_worker(
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(wc.lane_count));
 
-    // Probe AMQP connectivity with a short-lived connection+channel pair.
-    let amqp_available = match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
-        Ok((conn, ch)) => {
-            let _ = ch.close(0, "probe".into()).await;
-            let _ = conn.close(200, "probe".into()).await;
-            true
-        }
-        Err(e) => {
-            log_warn(&format!(
-                "{} worker: AMQP probe failed ({}), falling back to polling: {e}",
-                wc.job_kind, wc.queue_name
-            ));
-            false
-        }
-    };
+    let amqp_available = probe_amqp_available(cfg, wc).await;
 
     if amqp_available {
-        let mut reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
-        loop {
-            let lane_start = tokio::time::Instant::now();
-            let futs: Vec<_> = (1..=wc.lane_count)
-                .map(|lane| {
-                    amqp::run_amqp_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone())
-                })
-                .collect();
-            let results = futures_util::future::join_all(futs).await;
-            let ran_for_secs = lane_start.elapsed().as_secs();
-            let mut any_unexpected = false;
-            for result in results {
-                if let Err(err) = result {
-                    log_warn(&format!(
-                        "{} worker lane terminated unexpectedly: {err}",
-                        wc.job_kind
-                    ));
-                    any_unexpected = true;
-                }
-            }
-            // run_amqp_lane always returns Err — there is no clean-exit Ok path.
-            // Reset the backoff when lanes ran stably long enough to prove the
-            // connection was healthy (ran longer than the max backoff window).
-            if any_unexpected {
-                if ran_for_secs >= AMQP_RECONNECT_MAX_SECS {
-                    reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
-                }
-                log_warn(&format!(
-                    "{} worker restarting AMQP lanes in {reconnect_delay_secs}s",
-                    wc.job_kind
-                ));
-                tokio::time::sleep(Duration::from_secs(reconnect_delay_secs)).await;
-                reconnect_delay_secs = (reconnect_delay_secs * 2).min(AMQP_RECONNECT_MAX_SECS);
-            }
+        match reenqueue_orphaned_pending_jobs(cfg, &pool, wc).await {
+            Ok(0) => {}
+            Ok(n) => log_info(&format!(
+                "{} worker: re-enqueued {n} orphaned pending job(s) from before broker restart",
+                wc.job_kind
+            )),
+            Err(err) => log_warn(&format!(
+                "{} worker: orphaned pending re-enqueue failed (non-fatal): {err}",
+                wc.job_kind
+            )),
         }
+        run_amqp_reconnect_loop(cfg, pool.clone(), wc, &process_fn, semaphore.clone()).await;
     }
 
     // Polling fallback: AMQP was unavailable at startup so we fall back to
@@ -191,20 +295,7 @@ pub(crate) async fn run_job_worker(
     // will restart the worker binary automatically.  Do NOT add a reconnect
     // loop here without carefully considering the implications of concurrent
     // polling restarts stomping on each other's state.
-    log_warn(&format!(
-        "amqp unavailable; running {} worker in postgres polling mode",
-        wc.job_kind
-    ));
-    let futs: Vec<_> = (1..=wc.lane_count)
-        .map(|lane| {
-            poll::run_polling_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone())
-        })
-        .collect();
-    let results = futures_util::future::join_all(futs).await;
-    for result in results {
-        result?;
-    }
-    Ok(())
+    run_polling_lanes(cfg, pool, wc, &process_fn, semaphore).await
 }
 
 #[cfg(test)]

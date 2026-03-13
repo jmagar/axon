@@ -6,8 +6,6 @@
 ///    the CLI handlers can consume after the rewire.
 /// 2. The `StatusResult` type shape matches what `run_status` needs.
 /// 3. The `DoctorResult` type shape matches what `run_doctor` needs.
-/// 4. `run_stats_native` / `run_sources_native` / `run_domains_native` can
-///    reach the service entry points (compile-time proof of correct imports).
 ///
 /// These tests run without live services — they exercise the pure mapping
 /// helpers and type constructors that the handlers now depend on.
@@ -21,7 +19,7 @@ use axon::crates::services::types::{
 // ── SourcesResult shape ───────────────────────────────────────────────────────
 
 #[test]
-fn sources_result_fields_match_run_sources_native_expectations() {
+fn sources_result_fields_match_cli_handler_expectations() {
     let payload = serde_json::json!({
         "count": 5,
         "limit": 5,
@@ -56,7 +54,7 @@ fn sources_result_empty_urls_is_valid() {
 // ── DomainsResult shape ───────────────────────────────────────────────────────
 
 #[test]
-fn domains_result_fields_match_run_domains_native_expectations() {
+fn domains_result_fields_match_cli_handler_expectations() {
     let payload = serde_json::json!({
         "domains": [
             {"domain": "example.com", "vectors": 42},

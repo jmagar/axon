@@ -1,3 +1,4 @@
+use crate::crates::core::content::is_excluded_url_path;
 use crate::crates::jobs::crawl::sitemap;
 use std::error::Error;
 
@@ -12,8 +13,8 @@ pub(crate) fn build_start_plan(
 ) -> Result<StartPlan, Box<dyn Error>> {
     let canonical_start_url =
         sitemap::canonicalize_url(start_url).ok_or("invalid crawl start URL")?;
-    if sitemap::is_excluded_url_path(&canonical_start_url, exclude_path_prefix) {
-        return Err("crawl start URL is excluded by configured path prefixes".into());
+    if is_excluded_url_path(&canonical_start_url, exclude_path_prefix) {
+        return Err(format!("skipping {canonical_start_url} — path excluded by prefix").into());
     }
     Ok(StartPlan {
         start_url: canonical_start_url,
@@ -37,9 +38,6 @@ mod tests {
             &["/private".to_string()],
         )
         .expect_err("excluded start URL must fail");
-        assert!(
-            err.to_string()
-                .contains("excluded by configured path prefixes")
-        );
+        assert!(err.to_string().contains("path excluded by prefix"));
     }
 }

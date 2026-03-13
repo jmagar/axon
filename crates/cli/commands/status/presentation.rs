@@ -33,22 +33,6 @@ pub(super) fn emit_status_human(
     print_extracts(extract_jobs);
 }
 
-pub(super) fn status_payload(
-    crawl_jobs: &[CrawlJob],
-    extract_jobs: &[ExtractJob],
-    embed_jobs: &[EmbedJob],
-    ingest_jobs: &[IngestJob],
-    refresh_jobs: &[RefreshJob],
-) -> serde_json::Value {
-    serde_json::json!({
-        "local_crawl_jobs": crawl_jobs,
-        "local_extract_jobs": extract_jobs,
-        "local_embed_jobs": embed_jobs,
-        "local_ingest_jobs": ingest_jobs,
-        "local_refresh_jobs": refresh_jobs,
-    })
-}
-
 fn status_breakdown(statuses: &[&str]) -> String {
     let done = statuses.iter().filter(|s| **s == "completed").count();
     let active = statuses

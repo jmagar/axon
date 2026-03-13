@@ -1,14 +1,11 @@
+mod github;
 mod resolve;
 mod schedule;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::ui::confirm_destructive;
 use crate::crates::core::ui::{accent, muted, primary, status_text, symbol_for_status};
-use crate::crates::jobs::refresh::{
-    cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs, get_refresh_job,
-    list_refresh_jobs, recover_stale_refresh_jobs, run_refresh_once, run_refresh_worker,
-    start_refresh_job,
-};
+use crate::crates::services::refresh as refresh_service;
 use resolve::resolve_refresh_urls;
 use schedule::handle_refresh_schedule;
 use std::error::Error;
@@ -25,7 +22,7 @@ pub async fn run_refresh(cfg: &Config) -> Result<(), Box<dyn Error>> {
     }
 
     if cfg.wait {
-        let result = run_refresh_once(cfg, &urls).await?;
+        let result = refresh_service::refresh_now(cfg, &urls).await?.payload;
         if cfg.json_output {
             println!("{}", serde_json::to_string_pretty(&result)?);
         } else {
@@ -51,7 +48,7 @@ pub async fn run_refresh(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let job_id = start_refresh_job(cfg, &urls).await?;
+    let job_id = refresh_service::refresh_start(cfg, &urls).await?.job_id;
     if cfg.json_output {
         println!(
             "{}",
@@ -90,7 +87,7 @@ async fn maybe_handle_refresh_subcommand(cfg: &Config) -> Result<bool, Box<dyn E
         "list" => handle_refresh_list(cfg).await?,
         "cleanup" => handle_refresh_cleanup(cfg).await?,
         "clear" => handle_refresh_clear(cfg).await?,
-        "worker" => run_refresh_worker(cfg).await?,
+        "worker" => refresh_service::refresh_worker(cfg).await?,
         "recover" => handle_refresh_recover(cfg).await?,
         _ => return Ok(false),
     }
@@ -108,22 +105,23 @@ fn parse_refresh_job_id(cfg: &Config, action: &str) -> Result<Uuid, Box<dyn Erro
 
 async fn handle_refresh_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_refresh_job_id(cfg, "status")?;
-    match get_refresh_job(cfg, id).await? {
-        Some(job) => {
+    match refresh_service::refresh_status(cfg, id).await? {
+        Some(result) => {
+            let job = result.payload;
             if cfg.json_output {
                 println!("{}", serde_json::to_string_pretty(&job)?);
             } else {
                 println!(
                     "{} {}",
                     primary("Refresh Status for"),
-                    accent(&job.id.to_string())
+                    accent(job["id"].as_str().unwrap_or_default())
                 );
                 println!(
                     "  {} {}",
-                    symbol_for_status(&job.status),
-                    status_text(&job.status)
+                    symbol_for_status(job["status"].as_str().unwrap_or_default()),
+                    status_text(job["status"].as_str().unwrap_or_default())
                 );
-                if let Some(result) = job.result_json.as_ref() {
+                if let Some(result) = job.get("result_json") {
                     let checked = result.get("checked").and_then(|v| v.as_u64()).unwrap_or(0);
                     let changed = result.get("changed").and_then(|v| v.as_u64()).unwrap_or(0);
                     let unchanged = result
@@ -140,10 +138,10 @@ async fn handle_refresh_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
                         failed
                     );
                 }
-                if let Some(err) = job.error_text.as_deref() {
+                if let Some(err) = job.get("error_text").and_then(|v| v.as_str()) {
                     println!("  {} {}", muted("Error:"), err);
                 }
-                println!("Job ID: {}", job.id);
+                println!("Job ID: {}", job["id"].as_str().unwrap_or_default());
             }
         }
         None => println!(
@@ -157,7 +155,7 @@ async fn handle_refresh_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 async fn handle_refresh_cancel(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_refresh_job_id(cfg, "cancel")?;
-    let canceled = cancel_refresh_job(cfg, id).await?;
+    let canceled = refresh_service::refresh_cancel(cfg, id).await?;
     if cfg.json_output {
         println!("{}", serde_json::json!({"id": id, "canceled": canceled}));
     } else if canceled {
@@ -180,24 +178,25 @@ async fn handle_refresh_cancel(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 async fn handle_refresh_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_refresh_job_id(cfg, "errors")?;
-    match get_refresh_job(cfg, id).await? {
-        Some(job) => {
+    match refresh_service::refresh_status(cfg, id).await? {
+        Some(result) => {
+            let job = result.payload;
             if cfg.json_output {
                 println!(
                     "{}",
-                    serde_json::json!({"id": id, "status": job.status, "error": job.error_text})
+                    serde_json::json!({"id": id, "status": job["status"], "error": job["error_text"]})
                 );
             } else {
                 println!(
                     "{} {} {}",
-                    symbol_for_status(&job.status),
+                    symbol_for_status(job["status"].as_str().unwrap_or_default()),
                     accent(&id.to_string()),
-                    status_text(&job.status)
+                    status_text(job["status"].as_str().unwrap_or_default())
                 );
                 println!(
                     "  {} {}",
                     muted("Error:"),
-                    job.error_text.unwrap_or_else(|| "None".to_string())
+                    job["error_text"].as_str().unwrap_or("None")
                 );
                 println!("Job ID: {id}");
             }
@@ -212,13 +211,16 @@ async fn handle_refresh_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_refresh_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let jobs = list_refresh_jobs(cfg, 50, 0).await?;
+    let jobs = refresh_service::refresh_list(cfg, 50, 0).await?.payload;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
         return Ok(());
     }
 
     println!("{}", primary("Refresh Jobs"));
+    let jobs = jobs
+        .as_array()
+        .ok_or("refresh list payload should be an array")?;
     if jobs.is_empty() {
         println!("  {}", muted("No refresh jobs found."));
         return Ok(());
@@ -227,16 +229,16 @@ async fn handle_refresh_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
     for job in jobs {
         println!(
             "  {} {} {}",
-            symbol_for_status(&job.status),
-            accent(&job.id.to_string()),
-            status_text(&job.status)
+            symbol_for_status(job["status"].as_str().unwrap_or_default()),
+            accent(job["id"].as_str().unwrap_or_default()),
+            status_text(job["status"].as_str().unwrap_or_default())
         );
     }
     Ok(())
 }
 
 async fn handle_refresh_cleanup(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let removed = cleanup_refresh_jobs(cfg).await?;
+    let removed = refresh_service::refresh_cleanup(cfg).await?;
     if cfg.json_output {
         println!("{}", serde_json::json!({"removed": removed}));
     } else {
@@ -262,7 +264,7 @@ async fn handle_refresh_clear(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let removed = clear_refresh_jobs(cfg).await?;
+    let removed = refresh_service::refresh_clear(cfg).await?;
     if cfg.json_output {
         println!(
             "{}",
@@ -279,7 +281,7 @@ async fn handle_refresh_clear(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_refresh_recover(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let reclaimed = recover_stale_refresh_jobs(cfg).await?;
+    let reclaimed = refresh_service::refresh_recover(cfg).await?;
     if cfg.json_output {
         println!("{}", serde_json::json!({"reclaimed": reclaimed}));
     } else {
@@ -298,8 +300,9 @@ mod tests {
         handle_refresh_schedule_run_due, refresh_schedule_tick_secs_default, tier_to_seconds,
     };
     use crate::crates::jobs::common::{make_pool, test_config};
-    use crate::crates::jobs::refresh::{
-        RefreshScheduleCreate, create_refresh_schedule, delete_refresh_schedule, list_refresh_jobs,
+    use crate::crates::services::refresh::{
+        RefreshScheduleCreate, create_refresh_schedule, delete_refresh_schedule,
+        schedule_list_jobs as list_refresh_jobs,
     };
     use chrono::{Duration, Utc};
     use std::env;
@@ -336,6 +339,12 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let mut cfg = test_config(&pg_url);
         cfg.output_dir = temp_dir.path().to_path_buf();
+
+        // Skip when AXON_TEST_PG_URL is set but unavailable/misconfigured in this env.
+        let pool = match make_pool(&cfg).await {
+            Ok(pool) => pool,
+            Err(_) => return Ok(()),
+        };
 
         let seed_url = "https://example.com";
         let manifest_urls = vec![
@@ -382,6 +391,8 @@ mod tests {
                 every_seconds: 300,
                 enabled: true,
                 next_run_at: Utc::now() - Duration::minutes(1),
+                source_type: None,
+                target: None,
             },
         )
         .await?;
@@ -396,7 +407,6 @@ mod tests {
         });
         assert!(matching_job.is_some());
 
-        let pool = make_pool(&cfg).await?;
         if let Some(job) = matching_job {
             let _ = sqlx::query("DELETE FROM axon_refresh_jobs WHERE id = $1")
                 .bind(job.id)

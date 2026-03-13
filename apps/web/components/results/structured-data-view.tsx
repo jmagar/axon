@@ -103,7 +103,8 @@ function KeyValueTable({ rows }: { rows: Array<{ key: string; value: Scalar }> }
 }
 
 function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
-  const columns = rows.length > 0 ? Object.keys(rows[0]) : []
+  // rows.length > 0 guard ensures rows[0] is defined
+  const columns = rows.length > 0 ? Object.keys(rows[0]!) : []
 
   return (
     <div className="max-h-[55vh] overflow-auto">
@@ -122,7 +123,8 @@ function ScalarArrayTable({ rows }: { rows: Array<Record<string, Scalar>> }) {
             <tr key={idx} className="border-b border-[var(--border-subtle)] last:border-b-0">
               {columns.map((col) => (
                 <td key={col} className="ui-table-cell pr-4">
-                  {scalarLabel(row[col])}
+                  {/* col comes from Object.keys(row), so row[col] is always defined */}
+                  {scalarLabel(row[col]!)}
                 </td>
               ))}
             </tr>

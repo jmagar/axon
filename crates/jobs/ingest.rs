@@ -10,6 +10,7 @@ pub mod types;
 mod tests;
 
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::{log_debug, log_info};
 use crate::crates::jobs::common::{JobTable, make_pool, reclaim_stale_running_jobs};
 use crate::crates::jobs::worker_lane::{ProcessFn, WorkerConfig, run_job_worker};
 use std::error::Error;
@@ -38,7 +39,12 @@ pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
     );
     let amqp_ok = match amqp_result {
         Ok(ch) => {
-            let _ = ch.close(0, "probe".into()).await;
+            if let Err(e) = ch.close(0, "probe".into()).await {
+                log_debug(&format!(
+                    "amqp ch_close failed queue={} error={e}",
+                    cfg.ingest_queue
+                ));
+            }
             true
         }
         Err(_) => false,
@@ -53,6 +59,11 @@ pub async fn ingest_doctor(cfg: &Config) -> Result<serde_json::Value, String> {
 }
 
 pub async fn run_ingest_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    log_info(&format!(
+        "worker_start worker=ingest queue={}",
+        cfg.ingest_queue
+    ));
+
     let pool = make_pool(cfg).await?;
     ensure_schema(&pool).await?;
 

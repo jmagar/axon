@@ -25,6 +25,7 @@ pub enum AxonRequest {
     Ask(AskRequest),
     Screenshot(ScreenshotRequest),
     Refresh(RefreshRequest),
+    Graph(GraphRequest),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
@@ -182,7 +183,9 @@ pub struct HelpRequest {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct StatusRequest {}
+pub struct StatusRequest {
+    pub response_mode: Option<ResponseMode>,
+}
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -192,6 +195,16 @@ pub struct ArtifactsRequest {
     pub pattern: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    /// Lines of context before/after each grep match (like rg -C N). Default: 0.
+    pub context_lines: Option<usize>,
+    /// artifacts.read: return full content (paginated). Requires explicit opt-in.
+    pub full: Option<bool>,
+    /// artifacts.clean: delete files older than this many hours. Required for clean.
+    pub max_age_hours: Option<u64>,
+    /// artifacts.clean: preview-only mode. Defaults to true — no files deleted unless false.
+    pub dry_run: Option<bool>,
+    /// Response mode for list/search subactions (path | inline | both). Defaults to path.
+    pub response_mode: Option<ResponseMode>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -201,6 +214,14 @@ pub enum ArtifactsSubaction {
     Grep,
     Wc,
     Read,
+    /// List all artifacts in the artifact directory with metadata.
+    List,
+    /// Delete a single artifact by path (must be within artifact root).
+    Delete,
+    /// Bulk-delete artifacts older than max_age_hours. Dry-run by default.
+    Clean,
+    /// Regex search across all artifact files.
+    Search,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -241,7 +262,9 @@ pub struct MapRequest {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct DoctorRequest {}
+pub struct DoctorRequest {
+    pub response_mode: Option<ResponseMode>,
+}
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -263,7 +286,9 @@ pub struct SourcesRequest {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct StatsRequest {}
+pub struct StatsRequest {
+    pub response_mode: Option<ResponseMode>,
+}
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -327,6 +352,26 @@ pub struct RefreshRequest {
     pub schedule_name: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<usize>,
+    pub response_mode: Option<ResponseMode>,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphSubaction {
+    Build,
+    Status,
+    Explore,
+    Stats,
+}
+
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GraphRequest {
+    pub subaction: GraphSubaction,
+    pub url: Option<String>,
+    pub domain: Option<String>,
+    pub all: Option<bool>,
+    pub entity: Option<String>,
     pub response_mode: Option<ResponseMode>,
 }
 
@@ -486,6 +531,40 @@ mod tests {
         let result = parse_axon_request(raw);
         assert!(result.is_ok(), "stats should parse successfully");
         assert!(matches!(result.unwrap(), AxonRequest::Stats(_)));
+    }
+
+    #[test]
+    fn parse_graph_build_action() {
+        let raw = obj(json!({
+            "action": "graph",
+            "subaction": "build",
+            "domain": "tanstack.com"
+        }));
+        let result = parse_axon_request(raw);
+        assert!(result.is_ok(), "graph build should parse successfully");
+        if let Ok(AxonRequest::Graph(g)) = result {
+            assert!(matches!(g.subaction, GraphSubaction::Build));
+            assert_eq!(g.domain.as_deref(), Some("tanstack.com"));
+        } else {
+            panic!("expected Graph variant");
+        }
+    }
+
+    #[test]
+    fn parse_graph_explore_action() {
+        let raw = obj(json!({
+            "action": "graph",
+            "subaction": "explore",
+            "entity": "Neo4j"
+        }));
+        let result = parse_axon_request(raw);
+        assert!(result.is_ok(), "graph explore should parse successfully");
+        if let Ok(AxonRequest::Graph(g)) = result {
+            assert!(matches!(g.subaction, GraphSubaction::Explore));
+            assert_eq!(g.entity.as_deref(), Some("Neo4j"));
+        } else {
+            panic!("expected Graph variant");
+        }
     }
 
     #[test]

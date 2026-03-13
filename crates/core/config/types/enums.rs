@@ -23,13 +23,12 @@ pub enum CommandKind {
     Stats,
     Status,
     Dedupe,
-    Github,
     Ingest,
-    Reddit,
-    Youtube,
     Sessions,
     Research,
     Screenshot,
+    Graph,
+    Completions,
     Mcp,
     Serve,
 }
@@ -57,13 +56,12 @@ impl CommandKind {
             Self::Stats => "stats",
             Self::Status => "status",
             Self::Dedupe => "dedupe",
-            Self::Github => "github",
             Self::Ingest => "ingest",
-            Self::Reddit => "reddit",
-            Self::Youtube => "youtube",
             Self::Sessions => "sessions",
             Self::Research => "research",
             Self::Screenshot => "screenshot",
+            Self::Graph => "graph",
+            Self::Completions => "completions",
             Self::Mcp => "mcp",
             Self::Serve => "serve",
         }
@@ -161,6 +159,28 @@ pub enum PerformanceProfile {
     Extreme,
     Balanced,
     Max,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpTransport {
+    Stdio,
+    #[default]
+    Http,
+    Both,
+}
+
+impl fmt::Display for McpTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Self::Stdio => "stdio",
+            Self::Http => "http",
+            Self::Both => "both",
+        };
+        f.write_str(value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

@@ -9,11 +9,12 @@
 
 use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_debug, log_warn};
 use anyhow::{Result, anyhow};
 use reqwest::StatusCode;
 use std::collections::HashSet;
 use std::time::Duration;
+use std::time::Instant;
 
 use super::types::{QdrantPoint, QdrantSearchHit, QdrantSearchResponse};
 use super::utils::{qdrant_base, retrieve_max_points};
@@ -213,6 +214,42 @@ pub(crate) async fn qdrant_delete_by_url_filter(cfg: &Config, url: &str) -> Resu
     Ok(())
 }
 
+/// Delete stale tail chunks for `url` — points with `chunk_index >= new_chunk_count`.
+///
+/// Called after a successful upsert to clean up orphan chunks from a prior run that
+/// produced more chunks than the current one. If chunk count did not decrease, the
+/// filter matches zero points and this is a cheap no-op.
+///
+/// Never call before the upsert succeeds — doing so risks permanent data loss if the
+/// upsert subsequently fails.
+pub(crate) async fn qdrant_delete_stale_tail(
+    cfg: &Config,
+    url: &str,
+    new_chunk_count: usize,
+) -> Result<()> {
+    let client = http_client()?;
+    let endpoint = format!(
+        "{}/collections/{}/points/delete?wait=true",
+        qdrant_base(cfg),
+        cfg.collection
+    );
+    qdrant_delete_with_retry(
+        client,
+        &endpoint,
+        serde_json::json!({
+            "filter": {
+                "must": [
+                    {"key": "url", "match": {"value": url}},
+                    {"key": "chunk_index", "range": {"gte": new_chunk_count}}
+                ]
+            }
+        }),
+        "qdrant_delete_stale_tail",
+    )
+    .await?;
+    Ok(())
+}
+
 /// Delete all Qdrant points for URLs that belong to `domain` but are NOT in `current_urls`.
 /// Uses a single batch delete with a `should` filter instead of per-URL requests.
 /// Returns the number of stale URLs whose points were deleted.
@@ -354,8 +391,9 @@ pub(crate) async fn qdrant_search(
         qdrant_base(cfg),
         cfg.collection
     );
+    let search_start = Instant::now();
     let res = client
-        .post(url)
+        .post(&url)
         .json(&serde_json::json!({
             "vector": vector,
             "limit": limit,
@@ -363,10 +401,31 @@ pub(crate) async fn qdrant_search(
             "with_vector": false
         }))
         .send()
-        .await?
-        .error_for_status()?
+        .await
+        .map_err(|e| {
+            log_warn(&format!(
+                "qdrant_search failed collection={} duration_ms={} error={e}",
+                cfg.collection,
+                search_start.elapsed().as_millis()
+            ));
+            e
+        })?
+        .error_for_status()
+        .map_err(|e| {
+            log_warn(&format!(
+                "qdrant_search failed collection={} duration_ms={} error={e}",
+                cfg.collection,
+                search_start.elapsed().as_millis()
+            ));
+            e
+        })?
         .json::<QdrantSearchResponse>()
         .await?;
+    log_debug(&format!(
+        "qdrant search hits={} collection={}",
+        res.result.len(),
+        cfg.collection
+    ));
     Ok(res.result)
 }
 

@@ -52,14 +52,16 @@ export function KvEditor({
                 value={p.key}
                 onChange={(e) => updatePair(i, 'key', e.target.value)}
                 placeholder="KEY"
-                className="w-2/5 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)]"
+                aria-label={`Key for entry ${i + 1}`}
+                className="w-2/5 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 font-mono text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-color)]"
               />
               <input
                 type="text"
                 value={p.value}
                 onChange={(e) => updatePair(i, 'value', e.target.value)}
                 placeholder="value"
-                className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)]"
+                aria-label={`Value for entry ${i + 1}`}
+                className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[rgba(10,18,35,0.5)] px-2.5 py-2 text-[12px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--focus-ring-color)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-color)]"
               />
               <button
                 type="button"

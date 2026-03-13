@@ -48,10 +48,10 @@ fn maps_scrape_payload_with_non_200_status() {
 }
 
 #[test]
-fn maps_scrape_payload_wraps_json_value_verbatim() {
+fn maps_scrape_payload_requires_required_fields() {
     let payload = serde_json::json!({"a": 1, "b": [1, 2, 3]});
-    let result = map_scrape_payload(payload.clone()).expect("any JSON value is mappable");
-    assert_eq!(result.payload, payload);
+    let err = map_scrape_payload(payload).expect_err("payload missing required fields should fail");
+    assert!(err.to_string().contains("scrape payload missing url"));
 }
 
 // ---------------------------------------------------------------------------

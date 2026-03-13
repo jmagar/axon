@@ -1,6 +1,28 @@
+use crate::crates::core::logging::log_warn;
 use crate::crates::services::types::AcpBridgeEvent;
 use serde::Serialize;
 use tokio::sync::mpsc;
+
+/// The write operation for an `EditorWrite` event.
+///
+/// Serializes to `"replace"` or `"append"` on the wire, matching the
+/// TypeScript `'replace' | 'append'` union and the Zod schema in
+/// `use-axon-acp.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorOperation {
+    Replace,
+    Append,
+}
+
+impl std::fmt::Display for EditorOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Replace => write!(f, "replace"),
+            Self::Append => write!(f, "append"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -38,15 +60,26 @@ impl From<String> for LogLevel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceEvent {
-    Log { level: LogLevel, message: String },
-    AcpBridge { event: AcpBridgeEvent },
+    Log {
+        level: LogLevel,
+        message: String,
+    },
+    AcpBridge {
+        event: AcpBridgeEvent,
+    },
+    /// Emitted after a turn completes when the agent's response contained
+    /// one or more `<axon:editor>` blocks.  Each block becomes one event.
+    EditorWrite {
+        content: String,
+        operation: EditorOperation,
+    },
 }
 
 pub fn emit(tx: &Option<mpsc::Sender<ServiceEvent>>, event: ServiceEvent) {
     if let Some(sender) = tx
         && sender.try_send(event).is_err()
     {
-        eprintln!("[acp] event channel full — dropping event");
+        log_warn("acp event_channel_full action=drop");
     }
 }
 

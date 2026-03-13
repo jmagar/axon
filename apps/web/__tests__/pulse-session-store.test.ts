@@ -119,8 +119,8 @@ describe('loadSavedSessions', () => {
 
     const result = loadSavedSessions()
     expect(result).toHaveLength(2)
-    expect(result[0].sessionId).toBe('ses-2')
-    expect(result[1].sessionId).toBe('ses-1')
+    expect(result[0]!.sessionId).toBe('ses-2')
+    expect(result[1]!.sessionId).toBe('ses-1')
   })
 
   it('skips entries without a valid sessionId', () => {
@@ -130,7 +130,7 @@ describe('loadSavedSessions', () => {
 
     const result = loadSavedSessions()
     expect(result).toHaveLength(1)
-    expect(result[0].sessionId).toBe('ses-good')
+    expect(result[0]!.sessionId).toBe('ses-good')
   })
 })
 

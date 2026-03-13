@@ -1,6 +1,7 @@
 'use client'
 
 import { BrainCircuit, Clock3, Database, MessageSquareQuote, Search, Sparkles } from 'lucide-react'
+import type React from 'react'
 import { useState } from 'react'
 import { DoctorReport } from '@/components/results/doctor-report'
 import { MarkdownBlock } from '@/components/results/markdown-block'
@@ -299,8 +300,12 @@ function DebugReport({ data }: { data: DebugResult }) {
 // ---------------------------------------------------------------------------
 
 function RawTextReport({ data }: { data: unknown[] }) {
-  const objectItems = data.filter((item) => typeof item === 'object' && item !== null)
-  const stringItems = data.filter((item) => typeof item === 'string').map((item) => item as string)
+  const objectItems: object[] = []
+  const stringItems: string[] = []
+  for (const item of data) {
+    if (typeof item === 'object' && item !== null) objectItems.push(item)
+    else if (typeof item === 'string') stringItems.push(item)
+  }
 
   if (objectItems.length > 0 && stringItems.length === 0) {
     if (objectItems.length === 1) {

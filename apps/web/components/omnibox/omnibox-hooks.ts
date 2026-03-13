@@ -129,7 +129,8 @@ export function useOmniboxState() {
   })
 
   // ── Derived values ──────────────────────────────────────────────────
-  const selectedModeDef = MODES.find((m) => m.id === mode) ?? MODES[0]
+  // MODES is a non-empty compile-time constant — MODES[0] is always defined
+  const selectedModeDef = MODES.find((m) => m.id === mode) ?? MODES[0]!
   const hasOptions = (getCommandSpec(mode)?.commandOptions.length ?? 0) > 0
   const activeOptionCount = useMemo(
     () => Object.values(execution.optionValues).filter((val) => val !== '' && val !== false).length,

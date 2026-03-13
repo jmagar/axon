@@ -182,7 +182,7 @@ async fn ensure_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
 // Public API delegates to db module.
 pub use db::{
     cancel_job, cleanup_jobs, clear_jobs, doctor, get_job, list_jobs, recover_stale_crawl_jobs,
-    start_crawl_job, start_crawl_jobs_batch,
+    reenqueue_orphaned_pending_jobs, start_crawl_job, start_crawl_jobs_batch,
 };
 
 pub async fn run_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {

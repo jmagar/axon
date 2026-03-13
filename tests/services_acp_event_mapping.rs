@@ -111,8 +111,13 @@ fn map_session_notification_event_emits_config_options_update_for_config_changes
     let event = map_session_notification_event(&notification);
     match event {
         ServiceEvent::AcpBridge {
-            event: AcpBridgeEvent::ConfigOptionsUpdate(options),
+            event:
+                AcpBridgeEvent::ConfigOptionsUpdate {
+                    session_id,
+                    config_options: options,
+                },
         } => {
+            assert_eq!(session_id, "session-config");
             assert_eq!(options.len(), 1);
             assert_eq!(options[0].id, "choice");
             assert_eq!(options[0].category.as_deref(), Some("model"));
@@ -191,4 +196,74 @@ fn session_fallback_serializes_correctly() {
     assert_eq!(json["type"], "session_fallback");
     assert_eq!(json["old_session_id"], "old-123");
     assert_eq!(json["new_session_id"], "new-456");
+}
+
+// ── Security regression: Unknown wire type disambiguation ───────────────────
+
+#[test]
+fn unknown_session_update_produces_unknown_wire_type_not_status() {
+    use axon::crates::services::types::AcpSessionUpdateEvent;
+
+    let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
+        session_id: "session-unknown-test".to_string(),
+        kind: AcpSessionUpdateKind::Unknown,
+        text_delta: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_status: None,
+        tool_content: None,
+        tool_input: None,
+        tool_locations: None,
+    });
+
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(
+        json["type"], "unknown",
+        "AcpBridgeEvent wire type for Unknown must be 'unknown', not 'status'; got: {}",
+        json["type"]
+    );
+}
+
+#[test]
+fn plan_session_update_falls_through_as_status_wire_type() {
+    use axon::crates::services::types::AcpSessionUpdateEvent;
+
+    // Plan, AvailableCommandsUpdate, CurrentModeUpdate, ConfigOptionUpdate are
+    // normally intercepted by the AcpBridgeEvent custom Serialize. If they
+    // somehow fall through to the SessionUpdate path, they produce "status".
+    let event = AcpBridgeEvent::SessionUpdate(AcpSessionUpdateEvent {
+        session_id: "session-unknown-test".to_string(),
+        kind: AcpSessionUpdateKind::Plan,
+        text_delta: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_status: None,
+        tool_content: None,
+        tool_input: None,
+        tool_locations: None,
+    });
+
+    let json = serde_json::to_value(&event).unwrap();
+    // Plan falls through Display to "status" — distinct from Unknown's "unknown".
+    assert_eq!(
+        json["type"], "status",
+        "Plan fallthrough wire type must be 'status', got: {}",
+        json["type"]
+    );
+}
+
+#[test]
+fn plan_update_event_uses_dedicated_wire_type() {
+    use axon::crates::services::types::AcpPlanUpdate;
+
+    // When properly routed via AcpBridgeEvent::PlanUpdate (not SessionUpdate),
+    // the wire type is "plan_update".
+    let event = AcpBridgeEvent::PlanUpdate(AcpPlanUpdate {
+        session_id: "sess-plan".to_string(),
+        entries: vec![],
+    });
+
+    let json = serde_json::to_value(&event).unwrap();
+    assert_eq!(json["type"], "plan_update");
+    assert_eq!(json["session_id"], "sess-plan");
 }

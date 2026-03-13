@@ -1,4 +1,5 @@
 use crate::crates::core::config::Config;
+use crate::crates::core::logging::log_warn;
 use std::error::Error;
 use uuid::Uuid;
 
@@ -28,10 +29,23 @@ pub async fn start_crawl_jobs_batch(
 ) -> Result<Vec<(String, Uuid)>, Box<dyn Error>> {
     // Apply the same URL normalisation (exclude_path_prefix, trailing-slash) that
     // start_crawl_job would produce for each URL individually.
+    // Excluded URLs are skipped with a warning; only error if ALL URLs are excluded.
     let mut normalised: Vec<String> = Vec::with_capacity(start_urls.len());
     for &url in start_urls {
-        let plan = processor::build_start_plan(url, &cfg.exclude_path_prefix)?;
-        normalised.push(plan.start_url);
+        match processor::build_start_plan(url, &cfg.exclude_path_prefix) {
+            Ok(plan) => normalised.push(plan.start_url),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("path excluded") {
+                    log_warn(&format!("command=crawl_batch {msg}"));
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    if normalised.is_empty() {
+        return Err("all supplied URLs are excluded by configured path prefixes".into());
     }
     let refs: Vec<&str> = normalised.iter().map(|s| s.as_str()).collect();
     runtime::start_crawl_jobs_batch(cfg, &refs).await

@@ -2,7 +2,7 @@ mod display;
 mod scoring;
 mod streaming;
 
-use crate::crates::core::config::{Config, EvaluateResponsesMode};
+use crate::crates::core::config::Config;
 use crate::crates::core::http::http_client;
 use crate::crates::core::logging::log_warn;
 use crate::crates::jobs::crawl::start_crawl_job;
@@ -11,14 +11,35 @@ use std::time::Instant;
 
 use super::ask::build_ask_context;
 use super::suggest::discover_crawl_suggestions;
-use display::{emit_analysis_header, emit_context_header, emit_evaluate_output, emit_event};
+use display::build_evaluate_json;
 use scoring::{
     build_judge_reference, build_suggestion_focus, format_rag_sources, rag_underperformed,
 };
-use streaming::{
-    STREAM_WITH_CONTEXT, STREAM_WITHOUT_CONTEXT, run_analysis, run_baseline_answer,
-    run_parallel_answers_streaming, run_rag_answer,
-};
+use streaming::{run_analysis, run_baseline_answer, run_rag_answer};
+
+// Used by the `streaming` submodule — clippy's dead_code lint does not cross
+// module boundaries, so allow the lint here even though the type is live.
+#[derive(Debug, Default)]
+#[allow(dead_code)]
+struct SideBySideBuffer {
+    with_context: String,
+    without_context: String,
+}
+
+#[allow(dead_code)]
+impl SideBySideBuffer {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn push(&mut self, stream: &str, delta: &str) {
+        match stream {
+            streaming::STREAM_WITH_CONTEXT => self.with_context.push_str(delta),
+            streaming::STREAM_WITHOUT_CONTEXT => self.without_context.push_str(delta),
+            _ => {}
+        }
+    }
+}
 
 struct EvalTiming {
     rag_elapsed_ms: u128,
@@ -41,26 +62,6 @@ struct CrawlEnqueueOutcome {
     error: Option<String>,
 }
 
-#[derive(Default)]
-struct SideBySideBuffer {
-    with_context: String,
-    without_context: String,
-}
-
-impl SideBySideBuffer {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn push(&mut self, stream: &str, delta: &str) {
-        match stream {
-            STREAM_WITH_CONTEXT => self.with_context.push_str(delta),
-            STREAM_WITHOUT_CONTEXT => self.without_context.push_str(delta),
-            _ => {}
-        }
-    }
-}
-
 struct EvalAnswers<'a> {
     rag: &'a str,
     baseline: &'a str,
@@ -71,42 +72,23 @@ struct EvalAnswers<'a> {
     context_chars: usize,
 }
 
-pub async fn run_evaluate_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    run_evaluate_native_impl(cfg).await
-}
-
-async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let query = evaluate_query(cfg)?;
+/// Run the evaluate pipeline and return structured JSON without printing to stdout.
+///
+/// Forces `json_output = true` internally so the non-streaming path is used,
+/// then builds the JSON payload via `build_evaluate_json()` and returns it.
+pub async fn evaluate_payload(cfg: &Config) -> Result<serde_json::Value, Box<dyn Error>> {
+    let mut derived = cfg.clone();
+    derived.json_output = true;
+    let query = evaluate_query(&derived)?;
     let client = http_client()?;
     let eval_started = Instant::now();
-    if !cfg.json_output && cfg.evaluate_responses_mode == EvaluateResponsesMode::Events {
-        emit_event(&serde_json::json!({
-            "type": "evaluate_start",
-            "query": query,
-            "stage": "building_context",
-            "responses_mode": cfg.evaluate_responses_mode.to_string(),
-        }))?;
-    }
-    let ctx = build_ask_context(cfg, &query).await?;
-    emit_context_header(cfg, &query, &ctx)?;
-    let ((rag_answer, rag_elapsed_ms), (baseline_answer, baseline_elapsed_ms)) = if cfg.json_output
-    {
-        let rag = run_rag_answer(cfg, client, &query, &ctx.context).await?;
-        let baseline = run_baseline_answer(cfg, client, &query).await?;
-        (rag, baseline)
-    } else {
-        run_parallel_answers_streaming(
-            cfg,
-            client,
-            &query,
-            &ctx.context,
-            cfg.evaluate_responses_mode,
-        )
-        .await?
-    };
-
+    let ctx = build_ask_context(&derived, &query).await?;
+    let rag = run_rag_answer(&derived, client, &query, &ctx.context).await?;
+    let baseline = run_baseline_answer(&derived, client, &query).await?;
+    let (rag_answer, rag_elapsed_ms) = rag;
+    let (baseline_answer, baseline_elapsed_ms) = baseline;
     let research_started = Instant::now();
-    let (judge_reference, ref_chunk_count) = build_judge_reference(cfg, &query)
+    let (judge_reference, ref_chunk_count) = build_judge_reference(&derived, &query)
         .await
         .unwrap_or_else(|e| {
             log_warn(&format!(
@@ -121,7 +103,6 @@ async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
     } else {
         ""
     };
-    emit_analysis_header(cfg)?;
     let source_count = ctx.chunks_selected + ctx.full_docs_selected + ctx.supplemental_count;
     let context_chars = ctx.context.len();
     let judge_ctx = super::streaming::JudgeContext {
@@ -136,10 +117,10 @@ async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
         source_count,
         context_chars,
     };
-    let (analysis_answer, analysis_elapsed_ms) = run_analysis(cfg, client, &judge_ctx).await;
+    let (analysis_answer, analysis_elapsed_ms) = run_analysis(&derived, client, &judge_ctx).await;
     let crawl_suggestions = if rag_underperformed(&analysis_answer) {
         let focus = build_suggestion_focus(&query, &analysis_answer);
-        discover_crawl_suggestions(cfg, &focus, 5)
+        discover_crawl_suggestions(&derived, &focus, 5)
             .await
             .unwrap_or_else(|e| {
                 log_warn(&format!(
@@ -156,9 +137,8 @@ async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let crawl_enqueue_outcomes = if crawl_suggestions.is_empty() {
         Vec::new()
     } else {
-        enqueue_suggested_crawls(cfg, &crawl_suggestions).await
+        enqueue_suggested_crawls(&derived, &crawl_suggestions).await
     };
-
     let timing = EvalTiming {
         rag_elapsed_ms,
         baseline_elapsed_ms,
@@ -175,8 +155,15 @@ async fn run_evaluate_native_impl(cfg: &Config) -> Result<(), Box<dyn Error>> {
         ref_chunk_count,
         context_chars,
     };
-    emit_evaluate_output(cfg, &query, &ctx, &eval_answers, &timing)?;
-    Ok(())
+    let source_urls = scoring::extract_source_urls(&ctx.diagnostic_sources);
+    Ok(build_evaluate_json(
+        &derived,
+        &query,
+        &ctx,
+        &eval_answers,
+        &timing,
+        &source_urls,
+    ))
 }
 
 fn evaluate_query(cfg: &Config) -> Result<String, Box<dyn Error>> {

@@ -17,6 +17,7 @@ import {
   Underline,
 } from 'lucide-react'
 import { useEditorId, useEventEditorValue } from 'platejs/react'
+import type React from 'react'
 
 import { BlockTypeButton } from '@/components/ui/block-type-button'
 import { LinkToolbarButton } from '@/components/ui/link-toolbar-button'

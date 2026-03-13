@@ -1,6 +1,8 @@
 use super::*;
-use crate::crates::core::logging::log_done;
+use crate::crates::core::http::validate_url;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::jobs::common::spawn_heartbeat_task;
+use crate::crates::jobs::graph::enqueue_graph_job;
 use crate::crates::jobs::worker_lane::{
     ProcessFn, WorkerConfig, run_job_worker, validate_worker_env_vars,
 };
@@ -135,6 +137,7 @@ async fn run_embed_core(
 async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), Box<dyn Error>> {
     // Open a single Redis connection for cancel checks (reused across the job lifecycle).
     let mut redis_conn = open_embed_redis(cfg).await;
+    let job_start = std::time::Instant::now();
 
     let run_result = async {
         let row = sqlx::query_as::<_, (String, serde_json::Value)>(
@@ -176,6 +179,9 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
 
     match run_result {
         Ok(Some(result_json)) => {
+            let chunk_count = result_json["chunks_embedded"].as_u64().unwrap_or(0);
+            let collection = result_json["collection"].as_str().unwrap_or("").to_string();
+            let input = result_json["input"].as_str().unwrap_or("").to_string();
             sqlx::query(
                 "UPDATE axon_embed_jobs \
                  SET status=$2,updated_at=NOW(),finished_at=NOW(),result_json=$3,error_text=NULL \
@@ -187,11 +193,22 @@ async fn process_embed_job(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), 
             .bind(JobStatus::Running.as_str())
             .execute(pool)
             .await?;
-            log_done(&format!("worker completed embed job {id}"));
+            if !cfg.neo4j_url.trim().is_empty()
+                && validate_url(&input).is_ok()
+                && let Err(err) = enqueue_graph_job(pool, cfg, &input, "embed").await
+            {
+                log_warn(&format!("graph auto-enqueue failed for {input}: {err}"));
+            }
+            log_done(&format!(
+                "worker completed embed job {id} collection={collection} chunk_count={chunk_count} duration_ms={}",
+                job_start.elapsed().as_millis()
+            ));
         }
         Ok(None) => {}
         Err(error_text) => {
-            let _ = mark_job_failed(pool, TABLE, id, &error_text).await;
+            if let Err(e) = mark_job_failed(pool, TABLE, id, &error_text).await {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e}"));
+            }
             log_warn(&format!("worker failed embed job {id}: {error_text}"));
         }
     }
@@ -205,7 +222,9 @@ async fn process_claimed_embed_job(cfg: Config, pool: PgPool, id: Uuid) {
         Err(err) => Some(err.to_string()),
     };
     if let Some(error_text) = fail_msg {
-        let _ = mark_job_failed(&pool, TABLE, id, &error_text).await;
+        if let Err(e) = mark_job_failed(&pool, TABLE, id, &error_text).await {
+            log_warn(&format!("mark_job_failed failed job_id={id} error={e}"));
+        }
         log_warn(&format!("worker failed embed job {id}: {error_text}"));
     }
 }
@@ -215,6 +234,11 @@ pub async fn run_embed_worker(cfg: &Config) -> anyhow::Result<()> {
     if let Err(msg) = validate_worker_env_vars() {
         return Err(anyhow::anyhow!("{msg}"));
     }
+
+    log_info(&format!(
+        "worker_start worker=embed queue={} collection={}",
+        cfg.embed_queue, cfg.collection
+    ));
 
     let pool = make_pool(cfg).await?;
     if SCHEMA_INIT.get().is_none() {

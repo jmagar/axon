@@ -10,32 +10,37 @@ use uuid::Uuid;
 
 use super::helpers::{
     OAuthHtmlPageConfig, build_session_clear_cookie, build_session_set_cookie,
-    extract_cookie_value, oauth_html_page, request_identity,
+    extract_cookie_value, oauth_html_page, request_identity, session_cookie_name,
 };
 use super::types::{
     AuthorizationServerMetadata, CallbackParams, GoogleOAuthState, GoogleTokenResponse, LoginQuery,
-    OAUTH_SESSION_COOKIE, OAuthError, OAuthStatus, ProtectedResourceMetadata,
+    OAuthError, OAuthStatus, ProtectedResourceMetadata,
 };
+
+type BoxResponse = Box<Response>;
 
 pub(crate) async fn oauth_google_status(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<Json<OAuthStatus>, Response> {
-    let authenticated = if let Some(session_id) = extract_cookie_value(&req, OAUTH_SESSION_COOKIE) {
-        state.is_authenticated(&session_id).await
-    } else {
-        false
-    };
+    let authenticated =
+        if let Some(session_id) = extract_cookie_value(&req, session_cookie_name(&state)) {
+            state.is_authenticated(&session_id).await
+        } else {
+            false
+        };
 
     Ok(Json(match state.inner.config.as_ref() {
         Some(cfg) => OAuthStatus {
             configured: true,
+            api_key_configured: state.api_key_configured(),
             authenticated,
             redirect_uri: Some(cfg.redirect_uri.clone()),
             scopes: cfg.scopes.clone(),
         },
         None => OAuthStatus {
             configured: false,
+            api_key_configured: state.api_key_configured(),
             authenticated: false,
             redirect_uri: None,
             scopes: vec![],
@@ -147,6 +152,98 @@ async fn exchange_google_code(
         })
 }
 
+fn callback_google_error_response(error: &str) -> Response {
+    oauth_html_page(OAuthHtmlPageConfig {
+        status: StatusCode::UNAUTHORIZED,
+        title: "Google authorization did not complete.",
+        subtitle: "Sign-in Failed",
+        detail: &format!("Google returned: {error}"),
+        primary: ("/oauth/google/login", "Try Again"),
+        secondary: ("/mcp", "Go to MCP Endpoint"),
+    })
+}
+
+fn callback_missing_state_response() -> Response {
+    oauth_html_page(OAuthHtmlPageConfig {
+        status: StatusCode::BAD_REQUEST,
+        title: "Missing OAuth state parameter.",
+        subtitle: "Invalid Request",
+        detail: "The callback request did not include a valid state value.",
+        primary: ("/oauth/google/login", "Start Login"),
+        secondary: ("/mcp", "Go to MCP Endpoint"),
+    })
+}
+
+fn callback_missing_code_response() -> Response {
+    oauth_html_page(OAuthHtmlPageConfig {
+        status: StatusCode::BAD_REQUEST,
+        title: "Missing authorization code.",
+        subtitle: "Invalid Callback",
+        detail: "Google did not provide an authorization code in the callback.",
+        primary: ("/oauth/google/login", "Start Login"),
+        secondary: ("/mcp", "Go to MCP Endpoint"),
+    })
+}
+
+fn callback_expired_state_response() -> Response {
+    oauth_html_page(OAuthHtmlPageConfig {
+        status: StatusCode::UNAUTHORIZED,
+        title: "No pending OAuth state found.",
+        subtitle: "Session Expired",
+        detail: "Your login session likely expired. Start authentication again.",
+        primary: ("/oauth/google/login", "Start Login"),
+        secondary: ("/mcp", "Go to MCP Endpoint"),
+    })
+}
+
+fn validate_callback_params(params: &CallbackParams) -> Result<(String, String), BoxResponse> {
+    if let Some(error) = params.error.as_deref() {
+        return Err(Box::new(callback_google_error_response(error)));
+    }
+    let received_state = params
+        .state
+        .clone()
+        .ok_or_else(|| Box::new(callback_missing_state_response()))?;
+    let code = params
+        .code
+        .clone()
+        .ok_or_else(|| Box::new(callback_missing_code_response()))?;
+    Ok((received_state, code))
+}
+
+async fn take_pending_return_to(
+    state: &GoogleOAuthState,
+    received_state: &str,
+) -> Result<String, Response> {
+    state
+        .take_pending_state(received_state)
+        .await
+        .ok_or_else(callback_expired_state_response)
+}
+
+fn build_callback_success_response(
+    state: &GoogleOAuthState,
+    session_id: &str,
+    return_to: &str,
+) -> Response {
+    let mut response = if return_to == "/" {
+        oauth_html_page(OAuthHtmlPageConfig {
+            status: StatusCode::OK,
+            title: "OAuth token was stored in Redis and memory.",
+            subtitle: "Google Login Successful",
+            detail: "Authentication completed. You can close this tab and return to your MCP client.",
+            primary: ("/mcp", "Open MCP Endpoint"),
+            secondary: ("/oauth/google/status", "View Auth Status"),
+        })
+    } else {
+        Redirect::temporary(return_to).into_response()
+    };
+    if let Some(cookie) = build_session_set_cookie(state, session_id) {
+        response.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    response
+}
+
 #[allow(clippy::result_large_err)]
 pub(crate) async fn oauth_google_callback(
     State(state): State<GoogleOAuthState>,
@@ -159,51 +256,8 @@ pub(crate) async fn oauth_google_callback(
         .check_rate_limit(&format!("callback:{identity}"), 60, 60)
         .await?;
 
-    if let Some(error) = params.error {
-        return Err(oauth_html_page(OAuthHtmlPageConfig {
-            status: StatusCode::UNAUTHORIZED,
-            title: "Google authorization did not complete.",
-            subtitle: "Sign-in Failed",
-            detail: &format!("Google returned: {error}"),
-            primary: ("/oauth/google/login", "Try Again"),
-            secondary: ("/mcp", "Go to MCP Endpoint"),
-        }));
-    }
-
-    let received_state = params.state.ok_or_else(|| {
-        oauth_html_page(OAuthHtmlPageConfig {
-            status: StatusCode::BAD_REQUEST,
-            title: "Missing OAuth state parameter.",
-            subtitle: "Invalid Request",
-            detail: "The callback request did not include a valid state value.",
-            primary: ("/oauth/google/login", "Start Login"),
-            secondary: ("/mcp", "Go to MCP Endpoint"),
-        })
-    })?;
-    let return_to = state
-        .take_pending_state(&received_state)
-        .await
-        .ok_or_else(|| {
-            oauth_html_page(OAuthHtmlPageConfig {
-                status: StatusCode::UNAUTHORIZED,
-                title: "No pending OAuth state found.",
-                subtitle: "Session Expired",
-                detail: "Your login session likely expired. Start authentication again.",
-                primary: ("/oauth/google/login", "Start Login"),
-                secondary: ("/mcp", "Go to MCP Endpoint"),
-            })
-        })?;
-
-    let code = params.code.ok_or_else(|| {
-        oauth_html_page(OAuthHtmlPageConfig {
-            status: StatusCode::BAD_REQUEST,
-            title: "Missing authorization code.",
-            subtitle: "Invalid Callback",
-            detail: "Google did not provide an authorization code in the callback.",
-            primary: ("/oauth/google/login", "Start Login"),
-            secondary: ("/mcp", "Go to MCP Endpoint"),
-        })
-    })?;
+    let (received_state, code) = validate_callback_params(&params).map_err(|resp| *resp)?;
+    let return_to = take_pending_return_to(&state, &received_state).await?;
 
     let token = exchange_google_code(
         &state.inner.http_client,
@@ -223,26 +277,11 @@ pub(crate) async fn oauth_google_callback(
         "oauth callback exchange succeeded"
     );
 
-    if return_to == "/" {
-        let mut response = oauth_html_page(OAuthHtmlPageConfig {
-            status: StatusCode::OK,
-            title: "OAuth token was stored in Redis and memory.",
-            subtitle: "Google Login Successful",
-            detail: "Authentication completed. You can close this tab and return to your MCP client.",
-            primary: ("/mcp", "Open MCP Endpoint"),
-            secondary: ("/oauth/google/status", "View Auth Status"),
-        });
-        if let Some(cookie) = build_session_set_cookie(&state, &session_id) {
-            response.headers_mut().append(header::SET_COOKIE, cookie);
-        }
-        Ok(response)
-    } else {
-        let mut response = Redirect::temporary(&return_to).into_response();
-        if let Some(cookie) = build_session_set_cookie(&state, &session_id) {
-            response.headers_mut().append(header::SET_COOKIE, cookie);
-        }
-        Ok(response)
-    }
+    Ok(build_callback_success_response(
+        &state,
+        &session_id,
+        &return_to,
+    ))
 }
 
 #[allow(clippy::result_large_err)]
@@ -250,7 +289,7 @@ pub(crate) async fn oauth_google_token(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<Json<GoogleTokenResponse>, Response> {
-    let session_id = extract_cookie_value(&req, OAUTH_SESSION_COOKIE)
+    let session_id = extract_cookie_value(&req, session_cookie_name(&state))
         .ok_or_else(|| (StatusCode::UNAUTHORIZED, "missing oauth session").into_response())?;
     let token = state
         .get_session_token(&session_id)
@@ -264,7 +303,7 @@ pub(crate) async fn oauth_google_logout(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<impl IntoResponse, Response> {
-    if let Some(session_id) = extract_cookie_value(&req, OAUTH_SESSION_COOKIE) {
+    if let Some(session_id) = extract_cookie_value(&req, session_cookie_name(&state)) {
         state.clear_session_token(&session_id).await;
     }
     let mut response = oauth_html_page(OAuthHtmlPageConfig {
@@ -300,6 +339,36 @@ pub(crate) async fn oauth_authorization_server_metadata(
     let cfg = state.config()?;
     Ok(Json(AuthorizationServerMetadata {
         issuer: cfg.broker_issuer.clone(),
+        authorization_endpoint: cfg.authorization_endpoint.clone(),
+        token_endpoint: cfg.token_endpoint.clone(),
+        registration_endpoint: cfg.registration_endpoint.clone(),
+        response_types_supported: vec!["code".to_string()],
+        grant_types_supported: vec![
+            "authorization_code".to_string(),
+            "refresh_token".to_string(),
+        ],
+        token_endpoint_auth_methods_supported: vec!["none".to_string()],
+        code_challenge_methods_supported: vec!["S256".to_string()],
+        scopes_supported: cfg.scopes.clone(),
+    }))
+}
+
+/// RFC 8414 §3 requires that the `issuer` in authorization server metadata
+/// matches the path prefix used to discover it. The alias route
+/// `/.well-known/oauth-authorization-server/mcp` is scoped to the `/mcp`
+/// resource, so its `issuer` must be `resource_server_url` (e.g.
+/// `http://localhost:8080/mcp`) rather than the root broker issuer.
+///
+/// MCP clients that perform path-prefix discovery per RFC 8414 §3.1 will
+/// reject the metadata if the issuer does not match the request path.
+#[allow(clippy::result_large_err)]
+pub(crate) async fn oauth_authorization_server_metadata_mcp(
+    State(state): State<GoogleOAuthState>,
+) -> Result<Json<AuthorizationServerMetadata>, Response> {
+    let cfg = state.config()?;
+    Ok(Json(AuthorizationServerMetadata {
+        // issuer must equal the resource URL for path-prefix discovery (RFC 8414 §3.1).
+        issuer: cfg.resource_server_url.clone(),
         authorization_endpoint: cfg.authorization_endpoint.clone(),
         token_endpoint: cfg.token_endpoint.clone(),
         registration_endpoint: cfg.registration_endpoint.clone(),

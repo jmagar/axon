@@ -108,18 +108,18 @@ function isBlockedIpv6(hostname: string): { blocked: boolean; reason?: string } 
 
   // IPv6-mapped IPv4 — ::ffff:x.x.x.x (groups 0-4 are 0, group 5 is 0xffff)
   if (
-    groups[0] === 0 &&
-    groups[1] === 0 &&
-    groups[2] === 0 &&
-    groups[3] === 0 &&
-    groups[4] === 0 &&
-    groups[5] === 0xffff
+    groups[0]! === 0 &&
+    groups[1]! === 0 &&
+    groups[2]! === 0 &&
+    groups[3]! === 0 &&
+    groups[4]! === 0 &&
+    groups[5]! === 0xffff
   ) {
-    // Extract the IPv4 address from the last two groups
-    const a = (groups[6] >> 8) & 0xff
-    const b = groups[6] & 0xff
-    const c = (groups[7] >> 8) & 0xff
-    const d = groups[7] & 0xff
+    // parseIpv6 guarantees exactly 8 elements — all indices 0-7 are valid
+    const a = (groups[6]! >> 8) & 0xff
+    const b = groups[6]! & 0xff
+    const c = (groups[7]! >> 8) & 0xff
+    const d = groups[7]! & 0xff
     const ipv4 = `${a}.${b}.${c}.${d}`
     if (isPrivateIpv4(ipv4)) {
       return { blocked: true, reason: `Blocked IPv6-mapped private IPv4: ${ipv4}` }
@@ -128,13 +128,13 @@ function isBlockedIpv6(hostname: string): { blocked: boolean; reason?: string } 
   }
 
   // fc00::/7 — ULA (first byte fc or fd, i.e. first group >> 8 is 0xfc or 0xfd)
-  const firstByte = groups[0] >> 8
+  const firstByte = groups[0]! >> 8
   if (firstByte === 0xfc || firstByte === 0xfd) {
     return { blocked: true, reason: `Blocked IPv6 ULA: ${hostname}` }
   }
 
   // fe80::/10 — link-local (first 10 bits = 0x3fa = 1111111010)
-  if ((groups[0] & 0xffc0) === 0xfe80) {
+  if ((groups[0]! & 0xffc0) === 0xfe80) {
     return { blocked: true, reason: `Blocked IPv6 link-local: ${hostname}` }
   }
 

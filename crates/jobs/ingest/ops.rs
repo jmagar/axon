@@ -118,7 +118,12 @@ pub async fn clear_ingest_jobs(cfg: &Config) -> Result<u64, Box<dyn Error>> {
         .execute(&pool)
         .await?
         .rows_affected();
-    let _ = purge_queue_safe(cfg, &cfg.ingest_queue).await;
+    if let Err(e) = purge_queue_safe(cfg, &cfg.ingest_queue).await {
+        log_warn(&format!(
+            "queue_purge_failed queue={} error={e}",
+            cfg.ingest_queue
+        ));
+    }
     Ok(rows)
 }
 
@@ -126,12 +131,12 @@ pub(crate) async fn mark_completed(pool: &PgPool, id: Uuid, chunks: usize) {
     use crate::crates::core::logging::log_warn;
 
     match sqlx::query(
-        "UPDATE axon_ingest_jobs SET status=$2,updated_at=NOW(),\
-         finished_at=NOW(),result_json=$3 WHERE id=$1 AND status=$4",
+        "UPDATE axon_ingest_jobs SET status=$2,updated_at=NOW(),finished_at=NOW(),\
+         result_json=COALESCE(result_json,'{}'::jsonb)||$3 WHERE id=$1 AND status=$4",
     )
     .bind(id)
     .bind(JobStatus::Completed.as_str())
-    .bind(serde_json::json!({"chunks_embedded": chunks}))
+    .bind(serde_json::json!({"chunks_embedded": chunks, "enumerating": false}))
     .bind(JobStatus::Running.as_str())
     .execute(pool)
     .await

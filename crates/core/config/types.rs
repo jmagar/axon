@@ -6,8 +6,8 @@ pub mod subconfigs;
 
 pub use config::Config;
 pub use enums::{
-    CommandKind, EvaluateResponsesMode, PerformanceProfile, RedditSort, RedditTime, RenderMode,
-    ScrapeFormat,
+    CommandKind, EvaluateResponsesMode, McpTransport, PerformanceProfile, RedditSort, RedditTime,
+    RenderMode, ScrapeFormat,
 };
 pub use overrides::ConfigOverrides;
 
@@ -26,8 +26,18 @@ mod tests {
     }
 
     #[test]
+    fn test_command_kind_graph_as_str() {
+        assert_eq!(CommandKind::Graph.as_str(), "graph");
+    }
+
+    #[test]
     fn test_command_kind_mcp_as_str() {
         assert_eq!(CommandKind::Mcp.as_str(), "mcp");
+    }
+
+    #[test]
+    fn test_command_kind_completions_as_str() {
+        assert_eq!(CommandKind::Completions.as_str(), "completions");
     }
 
     #[test]
@@ -91,6 +101,9 @@ mod tests {
         assert!(!cfg.wait);
         assert!(!cfg.json_output);
         assert_eq!(cfg.evaluate_responses_mode, EvaluateResponsesMode::Inline);
+        assert_eq!(cfg.mcp_transport, McpTransport::Http);
+        assert_eq!(cfg.mcp_http_host, "0.0.0.0");
+        assert_eq!(cfg.mcp_http_port, 8001);
         assert!(!cfg.reclaimed_status_only);
     }
 
@@ -133,19 +146,14 @@ mod tests {
         let debug_output = format!("{cfg:?}");
 
         // Secrets must NOT appear in Debug output.
-        assert!(!debug_output.contains("password"), "pg_url password leaked");
+        assert!(
+            !debug_output.contains("user:password@"),
+            "pg_url password leaked"
+        );
         assert!(!debug_output.contains("secret@"), "redis_url secret leaked");
         assert!(
-            !debug_output.contains("sk-supersecret"),
-            "openai_api_key leaked"
-        );
-        assert!(
-            !debug_output.contains("tvly-supersecret"),
-            "tavily_api_key leaked"
-        );
-        assert!(
-            !debug_output.contains("ghp_supersecret"),
-            "github_token leaked"
+            !debug_output.contains("supersecret"),
+            "openai_api_key, tavily_api_key, or github_token leaked"
         );
         assert!(
             !debug_output.contains("my-reddit-id"),

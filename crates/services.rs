@@ -1,13 +1,17 @@
 pub mod acp;
 pub mod crawl;
+pub mod debug;
 pub mod embed;
 pub mod events;
 pub mod extract;
+pub mod graph;
 pub mod ingest;
 pub mod map;
 pub mod query;
+pub mod refresh;
 pub mod scrape;
 pub mod screenshot;
 pub mod search;
 pub mod system;
 pub mod types;
+pub mod watch;

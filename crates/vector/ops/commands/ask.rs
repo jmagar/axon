@@ -1,7 +1,5 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::ui::primary;
-use std::error::Error;
-use std::io::Write;
+use crate::crates::core::logging::log_info;
 
 mod context;
 mod normalize;
@@ -20,13 +18,14 @@ pub(super) fn validate_ask_llm_config(cfg: &Config) -> Result<(), String> {
     Ok(())
 }
 
-fn ask_query(cfg: &Config) -> Result<String, Box<dyn Error>> {
-    super::resolve_query_text(cfg).ok_or_else(|| "ask requires query".into())
-}
-
 pub async fn ask_payload(cfg: &Config, query: &str) -> Result<serde_json::Value, String> {
     let ask_started = std::time::Instant::now();
 
+    log_info(&format!(
+        "ask query_len={} collection={}",
+        query.len(),
+        cfg.collection
+    ));
     validate_ask_llm_config(cfg)?;
 
     let ctx = build_ask_context(cfg, query)
@@ -49,6 +48,8 @@ pub async fn ask_payload(cfg: &Config, query: &str) -> Result<serde_json::Value,
                 "full_docs_selected": ctx.full_docs_selected,
                 "supplemental_selected": ctx.supplemental_count,
                 "context_chars": ctx.context.len(),
+                "graph_entities": ctx.graph_entities_found,
+                "graph_context_chars": ctx.graph_context_text.len(),
                 "min_relevance_score": cfg.ask_min_relevance_score,
                 "doc_fetch_concurrency": cfg.ask_doc_fetch_concurrency,
                 "top_domains": ctx.top_domains,
@@ -61,35 +62,9 @@ pub async fn ask_payload(cfg: &Config, query: &str) -> Result<serde_json::Value,
         "timing_ms": {
             "retrieval": ctx.retrieval_elapsed_ms,
             "context_build": ctx.context_elapsed_ms,
+            "graph": ctx.graph_elapsed_ms,
             "llm": llm_elapsed_ms,
             "total": total_elapsed_ms,
         }
     }))
-}
-
-pub async fn run_ask_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let ask_started = std::time::Instant::now();
-    let query = ask_query(cfg)?;
-
-    validate_ask_llm_config(cfg).map_err(|e| -> Box<dyn Error> { e.into() })?;
-
-    let ctx = build_ask_context(cfg, &query).await?;
-    output::emit_ask_diagnostics(cfg, &ctx);
-    if !cfg.json_output {
-        println!("{}", primary("Conversation"));
-        println!("  {} {}", primary("You:"), query);
-        print!("  {} ", primary("Assistant:"));
-        std::io::stdout().flush()?;
-    }
-    let (raw_answer, llm_elapsed_ms, streamed_to_stdout) =
-        output::ask_llm_answer(cfg, &query, &ctx.context).await?;
-    let answer = normalize::normalize_ask_answer(cfg, &query, &raw_answer, &ctx.context);
-    if !cfg.json_output && streamed_to_stdout {
-        println!();
-    }
-    if !cfg.json_output && !streamed_to_stdout {
-        println!("  {} {}", primary("Assistant:"), answer);
-    }
-    let total_elapsed_ms = ask_started.elapsed().as_millis();
-    output::emit_ask_result(cfg, &query, &answer, &ctx, llm_elapsed_ms, total_elapsed_ms)
 }

@@ -66,7 +66,8 @@ export class ActionPotential {
 
   update(_dt: number) {
     if (this.phase === 'axon') {
-      const seg = this.segments[this.currentSegment]
+      // currentSegment is always a valid index — incremented only while < segments.length
+      const seg = this.segments[this.currentSegment]!
       this.progress += seg.isMyelin ? this.baseSpeed * 3 : this.baseSpeed
       if (this.progress >= 1) {
         this.currentSegment++
@@ -96,7 +97,8 @@ export class ActionPotential {
     let y: number | undefined
 
     if (this.phase === 'axon') {
-      const seg = this.segments[this.currentSegment]
+      // currentSegment is always a valid index — incremented only while < segments.length
+      const seg = this.segments[this.currentSegment]!
       const t = Math.min(this.progress, 1)
       x = seg.startX + (seg.endX - seg.startX) * t
       y = seg.startY + (seg.endY - seg.startY) * t
@@ -139,7 +141,8 @@ export function buildConnectionBuckets(conns: SynapticConnectionRef[]): Connecti
   const medium: SynapticConnectionRef[] = []
   const faint: SynapticConnectionRef[] = []
   for (let i = 0; i < conns.length; i++) {
-    const c = conns[i]
+    // i is bounded by conns.length — always a valid index
+    const c = conns[i]!
     if (c.bucket === 0) strong.push(c)
     else if (c.bucket === 1) medium.push(c)
     else faint.push(c)
@@ -177,13 +180,16 @@ export function drawConnections(
   ctx.save()
   ctx.globalCompositeOperation = 'lighter'
   for (let b = 0; b < 3; b++) {
-    if (grouped[b].length === 0) continue
-    ctx.strokeStyle = rgba(glowColor, Math.min(alphas[b] * boost * 0.5 * preset.brightness, 0.2))
-    ctx.lineWidth = glowWidths[b]
+    // b is 0, 1, or 2 — all arrays have exactly 3 elements
+    const bucket = grouped[b]!
+    if (bucket.length === 0) continue
+    ctx.strokeStyle = rgba(glowColor, Math.min(alphas[b]! * boost * 0.5 * preset.brightness, 0.2))
+    ctx.lineWidth = glowWidths[b]!
     ctx.beginPath()
-    for (let i = 0; i < grouped[b].length; i++) {
+    for (let i = 0; i < bucket.length; i++) {
       if (stride > 1 && i % stride !== 0) continue
-      const c = grouped[b][i]
+      // i is bounded by bucket.length — always a valid index
+      const c = bucket[i]!
       ctx.moveTo(c.preTerminal.x, c.preTerminal.y)
       ctx.lineTo(c.dendriteTip.x, c.dendriteTip.y)
     }
@@ -193,13 +199,16 @@ export function drawConnections(
 
   // Crisp fiber pass
   for (let b = 0; b < 3; b++) {
-    if (grouped[b].length === 0) continue
-    ctx.strokeStyle = rgba(fiberColor, Math.min(alphas[b] * boost * preset.brightness, 0.32))
-    ctx.lineWidth = widths[b]
+    // b is 0, 1, or 2 — all arrays have exactly 3 elements
+    const bucket = grouped[b]!
+    if (bucket.length === 0) continue
+    ctx.strokeStyle = rgba(fiberColor, Math.min(alphas[b]! * boost * preset.brightness, 0.32))
+    ctx.lineWidth = widths[b]!
     ctx.beginPath()
-    for (let i = 0; i < grouped[b].length; i++) {
+    for (let i = 0; i < bucket.length; i++) {
       if (stride > 1 && i % stride !== 0) continue
-      const c = grouped[b][i]
+      // i is bounded by bucket.length — always a valid index
+      const c = bucket[i]!
       ctx.moveTo(c.preTerminal.x, c.preTerminal.y)
       ctx.lineTo(c.dendriteTip.x, c.dendriteTip.y)
     }

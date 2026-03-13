@@ -1,3 +1,4 @@
+use super::helpers::normalize_loopback_redirect_uri;
 use super::types::{GoogleOAuthConfig, RedirectPolicy};
 
 impl GoogleOAuthConfig {
@@ -33,8 +34,18 @@ impl GoogleOAuthConfig {
             .trim_end_matches('/')
             .to_string();
 
-        let redirect_uri = std::env::var("GOOGLE_OAUTH_REDIRECT_URI")
-            .unwrap_or_else(|_| format!("http://{redirect_host}:{mcp_port}{redirect_path}"));
+        // When the user explicitly sets GOOGLE_OAUTH_REDIRECT_URI, preserve it exactly —
+        // Google's OAuth requires the redirect URI to match the registered value character for
+        // character and normalization would corrupt it. Only normalize the auto-generated URI
+        // (built from redirect_host/mcp_port) where we control the form and know it is a
+        // loopback address that benefits from canonical http://localhost rewriting.
+        let redirect_uri = match std::env::var("GOOGLE_OAUTH_REDIRECT_URI") {
+            Ok(explicit) => explicit, // user-supplied: preserve exactly
+            Err(_) => {
+                let generated = format!("http://{redirect_host}:{mcp_port}{redirect_path}");
+                normalize_loopback_redirect_uri(&generated).unwrap_or(generated)
+            }
+        };
         let resource_server_url = format!("{broker_issuer}/mcp");
         let resource_metadata_url = format!("{broker_issuer}/.well-known/oauth-protected-resource");
         let authorization_endpoint = format!("{broker_issuer}/oauth/authorize");

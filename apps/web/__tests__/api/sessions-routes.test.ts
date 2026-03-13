@@ -2,11 +2,19 @@ import { NextRequest } from 'next/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
-// Mock @/lib/sessions/session-scanner
+// Mock @/lib/sessions/session-scanner and the agent-specific scanners
 // ---------------------------------------------------------------------------
 const scanSessionsMock = vi.fn()
 vi.mock('@/lib/sessions/session-scanner', () => ({
   scanSessions: scanSessionsMock,
+}))
+
+vi.mock('@/lib/sessions/codex-scanner', () => ({
+  scanCodexSessions: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/lib/sessions/gemini-scanner', () => ({
+  scanGeminiSessions: vi.fn().mockResolvedValue([]),
 }))
 
 // ---------------------------------------------------------------------------
@@ -59,8 +67,8 @@ describe('GET /api/sessions/list', () => {
     scanSessionsMock.mockResolvedValueOnce([SESSION_A, SESSION_B])
     const { GET } = await import('@/app/api/sessions/list/route')
 
-    const _req = new NextRequest('http://localhost/api/sessions/list')
-    const res = await GET()
+    const req = new NextRequest('http://localhost/api/sessions/list')
+    const res = await GET(req)
     expect(res.status).toBe(200)
 
     const json = (await res.json()) as Array<Record<string, unknown>>
@@ -87,8 +95,8 @@ describe('GET /api/sessions/list', () => {
     scanSessionsMock.mockResolvedValueOnce([])
     const { GET } = await import('@/app/api/sessions/list/route')
 
-    const _req = new NextRequest('http://localhost/api/sessions/list')
-    const res = await GET()
+    const req = new NextRequest('http://localhost/api/sessions/list')
+    const res = await GET(req)
     expect(res.status).toBe(200)
 
     const json = await res.json()
@@ -99,13 +107,14 @@ describe('GET /api/sessions/list', () => {
     scanSessionsMock.mockResolvedValueOnce([SESSION_B])
     const { GET } = await import('@/app/api/sessions/list/route')
 
-    const _req = new NextRequest('http://localhost/api/sessions/list')
-    const res = await GET()
+    const req = new NextRequest('http://localhost/api/sessions/list')
+    const res = await GET(req)
     expect(res.status).toBe(200)
 
     const json = (await res.json()) as Array<Record<string, unknown>>
     expect(json).toHaveLength(1)
-    const item = json[0]
+    // json.length === 1 checked above via toHaveLength(1) — index 0 is always valid
+    const item = json[0]!
     expect(item?.id).toBe('deadbeef9999')
     // preview, repo, branch are undefined — JSON.stringify omits them entirely
     expect('preview' in item).toBe(false)
@@ -113,12 +122,21 @@ describe('GET /api/sessions/list', () => {
     expect('branch' in item).toBe(false)
   })
 
-  it('passes limit=20 to scanSessions', async () => {
+  it('passes perAgentLimit to scanSessions for claude sessions', async () => {
     scanSessionsMock.mockResolvedValueOnce([])
     const { GET } = await import('@/app/api/sessions/list/route')
 
-    await GET()
-    expect(scanSessionsMock).toHaveBeenCalledWith(20)
+    await GET(new NextRequest('http://localhost/api/sessions/list'))
+    expect(scanSessionsMock).toHaveBeenCalledWith(20, 30, { assistantMode: false })
+  })
+
+  it('passes assistantMode=true when assistant_mode=1 query is provided', async () => {
+    scanSessionsMock.mockResolvedValueOnce([SESSION_A])
+    const { GET } = await import('@/app/api/sessions/list/route')
+
+    const res = await GET(new NextRequest('http://localhost/api/sessions/list?assistant_mode=1'))
+    expect(res.status).toBe(200)
+    expect(scanSessionsMock).toHaveBeenCalledWith(20, 30, { assistantMode: true })
   })
 })
 
@@ -163,7 +181,7 @@ describe('GET /api/sessions/[id]', () => {
   })
 
   it('returns 404 when session id is not found', async () => {
-    scanSessionsMock.mockResolvedValueOnce([SESSION_A, SESSION_B])
+    scanSessionsMock.mockResolvedValueOnce([SESSION_A, SESSION_B]).mockResolvedValueOnce([])
 
     const { GET } = await import('@/app/api/sessions/[id]/route')
     const params = Promise.resolve({ id: 'nonexistent000' })
@@ -187,14 +205,42 @@ describe('GET /api/sessions/[id]', () => {
     expect(body.error).toBe('read failed')
   })
 
-  it('passes limit=200 to scanSessions for detail lookup', async () => {
-    scanSessionsMock.mockResolvedValueOnce([])
+  it('uses list-sized cache first, then falls back to limit=200 when detail id is not found', async () => {
+    scanSessionsMock.mockResolvedValueOnce([]).mockResolvedValueOnce([])
 
     const { GET } = await import('@/app/api/sessions/[id]/route')
     const params = Promise.resolve({ id: 'anything' })
     await GET(new Request('http://localhost/api/sessions/anything'), { params })
 
-    expect(scanSessionsMock).toHaveBeenCalledWith(200)
+    expect(scanSessionsMock).toHaveBeenNthCalledWith(1, 20, 30, { assistantMode: false })
+    expect(scanSessionsMock).toHaveBeenCalledWith(200, 30, { assistantMode: false })
+  })
+
+  it('uses assistant-mode list cache first, then falls back to full assistant scan', async () => {
+    scanSessionsMock.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+
+    const { GET } = await import('@/app/api/sessions/[id]/route')
+    const params = Promise.resolve({ id: 'anything' })
+    await GET(new Request('http://localhost/api/sessions/anything?assistant_mode=1'), { params })
+
+    expect(scanSessionsMock).toHaveBeenNthCalledWith(1, 20, 30, { assistantMode: true })
+    expect(scanSessionsMock).toHaveBeenCalledWith(200, 30, { assistantMode: true })
+  })
+
+  it('does not trigger fallback scan when session id is present in list-sized cache', async () => {
+    scanSessionsMock.mockResolvedValueOnce([SESSION_A, SESSION_B])
+
+    readFileMock.mockResolvedValueOnce(
+      JSON.stringify({ type: 'assistant', message: { content: 'ok' } }),
+    )
+
+    const { GET } = await import('@/app/api/sessions/[id]/route')
+    const params = Promise.resolve({ id: 'abc123def456' })
+    const res = await GET(new Request('http://localhost/api/sessions/abc123def456'), { params })
+
+    expect(res.status).toBe(200)
+    expect(scanSessionsMock).toHaveBeenCalledTimes(1)
+    expect(scanSessionsMock).toHaveBeenCalledWith(20, 30, { assistantMode: false })
   })
 
   it('returns empty messages array for empty jsonl file', async () => {

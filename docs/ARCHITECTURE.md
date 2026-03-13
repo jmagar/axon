@@ -1,5 +1,5 @@
 # Axon Architecture
-Last Modified: 2026-03-03
+Last Modified: 2026-03-09
 
 Version: 1.0.0
 Last Updated: 01:26:53 | 02/25/2026 EST
@@ -14,13 +14,14 @@ Last Updated: 01:26:53 | 02/25/2026 EST
 6. [Crawl and Content Pipeline](#crawl-and-content-pipeline)
 7. [Async Job Architecture](#async-job-architecture)
 8. [Vector and RAG Pipeline](#vector-and-rag-pipeline)
-9. [Web Runtime Architecture](#web-runtime-architecture)
-10. [Omnibox and Pulse Flows](#omnibox-and-pulse-flows)
-11. [Data Model and Persistence](#data-model-and-persistence)
-12. [Configuration Resolution](#configuration-resolution)
-13. [Failure Handling and Recovery](#failure-handling-and-recovery)
-14. [End-to-End Flows](#end-to-end-flows)
-15. [Key Source Map](#key-source-map)
+9. [Ingest Pipeline](#ingest-pipeline)
+10. [Web Runtime Architecture](#web-runtime-architecture)
+11. [Omnibox and Pulse Flows](#omnibox-and-pulse-flows)
+12. [Data Model and Persistence](#data-model-and-persistence)
+13. [Configuration Resolution](#configuration-resolution)
+14. [Failure Handling and Recovery](#failure-handling-and-recovery)
+15. [End-to-End Flows](#end-to-end-flows)
+16. [Key Source Map](#key-source-map)
 
 ## Purpose and Scope
 
@@ -90,6 +91,7 @@ flowchart LR
 | `crates/crawl/*` | Crawl engine, render mode strategy, sitemap backfill |
 | `crates/jobs/*` | Queue-backed worker runtime + job state transitions |
 | `crates/vector/*` | Embed/query/retrieve/ask/evaluate/suggest operations |
+| `crates/services/acp/*` | ACP session lifecycle, subprocess bridge, runtime state, permission map |
 | `crates/web.rs` + `crates/web/*` | Axum web server, websocket execution bridge, output/download endpoints |
 | `apps/web/*` | Next.js UI with omnibox, results rendering, pulse workspace |
 | `docker-compose.yaml` | Self-hosted runtime services |
@@ -202,7 +204,7 @@ Job families:
 - Crawl: `crates/jobs/crawl/runtime/worker/loops.rs` (own AMQP consumer loop — see Worker Architecture below)
 - Extract: `crates/jobs/extract/worker.rs` (uses `worker_lane.rs`)
 - Embed: `crates/jobs/embed/worker.rs` (uses `worker_lane.rs`)
-- Ingest (`github`, `reddit`, `youtube`, `sessions`): `crates/jobs/ingest.rs` (uses `worker_lane.rs`)
+- Ingest (unified `axon ingest <target>`): `crates/jobs/ingest/process.rs` (uses `worker_lane.rs`; target auto-detected by `crates/ingest/classify.rs`)
 - Refresh: `crates/jobs/refresh/worker.rs` (uses `worker_lane.rs`; lifecycle details in `docs/JOB-LIFECYCLE.md`)
 
 ### Worker Architecture
@@ -213,7 +215,7 @@ Job families:
 - Embed worker (`crates/jobs/embed/worker.rs`)
 - Extract worker (`crates/jobs/extract/worker.rs`)
 - Refresh worker (`crates/jobs/refresh/worker.rs`)
-- Ingest worker (`crates/jobs/ingest.rs`)
+- Ingest worker (`crates/jobs/ingest/process.rs`)
 
 Each worker type creates N lanes (configurable via `AXON_*_LANES` env vars).
 Each lane holds one AMQP consumer channel and processes jobs sequentially.
@@ -258,6 +260,64 @@ Key behaviors:
 - Command-level vector flows in `crates/vector/ops/commands/*`.
 - Ingest sources eventually call vector embedding paths so all content lands in Qdrant with metadata.
 
+## Ingest Pipeline
+
+### Unified Ingest Entry Point (v0.12.0)
+
+`axon ingest <target>` replaces the three separate `github`, `reddit`, and `youtube` CLI commands. `crates/ingest/classify.rs` auto-detects the source type from the target string:
+
+```mermaid
+flowchart TD
+  A[axon ingest <target>] --> B[classify_target]
+  B -->|r/ prefix or reddit.com| C[IngestSource::Reddit]
+  B -->|@handle / known YT host / 11-char ID| D[IngestSource::YouTube]
+  B -->|github.com or owner/repo| E[IngestSource::GitHub]
+  C --> F[crates/ingest/reddit.rs]
+  D --> G[crates/ingest/youtube.rs]
+  E --> H[crates/ingest/github.rs]
+  F --> I[embed_text_with_metadata -> Qdrant]
+  G --> I
+  H --> I
+```
+
+Detection order: Reddit → YouTube → GitHub (first match wins).
+
+### Ingest Submodule Layout
+
+```text
+crates/ingest/
+├── classify.rs          # auto-detection: classify_target()
+├── github.rs            # module root
+├── github/
+│   ├── files.rs         # file tree fetch + raw content
+│   ├── issues.rs        # octocrab paginated issues + PRs
+│   ├── meta.rs          # gh_* structured metadata for Qdrant points (v0.12.0)
+│   └── wiki.rs          # git clone --depth=1 wiki
+├── reddit.rs            # module root
+├── reddit/
+│   ├── client.rs        # OAuth2 client credentials
+│   ├── comments.rs      # recursive comment tree
+│   ├── meta.rs          # reddit_* structured metadata for Qdrant points (v0.12.0)
+│   └── types.rs         # Reddit API response types
+├── youtube.rs           # module root
+├── youtube/
+│   ├── meta.rs          # yt_* structured metadata for Qdrant points (v0.12.0)
+│   └── vtt.rs           # parse_vtt_to_text: yt-dlp VTT transcript parser
+└── sessions.rs          # AI session export ingest
+```
+
+### MCP Artifacts Module (`crates/mcp/server/artifacts/`)
+
+Added in v0.12.0 to manage MCP tool response artifacts:
+
+| File | Responsibility |
+|---|---|
+| `artifacts.rs` | Module root; `ArtifactStore` type |
+| `artifacts/lifecycle.rs` | Create, expire, and garbage-collect artifacts |
+| `artifacts/path.rs` | Artifact path resolution and URL generation |
+| `artifacts/respond.rs` | Build MCP tool response payloads embedding artifact refs |
+| `artifacts/shape.rs` | `ArtifactShape` enum: `Blob`, `Text`, `Json`, `Image` |
+
 ## Web Runtime Architecture
 
 The web UI is `apps/web` (Next.js). `crates/web.rs` provides the axum WebSocket bridge it connects to.
@@ -268,10 +328,15 @@ The web UI is `apps/web` (Next.js). `crates/web.rs` provides the axum WebSocket 
 flowchart TD
   A[/ws client/] --> B[crates/web.rs websocket handler]
   B --> C[execute::handle_command]
-  C --> D[spawn axon subprocess]
-  D --> E[stdout/stderr stream]
-  E --> F[typed WS messages]
-  F --> A
+  C --> D{dispatch}
+  D -->|subprocess mode| E[sync_mode/subprocess.rs]
+  D -->|service call mode| F[sync_mode/service_calls.rs]
+  D -->|ACP mode| G[sync_mode/acp_adapter.rs]
+  E --> H[stdout/stderr stream]
+  F --> H
+  G --> H
+  H --> I[typed WS messages]
+  I --> A
 ```
 
 Capabilities:
@@ -280,6 +345,43 @@ Capabilities:
 - Maintains per-connection command/crawl state.
 - Streams command output/events over websocket.
 - Broadcasts Docker stats via `crates/web/docker_stats.rs`.
+
+### sync_mode Submodule (`crates/web/execute/sync_mode/`)
+
+`sync_mode.rs` was split (v0.12.0) into six focused files:
+
+| File | Responsibility |
+|---|---|
+| `dispatch.rs` | Top-level mode dispatch (subprocess vs service call vs ACP) |
+| `subprocess.rs` | Spawn axon subprocess, stream stdout/stderr |
+| `service_calls.rs` | Direct in-process service invocations (no subprocess) |
+| `acp_adapter.rs` | ACP session bridging for websocket execute path |
+| `params.rs` | Parameter parsing and validation for incoming WS messages |
+| `types.rs` | Shared types: `SyncModeResult`, `DispatchMode`, output events |
+| `pulse_chat.rs` | Pulse chat streaming adapter |
+
+`session_guard.rs` was deleted — session lifecycle is now owned by the ACP service layer.
+
+### ACP Service (`crates/services/acp/`)
+
+`services/acp.rs` (formerly 2060-line monolith) was split (v0.11.2) into:
+
+| File | Responsibility |
+|---|---|
+| `bridge.rs` | WebSocket ↔ ACP protocol bridge; message routing |
+| `runtime.rs` | `AcpRuntimeState` lifecycle (init, shutdown, health); `OnceLock` singleton replacing `Arc<Mutex<AcpRuntimeState>>` |
+| `session.rs` | Per-session state, subprocess tracking, `AdapterGuard` RAII cleanup |
+| `adapters.rs` | Adapter registry and capability negotiation |
+| `config.rs` | ACP-specific configuration types and defaults |
+| `mapping.rs` | Protocol message mapping (ACP ↔ internal types) |
+| `persistent_conn.rs` | Persistent connection pool for ACP subprocess reuse |
+
+Key runtime patterns established in v0.11.2:
+
+- `Arc<Mutex<AcpRuntimeState>>` → `OnceLock` singleton (eliminates lock contention on runtime reads).
+- Permission map `Arc<Mutex<HashMap>>` → `DashMap` (lock-free concurrent reads for session-scoped permission routing, SEC-7).
+- `AdapterGuard` — RAII guard that cleans up the ACP subprocess on `Drop`, preventing zombie processes.
+- `select! { biased; }` — event-drain loop ordering ensures cancellation signals are checked before new input, preventing unbounded queuing on client disconnect.
 
 ## Omnibox and Pulse Flows
 
@@ -425,7 +527,7 @@ Crawl/jobs/vector:
 - `crates/jobs/crawl/runtime/worker/loops.rs`
 - `crates/jobs/extract/worker.rs`
 - `crates/jobs/embed/worker.rs`
-- `crates/jobs/ingest.rs`
+- `crates/jobs/ingest/process.rs`
 - `crates/jobs/refresh.rs`
 - `crates/jobs/refresh/processor.rs`
 - `crates/jobs/refresh/schedule.rs`
@@ -434,11 +536,33 @@ Crawl/jobs/vector:
 - `crates/vector/ops.rs`
 - `crates/vector/ops/tei.rs`
 
+Ingest:
+
+- `crates/ingest/classify.rs`
+- `crates/ingest/github.rs` + `crates/ingest/github/` (files, issues, meta, wiki)
+- `crates/ingest/reddit.rs` + `crates/ingest/reddit/` (client, comments, meta, types)
+- `crates/ingest/youtube.rs` + `crates/ingest/youtube/` (meta, vtt)
+- `crates/ingest/sessions.rs`
+
+ACP + MCP:
+
+- `crates/services/acp.rs`
+- `crates/services/acp/bridge.rs`
+- `crates/services/acp/runtime.rs`
+- `crates/services/acp/session.rs`
+- `crates/services/acp/adapters.rs`
+- `crates/services/acp/config.rs`
+- `crates/services/acp/mapping.rs`
+- `crates/services/acp/persistent_conn.rs`
+- `crates/mcp/server/artifacts.rs`
+- `crates/mcp/server/artifacts/` (lifecycle, path, respond, shape)
+
 Web + UI:
 
 - `crates/web.rs`
 - `crates/web/shell.rs`
 - `crates/web/execute.rs`
+- `crates/web/execute/sync_mode/` (dispatch, subprocess, service_calls, acp_adapter, params, types, pulse_chat)
 - `crates/web/docker_stats.rs`
 - `crates/web/download.rs`
 - `apps/web/app/page.tsx`

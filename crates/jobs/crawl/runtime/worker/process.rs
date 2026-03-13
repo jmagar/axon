@@ -40,6 +40,7 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     // Validate output_dir is not a path traversal attack.
     validate_output_dir(&ctx.job_cfg.output_dir, &cfg.output_dir)?;
 
+    let job_start = std::time::Instant::now();
     log_info(&format!("crawl worker started job {} url={}", id, ctx.url));
     if maybe_complete_cache_hit(pool, id, &ctx).await? {
         return Ok(());
@@ -53,7 +54,10 @@ async fn process_job_impl(cfg: &Config, pool: &PgPool, id: Uuid) -> Result<(), B
     match result {
         Ok(result_json) => {
             mark_job_completed(pool, TABLE, id, Some(&result_json)).await?;
-            log_done(&format!("worker completed crawl job {id}"));
+            log_done(&format!(
+                "worker completed crawl job {id} duration_ms={}",
+                job_start.elapsed().as_millis()
+            ));
         }
         Err(err) => {
             let is_canceled = err.contains(CANCEL_SENTINEL);
@@ -209,6 +213,7 @@ async fn maybe_complete_cache_hit(
         "crawl_stream_pages": 0,
         "elapsed_ms": 0,
         "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
+        "output_files": [report_path.to_string_lossy().to_string()],
         "audit_diff": diff_report,
         "audit_report_path": report_path.to_string_lossy(),
     });

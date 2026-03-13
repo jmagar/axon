@@ -319,3 +319,31 @@ pub async fn recover_stale_crawl_jobs(cfg: &Config) -> Result<u64, Box<dyn Error
     .await?;
     Ok(stats.reclaimed_jobs)
 }
+
+/// Re-enqueue pending crawl jobs that have been waiting longer than the stale
+/// timeout with no worker picking them up — jobs orphaned by a broker restart
+/// or a worker crash before the AMQP publish completed.
+///
+/// Called once at worker startup when AMQP is available, so the first worker
+/// online immediately drains any backlog rather than waiting for manual recovery.
+pub async fn reenqueue_orphaned_pending_jobs(
+    cfg: &Config,
+    pool: &sqlx::PgPool,
+) -> Result<u64, Box<dyn Error>> {
+    let threshold_secs = cfg.watchdog_stale_timeout_secs.max(60);
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM axon_crawl_jobs \
+         WHERE status = 'pending' \
+           AND updated_at < NOW() - make_interval(secs => $1::int) \
+         ORDER BY created_at ASC",
+    )
+    .bind(threshold_secs as i32)
+    .fetch_all(pool)
+    .await?;
+
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    batch_enqueue_jobs(cfg, &cfg.crawl_queue, &ids).await?;
+    Ok(ids.len() as u64)
+}

@@ -15,6 +15,9 @@ use super::types::{
     GoogleTokenResponse, OAUTH_SESSION_TTL_SECS, OAuthError, PendingStateRecord, RateLimitRecord,
     RefreshTokenRecord, RegisteredClient,
 };
+use crate::crates::core::config::parse::normalize_local_service_url;
+
+mod rate_limit;
 
 /// Maximum number of entries allowed in each in-memory OAuth state map.
 /// If a map reaches this size, a cleanup is triggered; if it is still over
@@ -25,14 +28,26 @@ const MAX_OAUTH_STATE_ENTRIES: usize = 10_000;
 impl GoogleOAuthState {
     pub(crate) fn from_env(mcp_host: &str, mcp_port: u16) -> Self {
         let config = GoogleOAuthConfig::from_env(mcp_host, mcp_port);
+        let mcp_api_key = std::env::var("AXON_MCP_API_KEY")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
         let redis_client = std::env::var("GOOGLE_OAUTH_REDIS_URL")
             .ok()
             .or_else(|| std::env::var("AXON_REDIS_URL").ok())
-            .and_then(|url| redis::Client::open(url).ok());
+            .and_then(|url| redis::Client::open(normalize_local_service_url(url)).ok());
+
+        if redis_client.is_none() {
+            warn!(
+                target: "axon.mcp.oauth",
+                "no redis client configured for oauth state — tokens will not survive restarts"
+            );
+        }
 
         let state = Self {
             inner: std::sync::Arc::new(GoogleOAuthInner {
                 config,
+                mcp_api_key,
                 http_client: reqwest::Client::new(),
                 redis_client,
                 pending_state: Mutex::new(HashMap::new()),
@@ -60,6 +75,10 @@ impl GoogleOAuthState {
 
     pub(crate) fn configured(&self) -> bool {
         self.inner.config.is_some()
+    }
+
+    pub(crate) fn api_key_configured(&self) -> bool {
+        self.inner.mcp_api_key.is_some()
     }
 
     #[allow(clippy::result_large_err)]
@@ -469,70 +488,5 @@ impl GoogleOAuthState {
                 "evicted expired oauth records from in-memory TTL stores"
             );
         }
-    }
-
-    pub(crate) async fn check_rate_limit(
-        &self,
-        bucket: &str,
-        limit: u64,
-        window_secs: u64,
-    ) -> Result<(), Response> {
-        let now = unix_now_secs();
-        let key = self.key(&format!("ratelimit:{bucket}"));
-
-        if let Some(mut conn) = self.redis_conn().await {
-            let script = redis::Script::new(
-                r"
-                local c = redis.call('INCR', KEYS[1])
-                if c == 1 then
-                    redis.call('EXPIRE', KEYS[1], ARGV[1])
-                end
-                return c
-                ",
-            );
-            let count: u64 = script
-                .key(&key)
-                .arg(window_secs as i64)
-                .invoke_async(&mut conn)
-                .await
-                .unwrap_or(0);
-            if count > limit {
-                warn!(target: "axon.mcp.oauth", bucket, count, limit, "rate limit exceeded (redis)");
-                return Err((
-                    StatusCode::TOO_MANY_REQUESTS,
-                    Json(serde_json::json!({
-                        "error": "rate_limited",
-                        "error_description": "too many requests",
-                        "retry_after_seconds": window_secs
-                    })),
-                )
-                    .into_response());
-            }
-            return Ok(());
-        }
-
-        let mut rl = self.inner.rate_limits.lock().await;
-        let entry = rl.entry(bucket.to_string()).or_insert(RateLimitRecord {
-            count: 0,
-            reset_at_unix: now + window_secs,
-        });
-        if now >= entry.reset_at_unix {
-            entry.count = 0;
-            entry.reset_at_unix = now + window_secs;
-        }
-        entry.count += 1;
-        if entry.count > limit {
-            warn!(target: "axon.mcp.oauth", bucket, count = entry.count, limit, "rate limit exceeded (memory)");
-            return Err((
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": "rate_limited",
-                    "error_description": "too many requests",
-                    "retry_after_seconds": entry.reset_at_unix.saturating_sub(now)
-                })),
-            )
-                .into_response());
-        }
-        Ok(())
     }
 }

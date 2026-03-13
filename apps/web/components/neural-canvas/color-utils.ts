@@ -5,7 +5,15 @@ import type { RenderAssets, RGB } from './types'
 // Color palette — bioluminescent blue (matches neural.js)
 // ---------------------------------------------------------------------------
 
-export let COLORS: Record<string, RGB> = {
+export type ColorPalette = {
+  core: RGB
+  bright: RGB
+  mid: RGB
+  dim: RGB
+  faint: RGB
+}
+
+export let COLORS: ColorPalette = {
   core: { r: 210, g: 235, b: 255 },
   bright: { r: 50, g: 160, b: 255 },
   mid: { r: 15, g: 90, b: 210 },

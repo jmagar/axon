@@ -106,7 +106,6 @@ export function AIMenu() {
 
   useHotkeys('esc', () => {
     api.aiChat.stop()
-    // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
     ;(chat as any).stop?.()
   })
 
@@ -117,7 +116,7 @@ export function AIMenu() {
       let anchorNode = editor.api.node({
         at: [],
         reverse: true,
-        match: (n) => !!n[KEYS.suggestion] && !!n[getTransientSuggestionKey()],
+        match: (n: any) => !!n[KEYS.suggestion] && !!n[getTransientSuggestionKey()],
       })
 
       if (!anchorNode) {
@@ -247,8 +246,9 @@ export const AIMenuItems = ({
   const menuGroups = React.useMemo(() => menuStateItems[menuState], [menuState])
 
   React.useEffect(() => {
-    if (menuGroups.length > 0 && menuGroups[0].items.length > 0) {
-      setValue(menuGroups[0].items[0].value)
+    if (menuGroups.length > 0 && menuGroups[0]!.items.length > 0) {
+      // Both guards above ensure these indices are valid
+      setValue(menuGroups[0]!.items[0]!.value)
     }
   }, [menuGroups, setValue])
 

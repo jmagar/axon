@@ -1,13 +1,14 @@
 'use client'
 
-import { useAxonWs } from '@/hooks/use-axon-ws'
+import { useAxonWs, useWsStatusLabel } from '@/hooks/use-axon-ws'
 
 export function WsIndicator() {
-  const { status, statusLabel } = useAxonWs()
+  const { status } = useAxonWs()
+  const statusLabel = useWsStatusLabel()
 
   return (
     <div
-      className="fixed bottom-3 right-3 z-20 flex cursor-default select-none items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[10px] tracking-wider opacity-50 transition-all duration-300 hover:opacity-100"
+      className="fixed bottom-3 right-3 z-20 flex cursor-default select-none items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[10px] tracking-wider opacity-50 transition-opacity duration-300 hover:opacity-100"
       style={{
         background: 'rgba(3, 7, 18, 0.6)',
         borderColor:
@@ -17,7 +18,7 @@ export function WsIndicator() {
       }}
     >
       <span
-        className={`size-[5px] rounded-full transition-all duration-300 ${
+        className={`size-[5px] rounded-full transition-[background-color,box-shadow] duration-300 ${
           status === 'connected'
             ? 'bg-[var(--axon-success)] shadow-[0_0_6px_rgba(130,217,160,0.55)]'
             : status === 'reconnecting'

@@ -1,76 +1,91 @@
-# axon reddit
-Last Modified: 2026-03-03
+# axon reddit (removed — use `axon ingest`)
 
-Ingest subreddit content or a single thread into Qdrant using Reddit OAuth2 client credentials.
+Last Modified: 2026-03-09
+
+> **This command has been replaced.** Use [`axon ingest`](ingest.md) instead.
+>
+> `axon ingest` auto-detects the source type. Reddit subreddit prefixes (`r/name`) and URLs are recognized automatically.
+
+> For implementation details and troubleshooting see [`docs/ingest/reddit.md`](../ingest/reddit.md).
 
 ## Synopsis
 
 ```bash
-axon reddit <target> [FLAGS]
-axon reddit <SUBCOMMAND> [ARGS]
+axon ingest <TARGET> [FLAGS]
+axon ingest <SUBCOMMAND> [ARGS]
 ```
+
+Replace `axon reddit` with `axon ingest` — flags and behavior are identical.
 
 ## Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `<target>` | Subreddit name (for example `rust`) or full Reddit thread URL. |
-
-## Required Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `REDDIT_CLIENT_ID` | OAuth2 client ID from Reddit app settings. |
-| `REDDIT_CLIENT_SECRET` | OAuth2 client secret from the same app. |
+| `<TARGET>` | Subreddit prefix (`r/name`), full Reddit URL, or thread URL |
 
 ## Flags
 
-All global flags apply. Reddit-specific and key flags:
-
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--sort` | `hot` | Subreddit sort: `hot`, `top`, `new`, `rising`. |
-| `--time` | `day` | Time range for `top`: `hour`, `day`, `week`, `month`, `year`, `all`. |
-| `--max-posts` | `25` | Maximum posts to fetch (`0` = unlimited). |
-| `--min-score` | `0` | Minimum score threshold for posts/comments. |
-| `--depth` | `2` | Comment traversal depth. |
-| `--scrape-links <bool>` | `false` | Scrape linked URLs from link posts (where supported). |
-| `--wait <bool>` | `false` | Block until ingestion completes; otherwise enqueue async job. |
-| `--collection <name>` | `cortex` | Target Qdrant collection. |
-| `--json` | `false` | Machine-readable output. |
+| `--sort <sort>` | `hot` | Post sort order: `hot`, `top`, `new`, `rising` |
+| `--time <range>` | `day` | Time range for `top` sort: `hour`, `day`, `week`, `month`, `year`, `all` |
+| `--max-posts <n>` | `25` | Maximum posts to fetch (0 = unlimited) |
+| `--min-score <n>` | `0` | Minimum score threshold for posts and comments |
+| `--depth <n>` | `2` | Comment traversal depth |
+| `--scrape-links <bool>` | `false` | Scrape content of linked URLs in link posts |
+| `--wait <bool>` | `false` | Block until ingestion completes |
+| `--collection <name>` | `cortex` | Target Qdrant collection |
+| `--json` | `false` | Machine-readable output |
 
 ## Job Subcommands
 
 ```bash
-axon reddit status <job_id>
-axon reddit cancel <job_id>
-axon reddit errors <job_id>
-axon reddit list
-axon reddit cleanup
-axon reddit clear
-axon reddit recover
-axon reddit worker
+axon ingest status <job_id>   # show one ingest job
+axon ingest cancel <job_id>   # cancel a pending/running job
+axon ingest errors <job_id>   # show job error text
+axon ingest list              # list recent ingest jobs (last 50)
+axon ingest cleanup           # remove failed/canceled + old completed jobs
+axon ingest clear             # delete all ingest jobs and purge the queue
+axon ingest recover           # reclaim stale/interrupted jobs
+axon ingest worker            # run ingest worker inline (blocking)
 ```
 
-These subcommands operate on the shared ingest queue across source types.
+## Required Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `REDDIT_CLIENT_ID` | Yes | OAuth2 app client ID |
+| `REDDIT_CLIENT_SECRET` | Yes | OAuth2 app client secret |
 
 ## Examples
 
 ```bash
-# Async enqueue (default)
-axon reddit rust
+# Subreddit — prefix form
+axon ingest r/unraid
 
-# Sync run with top posts from last month
-axon reddit rust --sort top --time month --max-posts 50 --wait true
+# Subreddit — with sort and time range
+axon ingest r/rust --sort top --time week --wait true
 
-# Single thread
-axon reddit "https://www.reddit.com/r/rust/comments/abc123/example_thread"
+# Full Reddit URL
+axon ingest "https://www.reddit.com/r/homelab/" --wait true
 
-# Include link scraping flag
-axon reddit MachineLearning --scrape-links true --wait true
+# Thread URL
+axon ingest "https://www.reddit.com/r/unraid/comments/abc123/title/" --wait true
+
+# Job control
+axon ingest list
+axon ingest status 550e8400-e29b-41d4-a716-446655440000
+axon ingest cancel 550e8400-e29b-41d4-a716-446655440000
 ```
 
-## Notes
+## Migration
 
-- Uses OAuth2 app credentials (no user login flow).
-- Job records are stored in `axon_ingest_jobs` with `source_type='reddit'`.
+```bash
+# Before
+axon reddit r/unraid
+axon reddit r/unraid --sort top --time week --wait true
+
+# After
+axon ingest r/unraid
+axon ingest r/unraid --sort top --time week --wait true
+```
