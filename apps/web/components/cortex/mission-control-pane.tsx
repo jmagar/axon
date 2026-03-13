@@ -128,10 +128,10 @@ export function MissionControlPane() {
   }, [])
 
   return (
-    <section className="axon-mission-control mx-auto w-full max-w-7xl p-4 md:p-6">
-      <header className="mb-4 flex items-center gap-2">
-        <BrainCircuit className="size-5 text-[var(--mc-accent-cyan)]" />
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+    <section className="axon-mission-control mx-auto w-full max-w-7xl p-4 md:p-5">
+      <header className="mb-3 flex items-center gap-1.5">
+        <BrainCircuit className="size-4.5 text-[var(--mc-accent-cyan)]" />
+        <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
           Mission Control
         </h1>
       </header>
@@ -151,9 +151,9 @@ export function MissionControlPane() {
       )}
 
       {!loading && !error && (
-        <div className="space-y-4">
-          <div className="axon-mission-grid grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="space-y-4">
+        <div className="space-y-3">
+          <div className="axon-mission-grid grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="space-y-3">
               <HeroKpis model={model} />
               <HealthStrip model={model} />
               <QueueRadar model={model} />
