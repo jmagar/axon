@@ -177,84 +177,90 @@ pub(crate) struct StatusJobs {
     pub refresh: Vec<RefreshJob>,
 }
 
+fn filter_status_jobs<T, FStatus, FError>(
+    jobs: Vec<T>,
+    reclaimed_only: bool,
+    status_of: FStatus,
+    error_of: FError,
+) -> Vec<T>
+where
+    FStatus: Fn(&T) -> &str,
+    FError: Fn(&T) -> Option<&str>,
+{
+    jobs.into_iter()
+        .filter(|job| include_status_job(status_of(job), error_of(job), reclaimed_only))
+        .collect()
+}
+
+async fn list_crawl_status(cfg: &Config) -> Result<Vec<CrawlJob>, String> {
+    list_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("crawl status lookup failed: {e}"))
+}
+
+async fn list_extract_status(cfg: &Config) -> Result<Vec<ExtractJob>, String> {
+    list_extract_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("extract status lookup failed: {e}"))
+}
+
+async fn list_embed_status(cfg: &Config) -> Result<Vec<EmbedJob>, String> {
+    list_embed_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("embed status lookup failed: {e}"))
+}
+
+async fn list_ingest_status(cfg: &Config) -> Result<Vec<IngestJob>, String> {
+    list_ingest_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("ingest status lookup failed: {e}"))
+}
+
+async fn list_refresh_status(cfg: &Config) -> Result<Vec<RefreshJob>, String> {
+    list_refresh_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("refresh status lookup failed: {e}"))
+}
+
 pub(crate) async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
     let (crawl_raw, extract_raw, embed_raw, ingest_raw, refresh_raw) = tokio::join!(
-        async {
-            list_jobs(cfg, 20, 0)
-                .await
-                .map_err(|e| format!("crawl status lookup failed: {e}"))
-        },
-        async {
-            list_extract_jobs(cfg, 20, 0)
-                .await
-                .map_err(|e| format!("extract status lookup failed: {e}"))
-        },
-        async {
-            list_embed_jobs(cfg, 20, 0)
-                .await
-                .map_err(|e| format!("embed status lookup failed: {e}"))
-        },
-        async {
-            list_ingest_jobs(cfg, 20, 0)
-                .await
-                .map_err(|e| format!("ingest status lookup failed: {e}"))
-        },
-        async {
-            list_refresh_jobs(cfg, 20, 0)
-                .await
-                .map_err(|e| format!("refresh status lookup failed: {e}"))
-        }
+        list_crawl_status(cfg),
+        list_extract_status(cfg),
+        list_embed_status(cfg),
+        list_ingest_status(cfg),
+        list_refresh_status(cfg),
     );
-    let crawl: Vec<_> = crawl_raw?
-        .into_iter()
-        .filter(|job| {
-            include_status_job(
-                &job.status,
-                job.error_text.as_deref(),
-                cfg.reclaimed_status_only,
-            )
-        })
-        .collect();
-    let extract: Vec<_> = extract_raw?
-        .into_iter()
-        .filter(|job| {
-            include_status_job(
-                &job.status,
-                job.error_text.as_deref(),
-                cfg.reclaimed_status_only,
-            )
-        })
-        .collect();
-    let embed: Vec<_> = embed_raw?
-        .into_iter()
-        .filter(|job| {
-            include_status_job(
-                &job.status,
-                job.error_text.as_deref(),
-                cfg.reclaimed_status_only,
-            )
-        })
-        .collect();
-    let ingest: Vec<_> = ingest_raw?
-        .into_iter()
-        .filter(|job| {
-            include_status_job(
-                &job.status,
-                job.error_text.as_deref(),
-                cfg.reclaimed_status_only,
-            )
-        })
-        .collect();
-    let refresh: Vec<_> = refresh_raw?
-        .into_iter()
-        .filter(|job| {
-            include_status_job(
-                &job.status,
-                job.error_text.as_deref(),
-                cfg.reclaimed_status_only,
-            )
-        })
-        .collect();
+    let reclaimed_only = cfg.reclaimed_status_only;
+    let crawl = filter_status_jobs(
+        crawl_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let extract = filter_status_jobs(
+        extract_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let embed = filter_status_jobs(
+        embed_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let ingest = filter_status_jobs(
+        ingest_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let refresh = filter_status_jobs(
+        refresh_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
     Ok(StatusJobs {
         crawl,
         extract,

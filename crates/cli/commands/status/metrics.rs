@@ -158,70 +158,53 @@ pub(crate) fn embed_metrics_suffix(status: &str, result_json: Option<&Value>) ->
 pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -> String {
     let sep = subtle(" | ");
     if matches!(status, "pending" | "running" | "processing") {
-        let Some(r) = result_json else {
-            return String::new();
-        };
-        let chunks = r
-            .get("chunks_embedded")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        // YouTube playlist progress
-        let videos_done = r.get("videos_done").and_then(|v| v.as_u64());
-        let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
-        if let (Some(done), Some(total)) = (videos_done, videos_total) {
-            return format!(
-                "{sep}{}{}{} videos{sep}{}",
-                accent(&done.to_string()),
-                subtle("/"),
-                accent(&total.to_string()),
-                metric(chunks, "chunks"),
-            );
-        }
-
-        // GitHub file-level progress
-        let files_done = r.get("files_done").and_then(|v| v.as_u64());
-        let files_total = r.get("files_total").and_then(|v| v.as_u64());
-        if let (Some(done), Some(total)) = (files_done, files_total) {
-            return format!(
-                "{sep}{}{}{} files{sep}{}",
-                accent(&done.to_string()),
-                subtle("/"),
-                accent(&total.to_string()),
-                metric(chunks, "chunks"),
-            );
-        }
-
-        // GitHub task-level progress (before file-level kicks in)
-        let tasks_done = r.get("tasks_done").and_then(|v| v.as_u64());
-        let tasks_total = r.get("tasks_total").and_then(|v| v.as_u64());
-        if let (Some(done), Some(total)) = (tasks_done, tasks_total) {
-            let phase = r.get("phase").and_then(|v| v.as_str()).unwrap_or("working");
-            if chunks > 0 {
-                return format!(
-                    "{sep}{}{}{} tasks{sep}{}",
-                    accent(&done.to_string()),
-                    subtle("/"),
-                    accent(&total.to_string()),
-                    metric(chunks, "chunks"),
-                );
-            }
-            return format!("{sep}{}", muted(phase));
-        }
-
-        let enumerating = r
-            .get("enumerating")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        return match () {
-            _ if enumerating => format!("{sep}{}", muted("enumerating…")),
-            _ if chunks > 0 => format!("{sep}{}", metric(chunks, "chunks")),
-            _ => String::new(),
-        };
+        return ingest_active_metrics_suffix(result_json, &sep);
     }
-    let r = match result_json {
-        Some(r) => r,
-        None => return String::new(),
+    ingest_completed_metrics_suffix(result_json, &sep)
+}
+
+fn ingest_active_metrics_suffix(result_json: Option<&Value>, sep: &str) -> String {
+    let Some(r) = result_json else {
+        return String::new();
+    };
+    let chunks = r
+        .get("chunks_embedded")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    if let Some(line) =
+        progress_with_chunks(r, "videos_done", "videos_total", "videos", chunks, sep)
+    {
+        return line;
+    }
+    if let Some(line) = progress_with_chunks(r, "files_done", "files_total", "files", chunks, sep) {
+        return line;
+    }
+
+    let tasks_done = r.get("tasks_done").and_then(|v| v.as_u64());
+    let tasks_total = r.get("tasks_total").and_then(|v| v.as_u64());
+    if let (Some(done), Some(total)) = (tasks_done, tasks_total) {
+        if chunks > 0 {
+            return format_progress_with_chunks(done, total, "tasks", chunks, sep);
+        }
+        let phase = r.get("phase").and_then(|v| v.as_str()).unwrap_or("working");
+        return format!("{sep}{}", muted(phase));
+    }
+
+    let enumerating = r
+        .get("enumerating")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    match () {
+        _ if enumerating => format!("{sep}{}", muted("enumerating…")),
+        _ if chunks > 0 => format!("{sep}{}", metric(chunks, "chunks")),
+        _ => String::new(),
+    }
+}
+
+fn ingest_completed_metrics_suffix(result_json: Option<&Value>, sep: &str) -> String {
+    let Some(r) = result_json else {
+        return String::new();
     };
     let chunks = r
         .get("chunks_embedded")
@@ -230,51 +213,67 @@ pub(super) fn ingest_metrics_suffix(status: &str, result_json: Option<&Value>) -
     if chunks == 0 {
         return String::new();
     }
-
-    // Completed: show final counts (YouTube or GitHub)
-    let videos_total = r.get("videos_total").and_then(|v| v.as_u64());
-    if let Some(total) = videos_total {
-        let numerator = r
-            .get("videos_done")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(total);
-        return format!(
-            "{sep}{}{}{} videos{sep}{}",
-            accent(&numerator.to_string()),
-            subtle("/"),
-            accent(&total.to_string()),
-            metric(chunks, "chunks"),
-        );
+    if let Some(line) =
+        completed_progress_with_chunks(r, "videos_done", "videos_total", "videos", chunks, sep)
+    {
+        return line;
     }
-    let files_total = r.get("files_total").and_then(|v| v.as_u64());
-    if let Some(total) = files_total {
-        let numerator = r
-            .get("files_done")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(total);
-        return format!(
-            "{sep}{}{}{} files{sep}{}",
-            accent(&numerator.to_string()),
-            subtle("/"),
-            accent(&total.to_string()),
-            metric(chunks, "chunks"),
-        );
+    if let Some(line) =
+        completed_progress_with_chunks(r, "files_done", "files_total", "files", chunks, sep)
+    {
+        return line;
     }
-    let tasks_total = r.get("tasks_total").and_then(|v| v.as_u64());
-    if let Some(total) = tasks_total {
-        let numerator = r
-            .get("tasks_done")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(total);
-        return format!(
-            "{sep}{}{}{} tasks{sep}{}",
-            accent(&numerator.to_string()),
-            subtle("/"),
-            accent(&total.to_string()),
-            metric(chunks, "chunks"),
-        );
+    if let Some(line) =
+        completed_progress_with_chunks(r, "tasks_done", "tasks_total", "tasks", chunks, sep)
+    {
+        return line;
     }
     format!("{sep}{}", metric(chunks, "chunks"))
+}
+
+fn progress_with_chunks(
+    payload: &Value,
+    done_key: &str,
+    total_key: &str,
+    label: &str,
+    chunks: u64,
+    sep: &str,
+) -> Option<String> {
+    let done = payload.get(done_key).and_then(|v| v.as_u64())?;
+    let total = payload.get(total_key).and_then(|v| v.as_u64())?;
+    Some(format_progress_with_chunks(done, total, label, chunks, sep))
+}
+
+fn completed_progress_with_chunks(
+    payload: &Value,
+    done_key: &str,
+    total_key: &str,
+    label: &str,
+    chunks: u64,
+    sep: &str,
+) -> Option<String> {
+    let total = payload.get(total_key).and_then(|v| v.as_u64())?;
+    let done = payload
+        .get(done_key)
+        .and_then(|v| v.as_u64())
+        .unwrap_or(total);
+    Some(format_progress_with_chunks(done, total, label, chunks, sep))
+}
+
+fn format_progress_with_chunks(
+    done: u64,
+    total: u64,
+    label: &str,
+    chunks: u64,
+    sep: &str,
+) -> String {
+    format!(
+        "{sep}{}{}{} {label}{sep}{}",
+        accent(&done.to_string()),
+        subtle("/"),
+        accent(&total.to_string()),
+        metric(chunks, "chunks"),
+    )
 }
 
 /// Extract the `"collection"` string from a job's `config_json`, if present.

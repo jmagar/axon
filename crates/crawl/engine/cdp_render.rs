@@ -284,32 +284,7 @@ pub(super) async fn render_html_with_chrome(
         }
     };
 
-    // Resolve the HTTP management URL (e.g. http://host:6000) to the actual
-    // browser-level ws:// WebSocket endpoint via /json/version. This is the
-    // same resolution path used by bootstrap_chrome_runtime() and cdp.rs.
-    // If already a ws:// URL (pre-resolved by the caller), this is a no-op.
-    let resolved_ws_url = match tokio::time::timeout(
-        Duration::from_secs(5),
-        super::runtime::resolve_cdp_ws_url(chrome_ws_url),
-    )
-    .await
-    {
-        Ok(Some(url)) => url,
-        Ok(None) => {
-            // Inside Docker, Chrome resolves on the container network —
-            // inline rendering is not available outside Docker in this path.
-            log_warn(&format!(
-                "thin_refetch: Chrome URL {chrome_ws_url} did not resolve to a ws:// endpoint (inside Docker?)"
-            ));
-            return None;
-        }
-        Err(_) => {
-            log_warn(&format!(
-                "thin_refetch: timeout resolving Chrome WS URL from {chrome_ws_url}"
-            ));
-            return None;
-        }
-    };
+    let resolved_ws_url = resolve_inline_chrome_ws_url(chrome_ws_url).await?;
 
     // Use the caller-supplied timeout for CDP commands; cap at a sane maximum
     // so a misconfigured value cannot hang indefinitely.
@@ -336,16 +311,7 @@ pub(super) async fn render_html_with_chrome(
     )
     .await;
 
-    // Always close the tab — single cleanup path regardless of render outcome.
-    let _ = send_cdp_cmd(
-        &mut ws_tx,
-        &mut ws_rx,
-        None,
-        "Target.closeTarget",
-        serde_json::json!({ "targetId": target_id }),
-        Duration::from_secs(5),
-    )
-    .await;
+    close_cdp_target(&mut ws_tx, &mut ws_rx, &target_id).await;
 
     let rendered_html = match render_result {
         Ok(html_out) => html_out,
@@ -359,6 +325,10 @@ pub(super) async fn render_html_with_chrome(
         }
     };
 
+    markdown_if_not_thin(&rendered_html, min_chars)
+}
+
+fn markdown_if_not_thin(rendered_html: &str, min_chars: usize) -> Option<String> {
     let transform_cfg = build_transform_config();
     let input = TransformInput {
         url: None,
@@ -370,10 +340,56 @@ pub(super) async fn render_html_with_chrome(
     };
     let markdown = transform_content_input(input, transform_cfg);
     let trimmed = clean_markdown_whitespace(markdown.trim());
-
     if trimmed.len() < min_chars {
         None
     } else {
         Some(trimmed)
     }
+}
+
+async fn resolve_inline_chrome_ws_url(chrome_ws_url: &str) -> Option<String> {
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        super::runtime::resolve_cdp_ws_url(chrome_ws_url),
+    )
+    .await
+    {
+        Ok(Some(url)) => Some(url),
+        Ok(None) => {
+            log_warn(&format!(
+                "thin_refetch: Chrome URL {chrome_ws_url} did not resolve to a ws:// endpoint (inside Docker?)"
+            ));
+            None
+        }
+        Err(_) => {
+            log_warn(&format!(
+                "thin_refetch: timeout resolving Chrome WS URL from {chrome_ws_url}"
+            ));
+            None
+        }
+    }
+}
+
+async fn close_cdp_target<Tx, Rx>(tx: &mut Tx, rx: &mut Rx, target_id: &str)
+where
+    Tx: SinkExt<
+            tokio_tungstenite::tungstenite::Message,
+            Error = tokio_tungstenite::tungstenite::Error,
+        > + Unpin,
+    Rx: StreamExt<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + Unpin,
+{
+    let _ = send_cdp_cmd(
+        tx,
+        rx,
+        None,
+        "Target.closeTarget",
+        serde_json::json!({ "targetId": target_id }),
+        Duration::from_secs(5),
+    )
+    .await;
 }

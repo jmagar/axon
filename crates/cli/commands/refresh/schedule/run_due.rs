@@ -21,6 +21,13 @@ pub(super) struct RefreshScheduleDueSweep {
     pub(super) jobs: Vec<serde_json::Value>,
 }
 
+struct SweepCounters {
+    dispatched: usize,
+    skipped: usize,
+    failed: usize,
+    jobs: Vec<serde_json::Value>,
+}
+
 pub async fn handle_refresh_schedule_run_due(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let mut batch: usize = 25;
     let mut idx = 2usize;
@@ -78,98 +85,129 @@ pub(super) async fn run_refresh_schedule_due_sweep(
     ensure_schema_once(&pool).await?;
     let claimed = claim_due_refresh_schedules_with_pool(&pool, batch as i64).await?;
     let now = Utc::now();
-    let mut dispatched = 0usize;
-    let mut skipped = 0usize;
-    let mut failed = 0usize;
-    let mut jobs = Vec::new();
+    let mut counters = SweepCounters {
+        dispatched: 0,
+        skipped: 0,
+        failed: 0,
+        jobs: Vec::new(),
+    };
 
     if claimed.is_empty() {
         log_debug("refresh poll_idle");
     } else {
-        log_info(&format!("refresh schedules_claimed count={}", claimed.len()));
+        log_info(&format!(
+            "refresh schedules_claimed count={}",
+            claimed.len()
+        ));
     }
 
     for schedule in &claimed {
-        if schedule.source_type.as_deref() == Some("github")
-            && let Some(target) = &schedule.target
-        {
-            match dispatch_github_refresh(cfg, &pool, schedule, target).await {
-                Ok(Some(job_id)) => {
-                    dispatched += 1;
-                    let next_run_at = now + Duration::seconds(schedule.every_seconds);
-                    jobs.push(serde_json::json!({
-                        "schedule_id": schedule.id,
-                        "name": schedule.name,
-                        "job_id": job_id,
-                        "source_type": "github",
-                        "target": target,
-                        "next_run_at": next_run_at,
-                    }));
-                }
-                Ok(None) => {
-                    skipped += 1;
-                }
-                Err(_) => {
-                    failed += 1;
-                }
-            }
-            continue;
-        }
-
-        let urls = resolve_schedule_urls(cfg, schedule).await?;
-        if urls.is_empty() {
-            let next_run_at = now + Duration::seconds(schedule.every_seconds);
-            if let Err(err) =
-                mark_refresh_schedule_ran_with_pool(&pool, schedule.id, next_run_at).await
-            {
-                log_warn(&format!(
-                    "refresh schedule mark_ran failed for skipped schedule={} id={}: {err}",
-                    schedule.name, schedule.id
-                ));
-            }
-            skipped += 1;
-            continue;
-        }
-
-        match refresh_service::refresh_start(cfg, &urls).await {
-            Ok(started) => {
-                let next_run_at = now + Duration::seconds(schedule.every_seconds);
-                if let Err(err) =
-                    mark_refresh_schedule_ran_with_pool(&pool, schedule.id, next_run_at).await
-                {
-                    log_warn(&format!(
-                        "refresh schedule mark_ran failed for schedule={} id={}: {err}",
-                        schedule.name, schedule.id
-                    ));
-                }
-                for url in &urls {
-                    log_info(&format!("refresh url_queued url={url}"));
-                }
-                dispatched += 1;
-                let job_id = Uuid::parse_str(&started.job_id).unwrap_or_else(|_| Uuid::nil());
-                jobs.push(serde_json::json!({
-                    "schedule_id": schedule.id,
-                    "name": schedule.name,
-                    "job_id": job_id,
-                    "target_count": urls.len(),
-                    "next_run_at": next_run_at,
-                }));
-            }
-            Err(err) => {
-                log_warn(&format!(
-                    "refresh schedule worker failed to dispatch schedule={} error={err}",
-                    schedule.name
-                ));
-                failed += 1;
-            }
-        }
+        process_due_schedule(cfg, &pool, schedule, now, &mut counters).await?;
     }
 
     Ok(RefreshScheduleDueSweep {
         claimed_count: claimed.len(),
-        dispatched_count: dispatched,
-        skipped_count: skipped,
-        failed_count: failed,
-        jobs,
+        dispatched_count: counters.dispatched,
+        skipped_count: counters.skipped,
+        failed_count: counters.failed,
+        jobs: counters.jobs,
     })
+}
+
+async fn process_due_schedule(
+    cfg: &Config,
+    pool: &sqlx::PgPool,
+    schedule: &crate::crates::jobs::refresh::RefreshSchedule,
+    now: chrono::DateTime<Utc>,
+    counters: &mut SweepCounters,
+) -> Result<(), Box<dyn Error>> {
+    if schedule.source_type.as_deref() == Some("github")
+        && let Some(target) = &schedule.target
+    {
+        process_github_due_schedule(cfg, pool, schedule, target, now, counters).await;
+        return Ok(());
+    }
+    process_url_due_schedule(cfg, pool, schedule, now, counters).await
+}
+
+async fn process_github_due_schedule(
+    cfg: &Config,
+    pool: &sqlx::PgPool,
+    schedule: &crate::crates::jobs::refresh::RefreshSchedule,
+    target: &str,
+    now: chrono::DateTime<Utc>,
+    counters: &mut SweepCounters,
+) {
+    match dispatch_github_refresh(cfg, pool, schedule, target).await {
+        Ok(Some(job_id)) => {
+            counters.dispatched += 1;
+            let next_run_at = now + Duration::seconds(schedule.every_seconds);
+            counters.jobs.push(serde_json::json!({
+                "schedule_id": schedule.id,
+                "name": schedule.name,
+                "job_id": job_id,
+                "source_type": "github",
+                "target": target,
+                "next_run_at": next_run_at,
+            }));
+        }
+        Ok(None) => counters.skipped += 1,
+        Err(_) => counters.failed += 1,
+    }
+}
+
+async fn process_url_due_schedule(
+    cfg: &Config,
+    pool: &sqlx::PgPool,
+    schedule: &crate::crates::jobs::refresh::RefreshSchedule,
+    now: chrono::DateTime<Utc>,
+    counters: &mut SweepCounters,
+) -> Result<(), Box<dyn Error>> {
+    let urls = resolve_schedule_urls(cfg, schedule).await?;
+    if urls.is_empty() {
+        mark_schedule_ran(pool, schedule, now, true).await;
+        counters.skipped += 1;
+        return Ok(());
+    }
+    match refresh_service::refresh_start(cfg, &urls).await {
+        Ok(started) => {
+            mark_schedule_ran(pool, schedule, now, false).await;
+            for url in &urls {
+                log_info(&format!("refresh url_queued url={url}"));
+            }
+            counters.dispatched += 1;
+            let job_id = Uuid::parse_str(&started.job_id).unwrap_or_else(|_| Uuid::nil());
+            counters.jobs.push(serde_json::json!({
+                "schedule_id": schedule.id,
+                "name": schedule.name,
+                "job_id": job_id,
+                "target_count": urls.len(),
+                "next_run_at": now + Duration::seconds(schedule.every_seconds),
+            }));
+        }
+        Err(err) => {
+            log_warn(&format!(
+                "refresh schedule worker failed to dispatch schedule={} error={err}",
+                schedule.name
+            ));
+            counters.failed += 1;
+        }
+    }
+    Ok(())
+}
+
+async fn mark_schedule_ran(
+    pool: &sqlx::PgPool,
+    schedule: &crate::crates::jobs::refresh::RefreshSchedule,
+    now: chrono::DateTime<Utc>,
+    skipped: bool,
+) {
+    let next_run_at = now + Duration::seconds(schedule.every_seconds);
+    if let Err(err) = mark_refresh_schedule_ran_with_pool(pool, schedule.id, next_run_at).await {
+        let context = if skipped { "skipped " } else { "" };
+        log_warn(&format!(
+            "refresh schedule mark_ran failed for {context}schedule={} id={}: {err}",
+            schedule.name, schedule.id
+        ));
+    }
 }

@@ -7,6 +7,8 @@ mod sync_crawl;
 mod runtime_migration_tests;
 #[cfg(test)]
 mod sync_backfill_migration_tests;
+#[cfg(test)]
+mod sync_crawl_migration_tests;
 
 use super::common::parse_urls;
 use crate::crates::core::config::Config;

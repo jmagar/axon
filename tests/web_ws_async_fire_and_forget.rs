@@ -40,21 +40,13 @@ fn async_modes_all_covered_by_allowed_modes() {
 
 #[test]
 fn async_modes_contains_direct_enqueue_commands() {
-    // Direct fire-and-forget enqueue: crawl, extract, embed.
+    // Direct fire-and-forget enqueue includes core job modes plus ingest modes.
     let async_modes = execute::async_modes_pub();
-    for expected in &["crawl", "extract", "embed"] {
+    for expected in &["crawl", "extract", "embed", "github", "reddit", "youtube"] {
         assert!(
             async_modes.contains(expected),
             "expected async mode '{}' missing from ASYNC_MODES",
             expected
-        );
-    }
-    // github/reddit/youtube are subprocess fallback — NOT in ASYNC_MODES.
-    for excluded in &["github", "reddit", "youtube"] {
-        assert!(
-            !async_modes.contains(excluded),
-            "'{}' should NOT be in ASYNC_MODES (uses subprocess fallback)",
-            excluded
         );
     }
 }

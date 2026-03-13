@@ -208,8 +208,8 @@ fn ingest_service_exposes_start_status_cancel_list_cleanup_clear_recover() {
 
 #[test]
 fn classify_target_returns_ingest_source_for_github_slug() {
-    let src = axon::crates::services::ingest::classify_target("owner/repo", true)
-        .expect("must classify");
+    let src =
+        axon::crates::services::ingest::classify_target("owner/repo", true).expect("must classify");
     assert!(matches!(
         src,
         axon::crates::jobs::ingest::IngestSource::Github { .. }
@@ -218,7 +218,6 @@ fn classify_target_returns_ingest_source_for_github_slug() {
 
 #[test]
 fn classify_target_rejects_unknown_target() {
-    let err =
-        axon::crates::services::ingest::classify_target("not-a-target", false).unwrap_err();
+    let err = axon::crates::services::ingest::classify_target("not-a-target", false).unwrap_err();
     assert!(err.to_string().contains("cannot determine ingest source"));
 }

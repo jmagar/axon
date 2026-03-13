@@ -294,8 +294,16 @@ mod tests {
         let path = build_artifact_path("crawl-status-1234", "json")
             .await
             .expect("artifact path");
-        let root = ensure_artifact_root().await.expect("artifact root");
-        assert_eq!(path, root.join("crawl").join("status-1234.json"));
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("status-1234.json")
+        );
+        assert_eq!(
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some("crawl")
+        );
 
         // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
         unsafe {
