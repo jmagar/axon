@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-13 (session: v0.21.1 — services layer migration + contract tests)
+Last Modified: 2026-03-13 (session: v0.21.2 — PR review fixes + crawl engine refactoring)
 
-## [Unreleased] — feat/github-code-aware-chunking
+## [Unreleased] — fix/pr-review-fixes-crawl-refactor
 
-This section documents commits on `feat/github-code-aware-chunking` relative to `main` (`e2a503c7`).
+This section documents commits on `fix/pr-review-fixes-crawl-refactor` relative to `main` (`82ecd6e1`).
 
 ### Highlights
+
+- **PR review fixes + crawl engine refactoring (v0.21.2)** — eight code-review findings addressed: `.expect()` in `handlers_broker.rs` replaced with `unreachable!()`; `i64 as i32` clamp added in `orphaned_pending_threshold_secs`; SQL interval changed from string-concat to `make_interval(secs => $2)`; TOCTOU window documented with concurrency-safety comment; `SideBySideBuffer::push` wildcard arm replaced with `log_warn`; two unit tests added for threshold floor and SQL query construction; `#[tokio::test]` → `#[test]` on synchronous OAuth cookie tests; scaffolding `#[allow(dead_code)]` upgraded to `#[expect(dead_code)]` where cross-module references permitted. Crawl engine: `prepare_crawl_output_dir` extracted from `run_crawl_once`; `enqueue_robots_sitemaps` added for `robots.txt` sitemap discovery; `save_partial_cancel_result` added for graceful-cancel partial persistence.
 
 - **Services layer migration complete + contract tests (`ca7831c0` window)** — all CLI commands, MCP handlers, and web sync modes route through `crates::services::*`; dead-code exports (`run_evaluate_native`, `run_suggest_native`) removed; `watch` CLI command migrated to service layer; MCP contract parity tests hardened; map migration and scrape contract tests added.
 

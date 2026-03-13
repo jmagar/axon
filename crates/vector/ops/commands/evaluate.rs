@@ -36,7 +36,13 @@ impl SideBySideBuffer {
         match stream {
             streaming::STREAM_WITH_CONTEXT => self.with_context.push_str(delta),
             streaming::STREAM_WITHOUT_CONTEXT => self.without_context.push_str(delta),
-            _ => {}
+            _ => {
+                log_warn(&format!(
+                    "evaluate: SideBySideBuffer received unknown stream '{}' — delta discarded ({} chars)",
+                    stream,
+                    delta.len()
+                ));
+            }
         }
     }
 }

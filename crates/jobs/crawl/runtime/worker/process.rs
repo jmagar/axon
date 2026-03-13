@@ -380,6 +380,41 @@ async fn reconnect_cancel_redis(
     None
 }
 
+/// Save partial results for a gracefully-canceled crawl job.
+/// Called when spider drains in-flight requests after a shutdown signal.
+async fn save_partial_cancel_result(
+    pool: &PgPool,
+    id: Uuid,
+    summary: &CrawlSummary,
+    ctx: &JobExecutionContext,
+) {
+    log_info(&format!(
+        "crawl job {id} shutdown complete (partial pages={})",
+        summary.pages_seen
+    ));
+    let partial_json = serde_json::json!({
+        "phase": "canceled",
+        "md_created": summary.markdown_files,
+        "thin_md": summary.thin_pages,
+        "error_pages": summary.error_pages,
+        "waf_blocked_pages": summary.waf_blocked_pages,
+        "thin_urls": sorted_urls(&summary.thin_urls),
+        "waf_blocked_urls": sorted_urls(&summary.waf_blocked_urls),
+        "pages_crawled": summary.pages_seen,
+        "elapsed_ms": summary.elapsed_ms,
+        "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
+        "graceful_shutdown": true,
+    });
+    let _ = sqlx::query(
+        "UPDATE axon_crawl_jobs SET result_json=$2, updated_at=NOW() WHERE id=$1 AND status=$3",
+    )
+    .bind(id)
+    .bind(&partial_json)
+    .bind(JobStatus::Running.as_str())
+    .execute(pool)
+    .await;
+}
+
 async fn run_primary_with_optional_chrome_fallback(
     ctx: &JobExecutionContext,
     id: Uuid,
@@ -474,33 +509,9 @@ async fn run_active_crawl_job(
                 ).await;
                 match drain_result {
                     Ok(Ok((summary, _seen_urls))) => {
-                        log_info(&format!(
-                            "crawl job {id} shutdown complete (partial pages={})",
-                            summary.pages_seen
-                        ));
                         // Save partial results before marking canceled — the data
                         // is already on disk and worth preserving.
-                        let partial_json = serde_json::json!({
-                            "phase": "canceled",
-                            "md_created": summary.markdown_files,
-                            "thin_md": summary.thin_pages,
-                            "error_pages": summary.error_pages,
-                            "waf_blocked_pages": summary.waf_blocked_pages,
-                            "thin_urls": sorted_urls(&summary.thin_urls),
-                            "waf_blocked_urls": sorted_urls(&summary.waf_blocked_urls),
-                            "pages_crawled": summary.pages_seen,
-                            "elapsed_ms": summary.elapsed_ms,
-                            "output_dir": ctx.job_cfg.output_dir.to_string_lossy(),
-                            "graceful_shutdown": true,
-                        });
-                        let _ = sqlx::query(
-                            "UPDATE axon_crawl_jobs SET result_json=$2, updated_at=NOW() WHERE id=$1 AND status=$3",
-                        )
-                        .bind(id)
-                        .bind(&partial_json)
-                        .bind(JobStatus::Running.as_str())
-                        .execute(pool)
-                        .await;
+                        save_partial_cancel_result(pool, id, &summary, ctx).await;
                     }
                     Ok(Err(e)) => {
                         log_warn(&format!(
