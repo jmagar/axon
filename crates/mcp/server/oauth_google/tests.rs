@@ -5,6 +5,11 @@ use super::types::RedirectPolicy;
 use axum::http::StatusCode;
 use std::sync::Mutex;
 
+/// Serializes env-var mutations within this file.
+///
+/// **Limitation:** this mutex only prevents races between tests *within this file*.
+/// Tests in other files that mutate the same env vars can still race these tests.
+/// For fully isolated env-var test runs, use `cargo test -- --test-threads=1`.
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
@@ -172,9 +177,13 @@ async fn empty_mcp_api_key_is_treated_as_unconfigured() {
     }
 }
 
+/// Verifies that an explicitly-set `GOOGLE_OAUTH_REDIRECT_URI` is preserved
+/// exactly — no normalization applied. Google's OAuth requires the redirect URI
+/// registered with the client to match character-for-character; normalization
+/// of an explicit value would silently break the OAuth flow.
 #[allow(unsafe_code)]
 #[test]
-fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
+fn explicitly_configured_redirect_uri_is_preserved_exactly() {
     let _guard = ENV_LOCK.lock().unwrap();
     let vars = [
         "GOOGLE_OAUTH_CLIENT_ID",
@@ -191,6 +200,8 @@ fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
     unsafe {
         std::env::set_var("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
         std::env::set_var("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+        // Deliberately use https:// — this is what a user may register in the
+        // Google Cloud Console. The value must survive config loading unchanged.
         std::env::set_var(
             "GOOGLE_OAUTH_REDIRECT_URI",
             "https://localhost:8001/oauth/google/callback",
@@ -201,6 +212,53 @@ fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
 
     let cfg = super::types::GoogleOAuthConfig::from_env("0.0.0.0", 8001)
         .expect("oauth config should load with test credentials");
+    // Explicit URI must be preserved verbatim — NOT rewritten to http://localhost.
+    assert_eq!(
+        cfg.redirect_uri,
+        "https://localhost:8001/oauth/google/callback"
+    );
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
+}
+
+/// Verifies that the *auto-generated* redirect URI (built from redirect_host +
+/// mcp_port when `GOOGLE_OAUTH_REDIRECT_URI` is not set) is normalized to
+/// canonical `http://localhost` form for loopback addresses.
+#[allow(unsafe_code)]
+#[test]
+fn auto_generated_loopback_redirect_uri_is_normalized_to_http_localhost() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let vars = [
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_REDIRECT_URI",
+        "GOOGLE_OAUTH_REDIRECT_HOST",
+        "GOOGLE_OAUTH_BROKER_ISSUER",
+    ];
+    let prev = vars
+        .iter()
+        .map(|k| ((*k).to_string(), std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+        // No GOOGLE_OAUTH_REDIRECT_URI — let config auto-generate from host+port.
+        std::env::remove_var("GOOGLE_OAUTH_REDIRECT_URI");
+        // Use 127.0.0.1 so the auto-generated URI is a loopback address that
+        // the normalizer should rewrite to http://localhost.
+        std::env::set_var("GOOGLE_OAUTH_REDIRECT_HOST", "127.0.0.1");
+        std::env::remove_var("GOOGLE_OAUTH_BROKER_ISSUER");
+    }
+
+    let cfg = super::types::GoogleOAuthConfig::from_env("0.0.0.0", 8001)
+        .expect("oauth config should load with test credentials");
+    // Auto-generated loopback URIs are normalized to http://localhost.
     assert_eq!(
         cfg.redirect_uri,
         "http://localhost:8001/oauth/google/callback"
