@@ -327,24 +327,11 @@ fn build_args_strips_leading_dashes_from_url_input() {
 fn build_args_skips_wait_flag_for_async_modes() {
     // Direct async modes (fire-and-forget) suppress --wait since they enqueue and return.
     let flags = json!({"wait": true});
-    for async_mode in &["crawl", "extract", "embed"] {
+    for async_mode in &["crawl", "extract", "embed", "github", "reddit", "youtube"] {
         let args = super::build_args(async_mode, "test", &flags);
         assert!(
             !args.contains(&"--wait".to_string()),
             "async mode '{async_mode}' must suppress '--wait'"
-        );
-    }
-}
-
-#[test]
-fn build_args_allows_wait_flag_for_subprocess_async_modes() {
-    // github/reddit/youtube use subprocess fallback — --wait is passed through.
-    let flags = json!({"wait": true});
-    for mode in &["github", "reddit", "youtube"] {
-        let args = super::build_args(mode, "test", &flags);
-        assert!(
-            args.contains(&"--wait".to_string()),
-            "subprocess async mode '{mode}' must allow '--wait'"
         );
     }
 }
