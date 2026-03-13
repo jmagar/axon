@@ -48,7 +48,7 @@ const EditorPane = dynamic(
 )
 
 const DESKTOP_TOOL_BUTTON_CLASS =
-  'h-7 w-7 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.26)] hover:bg-[rgba(175,215,255,0.08)] data-[active=true]:border-[rgba(175,215,255,0.46)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.28),rgba(135,175,255,0.1))] data-[active=true]:text-[var(--text-primary)]'
+  'h-8 w-8 rounded-md border border-transparent text-[var(--text-secondary)] hover:border-[rgba(175,215,255,0.26)] hover:bg-[rgba(175,215,255,0.08)] data-[active=true]:border-[rgba(175,215,255,0.46)] data-[active=true]:bg-[linear-gradient(145deg,rgba(135,175,255,0.28),rgba(135,175,255,0.1))] data-[active=true]:text-[var(--text-primary)]'
 
 export { shouldReloadSessionOnTurnComplete }
 
@@ -203,7 +203,7 @@ export function AxonShell() {
                   aria-label="Expand sidebar"
                   className="axon-icon-btn flex size-8 items-center justify-center"
                 >
-                  <PanelLeft className="size-3.5" />
+                  <PanelLeft className="size-4" />
                 </button>
                 <div className="my-1.5 w-5 border-t border-[var(--border-subtle)]" />
                 {RAIL_MODES.map((mode) => {
@@ -219,13 +219,13 @@ export function AxonShell() {
                       }}
                       aria-label={mode.label}
                       title={mode.label}
-                      className={`flex size-7 items-center justify-center rounded transition-colors ${
+                      className={`flex size-8 items-center justify-center rounded transition-colors ${
                         isActive
                           ? 'border border-[rgba(175,215,255,0.42)] bg-[linear-gradient(145deg,rgba(135,175,255,0.26),rgba(135,175,255,0.08))] text-[var(--text-primary)]'
                           : 'text-[var(--text-dim)] hover:bg-[rgba(175,215,255,0.06)] hover:text-[var(--text-primary)]'
                       }`}
                     >
-                      <Icon className="size-3.5" />
+                      <Icon className="size-4" />
                     </button>
                   )
                 })}
@@ -275,7 +275,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'cortex' ? null : 'cortex')
                       }
                     >
-                      <Brain className="size-3.5" />
+                      <Brain className="size-4" />
                       <span className="sr-only">Toggle cortex</span>
                     </Button>
                     <Button
@@ -288,7 +288,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'terminal' ? null : 'terminal')
                       }
                     >
-                      <TerminalSquare className="size-3.5" />
+                      <TerminalSquare className="size-4" />
                       <span className="sr-only">Toggle terminal</span>
                     </Button>
                     <Button
@@ -301,7 +301,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'logs' ? null : 'logs')
                       }
                     >
-                      <ScrollText className="size-3.5" />
+                      <ScrollText className="size-4" />
                       <span className="sr-only">Toggle logs</span>
                     </Button>
                     <Button
@@ -314,7 +314,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'mcp' ? null : 'mcp')
                       }
                     >
-                      <McpIcon className="size-3.5" />
+                      <McpIcon className="size-4" />
                       <span className="sr-only">Toggle MCP servers</span>
                     </Button>
                     <Button
@@ -327,7 +327,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'settings' ? null : 'settings')
                       }
                     >
-                      <Settings2 className="size-3.5" />
+                      <Settings2 className="size-4" />
                       <span className="sr-only">Toggle settings</span>
                     </Button>
                     <Button
@@ -338,7 +338,7 @@ export function AxonShell() {
                       data-active={shell.chatOpen}
                       onClick={() => shell.persistChatOpen(!shell.chatOpen)}
                     >
-                      <MessageSquareText className="size-3.5" />
+                      <MessageSquareText className="size-4" />
                       <span className="sr-only">Toggle chat</span>
                     </Button>
                     <Button
@@ -351,7 +351,7 @@ export function AxonShell() {
                         shell.persistRightPane(shell.rightPane === 'editor' ? null : 'editor')
                       }
                     >
-                      <PanelRight className="size-3.5" />
+                      <PanelRight className="size-4" />
                       <span className="sr-only">Toggle editor</span>
                     </Button>
                   </div>

@@ -1,6 +1,7 @@
 use spider::url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) struct MapScope {
     pub(crate) host: String,
     pub(crate) path_prefix: Option<String>,
@@ -26,6 +27,7 @@ pub(crate) fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
     Some(parsed.to_string())
 }
 
+#[allow(dead_code)]
 pub(crate) fn normalize_map_candidate_url(
     raw: &str,
     scope: &MapScope,
