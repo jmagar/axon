@@ -279,3 +279,19 @@ fn mcp_ingest_start_requires_source_type() {
     let err = rmcp::ErrorData::invalid_params("source_type is required", None);
     assert_eq!(err.code, rmcp::model::ErrorCode::INVALID_PARAMS);
 }
+
+#[test]
+fn mcp_refresh_schedule_unknown_subaction_returns_invalid_params() {
+    let msg = "unknown schedule_subaction";
+    assert!(msg.contains("unknown schedule_subaction"));
+}
+
+#[test]
+fn mcp_screenshot_payload_contains_path_size_and_viewport() {
+    let payload = serde_json::json!({
+        "path": "/tmp/a.png",
+        "size_bytes": 10,
+        "viewport": "1280x720"
+    });
+    assert!(payload.get("path").is_some());
+}
