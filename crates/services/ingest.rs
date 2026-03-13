@@ -1,9 +1,10 @@
 use crate::crates::core::config::Config;
 use crate::crates::ingest;
 use crate::crates::jobs::ingest::{
-    IngestSource, cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs, get_ingest_job,
-    list_ingest_jobs, recover_stale_ingest_jobs, start_ingest_job,
+    cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs, get_ingest_job, list_ingest_jobs,
+    recover_stale_ingest_jobs, start_ingest_job,
 };
+pub use crate::crates::jobs::ingest::IngestSource;
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{IngestJobResult, IngestResult, IngestStartResult};
 use std::error::Error;

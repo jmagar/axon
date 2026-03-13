@@ -181,6 +181,26 @@ fn test_fallback_uncapped_small_but_complete_site() {
 }
 
 #[test]
+fn test_fallback_uncapped_two_pages_still_retries_chrome() {
+    // 2-page sites are also too small to trust as "complete" in HTTP mode.
+    assert!(should_fallback_to_chrome(
+        &summary(2, 0, 2),
+        0,
+        &default_cfg()
+    ));
+}
+
+#[test]
+fn test_no_fallback_uncapped_three_pages_healthy() {
+    // 3+ pages should use normal thin-ratio checks when uncapped.
+    assert!(!should_fallback_to_chrome(
+        &summary(3, 0, 3),
+        0,
+        &default_cfg()
+    ));
+}
+
+#[test]
 fn test_no_fallback_uncapped_nine_pages_healthy() {
     // 9-page site, healthy, max_pages uncapped — should NOT trigger Chrome
     assert!(!should_fallback_to_chrome(
@@ -238,6 +258,14 @@ fn test_fallback_custom_min_pages() {
         80,
         &default_cfg()
     ));
+}
+
+#[test]
+fn test_map_retry_gate_low_coverage() {
+    assert!(should_retry_map_with_chrome(&summary(0, 0, 0)));
+    assert!(should_retry_map_with_chrome(&summary(1, 0, 1)));
+    assert!(should_retry_map_with_chrome(&summary(2, 0, 2)));
+    assert!(!should_retry_map_with_chrome(&summary(3, 0, 3)));
 }
 
 #[test]
