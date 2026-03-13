@@ -26,10 +26,15 @@ const AGENT_LOGO: Record<string, { src: string; alt: string; title: string }> = 
   codex: { src: '/logos/openai.svg', alt: 'OpenAI logo', title: 'OpenAI (Codex)' },
   gemini: { src: '/logos/google.svg', alt: 'Google logo', title: 'Google (Gemini)' },
 }
+const DEFAULT_AGENT_LOGO = {
+  src: '/logos/anthropic.svg',
+  alt: 'Anthropic logo',
+  title: 'Anthropic (Claude)',
+} as const
 
 function AgentLogo({ agent }: { agent?: string }) {
   const normalized = (agent ?? 'claude').toLowerCase()
-  const logo = AGENT_LOGO[normalized] ?? AGENT_LOGO.claude
+  const logo = AGENT_LOGO[normalized] ?? DEFAULT_AGENT_LOGO
   return (
     <span
       className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-[rgba(255,255,255,0.94)] ring-1 ring-[rgba(5,10,20,0.3)] shadow-[0_1px_4px_rgba(0,0,0,0.2)]"

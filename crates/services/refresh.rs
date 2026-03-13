@@ -1,12 +1,14 @@
 use crate::crates::core::config::Config;
 use crate::crates::jobs::refresh::{
-    cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs, create_refresh_schedule,
-    delete_refresh_schedule, get_refresh_job, list_refresh_jobs, list_refresh_schedules,
-    recover_stale_refresh_jobs, run_refresh_once, run_refresh_worker, set_refresh_schedule_enabled,
-    start_refresh_job,
+    cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs, get_refresh_job, list_refresh_jobs,
+    list_refresh_schedules, recover_stale_refresh_jobs, run_refresh_once, run_refresh_worker,
+    set_refresh_schedule_enabled, start_refresh_job,
 };
 
-pub use crate::crates::jobs::refresh::{RefreshJob, RefreshSchedule, RefreshScheduleCreate};
+pub use crate::crates::jobs::refresh::{
+    RefreshJob, RefreshSchedule, RefreshScheduleCreate, create_refresh_schedule,
+    delete_refresh_schedule, list_refresh_jobs as schedule_list_jobs,
+};
 use crate::crates::services::types::{RefreshRunResult, RefreshStartResult};
 use std::error::Error;
 use uuid::Uuid;

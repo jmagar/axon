@@ -139,102 +139,16 @@ async fn stream_container_stats(
         let dt = now.duration_since(prev_timestamp).as_secs_f64().max(0.1);
         prev_timestamp = now;
 
-        // CPU %
-        let cpu_delta = stats
-            .cpu_stats
-            .as_ref()
-            .and_then(|c| c.cpu_usage.as_ref())
-            .and_then(|u| u.total_usage)
-            .unwrap_or(0)
-            .saturating_sub(
-                stats
-                    .precpu_stats
-                    .as_ref()
-                    .and_then(|c| c.cpu_usage.as_ref())
-                    .and_then(|u| u.total_usage)
-                    .unwrap_or(0),
+        let cpu_percent = cpu_percent_from_stats(&stats);
+        let (mem_usage_mb, mem_limit_mb, mem_percent) = memory_metrics_from_stats(&stats);
+        let (net_rx, net_tx) = network_totals_from_stats(&stats);
+        let (blk_read, blk_write) = block_io_totals_from_stats(&stats);
+        let (net_rx_rate, net_tx_rate, blk_read_rate, blk_write_rate) =
+            compute_rates(
+                dt,
+                (net_rx, net_tx, blk_read, blk_write),
+                (prev_net_rx, prev_net_tx, prev_blk_read, prev_blk_write),
             );
-        let system_delta = stats
-            .cpu_stats
-            .as_ref()
-            .and_then(|c| c.system_cpu_usage)
-            .unwrap_or(0)
-            .saturating_sub(
-                stats
-                    .precpu_stats
-                    .as_ref()
-                    .and_then(|c| c.system_cpu_usage)
-                    .unwrap_or(0),
-            );
-        let online_cpus = stats
-            .cpu_stats
-            .as_ref()
-            .and_then(|c| c.online_cpus)
-            .unwrap_or(1)
-            .max(1);
-        let cpu_percent = if system_delta > 0 {
-            (cpu_delta as f64 / system_delta as f64) * online_cpus as f64 * 100.0
-        } else {
-            0.0
-        };
-
-        // Memory
-        let mem_usage = stats
-            .memory_stats
-            .as_ref()
-            .and_then(|m| m.usage)
-            .unwrap_or(0);
-        // In bollard 0.20 the MemoryStatsStats V1/V2 enum is no longer exposed;
-        // skip cache subtraction and use raw usage (conservative, never negative).
-        let mem_cache = 0u64;
-        let mem_actual = mem_usage.saturating_sub(mem_cache);
-        let mem_limit = stats
-            .memory_stats
-            .as_ref()
-            .and_then(|m| m.limit)
-            .unwrap_or(1)
-            .max(1);
-        let mem_usage_mb = mem_actual as f64 / (1024.0 * 1024.0);
-        let mem_limit_mb = mem_limit as f64 / (1024.0 * 1024.0);
-        let mem_percent = (mem_actual as f64 / mem_limit as f64) * 100.0;
-
-        // Network I/O
-        let (net_rx, net_tx) = stats
-            .networks
-            .as_ref()
-            .map(|nets| {
-                nets.values().fold((0u64, 0u64), |(rx, tx), iface| {
-                    (
-                        rx + iface.rx_bytes.unwrap_or(0),
-                        tx + iface.tx_bytes.unwrap_or(0),
-                    )
-                })
-            })
-            .unwrap_or((0, 0));
-
-        // Block I/O
-        let (blk_read, blk_write) = stats
-            .blkio_stats
-            .as_ref()
-            .and_then(|b| b.io_service_bytes_recursive.as_ref())
-            .map(|entries| {
-                entries.iter().fold((0u64, 0u64), |(r, w), e| {
-                    let op = e.op.as_deref().unwrap_or("").to_lowercase();
-                    let val = e.value.unwrap_or(0);
-                    match op.as_str() {
-                        "read" => (r + val, w),
-                        "write" => (r, w + val),
-                        _ => (r, w),
-                    }
-                })
-            })
-            .unwrap_or((0, 0));
-
-        // Rate calculations
-        let net_rx_rate = (net_rx.saturating_sub(prev_net_rx) as f64 / dt).max(0.0);
-        let net_tx_rate = (net_tx.saturating_sub(prev_net_tx) as f64 / dt).max(0.0);
-        let blk_read_rate = (blk_read.saturating_sub(prev_blk_read) as f64 / dt).max(0.0);
-        let blk_write_rate = (blk_write.saturating_sub(prev_blk_write) as f64 / dt).max(0.0);
 
         prev_net_rx = net_rx;
         prev_net_tx = net_tx;
@@ -258,6 +172,109 @@ async fn stream_container_stats(
             break;
         }
     }
+}
+
+fn cpu_percent_from_stats(stats: &bollard::models::ContainerStatsResponse) -> f64 {
+    let cpu_delta = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|c| c.cpu_usage.as_ref())
+        .and_then(|u| u.total_usage)
+        .unwrap_or(0)
+        .saturating_sub(
+            stats
+                .precpu_stats
+                .as_ref()
+                .and_then(|c| c.cpu_usage.as_ref())
+                .and_then(|u| u.total_usage)
+                .unwrap_or(0),
+        );
+    let system_delta = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|c| c.system_cpu_usage)
+        .unwrap_or(0)
+        .saturating_sub(
+            stats
+                .precpu_stats
+                .as_ref()
+                .and_then(|c| c.system_cpu_usage)
+                .unwrap_or(0),
+        );
+    let online_cpus = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|c| c.online_cpus)
+        .unwrap_or(1)
+        .max(1);
+    if system_delta > 0 {
+        (cpu_delta as f64 / system_delta as f64) * online_cpus as f64 * 100.0
+    } else {
+        0.0
+    }
+}
+
+fn memory_metrics_from_stats(stats: &bollard::models::ContainerStatsResponse) -> (f64, f64, f64) {
+    let mem_usage = stats
+        .memory_stats
+        .as_ref()
+        .and_then(|m| m.usage)
+        .unwrap_or(0);
+    let mem_actual = mem_usage;
+    let mem_limit = stats
+        .memory_stats
+        .as_ref()
+        .and_then(|m| m.limit)
+        .unwrap_or(1)
+        .max(1);
+    let mem_usage_mb = mem_actual as f64 / (1024.0 * 1024.0);
+    let mem_limit_mb = mem_limit as f64 / (1024.0 * 1024.0);
+    let mem_percent = (mem_actual as f64 / mem_limit as f64) * 100.0;
+    (mem_usage_mb, mem_limit_mb, mem_percent)
+}
+
+fn network_totals_from_stats(stats: &bollard::models::ContainerStatsResponse) -> (u64, u64) {
+    stats
+        .networks
+        .as_ref()
+        .map(|nets| {
+            nets.values().fold((0u64, 0u64), |(rx, tx), iface| {
+                (
+                    rx + iface.rx_bytes.unwrap_or(0),
+                    tx + iface.tx_bytes.unwrap_or(0),
+                )
+            })
+        })
+        .unwrap_or((0, 0))
+}
+
+fn block_io_totals_from_stats(stats: &bollard::models::ContainerStatsResponse) -> (u64, u64) {
+    stats
+        .blkio_stats
+        .as_ref()
+        .and_then(|b| b.io_service_bytes_recursive.as_ref())
+        .map(|entries| {
+            entries.iter().fold((0u64, 0u64), |(r, w), e| {
+                let op = e.op.as_deref().unwrap_or("").to_lowercase();
+                let val = e.value.unwrap_or(0);
+                match op.as_str() {
+                    "read" => (r + val, w),
+                    "write" => (r, w + val),
+                    _ => (r, w),
+                }
+            })
+        })
+        .unwrap_or((0, 0))
+}
+
+fn compute_rates(dt: f64, curr: (u64, u64, u64, u64), prev: (u64, u64, u64, u64)) -> (f64, f64, f64, f64) {
+    let (net_rx, net_tx, blk_read, blk_write) = curr;
+    let (prev_net_rx, prev_net_tx, prev_blk_read, prev_blk_write) = prev;
+    let net_rx_rate = (net_rx.saturating_sub(prev_net_rx) as f64 / dt).max(0.0);
+    let net_tx_rate = (net_tx.saturating_sub(prev_net_tx) as f64 / dt).max(0.0);
+    let blk_read_rate = (blk_read.saturating_sub(prev_blk_read) as f64 / dt).max(0.0);
+    let blk_write_rate = (blk_write.saturating_sub(prev_blk_write) as f64 / dt).max(0.0);
+    (net_rx_rate, net_tx_rate, blk_read_rate, blk_write_rate)
 }
 
 fn build_stats_message(metrics: &HashMap<String, ContainerMetrics>) -> String {

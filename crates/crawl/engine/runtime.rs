@@ -121,6 +121,17 @@ async fn apply_browser_settings(
                 true,
                 Some(std::path::PathBuf::from(&cfg.output_dir)),
             )));
+        } else {
+            // spider 2.46.0 has a default screenshot save path when screenshot
+            // config is None. Explicitly set save=false/bytes=false to avoid
+            // unintended filesystem writes (and noisy filename-too-long errors
+            // from malformed discovered URLs).
+            website.with_screenshot(Some(ScreenShotConfig::new(
+                ScreenshotParams::default(),
+                false,
+                false,
+                None,
+            )));
         }
         website = website
             .build()
