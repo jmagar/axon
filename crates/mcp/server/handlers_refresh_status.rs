@@ -4,15 +4,10 @@ use super::common::{
     respond_with_mode,
 };
 use crate::crates::core::http::validate_url;
-use crate::crates::jobs::refresh::{
-    RefreshScheduleCreate, cancel_refresh_job, cleanup_refresh_jobs, clear_refresh_jobs,
-    create_refresh_schedule, delete_refresh_schedule, get_refresh_job, list_refresh_jobs,
-    list_refresh_schedules, recover_stale_refresh_jobs, set_refresh_schedule_enabled,
-    start_refresh_job,
-};
 use crate::crates::mcp::schema::{
     AxonToolResponse, RefreshRequest, RefreshSubaction, ResponseMode, StatusRequest,
 };
+use crate::crates::services::refresh::{self as refresh_service, RefreshScheduleCreate};
 use rmcp::ErrorData;
 
 impl AxonMcpServer {
@@ -23,7 +18,7 @@ impl AxonMcpServer {
         let response_mode = req.response_mode;
         let result = crate::crates::services::system::full_status(self.cfg.as_ref())
             .await
-            .map_err(|e| logged_internal_error("operation", e))?;
+            .map_err(|e| logged_internal_error("status", e))?;
 
         respond_with_mode(
             "status",
@@ -52,34 +47,34 @@ impl AxonMcpServer {
                 if urls.is_empty() {
                     return Err(invalid_params("urls cannot be empty"));
                 }
-                let id = start_refresh_job(self.cfg.as_ref(), &urls)
+                let result = refresh_service::refresh_start(self.cfg.as_ref(), &urls)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.start", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "start",
-                    serde_json::json!({ "job_id": id.to_string() }),
+                    serde_json::json!({ "job_id": result.job_id }),
                 ))
             }
             RefreshSubaction::Status => {
                 let id = parse_job_id(req.job_id.as_ref())?;
-                let job = get_refresh_job(self.cfg.as_ref(), id)
+                let job = refresh_service::refresh_status(self.cfg.as_ref(), id)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.status", e))?;
                 respond_with_mode(
                     "refresh",
                     "status",
                     response_mode,
                     &format!("refresh-status-{id}"),
-                    serde_json::json!({ "job": job }),
+                    serde_json::json!({ "job": job.map(|j| j.payload) }),
                 )
                 .await
             }
             RefreshSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
-                let canceled = cancel_refresh_job(self.cfg.as_ref(), id)
+                let canceled = refresh_service::refresh_cancel(self.cfg.as_ref(), id)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.cancel", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "cancel",
@@ -89,22 +84,22 @@ impl AxonMcpServer {
             RefreshSubaction::List => {
                 let limit = parse_limit(req.limit, 20);
                 let offset = parse_offset(req.offset);
-                let jobs = list_refresh_jobs(self.cfg.as_ref(), limit, offset as i64)
+                let jobs = refresh_service::refresh_list(self.cfg.as_ref(), limit, offset as i64)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.list", e))?;
                 respond_with_mode(
                     "refresh",
                     "list",
                     response_mode,
                     "refresh-list",
-                    serde_json::json!({ "jobs": jobs, "limit": limit, "offset": offset }),
+                    serde_json::json!({ "jobs": jobs.payload, "limit": limit, "offset": offset }),
                 )
                 .await
             }
             RefreshSubaction::Cleanup => {
-                let deleted = cleanup_refresh_jobs(self.cfg.as_ref())
+                let deleted = refresh_service::refresh_cleanup(self.cfg.as_ref())
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.cleanup", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "cleanup",
@@ -112,9 +107,9 @@ impl AxonMcpServer {
                 ))
             }
             RefreshSubaction::Clear => {
-                let deleted = clear_refresh_jobs(self.cfg.as_ref())
+                let deleted = refresh_service::refresh_clear(self.cfg.as_ref())
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.clear", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "clear",
@@ -122,9 +117,9 @@ impl AxonMcpServer {
                 ))
             }
             RefreshSubaction::Recover => {
-                let recovered = recover_stale_refresh_jobs(self.cfg.as_ref())
+                let recovered = refresh_service::refresh_recover(self.cfg.as_ref())
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.recover", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "recover",
@@ -144,9 +139,9 @@ impl AxonMcpServer {
         match sub {
             "list" => {
                 let limit = parse_limit(req.limit, 20);
-                let schedules = list_refresh_schedules(self.cfg.as_ref(), limit)
+                let schedules = refresh_service::refresh_schedule_list(self.cfg.as_ref(), limit)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.schedule.list", e))?;
                 respond_with_mode(
                     "refresh",
                     "schedule",
@@ -170,7 +165,7 @@ impl AxonMcpServer {
                 for url in &urls {
                     validate_url(url).map_err(|e| invalid_params(e.to_string()))?;
                 }
-                let schedule = create_refresh_schedule(
+                let schedule = refresh_service::refresh_schedule_create(
                     self.cfg.as_ref(),
                     &RefreshScheduleCreate {
                         name,
@@ -184,7 +179,7 @@ impl AxonMcpServer {
                     },
                 )
                 .await
-                .map_err(|e| logged_internal_error("operation", e))?;
+                .map_err(|e| logged_internal_error("refresh.schedule.create", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "schedule",
@@ -195,27 +190,39 @@ impl AxonMcpServer {
                 let name = req.schedule_name.ok_or_else(|| {
                     invalid_params("schedule_name is required for schedule delete")
                 })?;
-                let deleted = delete_refresh_schedule(self.cfg.as_ref(), &name)
+                let deleted = refresh_service::refresh_schedule_delete(self.cfg.as_ref(), &name)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.schedule.delete", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "schedule",
                     serde_json::json!({ "name": name, "deleted": deleted }),
                 ))
             }
-            "enable" | "disable" => {
+            "enable" => {
                 let name = req.schedule_name.ok_or_else(|| {
-                    invalid_params("schedule_name is required for schedule enable/disable")
+                    invalid_params("schedule_name is required for schedule enable")
                 })?;
-                let enabled = sub == "enable";
-                let updated = set_refresh_schedule_enabled(self.cfg.as_ref(), &name, enabled)
+                let updated = refresh_service::refresh_schedule_enable(self.cfg.as_ref(), &name)
                     .await
-                    .map_err(|e| logged_internal_error("operation", e))?;
+                    .map_err(|e| logged_internal_error("refresh.schedule.enable", e))?;
                 Ok(AxonToolResponse::ok(
                     "refresh",
                     "schedule",
-                    serde_json::json!({ "name": name, "enabled": enabled, "updated": updated }),
+                    serde_json::json!({ "name": name, "enabled": true, "updated": updated }),
+                ))
+            }
+            "disable" => {
+                let name = req.schedule_name.ok_or_else(|| {
+                    invalid_params("schedule_name is required for schedule disable")
+                })?;
+                let updated = refresh_service::refresh_schedule_disable(self.cfg.as_ref(), &name)
+                    .await
+                    .map_err(|e| logged_internal_error("refresh.schedule.disable", e))?;
+                Ok(AxonToolResponse::ok(
+                    "refresh",
+                    "schedule",
+                    serde_json::json!({ "name": name, "enabled": false, "updated": updated }),
                 ))
             }
             other => Err(invalid_params(format!(
