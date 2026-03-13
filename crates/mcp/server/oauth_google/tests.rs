@@ -201,7 +201,10 @@ fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
 
     let cfg = super::types::GoogleOAuthConfig::from_env("0.0.0.0", 8001)
         .expect("oauth config should load with test credentials");
-    assert_eq!(cfg.redirect_uri, "http://localhost:8001/oauth/google/callback");
+    assert_eq!(
+        cfg.redirect_uri,
+        "http://localhost:8001/oauth/google/callback"
+    );
 
     for (key, value) in prev {
         match value {
@@ -227,6 +230,15 @@ async fn check_rate_limit_enforces_bucket_limit_in_memory_fallback() {
     }
 
     let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
+    drop(_guard);
+
     let bucket = format!("rate-limit-test-{}", uuid::Uuid::new_v4());
     assert!(state.check_rate_limit(&bucket, 1, 60).await.is_ok());
 
@@ -235,11 +247,4 @@ async fn check_rate_limit_enforces_bucket_limit_in_memory_fallback() {
         .await
         .expect_err("second request in same window should be rate limited");
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
-
-    for (key, value) in prev {
-        match value {
-            Some(v) => unsafe { std::env::set_var(&key, v) },
-            None => unsafe { std::env::remove_var(&key) },
-        }
-    }
 }
