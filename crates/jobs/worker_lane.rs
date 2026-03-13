@@ -121,28 +121,8 @@ pub(crate) async fn sweep_stale_jobs(
     }
 }
 
-/// Generic top-level worker: startup sweep, probe AMQP, then run `lane_count` lanes
-/// (AMQP or polling fallback) using `futures_util::future::join_all` for dynamic concurrency.
-///
-/// A shared `Semaphore` limits total in-flight spawned tasks to `lane_count`.
-///
-/// Callers must call `make_pool` and `ensure_schema` before invoking this.
-pub(crate) async fn run_job_worker(
-    cfg: &Config,
-    pool: PgPool,
-    wc: &WorkerConfig,
-    process_fn: ProcessFn,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if wc.lane_count == 0 {
-        return Err(format!("{} worker: lane_count must be >= 1", wc.job_kind).into());
-    }
-
-    sweep_stale_jobs(cfg, &pool, wc, "startup", 0).await;
-
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(wc.lane_count));
-
-    // Probe AMQP connectivity with a short-lived connection+channel pair.
-    let amqp_available = match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
+async fn probe_amqp_available(cfg: &Config, wc: &WorkerConfig) -> bool {
+    match open_amqp_connection_and_channel(cfg, &wc.queue_name).await {
         Ok((conn, ch)) => {
             if let Err(e) = ch.close(0, "probe".into()).await {
                 log_debug(&format!(
@@ -165,44 +145,97 @@ pub(crate) async fn run_job_worker(
             ));
             false
         }
-    };
+    }
+}
 
-    if amqp_available {
-        let mut reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
-        loop {
-            let lane_start = tokio::time::Instant::now();
-            let futs: Vec<_> = (1..=wc.lane_count)
-                .map(|lane| {
-                    amqp::run_amqp_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone())
-                })
-                .collect();
-            let results = futures_util::future::join_all(futs).await;
-            let ran_for_secs = lane_start.elapsed().as_secs();
-            let mut any_unexpected = false;
-            for result in results {
-                if let Err(err) = result {
-                    log_warn(&format!(
-                        "{} worker lane terminated unexpectedly: {err}",
-                        wc.job_kind
-                    ));
-                    any_unexpected = true;
-                }
-            }
-            // run_amqp_lane always returns Err — there is no clean-exit Ok path.
-            // Reset the backoff when lanes ran stably long enough to prove the
-            // connection was healthy (ran longer than the max backoff window).
-            if any_unexpected {
-                if ran_for_secs >= AMQP_RECONNECT_MAX_SECS {
-                    reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
-                }
+async fn run_amqp_reconnect_loop(
+    cfg: &Config,
+    pool: PgPool,
+    wc: &WorkerConfig,
+    process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
+) {
+    let mut reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
+    loop {
+        let lane_start = tokio::time::Instant::now();
+        let futs: Vec<_> = (1..=wc.lane_count)
+            .map(|lane| {
+                amqp::run_amqp_lane(cfg, pool.clone(), wc, lane, process_fn, semaphore.clone())
+            })
+            .collect();
+        let results = futures_util::future::join_all(futs).await;
+        let ran_for_secs = lane_start.elapsed().as_secs();
+        let mut any_unexpected = false;
+        for result in results {
+            if let Err(err) = result {
                 log_warn(&format!(
-                    "{} worker restarting AMQP lanes in {reconnect_delay_secs}s",
+                    "{} worker lane terminated unexpectedly: {err}",
                     wc.job_kind
                 ));
-                tokio::time::sleep(Duration::from_secs(reconnect_delay_secs)).await;
-                reconnect_delay_secs = (reconnect_delay_secs * 2).min(AMQP_RECONNECT_MAX_SECS);
+                any_unexpected = true;
             }
         }
+        if any_unexpected {
+            if ran_for_secs >= AMQP_RECONNECT_MAX_SECS {
+                reconnect_delay_secs = AMQP_RECONNECT_INIT_SECS;
+            }
+            log_warn(&format!(
+                "{} worker restarting AMQP lanes in {reconnect_delay_secs}s",
+                wc.job_kind
+            ));
+            tokio::time::sleep(Duration::from_secs(reconnect_delay_secs)).await;
+            reconnect_delay_secs = (reconnect_delay_secs * 2).min(AMQP_RECONNECT_MAX_SECS);
+        }
+    }
+}
+
+async fn run_polling_lanes(
+    cfg: &Config,
+    pool: PgPool,
+    wc: &WorkerConfig,
+    process_fn: &ProcessFn,
+    semaphore: Arc<tokio::sync::Semaphore>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    log_warn(&format!(
+        "amqp unavailable; running {} worker in postgres polling mode",
+        wc.job_kind
+    ));
+    let futs: Vec<_> = (1..=wc.lane_count)
+        .map(|lane| {
+            poll::run_polling_lane(cfg, pool.clone(), wc, lane, process_fn, semaphore.clone())
+        })
+        .collect();
+    let results = futures_util::future::join_all(futs).await;
+    for result in results {
+        result?;
+    }
+    Ok(())
+}
+
+/// Generic top-level worker: startup sweep, probe AMQP, then run `lane_count` lanes
+/// (AMQP or polling fallback) using `futures_util::future::join_all` for dynamic concurrency.
+///
+/// A shared `Semaphore` limits total in-flight spawned tasks to `lane_count`.
+///
+/// Callers must call `make_pool` and `ensure_schema` before invoking this.
+pub(crate) async fn run_job_worker(
+    cfg: &Config,
+    pool: PgPool,
+    wc: &WorkerConfig,
+    process_fn: ProcessFn,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if wc.lane_count == 0 {
+        return Err(format!("{} worker: lane_count must be >= 1", wc.job_kind).into());
+    }
+
+    sweep_stale_jobs(cfg, &pool, wc, "startup", 0).await;
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(wc.lane_count));
+
+    let amqp_available = probe_amqp_available(cfg, wc).await;
+
+    if amqp_available {
+        run_amqp_reconnect_loop(cfg, pool.clone(), wc, &process_fn, semaphore.clone()).await;
     }
 
     // Polling fallback: AMQP was unavailable at startup so we fall back to
@@ -212,20 +245,7 @@ pub(crate) async fn run_job_worker(
     // will restart the worker binary automatically.  Do NOT add a reconnect
     // loop here without carefully considering the implications of concurrent
     // polling restarts stomping on each other's state.
-    log_warn(&format!(
-        "amqp unavailable; running {} worker in postgres polling mode",
-        wc.job_kind
-    ));
-    let futs: Vec<_> = (1..=wc.lane_count)
-        .map(|lane| {
-            poll::run_polling_lane(cfg, pool.clone(), wc, lane, &process_fn, semaphore.clone())
-        })
-        .collect();
-    let results = futures_util::future::join_all(futs).await;
-    for result in results {
-        result?;
-    }
-    Ok(())
+    run_polling_lanes(cfg, pool, wc, &process_fn, semaphore).await
 }
 
 #[cfg(test)]

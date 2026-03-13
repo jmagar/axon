@@ -45,6 +45,78 @@ async fn setup_amqp_consumer(
     Ok((conn, ch, consumer))
 }
 
+async fn poll_next_delivery(
+    inflight: &mut FuturesUnordered<Pin<Box<dyn Future<Output = ()>>>>,
+    consumer: &mut lapin::Consumer,
+) -> Result<Option<Result<lapin::message::Delivery, lapin::Error>>, tokio::time::error::Elapsed> {
+    if inflight.is_empty() {
+        return tokio::time::timeout(
+            Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
+            consumer.next(),
+        )
+        .await;
+    }
+    tokio::select! {
+        maybe_done = inflight.next() => {
+            if maybe_done.is_some() {
+                return Ok(None);
+            }
+            tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()).await
+        }
+        delivery = tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()) => {
+            delivery
+        }
+    }
+}
+
+enum DeliveryOutcome {
+    Delivery(Box<lapin::message::Delivery>),
+    Continue,
+    Break,
+}
+
+async fn parse_delivery_result(
+    timed: Result<
+        Option<Result<lapin::message::Delivery, lapin::Error>>,
+        tokio::time::error::Elapsed,
+    >,
+    cfg: &Config,
+    pool: &PgPool,
+    wc: &WorkerConfig,
+    lane: usize,
+) -> DeliveryOutcome {
+    match timed {
+        Ok(Some(Ok(d))) => DeliveryOutcome::Delivery(Box::new(d)),
+        Ok(Some(Err(e))) => {
+            log_warn(&format!(
+                "{} worker lane={lane} AMQP delivery error: {e}",
+                wc.job_kind
+            ));
+            DeliveryOutcome::Continue
+        }
+        Ok(None) => DeliveryOutcome::Break,
+        Err(_) => {
+            sweep_stale_jobs(cfg, pool, wc, "amqp", lane).await;
+            DeliveryOutcome::Continue
+        }
+    }
+}
+
+async fn close_amqp_lane(conn: lapin::Connection, ch: lapin::Channel, wc: &WorkerConfig) {
+    if let Err(e) = ch.close(200, "lane exit".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={} error={e}",
+            wc.queue_name
+        ));
+    }
+    if let Err(e) = conn.close(200, "lane exit".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={} error={e}",
+            wc.queue_name
+        ));
+    }
+}
+
 /// Generic AMQP consumer lane. Listens for job IDs on the queue, claims them,
 /// and dispatches to `process_fn` concurrently using `FuturesUnordered` with a
 /// semaphore for backpressure. Runs stale sweeps on idle timeout.
@@ -83,40 +155,11 @@ pub(crate) async fn run_amqp_lane(
             continue;
         }
 
-        let timed = if inflight.is_empty() {
-            tokio::time::timeout(
-                Duration::from_secs(STALE_SWEEP_INTERVAL_SECS),
-                consumer.next(),
-            )
-            .await
-        } else {
-            tokio::select! {
-                maybe_done = inflight.next() => {
-                    if maybe_done.is_some() {
-                        continue;
-                    }
-                    // No in-flight jobs left; fall back to consumer poll.
-                    tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()).await
-                }
-                delivery = tokio::time::timeout(Duration::from_secs(STALE_SWEEP_INTERVAL_SECS), consumer.next()) => {
-                    delivery
-                }
-            }
-        };
-        let delivery = match timed {
-            Ok(Some(Ok(d))) => d,
-            Ok(Some(Err(e))) => {
-                log_warn(&format!(
-                    "{} worker lane={lane} AMQP delivery error: {e}",
-                    wc.job_kind
-                ));
-                continue;
-            }
-            Ok(None) => break,
-            Err(_) => {
-                sweep_stale_jobs(cfg, &pool, wc, "amqp", lane).await;
-                continue;
-            }
+        let timed = poll_next_delivery(&mut inflight, &mut consumer).await;
+        let delivery = match parse_delivery_result(timed, cfg, &pool, wc, lane).await {
+            DeliveryOutcome::Delivery(d) => *d,
+            DeliveryOutcome::Continue => continue,
+            DeliveryOutcome::Break => break,
         };
 
         if let Some(job_fut) =
@@ -131,18 +174,7 @@ pub(crate) async fn run_amqp_lane(
 
     // Explicitly close channel and connection so RabbitMQ cleans up immediately
     // rather than waiting for the TCP timeout.
-    if let Err(e) = ch.close(200, "lane exit".into()).await {
-        log_debug(&format!(
-            "amqp ch_close failed queue={} error={e}",
-            wc.queue_name
-        ));
-    }
-    if let Err(e) = conn.close(200, "lane exit".into()).await {
-        log_debug(&format!(
-            "amqp conn_close failed queue={} error={e}",
-            wc.queue_name
-        ));
-    }
+    close_amqp_lane(conn, ch, wc).await;
 
     Err(format!(
         "{} worker lane={lane} AMQP consumer stream ended unexpectedly",

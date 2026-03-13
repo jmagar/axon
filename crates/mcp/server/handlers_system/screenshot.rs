@@ -64,10 +64,13 @@ impl AxonMcpServer {
         let output_path = if let Some(output) = req.output {
             resolve_artifact_output_path(&output).await?
         } else {
-            ensure_artifact_root().await?.join("screenshots").join(format!(
-                "{}.png",
-                chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
-            ))
+            ensure_artifact_root()
+                .await?
+                .join("screenshots")
+                .join(format!(
+                    "{}.png",
+                    chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
+                ))
         };
 
         let mut cfg = self.cfg.as_ref().clone();

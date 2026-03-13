@@ -137,7 +137,8 @@ pub(crate) async fn dispatch_github_refresh(
                 .await
                 {
                     Ok(started) => {
-                        let job_id = Uuid::parse_str(&started.job_id).unwrap_or_else(|_| Uuid::nil());
+                        let job_id =
+                            Uuid::parse_str(&started.job_id).unwrap_or_else(|_| Uuid::nil());
                         log_info(&format!(
                             "refresh github_ingest_queued repo={target} job_id={job_id}"
                         ));

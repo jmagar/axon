@@ -26,8 +26,8 @@ use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
 pub(crate) use runtime::resolve_cdp_ws_url;
-pub use sitemap::{BackfillStats, append_sitemap_backfill};
 pub(crate) use sitemap::append_candidate_backfill;
+pub use sitemap::{BackfillStats, append_sitemap_backfill};
 pub(crate) use sitemap::{SitemapDiscovery, discover_sitemap_urls};
 pub(crate) use thin_refetch::chrome_refetch_thin_pages;
 use url_utils::normalize_map_candidate_url;

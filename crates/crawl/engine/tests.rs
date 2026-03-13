@@ -181,8 +181,8 @@ fn test_map_seed_scope_uses_resolved_project_prefix() {
 
 #[test]
 fn test_map_scope_allows_root_seed_without_path_filter() {
-    let scope =
-        derive_map_scope("https://example.github.io/", "https://example.github.io/").expect("scope");
+    let scope = derive_map_scope("https://example.github.io/", "https://example.github.io/")
+        .expect("scope");
 
     assert_eq!(scope.path_prefix, None);
 }
