@@ -7,8 +7,8 @@ use reqwest::Url;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::types::{
-    GoogleOAuthState, OAUTH_SESSION_COOKIE, OAUTH_SESSION_TTL_SECS, RedirectPolicy,
-    TokenErrorResponse,
+    GoogleOAuthState, OAUTH_SESSION_COOKIE_PLAIN, OAUTH_SESSION_COOKIE_SECURE,
+    OAUTH_SESSION_TTL_SECS, RedirectPolicy, TokenErrorResponse,
 };
 
 pub(crate) fn unix_now_secs() -> u64 {
@@ -141,6 +141,20 @@ pub(crate) fn unauthorized_response(state: &GoogleOAuthState, body: serde_json::
     response
 }
 
+/// Returns the correct session cookie name for the broker's scheme.
+///
+/// Browsers silently drop the `__Host-` prefix when `Secure` is absent, which
+/// means the set-cookie and read-cookie names diverge on HTTP, causing
+/// re-authentication loops. This picks the plain name for HTTP and the
+/// `__Host-` prefixed name for HTTPS.
+pub(crate) fn session_cookie_name(state: &GoogleOAuthState) -> &'static str {
+    if is_secure_cookie(state) {
+        OAUTH_SESSION_COOKIE_SECURE
+    } else {
+        OAUTH_SESSION_COOKIE_PLAIN
+    }
+}
+
 pub(crate) fn is_secure_cookie(state: &GoogleOAuthState) -> bool {
     state
         .inner
@@ -154,24 +168,26 @@ pub(crate) fn build_session_set_cookie(
     state: &GoogleOAuthState,
     session_id: &str,
 ) -> Option<HeaderValue> {
+    let secure = is_secure_cookie(state);
     let mut cookie = format!(
         "{name}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax",
-        name = OAUTH_SESSION_COOKIE,
+        name = session_cookie_name(state),
         value = session_id,
         max_age = OAUTH_SESSION_TTL_SECS
     );
-    if is_secure_cookie(state) {
+    if secure {
         cookie.push_str("; Secure");
     }
     HeaderValue::from_str(&cookie).ok()
 }
 
 pub(crate) fn build_session_clear_cookie(state: &GoogleOAuthState) -> Option<HeaderValue> {
+    let secure = is_secure_cookie(state);
     let mut cookie = format!(
         "{name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
-        name = OAUTH_SESSION_COOKIE
+        name = session_cookie_name(state)
     );
-    if is_secure_cookie(state) {
+    if secure {
         cookie.push_str("; Secure");
     }
     HeaderValue::from_str(&cookie).ok()

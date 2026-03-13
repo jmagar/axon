@@ -306,3 +306,77 @@ async fn check_rate_limit_enforces_bucket_limit_in_memory_fallback() {
         .expect_err("second request in same window should be rate limited");
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 }
+
+/// Verify that `session_cookie_name` returns the plain (non-`__Host-`) name
+/// when the broker issuer is HTTP, so browsers don't silently drop the cookie.
+#[allow(unsafe_code)]
+#[tokio::test]
+async fn session_cookie_name_is_plain_on_http() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let vars = [
+        "GOOGLE_OAUTH_BROKER_ISSUER",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+    ];
+    let prev = vars
+        .iter()
+        .map(|k| ((*k).to_string(), std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_BROKER_ISSUER", "http://localhost:8001");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+    }
+
+    let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+    assert_eq!(
+        super::helpers::session_cookie_name(&state),
+        super::types::OAUTH_SESSION_COOKIE_PLAIN,
+        "HTTP broker must use plain cookie name to avoid browser silently dropping __Host- prefix"
+    );
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
+}
+
+/// Verify that `session_cookie_name` returns the `__Host-` prefixed name
+/// when the broker issuer is HTTPS.
+#[allow(unsafe_code)]
+#[tokio::test]
+async fn session_cookie_name_uses_host_prefix_on_https() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let vars = [
+        "GOOGLE_OAUTH_BROKER_ISSUER",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+    ];
+    let prev = vars
+        .iter()
+        .map(|k| ((*k).to_string(), std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_BROKER_ISSUER", "https://example.com");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_ID", "test-client-id");
+        std::env::set_var("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret");
+    }
+
+    let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+    assert_eq!(
+        super::helpers::session_cookie_name(&state),
+        super::types::OAUTH_SESSION_COOKIE_SECURE,
+        "HTTPS broker must use __Host- prefixed cookie name"
+    );
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
+}

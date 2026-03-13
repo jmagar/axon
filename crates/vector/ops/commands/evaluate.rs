@@ -17,6 +17,30 @@ use scoring::{
 };
 use streaming::{run_analysis, run_baseline_answer, run_rag_answer};
 
+// Used by the `streaming` submodule — clippy's dead_code lint does not cross
+// module boundaries, so allow the lint here even though the type is live.
+#[derive(Debug, Default)]
+#[allow(dead_code)]
+struct SideBySideBuffer {
+    with_context: String,
+    without_context: String,
+}
+
+#[allow(dead_code)]
+impl SideBySideBuffer {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn push(&mut self, stream: &str, delta: &str) {
+        match stream {
+            streaming::STREAM_WITH_CONTEXT => self.with_context.push_str(delta),
+            streaming::STREAM_WITHOUT_CONTEXT => self.without_context.push_str(delta),
+            _ => {}
+        }
+    }
+}
+
 struct EvalTiming {
     rag_elapsed_ms: u128,
     baseline_elapsed_ms: u128,

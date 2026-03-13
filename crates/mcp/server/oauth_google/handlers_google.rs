@@ -10,11 +10,11 @@ use uuid::Uuid;
 
 use super::helpers::{
     OAuthHtmlPageConfig, build_session_clear_cookie, build_session_set_cookie,
-    extract_cookie_value, oauth_html_page, request_identity,
+    extract_cookie_value, oauth_html_page, request_identity, session_cookie_name,
 };
 use super::types::{
     AuthorizationServerMetadata, CallbackParams, GoogleOAuthState, GoogleTokenResponse, LoginQuery,
-    OAUTH_SESSION_COOKIE, OAuthError, OAuthStatus, ProtectedResourceMetadata,
+    OAuthError, OAuthStatus, ProtectedResourceMetadata,
 };
 
 type BoxResponse = Box<Response>;
@@ -23,11 +23,12 @@ pub(crate) async fn oauth_google_status(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<Json<OAuthStatus>, Response> {
-    let authenticated = if let Some(session_id) = extract_cookie_value(&req, OAUTH_SESSION_COOKIE) {
-        state.is_authenticated(&session_id).await
-    } else {
-        false
-    };
+    let authenticated =
+        if let Some(session_id) = extract_cookie_value(&req, session_cookie_name(&state)) {
+            state.is_authenticated(&session_id).await
+        } else {
+            false
+        };
 
     Ok(Json(match state.inner.config.as_ref() {
         Some(cfg) => OAuthStatus {
@@ -288,7 +289,7 @@ pub(crate) async fn oauth_google_token(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<Json<GoogleTokenResponse>, Response> {
-    let session_id = extract_cookie_value(&req, OAUTH_SESSION_COOKIE)
+    let session_id = extract_cookie_value(&req, session_cookie_name(&state))
         .ok_or_else(|| (StatusCode::UNAUTHORIZED, "missing oauth session").into_response())?;
     let token = state
         .get_session_token(&session_id)
@@ -302,7 +303,7 @@ pub(crate) async fn oauth_google_logout(
     State(state): State<GoogleOAuthState>,
     req: axum::extract::Request,
 ) -> Result<impl IntoResponse, Response> {
-    if let Some(session_id) = extract_cookie_value(&req, OAUTH_SESSION_COOKIE) {
+    if let Some(session_id) = extract_cookie_value(&req, session_cookie_name(&state)) {
         state.clear_session_token(&session_id).await;
     }
     let mut response = oauth_html_page(OAuthHtmlPageConfig {
