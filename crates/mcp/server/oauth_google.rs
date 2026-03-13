@@ -17,9 +17,9 @@ mod types;
 
 pub(super) use handlers_broker::{oauth_authorize, oauth_register_client};
 pub(super) use handlers_google::{
-    oauth_authorization_server_metadata, oauth_google_callback, oauth_google_login,
-    oauth_google_logout, oauth_google_status, oauth_google_token,
-    oauth_protected_resource_metadata,
+    oauth_authorization_server_metadata, oauth_authorization_server_metadata_mcp,
+    oauth_google_callback, oauth_google_login, oauth_google_logout, oauth_google_status,
+    oauth_google_token, oauth_protected_resource_metadata,
 };
 pub(super) use handlers_protected::{oauth_token, require_google_auth};
 pub(super) use types::GoogleOAuthState;

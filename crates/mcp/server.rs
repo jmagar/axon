@@ -36,9 +36,10 @@ use axum::{
 };
 use common::{MCP_TOOL_SCHEMA_URI, internal_error, invalid_params};
 use oauth_google::{
-    GoogleOAuthState, oauth_authorization_server_metadata, oauth_authorize, oauth_google_callback,
-    oauth_google_login, oauth_google_logout, oauth_google_status, oauth_google_token,
-    oauth_protected_resource_metadata, oauth_register_client, oauth_token, require_google_auth,
+    GoogleOAuthState, oauth_authorization_server_metadata, oauth_authorization_server_metadata_mcp,
+    oauth_authorize, oauth_google_callback, oauth_google_login, oauth_google_logout,
+    oauth_google_status, oauth_google_token, oauth_protected_resource_metadata,
+    oauth_register_client, oauth_token, require_google_auth,
 };
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -243,8 +244,12 @@ pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::e
             get(oauth_authorization_server_metadata),
         )
         .route(
+            // Path-prefix discovery alias for the /mcp resource (RFC 8414 §3.1).
+            // Uses a dedicated handler that returns issuer = resource_server_url so the
+            // issuer matches the request path — the root handler would return the broker
+            // issuer which would fail RFC 8414 §3 validation for MCP clients.
             "/.well-known/oauth-authorization-server/mcp",
-            get(oauth_authorization_server_metadata),
+            get(oauth_authorization_server_metadata_mcp),
         )
         .route(
             "/.well-known/openid-configuration",
