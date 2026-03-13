@@ -1,8 +1,10 @@
-use super::run_due::run_refresh_schedule_due_sweep;
+use super::run_due::run_refresh_schedule_due_sweep_with_pool;
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::jobs::common::make_pool;
 use std::error::Error;
 use tokio::time::Duration as TokioDuration;
+use tokio::time::Instant;
 
 const REFRESH_SCHEDULE_WORKER_DEFAULT_TICK_SECS: u64 = 30;
 const REFRESH_SCHEDULE_WORKER_TICK_ENV: &str = "AXON_REFRESH_SCHEDULER_TICK_SECS";
@@ -21,13 +23,17 @@ fn refresh_schedule_tick_secs() -> u64 {
 
 pub(super) async fn handle_refresh_schedule_worker(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let tick_secs = refresh_schedule_tick_secs();
+    let tick_duration = TokioDuration::from_secs(tick_secs);
     log_info(&format!(
         "refresh schedule worker started tick_secs={tick_secs} (env={REFRESH_SCHEDULE_WORKER_TICK_ENV})"
     ));
 
+    let pool = make_pool(cfg).await?;
+
     loop {
+        let sweep_start = Instant::now();
         log_info("refresh schedule worker running due sweep");
-        match run_refresh_schedule_due_sweep(cfg, 25).await {
+        match run_refresh_schedule_due_sweep_with_pool(cfg, &pool, 25).await {
             Ok(sweep) => {
                 log_info(&format!(
                     "refresh schedule worker sweep complete claimed={} dispatched={} skipped={} failed={}",
@@ -42,6 +48,7 @@ pub(super) async fn handle_refresh_schedule_worker(cfg: &Config) -> Result<(), B
             }
         }
 
-        tokio::time::sleep(TokioDuration::from_secs(tick_secs)).await;
+        let remaining = tick_duration.saturating_sub(sweep_start.elapsed());
+        tokio::time::sleep(remaining).await;
     }
 }

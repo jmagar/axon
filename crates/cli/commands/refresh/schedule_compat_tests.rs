@@ -101,7 +101,7 @@ fn watch_run_now_refresh_task_uses_service_layer() {
         "watch run-now should dispatch refresh via services layer"
     );
     assert!(
-        !source.contains("jobs::refresh::{"),
+        !source.contains("jobs::refresh"),
         "watch should not import jobs::refresh directly for dispatch"
     );
 }

@@ -1,7 +1,10 @@
 use super::thin_refetch::{
     RefetchResult, THIN_REFETCH_CONCURRENCY, render_html_with_chrome, write_refetch_results,
 };
-use super::{CrawlSummary, canonicalize_url_for_dedupe, is_excluded_url_path};
+use super::{
+    CrawlSummary, MapScope, canonicalize_url_for_dedupe, is_excluded_url_path,
+    normalize_map_candidate_url,
+};
 use crate::crates::core::content::{
     BOILERPLATE_SELECTORS, clean_markdown_whitespace, url_to_filename,
 };
@@ -25,6 +28,7 @@ pub(super) struct CollectorConfig {
     pub min_chars: usize,
     pub drop_thin: bool,
     pub exclude_path_prefix: Vec<String>,
+    pub scope: Option<MapScope>,
     pub transform_cfg: &'static spider_transformations::transformation::content::TransformConfig,
     pub progress_tx: Option<Sender<CrawlSummary>>,
     pub previous_manifest: HashMap<String, ManifestEntry>,
@@ -467,6 +471,14 @@ async fn process_received_page(
     else {
         return Ok(());
     };
+    // Restore pages_discovered tracking: track the running maximum of
+    // (seen URLs so far + outbound links on this page) to give the UI a
+    // realistic "total discovered" count in live progress updates.
+    if let Some(links) = &page.page_links {
+        summary.pages_discovered = summary
+            .pages_discovered
+            .max(seen_canonical.len() as u32 + links.len() as u32);
+    }
     if !page.status_code.is_success() {
         log_info(&format!(
             "skip: {} (HTTP {})",
@@ -513,7 +525,10 @@ fn canonicalize_and_track_page(
     if is_excluded_url_path(&raw_url, &col.exclude_path_prefix) {
         return None;
     }
-    let url = canonicalize_url_for_dedupe(&raw_url)?;
+    let url = match col.scope.as_ref() {
+        Some(scope) => normalize_map_candidate_url(&raw_url, scope, false)?,
+        None => canonicalize_url_for_dedupe(&raw_url)?,
+    };
     if !seen_canonical.insert(url.clone()) {
         return None;
     }
@@ -540,5 +555,78 @@ fn track_waf_block(
 async fn emit_progress(col: &CollectorConfig, summary: &CrawlSummary) {
     if let Some(tx) = col.progress_tx.as_ref() {
         tx.send(summary.clone()).await.ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::content::build_transform_config;
+
+    fn test_collector_config(scope: Option<MapScope>) -> CollectorConfig {
+        CollectorConfig {
+            markdown_dir: std::env::temp_dir(),
+            manifest_path: std::env::temp_dir().join("collector-manifest.jsonl"),
+            min_chars: 10,
+            drop_thin: false,
+            exclude_path_prefix: Vec::new(),
+            scope,
+            transform_cfg: build_transform_config(),
+            progress_tx: None,
+            previous_manifest: HashMap::new(),
+            selector_config: None,
+            chrome_ws_url: None,
+            chrome_timeout_secs: 1,
+            output_dir: std::env::temp_dir(),
+        }
+    }
+
+    #[test]
+    fn canonicalize_and_track_page_rejects_same_host_root_outside_project_scope() {
+        let col = test_collector_config(Some(MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        }));
+        let mut summary = CrawlSummary::default();
+        let mut urls = HashSet::new();
+        let mut seen = HashSet::new();
+
+        let url = canonicalize_and_track_page(
+            "https://example.github.io/",
+            &col,
+            &mut summary,
+            &mut urls,
+            &mut seen,
+        );
+
+        assert!(url.is_none());
+        assert_eq!(summary.pages_seen, 0);
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn canonicalize_and_track_page_accepts_in_scope_project_page() {
+        let col = test_collector_config(Some(MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        }));
+        let mut summary = CrawlSummary::default();
+        let mut urls = HashSet::new();
+        let mut seen = HashSet::new();
+
+        let url = canonicalize_and_track_page(
+            "https://example.github.io/project/docs/",
+            &col,
+            &mut summary,
+            &mut urls,
+            &mut seen,
+        );
+
+        assert_eq!(
+            url.as_deref(),
+            Some("https://example.github.io/project/docs")
+        );
+        assert_eq!(summary.pages_seen, 1);
+        assert!(urls.contains("https://example.github.io/project/docs"));
     }
 }

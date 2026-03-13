@@ -82,8 +82,16 @@ pub(super) async fn run_refresh_schedule_due_sweep(
     batch: usize,
 ) -> Result<RefreshScheduleDueSweep, Box<dyn Error>> {
     let pool = make_pool(cfg).await?;
-    ensure_schema_once(&pool).await?;
-    let claimed = claim_due_refresh_schedules_with_pool(&pool, batch as i64).await?;
+    run_refresh_schedule_due_sweep_with_pool(cfg, &pool, batch).await
+}
+
+pub(super) async fn run_refresh_schedule_due_sweep_with_pool(
+    cfg: &Config,
+    pool: &sqlx::PgPool,
+    batch: usize,
+) -> Result<RefreshScheduleDueSweep, Box<dyn Error>> {
+    ensure_schema_once(pool).await?;
+    let claimed = claim_due_refresh_schedules_with_pool(pool, batch as i64).await?;
     let now = Utc::now();
     let mut counters = SweepCounters {
         dispatched: 0,
@@ -102,7 +110,7 @@ pub(super) async fn run_refresh_schedule_due_sweep(
     }
 
     for schedule in &claimed {
-        process_due_schedule(cfg, &pool, schedule, now, &mut counters).await?;
+        process_due_schedule(cfg, pool, schedule, now, &mut counters).await?;
     }
 
     Ok(RefreshScheduleDueSweep {

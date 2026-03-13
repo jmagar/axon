@@ -7,7 +7,6 @@ pub mod stats;
 pub mod tei;
 
 // Re-export public API — no passthrough wrappers needed.
-pub use commands::{run_evaluate_native, run_suggest_native};
 pub use input::{chunk_text, url_lookup_candidates};
 pub use stats::stats_payload;
 pub use tei::{

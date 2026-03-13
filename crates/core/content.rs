@@ -199,22 +199,56 @@ pub fn extract_meta_description(html: &str) -> Option<String> {
 pub fn extract_links(html: &str, limit: usize) -> Vec<String> {
     let mut out = Vec::new();
     let mut pos = 0usize;
-    while let Some(rel) = html[pos..].find("href=\"") {
-        let start = pos + rel + 6;
-        let remain = &html[start..];
-        let Some(end_rel) = remain.find('"') else {
+    let bytes = html.as_bytes();
+
+    // Only extract href= values that appear inside <a ...> tags.
+    // Two-pass approach: find each <a tag opening, then extract href= within it.
+    while pos < html.len() {
+        // Find the next <a tag (must be followed by whitespace or end-of-tag).
+        let Some(a_rel) = html[pos..].find("<a") else {
             break;
         };
-        let link = remain[..end_rel].trim();
-        if (link.starts_with("http://") || link.starts_with("https://"))
-            && !out.iter().any(|x| x == link)
-        {
-            out.push(link.to_string());
-            if out.len() >= limit {
-                break;
-            }
+        let a_start = pos + a_rel;
+        let after_a = a_start + 2;
+
+        // Verify this is actually an <a tag and not e.g. <area, <aside — the
+        // character after "<a" must be whitespace or ">".
+        let next_byte = bytes.get(after_a).copied();
+        if !matches!(
+            next_byte,
+            Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'>')
+        ) {
+            pos = after_a;
+            continue;
         }
-        pos = start + end_rel + 1;
+
+        // Find the closing > of this opening tag.
+        let Some(tag_end_rel) = html[after_a..].find('>') else {
+            break;
+        };
+        let tag_body = &html[after_a..after_a + tag_end_rel];
+
+        // Now search for href=" within this tag body only.
+        let mut tag_pos = 0usize;
+        while let Some(href_rel) = tag_body[tag_pos..].find("href=\"") {
+            let value_start = tag_pos + href_rel + 6;
+            let remain = &tag_body[value_start..];
+            let Some(end_rel) = remain.find('"') else {
+                break;
+            };
+            let link = remain[..end_rel].trim();
+            if (link.starts_with("http://") || link.starts_with("https://"))
+                && !out.iter().any(|x| x == link)
+            {
+                out.push(link.to_string());
+                if out.len() >= limit {
+                    return out;
+                }
+            }
+            tag_pos = value_start + end_rel + 1;
+        }
+
+        pos = after_a + tag_end_rel + 1;
     }
     out
 }
