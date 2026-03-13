@@ -135,7 +135,6 @@ pub async fn crawl_status(cfg: &Config, job_id: Uuid) -> Result<CrawlJobResult, 
     Ok(map_crawl_job_result(payload))
 }
 
-
 pub async fn crawl_list(
     cfg: &Config,
     limit: i64,

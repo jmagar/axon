@@ -71,5 +71,8 @@ fn autoswitch_thin_ratio_equal_to_threshold_does_not_trigger_fallback() {
         ..CrawlSummary::default()
     };
 
-    assert_eq!(plan_chrome_fallback(&cfg, &summary), ChromeFallbackPlan::None);
+    assert_eq!(
+        plan_chrome_fallback(&cfg, &summary),
+        ChromeFallbackPlan::None
+    );
 }

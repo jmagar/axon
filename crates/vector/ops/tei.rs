@@ -229,45 +229,31 @@ fn prepare_batch_document(doc: &EmbedDocument) -> Option<PreparedBatchDocument> 
     })
 }
 
-pub async fn embed_documents_batch(
-    cfg: &Config,
-    docs: &[EmbedDocument],
-) -> Result<EmbedSummary, Box<dyn Error>> {
-    let prepared: Vec<PreparedBatchDocument> =
-        docs.iter().filter_map(prepare_batch_document).collect();
-    if prepared.is_empty() {
-        return Ok(EmbedSummary {
-            docs_embedded: 0,
-            chunks_embedded: 0,
-        });
-    }
-
-    let all_chunks: Vec<String> = prepared
-        .iter()
-        .flat_map(|doc| doc.chunks.iter().cloned())
-        .collect();
-    let chunks_embedded = all_chunks.len();
-    let vectors = tei_embed(cfg, &all_chunks).await?;
-    if vectors.is_empty() {
+fn validate_batch_vectors(
+    vectors_len: usize,
+    chunks_embedded: usize,
+) -> Result<(), Box<dyn Error>> {
+    if vectors_len == 0 {
         return Err("TEI returned no vectors for batch embed".into());
     }
-    if vectors.len() != chunks_embedded {
+    if vectors_len != chunks_embedded {
         return Err(format!(
             "TEI vector count mismatch for batch embed: {} vectors for {} chunks",
-            vectors.len(),
-            chunks_embedded
+            vectors_len, chunks_embedded
         )
         .into());
     }
+    Ok(())
+}
 
-    let dim = vectors[0].len();
-    if qdrant_store::collection_needs_init(&cfg.collection) {
-        qdrant_store::ensure_collection(cfg, dim).await?;
-    }
-
+fn build_batch_points(
+    prepared: &[PreparedBatchDocument],
+    vectors: Vec<Vec<f32>>,
+) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
+    let chunks_embedded: usize = prepared.iter().map(|doc| doc.chunks.len()).sum();
     let mut points: Vec<serde_json::Value> = Vec::with_capacity(chunks_embedded);
     let mut vectors_iter = vectors.into_iter();
-    for doc in &prepared {
+    for doc in prepared {
         for (idx, chunk) in doc.chunks.iter().enumerate() {
             let vector = vectors_iter
                 .next()
@@ -301,8 +287,13 @@ pub async fn embed_documents_batch(
             }));
         }
     }
-    qdrant_store::qdrant_upsert(cfg, &points).await?;
-    // Deduplicate URLs before stale-tail deletion to avoid redundant deletes
+    Ok(points)
+}
+
+async fn cleanup_batch_stale_tails(
+    cfg: &Config,
+    prepared: &[PreparedBatchDocument],
+) -> Result<(), Box<dyn Error>> {
     let unique_urls: std::collections::HashMap<&str, usize> = prepared
         .iter()
         .map(|doc| (doc.url.as_str(), doc.chunks.len()))
@@ -310,6 +301,38 @@ pub async fn embed_documents_batch(
     for (url, chunk_count) in unique_urls {
         qdrant_delete_stale_tail(cfg, url, chunk_count).await?;
     }
+    Ok(())
+}
+
+pub async fn embed_documents_batch(
+    cfg: &Config,
+    docs: &[EmbedDocument],
+) -> Result<EmbedSummary, Box<dyn Error>> {
+    let prepared: Vec<PreparedBatchDocument> =
+        docs.iter().filter_map(prepare_batch_document).collect();
+    if prepared.is_empty() {
+        return Ok(EmbedSummary {
+            docs_embedded: 0,
+            chunks_embedded: 0,
+        });
+    }
+
+    let all_chunks: Vec<String> = prepared
+        .iter()
+        .flat_map(|doc| doc.chunks.iter().cloned())
+        .collect();
+    let chunks_embedded = all_chunks.len();
+    let vectors = tei_embed(cfg, &all_chunks).await?;
+    validate_batch_vectors(vectors.len(), chunks_embedded)?;
+
+    let dim = vectors[0].len();
+    if qdrant_store::collection_needs_init(&cfg.collection) {
+        qdrant_store::ensure_collection(cfg, dim).await?;
+    }
+
+    let points = build_batch_points(&prepared, vectors)?;
+    qdrant_store::qdrant_upsert(cfg, &points).await?;
+    cleanup_batch_stale_tails(cfg, &prepared).await?;
 
     Ok(EmbedSummary {
         docs_embedded: prepared.len(),

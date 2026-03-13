@@ -16,20 +16,8 @@ use std::sync::{
 use std::time::Instant;
 
 pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.tavily_api_key.is_empty() {
-        return Err("research requires TAVILY_API_KEY — set it in .env".into());
-    }
-    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
-        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
-    }
-
-    let query = if let Some(q) = &cfg.query {
-        q.clone()
-    } else if !cfg.positional.is_empty() {
-        cfg.positional.join(" ")
-    } else {
-        return Err("research requires a query (positional or --query)".into());
-    };
+    validate_research_prereqs(cfg)?;
+    let query = resolve_research_query(cfg)?;
 
     log_info(&format!("command=research query_len={}", query.len()));
     if !cfg.json_output {
@@ -79,7 +67,36 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         log_done("command=research complete");
         return Ok(());
     }
+    print_human_research_output(&payload, started.elapsed().as_millis())?;
 
+    log_done("command=research complete");
+    Ok(())
+}
+
+fn validate_research_prereqs(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if cfg.tavily_api_key.is_empty() {
+        return Err("research requires TAVILY_API_KEY — set it in .env".into());
+    }
+    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
+        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
+    }
+    Ok(())
+}
+
+fn resolve_research_query(cfg: &Config) -> Result<String, Box<dyn Error>> {
+    if let Some(q) = &cfg.query {
+        return Ok(q.clone());
+    }
+    if !cfg.positional.is_empty() {
+        return Ok(cfg.positional.join(" "));
+    }
+    Err("research requires a query (positional or --query)".into())
+}
+
+fn print_human_research_output(
+    payload: &serde_json::Value,
+    total_ms: u128,
+) -> Result<(), Box<dyn Error>> {
     let search_results = payload["search_results"]
         .as_array()
         .cloned()
@@ -92,31 +109,14 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let prompt_tokens = payload["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
     let completion_tokens = payload["usage"]["completion_tokens"].as_u64().unwrap_or(0);
     let total_tokens = payload["usage"]["total_tokens"].as_u64().unwrap_or(0);
-    let total_ms = started.elapsed().as_millis();
 
     println!("{} {}", primary("Search Results:"), search_results.len());
     println!();
-
     println!("{} {}", primary("Pages Extracted:"), extractions.len());
     println!();
 
     for (i, extraction) in extractions.iter().enumerate() {
-        let title = extraction["title"].as_str().unwrap_or("");
-        let url = extraction["url"].as_str().unwrap_or("");
-        println!("{}. {}", i + 1, primary(title));
-        println!("   {}", muted(url));
-        let preview = serde_json::to_string(&extraction["extracted"])
-            .unwrap_or_default()
-            .chars()
-            .take(200)
-            .collect::<String>();
-        let preview = preview.trim();
-        if preview.is_empty() || preview == "null" || preview == "{}" {
-            println!("   {}", muted("(no data extracted)"));
-        } else {
-            println!("   {preview}");
-        }
-        println!();
+        print_extraction_preview(i, extraction)?;
     }
 
     if let Some(summary) = summary {
@@ -124,7 +124,6 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!("{summary}");
         println!();
     }
-
     if total_tokens > 0 {
         println!(
             "  {} prompt={} completion={} total={}",
@@ -135,8 +134,28 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         );
     }
     println!("  {} total={}ms", muted("timing"), total_ms);
+    Ok(())
+}
 
-    log_done("command=research complete");
+fn print_extraction_preview(
+    i: usize,
+    extraction: &serde_json::Value,
+) -> Result<(), Box<dyn Error>> {
+    let title = extraction["title"].as_str().unwrap_or("");
+    let url = extraction["url"].as_str().unwrap_or("");
+    println!("{}. {}", i + 1, primary(title));
+    println!("   {}", muted(url));
+    let preview = serde_json::to_string(&extraction["extracted"])?
+        .chars()
+        .take(200)
+        .collect::<String>();
+    let preview = preview.trim();
+    if preview.is_empty() || preview == "null" || preview == "{}" {
+        println!("   {}", muted("(no data extracted)"));
+    } else {
+        println!("   {preview}");
+    }
+    println!();
     Ok(())
 }
 

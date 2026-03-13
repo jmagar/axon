@@ -22,7 +22,10 @@ pub fn map_embed_job_result(payload: serde_json::Value) -> EmbedJobResult {
 
 // --- Service lifecycle wrappers ---
 
-pub async fn embed_status(cfg: &Config, id: Uuid) -> Result<Option<EmbedJobResult>, Box<dyn Error>> {
+pub async fn embed_status(
+    cfg: &Config,
+    id: Uuid,
+) -> Result<Option<EmbedJobResult>, Box<dyn Error>> {
     let job = get_embed_job(cfg, id).await?;
     Ok(job.map(|value| {
         map_embed_job_result(serde_json::to_value(value).unwrap_or(serde_json::Value::Null))

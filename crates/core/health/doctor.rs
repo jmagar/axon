@@ -12,6 +12,7 @@ use crate::crates::jobs::ingest::ingest_doctor;
 use serde_json::Value;
 use std::env;
 use std::error::Error;
+use std::future::Future;
 use std::time::Instant;
 
 fn elapsed_ms(start: Instant) -> u64 {
@@ -173,6 +174,15 @@ struct DoctorProbes {
     stale_jobs_ms: u64,
 }
 
+async fn timed_probe<T, F>(future: F) -> (T, u64)
+where
+    F: Future<Output = T>,
+{
+    let start = Instant::now();
+    let value = future.await;
+    (value, elapsed_ms(start))
+}
+
 async fn gather_doctor_probes(
     cfg: &Config,
     openai_model: &str,
@@ -189,58 +199,16 @@ async fn gather_doctor_probes(
         (openai_probe, openai_probe_ms),
         (stale_jobs, stale_jobs_ms),
     ) = spider::tokio::join!(
-        async {
-            let start = Instant::now();
-            (crawl_doctor(cfg).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (extract_doctor(cfg).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (embed_doctor(cfg).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (ingest_doctor(cfg).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (
-                probe_http(&cfg.tei_url, &["/health", "/"]).await,
-                elapsed_ms(start),
-            )
-        },
-        async {
-            let start = Instant::now();
-            (probe_tei_info(&cfg.tei_url).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (
-                probe_http(&cfg.qdrant_url, &["/healthz", "/"]).await,
-                elapsed_ms(start),
-            )
-        },
-        async {
-            let start = Instant::now();
-            (
-                probe_chrome(cfg.chrome_remote_url.as_deref()).await,
-                elapsed_ms(start),
-            )
-        },
-        async {
-            let start = Instant::now();
-            (probe_openai(cfg, openai_model).await, elapsed_ms(start))
-        },
-        async {
-            let start = Instant::now();
-            (
-                count_stale_and_pending_jobs(cfg, 15).await,
-                elapsed_ms(start),
-            )
-        },
+        timed_probe(crawl_doctor(cfg)),
+        timed_probe(extract_doctor(cfg)),
+        timed_probe(embed_doctor(cfg)),
+        timed_probe(ingest_doctor(cfg)),
+        timed_probe(probe_http(&cfg.tei_url, &["/health", "/"])),
+        timed_probe(probe_tei_info(&cfg.tei_url)),
+        timed_probe(probe_http(&cfg.qdrant_url, &["/healthz", "/"])),
+        timed_probe(probe_chrome(cfg.chrome_remote_url.as_deref())),
+        timed_probe(probe_openai(cfg, openai_model)),
+        timed_probe(count_stale_and_pending_jobs(cfg, 15)),
     );
 
     Ok(DoctorProbes {
