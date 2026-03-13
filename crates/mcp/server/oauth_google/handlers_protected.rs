@@ -16,10 +16,11 @@ use super::helpers::{
     token_error_response, unauthorized_response, unix_now_secs,
 };
 use super::types::{
-    AccessTokenRecord, AuthCodeRecord, GoogleOAuthState, OAUTH_REFRESH_TTL_SECS, OAuthTokenResponse,
-    RefreshTokenRecord, TokenRequest,
+    AccessTokenRecord, AuthCodeRecord, GoogleOAuthState, OAUTH_REFRESH_TTL_SECS,
+    OAuthTokenResponse, RefreshTokenRecord, TokenRequest,
 };
 
+#[derive(Debug)]
 struct AuthCodeGrantInput {
     client_id: String,
     code: String,
@@ -31,26 +32,28 @@ struct RefreshGrantInput {
     refresh_token: String,
 }
 
-fn required_form_field(value: Option<String>, field: &'static str) -> Result<String, Response> {
+type BoxResponse = Box<Response>;
+
+fn required_form_field(value: Option<String>, field: &'static str) -> Result<String, BoxResponse> {
     value.ok_or_else(|| {
-        token_error_response(
+        Box::new(token_error_response(
             "invalid_request",
             &format!("{field} is required"),
             StatusCode::BAD_REQUEST,
-        )
+        ))
     })
 }
 
-fn parse_auth_code_grant_input(form: &TokenRequest) -> Result<AuthCodeGrantInput, Response> {
+fn parse_auth_code_grant_input(form: &TokenRequest) -> Result<AuthCodeGrantInput, BoxResponse> {
     let client_id = required_form_field(form.client_id.clone(), "client_id")?;
     let code = required_form_field(form.code.clone(), "code")?;
     let redirect_uri_raw = required_form_field(form.redirect_uri.clone(), "redirect_uri")?;
     let redirect_uri = normalize_loopback_redirect_uri(&redirect_uri_raw).ok_or_else(|| {
-        token_error_response(
+        Box::new(token_error_response(
             "invalid_request",
             "redirect_uri is invalid",
             StatusCode::BAD_REQUEST,
-        )
+        ))
     })?;
     Ok(AuthCodeGrantInput {
         client_id,
@@ -59,20 +62,23 @@ fn parse_auth_code_grant_input(form: &TokenRequest) -> Result<AuthCodeGrantInput
     })
 }
 
-fn validate_redirect_policy(state: &GoogleOAuthState, redirect_uri: &str) -> Result<(), Response> {
+fn validate_redirect_policy(
+    state: &GoogleOAuthState,
+    redirect_uri: &str,
+) -> Result<(), BoxResponse> {
     let cfg = state.config().map_err(|_| {
-        token_error_response(
+        Box::new(token_error_response(
             "server_error",
             "oauth configuration unavailable",
             StatusCode::INTERNAL_SERVER_ERROR,
-        )
+        ))
     })?;
     if !is_allowed_redirect_uri(redirect_uri, cfg.redirect_policy) {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_request",
             "redirect_uri violates server redirect policy",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     Ok(())
 }
@@ -81,54 +87,54 @@ fn validate_auth_code_record(
     record: &AuthCodeRecord,
     client_id: &str,
     redirect_uri: &str,
-) -> Result<(), Response> {
+) -> Result<(), BoxResponse> {
     if unix_now_secs() > record.expires_at_unix {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_grant",
             "authorization code expired",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     if record.client_id != client_id || record.redirect_uri != redirect_uri {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_grant",
             "authorization code does not match client_id/redirect_uri",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     Ok(())
 }
 
-fn validate_pkce(record: &AuthCodeRecord, code_verifier: Option<String>) -> Result<(), Response> {
+fn validate_pkce(
+    record: &AuthCodeRecord,
+    code_verifier: Option<String>,
+) -> Result<(), BoxResponse> {
     let Some(challenge) = record.code_challenge.as_ref() else {
         return Ok(());
     };
     let verifier = code_verifier.ok_or_else(|| {
-        token_error_response(
+        Box::new(token_error_response(
             "invalid_request",
             "code_verifier is required for PKCE",
             StatusCode::BAD_REQUEST,
-        )
+        ))
     })?;
-    let method = record
-        .code_challenge_method
-        .as_deref()
-        .unwrap_or("S256");
+    let method = record.code_challenge_method.as_deref().unwrap_or("S256");
     if method != "S256" {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_request",
             "code_challenge_method must be S256",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     let digest = Sha256::digest(verifier.as_bytes());
     let computed = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
     if computed != *challenge {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_grant",
             "invalid code_verifier",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     Ok(())
 }
@@ -167,7 +173,7 @@ async fn issue_oauth_tokens(
     })
 }
 
-fn parse_refresh_grant_input(form: &TokenRequest) -> Result<RefreshGrantInput, Response> {
+fn parse_refresh_grant_input(form: &TokenRequest) -> Result<RefreshGrantInput, BoxResponse> {
     let client_id = required_form_field(form.client_id.clone(), "client_id")?;
     let refresh_token = required_form_field(form.refresh_token.clone(), "refresh_token")?;
     Ok(RefreshGrantInput {
@@ -179,20 +185,20 @@ fn parse_refresh_grant_input(form: &TokenRequest) -> Result<RefreshGrantInput, R
 fn validate_refresh_token_record(
     record: &RefreshTokenRecord,
     client_id: &str,
-) -> Result<(), Response> {
+) -> Result<(), BoxResponse> {
     if record.client_id != client_id {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_grant",
             "refresh_token does not belong to this client",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     if unix_now_secs() > record.expires_at_unix {
-        return Err(token_error_response(
+        return Err(Box::new(token_error_response(
             "invalid_grant",
             "refresh_token expired",
             StatusCode::BAD_REQUEST,
-        ));
+        )));
     }
     Ok(())
 }
@@ -240,10 +246,10 @@ async fn handle_auth_code_grant(
 ) -> Response {
     let input = match parse_auth_code_grant_input(&form) {
         Ok(v) => v,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
     if let Err(resp) = validate_redirect_policy(state, &input.redirect_uri) {
-        return resp;
+        return *resp;
     }
     let record = match state.consume_auth_code(&input.code).await {
         Some(v) => v,
@@ -256,10 +262,10 @@ async fn handle_auth_code_grant(
         }
     };
     if let Err(resp) = validate_auth_code_record(&record, &input.client_id, &input.redirect_uri) {
-        return resp;
+        return *resp;
     }
     if let Err(resp) = validate_pkce(&record, form.code_verifier.clone()) {
-        return resp;
+        return *resp;
     }
     let token_response = match issue_oauth_tokens(state, input.client_id, record.scope).await {
         Ok(resp) => resp,
@@ -280,7 +286,7 @@ async fn handle_refresh_token_grant(
 ) -> Response {
     let input = match parse_refresh_grant_input(&form) {
         Ok(v) => v,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
     let refresh_record = match state.get_refresh_token(&input.refresh_token).await {
         Some(v) => v,
@@ -293,7 +299,7 @@ async fn handle_refresh_token_grant(
         }
     };
     if let Err(resp) = validate_refresh_token_record(&refresh_record, &input.client_id) {
-        return resp;
+        return *resp;
     }
     let token_response = match rotate_refresh_token(
         state,
@@ -406,4 +412,42 @@ pub(crate) async fn require_google_auth(
             "error": "authorization_required"
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use serde_json::Value;
+
+    #[test]
+    fn required_form_field_missing_returns_bad_request_contract() {
+        let resp = *required_form_field(None, "client_id").expect_err("missing field should error");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn parse_auth_code_grant_input_invalid_redirect_preserves_error_shape() {
+        let req = TokenRequest {
+            grant_type: "authorization_code".to_string(),
+            code: Some("code".to_string()),
+            redirect_uri: Some("not-a-uri".to_string()),
+            client_id: Some("client-1".to_string()),
+            code_verifier: None,
+            refresh_token: None,
+        };
+
+        let resp = match parse_auth_code_grant_input(&req) {
+            Ok(_) => panic!("invalid redirect uri should fail parsing"),
+            Err(resp) => *resp,
+        };
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let bytes = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body should be readable");
+        let parsed: Value = serde_json::from_slice(&bytes).expect("body should be valid json");
+        assert_eq!(parsed["error"], "invalid_request");
+        assert_eq!(parsed["error_description"], "redirect_uri is invalid");
+    }
 }

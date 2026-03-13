@@ -27,6 +27,7 @@ use tokio::sync::mpsc::Sender;
 
 pub(crate) use runtime::resolve_cdp_ws_url;
 pub use sitemap::{BackfillStats, append_sitemap_backfill};
+pub(crate) use sitemap::append_candidate_backfill;
 pub(crate) use sitemap::{SitemapDiscovery, discover_sitemap_urls};
 pub(crate) use thin_refetch::chrome_refetch_thin_pages;
 use url_utils::normalize_map_candidate_url;
@@ -118,6 +119,41 @@ fn merge_map_candidate_urls(
     merged
 }
 
+pub(crate) async fn append_html_anchor_backfill(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+    seen_urls: &HashSet<String>,
+    summary: &mut CrawlSummary,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let crawl_start_url = resolve_map_seed_url(start_url)
+        .await
+        .unwrap_or_else(|_| normalize_url(start_url));
+    let scope =
+        derive_map_scope(start_url, &crawl_start_url).ok_or("failed to derive map scope")?;
+    let fallback_limit = if cfg.max_pages == 0 {
+        500
+    } else {
+        cfg.max_pages as usize
+    };
+
+    let client = http_client()?;
+    let html = fetch_html(client, &crawl_start_url).await?;
+    let fallback_urls = extract_anchor_hrefs(&crawl_start_url, &html, fallback_limit);
+
+    let existing_urls: Vec<String> = seen_urls.iter().cloned().collect();
+    let merged_urls = merge_map_candidate_urls(existing_urls.clone(), fallback_urls, &scope, true);
+    let existing: HashSet<String> = existing_urls.into_iter().collect();
+    let candidates: Vec<String> = merged_urls
+        .into_iter()
+        .filter(|url| !existing.contains(url))
+        .collect();
+
+    let (_, added_urls) =
+        append_candidate_backfill(cfg, output_dir, seen_urls, candidates, summary).await?;
+    Ok(added_urls)
+}
+
 fn derive_map_scope_url(requested_url: &str, resolved_url: &str) -> Option<String> {
     let requested_canonical = canonicalize_url_for_dedupe(requested_url)?;
     let requested = Url::parse(&requested_canonical).ok()?;
@@ -136,7 +172,11 @@ fn derive_map_scope_url(requested_url: &str, resolved_url: &str) -> Option<Strin
         resolved_path
     };
 
-    resolved.set_path(if scope_path.is_empty() { "/" } else { &scope_path });
+    resolved.set_path(if scope_path.is_empty() {
+        "/"
+    } else {
+        &scope_path
+    });
     canonicalize_url_for_dedupe(resolved.as_ref())
 }
 
@@ -235,7 +275,8 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
     let crawl_start_url = resolve_map_seed_url(start_url)
         .await
         .unwrap_or_else(|_| normalize_url(start_url));
-    let scope = derive_map_scope(start_url, &crawl_start_url).ok_or("failed to derive map scope")?;
+    let scope =
+        derive_map_scope(start_url, &crawl_start_url).ok_or("failed to derive map scope")?;
     let scope_start_url = derive_map_scope_url(start_url, &crawl_start_url)
         .unwrap_or_else(|| crawl_start_url.clone());
 
@@ -246,11 +287,10 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
         && should_retry_map_with_chrome(&summary)
         && let Ok((chrome_summary, chrome_urls)) =
             crawl_and_collect_map(cfg, &crawl_start_url, RenderMode::Chrome, &scope).await
+        && chrome_summary.pages_seen > summary.pages_seen
     {
-        if chrome_summary.pages_seen > summary.pages_seen {
-            summary = chrome_summary;
-            urls = chrome_urls;
-        }
+        summary = chrome_summary;
+        urls = chrome_urls;
     }
 
     if should_retry_map_with_html_fallback(urls.len()) {
