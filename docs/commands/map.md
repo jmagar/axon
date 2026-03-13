@@ -26,7 +26,7 @@ All global flags apply. Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--max-depth <n>` | `5` | Maximum depth for URL discovery. |
-| `--render-mode <mode>` | `auto-switch` | `auto-switch` starts in HTTP and retries in Chrome only if HTTP sees zero pages. |
+| `--render-mode <mode>` | `auto-switch` | `auto-switch` starts in HTTP and retries in Chrome when accepted HTTP coverage is still very low. |
 | `--discover-sitemaps <bool>` | `true` | Append sitemap/robots-discovered URLs and dedupe final list. |
 | `--include-subdomains <bool>` | `false` | Include subdomains under same parent domain. |
 | `--json` | `false` | Print structured payload including all discovered URLs. |
@@ -61,5 +61,9 @@ JSON mode returns:
 ## Behavior Notes
 
 - `map` validates the URL before crawl starts.
-- When `--render-mode auto-switch`, Chrome fallback is only attempted if HTTP mapping finds zero pages.
+- `map` resolves redirects before deriving its final host/path scope.
+- Path-rooted seeds such as `https://example.github.io/project/` stay scoped to that project subtree in the final result set.
+- When `--render-mode auto-switch`, Chrome fallback is attempted when accepted HTTP coverage is still two URLs or fewer.
+- If coverage remains two URLs or fewer after the crawler pass, `map` may fetch the seed HTML once and extract deterministic anchor links before sitemap URLs are appended.
+- Final map results reject malformed discovered URLs and canonicalize accepted URLs before dedupe.
 - `map` is synchronous and does not enqueue jobs.

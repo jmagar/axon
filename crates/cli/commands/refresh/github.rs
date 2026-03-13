@@ -121,7 +121,7 @@ pub(crate) async fn dispatch_github_refresh(
     pool: &PgPool,
     schedule: &RefreshSchedule,
     target: &str,
-) -> Result<Option<uuid::Uuid>, Box<dyn Error>> {
+) -> Result<Option<Uuid>, Box<dyn Error>> {
     let next_run_at = Utc::now() + Duration::seconds(schedule.every_seconds);
 
     match check_github_pushed_at(cfg, target).await {
