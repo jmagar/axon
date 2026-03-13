@@ -145,19 +145,19 @@ const RailContent = React.memo(function RailContent({
                       <AgentLogo agent={session.agent} />
                     </div>
                     <div className="min-w-0">
-                      <span className="block truncate text-[12px] leading-tight font-medium">
+                      <span className="block truncate text-[12px] leading-[1.3] font-medium">
                         {title}
                       </span>
                       {meta ? (
                         <div
-                          className="mt-px truncate text-[10px] leading-tight text-[var(--text-dim)]"
+                          className="mt-px truncate text-[10px] leading-[1.25] text-[var(--text-muted)]"
                           title={`Workspace context: ${meta}`}
                         >
                           {meta}
                         </div>
                       ) : null}
                     </div>
-                    <span className="whitespace-nowrap pt-px text-[9px] tabular-nums text-[rgba(175,215,255,0.54)]">
+                    <span className="whitespace-nowrap pt-px text-[10px] tabular-nums text-[rgba(175,215,255,0.68)]">
                       {formatLastMessageTime(session.mtimeMs)}
                     </span>
                   </div>
@@ -239,19 +239,19 @@ const RailContent = React.memo(function RailContent({
                       <AgentLogo agent={session.agent} />
                     </div>
                     <div className="min-w-0">
-                      <span className="block truncate text-[12px] leading-tight font-medium">
+                      <span className="block truncate text-[12px] leading-[1.3] font-medium">
                         {title}
                       </span>
                       {meta ? (
                         <div
-                          className="mt-px truncate text-[10px] leading-tight text-[var(--text-dim)]"
+                          className="mt-px truncate text-[10px] leading-[1.25] text-[var(--text-muted)]"
                           title={`Workspace context: ${meta}`}
                         >
                           {meta}
                         </div>
                       ) : null}
                     </div>
-                    <span className="whitespace-nowrap pt-px text-[9px] tabular-nums text-[rgba(175,215,255,0.54)]">
+                    <span className="whitespace-nowrap pt-px text-[10px] tabular-nums text-[rgba(175,215,255,0.68)]">
                       {formatLastMessageTime(session.mtimeMs)}
                     </span>
                   </div>
