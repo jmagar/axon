@@ -420,3 +420,24 @@ fn canonicalize_url_strips_fragment_and_trailing_slash() {
         Some("https://example.com/docs".to_string())
     );
 }
+
+#[test]
+fn extract_anchor_hrefs_resolves_relative_links_against_base_url() {
+    let html = r##"
+        <a href="/project/docs/intro/">Intro</a>
+        <a href="./api">API</a>
+        <a href="#local">Local</a>
+        <a href="javascript:void(0)">Ignore</a>
+        <a href="mailto:test@example.com">Mail</a>
+    "##;
+
+    let links = extract_anchor_hrefs("https://example.github.io/project/", html, 10);
+
+    assert_eq!(
+        links,
+        vec![
+            "https://example.github.io/project/docs/intro/".to_string(),
+            "https://example.github.io/project/api".to_string(),
+        ]
+    );
+}

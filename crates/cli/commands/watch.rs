@@ -1,7 +1,6 @@
 use crate::crates::core::config::Config;
-use crate::crates::jobs::watch::{
-    WatchDefCreate, create_watch_def, create_watch_run, list_watch_defs, list_watch_runs,
-};
+use crate::crates::jobs::watch as watch_jobs;
+use crate::crates::jobs::watch::WatchDefCreate;
 use crate::crates::services::refresh as refresh_service;
 use chrono::{Duration, Utc};
 use std::error::Error;
@@ -17,7 +16,7 @@ pub async fn run_watch(cfg: &Config) -> Result<(), Box<dyn Error>> {
     match subcmd {
         "create" => handle_watch_create(cfg).await?,
         "list" => {
-            let watches = list_watch_defs(cfg, 200).await?;
+            let watches = watch_jobs::list_watch_defs(cfg, 200).await?;
             if cfg.json_output {
                 println!("{}", serde_json::to_string_pretty(&watches)?);
             } else {
@@ -36,7 +35,7 @@ pub async fn run_watch(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 .and_then(|i| cfg.positional.get(i + 1))
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(50);
-            let runs = list_watch_runs(cfg, watch_id, limit).await?;
+            let runs = watch_jobs::list_watch_runs(cfg, watch_id, limit).await?;
             println!("{}", serde_json::to_string_pretty(&runs)?);
         }
         _ => return Err(format!("unknown watch subcommand: {subcmd}").into()),
@@ -91,7 +90,7 @@ async fn handle_watch_create(cfg: &Config) -> Result<(), Box<dyn Error>> {
         }
     }
     let every_seconds = every_seconds.ok_or("watch create requires --every-seconds <integer>")?;
-    let created = create_watch_def(
+    let created = watch_jobs::create_watch_def(
         cfg,
         &WatchDefCreate {
             name,
@@ -113,7 +112,7 @@ async fn handle_watch_create(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 async fn handle_watch_run_now(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let watch_id = parse_uuid(cfg.positional.get(1), "run-now")?;
-    let all = list_watch_defs(cfg, 500).await?;
+    let all = watch_jobs::list_watch_defs(cfg, 500).await?;
     let watch = all
         .into_iter()
         .find(|w| w.id == watch_id)
@@ -134,7 +133,7 @@ async fn handle_watch_run_now(cfg: &Config) -> Result<(), Box<dyn Error>> {
     } else {
         None
     };
-    let run = create_watch_run(cfg, watch_id, dispatched_job_id).await?;
+    let run = watch_jobs::create_watch_run(cfg, watch_id, dispatched_job_id).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&run)?);
     } else {

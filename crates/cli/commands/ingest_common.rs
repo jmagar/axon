@@ -6,12 +6,9 @@ use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::confirm_destructive;
 use crate::crates::core::ui::{accent, muted, primary, status_text, symbol_for_status};
-use crate::crates::jobs::ingest::{
-    IngestJob, IngestSource, cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs,
-    get_ingest_job, list_ingest_jobs, recover_stale_ingest_jobs, run_ingest_worker,
-    start_ingest_job,
-};
-use crate::crates::services::ingest as ingest_service;
+use crate::crates::jobs::ingest as ingest_jobs;
+use crate::crates::jobs::ingest::IngestJob;
+use crate::crates::services::ingest::{self as ingest_service, IngestSource};
 use std::error::Error;
 use uuid::Uuid;
 
@@ -35,30 +32,30 @@ pub async fn maybe_handle_ingest_subcommand(
     match subcmd {
         "status" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "status")?;
-            let job = get_ingest_job(cfg, id).await?;
+            let job = ingest_jobs::get_ingest_job(cfg, id).await?;
             handle_ingest_status(cfg, job, id).await?;
         }
         "cancel" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "cancel")?;
-            let canceled = cancel_ingest_job(cfg, id).await?;
+            let canceled = ingest_jobs::cancel_ingest_job(cfg, id).await?;
             handle_job_cancel(cfg, id, canceled, "ingest")?;
         }
         "errors" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "errors")?;
-            let job = get_ingest_job(cfg, id).await?;
+            let job = ingest_jobs::get_ingest_job(cfg, id).await?;
             handle_job_errors(cfg, job, id, "ingest")?;
         }
         "list" => {
-            let jobs = list_ingest_jobs(cfg, 50, 0).await?;
+            let jobs = ingest_jobs::list_ingest_jobs(cfg, 50, 0).await?;
             handle_ingest_list(cfg, jobs).await?;
         }
         "cleanup" => {
-            let removed = cleanup_ingest_jobs(cfg).await?;
+            let removed = ingest_jobs::cleanup_ingest_jobs(cfg).await?;
             handle_job_cleanup(cfg, removed, "ingest")?;
         }
         "clear" => {
             if confirm_destructive(cfg, "Clear all ingest jobs and purge ingest queue?")? {
-                let removed = clear_ingest_jobs(cfg).await?;
+                let removed = ingest_jobs::clear_ingest_jobs(cfg).await?;
                 handle_job_clear(cfg, removed, "ingest")?;
             } else if cfg.json_output {
                 println!(
@@ -69,9 +66,9 @@ pub async fn maybe_handle_ingest_subcommand(
                 println!("{} aborted", symbol_for_status("canceled"));
             }
         }
-        "worker" => run_ingest_worker(cfg).await?,
+        "worker" => ingest_jobs::run_ingest_worker(cfg).await?,
         "recover" => {
-            let reclaimed = recover_stale_ingest_jobs(cfg).await?;
+            let reclaimed = ingest_jobs::recover_stale_ingest_jobs(cfg).await?;
             handle_job_recover(cfg, reclaimed, "ingest")?;
         }
         _ => return Ok(false),
@@ -207,7 +204,8 @@ async fn handle_ingest_list(cfg: &Config, jobs: Vec<IngestJob>) -> Result<(), Bo
 }
 
 pub async fn enqueue_ingest_job(cfg: &Config, source: IngestSource) -> Result<(), Box<dyn Error>> {
-    let job_id = start_ingest_job(cfg, source).await?;
+    let result = ingest_service::ingest_start(cfg, source).await?;
+    let job_id = result.job_id;
     if cfg.json_output {
         println!(
             "{}",
