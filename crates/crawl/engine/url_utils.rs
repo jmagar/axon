@@ -1,5 +1,11 @@
 use spider::url::Url;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MapScope {
+    pub(crate) host: String,
+    pub(crate) path_prefix: Option<String>,
+}
+
 pub(crate) fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
     parsed.set_fragment(None);
@@ -18,6 +24,41 @@ pub(crate) fn canonicalize_url_for_dedupe(url: &str) -> Option<String> {
     }
 
     Some(parsed.to_string())
+}
+
+pub(crate) fn normalize_map_candidate_url(
+    raw: &str,
+    scope: &MapScope,
+    drop_query: bool,
+) -> Option<String> {
+    if is_junk_discovered_url(raw) {
+        return None;
+    }
+
+    let mut parsed = Url::parse(raw).ok()?;
+    parsed.set_fragment(None);
+
+    if drop_query {
+        parsed.set_query(None);
+    }
+
+    let host = parsed.host_str()?;
+    if !host.eq_ignore_ascii_case(&scope.host) {
+        return None;
+    }
+
+    if let Some(prefix) = scope.path_prefix.as_deref() {
+        let path = parsed.path();
+        if path != prefix
+            && !path
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('-'))
+        {
+            return None;
+        }
+    }
+
+    canonicalize_url_for_dedupe(parsed.as_ref())
 }
 
 pub(crate) fn is_excluded_url_path(url: &str, excludes: &[String]) -> bool {
@@ -249,6 +290,38 @@ mod tests {
             patterns[0].ends_with("(?:/|-|$|\\?|#)"),
             "pattern should end with boundary alternation group, got: {}",
             patterns[0]
+        );
+    }
+
+    #[test]
+    fn normalize_map_candidate_url_strips_fragment_and_trailing_slash() {
+        let scope = MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        };
+
+        let normalized = normalize_map_candidate_url(
+            "https://example.github.io/project/docs/#intro",
+            &scope,
+            true,
+        );
+
+        assert_eq!(
+            normalized.as_deref(),
+            Some("https://example.github.io/project/docs")
+        );
+    }
+
+    #[test]
+    fn normalize_map_candidate_url_rejects_out_of_scope_paths() {
+        let scope = MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        };
+
+        assert!(
+            normalize_map_candidate_url("https://example.github.io/other/docs", &scope, true)
+                .is_none()
         );
     }
 }

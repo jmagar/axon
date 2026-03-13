@@ -8,10 +8,6 @@ use crate::crates::core::ui::{
     accent, confirm_destructive, error, muted, primary, status_label, status_text, subtle,
     symbol_for_status,
 };
-use crate::crates::jobs::embed::{
-    cancel_embed_job, cleanup_embed_jobs, clear_embed_jobs, get_embed_job, list_embed_jobs,
-    recover_stale_embed_jobs, run_embed_worker,
-};
 use crate::crates::services::embed as embed_service;
 use std::error::Error;
 use std::path::Path;
@@ -65,7 +61,7 @@ async fn maybe_handle_embed_subcommand(cfg: &Config) -> Result<bool, Box<dyn Err
         "list" => handle_embed_list(cfg).await?,
         "cleanup" => handle_embed_cleanup(cfg).await?,
         "clear" => handle_embed_clear(cfg).await?,
-        "worker" => run_embed_worker(cfg).await?,
+        "worker" => crate::crates::jobs::embed::run_embed_worker(cfg).await?,
         "recover" => handle_embed_recover(cfg).await?,
         _ => return Ok(false),
     }
@@ -83,7 +79,7 @@ fn parse_embed_job_id(cfg: &Config, action: &str) -> Result<Uuid, Box<dyn Error>
 
 async fn handle_embed_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_embed_job_id(cfg, "status")?;
-    match get_embed_job(cfg, id).await? {
+    match crate::crates::jobs::embed::get_embed_job(cfg, id).await? {
         Some(job) => {
             if cfg.json_output {
                 println!("{}", serde_json::to_string_pretty(&job)?);
@@ -116,7 +112,7 @@ async fn handle_embed_status(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 async fn handle_embed_cancel(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_embed_job_id(cfg, "cancel")?;
-    let canceled = cancel_embed_job(cfg, id).await?;
+    let canceled = embed_service::embed_cancel(cfg, id).await?;
     if cfg.json_output {
         println!(
             "{}",
@@ -142,7 +138,7 @@ async fn handle_embed_cancel(cfg: &Config) -> Result<(), Box<dyn Error>> {
 
 async fn handle_embed_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let id = parse_embed_job_id(cfg, "errors")?;
-    match get_embed_job(cfg, id).await? {
+    match crate::crates::jobs::embed::get_embed_job(cfg, id).await? {
         Some(job) => {
             if cfg.json_output {
                 println!(
@@ -174,7 +170,7 @@ async fn handle_embed_errors(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_embed_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let jobs = list_embed_jobs(cfg, 50, 0).await?;
+    let jobs = crate::crates::jobs::embed::list_embed_jobs(cfg, 50, 0).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
         return Ok(());
@@ -227,7 +223,7 @@ async fn handle_embed_list(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_embed_cleanup(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let removed = cleanup_embed_jobs(cfg).await?;
+    let removed = embed_service::embed_cleanup(cfg).await?;
     if cfg.json_output {
         println!("{}", serde_json::json!({"removed": removed}));
     } else {
@@ -253,7 +249,7 @@ async fn handle_embed_clear(cfg: &Config) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let removed = clear_embed_jobs(cfg).await?;
+    let removed = embed_service::embed_clear(cfg).await?;
     if cfg.json_output {
         println!(
             "{}",
@@ -270,7 +266,7 @@ async fn handle_embed_clear(cfg: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_embed_recover(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    let reclaimed = recover_stale_embed_jobs(cfg).await?;
+    let reclaimed = embed_service::embed_recover(cfg).await?;
     if cfg.json_output {
         println!("{}", serde_json::json!({"reclaimed": reclaimed}));
     } else {

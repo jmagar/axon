@@ -219,6 +219,63 @@ pub fn extract_links(html: &str, limit: usize) -> Vec<String> {
     out
 }
 
+pub fn extract_anchor_hrefs(base_url: &str, html: &str, limit: usize) -> Vec<String> {
+    let Some(base) = Url::parse(base_url).ok() else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+
+    while let Some(rel) = html[pos..].find("href=") {
+        let marker = pos + rel + 5;
+        let Some(quote) = html[marker..].chars().next() else {
+            break;
+        };
+
+        if quote != '"' && quote != '\'' {
+            pos = marker;
+            continue;
+        }
+
+        let value_start = marker + quote.len_utf8();
+        let remain = &html[value_start..];
+        let Some(value_end_rel) = remain.find(quote) else {
+            break;
+        };
+
+        let raw = remain[..value_end_rel].trim();
+        pos = value_start + value_end_rel + quote.len_utf8();
+
+        if raw.is_empty()
+            || raw.starts_with('#')
+            || raw.starts_with("javascript:")
+            || raw.starts_with("mailto:")
+        {
+            continue;
+        }
+
+        let Ok(resolved) = base.join(raw) else {
+            continue;
+        };
+
+        match resolved.scheme() {
+            "http" | "https" => {
+                let link = resolved.to_string();
+                if !out.iter().any(|existing| existing == &link) {
+                    out.push(link);
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    out
+}
+
 pub fn extract_loc_values(xml: &str) -> Vec<String> {
     // Case-insensitive search without cloning the full document (which can be 1–5 MB).
     // The sitemap spec mandates lowercase, but real-world feeds sometimes use <LOC>.
