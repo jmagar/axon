@@ -206,6 +206,30 @@ async fn process_sitemap_batch(
 /// following sitemap index references recursively.
 ///
 /// Returns a [`SitemapDiscovery`] with sorted, deduplicated URLs and diagnostic stats.
+/// Fetch `robots.txt` for `scheme://host/robots.txt` and enqueue any `Sitemap:` directives
+/// into `queue`. Returns the count of declared sitemaps found.
+async fn enqueue_robots_sitemaps(
+    client: &reqwest::Client,
+    scheme: &str,
+    host: &str,
+    cfg: &Config,
+    queue: &mut VecDeque<String>,
+) -> usize {
+    let robots_url = format!("{scheme}://{host}/robots.txt");
+    if let Some(robots_txt) =
+        fetch_text_with_retry(client, &robots_url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+    {
+        let declared = extract_robots_sitemaps(&robots_txt);
+        let count = declared.len();
+        for sitemap in declared {
+            queue.push_back(sitemap);
+        }
+        count
+    } else {
+        0
+    }
+}
+
 pub async fn discover_sitemap_urls(
     cfg: &Config,
     start_url: &str,
@@ -223,25 +247,10 @@ pub async fn discover_sitemap_urls(
     let mut queue = sitemap_seed_queue(&scheme, &host);
     let seeded_default_sitemaps = queue.len();
 
-    // Fetch robots.txt and enqueue any declared sitemaps.
     let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
     let client = build_client(timeout_secs)?;
-    let mut robots_declared_sitemaps = 0usize;
-    let robots_url = format!("{scheme}://{host}/robots.txt");
-    if let Some(robots_txt) = fetch_text_with_retry(
-        &client,
-        &robots_url,
-        cfg.fetch_retries,
-        cfg.retry_backoff_ms,
-    )
-    .await
-    {
-        let declared = extract_robots_sitemaps(&robots_txt);
-        robots_declared_sitemaps = declared.len();
-        for sitemap in declared {
-            queue.push_back(sitemap);
-        }
-    }
+    let robots_declared_sitemaps =
+        enqueue_robots_sitemaps(&client, &scheme, &host, cfg, &mut queue).await;
 
     let mut seen_sitemaps = HashSet::new();
     let mut out = HashSet::new();
@@ -336,6 +345,85 @@ pub struct BackfillStats {
     pub failed: usize,
 }
 
+/// Fetch `url`, convert to markdown, and classify as thin/dropped.
+/// Returns `(url, None)` on fetch failure, `(url, Some(...))` otherwise.
+async fn fetch_and_convert_backfill_url(
+    http: reqwest::Client,
+    url: String,
+    retries: usize,
+    backoff: u64,
+    min_chars: usize,
+    drop_thin: bool,
+    selector_config: Option<spider_transformations::transformation::content::SelectorConfiguration>,
+) -> (String, Option<(String, usize, bool, bool)>) {
+    let Some(html) = fetch_text_with_retry(&http, &url, retries, backoff).await else {
+        return (url, None);
+    };
+    let md = to_markdown(&html, selector_config.as_ref());
+    let trimmed = md.trim().to_string();
+    let markdown_chars = trimmed.len();
+    let is_thin = markdown_chars < min_chars;
+    let dropped = is_thin && drop_thin;
+    (url, Some((trimmed, markdown_chars, is_thin, dropped)))
+}
+
+/// Open (or create) a manifest file in append mode wrapped in a `BufWriter`.
+async fn open_append_manifest(
+    manifest_path: &Path,
+) -> Result<BufWriter<tokio::fs::File>, Box<dyn Error>> {
+    let file = tokio::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(manifest_path)
+        .await?;
+    Ok(BufWriter::new(file))
+}
+
+/// Filter `candidates` to those not already in `seen_urls` or the on-disk manifest.
+async fn filter_seen_candidates(
+    manifest_path: &Path,
+    seen_urls: &HashSet<String>,
+    candidates: Vec<String>,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let previous_manifest =
+        crate::crates::crawl::manifest::read_manifest_data(manifest_path).await?;
+    let manifest_urls: HashSet<String> = previous_manifest.keys().cloned().collect();
+    Ok(candidates
+        .into_iter()
+        .filter(|url| !seen_urls.contains(url) && !manifest_urls.contains(url))
+        .collect())
+}
+
+/// Write a single backfill page to disk and append its entry to the manifest.
+async fn write_backfill_entry(
+    manifest: &mut BufWriter<tokio::fs::File>,
+    markdown_dir: &Path,
+    url: &str,
+    trimmed: &str,
+    markdown_chars: usize,
+    idx: u32,
+) -> Result<(), Box<dyn Error>> {
+    let mut hasher = Sha256::new();
+    hasher.update(trimmed.as_bytes());
+    let content_hash = hex::encode(hasher.finalize());
+
+    let filename = url_to_filename(url, idx);
+    let file = markdown_dir.join(&filename);
+    tokio::fs::write(&file, trimmed.as_bytes()).await?;
+
+    let entry = ManifestEntry {
+        url: url.to_string(),
+        relative_path: format!("markdown/{filename}"),
+        markdown_chars,
+        content_hash: Some(content_hash),
+        changed: true,
+    };
+    let mut line = serde_json::to_string(&entry)?;
+    line.push('\n');
+    manifest.write_all(line.as_bytes()).await?;
+    Ok(())
+}
+
 pub(crate) async fn append_candidate_backfill(
     cfg: &Config,
     output_dir: &Path,
@@ -344,15 +432,7 @@ pub(crate) async fn append_candidate_backfill(
     summary: &mut CrawlSummary,
 ) -> Result<(BackfillStats, Vec<String>), Box<dyn Error>> {
     let manifest_path = output_dir.join("manifest.jsonl");
-
-    let previous_manifest =
-        crate::crates::crawl::manifest::read_manifest_data(&manifest_path).await?;
-    let manifest_urls: HashSet<String> = previous_manifest.keys().cloned().collect();
-
-    let candidates: Vec<String> = candidates
-        .into_iter()
-        .filter(|url| !seen_urls.contains(url) && !manifest_urls.contains(url))
-        .collect();
+    let candidates = filter_seen_candidates(&manifest_path, seen_urls, candidates).await?;
 
     if candidates.is_empty() {
         return Ok((BackfillStats::default(), Vec::new()));
@@ -363,13 +443,7 @@ pub(crate) async fn append_candidate_backfill(
 
     let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
     let client = build_client(timeout_secs)?;
-    let mut manifest = BufWriter::new(
-        tokio::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&manifest_path)
-            .await?,
-    );
+    let mut manifest = open_append_manifest(&manifest_path).await?;
 
     let mut idx = summary.markdown_files;
     let mut stats = BackfillStats {
@@ -392,20 +466,15 @@ pub(crate) async fn append_candidate_backfill(
             let min_chars = cfg.min_markdown_chars;
             let drop_thin = cfg.drop_thin_markdown;
             let selector_config = build_selector_config(cfg);
-            joins.spawn(async move {
-                let html = fetch_text_with_retry(&http, &url, retries, backoff).await;
-                let Some(html) = html else {
-                    return (url, None);
-                };
-                let md = to_markdown(&html, selector_config.as_ref());
-                let trimmed = md.trim().to_string();
-                let markdown_chars = trimmed.len();
-                let is_thin = markdown_chars < min_chars;
-                if is_thin && drop_thin {
-                    return (url, Some((trimmed, markdown_chars, is_thin, true)));
-                }
-                (url, Some((trimmed, markdown_chars, is_thin, false)))
-            });
+            joins.spawn(fetch_and_convert_backfill_url(
+                http,
+                url,
+                retries,
+                backoff,
+                min_chars,
+                drop_thin,
+                selector_config,
+            ));
         }
 
         while let Some(joined) = joins.join_next().await {
@@ -426,25 +495,16 @@ pub(crate) async fn append_candidate_backfill(
                 continue;
             }
 
-            let mut hasher = Sha256::new();
-            hasher.update(trimmed.as_bytes());
-            let content_hash = hex::encode(hasher.finalize());
-
             idx += 1;
-            let filename = url_to_filename(&url, idx);
-            let file = markdown_dir.join(&filename);
-            tokio::fs::write(&file, trimmed.as_bytes()).await?;
-
-            let entry = ManifestEntry {
-                url: url.clone(),
-                relative_path: format!("markdown/{}", filename),
+            write_backfill_entry(
+                &mut manifest,
+                &markdown_dir,
+                &url,
+                &trimmed,
                 markdown_chars,
-                content_hash: Some(content_hash),
-                changed: true,
-            };
-            let mut line = serde_json::to_string(&entry)?;
-            line.push('\n');
-            manifest.write_all(line.as_bytes()).await?;
+                idx,
+            )
+            .await?;
             summary.markdown_files += 1;
             stats.written += 1;
             added_urls.push(url);
