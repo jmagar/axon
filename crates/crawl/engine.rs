@@ -382,34 +382,26 @@ pub async fn update_latest_reflink(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run_crawl_once(
-    cfg: &Config,
-    start_url: &str,
-    mode: RenderMode,
+/// Prepare the output directory before a crawl run.
+///
+/// - Cache mode: archives existing `markdown/` to `markdown.old/` (Recycling Bin Pattern)
+///   so the collector can surgically reuse unchanged pages.
+/// - Non-cache mode: wipes the directory unless `AXON_NO_WIPE` is set.
+/// - Always ensures `markdown/` exists at the end.
+async fn prepare_crawl_output_dir(
     output_dir: &Path,
-    progress_tx: Option<Sender<CrawlSummary>>,
-    run_sitemap: bool,
-    previous_manifest: HashMap<String, ManifestEntry>,
-    crawl_id: Option<&str>,
-) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
-    log_info(&format!(
-        "crawl start url={} render_mode={:?} max_pages={} max_depth={}",
-        start_url, mode, cfg.max_pages, cfg.max_depth
-    ));
-    let _crawl_start = Instant::now();
-
-    let markdown_dir = output_dir.join("markdown");
-    let recycling_bin = output_dir.join("markdown.old");
-
+    markdown_dir: &Path,
+    recycling_bin: &Path,
+    cfg: &Config,
+) -> Result<(), Box<dyn Error>> {
     if output_dir.exists() {
         if cfg.cache {
             // Recycling Bin Pattern: move existing markdown to .old for surgical reuse
             if markdown_dir.exists() {
                 if recycling_bin.exists() {
-                    tokio::fs::remove_dir_all(&recycling_bin).await?;
+                    tokio::fs::remove_dir_all(recycling_bin).await?;
                 }
-                tokio::fs::rename(&markdown_dir, &recycling_bin).await?;
+                tokio::fs::rename(markdown_dir, recycling_bin).await?;
                 log_info(&format!(
                     "Archived existing spoils to recycling bin for incremental reuse: {}",
                     recycling_bin.display()
@@ -432,7 +424,31 @@ pub async fn run_crawl_once(
             }
         }
     }
-    tokio::fs::create_dir_all(&markdown_dir).await?;
+    tokio::fs::create_dir_all(markdown_dir).await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn run_crawl_once(
+    cfg: &Config,
+    start_url: &str,
+    mode: RenderMode,
+    output_dir: &Path,
+    progress_tx: Option<Sender<CrawlSummary>>,
+    run_sitemap: bool,
+    previous_manifest: HashMap<String, ManifestEntry>,
+    crawl_id: Option<&str>,
+) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    log_info(&format!(
+        "crawl start url={} render_mode={:?} max_pages={} max_depth={}",
+        start_url, mode, cfg.max_pages, cfg.max_depth
+    ));
+    let _crawl_start = Instant::now();
+
+    let markdown_dir = output_dir.join("markdown");
+    let recycling_bin = output_dir.join("markdown.old");
+
+    prepare_crawl_output_dir(output_dir, &markdown_dir, &recycling_bin, cfg).await?;
 
     let mut website =
         runtime::configure_website_with_crawl_id(cfg, start_url, mode, crawl_id).await?;
