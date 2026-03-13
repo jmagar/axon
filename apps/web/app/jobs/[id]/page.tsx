@@ -10,13 +10,6 @@ import {
 } from './job-detail-helpers'
 import { JobDetailErrorState, JobDetailLoadingState, JobDetailView } from './job-detail-ui'
 
-export {
-  buildJobDetailRequestPath,
-  flattenJsonEntries,
-  getRefreshSummaryRows,
-  shouldRefetchArtifactsOnTerminalTransition,
-} from './job-detail-helpers'
-
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [job, setJob] = useState<JobDetail | null>(null)
