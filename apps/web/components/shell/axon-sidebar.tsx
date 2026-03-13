@@ -91,7 +91,7 @@ const RailContent = React.memo(function RailContent({
   compact?: boolean
 }) {
   const normalizedQuery = query.trim().toLowerCase()
-  const rowClass = compact ? 'py-1.5' : 'py-2'
+  const rowClass = compact ? 'py-1.5' : 'py-2.5'
 
   if (mode === 'sessions') {
     const filteredSessions = sessions.filter((session) => {
@@ -310,7 +310,7 @@ export const AxonSidebar = React.memo(function AxonSidebar({
   const ActiveModeIcon = activeMode.icon
   const isDesktop = variant === 'desktop'
   const toolbarH = isDesktop ? 'h-8' : 'h-10'
-  const searchH = isDesktop ? 'h-6 text-xs' : 'h-8 text-[13px]'
+  const searchH = isDesktop ? 'h-7 text-[12px]' : 'h-8 text-[13px]'
   const subtitle =
     railMode === 'sessions'
       ? activeSessionRepo
