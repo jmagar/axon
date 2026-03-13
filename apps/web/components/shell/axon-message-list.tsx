@@ -154,9 +154,9 @@ function formatTimestamp(ts: number | string | undefined): string | null {
 }
 
 const AXON_USER_BUBBLE_CLASS =
-  'rounded-xl border border-[rgba(175,215,255,0.44)] bg-[linear-gradient(150deg,rgba(135,175,255,0.3),rgba(135,175,255,0.11))] shadow-[0_10px_30px_rgba(6,14,32,0.38)] text-[var(--text-primary)]'
+  'border border-[rgba(175,215,255,0.44)] bg-[linear-gradient(150deg,rgba(135,175,255,0.3),rgba(135,175,255,0.11))] shadow-[0_10px_30px_rgba(6,14,32,0.38)] text-[var(--text-primary)]'
 const AXON_ASSISTANT_BUBBLE_CLASS =
-  'rounded-xl border border-[rgba(255,135,175,0.28)] bg-[linear-gradient(150deg,rgba(255,135,175,0.13),rgba(10,18,35,0.62))] shadow-[0_10px_30px_rgba(3,7,18,0.34)] text-[var(--text-secondary)]'
+  'border border-[rgba(255,135,175,0.28)] bg-[linear-gradient(150deg,rgba(255,135,175,0.13),rgba(10,18,35,0.62))] shadow-[0_10px_30px_rgba(3,7,18,0.34)] text-[var(--text-secondary)]'
 
 export { AXON_ASSISTANT_BUBBLE_CLASS }
 
@@ -193,11 +193,11 @@ export const AxonMessageList = memo(function AxonMessageList({
 }) {
   const isMobile = variant === 'mobile'
   const userMaxWidth = isMobile ? 'max-w-[95%]' : 'max-w-[78ch]'
-  const assistantMaxWidth = isMobile ? 'max-w-[98%]' : 'max-w-[86ch]'
+  const assistantMaxWidth = isMobile ? 'max-w-[97%]' : 'max-w-[80ch]'
   const bubbleRounding = isMobile ? 'rounded-[16px]' : 'rounded-[14px]'
   const bubblePadding = isMobile
-    ? 'px-2.5 py-2 text-[12px] leading-[1.45]'
-    : 'px-2 py-1.5 text-[11px] leading-[1.4]'
+    ? 'px-3 py-2.5 text-[13px] leading-[1.5]'
+    : 'px-3.5 py-2.5 text-[13px] leading-[1.55]'
   const emptyStatePadding = isMobile ? 'py-16' : 'py-24'
   const botIconSize = isMobile ? 'size-8' : 'size-10'
   const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[240px]'
@@ -205,7 +205,7 @@ export const AxonMessageList = memo(function AxonMessageList({
   return (
     <ConversationContent
       key={sessionKey}
-      className="axon-message-list-container animate-crossfade-in gap-2 px-0 py-0"
+      className="axon-message-list-container animate-crossfade-in gap-3 px-0 py-0"
     >
       {loading && messages.length === 0 ? (
         <div className="flex h-full items-center justify-center animate-fade-in">
@@ -255,13 +255,13 @@ export const AxonMessageList = memo(function AxonMessageList({
             <div
               className={
                 message.role === 'assistant'
-                  ? `axon-message-bubble ${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1`
-                  : `axon-message-bubble ${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1`
+                  ? `axon-message-bubble ${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
+                  : `axon-message-bubble ${AXON_USER_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`
               }
             >
-              <div className="mb-0.5 flex items-center gap-1">
+              <div className="mb-1.5 flex items-center gap-1.5">
                 <span
-                  className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                  className={`inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.06em] ${
                     message.role === 'user'
                       ? 'text-[var(--axon-primary)]'
                       : 'text-[var(--axon-secondary-strong)]'
@@ -300,7 +300,7 @@ export const AxonMessageList = memo(function AxonMessageList({
                 />
               )}
               {message.toolUses?.length ? (
-                <div className="space-y-1.5">
+                <div className="space-y-2.5">
                   {message.toolUses.map((tool, i) => (
                     <ToolCallCard key={tool.toolCallId ?? i} isMobile={isMobile} tool={tool} />
                   ))}
@@ -308,7 +308,7 @@ export const AxonMessageList = memo(function AxonMessageList({
               ) : null}
               <ThinkingSection message={message} />
               {message.usage && message.role === 'assistant' && (
-                <div className="mt-2 flex items-center gap-3 border-t border-[var(--border-subtle)] pt-2 text-[10px] tabular-nums text-[var(--text-dim)]">
+                <div className="mt-2 flex items-center gap-2.5 border-t border-[var(--border-subtle)] pt-2 text-[12px] tabular-nums text-[var(--text-dim)]">
                   <div className="flex items-center gap-1.5" title="Input tokens">
                     <span className="font-bold uppercase tracking-widest opacity-60">In</span>
                     <span className="text-[var(--text-secondary)] font-medium">
@@ -353,10 +353,10 @@ export const AxonMessageList = memo(function AxonMessageList({
               ) : null}
             </div>
             <div
-              className={`mt-0 flex translate-y-0.5 items-center gap-0.5 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`mt-0.5 flex translate-y-0.5 items-center gap-1 transition-all duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:translate-y-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {formatTimestamp(message.timestamp as number | string | undefined) ? (
-                <span className="mr-1 text-[10px] tabular-nums text-[var(--text-dim)]">
+                <span className="mr-1 text-[11px] tabular-nums text-[var(--text-dim)]">
                   {formatTimestamp(message.timestamp as number | string | undefined)}
                 </span>
               ) : null}
@@ -397,10 +397,10 @@ export const AxonMessageList = memo(function AxonMessageList({
       {isTyping && !messages.some((m) => m.streaming) ? (
         <Message from="assistant" className={`animate-fade-in-up ${assistantMaxWidth}`}>
           <div
-            className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1`}
+            className={`${AXON_ASSISTANT_BUBBLE_CLASS} ${bubblePadding} ${bubbleRounding} space-y-1.5`}
           >
-            <div className="flex items-center gap-1">
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--axon-secondary-strong)]">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--axon-secondary-strong)]">
                 <span className="inline-block size-1.5 rounded-full bg-[var(--axon-secondary)]" />
                 {agentName}
               </span>
