@@ -26,6 +26,11 @@ struct AuthCodeGrantInput {
     redirect_uri: String,
 }
 
+struct RefreshGrantInput {
+    client_id: String,
+    refresh_token: String,
+}
+
 fn required_form_field(value: Option<String>, field: &'static str) -> Result<String, Response> {
     value.ok_or_else(|| {
         token_error_response(
@@ -162,6 +167,72 @@ async fn issue_oauth_tokens(
     })
 }
 
+fn parse_refresh_grant_input(form: &TokenRequest) -> Result<RefreshGrantInput, Response> {
+    let client_id = required_form_field(form.client_id.clone(), "client_id")?;
+    let refresh_token = required_form_field(form.refresh_token.clone(), "refresh_token")?;
+    Ok(RefreshGrantInput {
+        client_id,
+        refresh_token,
+    })
+}
+
+fn validate_refresh_token_record(
+    record: &RefreshTokenRecord,
+    client_id: &str,
+) -> Result<(), Response> {
+    if record.client_id != client_id {
+        return Err(token_error_response(
+            "invalid_grant",
+            "refresh_token does not belong to this client",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+    if unix_now_secs() > record.expires_at_unix {
+        return Err(token_error_response(
+            "invalid_grant",
+            "refresh_token expired",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+    Ok(())
+}
+
+async fn rotate_refresh_token(
+    state: &GoogleOAuthState,
+    client_id: String,
+    scope: String,
+    refresh_to_revoke: &str,
+) -> Result<OAuthTokenResponse, Response> {
+    let access_token = format!("atk_{}", Uuid::new_v4());
+    let new_refresh_token = format!("rtk_{}", Uuid::new_v4());
+    let expires_in = 3600_u64;
+    let access_record = AccessTokenRecord {
+        scope: scope.clone(),
+        expires_at_unix: unix_now_secs() + expires_in,
+    };
+    state
+        .put_access_token(&access_token, &access_record, expires_in)
+        .await?;
+
+    let rotated_refresh = RefreshTokenRecord {
+        client_id,
+        scope,
+        expires_at_unix: unix_now_secs() + OAUTH_REFRESH_TTL_SECS,
+    };
+    state
+        .put_refresh_token(&new_refresh_token, &rotated_refresh, OAUTH_REFRESH_TTL_SECS)
+        .await?;
+
+    state.delete_refresh_token(refresh_to_revoke).await;
+    Ok(OAuthTokenResponse {
+        access_token,
+        token_type: "Bearer".to_string(),
+        expires_in,
+        refresh_token: Some(new_refresh_token),
+        scope: access_record.scope,
+    })
+}
+
 async fn handle_auth_code_grant(
     state: &GoogleOAuthState,
     identity: &str,
@@ -207,27 +278,11 @@ async fn handle_refresh_token_grant(
     identity: &str,
     form: TokenRequest,
 ) -> Response {
-    let client_id = match form.client_id {
-        Some(v) => v,
-        None => {
-            return token_error_response(
-                "invalid_request",
-                "client_id is required",
-                StatusCode::BAD_REQUEST,
-            );
-        }
+    let input = match parse_refresh_grant_input(&form) {
+        Ok(v) => v,
+        Err(resp) => return resp,
     };
-    let refresh = match form.refresh_token {
-        Some(v) => v,
-        None => {
-            return token_error_response(
-                "invalid_request",
-                "refresh_token is required",
-                StatusCode::BAD_REQUEST,
-            );
-        }
-    };
-    let refresh_record = match state.get_refresh_token(&refresh).await {
+    let refresh_record = match state.get_refresh_token(&input.refresh_token).await {
         Some(v) => v,
         None => {
             return token_error_response(
@@ -237,60 +292,26 @@ async fn handle_refresh_token_grant(
             );
         }
     };
-    if refresh_record.client_id != client_id {
-        return token_error_response(
-            "invalid_grant",
-            "refresh_token does not belong to this client",
-            StatusCode::BAD_REQUEST,
-        );
-    }
-    if unix_now_secs() > refresh_record.expires_at_unix {
-        return token_error_response(
-            "invalid_grant",
-            "refresh_token expired",
-            StatusCode::BAD_REQUEST,
-        );
-    }
-    let access_token = format!("atk_{}", Uuid::new_v4());
-    let new_refresh_token = format!("rtk_{}", Uuid::new_v4());
-    let expires_in = 3600_u64;
-    let access_record = AccessTokenRecord {
-        scope: refresh_record.scope.clone(),
-        expires_at_unix: unix_now_secs() + expires_in,
-    };
-    if let Err(resp) = state
-        .put_access_token(&access_token, &access_record, expires_in)
-        .await
-    {
+    if let Err(resp) = validate_refresh_token_record(&refresh_record, &input.client_id) {
         return resp;
     }
-    // Store the new refresh token BEFORE deleting the old one.
-    // If put_refresh_token fails (e.g. capacity full / 503), the old token
-    // remains valid and the client can retry — no lockout.
-    let rotated_refresh = RefreshTokenRecord {
-        client_id,
-        scope: refresh_record.scope.clone(),
-        expires_at_unix: unix_now_secs() + OAUTH_REFRESH_TTL_SECS,
-    };
-    if let Err(resp) = state
-        .put_refresh_token(&new_refresh_token, &rotated_refresh, OAUTH_REFRESH_TTL_SECS)
-        .await
-    {
-        return resp;
-    }
-    state.delete_refresh_token(&refresh).await;
-    info!(target: "axon.mcp.oauth", identity, "token exchange succeeded (refresh_token)");
-    (
-        StatusCode::OK,
-        Json(OAuthTokenResponse {
-            access_token,
-            token_type: "Bearer".to_string(),
-            expires_in,
-            refresh_token: Some(new_refresh_token),
-            scope: refresh_record.scope,
-        }),
+    let token_response = match rotate_refresh_token(
+        state,
+        input.client_id,
+        refresh_record.scope,
+        &input.refresh_token,
     )
-        .into_response()
+    .await
+    {
+        Ok(resp) => resp,
+        Err(resp) => return resp,
+    };
+    info!(
+        target: "axon.mcp.oauth",
+        identity,
+        "token exchange succeeded (refresh_token)"
+    );
+    (StatusCode::OK, Json(token_response)).into_response()
 }
 
 pub(crate) async fn oauth_token(

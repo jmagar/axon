@@ -201,12 +201,16 @@ export const AxonMessageList = memo(function AxonMessageList({
   const emptyStatePadding = isMobile ? 'py-16' : 'py-24'
   const botIconSize = isMobile ? 'size-8' : 'size-10'
   const fileTruncate = isMobile ? 'max-w-[140px]' : 'max-w-[240px]'
+  const debugMarker = 'AXON_MESSAGE_LIST_DEBUG_2026_03_12'
 
   return (
     <ConversationContent
       key={sessionKey}
       className="axon-message-list-container animate-crossfade-in gap-3 px-0 py-0"
     >
+      <div className="rounded border border-red-500/60 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-200">
+        {debugMarker}
+      </div>
       {loading && messages.length === 0 ? (
         <div className="flex h-full items-center justify-center animate-fade-in">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--text-dim)]" />

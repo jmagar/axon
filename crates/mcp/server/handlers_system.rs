@@ -1,25 +1,23 @@
 use super::AxonMcpServer;
 use super::artifacts::{
-    artifact_root, clean_artifact_files, client_context_name, delete_artifact_file,
-    ensure_artifact_root, line_count, list_artifact_files, resolve_artifact_output_path,
-    respond_with_mode, search_artifact_files, validate_artifact_path,
+    artifact_root, clean_artifact_files, client_context_name, delete_artifact_file, line_count,
+    list_artifact_files, respond_with_mode, search_artifact_files, validate_artifact_path,
 };
 use super::common::{
     MCP_TOOL_SCHEMA_URI, invalid_params, logged_internal_error, parse_limit_usize, parse_offset,
     to_pagination,
 };
-use crate::crates::core::http::{normalize_url, validate_url};
-use crate::crates::crawl::screenshot::{
-    spider_screenshot_with_options, url_to_screenshot_filename,
-};
 use crate::crates::mcp::schema::{
     ArtifactsRequest, ArtifactsSubaction, AxonToolResponse, DoctorRequest, DomainsRequest,
-    HelpRequest, ScreenshotRequest, SourcesRequest, StatsRequest,
+    HelpRequest, SourcesRequest, StatsRequest,
 };
 use crate::crates::services::system;
 use regex::Regex;
 use rmcp::ErrorData;
 use std::path::Path;
+
+#[path = "handlers_system/screenshot.rs"]
+mod screenshot;
 
 // --- Private helpers for artifact inspection ---
 
@@ -135,102 +133,6 @@ impl AxonMcpServer {
 // --- Public handlers ---
 
 impl AxonMcpServer {
-    pub(super) fn parse_viewport(
-        viewport: Option<&str>,
-        fallback_w: u32,
-        fallback_h: u32,
-    ) -> Result<(u32, u32), ErrorData> {
-        let Some(v) = viewport else {
-            return Ok((fallback_w, fallback_h));
-        };
-        let mut parts = v.split('x');
-        let w = parts
-            .next()
-            .and_then(|n| n.parse::<u32>().ok())
-            .ok_or_else(|| {
-                invalid_params(format!(
-                    "invalid viewport '{v}': expected WxH format (e.g. 1280x720)"
-                ))
-            })?;
-        let h = parts
-            .next()
-            .and_then(|n| n.parse::<u32>().ok())
-            .ok_or_else(|| {
-                invalid_params(format!(
-                    "invalid viewport '{v}': expected WxH format (e.g. 1280x720)"
-                ))
-            })?;
-        if w == 0 || h == 0 {
-            return Err(invalid_params(format!(
-                "invalid viewport '{v}': width and height must be greater than zero"
-            )));
-        }
-        // Reject unreasonably large dimensions to prevent resource exhaustion.
-        if w > 7680 || h > 4320 {
-            return Err(invalid_params(format!(
-                "invalid viewport '{v}': dimensions exceed maximum allowed (7680x4320)"
-            )));
-        }
-        Ok((w, h))
-    }
-
-    pub(super) async fn handle_screenshot(
-        &self,
-        req: ScreenshotRequest,
-    ) -> Result<AxonToolResponse, ErrorData> {
-        let url = req
-            .url
-            .ok_or_else(|| invalid_params("url is required for screenshot"))?;
-        let response_mode = req.response_mode;
-        let normalized = normalize_url(&url);
-        validate_url(&normalized).map_err(|e| invalid_params(e.to_string()))?;
-
-        let (width, height) = Self::parse_viewport(
-            req.viewport.as_deref(),
-            self.cfg.viewport_width,
-            self.cfg.viewport_height,
-        )?;
-        let full_page = req.full_page.unwrap_or(self.cfg.screenshot_full_page);
-
-        let bytes =
-            spider_screenshot_with_options(&self.cfg, &normalized, width, height, full_page)
-                .await
-                .map_err(|e| logged_internal_error("operation", e))?;
-
-        let path = if let Some(output) = req.output {
-            resolve_artifact_output_path(&output).await?
-        } else {
-            ensure_artifact_root()
-                .await?
-                .join("screenshots")
-                .join(url_to_screenshot_filename(&normalized, 1))
-        };
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| logged_internal_error("operation", e))?;
-        }
-        tokio::fs::write(&path, &bytes)
-            .await
-            .map_err(|e| logged_internal_error("operation", e))?;
-
-        let payload = serde_json::json!({
-            "url": normalized,
-            "path": path,
-            "size_bytes": bytes.len(),
-            "full_page": full_page,
-            "viewport": format!("{}x{}", width, height),
-        });
-        respond_with_mode(
-            "screenshot",
-            "screenshot",
-            response_mode,
-            "screenshot",
-            payload,
-        )
-        .await
-    }
-
     pub(super) async fn handle_artifacts(
         &self,
         req: ArtifactsRequest,
