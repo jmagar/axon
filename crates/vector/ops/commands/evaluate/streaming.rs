@@ -1,3 +1,6 @@
+// Scaffolding for streaming evaluate pipelines — not all functions are wired up yet.
+#![allow(dead_code)]
+
 use crate::crates::core::config::{Config, EvaluateResponsesMode};
 use crate::crates::core::logging::log_warn;
 use std::error::Error;

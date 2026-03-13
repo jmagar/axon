@@ -2,7 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 
-pub(crate) const OAUTH_SESSION_COOKIE: &str = "__Host-axon_oauth_session";
+/// Plain cookie name for HTTP brokers (no `Secure` flag required).
+pub(crate) const OAUTH_SESSION_COOKIE_PLAIN: &str = "axon_oauth_session";
+/// `__Host-` prefixed cookie name for HTTPS brokers.
+/// The `__Host-` prefix is silently dropped by browsers when `Secure` is absent
+/// (i.e., on HTTP), causing re-auth loops. Use `session_cookie_name()` to pick
+/// the correct variant at runtime.
+pub(crate) const OAUTH_SESSION_COOKIE_SECURE: &str = "__Host-axon_oauth_session";
 pub(crate) const OAUTH_SESSION_TTL_SECS: u64 = 60 * 60 * 24 * 7;
 pub(crate) const OAUTH_REFRESH_TTL_SECS: u64 = 60 * 60 * 24 * 30;
 

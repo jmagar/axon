@@ -133,6 +133,7 @@ fn host_of(url: &str) -> String {
         .unwrap_or_default()
 }
 
+#[allow(dead_code)]
 struct SuggestPromptContext {
     desired: usize,
     /// How many URLs to request from the LLM. Over-samples relative to `desired`

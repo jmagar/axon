@@ -5,8 +5,9 @@ mod poll;
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::jobs::common::{
-    JobTable, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
+    JobTable, batch_enqueue_jobs, open_amqp_connection_and_channel, reclaim_stale_running_jobs,
 };
+use crate::crates::jobs::status::JobStatus;
 use sqlx::PgPool;
 use std::future::Future;
 use std::pin::Pin;
@@ -217,6 +218,44 @@ async fn run_polling_lanes(
 ///
 /// A shared `Semaphore` limits total in-flight spawned tasks to `lane_count`.
 ///
+/// How long a pending job must sit unprocessed before we consider it orphaned.
+/// Using `watchdog_stale_timeout_secs` as a proxy: if a pending job is older
+/// than the stale threshold it was never picked up after a broker restart.
+fn orphaned_pending_threshold_secs(stale_timeout_secs: i64) -> i32 {
+    stale_timeout_secs.max(60) as i32
+}
+
+fn orphaned_pending_select_query(table: JobTable) -> String {
+    format!(
+        "SELECT id FROM {} WHERE status = $1 AND created_at < NOW() - ($2 || ' seconds')::INTERVAL",
+        table.as_str()
+    )
+}
+
+/// At AMQP worker startup, re-enqueue any jobs that are stuck in `pending`
+/// state longer than the stale threshold. These are jobs that were enqueued
+/// before a broker restart — the AMQP message was lost but the DB row remains.
+async fn reenqueue_orphaned_pending_jobs(
+    cfg: &Config,
+    pool: &PgPool,
+    wc: &WorkerConfig,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let threshold = orphaned_pending_threshold_secs(cfg.watchdog_stale_timeout_secs);
+    let query = orphaned_pending_select_query(wc.table);
+    let rows: Vec<(uuid::Uuid,)> = sqlx::query_as(&query)
+        .bind(JobStatus::Pending.as_str())
+        .bind(threshold.to_string())
+        .fetch_all(pool)
+        .await?;
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let ids: Vec<uuid::Uuid> = rows.into_iter().map(|(id,)| id).collect();
+    let count = ids.len() as u64;
+    batch_enqueue_jobs(cfg, &wc.queue_name, &ids).await?;
+    Ok(count)
+}
+
 /// Callers must call `make_pool` and `ensure_schema` before invoking this.
 pub(crate) async fn run_job_worker(
     cfg: &Config,
@@ -235,6 +274,17 @@ pub(crate) async fn run_job_worker(
     let amqp_available = probe_amqp_available(cfg, wc).await;
 
     if amqp_available {
+        match reenqueue_orphaned_pending_jobs(cfg, &pool, wc).await {
+            Ok(0) => {}
+            Ok(n) => log_info(&format!(
+                "{} worker: re-enqueued {n} orphaned pending job(s) from before broker restart",
+                wc.job_kind
+            )),
+            Err(err) => log_warn(&format!(
+                "{} worker: orphaned pending re-enqueue failed (non-fatal): {err}",
+                wc.job_kind
+            )),
+        }
         run_amqp_reconnect_loop(cfg, pool.clone(), wc, &process_fn, semaphore.clone()).await;
     }
 
