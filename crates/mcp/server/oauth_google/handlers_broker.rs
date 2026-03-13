@@ -249,8 +249,10 @@ fn validate_scope(
 
 fn redirect_to_login(req: &axum::extract::Request) -> Response {
     let return_to = req.uri().to_string();
-    let mut login_url = Url::parse("http://localhost/oauth/google/login")
-        .unwrap_or_else(|_| Url::parse("http://localhost/").expect("localhost parse must succeed"));
+    let mut login_url = Url::parse("http://localhost/oauth/google/login").unwrap_or_else(|_| {
+        Url::parse("http://localhost/")
+            .unwrap_or_else(|_| unreachable!("static URL literal cannot fail to parse"))
+    });
     login_url
         .query_pairs_mut()
         .append_pair("return_to", &return_to);
