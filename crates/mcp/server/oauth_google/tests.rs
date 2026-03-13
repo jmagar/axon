@@ -2,6 +2,7 @@
 
 use super::helpers::{is_allowed_redirect_uri, normalize_loopback_redirect_uri};
 use super::types::RedirectPolicy;
+use axum::http::StatusCode;
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -201,6 +202,39 @@ fn configured_loopback_redirect_uri_is_normalized_to_http_localhost() {
     let cfg = super::types::GoogleOAuthConfig::from_env("0.0.0.0", 8001)
         .expect("oauth config should load with test credentials");
     assert_eq!(cfg.redirect_uri, "http://localhost:8001/oauth/google/callback");
+
+    for (key, value) in prev {
+        match value {
+            Some(v) => unsafe { std::env::set_var(&key, v) },
+            None => unsafe { std::env::remove_var(&key) },
+        }
+    }
+}
+
+#[allow(unsafe_code)]
+#[tokio::test]
+async fn check_rate_limit_enforces_bucket_limit_in_memory_fallback() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let vars = ["GOOGLE_OAUTH_REDIS_URL", "AXON_REDIS_URL"];
+    let prev = vars
+        .iter()
+        .map(|k| ((*k).to_string(), std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+
+    unsafe {
+        std::env::set_var("GOOGLE_OAUTH_REDIS_URL", "redis://127.0.0.1:1");
+        std::env::remove_var("AXON_REDIS_URL");
+    }
+
+    let state = super::types::GoogleOAuthState::from_env("127.0.0.1", 8001);
+    let bucket = format!("rate-limit-test-{}", uuid::Uuid::new_v4());
+    assert!(state.check_rate_limit(&bucket, 1, 60).await.is_ok());
+
+    let resp = state
+        .check_rate_limit(&bucket, 1, 60)
+        .await
+        .expect_err("second request in same window should be rate limited");
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 
     for (key, value) in prev {
         match value {
