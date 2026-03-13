@@ -16,7 +16,12 @@ import Link from 'next/link'
 import type React from 'react'
 import { useState } from 'react'
 import type { JobDetail } from '@/app/api/jobs/[id]/route'
-import { flattenJsonEntries, fmtDate, fmtDuration, getRefreshSummaryRows } from './job-detail-helpers'
+import {
+  flattenJsonEntries,
+  fmtDate,
+  fmtDuration,
+  getRefreshSummaryRows,
+} from './job-detail-helpers'
 
 const STATUS_CONFIG = {
   pending: {
@@ -280,7 +285,9 @@ export function JobDetailView({ job }: { job: JobDetail }) {
           <span className="w-16 flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-dim)]">
             Job ID
           </span>
-          <code className="break-all font-mono text-[11px] text-[var(--text-secondary)]">{job.id}</code>
+          <code className="break-all font-mono text-[11px] text-[var(--text-secondary)]">
+            {job.id}
+          </code>
         </div>
 
         {job.type === 'crawl' && (
@@ -351,17 +358,24 @@ export function JobDetailView({ job }: { job: JobDetail }) {
                   title="Refresh URLs"
                   items={job.urls}
                   emptyText="No refresh URLs recorded."
-                  renderItem={(url) => (
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 break-all font-mono text-[11px] text-[var(--axon-primary)] hover:underline"
-                    >
-                      {url}
-                      <ExternalLink className="size-3 flex-shrink-0" />
-                    </a>
-                  )}
+                  renderItem={(url) => {
+                    const isSafeUrl = /^https?:\/\//i.test(url)
+                    return isSafeUrl ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 break-all font-mono text-[11px] text-[var(--axon-primary)] hover:underline"
+                      >
+                        {url}
+                        <ExternalLink className="size-3 flex-shrink-0" />
+                      </a>
+                    ) : (
+                      <span className="break-all font-mono text-[11px] text-[var(--text-secondary)]">
+                        {url}
+                      </span>
+                    )
+                  }}
                 />
               </div>
             )}
