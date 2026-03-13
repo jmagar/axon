@@ -14,3 +14,4 @@ pub mod screenshot;
 pub mod search;
 pub mod system;
 pub mod types;
+pub mod watch;
