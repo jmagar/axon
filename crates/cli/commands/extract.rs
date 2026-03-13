@@ -8,10 +8,7 @@ use crate::crates::core::content::{
 };
 use crate::crates::core::logging::{log_done, log_info};
 use crate::crates::core::ui::{accent, confirm_destructive, muted, primary, symbol_for_status};
-use crate::crates::jobs::extract::{
-    cancel_extract_job, cleanup_extract_jobs, clear_extract_jobs, get_extract_job,
-    list_extract_jobs, recover_stale_extract_jobs, run_extract_worker,
-};
+use crate::crates::jobs::extract as extract_jobs;
 use crate::crates::services::extract as extract_service;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
@@ -58,30 +55,30 @@ async fn maybe_handle_extract_subcommand(cfg: &Config) -> Result<bool, Box<dyn E
     match subcmd {
         "status" => {
             let id = parse_extract_job_id(cfg, "status")?;
-            let job = get_extract_job(cfg, id).await?;
+            let job = extract_jobs::get_extract_job(cfg, id).await?;
             handle_job_status(cfg, job, id, "Extract")?;
         }
         "cancel" => {
             let id = parse_extract_job_id(cfg, "cancel")?;
-            let canceled = cancel_extract_job(cfg, id).await?;
+            let canceled = extract_jobs::cancel_extract_job(cfg, id).await?;
             handle_job_cancel(cfg, id, canceled, "extract")?;
         }
         "errors" => {
             let id = parse_extract_job_id(cfg, "errors")?;
-            let job = get_extract_job(cfg, id).await?;
+            let job = extract_jobs::get_extract_job(cfg, id).await?;
             handle_job_errors(cfg, job, id, "extract")?;
         }
         "list" => {
-            let jobs = list_extract_jobs(cfg, 50, 0).await?;
+            let jobs = extract_jobs::list_extract_jobs(cfg, 50, 0).await?;
             handle_job_list(cfg, jobs, "Extract")?;
         }
         "cleanup" => {
-            let removed = cleanup_extract_jobs(cfg).await?;
+            let removed = extract_jobs::cleanup_extract_jobs(cfg).await?;
             handle_job_cleanup(cfg, removed, "extract")?;
         }
         "clear" => {
             if confirm_destructive(cfg, "Clear all extract jobs and purge extract queue?")? {
-                let removed = clear_extract_jobs(cfg).await?;
+                let removed = extract_jobs::clear_extract_jobs(cfg).await?;
                 handle_job_clear(cfg, removed, "extract")?;
             } else if cfg.json_output {
                 println!(
@@ -92,9 +89,9 @@ async fn maybe_handle_extract_subcommand(cfg: &Config) -> Result<bool, Box<dyn E
                 println!("{} aborted", symbol_for_status("canceled"));
             }
         }
-        "worker" => run_extract_worker(cfg).await?,
+        "worker" => extract_jobs::run_extract_worker(cfg).await?,
         "recover" => {
-            let reclaimed = recover_stale_extract_jobs(cfg).await?;
+            let reclaimed = extract_jobs::recover_stale_extract_jobs(cfg).await?;
             handle_job_recover(cfg, reclaimed, "extract")?;
         }
         _ => return Ok(false),
