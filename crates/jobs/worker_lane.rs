@@ -222,12 +222,12 @@ async fn run_polling_lanes(
 /// Using `watchdog_stale_timeout_secs` as a proxy: if a pending job is older
 /// than the stale threshold it was never picked up after a broker restart.
 fn orphaned_pending_threshold_secs(stale_timeout_secs: i64) -> i32 {
-    stale_timeout_secs.max(60) as i32
+    stale_timeout_secs.max(60).min(i32::MAX as i64) as i32
 }
 
 fn orphaned_pending_select_query(table: JobTable) -> String {
     format!(
-        "SELECT id FROM {} WHERE status = $1 AND created_at < NOW() - ($2 || ' seconds')::INTERVAL",
+        "SELECT id FROM {} WHERE status = $1 AND created_at < NOW() - make_interval(secs => $2)",
         table.as_str()
     )
 }
@@ -244,7 +244,7 @@ async fn reenqueue_orphaned_pending_jobs(
     let query = orphaned_pending_select_query(wc.table);
     let rows: Vec<(uuid::Uuid,)> = sqlx::query_as(&query)
         .bind(JobStatus::Pending.as_str())
-        .bind(threshold.to_string())
+        .bind(threshold)
         .fetch_all(pool)
         .await?;
     if rows.is_empty() {
@@ -252,6 +252,11 @@ async fn reenqueue_orphaned_pending_jobs(
     }
     let ids: Vec<uuid::Uuid> = rows.into_iter().map(|(id,)| id).collect();
     let count = ids.len() as u64;
+    // Concurrency safety: between the SELECT above and the AMQP publish below, a job may
+    // transition from `pending` to `running` if a worker lane claims it. This is safe because
+    // `claim_next_pending` uses a `WHERE status = 'pending'` guard — a running job will not
+    // be claimed again. The AMQP message will be published but the consumer will find no
+    // claimable row and nack/discard it.
     batch_enqueue_jobs(cfg, &wc.queue_name, &ids).await?;
     Ok(count)
 }
@@ -536,5 +541,29 @@ mod tests {
             .ok()
             .and_then(|s| uuid::Uuid::parse_str(s.trim()).ok());
         assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn orphaned_pending_threshold_enforces_60s_floor() {
+        assert_eq!(orphaned_pending_threshold_secs(0), 60);
+        assert_eq!(orphaned_pending_threshold_secs(30), 60);
+        assert_eq!(orphaned_pending_threshold_secs(59), 60);
+        assert_eq!(orphaned_pending_threshold_secs(60), 60);
+        assert_eq!(orphaned_pending_threshold_secs(300), 300);
+        assert_eq!(orphaned_pending_threshold_secs(i64::MAX), i32::MAX);
+    }
+
+    #[test]
+    fn orphaned_pending_select_query_contains_table_and_placeholders() {
+        let q = orphaned_pending_select_query(JobTable::Embed);
+        assert!(
+            q.contains("axon_embed_jobs"),
+            "query must reference the correct table"
+        );
+        assert!(q.contains("status = $1"), "query must bind status as $1");
+        assert!(
+            q.contains("make_interval"),
+            "query must use make_interval for type safety"
+        );
     }
 }
