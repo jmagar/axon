@@ -58,7 +58,7 @@ pub(crate) struct JudgeContext<'a> {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // reason: used by streaming evaluate pipeline — wire up before release
 pub(crate) struct TaggedToken {
     pub stream: &'static str,
     pub delta: String,
@@ -282,7 +282,7 @@ pub(crate) async fn ask_llm_streaming(
     run_sse_stream(req, print_tokens, None).await
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // reason: used by streaming evaluate pipeline — wire up before release
 pub(crate) async fn ask_llm_streaming_tagged(
     cfg: &Config,
     client: &reqwest::Client,
@@ -351,7 +351,7 @@ pub(crate) async fn baseline_llm_streaming(
     run_sse_stream(req, print_tokens, None).await
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // reason: used by streaming evaluate pipeline — wire up before release
 pub(crate) async fn baseline_llm_streaming_tagged(
     cfg: &Config,
     client: &reqwest::Client,

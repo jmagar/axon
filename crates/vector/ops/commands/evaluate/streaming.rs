@@ -1,5 +1,8 @@
 // Scaffolding for streaming evaluate pipelines — not all functions are wired up yet.
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "scaffolding for streaming evaluate pipelines — not all functions are wired up yet"
+)]
 
 use crate::crates::core::config::{Config, EvaluateResponsesMode};
 use crate::crates::core::logging::log_warn;
