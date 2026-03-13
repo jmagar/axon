@@ -18,8 +18,8 @@ function KpiTile({
 
   return (
     <article className="axon-mission-card">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-dim)]">{label}</p>
-      <p className={`mt-2 font-mono text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-dim)]">{label}</p>
+      <p className={`mt-1.5 font-mono text-[1.5rem] font-semibold leading-[1.1] ${toneClass}`}>{value}</p>
     </article>
   )
 }

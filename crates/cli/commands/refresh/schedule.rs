@@ -9,6 +9,7 @@ use crate::crates::services::refresh as refresh_service;
 use std::error::Error;
 
 pub use run_due::handle_refresh_schedule_run_due;
+#[cfg(test)]
 pub use worker::refresh_schedule_tick_secs_default;
 
 pub(super) const REFRESH_TIER_HIGH_SECONDS: i64 = 1800;

@@ -81,6 +81,7 @@ pub(super) const ASYNC_MODES: &[&str] =
 
 /// Modes whose operations produce async job IDs but are handled via subprocess.
 /// Kept as an empty marker list while direct async routing is authoritative.
+#[allow(dead_code)]
 pub(super) const ASYNC_SUBPROCESS_MODES: &[&str] = &[];
 
 /// Commands that produce streaming/non-JSON output and must NOT receive --json.
