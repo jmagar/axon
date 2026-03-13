@@ -20,10 +20,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Shared mock for the WS execution bridge
 // ---------------------------------------------------------------------------
 
-const runAxonCommandWsMock = vi.fn<() => Promise<unknown>>()
+const runAxonCommandWsMock =
+  vi.fn<(mode: string, timeoutMs: number, focus?: string) => Promise<unknown>>()
 
 vi.mock('@/lib/axon-ws-exec', () => ({
-  runAxonCommandWs: (...args: unknown[]) => runAxonCommandWsMock(...args),
+  runAxonCommandWs: (mode: string, timeoutMs: number, focus?: string) =>
+    runAxonCommandWsMock(mode, timeoutMs, focus),
   runAxonCommandWsStream: vi.fn(),
 }))
 
@@ -84,7 +86,7 @@ describe('GET /api/cortex/doctor', () => {
     const { GET } = await import('@/app/api/cortex/doctor/route')
     await GET()
 
-    expect(runAxonCommandWsMock).toHaveBeenCalledWith('doctor', 30_000)
+    expect(runAxonCommandWsMock).toHaveBeenCalledWith('doctor', 30_000, undefined)
   })
 
   it('returns 500 with error envelope when runAxonCommandWs throws', async () => {
@@ -148,7 +150,7 @@ describe('GET /api/cortex/domains', () => {
     const { GET } = await import('@/app/api/cortex/domains/route')
     await GET()
 
-    expect(runAxonCommandWsMock).toHaveBeenCalledWith('domains', 60_000)
+    expect(runAxonCommandWsMock).toHaveBeenCalledWith('domains', 60_000, undefined)
   })
 
   it('returns 500 with error envelope when runAxonCommandWs throws', async () => {
@@ -211,7 +213,7 @@ describe('GET /api/cortex/sources', () => {
     const { GET } = await import('@/app/api/cortex/sources/route')
     await GET()
 
-    expect(runAxonCommandWsMock).toHaveBeenCalledWith('sources', 60_000)
+    expect(runAxonCommandWsMock).toHaveBeenCalledWith('sources', 60_000, undefined)
   })
 
   it('returns 500 with error envelope when runAxonCommandWs throws', async () => {
@@ -276,7 +278,7 @@ describe('GET /api/cortex/stats', () => {
     const { GET } = await import('@/app/api/cortex/stats/route')
     await GET()
 
-    expect(runAxonCommandWsMock).toHaveBeenCalledWith('stats', 30_000)
+    expect(runAxonCommandWsMock).toHaveBeenCalledWith('stats', 30_000, undefined)
   })
 
   it('returns 500 with error envelope when runAxonCommandWs throws', async () => {
@@ -341,7 +343,7 @@ describe('GET /api/cortex/status', () => {
     const { GET } = await import('@/app/api/cortex/status/route')
     await GET()
 
-    expect(runAxonCommandWsMock).toHaveBeenCalledWith('status', 30_000)
+    expect(runAxonCommandWsMock).toHaveBeenCalledWith('status', 30_000, undefined)
   })
 
   it('returns 500 with error envelope when runAxonCommandWs throws', async () => {

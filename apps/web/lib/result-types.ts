@@ -193,6 +193,45 @@ export interface StatusResult {
   local_ingest_jobs: JobEntry[]
 }
 
+export interface OverviewJob {
+  id: string
+  type: string
+  status: string
+  target: string
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface CortexOverviewResult {
+  health: {
+    allOk: boolean
+    unhealthyServices: number
+    staleJobs: number
+    pendingJobs: number
+    services: Record<string, DoctorServiceStatus>
+    pipelines: Record<string, boolean>
+  }
+  queue: {
+    running: number
+    pending: number
+    completed: number
+    failed: number
+    total: number
+  }
+  corpus: {
+    collection: string
+    status: string
+    vectors: number
+    points: number
+    domains: number
+    sources: number
+    topDomains: Array<{ domain: string; vectors: number; urls: number }>
+    topSources: Array<{ url: string; chunks: number }>
+  }
+  jobs: OverviewJob[]
+}
+
 // ---------------------------------------------------------------------------
 // suggest: single object
 // ---------------------------------------------------------------------------
@@ -236,6 +275,7 @@ export type NormalizedResult =
   | { type: 'domains'; data: DomainsResult }
   | { type: 'stats'; data: StatsResult }
   | { type: 'status'; data: StatusResult }
+  | { type: 'cortex-overview'; data: CortexOverviewResult }
   | { type: 'suggest'; data: SuggestResult }
   | { type: 'retrieve'; data: RetrieveResult }
   | { type: 'dedupe'; data: DedupeResult }

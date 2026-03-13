@@ -7,9 +7,14 @@ mod performance;
 use super::cli::Cli;
 use super::help::maybe_print_top_level_help_and_exit;
 use super::types::Config;
-use clap::Parser;
+use crate::crates::core::ui::report_error;
+use clap::{Command, CommandFactory, Parser};
 
 pub(crate) use docker::{is_docker_service_host, normalize_local_service_url};
+
+pub fn build_cli_command() -> Command {
+    Cli::command()
+}
 
 pub fn parse_args() -> Config {
     maybe_print_top_level_help_and_exit();
@@ -17,7 +22,7 @@ pub fn parse_args() -> Config {
     match build_config::into_config(cli) {
         Ok(cfg) => cfg,
         Err(msg) => {
-            eprintln!("error: {msg}");
+            report_error(&msg);
             std::process::exit(1);
         }
     }
@@ -26,7 +31,7 @@ pub fn parse_args() -> Config {
 #[cfg(test)]
 mod tests {
     use super::docker::is_docker_service_host;
-    use crate::crates::core::config::types::CommandKind;
+    use crate::crates::core::config::types::{CommandKind, McpTransport};
     use clap::Parser;
     use std::env;
     use std::sync::Mutex;
@@ -297,6 +302,9 @@ mod tests {
         const PG: &str = "AXON_PG_URL";
         const REDIS: &str = "AXON_REDIS_URL";
         const AMQP: &str = "AXON_AMQP_URL";
+        let prev_pg = env::var(PG).ok();
+        let prev_redis = env::var(REDIS).ok();
+        let prev_amqp = env::var(AMQP).ok();
 
         unsafe {
             env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
@@ -318,11 +326,64 @@ mod tests {
             ]
         );
 
+        match prev_pg {
+            Some(v) => unsafe { env::set_var(PG, v) },
+            None => unsafe { env::remove_var(PG) },
+        }
+        match prev_redis {
+            Some(v) => unsafe { env::set_var(REDIS, v) },
+            None => unsafe { env::remove_var(REDIS) },
+        }
+        match prev_amqp {
+            Some(v) => unsafe { env::set_var(AMQP, v) },
+            None => unsafe { env::remove_var(AMQP) },
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_completions_bash_does_not_require_service_envs() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        let prev_pg = env::var(PG).ok();
+        let prev_redis = env::var(REDIS).ok();
+        let prev_amqp = env::var(AMQP).ok();
+
         unsafe {
             env::remove_var(PG);
             env::remove_var(REDIS);
             env::remove_var(AMQP);
         }
+
+        let cli = super::Cli::parse_from(["axon", "completions", "bash"]);
+        let cfg = super::build_config::into_config(cli)
+            .expect("completions should parse without service env vars");
+        assert!(matches!(cfg.command, CommandKind::Completions));
+        assert_eq!(cfg.positional, vec!["bash".to_string()]);
+
+        match prev_pg {
+            Some(v) => unsafe { env::set_var(PG, v) },
+            None => unsafe { env::remove_var(PG) },
+        }
+        match prev_redis {
+            Some(v) => unsafe { env::set_var(REDIS, v) },
+            None => unsafe { env::remove_var(REDIS) },
+        }
+        match prev_amqp {
+            Some(v) => unsafe { env::set_var(AMQP, v) },
+            None => unsafe { env::remove_var(AMQP) },
+        }
+    }
+
+    #[test]
+    fn parse_completion_alias_routes_to_completions_command() {
+        let cli = super::Cli::parse_from(["axon", "completion", "zsh"]);
+        let cfg = super::build_config::into_config(cli)
+            .expect("completion alias should route to completions");
+        assert!(matches!(cfg.command, CommandKind::Completions));
+        assert_eq!(cfg.positional, vec!["zsh".to_string()]);
     }
 
     // --- is_docker_service_host tests ---
@@ -558,5 +619,62 @@ mod tests {
             normalized.prefixes.is_empty(),
             "bare slash should not produce any prefix entries"
         );
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_mcp_transport_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        const TRANSPORT: &str = "AXON_MCP_TRANSPORT";
+
+        unsafe {
+            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
+            env::set_var(REDIS, "redis://127.0.0.1:53379");
+            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
+            env::set_var(TRANSPORT, "stdio");
+        }
+
+        let cli = super::Cli::parse_from(["axon", "mcp"]);
+        let cfg = super::build_config::into_config(cli).expect("mcp config should parse");
+        assert!(matches!(cfg.command, CommandKind::Mcp));
+        assert_eq!(cfg.mcp_transport, McpTransport::Stdio);
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+            env::remove_var(TRANSPORT);
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn parse_mcp_transport_flag_overrides_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const PG: &str = "AXON_PG_URL";
+        const REDIS: &str = "AXON_REDIS_URL";
+        const AMQP: &str = "AXON_AMQP_URL";
+        const TRANSPORT: &str = "AXON_MCP_TRANSPORT";
+
+        unsafe {
+            env::set_var(PG, "postgresql://axon:postgres@127.0.0.1:53432/axon");
+            env::set_var(REDIS, "redis://127.0.0.1:53379");
+            env::set_var(AMQP, "amqp://axon:axonrabbit@127.0.0.1:45535/%2f");
+            env::set_var(TRANSPORT, "http");
+        }
+
+        let cli = super::Cli::parse_from(["axon", "mcp", "--transport", "both"]);
+        let cfg = super::build_config::into_config(cli).expect("mcp config should parse");
+        assert_eq!(cfg.mcp_transport, McpTransport::Both);
+
+        unsafe {
+            env::remove_var(PG);
+            env::remove_var(REDIS);
+            env::remove_var(AMQP);
+            env::remove_var(TRANSPORT);
+        }
     }
 }

@@ -126,6 +126,58 @@ describe('scanSessions', () => {
     expect(matching).toHaveLength(1)
     expect(matching[0]!.absolutePath).toBe(newerFile)
   })
+
+  it('uses first substantive user message for short chats', async () => {
+    const projectsDir = path.join(tmpRoot, '.claude', 'projects')
+    const projectDir = path.join(projectsDir, '-home-user-workspace-my-app')
+    await fs.mkdir(projectDir, { recursive: true })
+
+    const sessionFile = path.join(projectDir, 'latest-preview.jsonl')
+    const first = makeUserLine('Please fix the session title extraction logic')
+    const second = makeUserLine('Different follow-up prompt that should not be picked yet')
+    await fs.writeFile(sessionFile, `${first}\n${second}\n`, 'utf8')
+
+    const sessions = await scanSessions()
+    const target = sessions.find((s) => s.filename === 'latest-preview')
+    expect(target).toBeTruthy()
+    expect(target!.preview).toBe('Please fix the session title extraction logic')
+  })
+
+  it('uses latest substantive user message for longer chats', async () => {
+    const projectsDir = path.join(tmpRoot, '.claude', 'projects')
+    const projectDir = path.join(projectsDir, '-home-user-workspace-my-app')
+    await fs.mkdir(projectDir, { recursive: true })
+
+    const sessionFile = path.join(projectDir, 'adaptive-preview.jsonl')
+    const lines = [
+      makeUserLine('Initial architecture question'),
+      makeUserLine('Can you propose a migration plan'),
+      makeUserLine('Also include rollback strategy'),
+      makeUserLine('Now focus on observability and alerting'),
+    ]
+    await fs.writeFile(sessionFile, `${lines.join('\n')}\n`, 'utf8')
+
+    const sessions = await scanSessions()
+    const target = sessions.find((s) => s.filename === 'adaptive-preview')
+    expect(target).toBeTruthy()
+    expect(target!.preview).toBe('Now focus on observability and alerting')
+  })
+
+  it('strips system context wrappers and keeps the actual user message', async () => {
+    const projectsDir = path.join(tmpRoot, '.claude', 'projects')
+    const projectDir = path.join(projectsDir, '-home-user-workspace-my-app')
+    await fs.mkdir(projectDir, { recursive: true })
+
+    const sessionFile = path.join(projectDir, 'wrapped-preview.jsonl')
+    const wrapped =
+      '[System context — Axon editor integration] You have access to editor. [User message] Build a weekly deployment checklist'
+    await fs.writeFile(sessionFile, `${makeUserLine(wrapped)}\n`, 'utf8')
+
+    const sessions = await scanSessions()
+    const target = sessions.find((s) => s.filename === 'wrapped-preview')
+    expect(target).toBeTruthy()
+    expect(target!.preview).toBe('Build a weekly deployment checklist')
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,13 @@
+#[path = "server/artifacts.rs"]
+pub(super) mod artifacts;
 #[path = "server/common.rs"]
 pub mod common;
 #[path = "server/handlers_crawl_extract.rs"]
 mod handlers_crawl_extract;
 #[path = "server/handlers_embed_ingest.rs"]
 mod handlers_embed_ingest;
+#[path = "server/handlers_graph.rs"]
+mod handlers_graph;
 #[path = "server/handlers_query.rs"]
 mod handlers_query;
 #[path = "server/handlers_refresh_status.rs"]
@@ -13,18 +17,29 @@ mod handlers_system;
 #[path = "server/oauth_google.rs"]
 mod oauth_google;
 
+#[cfg(test)]
+#[path = "server/services_migration_tests.rs"]
+mod services_migration_tests;
+
 use super::config::load_mcp_config;
 use super::schema::{AxonRequest, parse_axon_request};
 use crate::crates::core::config::Config;
+use crate::crates::web::cors::cors_middleware;
 use axum::{
-    Router, middleware,
+    Router,
+    body::Body,
+    extract::State,
+    middleware,
+    middleware::Next,
+    response::Response,
     routing::{get, post},
 };
 use common::{MCP_TOOL_SCHEMA_URI, internal_error, invalid_params};
 use oauth_google::{
-    GoogleOAuthState, oauth_authorization_server_metadata, oauth_authorize, oauth_google_callback,
-    oauth_google_login, oauth_google_logout, oauth_google_status, oauth_google_token,
-    oauth_protected_resource_metadata, oauth_register_client, oauth_token, require_google_auth,
+    GoogleOAuthState, oauth_authorization_server_metadata, oauth_authorization_server_metadata_mcp,
+    oauth_authorize, oauth_google_callback, oauth_google_login, oauth_google_logout,
+    oauth_google_status, oauth_google_token, oauth_protected_resource_metadata,
+    oauth_register_client, oauth_token, require_google_auth,
 };
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -60,14 +75,27 @@ impl AxonMcpServer {
 impl AxonMcpServer {
     #[tool(
         name = "axon",
-        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
+        description = "Unified Axon MCP tool. Use action/subaction routing. Use action:help to list actions/subactions/defaults. Exposes schema resource axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, refresh, graph, query, retrieve, search, map, doctor, domains, sources, stats, artifacts, scrape, research, ask, screenshot."
     )]
     async fn axon<'a>(
         &'a self,
         Parameters(raw): Parameters<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<String, ErrorData> {
-        let request: AxonRequest =
-            parse_axon_request(raw).map_err(|e| invalid_params(format!("invalid request: {e}")))?;
+        let action = raw
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_owned();
+        let subaction = raw
+            .get("subaction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        tracing::info!(action = %action, subaction = %subaction, "mcp request");
+        let request: AxonRequest = parse_axon_request(raw).map_err(|e| {
+            tracing::warn!(action = %action, subaction = %subaction, error = %e, "mcp error");
+            invalid_params(format!("invalid request: {e}"))
+        })?;
         let response = match request {
             AxonRequest::Status(req) => self.handle_status(req).await?,
             AxonRequest::Crawl(req) => self.handle_crawl(req).await?,
@@ -96,6 +124,7 @@ impl AxonMcpServer {
             }
             AxonRequest::Screenshot(req) => self.handle_screenshot(req).await?,
             AxonRequest::Refresh(req) => self.handle_refresh(req).await?,
+            AxonRequest::Graph(req) => self.handle_graph(req).await?,
         };
         serde_json::to_string(&response).map_err(|e| internal_error(e.to_string()))
     }
@@ -181,6 +210,7 @@ pub async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let cors_cfg = Arc::new(load_mcp_config());
     let oauth_state = GoogleOAuthState::from_env(host, port);
     let oauth_state_for_layer = oauth_state.clone();
 
@@ -213,6 +243,22 @@ pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::e
             "/.well-known/oauth-authorization-server",
             get(oauth_authorization_server_metadata),
         )
+        .route(
+            // Path-prefix discovery alias for the /mcp resource (RFC 8414 §3.1).
+            // Uses a dedicated handler that returns issuer = resource_server_url so the
+            // issuer matches the request path — the root handler would return the broker
+            // issuer which would fail RFC 8414 §3 validation for MCP clients.
+            "/.well-known/oauth-authorization-server/mcp",
+            get(oauth_authorization_server_metadata_mcp),
+        )
+        .route(
+            "/.well-known/openid-configuration",
+            get(oauth_authorization_server_metadata),
+        )
+        .route(
+            "/.well-known/openid-configuration/mcp",
+            get(oauth_authorization_server_metadata),
+        )
         .route("/oauth/register", post(oauth_register_client))
         .route("/oauth/authorize", get(oauth_authorize))
         .route("/oauth/token", post(oauth_token))
@@ -220,9 +266,21 @@ pub async fn run_http_server(host: &str, port: u16) -> Result<(), Box<dyn std::e
         .layer(middleware::from_fn_with_state(
             oauth_state_for_layer,
             require_google_auth,
+        ))
+        .layer(middleware::from_fn_with_state(
+            cors_cfg,
+            mcp_http_cors_middleware,
         ));
 
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn mcp_http_cors_middleware(
+    State(cfg): State<Arc<Config>>,
+    request: axum::http::Request<Body>,
+    next: Next,
+) -> Response {
+    cors_middleware(request, next, &cfg.web_allowed_origins).await
 }

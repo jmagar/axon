@@ -1,9 +1,10 @@
 /**
  * Drop-in replacement for fetch() for all /api/* calls.
- * Automatically injects x-api-key when NEXT_PUBLIC_AXON_API_TOKEN is set.
+ * Automatically injects x-api-key when NEXT_PUBLIC_AXON_BROWSER_API_TOKEN is set.
  */
 
-const API_TOKEN = process.env.NEXT_PUBLIC_AXON_API_TOKEN
+const API_TOKEN =
+  process.env.NEXT_PUBLIC_AXON_BROWSER_API_TOKEN ?? process.env.NEXT_PUBLIC_AXON_API_TOKEN
 
 function shouldInjectToken(input: string | URL | Request): boolean {
   try {

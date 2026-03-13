@@ -31,7 +31,7 @@ export type McpServersState = {
 
 export function useMcpServers() {
   const [mcpServers, setMcpServers] = useState<string[]>([])
-  const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([])
+  const [enabledMcpServers, setEnabledMcpServersState] = useState<string[]>([])
   const [mcpStatusByServer, setMcpStatusByServer] = useState<
     Record<string, 'online' | 'offline' | 'unknown'>
   >({})
@@ -51,7 +51,7 @@ export function useMcpServers() {
         const statusServers: Record<string, { status?: 'online' | 'offline' | 'unknown' }> =
           status.servers ?? {}
         setMcpServers(serverNames)
-        setEnabledMcpServers((current) =>
+        setEnabledMcpServersState((current) =>
           current.length > 0 ? current.filter((name) => serverNames.includes(name)) : serverNames,
         )
         setMcpStatusByServer(
@@ -66,7 +66,7 @@ export function useMcpServers() {
       .catch(() => {
         if (cancelled) return
         setMcpServers([])
-        setEnabledMcpServers([])
+        setEnabledMcpServersState([])
         setMcpStatusByServer({})
       })
 
@@ -76,12 +76,23 @@ export function useMcpServers() {
   }, [])
 
   const toggleMcpServer = useCallback((serverName: string) => {
-    setEnabledMcpServers((current) =>
+    setEnabledMcpServersState((current) =>
       current.includes(serverName)
         ? current.filter((name) => name !== serverName)
         : [...current, serverName],
     )
   }, [])
+
+  const setEnabledMcpServers = useCallback(
+    (serverNames: string[]) => {
+      setEnabledMcpServersState((_current) => {
+        const unique = Array.from(new Set(serverNames))
+        if (unique.length === 0) return []
+        return unique.filter((serverName) => mcpServers.includes(serverName))
+      })
+    },
+    [mcpServers],
+  )
 
   const composerToolsState: McpServersState = useMemo(
     () => ({
@@ -92,5 +103,5 @@ export function useMcpServers() {
     [enabledMcpServers, mcpServers, mcpStatusByServer],
   )
 
-  return { ...composerToolsState, toggleMcpServer }
+  return { ...composerToolsState, toggleMcpServer, setEnabledMcpServers }
 }

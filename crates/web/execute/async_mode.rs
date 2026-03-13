@@ -1,19 +1,15 @@
 //! Fire-and-forget async job dispatch for the WebSocket execution bridge.
 //!
-//! Handles `crawl`, `extract`, and `embed` modes by calling the services layer
+//! Handles `crawl`, `extract`, `embed`, `github`, `reddit`, and `youtube` modes by calling the services layer
 //! directly to enqueue a background job, then returning immediately with the job
 //! ID.  No subprocess is spawned; no polling loop is run.
-//!
-//! `github`, `reddit`, and `youtube` are excluded from this path because the
-//! underlying ingest service functions are `!Send` (they use `Box<dyn Error>`
-//! without `+ Send` in sub-futures).  Those modes continue to use the subprocess
-//! fallback path in `execute.rs`.
 
 use super::context::ExecCommandContext;
 use super::events::{CommandContext, WsEventV2, serialize_v2_event};
 use super::ws_send::{send_done_dual, send_error_dual};
 use crate::crates::core::config::{Config, ConfigOverrides};
 use crate::crates::services;
+use crate::crates::services::ingest::IngestSource;
 use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
@@ -76,6 +72,18 @@ fn call_embed_start(
     })
 }
 
+fn call_ingest_start(
+    cfg: Arc<Config>,
+    source: IngestSource,
+) -> Pin<Box<dyn Future<Output = Result<EnqueueResult, String>> + Send + 'static>> {
+    Box::pin(async move {
+        services::ingest::ingest_start(&cfg, source)
+            .await
+            .map(|r| EnqueueResult::JobId(r.job_id))
+            .map_err(|e| e.to_string())
+    })
+}
+
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
 async fn dispatch_async(
@@ -115,6 +123,36 @@ async fn dispatch_async(
             call_extract_start(cfg, urls).await?
         }
         "embed" => call_embed_start(cfg).await?,
+        "github" => {
+            if input.is_empty() {
+                return Err("github requires a non-empty repo input".to_string());
+            }
+            let include_source = context
+                .flags
+                .get("include_source")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(cfg.github_include_source);
+            call_ingest_start(
+                cfg,
+                IngestSource::Github {
+                    repo: input,
+                    include_source,
+                },
+            )
+            .await?
+        }
+        "reddit" => {
+            if input.is_empty() {
+                return Err("reddit requires a non-empty target input".to_string());
+            }
+            call_ingest_start(cfg, IngestSource::Reddit { target: input }).await?
+        }
+        "youtube" => {
+            if input.is_empty() {
+                return Err("youtube requires a non-empty target input".to_string());
+            }
+            call_ingest_start(cfg, IngestSource::Youtube { target: input }).await?
+        }
         _ => return Err(format!("unknown async mode: {mode}")),
     };
 

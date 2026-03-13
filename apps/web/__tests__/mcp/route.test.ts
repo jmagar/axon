@@ -5,7 +5,8 @@
  * next/server is mocked to return a plain object with .json() and .status.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { NextRequest } from 'next/server'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -36,25 +37,26 @@ vi.mock('node:util', () => ({ promisify: (fn: unknown) => fn }))
 
 // Dynamic import so that the module picks up the mocked dependencies.
 async function loadRoute() {
-  // Invalidate module cache between tests by using a fresh import path.
   return import('@/app/api/mcp/route')
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const TEST_API_TOKEN = 'test-api-token-abc123'
+
 /** Simulate a Next.js Request with a JSON body and optional headers. */
-function makeRequest(body: unknown, headers: Record<string, string> = {}): Request {
+function makeRequest(body: unknown, headers: Record<string, string> = {}): NextRequest {
   return {
     json: async () => body,
     headers: {
-      get: (key: string) => headers[key] ?? null,
+      get: (key: string) => headers[key.toLowerCase()] ?? null,
     },
-  } as unknown as Request
+  } as unknown as NextRequest
 }
 
-/** Simulate a request that includes the required CSRF header. */
-function makeAuthedRequest(body: unknown): Request {
-  return makeRequest(body, { 'X-Pulse-Request': '1' })
+/** Simulate a request that includes a valid API token. */
+function makeAuthedRequest(body: unknown): NextRequest {
+  return makeRequest(body, { authorization: `Bearer ${TEST_API_TOKEN}` })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -116,16 +118,21 @@ describe('PUT /api/mcp', () => {
     vi.clearAllMocks()
     fsMock.writeFile.mockResolvedValue(undefined)
     fsMock.mkdir.mockResolvedValue(undefined)
+    process.env.AXON_WEB_API_TOKEN = TEST_API_TOKEN
   })
 
-  it('returns 403 when X-Pulse-Request header is absent', async () => {
+  afterEach(() => {
+    delete process.env.AXON_WEB_API_TOKEN
+  })
+
+  it('returns 401 when Authorization header is absent', async () => {
     const config = { mcpServers: { 'my-server': { command: 'node' } } }
-    const req = makeRequest(config) // no CSRF header
+    const req = makeRequest(config) // no auth token
 
     const { PUT } = await loadRoute()
     const response = await PUT(req)
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(401)
     const body = await response.json()
     expect(body).toHaveProperty('error')
   })
@@ -240,15 +247,20 @@ describe('DELETE /api/mcp', () => {
     vi.clearAllMocks()
     fsMock.writeFile.mockResolvedValue(undefined)
     fsMock.mkdir.mockResolvedValue(undefined)
+    process.env.AXON_WEB_API_TOKEN = TEST_API_TOKEN
   })
 
-  it('returns 403 when X-Pulse-Request header is absent', async () => {
-    const req = makeRequest({ name: 'some-server' }) // no CSRF header
+  afterEach(() => {
+    delete process.env.AXON_WEB_API_TOKEN
+  })
+
+  it('returns 401 when Authorization header is absent', async () => {
+    const req = makeRequest({ name: 'some-server' }) // no auth token
 
     const { DELETE } = await loadRoute()
     const response = await DELETE(req)
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(401)
     const body = await response.json()
     expect(body).toHaveProperty('error')
   })

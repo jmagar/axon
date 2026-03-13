@@ -1,16 +1,22 @@
-use crate::crates::cli::commands::doctor::build_doctor_report;
-use crate::crates::cli::commands::status::status_full;
 use crate::crates::core::config::Config;
+use crate::crates::core::health::build_doctor_report;
+use crate::crates::jobs::crawl::{CrawlJob, list_jobs};
+use crate::crates::jobs::embed::{EmbedJob, list_embed_jobs};
+use crate::crates::jobs::extract::{ExtractJob, list_extract_jobs};
+use crate::crates::jobs::ingest::{IngestJob, list_ingest_jobs};
+use crate::crates::jobs::refresh::{RefreshJob, list_refresh_jobs};
 use crate::crates::services::events::{LogLevel, ServiceEvent, emit};
 use crate::crates::services::types::{
     DedupeResult, DoctorResult, DomainFacet, DomainsResult, Pagination, SourcesResult, StatsResult,
     StatusResult,
 };
-use crate::crates::vector::ops::qdrant::{domains_payload, run_dedupe_native, sources_payload};
+use crate::crates::vector::ops::qdrant::{dedupe_payload, domains_payload, sources_payload};
 use crate::crates::vector::ops::stats::stats_payload;
 use std::error::Error;
 use std::fmt;
 use tokio::sync::mpsc;
+
+const WATCHDOG_RECLAIM_PREFIX: &str = "watchdog reclaimed stale running ";
 
 #[derive(Debug)]
 pub struct PayloadParseError(String);
@@ -141,8 +147,161 @@ pub async fn doctor(cfg: &Config) -> Result<DoctorResult, Box<dyn Error>> {
 }
 
 pub async fn full_status(cfg: &Config) -> Result<StatusResult, Box<dyn Error>> {
-    let (payload, text) = status_full(cfg).await?;
+    let jobs = load_status_jobs(cfg).await?;
+    let payload = build_status_payload(
+        &jobs.crawl,
+        &jobs.extract,
+        &jobs.embed,
+        &jobs.ingest,
+        &jobs.refresh,
+    );
+    let text = [
+        "Axon Status".to_string(),
+        format!("crawl jobs:   {}", jobs.crawl.len()),
+        format!("extract jobs: {}", jobs.extract.len()),
+        format!("embed jobs:   {}", jobs.embed.len()),
+        format!("ingest jobs:  {}", jobs.ingest.len()),
+        format!("refresh jobs: {}", jobs.refresh.len()),
+    ]
+    .join("\n");
     Ok(StatusResult { payload, text })
+}
+
+// ── Status business logic ───────────────────────────────────────────────────
+
+pub(crate) struct StatusJobs {
+    pub crawl: Vec<CrawlJob>,
+    pub extract: Vec<ExtractJob>,
+    pub embed: Vec<EmbedJob>,
+    pub ingest: Vec<IngestJob>,
+    pub refresh: Vec<RefreshJob>,
+}
+
+fn filter_status_jobs<T, FStatus, FError>(
+    jobs: Vec<T>,
+    reclaimed_only: bool,
+    status_of: FStatus,
+    error_of: FError,
+) -> Vec<T>
+where
+    FStatus: Fn(&T) -> &str,
+    FError: Fn(&T) -> Option<&str>,
+{
+    jobs.into_iter()
+        .filter(|job| include_status_job(status_of(job), error_of(job), reclaimed_only))
+        .collect()
+}
+
+async fn list_crawl_status(cfg: &Config) -> Result<Vec<CrawlJob>, String> {
+    list_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("crawl status lookup failed: {e}"))
+}
+
+async fn list_extract_status(cfg: &Config) -> Result<Vec<ExtractJob>, String> {
+    list_extract_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("extract status lookup failed: {e}"))
+}
+
+async fn list_embed_status(cfg: &Config) -> Result<Vec<EmbedJob>, String> {
+    list_embed_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("embed status lookup failed: {e}"))
+}
+
+async fn list_ingest_status(cfg: &Config) -> Result<Vec<IngestJob>, String> {
+    list_ingest_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("ingest status lookup failed: {e}"))
+}
+
+async fn list_refresh_status(cfg: &Config) -> Result<Vec<RefreshJob>, String> {
+    list_refresh_jobs(cfg, 20, 0)
+        .await
+        .map_err(|e| format!("refresh status lookup failed: {e}"))
+}
+
+pub(crate) async fn load_status_jobs(cfg: &Config) -> Result<StatusJobs, Box<dyn Error>> {
+    let (crawl_raw, extract_raw, embed_raw, ingest_raw, refresh_raw) = tokio::join!(
+        list_crawl_status(cfg),
+        list_extract_status(cfg),
+        list_embed_status(cfg),
+        list_ingest_status(cfg),
+        list_refresh_status(cfg),
+    );
+    let reclaimed_only = cfg.reclaimed_status_only;
+    let crawl = filter_status_jobs(
+        crawl_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let extract = filter_status_jobs(
+        extract_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let embed = filter_status_jobs(
+        embed_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let ingest = filter_status_jobs(
+        ingest_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    let refresh = filter_status_jobs(
+        refresh_raw?,
+        reclaimed_only,
+        |job| &job.status,
+        |job| job.error_text.as_deref(),
+    );
+    Ok(StatusJobs {
+        crawl,
+        extract,
+        embed,
+        ingest,
+        refresh,
+    })
+}
+
+pub(crate) fn build_status_payload(
+    crawl_jobs: &[CrawlJob],
+    extract_jobs: &[ExtractJob],
+    embed_jobs: &[EmbedJob],
+    ingest_jobs: &[IngestJob],
+    refresh_jobs: &[RefreshJob],
+) -> serde_json::Value {
+    serde_json::json!({
+        "local_crawl_jobs": crawl_jobs,
+        "local_extract_jobs": extract_jobs,
+        "local_embed_jobs": embed_jobs,
+        "local_ingest_jobs": ingest_jobs,
+        "local_refresh_jobs": refresh_jobs,
+    })
+}
+
+fn include_status_job(status: &str, error_text: Option<&str>, reclaimed_only: bool) -> bool {
+    let reclaimed = is_watchdog_reclaimed_failure(status, error_text);
+    if reclaimed_only {
+        reclaimed
+    } else {
+        !reclaimed
+    }
+}
+
+fn is_watchdog_reclaimed_failure(status: &str, error_text: Option<&str>) -> bool {
+    if status != "failed" {
+        return false;
+    }
+    error_text
+        .map(str::trim_start)
+        .is_some_and(|text| text.starts_with(WATCHDOG_RECLAIM_PREFIX))
 }
 
 pub async fn dedupe(
@@ -156,24 +315,39 @@ pub async fn dedupe(
             message: "starting dedupe".to_string(),
         },
     );
-    if let Err(e) = run_dedupe_native(cfg).await {
-        emit(
-            &tx,
-            ServiceEvent::Log {
-                level: LogLevel::Error,
-                message: format!("dedupe failed: {e}"),
-            },
-        );
-        return Err(e);
-    }
+    let payload = match dedupe_payload(cfg).await {
+        Ok(v) => v,
+        Err(e) => {
+            emit(
+                &tx,
+                ServiceEvent::Log {
+                    level: LogLevel::Error,
+                    message: format!("dedupe failed: {e}"),
+                },
+            );
+            return Err(e);
+        }
+    };
+    let duplicate_groups = payload
+        .get("duplicate_groups")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize;
+    let deleted = payload
+        .get("deleted")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize;
     emit(
         &tx,
         ServiceEvent::Log {
             level: LogLevel::Info,
-            message: "completed dedupe".to_string(),
+            message: format!("completed dedupe: {duplicate_groups} groups, {deleted} deleted"),
         },
     );
-    Ok(DedupeResult { completed: true })
+    Ok(DedupeResult {
+        completed: true,
+        duplicate_groups,
+        deleted,
+    })
 }
 
 #[cfg(test)]
@@ -317,5 +491,43 @@ mod tests {
         assert!(result.domains.is_empty());
         assert_eq!(result.limit, 10);
         assert_eq!(result.offset, 0);
+    }
+
+    // ── status helpers ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn watchdog_reclaim_detection_matches_prefix_on_failed_jobs() {
+        assert!(is_watchdog_reclaimed_failure(
+            "failed",
+            Some("watchdog reclaimed stale running ingest job (idle=360s marker=amqp)")
+        ));
+        assert!(!is_watchdog_reclaimed_failure(
+            "error",
+            Some("watchdog reclaimed stale running crawl job (idle=361s marker=polling)")
+        ));
+        assert!(!is_watchdog_reclaimed_failure(
+            "completed",
+            Some("watchdog reclaimed stale running ingest job (idle=360s marker=amqp)")
+        ));
+        assert!(!is_watchdog_reclaimed_failure(
+            "failed",
+            Some("network timeout")
+        ));
+    }
+
+    #[test]
+    fn status_filter_hides_reclaimed_by_default_and_shows_in_reclaimed_mode() {
+        let reclaimed_err =
+            Some("watchdog reclaimed stale running extract job (idle=360s marker=amqp)");
+        assert!(!include_status_job("failed", reclaimed_err, false));
+        assert!(include_status_job("failed", reclaimed_err, true));
+        assert!(include_status_job("completed", None, false));
+        assert!(!include_status_job("completed", None, true));
+    }
+
+    #[test]
+    fn status_payload_includes_refresh_jobs_key() {
+        let payload = build_status_payload(&[], &[], &[], &[], &[]);
+        assert!(payload.get("local_refresh_jobs").is_some());
     }
 }

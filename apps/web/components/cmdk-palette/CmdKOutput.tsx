@@ -1,7 +1,7 @@
 'use client'
 
 import { type RefObject, useEffect, useRef } from 'react'
-import { PulseMarkdown } from '@/components/pulse/pulse-markdown'
+import { AxonMarkdown } from '@/components/ui/axon-markdown'
 import { resultToMarkdown } from '@/lib/result-to-markdown'
 import type { ModeDefinition } from '@/lib/ws-protocol'
 import type { PaletteProgress } from './CmdKPalette'
@@ -293,7 +293,7 @@ function CmdKInlineResult({ mode, capturedJson }: CmdKInlineResultProps) {
         padding: '14px 20px',
       }}
     >
-      <PulseMarkdown content={markdown} />
+      <AxonMarkdown content={markdown} />
     </div>
   )
 }

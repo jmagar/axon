@@ -1,0 +1,20 @@
+log_level: INFO
+
+service:
+  host: 0.0.0.0
+  http_port: 6333
+  grpc_port: 6334
+
+storage:
+  on_disk_payload: true
+
+  optimizers:
+    memmap_threshold_kb: 20000
+    indexing_threshold_kb: 20000
+
+  hnsw_index:
+    on_disk: true
+
+  collection:
+    vectors:
+      on_disk: true

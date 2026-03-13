@@ -1,8 +1,14 @@
 // Client → Server
 export type WsClientMsg =
-  | { type: 'execute'; mode: string; input: string; flags: Record<string, string | boolean> }
+  | {
+      type: 'execute'
+      mode: string
+      input: string
+      flags: Record<string, string | boolean | number | string[]>
+    }
   | { type: 'cancel'; id: string; mode?: string; job_id?: string }
   | { type: 'read_file'; path: string }
+  | { type: 'acp_resume'; session_id: string }
   // TODO: Wire permission response to Rust AcpBridgeClient when leaving container mode
   | { type: 'permission_response'; tool_call_id: string; option_id: string }
 
@@ -37,11 +43,39 @@ export type WsServerMsg =
   | WsV2ArtifactListMsg
   | WsV2ArtifactContentMsg
   | WsV2JobCancelResponseMsg
-  | { type: 'assistant_delta'; session_id?: string; delta: string; tool_call_id?: string | null }
+  | {
+      type: 'assistant_delta'
+      session_id?: string
+      delta: string
+      tool_call_id?: string | null
+      tool_locations?: string[]
+      usage?: WsUsageStats
+    }
+  | { type: 'usage_update'; session_id: string; usage: WsUsageStats }
   | { type: 'thinking_content'; session_id?: string; content: string; tool_call_id?: string | null }
   | { type: 'session_fallback'; old_session_id: string; new_session_id: string }
   | { type: 'result'; session_id?: string; result?: string; [key: string]: unknown }
   | { type: 'error'; message?: string; [key: string]: unknown }
+  | { type: 'editor_update'; content: string; operation: 'replace' | 'append' }
+  | {
+      type: 'tool_use'
+      tool_call_id?: string
+      tool_name?: string
+      tool_input?: Record<string, unknown>
+    }
+  | {
+      type: 'tool_use_update'
+      tool_call_id?: string
+      tool_status?: string
+      tool_content?: string
+    }
+  | { type: 'config_options_update'; configOptions: unknown[] }
+  | { type: 'config_option_update'; configOptions: unknown[] }
+  | {
+      type: 'commands_update'
+      commands: Array<{ name: string; description?: string }>
+    }
+  | { type: 'acp_resume_result'; ok?: boolean; replayed?: number; session_id?: string }
 
 export interface WsV2CommandContext {
   exec_id: string
@@ -249,6 +283,14 @@ export interface ContainerStats {
   memory_limit_mb: number
   net_rx_rate: number
   net_tx_rate: number
+}
+
+export interface WsUsageStats {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cache_creation_input_tokens?: number
+  cache_read_input_tokens?: number
 }
 
 export type WsStatus = 'connected' | 'reconnecting' | 'disconnected'

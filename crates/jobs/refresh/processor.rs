@@ -7,7 +7,7 @@ use super::{
 use crate::crates::core::config::Config;
 use crate::crates::core::content::to_markdown;
 use crate::crates::core::http::{http_client, validate_url};
-use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_warn};
 use crate::crates::jobs::common::{mark_job_completed, mark_job_failed, spawn_heartbeat_task};
 use crate::crates::jobs::status::JobStatus;
 use reqwest::StatusCode;
@@ -132,17 +132,25 @@ async fn setup_refresh_job_context(
         Ok(Some(v)) => match serde_json::from_value(v) {
             Ok(c) => c,
             Err(e) => {
-                let _ =
-                    mark_job_failed(pool, TABLE, id, &format!("invalid config_json: {e}")).await;
+                if let Err(e2) =
+                    mark_job_failed(pool, TABLE, id, &format!("invalid config_json: {e}")).await
+                {
+                    log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+                }
                 return None;
             }
         },
         Ok(None) => {
-            let _ = mark_job_failed(pool, TABLE, id, "job not found in DB").await;
+            if let Err(e) = mark_job_failed(pool, TABLE, id, "job not found in DB").await {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e}"));
+            }
             return None;
         }
         Err(e) => {
-            let _ = mark_job_failed(pool, TABLE, id, &format!("DB read error: {e}")).await;
+            if let Err(e2) = mark_job_failed(pool, TABLE, id, &format!("DB read error: {e}")).await
+            {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+            }
             return None;
         }
     };
@@ -154,20 +162,27 @@ async fn setup_refresh_job_context(
         .join(id.to_string());
 
     if let Err(e) = validate_output_dir(&run_dir, output_base).await {
-        let _ = mark_job_failed(pool, TABLE, id, &format!("output_dir rejected: {e}")).await;
+        if let Err(e2) =
+            mark_job_failed(pool, TABLE, id, &format!("output_dir rejected: {e}")).await
+        {
+            log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+        }
         return None;
     }
 
     let markdown_dir = run_dir.join("markdown");
 
     if let Err(err) = tokio::fs::create_dir_all(&markdown_dir).await {
-        let _ = mark_job_failed(
+        if let Err(e2) = mark_job_failed(
             pool,
             TABLE,
             id,
             &format!("create refresh output dir failed: {err}"),
         )
-        .await;
+        .await
+        {
+            log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+        }
         return None;
     }
 
@@ -175,13 +190,16 @@ async fn setup_refresh_job_context(
     let manifest_file = match tokio::fs::File::create(&manifest_path).await {
         Ok(file) => file,
         Err(err) => {
-            let _ = mark_job_failed(
+            if let Err(e2) = mark_job_failed(
                 pool,
                 TABLE,
                 id,
                 &format!("create refresh manifest failed: {err}"),
             )
-            .await;
+            .await
+            {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+            }
             return None;
         }
     };
@@ -211,7 +229,7 @@ async fn finalize_refresh_job(
     heartbeat_stop_tx: tokio::sync::watch::Sender<bool>,
     heartbeat_task: tokio::task::JoinHandle<()>,
 ) {
-    let _ = heartbeat_stop_tx.send(true);
+    let _ = heartbeat_stop_tx.send(true); // receiver dropped; worker already exiting
     if let Err(err) = heartbeat_task.await {
         log_warn(&format!(
             "command=refresh_worker heartbeat_task_panicked job_id={id} err={err:?}"
@@ -237,10 +255,15 @@ async fn finalize_refresh_job(
                 "command=refresh_worker completion_update_skipped job_id={id} reason=not_running_state"
             ));
         }
-        Ok(true) => {}
+        Ok(true) => {
+            log_done(&format!("refresh complete job_id={id}"));
+        }
         Err(err) => {
-            let _ =
-                mark_job_failed(pool, TABLE, id, &format!("mark completed failed: {err}")).await;
+            if let Err(e2) =
+                mark_job_failed(pool, TABLE, id, &format!("mark completed failed: {err}")).await
+            {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+            }
         }
     }
 }
@@ -296,10 +319,15 @@ pub(crate) async fn process_refresh_job(cfg: Config, pool: PgPool, id: Uuid) {
     let client = match http_client() {
         Ok(c) => c,
         Err(err) => {
-            let _ = heartbeat_stop_tx.send(true);
-            let _ = heartbeat_task.await;
-            let _ =
-                mark_job_failed(&pool, TABLE, id, &format!("http client unavailable: {err}")).await;
+            let _ = heartbeat_stop_tx.send(true); // receiver dropped; worker already exiting
+            if let Err(e) = heartbeat_task.await {
+                log_warn(&format!("heartbeat task panicked job_id={id} error={e:?}"));
+            }
+            if let Err(e2) =
+                mark_job_failed(&pool, TABLE, id, &format!("http client unavailable: {err}")).await
+            {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+            }
             return;
         }
     };
@@ -307,15 +335,20 @@ pub(crate) async fn process_refresh_job(cfg: Config, pool: PgPool, id: Uuid) {
     let states = match load_target_states(&pool, &job_cfg.urls).await {
         Ok(s) => s,
         Err(err) => {
-            let _ = heartbeat_stop_tx.send(true);
-            let _ = heartbeat_task.await;
-            let _ = mark_job_failed(
+            let _ = heartbeat_stop_tx.send(true); // receiver dropped; worker already exiting
+            if let Err(e) = heartbeat_task.await {
+                log_warn(&format!("heartbeat task panicked job_id={id} error={e:?}"));
+            }
+            if let Err(e2) = mark_job_failed(
                 &pool,
                 TABLE,
                 id,
                 &format!("load refresh target state failed: {err}"),
             )
-            .await;
+            .await
+            {
+                log_warn(&format!("mark_job_failed failed job_id={id} error={e2}"));
+            }
             return;
         }
     };
@@ -358,7 +391,9 @@ pub(crate) async fn process_refresh_job(cfg: Config, pool: PgPool, id: Uuid) {
         .await;
     }
 
-    let _ = manifest.flush().await;
+    if let Err(e) = manifest.flush().await {
+        log_warn(&format!("manifest flush failed job_id={id} error={e}"));
+    }
 
     let manifest_path = run_dir.join("manifest.jsonl");
     finalize_refresh_job(

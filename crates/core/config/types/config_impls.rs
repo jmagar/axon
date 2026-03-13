@@ -1,7 +1,7 @@
 use super::config::Config;
 use super::enums::{
-    CommandKind, EvaluateResponsesMode, PerformanceProfile, RedditSort, RedditTime, RenderMode,
-    ScrapeFormat,
+    CommandKind, EvaluateResponsesMode, McpTransport, PerformanceProfile, RedditSort, RedditTime,
+    RenderMode, ScrapeFormat,
 };
 use std::fmt;
 use std::path::PathBuf;
@@ -68,7 +68,7 @@ impl Default for Config {
             sessions_gemini: false,
             sessions_project: None,
             github_token: None,
-            github_include_source: false,
+            github_include_source: true,
             reddit_client_id: None,
             reddit_client_secret: None,
             reddit_sort: RedditSort::Hot,
@@ -85,7 +85,21 @@ impl Default for Config {
             acp_adapter_cmd: None,
             acp_adapter_args: None,
             tavily_api_key: String::new(),
+            neo4j_url: String::new(),
+            neo4j_user: "neo4j".to_string(),
+            neo4j_password: String::new(),
+            graph_queue: "axon.graph.jobs".to_string(),
+            graph_concurrency: 4,
+            graph_llm_url: "http://localhost:11434".to_string(),
+            graph_llm_model: "qwen3.5:2b".to_string(),
+            graph_similarity_threshold: 0.75,
+            graph_similarity_limit: 20,
+            graph_context_max_chars: 2_000,
+            graph_taxonomy_path: String::new(),
+            web_allowed_origins: vec![],
+            shell_allowed_origins: vec![],
             ask_diagnostics: false,
+            ask_graph: false,
             evaluate_responses_mode: EvaluateResponsesMode::Inline,
             ask_max_context_chars: 120_000,
             ask_candidate_limit: 64,
@@ -127,6 +141,9 @@ impl Default for Config {
             viewport_width: 1920,
             viewport_height: 1080,
             serve_port: 49000,
+            mcp_transport: McpTransport::Http,
+            mcp_http_host: "0.0.0.0".to_string(),
+            mcp_http_port: 8001,
             custom_headers: vec![],
         }
     }
@@ -232,7 +249,24 @@ impl fmt::Debug for Config {
             .field("acp_adapter_cmd", &self.acp_adapter_cmd)
             .field("acp_adapter_args", &self.acp_adapter_args)
             .field("tavily_api_key", &"[REDACTED]")
+            .field("neo4j_url", &"[REDACTED]")
+            .field("neo4j_user", &self.neo4j_user)
+            .field("neo4j_password", &"[REDACTED]")
+            .field("graph_queue", &self.graph_queue)
+            .field("graph_concurrency", &self.graph_concurrency)
+            .field("graph_llm_url", &self.graph_llm_url)
+            .field("graph_llm_model", &self.graph_llm_model)
+            .field(
+                "graph_similarity_threshold",
+                &self.graph_similarity_threshold,
+            )
+            .field("graph_similarity_limit", &self.graph_similarity_limit)
+            .field("graph_context_max_chars", &self.graph_context_max_chars)
+            .field("graph_taxonomy_path", &self.graph_taxonomy_path)
+            .field("web_allowed_origins", &self.web_allowed_origins)
+            .field("shell_allowed_origins", &self.shell_allowed_origins)
             .field("ask_diagnostics", &self.ask_diagnostics)
+            .field("ask_graph", &self.ask_graph)
             .field("evaluate_responses_mode", &self.evaluate_responses_mode)
             .field("ask_max_context_chars", &self.ask_max_context_chars)
             .field("ask_candidate_limit", &self.ask_candidate_limit)
@@ -292,6 +326,9 @@ impl fmt::Debug for Config {
             .field("viewport_width", &self.viewport_width)
             .field("viewport_height", &self.viewport_height)
             .field("serve_port", &self.serve_port)
+            .field("mcp_transport", &self.mcp_transport)
+            .field("mcp_http_host", &self.mcp_http_host)
+            .field("mcp_http_port", &self.mcp_http_port)
             .field(
                 "custom_headers",
                 &self

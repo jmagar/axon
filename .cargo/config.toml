@@ -1,0 +1,15 @@
+[build]
+# Keep peak memory sane on large Rust builds. The cargo wrapper also exports
+# CARGO_BUILD_JOBS=4 when unset, but this gives the repo an explicit baseline.
+jobs = 4
+
+[profile.dev]
+# Reduce debug-info memory and disk pressure while keeping backtraces useful.
+debug = 1
+# Favor compile-time and lower memory use for day-to-day development.
+codegen-units = 8
+
+[profile.test]
+# Test builds are often the heaviest local workload; keep them closer to dev.
+debug = 1
+codegen-units = 8

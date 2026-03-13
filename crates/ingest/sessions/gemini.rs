@@ -1,7 +1,9 @@
-use super::{IngestResult, SessionStateTracker, matches_project_filter, resolve_collection};
+use super::{
+    IngestResult, SessionStateTracker, embed_session_text, matches_project_filter,
+    resolve_collection,
+};
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use indicatif::MultiProgress;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -221,27 +223,30 @@ async fn process_gemini_file(
         }
     }
 
-    if session_text.trim().is_empty() {
-        return Ok(0);
-    }
-
     let url = format!("file://{}", path.display());
     let title = path.file_name().and_then(|n| n.to_str());
 
     let mut attempt = 0;
     loop {
-        let res =
-            embed_text_with_metadata(&session_cfg, &session_text, &url, "gemini_session", title)
-                .await
-                .map_err(|e| format!("{e:#}"));
-        let err_msg = match res {
+        let res = embed_session_text(
+            &session_cfg,
+            session_text.clone(),
+            url.clone(),
+            "gemini_session",
+            title,
+        )
+        .await;
+        let err_msg = match res.map_err(|e| format!("{e:#}")) {
             Ok(n) => return Ok(n),
             Err(msg) => msg,
         };
         if attempt < 3 {
             attempt += 1;
-            tokio::time::sleep(Duration::from_millis(attempt * 500)).await;
-            log_warn(&format!("retry {} for {}: {}", attempt, url, err_msg));
+            let backoff_ms = attempt * 500;
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            log_warn(&format!(
+                "retry attempt={attempt}/max=3 backoff_ms={backoff_ms} url={url} error={err_msg}"
+            ));
         } else {
             return Err(anyhow::anyhow!(err_msg));
         }

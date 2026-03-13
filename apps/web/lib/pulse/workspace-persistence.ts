@@ -11,6 +11,7 @@ import type {
   PulseModel,
   PulsePermissionLevel,
   PulseToolUse,
+  RightPanelId,
 } from '@/lib/pulse/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ export type PersistedPulseWorkspaceState = {
   lastResponseLatencyMs: number | null
   lastResponseModel: PulseModel | null
   showChat: boolean
-  showEditor: boolean
+  rightPanel: RightPanelId | null
   savedAt: number
 }
 
@@ -83,18 +84,25 @@ export function parsePersistedWorkspaceState(
       parsed.permissionLevel === 'bypass-permissions'
         ? parsed.permissionLevel
         : 'bypass-permissions'
-    // Migration: if old desktopViewMode is present, derive showChat/showEditor from it.
+    // Migration: if old desktopViewMode is present, derive showChat from it.
     // New fields take priority.
     let showChat =
       typeof parsed.showChat === 'boolean'
         ? parsed.showChat
         : (parsed as Record<string, unknown>).desktopViewMode !== 'editor' // old: 'chat' or 'both' → showChat true
-    const showEditor =
-      typeof parsed.showEditor === 'boolean'
-        ? parsed.showEditor
-        : (parsed as Record<string, unknown>).desktopViewMode !== 'chat' // old: 'editor' or 'both' → showEditor true
-    // Safety: never allow both panels to be collapsed on restore (stale blob guard)
-    if (!showChat && !showEditor) showChat = true
+    // Migration: derive rightPanel from old showEditor / desktopViewMode fields if rightPanel is absent
+    const VALID_RIGHT_PANELS: string[] = ['editor', 'terminal', 'logs', 'mcp', 'settings']
+    const rightPanel: RightPanelId | null =
+      parsed.rightPanel !== undefined && parsed.rightPanel !== null
+        ? VALID_RIGHT_PANELS.includes(parsed.rightPanel as string)
+          ? (parsed.rightPanel as RightPanelId)
+          : null
+        : (parsed as Record<string, unknown>).showEditor === true ||
+            (parsed as Record<string, unknown>).desktopViewMode === 'editor'
+          ? 'editor'
+          : null
+    // Safety: if chat is collapsed and no panel open, keep chat visible (it will show on next load)
+    if (!showChat && rightPanel === null) showChat = true
     return {
       permissionLevel,
       agent,
@@ -118,7 +126,7 @@ export function parsePersistedWorkspaceState(
           ? parsed.lastResponseModel
           : null,
       showChat,
-      showEditor,
+      rightPanel,
       savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
     }
   } catch {

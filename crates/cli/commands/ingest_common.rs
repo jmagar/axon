@@ -6,11 +6,9 @@ use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_done;
 use crate::crates::core::ui::confirm_destructive;
 use crate::crates::core::ui::{accent, muted, primary, status_text, symbol_for_status};
-use crate::crates::jobs::ingest::{
-    IngestJob, IngestSource, cancel_ingest_job, cleanup_ingest_jobs, clear_ingest_jobs,
-    get_ingest_job, list_ingest_jobs, recover_stale_ingest_jobs, run_ingest_worker,
-    start_ingest_job,
-};
+use crate::crates::jobs::ingest as ingest_jobs;
+use crate::crates::jobs::ingest::IngestJob;
+use crate::crates::services::ingest::{self as ingest_service, IngestSource};
 use std::error::Error;
 use uuid::Uuid;
 
@@ -34,30 +32,30 @@ pub async fn maybe_handle_ingest_subcommand(
     match subcmd {
         "status" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "status")?;
-            let job = get_ingest_job(cfg, id).await?;
+            let job = ingest_jobs::get_ingest_job(cfg, id).await?;
             handle_ingest_status(cfg, job, id).await?;
         }
         "cancel" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "cancel")?;
-            let canceled = cancel_ingest_job(cfg, id).await?;
+            let canceled = ingest_jobs::cancel_ingest_job(cfg, id).await?;
             handle_job_cancel(cfg, id, canceled, "ingest")?;
         }
         "errors" => {
             let id = parse_ingest_job_id(cfg, cmd_name, "errors")?;
-            let job = get_ingest_job(cfg, id).await?;
+            let job = ingest_jobs::get_ingest_job(cfg, id).await?;
             handle_job_errors(cfg, job, id, "ingest")?;
         }
         "list" => {
-            let jobs = list_ingest_jobs(cfg, 50, 0).await?;
+            let jobs = ingest_jobs::list_ingest_jobs(cfg, 50, 0).await?;
             handle_ingest_list(cfg, jobs).await?;
         }
         "cleanup" => {
-            let removed = cleanup_ingest_jobs(cfg).await?;
+            let removed = ingest_jobs::cleanup_ingest_jobs(cfg).await?;
             handle_job_cleanup(cfg, removed, "ingest")?;
         }
         "clear" => {
             if confirm_destructive(cfg, "Clear all ingest jobs and purge ingest queue?")? {
-                let removed = clear_ingest_jobs(cfg).await?;
+                let removed = ingest_jobs::clear_ingest_jobs(cfg).await?;
                 handle_job_clear(cfg, removed, "ingest")?;
             } else if cfg.json_output {
                 println!(
@@ -68,9 +66,9 @@ pub async fn maybe_handle_ingest_subcommand(
                 println!("{} aborted", symbol_for_status("canceled"));
             }
         }
-        "worker" => run_ingest_worker(cfg).await?,
+        "worker" => ingest_jobs::run_ingest_worker(cfg).await?,
         "recover" => {
-            let reclaimed = recover_stale_ingest_jobs(cfg).await?;
+            let reclaimed = ingest_jobs::recover_stale_ingest_jobs(cfg).await?;
             handle_job_recover(cfg, reclaimed, "ingest")?;
         }
         _ => return Ok(false),
@@ -89,6 +87,54 @@ pub fn parse_ingest_job_id(
         .get(1)
         .ok_or_else(|| format!("{cmd_name} {action} requires <job-id>"))?;
     Ok(Uuid::parse_str(id)?)
+}
+
+/// Extract a progress string from an ingest job's `result_json`.
+///
+/// Handles YouTube playlists (`videos_done/videos_total`) and GitHub repos
+/// (`files_done/files_total`). Returns `None` for single-video YouTube,
+/// Reddit, or jobs that haven't started producing progress yet.
+fn ingest_progress(result_json: &Option<serde_json::Value>) -> Option<String> {
+    let r = result_json.as_ref()?;
+    let chunks = r
+        .get("chunks_embedded")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    // YouTube playlist progress
+    if let (Some(done), Some(total)) = (
+        r.get("videos_done").and_then(|v| v.as_u64()),
+        r.get("videos_total").and_then(|v| v.as_u64()),
+    ) {
+        return Some(format!("{done} / {total} videos, {chunks} chunks embedded"));
+    }
+
+    // GitHub file-level progress
+    if let (Some(done), Some(total)) = (
+        r.get("files_done").and_then(|v| v.as_u64()),
+        r.get("files_total").and_then(|v| v.as_u64()),
+    ) {
+        return Some(format!("{done} / {total} files, {chunks} chunks embedded"));
+    }
+
+    // GitHub task-level progress (before file-level kicks in)
+    if let (Some(done), Some(total)) = (
+        r.get("tasks_done").and_then(|v| v.as_u64()),
+        r.get("tasks_total").and_then(|v| v.as_u64()),
+    ) {
+        if chunks > 0 {
+            return Some(format!("{done} / {total} tasks, {chunks} chunks embedded"));
+        }
+        let phase = r.get("phase").and_then(|v| v.as_str()).unwrap_or("working");
+        return Some(format!("{phase} ({done} / {total} tasks)"));
+    }
+
+    // Generic chunks-only (e.g. single YouTube video)
+    if chunks > 0 {
+        return Some(format!("{chunks} chunks embedded"));
+    }
+
+    None
 }
 
 async fn handle_ingest_status(
@@ -119,6 +165,9 @@ async fn handle_ingest_status(
             );
             println!("  {} {}", muted("Created:"), job.created_at);
             println!("  {} {}", muted("Updated:"), job.updated_at);
+            if let Some(progress) = ingest_progress(&job.result_json) {
+                println!("  {} {}", muted("Progress:"), progress);
+            }
             if let Some(err) = job.error_text.as_deref() {
                 println!("  {} {}", muted("Error:"), err);
             }
@@ -138,11 +187,13 @@ async fn handle_ingest_list(cfg: &Config, jobs: Vec<IngestJob>) -> Result<(), Bo
             println!("  {}", muted("No ingest jobs found."));
         } else {
             for job in jobs {
+                let progress = ingest_progress(&job.result_json)
+                    .map(|p| format!(" [{p}]"))
+                    .unwrap_or_default();
                 println!(
-                    "  {} {} {} {}/{}",
+                    "  {} {} {}/{}{progress}",
                     symbol_for_status(&job.status),
                     accent(&job.id().to_string()),
-                    status_text(&job.status),
                     job.source_type,
                     job.target
                 );
@@ -153,7 +204,8 @@ async fn handle_ingest_list(cfg: &Config, jobs: Vec<IngestJob>) -> Result<(), Bo
 }
 
 pub async fn enqueue_ingest_job(cfg: &Config, source: IngestSource) -> Result<(), Box<dyn Error>> {
-    let job_id = start_ingest_job(cfg, source).await?;
+    let result = ingest_service::ingest_start(cfg, source).await?;
+    let job_id = result.job_id;
     if cfg.json_output {
         println!(
             "{}",
@@ -186,4 +238,45 @@ pub fn print_ingest_sync_result(cfg: &Config, cmd_name: &str, chunks: usize, tar
             muted(target)
         );
     }
+}
+
+/// Run an ingest job synchronously (blocking until complete).
+///
+/// Dispatches to the appropriate service function based on the `IngestSource` variant
+/// and prints a completion summary. Called by `run_ingest` when `--wait true` is set.
+pub async fn run_ingest_sync(cfg: &Config, source: IngestSource) -> Result<(), Box<dyn Error>> {
+    let (chunks, source_label, target_label) = match &source {
+        IngestSource::Youtube { target } => {
+            let result = ingest_service::ingest_youtube(cfg, target, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "youtube", target.clone())
+        }
+        IngestSource::Github { repo, .. } => {
+            let (owner, repo_name) = repo
+                .split_once('/')
+                .ok_or_else(|| format!("ingest: GitHub repo must be 'owner/repo', got '{repo}'"))?;
+            let result = ingest_service::ingest_github(cfg, owner, repo_name, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "github", repo.clone())
+        }
+        IngestSource::Reddit { target } => {
+            let result = ingest_service::ingest_reddit(cfg, target, None).await?;
+            let n = result.payload["chunks"]
+                .as_u64()
+                .ok_or("ingest: service payload missing 'chunks' field")?
+                as usize;
+            (n, "reddit", target.clone())
+        }
+        IngestSource::Sessions { .. } => {
+            return Err("sessions ingest is handled by the sessions command, not ingest".into());
+        }
+    };
+    print_ingest_sync_result(cfg, source_label, chunks, &target_label);
+    Ok(())
 }

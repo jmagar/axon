@@ -28,15 +28,6 @@ export interface PromptConfig {
   permissionLevel: PulsePermissionLevel
   agent: PulseAgent
   model: PulseModel
-  effort?: string
-  maxTurns?: number
-  maxBudgetUsd?: number
-  appendSystemPrompt?: string
-  disableSlashCommands?: boolean
-  noSessionPersistence?: boolean
-  fallbackModel?: string
-  allowedTools?: string
-  disallowedTools?: string
 }
 
 /** Mutable accumulator shared across streaming event handlers for a single prompt. */
@@ -68,16 +59,24 @@ export async function handleSourceIntent(
   const result = await runSourcePrompt(urls, signal)
   if (inFlightRef.current !== promptId) return
   setIndexedSources((prev) => {
+    const seen = new Set(prev)
     const next = [...prev]
     for (const url of result.indexed) {
-      if (!next.includes(url)) next.push(url)
+      if (!seen.has(url)) {
+        seen.add(url)
+        next.push(url)
+      }
     }
     return next.slice(-200)
   })
   setActiveThreadSources((prev) => {
+    const seen = new Set(prev)
     const merged = [...prev]
     for (const url of result.indexed) {
-      if (!merged.includes(url)) merged.push(url)
+      if (!seen.has(url)) {
+        seen.add(url)
+        merged.push(url)
+      }
     }
     return merged.slice(-200)
   })
@@ -199,12 +198,22 @@ export function makeStreamEventHandler(
       // Flush any pending text delta before adding tool use
       flush()
       ensureDraftAdded()
-      acc.partialTools.push({ ...event.tool })
+      const now = Date.now()
+      acc.partialTools.push({
+        ...event.tool,
+        sequence: (acc.partialTools.at(-1)?.sequence ?? 0) + 1,
+        startedAtMs: event.tool.startedAtMs ?? now,
+        updatedAtMs: now,
+      })
       acc.partialBlocks.push({
         type: 'tool_use',
         name: event.tool.name,
         input: event.tool.input,
         toolCallId: event.tool.toolCallId,
+        status: event.tool.status ?? 'running',
+        sequence: acc.partialTools.at(-1)?.sequence,
+        startedAtMs: event.tool.startedAtMs ?? now,
+        updatedAtMs: now,
       })
       setLiveToolUses([...acc.partialTools])
       updateChatMessage(assistantDraft.id!, (m) => ({
@@ -217,26 +226,43 @@ export function makeStreamEventHandler(
 
     if (event.type === 'tool_use_update' && event.toolCallId) {
       ensureDraftAdded()
+      const now = Date.now()
       const blockIdx = acc.partialBlocks.findLastIndex(
         (b) => b.type === 'tool_use' && 'toolCallId' in b && b.toolCallId === event.toolCallId,
       )
       if (blockIdx >= 0) {
-        const block = acc.partialBlocks[blockIdx]
+        // blockIdx is a valid index — findLastIndex only returns >= 0 for real matches
+        const block = acc.partialBlocks[blockIdx]!
         if (block.type === 'tool_use') {
           acc.partialBlocks[blockIdx] = {
             ...block,
             status: event.status ?? block.status,
             content: event.content ? (block.content ?? '') + event.content : block.content,
+            updatedAtMs: now,
+            ...(event.status === 'completed' || event.status === 'success'
+              ? {
+                  completedAtMs: now,
+                  durationMs: block.startedAtMs ? Math.max(0, now - block.startedAtMs) : undefined,
+                }
+              : {}),
           }
         }
       }
       const toolIdx = acc.partialTools.findLastIndex((t) => t.toolCallId === event.toolCallId)
       if (toolIdx >= 0) {
-        const tool = acc.partialTools[toolIdx]
+        // toolIdx is a valid index — findLastIndex only returns >= 0 for real matches
+        const tool = acc.partialTools[toolIdx]!
         acc.partialTools[toolIdx] = {
           ...tool,
           status: event.status ?? tool.status,
           content: event.content ? (tool.content ?? '') + event.content : tool.content,
+          updatedAtMs: now,
+          ...(event.status === 'completed' || event.status === 'success'
+            ? {
+                completedAtMs: now,
+                durationMs: tool.startedAtMs ? Math.max(0, now - tool.startedAtMs) : undefined,
+              }
+            : {}),
         }
       }
       setLiveToolUses([...acc.partialTools])

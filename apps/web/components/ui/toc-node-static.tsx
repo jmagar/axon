@@ -72,14 +72,14 @@ const getHeadingList = (editor?: SlateEditor) => {
 
   const headingList: Heading[] = []
 
-  const values = editor.api.nodes<TElement>({
+  const values = editor.api.nodes({
     at: [],
-    match: (n) => isHeading(n),
+    match: (n: any) => isHeading(n),
   })
 
   if (!values) return []
 
-  Array.from(values).forEach(([node, path]) => {
+  ;(Array.from(values) as [any, any][]).forEach(([node, path]) => {
     const { type } = node
     const title = NodeApi.string(node)
     const depth = headingDepth[type] ?? 1

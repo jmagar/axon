@@ -1,5 +1,7 @@
 use super::super::cli::{Cli, CliCommand, RefreshScheduleSubcommand, RefreshSubcommand};
-use super::super::types::{CommandKind, Config, EvaluateResponsesMode, RedditSort, RedditTime};
+use super::super::types::{
+    CommandKind, Config, EvaluateResponsesMode, McpTransport, RedditSort, RedditTime,
+};
 use super::docker::normalize_local_service_url;
 use super::excludes;
 use super::helpers::{
@@ -7,7 +9,16 @@ use super::helpers::{
     positional_from_watch_subcommand,
 };
 use super::performance;
+use clap::ValueEnum;
 use std::env;
+
+fn parse_origin_allowlist(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
 
 pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let global = cli.global;
@@ -16,7 +27,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
 
     let mut ask_diagnostics = false;
     let mut evaluate_responses_mode = EvaluateResponsesMode::Inline;
-    let mut github_include_source = false;
+    let mut github_include_source = true;
     let mut reddit_sort = RedditSort::Hot;
     let mut reddit_time = RedditTime::Day;
     let mut reddit_max_posts = 25usize;
@@ -28,6 +39,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let mut sessions_gemini = false;
     let mut sessions_project = None;
     let mut serve_port = 49000u16;
+    let mut mcp_transport = None;
     let (command, positional) = match cli.command {
         CliCommand::Scrape(args) => (CommandKind::Scrape, args.positional_urls),
         CliCommand::Crawl(args) => (
@@ -126,26 +138,11 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
         CliCommand::Stats => (CommandKind::Stats, Vec::new()),
         CliCommand::Status => (CommandKind::Status, Vec::new()),
         CliCommand::Dedupe => (CommandKind::Dedupe, Vec::new()),
-        CliCommand::Github(args) => {
-            github_include_source = args.include_source;
-            (
-                CommandKind::Github,
-                if let Some(job) = args.job {
-                    positional_from_job(job)
-                } else {
-                    args.repo.into_iter().collect()
-                },
-            )
-        }
-        CliCommand::Ingest(args) => (
-            CommandKind::Ingest,
-            if let Some(job) = args.job {
-                positional_from_job(job)
-            } else {
-                Vec::new()
-            },
-        ),
-        CliCommand::Reddit(args) => {
+        CliCommand::Ingest(args) => {
+            // --no-source overrides the default (true). --include-source is now a no-op.
+            if args.no_source {
+                github_include_source = false;
+            }
             reddit_sort = args.sort;
             reddit_time = args.time;
             reddit_max_posts = args.max_posts;
@@ -153,7 +150,7 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             reddit_depth = args.depth;
             reddit_scrape_links = args.scrape_links;
             (
-                CommandKind::Reddit,
+                CommandKind::Ingest,
                 if let Some(job) = args.job {
                     positional_from_job(job)
                 } else {
@@ -161,14 +158,6 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
                 },
             )
         }
-        CliCommand::Youtube(args) => (
-            CommandKind::Youtube,
-            if let Some(job) = args.job {
-                positional_from_job(job)
-            } else {
-                args.url.into_iter().collect()
-            },
-        ),
         CliCommand::Sessions(args) => {
             sessions_claude = args.claude;
             sessions_codex = args.codex;
@@ -184,12 +173,34 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             )
         }
         CliCommand::Screenshot(args) => (CommandKind::Screenshot, args.positional_urls),
-        CliCommand::Mcp => (CommandKind::Mcp, Vec::new()),
+        CliCommand::Graph(args) => (CommandKind::Graph, args.value),
+        CliCommand::Completions(args) => (
+            CommandKind::Completions,
+            vec![
+                args.shell
+                    .to_possible_value()
+                    .expect("shell value")
+                    .get_name()
+                    .to_string(),
+            ],
+        ),
+        CliCommand::Mcp(args) => {
+            mcp_transport = args.transport;
+            (CommandKind::Mcp, Vec::new())
+        }
         CliCommand::Serve(args) => {
             serve_port = args.port;
             (CommandKind::Serve, Vec::new())
         }
     };
+
+    if matches!(command, CommandKind::Completions) {
+        return Ok(Config {
+            command,
+            positional,
+            ..Config::default()
+        });
+    }
 
     let pg_url = normalize_local_service_url(
         global
@@ -349,7 +360,49 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty()),
         tavily_api_key: env::var("TAVILY_API_KEY").ok().unwrap_or_default(),
+        neo4j_url: env::var("AXON_NEO4J_URL").ok().unwrap_or_default(),
+        neo4j_user: env::var("AXON_NEO4J_USER")
+            .ok()
+            .unwrap_or_else(|| "neo4j".to_string()),
+        neo4j_password: env::var("AXON_NEO4J_PASSWORD").ok().unwrap_or_default(),
+        graph_queue: env::var("AXON_GRAPH_QUEUE")
+            .ok()
+            .unwrap_or_else(|| "axon.graph.jobs".to_string()),
+        graph_concurrency: env::var("AXON_GRAPH_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4),
+        graph_llm_url: env::var("AXON_GRAPH_LLM_URL")
+            .ok()
+            .unwrap_or_else(|| "http://localhost:11434".to_string()),
+        graph_llm_model: env::var("AXON_GRAPH_LLM_MODEL")
+            .ok()
+            .unwrap_or_else(|| "qwen3.5:2b".to_string()),
+        graph_similarity_threshold: env::var("AXON_GRAPH_SIMILARITY_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.75),
+        graph_similarity_limit: env::var("AXON_GRAPH_SIMILARITY_LIMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20),
+        graph_context_max_chars: env::var("AXON_GRAPH_CONTEXT_MAX_CHARS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2_000),
+        graph_taxonomy_path: env::var("AXON_GRAPH_TAXONOMY_PATH")
+            .ok()
+            .unwrap_or_default(),
+        web_allowed_origins: env::var("AXON_WEB_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| parse_origin_allowlist(&raw))
+            .unwrap_or_default(),
+        shell_allowed_origins: env::var("AXON_SHELL_ALLOWED_ORIGINS")
+            .ok()
+            .map(|raw| parse_origin_allowlist(&raw))
+            .unwrap_or_default(),
         ask_diagnostics,
+        ask_graph: global.graph,
         evaluate_responses_mode,
         ask_max_context_chars: performance::env_usize_clamped(
             "AXON_ASK_MAX_CONTEXT_CHARS",
@@ -447,6 +500,14 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             h
         },
         serve_port,
+        mcp_transport: resolve_mcp_transport(mcp_transport, env::var("AXON_MCP_TRANSPORT").ok())?,
+        mcp_http_host: env::var("AXON_MCP_HTTP_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+        mcp_http_port: env::var("AXON_MCP_HTTP_PORT")
+            .ok()
+            .as_deref()
+            .map(parse_mcp_http_port)
+            .transpose()?
+            .unwrap_or(8001),
         custom_headers: global.custom_headers,
     };
 
@@ -486,4 +547,87 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     }
 
     Ok(cfg)
+}
+
+fn resolve_mcp_transport(
+    cli_transport: Option<McpTransport>,
+    env_transport: Option<String>,
+) -> Result<McpTransport, String> {
+    if let Some(transport) = cli_transport {
+        return Ok(transport);
+    }
+
+    match env_transport
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
+        None => Ok(McpTransport::Http),
+        Some(raw) => match raw {
+            "stdio" => Ok(McpTransport::Stdio),
+            "http" => Ok(McpTransport::Http),
+            "both" => Ok(McpTransport::Both),
+            _ => Err(format!(
+                "invalid AXON_MCP_TRANSPORT '{raw}' (expected stdio, http, or both)"
+            )),
+        },
+    }
+}
+
+fn parse_mcp_http_port(raw: &str) -> Result<u16, String> {
+    raw.parse::<u16>()
+        .map_err(|e| format!("invalid AXON_MCP_HTTP_PORT '{raw}': {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::core::config::cli::Cli;
+    use clap::Parser;
+    use std::env;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn into_config_parses_web_origin_allowlists_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const WEB: &str = "AXON_WEB_ALLOWED_ORIGINS";
+        const SHELL: &str = "AXON_SHELL_ALLOWED_ORIGINS";
+
+        unsafe {
+            env::set_var(WEB, " https://axon.example.com , http://localhost:49010 ");
+            env::set_var(SHELL, " http://localhost:49011 ");
+        }
+
+        let cli = Cli::parse_from([
+            "axon",
+            "--pg-url",
+            "postgresql://axon:postgres@127.0.0.1:53432/axon",
+            "--redis-url",
+            "redis://127.0.0.1:53379",
+            "--amqp-url",
+            "amqp://axon:axonrabbit@127.0.0.1:45535/%2f",
+            "status",
+        ]);
+        let cfg = into_config(cli).expect("status config should parse");
+
+        assert_eq!(
+            cfg.web_allowed_origins,
+            vec![
+                "https://axon.example.com".to_string(),
+                "http://localhost:49010".to_string(),
+            ]
+        );
+        assert_eq!(
+            cfg.shell_allowed_origins,
+            vec!["http://localhost:49011".to_string()]
+        );
+
+        unsafe {
+            env::remove_var(WEB);
+            env::remove_var(SHELL);
+        }
+    }
 }

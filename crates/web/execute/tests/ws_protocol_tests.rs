@@ -327,24 +327,11 @@ fn build_args_strips_leading_dashes_from_url_input() {
 fn build_args_skips_wait_flag_for_async_modes() {
     // Direct async modes (fire-and-forget) suppress --wait since they enqueue and return.
     let flags = json!({"wait": true});
-    for async_mode in &["crawl", "extract", "embed"] {
+    for async_mode in &["crawl", "extract", "embed", "github", "reddit", "youtube"] {
         let args = super::build_args(async_mode, "test", &flags);
         assert!(
             !args.contains(&"--wait".to_string()),
             "async mode '{async_mode}' must suppress '--wait'"
-        );
-    }
-}
-
-#[test]
-fn build_args_allows_wait_flag_for_subprocess_async_modes() {
-    // github/reddit/youtube use subprocess fallback — --wait is passed through.
-    let flags = json!({"wait": true});
-    for mode in &["github", "reddit", "youtube"] {
-        let args = super::build_args(mode, "test", &flags);
-        assert!(
-            args.contains(&"--wait".to_string()),
-            "subprocess async mode '{mode}' must allow '--wait'"
         );
     }
 }
@@ -414,6 +401,12 @@ fn direct_sync_modes_contains_core_service_modes() {
         "doctor",
         "status",
         "pulse_chat",
+        "suggest",
+        "evaluate",
+        "dedupe",
+        "screenshot",
+        "debug",
+        "sessions",
     ] {
         assert!(
             direct.contains(expected),
@@ -423,27 +416,17 @@ fn direct_sync_modes_contains_core_service_modes() {
 }
 
 #[test]
-fn fallback_subprocess_modes_not_in_direct_sync_or_async() {
-    // These modes are not yet wired to direct service dispatch and are expected
-    // to fall through to the subprocess path.  Verify their classification.
-    let fallback_modes = &[
-        "suggest",
-        "screenshot",
-        "evaluate",
-        "sessions",
-        "dedupe",
-        "debug",
-    ];
+fn no_sync_service_modes_remain_on_subprocess_fallback() {
     let direct = super::direct_sync_modes();
     let async_m = super::async_modes();
-    for mode in fallback_modes {
+    for mode in &["sessions", "debug"] {
         assert!(
-            !direct.contains(mode),
-            "fallback mode '{mode}' must NOT be in direct_sync_modes yet"
+            direct.contains(mode),
+            "mode '{mode}' should now dispatch directly through services"
         );
         assert!(
             !async_m.contains(mode),
-            "fallback mode '{mode}' must NOT be in async_modes"
+            "mode '{mode}' must not be reclassified as async"
         );
     }
 }
@@ -493,4 +476,14 @@ fn strip_ansi_handles_multiple_sequences_on_one_line() {
         stripped, "⠋ Crawling...",
         "multiple escape sequences must all be stripped"
     );
+}
+
+#[test]
+fn async_subprocess_modes_does_not_include_ingest_modes() {
+    for mode in ["github", "reddit", "youtube"] {
+        assert!(
+            !super::constants::ASYNC_SUBPROCESS_MODES.contains(&mode),
+            "ingest mode must not use subprocess fallback: {mode}"
+        );
+    }
 }

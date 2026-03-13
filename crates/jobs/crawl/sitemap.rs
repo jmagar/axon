@@ -1,4 +1,4 @@
-pub(crate) use crate::crates::core::content::{canonicalize_url, is_excluded_url_path};
+pub(crate) use crate::crates::core::content::canonicalize_url;
 
 #[cfg(test)]
 mod tests {

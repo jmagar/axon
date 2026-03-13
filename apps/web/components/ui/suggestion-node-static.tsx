@@ -10,7 +10,7 @@ export function SuggestionLeafStatic(props: SlateLeafProps<TSuggestionText>) {
   const { editor, leaf } = props
 
   const dataList = editor.getApi(BaseSuggestionPlugin).suggestion.dataList(leaf)
-  const hasRemove = dataList.some((data) => data.type === 'remove')
+  const hasRemove = dataList.some((data: any) => data.type === 'remove')
   const diffOperation = { type: hasRemove ? 'delete' : 'insert' } as const
 
   const Component = ({ delete: 'del', insert: 'ins', update: 'span' } as const)[diffOperation.type]
