@@ -57,19 +57,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import json,sys; d=json.loads(sys.stdin.read() or '{}'); p=d.get('tool_input',{}).get('file_path',''); raise SystemExit(0 if p.endswith('Cargo.toml') else 1)\" &&(command -v cargo-audit >/dev/null 2>&1 && cargo audit 2>&1 | tail -20 || echo '[skip] cargo-audit not installed') || true"
-          },
-          {
-            "type": "command",
-            "command": "python3 -c \"import json,sys; d=json.loads(sys.stdin.read() or '{}'); p=d.get('tool_input',{}).get('file_path',''); raise SystemExit(0 if p.endswith('Cargo.toml') else 1)\" &&(command -v cargo-deny >/dev/null 2>&1 && cargo deny check 2>&1 | tail -20 || echo '[skip] cargo-deny not installed') || true"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hook_justfile_lefthook_sync.py\""
           }
         ]
@@ -80,15 +67,6 @@
           {
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hook_deny_audit_sync.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -c \"import json,sys,subprocess,os; d=json.loads(sys.stdin.read() or '{}'); p=d.get('tool_input',{}).get('file_path',''); (subprocess.run(['pnpm','--dir','apps/web','biome','check','--reporter=summary',p], capture_output=False) if p.endswith(('.ts','.tsx')) and os.path.exists(p) else None)\""
           }
         ]
       },

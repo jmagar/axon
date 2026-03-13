@@ -1,11 +1,13 @@
 # Changelog
-Last Modified: 2026-03-12 (session: v0.21.0 — quick-win hardening + release prep)
+Last Modified: 2026-03-13 (session: v0.21.1 — services layer migration + contract tests)
 
 ## [Unreleased] — feat/github-code-aware-chunking
 
 This section documents commits on `feat/github-code-aware-chunking` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Services layer migration complete + contract tests (`ca7831c0` window)** — all CLI commands, MCP handlers, and web sync modes route through `crates::services::*`; dead-code exports (`run_evaluate_native`, `run_suggest_native`) removed; `watch` CLI command migrated to service layer; MCP contract parity tests hardened; map migration and scrape contract tests added.
 
 - **Session lifecycle hardening + tooling cleanup (`b39e83a0`)** — ACP/web/MCP lifecycle behavior and developer tooling were hardened in a single branch-head commit.
 
@@ -131,6 +133,28 @@ This section documents commits on `feat/github-code-aware-chunking` relative to 
 
 | Commit | Type | Message |
 |---|---|---|
+| `ca7831c0` | fix | OAuth __Host- cookie HTTP bug, orphaned pending re-enqueue, youtube helper, evaluate dead code |
+| `a3120774` | chore | remove orphaned run_evaluate_native and run_suggest_native dead code |
+| `f508977f` | feat | add watch service module, migrate watch CLI command through services layer |
+| `c4dcb115` | fix | strengthen MCP contract parity tests from tautological to real assertions |
+| `c9e5c468` | fix | restore artifact path test, fix OAuth redirect URI normalization, fix MCP issuer |
+| `fddf8374` | fix | fix worker lane exit bug, Reddit ingest flags, and inverted routing test |
+| `b0db2244` | fix | restore auto-inline and artifacts param docs in MCP-TOOL-SCHEMA.md |
+| `5c298b29` | fix | fix next.config.ts typos, URL validation, and page.tsx re-export |
+| `01143928` | chore | stabilize branch and make all quality gates green |
+| `4fffcb68` | test | harden crawl fallback and oauth error contracts |
+| `3f8214ae` | chore | finalize service-layer migration task 9 |
+| `afe1ef60` | chore | finalize service layer migration v2 with guards and verifications |
+| `51775607` | refactor | route web async ingest modes through direct services |
+| `57ce5057` | refactor | split refresh schedule and route watch/scheduler through services |
+| `5d1960cf` | refactor | route cli lifecycle and system commands through services |
+| `318eae23` | refactor | complete mcp lifecycle and screenshot rewires to services |
+| `eb2895e9` | refactor | route mcp embed ingest handlers through services layer |
+| `84d0736f` | feat | add service-owned ingest target classification |
+| `5f91f82c` | feat | add service lifecycle wrappers for crawl extract embed ingest refresh |
+| `67808fd5` | test | add migration guardrails for CLI MCP and web ingest routing |
+| `68db1231` | chore | checkpoint current changes |
+| `b6149f31` | feat(web) | refresh shell mission control and provider branding |
 | `b39e83a0` | feat(acp,web,mcp) | harden session lifecycle and developer tooling |
 | `356ea87a` | fix(web) | make session list loading reliable |
 | `80a7e21d` | fix(web) | clear streaming flag on message when result arrives |
