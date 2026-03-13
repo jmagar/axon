@@ -3,10 +3,8 @@
 //! async jobs with fire-and-forget semantics, and streams output over WebSocket.
 //!
 //! # Execution paths
-//! - **Async direct modes** (`crawl`, `extract`, `embed`):
+//! - **Async direct modes** (`crawl`, `extract`, `embed`, `github`, `reddit`, `youtube`):
 //!   `async_mode::handle_async_command` — direct service enqueue, fire-and-forget.
-//! - **Async subprocess modes** (`github`, `reddit`, `youtube`):
-//!   subprocess fallback — ingest service functions are `!Send`, so the binary is spawned.
 //! - **Sync direct modes** (scrape, map, query, retrieve, ask, search, research,
 //!   stats, sources, domains, doctor, status, pulse_chat):
 //!   `sync_mode::handle_sync_direct` — direct service call, awaited inline.
@@ -101,7 +99,7 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
 use uuid::Uuid;
 
-use constants::{ALLOWED_FLAGS, ALLOWED_MODES, ASYNC_MODES, ASYNC_SUBPROCESS_MODES};
+use constants::{ALLOWED_FLAGS, ALLOWED_MODES, ASYNC_MODES};
 use context::ExecCommandContext;
 
 fn resolve_exe() -> Result<std::path::PathBuf, String> {
@@ -215,7 +213,7 @@ pub(super) async fn handle_command(
         }
     }
 
-    // Async direct modes (crawl, extract, embed) — fire-and-forget direct service dispatch:
+    // Async direct modes (crawl, extract, embed, github, reddit, youtube) — fire-and-forget direct service dispatch:
     // enqueue the job and return immediately with the job ID.
     // No subprocess is spawned; no polling loop is run.
     if ASYNC_MODES.contains(&mode.as_str()) {
@@ -296,8 +294,7 @@ async fn acquire_acp_permit(
 
 /// Subprocess fallback for modes not yet wired to direct dispatch.
 ///
-/// Covers github, reddit, youtube (ingest — `!Send` service functions) and
-/// suggest, screenshot, evaluate, sessions, dedupe, debug, refresh.
+/// Covers suggest, screenshot, evaluate, sessions, dedupe, debug, refresh.
 /// TODO: direct dispatch for remaining modes once `!Send` constraints are resolved.
 async fn dispatch_subprocess_fallback(
     context: ExecCommandContext,
@@ -307,7 +304,6 @@ async fn dispatch_subprocess_fallback(
     tx: mpsc::Sender<String>,
     ws_ctx: events::CommandContext,
 ) {
-    let _ = ASYNC_SUBPROCESS_MODES; // used in routing comment above; suppress dead_code lint
     let exe = match resolve_exe() {
         Ok(p) => p,
         Err(e) => {

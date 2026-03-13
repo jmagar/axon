@@ -218,7 +218,7 @@ export const MessageResponse = memo(
     return (
       <Streamdown
         className={cn(
-          'size-full min-w-0 break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-inside [&_ol]:list-decimal [&_ol]:pl-2 [&_ul]:my-1.5 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:pl-2 [&_li]:ml-0 [&_li]:leading-[1.5] [&_li+li]:mt-0.75 [&_ol_ol]:pl-4 [&_ul_ul]:list-[circle] [&_ul_ul]:pl-4',
+          'size-full min-w-0 break-words text-[10px] leading-[1.4] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-1 [&_p]:text-[10px] [&_p]:leading-[1.4] [&_h1]:mt-1.5 [&_h1]:mb-0.5 [&_h1]:text-[12px] [&_h1]:font-semibold [&_h1]:leading-[1.25] [&_h2]:mt-1.5 [&_h2]:mb-0.5 [&_h2]:text-[11px] [&_h2]:font-semibold [&_h2]:leading-[1.25] [&_h3]:mt-1 [&_h3]:mb-0.5 [&_h3]:text-[10px] [&_h3]:font-semibold [&_h3]:leading-[1.25] [&_ol]:my-1 [&_ol]:list-inside [&_ol]:list-decimal [&_ol]:pl-2 [&_ul]:my-1 [&_ul]:list-inside [&_ul]:list-disc [&_ul]:pl-2 [&_li]:ml-0 [&_li]:text-[10px] [&_li]:leading-[1.4] [&_li+li]:mt-0.5 [&_ol_ol]:pl-3 [&_ul_ul]:list-[circle] [&_ul_ul]:pl-3 [&_pre]:my-1 [&_pre]:text-[9px] [&_code]:text-[9px]',
           props.className,
         )}
         {...props}

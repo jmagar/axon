@@ -324,4 +324,18 @@ mod tests {
                 .is_none()
         );
     }
+
+    #[test]
+    fn normalize_map_candidate_url_drops_query_when_requested() {
+        let scope = MapScope {
+            host: "example.github.io".to_string(),
+            path_prefix: Some("/project".to_string()),
+        };
+
+        assert_eq!(
+            normalize_map_candidate_url("https://example.github.io/project/docs/?q=1", &scope, true)
+                .as_deref(),
+            Some("https://example.github.io/project/docs")
+        );
+    }
 }
