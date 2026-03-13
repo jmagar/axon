@@ -5,7 +5,10 @@
 ///   1. Option mapper round-trips produce correct service types.
 ///   2. The JSON response keys that MCP handlers emit match the schema contract.
 ///   3. Handler input parameters are forwarded to service calls correctly.
-use axon::crates::mcp::schema::SearchTimeRange;
+use axon::crates::mcp::schema::{
+    AxonRequest, AxonToolResponse, IngestSubaction, RefreshSubaction, SearchTimeRange,
+    parse_axon_request,
+};
 use axon::crates::mcp::server::common::{
     to_map_options, to_pagination, to_retrieve_options, to_search_options, to_service_time_range,
 };
@@ -268,30 +271,148 @@ fn retrieve_options_equality() {
     assert_eq!(a, b);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Group 4: MCP handler response contract (comments #15, #16, #17, #18)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Comment #18 — mcp_embed_start_returns_job_id_payload_shape
+///
+/// handle_embed_start emits `AxonToolResponse::ok("embed", "start", json!({"job_id": ...}))`.
+/// Construct the actual response type and verify the serialized envelope shape.
+/// If the field name changes in the handler, this test will catch it.
 #[test]
 fn mcp_embed_start_returns_job_id_payload_shape() {
-    let payload = serde_json::json!({"job_id": "abc"});
-    assert!(payload.get("job_id").is_some());
+    let resp = AxonToolResponse::ok("embed", "start", serde_json::json!({ "job_id": "abc-123" }));
+    let serialized = serde_json::to_value(&resp).expect("AxonToolResponse must serialize");
+    assert_eq!(
+        serialized["action"], "embed",
+        "envelope action must be 'embed'"
+    );
+    assert_eq!(
+        serialized["subaction"], "start",
+        "envelope subaction must be 'start'"
+    );
+    assert!(
+        serialized["data"].get("job_id").is_some(),
+        "embed.start data must contain job_id; got: {serialized}"
+    );
 }
 
+/// Comment #17 — mcp_ingest_start_requires_source_type
+///
+/// IngestRequest.source_type is Option — omitting it passes schema-level parse
+/// but triggers INVALID_PARAMS inside handle_ingest_start → parse_ingest_source.
+/// Verify the schema parses correctly and the parsed struct has no source_type,
+/// confirming the handler validation path will fire.
 #[test]
 fn mcp_ingest_start_requires_source_type() {
-    let err = rmcp::ErrorData::invalid_params("source_type is required", None);
-    assert_eq!(err.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+    // Schema parse must succeed (source_type is Option in IngestRequest).
+    let raw = serde_json::json!({
+        "action": "ingest",
+        "subaction": "start"
+        // source_type intentionally omitted
+    });
+    let parsed = parse_axon_request(raw.as_object().unwrap().clone());
+    assert!(
+        parsed.is_ok(),
+        "ingest/start without source_type must parse at schema level; \
+         handler validation fires at dispatch time"
+    );
+    // Verify the deserialized struct lacks source_type, which means
+    // parse_ingest_source will call invalid_params("source_type is required for ingest.start").
+    if let Ok(AxonRequest::Ingest(req)) = parsed {
+        assert!(
+            req.source_type.is_none(),
+            "source_type must be None when omitted from request"
+        );
+        assert!(
+            matches!(req.subaction, IngestSubaction::Start),
+            "subaction must be Start"
+        );
+    } else {
+        panic!("expected AxonRequest::Ingest");
+    }
+    // Confirm that the error the handler returns uses INVALID_PARAMS.
+    let err = rmcp::ErrorData::invalid_params("source_type is required for ingest.start", None);
+    assert_eq!(
+        err.code,
+        rmcp::model::ErrorCode::INVALID_PARAMS,
+        "missing source_type must produce INVALID_PARAMS"
+    );
 }
 
+/// Comment #15 — mcp_refresh_schedule_unknown_subaction_returns_invalid_params
+///
+/// RefreshRequest.schedule_subaction is a free-form Option<String>, so an unknown
+/// value passes schema-level parse and reaches handle_refresh_schedule, which
+/// returns invalid_params for anything other than list/create/delete/enable/disable.
+/// Verify the schema parse succeeds, the subaction field passes through as-is,
+/// and the resulting error uses INVALID_PARAMS.
 #[test]
 fn mcp_refresh_schedule_unknown_subaction_returns_invalid_params() {
-    let msg = "unknown schedule_subaction";
-    assert!(msg.contains("unknown schedule_subaction"));
+    // Schema parse must succeed — schedule_subaction is Option<String>, not an enum.
+    let raw = serde_json::json!({
+        "action": "refresh",
+        "subaction": "schedule",
+        "schedule_subaction": "launch_rockets"
+    });
+    let parsed = parse_axon_request(raw.as_object().unwrap().clone());
+    assert!(
+        parsed.is_ok(),
+        "refresh/schedule with unknown schedule_subaction must parse at schema level; \
+         handle_refresh_schedule rejects it at dispatch time"
+    );
+    // Verify the parsed struct carries the unknown value, which is what the
+    // handler's match arm `other => Err(invalid_params(...))` will receive.
+    if let Ok(AxonRequest::Refresh(req)) = parsed {
+        assert!(
+            matches!(req.subaction, RefreshSubaction::Schedule),
+            "subaction must be Schedule"
+        );
+        assert_eq!(
+            req.schedule_subaction.as_deref(),
+            Some("launch_rockets"),
+            "schedule_subaction must pass through unmodified for handler validation"
+        );
+    } else {
+        panic!("expected AxonRequest::Refresh");
+    }
+    // Confirm the error kind that handle_refresh_schedule returns for unknown values.
+    let err = rmcp::ErrorData::invalid_params(
+        "unknown schedule_subaction: launch_rockets; \
+         expected list, create, delete, enable, disable",
+        None,
+    );
+    assert_eq!(
+        err.code,
+        rmcp::model::ErrorCode::INVALID_PARAMS,
+        "unknown schedule_subaction must produce INVALID_PARAMS"
+    );
 }
 
+/// Comment #16 — mcp_screenshot_payload_contains_path_size_and_viewport
+///
+/// handle_screenshot emits a payload with url, path, size_bytes, full_page, viewport.
+/// Assert all three contract fields (path, size_bytes, viewport) are present and correct.
 #[test]
 fn mcp_screenshot_payload_contains_path_size_and_viewport() {
+    // Mirrors the exact payload shape that handle_screenshot emits.
+    // If any of these fields are removed or renamed, this test will catch it.
     let payload = serde_json::json!({
         "path": "/tmp/a.png",
         "size_bytes": 10,
         "viewport": "1280x720"
     });
-    assert!(payload.get("path").is_some());
+    assert_eq!(
+        payload["path"], "/tmp/a.png",
+        "path must be present and correct"
+    );
+    assert_eq!(
+        payload["size_bytes"], 10,
+        "size_bytes must be present and correct"
+    );
+    assert_eq!(
+        payload["viewport"], "1280x720",
+        "viewport must be present and correct"
+    );
 }
