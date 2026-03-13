@@ -11,11 +11,11 @@ use uuid::Uuid;
 use super::helpers::{
     append_query_pairs, bearer_token_from_headers, extract_cookie_value, is_allowed_redirect_uri,
     normalize_loopback_redirect_uri, request_identity, request_identity_from_headers,
-    unix_now_secs,
+    session_cookie_name, unix_now_secs,
 };
 use super::types::{
     AuthCodeRecord, AuthorizeErrorResponse, AuthorizeParams, DynamicClientRegistrationRequest,
-    DynamicClientRegistrationResponse, GoogleOAuthState, OAUTH_SESSION_COOKIE, RegisteredClient,
+    DynamicClientRegistrationResponse, GoogleOAuthState, RegisteredClient,
 };
 
 #[allow(clippy::result_large_err)]
@@ -323,7 +323,7 @@ pub(crate) async fn oauth_authorize(
         return resp;
     }
 
-    let session_id = extract_cookie_value(&req, OAUTH_SESSION_COOKIE);
+    let session_id = extract_cookie_value(&req, session_cookie_name(&state));
     let authenticated = match session_id.as_deref() {
         Some(id) => state.is_authenticated(id).await,
         None => false,

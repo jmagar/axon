@@ -171,6 +171,18 @@ async fn run_ytdlp(safe_url: &str, tmp_path: &str) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// Resolve a user-supplied YouTube target (URL, short URL, or bare video ID)
+/// to a canonical `(video_id, safe_url)` pair.
+///
+/// Returns an error if the input cannot be parsed as a valid YouTube video.
+/// The returned `safe_url` is always in `https://www.youtube.com/watch?v=ID`
+/// form, safe to pass to yt-dlp without argument-injection risk.
+fn resolve_video_id_and_safe_url(url: &str) -> Result<(String, String), Box<dyn Error>> {
+    let video_id = extract_video_id(url).ok_or("URL does not appear to be a YouTube video URL")?;
+    let safe_url = format!("https://www.youtube.com/watch?v={video_id}");
+    Ok((video_id, safe_url))
+}
+
 /// Ingest a YouTube video URL (or bare video ID) by:
 /// 1. Running yt-dlp to download VTT subtitle files into a temp directory
 /// 2. Parsing each VTT file into clean text via parse_vtt_to_text
@@ -183,8 +195,7 @@ pub async fn ingest_youtube(cfg: &Config, url: &str) -> Result<usize, Box<dyn Er
     // This must happen before the SSRF check because bare 11-character video IDs
     // (e.g. "dQw4w9WgXcQ") are not URLs and would fail validate_url before
     // canonicalization. We validate the canonicalized safe_url instead.
-    let video_id = extract_video_id(url).ok_or("URL does not appear to be a YouTube video URL")?;
-    let safe_url = format!("https://www.youtube.com/watch?v={video_id}");
+    let (video_id, safe_url) = resolve_video_id_and_safe_url(url)?;
 
     // SSRF guard: validate the canonicalized URL against private IP ranges.
     // YouTube.com is always a public host, so this is belt-and-suspenders against
