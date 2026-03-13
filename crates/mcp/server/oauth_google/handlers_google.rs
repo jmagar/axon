@@ -351,3 +351,33 @@ pub(crate) async fn oauth_authorization_server_metadata(
         scopes_supported: cfg.scopes.clone(),
     }))
 }
+
+/// RFC 8414 §3 requires that the `issuer` in authorization server metadata
+/// matches the path prefix used to discover it. The alias route
+/// `/.well-known/oauth-authorization-server/mcp` is scoped to the `/mcp`
+/// resource, so its `issuer` must be `resource_server_url` (e.g.
+/// `http://localhost:8080/mcp`) rather than the root broker issuer.
+///
+/// MCP clients that perform path-prefix discovery per RFC 8414 §3.1 will
+/// reject the metadata if the issuer does not match the request path.
+#[allow(clippy::result_large_err)]
+pub(crate) async fn oauth_authorization_server_metadata_mcp(
+    State(state): State<GoogleOAuthState>,
+) -> Result<Json<AuthorizationServerMetadata>, Response> {
+    let cfg = state.config()?;
+    Ok(Json(AuthorizationServerMetadata {
+        // issuer must equal the resource URL for path-prefix discovery (RFC 8414 §3.1).
+        issuer: cfg.resource_server_url.clone(),
+        authorization_endpoint: cfg.authorization_endpoint.clone(),
+        token_endpoint: cfg.token_endpoint.clone(),
+        registration_endpoint: cfg.registration_endpoint.clone(),
+        response_types_supported: vec!["code".to_string()],
+        grant_types_supported: vec![
+            "authorization_code".to_string(),
+            "refresh_token".to_string(),
+        ],
+        token_endpoint_auth_methods_supported: vec!["none".to_string()],
+        code_challenge_methods_supported: vec!["S256".to_string()],
+        scopes_supported: cfg.scopes.clone(),
+    }))
+}

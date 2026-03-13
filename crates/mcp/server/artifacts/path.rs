@@ -291,19 +291,11 @@ mod tests {
             env::set_var(MCP_ARTIFACT_DIR_ENV, tmp.path());
         }
 
+        let root = ensure_artifact_root().await.expect("artifact root");
         let path = build_artifact_path("crawl-status-1234", "json")
             .await
             .expect("artifact path");
-        assert_eq!(
-            path.file_name().and_then(|n| n.to_str()),
-            Some("status-1234.json")
-        );
-        assert_eq!(
-            path.parent()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str()),
-            Some("crawl")
-        );
+        assert_eq!(path, root.join("crawl").join("status-1234.json"));
 
         // SAFETY: guarded by ENV_CWD_LOCK; no concurrent env mutation in this module.
         unsafe {
