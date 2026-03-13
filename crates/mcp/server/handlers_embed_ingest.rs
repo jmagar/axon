@@ -58,29 +58,51 @@ fn parse_ingest_source(req: &mut IngestRequest) -> Result<IngestSource, ErrorDat
 }
 
 impl AxonMcpServer {
+    async fn handle_embed_start(
+        &self,
+        input: Option<String>,
+    ) -> Result<AxonToolResponse, ErrorData> {
+        let input = input.ok_or_else(|| invalid_params("input is required for embed.start"))?;
+        let result =
+            crate::crates::services::embed::embed_start_with_input(self.cfg.as_ref(), &input, None)
+                .await
+                .map_err(|e| logged_internal_error("embed.start", e))?;
+        Ok(AxonToolResponse::ok(
+            "embed",
+            "start",
+            serde_json::json!({ "job_id": result.job_id }),
+        ))
+    }
+
+    async fn handle_embed_list(
+        &self,
+        limit: Option<i64>,
+        offset: Option<usize>,
+        response_mode: Option<crate::crates::mcp::schema::ResponseMode>,
+    ) -> Result<AxonToolResponse, ErrorData> {
+        let limit = parse_limit(limit, 20);
+        let offset = parse_offset(offset);
+        let jobs =
+            crate::crates::services::embed::embed_list(self.cfg.as_ref(), limit, offset as i64)
+                .await
+                .map_err(|e| logged_internal_error("embed.list", e))?;
+        respond_with_mode(
+            "embed",
+            "list",
+            response_mode,
+            "embed-list",
+            serde_json::json!({ "jobs": jobs.payload, "limit": limit, "offset": offset }),
+        )
+        .await
+    }
+
     pub(super) async fn handle_embed(
         &self,
         req: EmbedRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = req.response_mode;
         match req.subaction {
-            EmbedSubaction::Start => {
-                let input = req
-                    .input
-                    .ok_or_else(|| invalid_params("input is required for embed.start"))?;
-                let result = crate::crates::services::embed::embed_start_with_input(
-                    self.cfg.as_ref(),
-                    &input,
-                    None,
-                )
-                .await
-                .map_err(|e| logged_internal_error("embed.start", e))?;
-                Ok(AxonToolResponse::ok(
-                    "embed",
-                    "start",
-                    serde_json::json!({ "job_id": result.job_id }),
-                ))
-            }
+            EmbedSubaction::Start => self.handle_embed_start(req.input).await,
             EmbedSubaction::Status => {
                 let id = parse_job_id(req.job_id.as_ref())?;
                 let job = crate::crates::services::embed::embed_status(self.cfg.as_ref(), id)
@@ -107,20 +129,8 @@ impl AxonMcpServer {
                 ))
             }
             EmbedSubaction::List => {
-                let limit = parse_limit(req.limit, 20);
-                let offset = parse_offset(req.offset);
-                let jobs =
-                    crate::crates::services::embed::embed_list(self.cfg.as_ref(), limit, offset as i64)
-                        .await
-                        .map_err(|e| logged_internal_error("embed.list", e))?;
-                respond_with_mode(
-                    "embed",
-                    "list",
-                    response_mode,
-                    "embed-list",
-                    serde_json::json!({ "jobs": jobs.payload, "limit": limit, "offset": offset }),
-                )
-                .await
+                self.handle_embed_list(req.limit, req.offset, response_mode)
+                    .await
             }
             EmbedSubaction::Cleanup => {
                 let deleted = crate::crates::services::embed::embed_cleanup(self.cfg.as_ref())
@@ -155,23 +165,50 @@ impl AxonMcpServer {
         }
     }
 
+    async fn handle_ingest_start(
+        &self,
+        req: &mut IngestRequest,
+    ) -> Result<AxonToolResponse, ErrorData> {
+        let source = parse_ingest_source(req)?;
+        let result = crate::crates::services::ingest::ingest_start(self.cfg.as_ref(), source)
+            .await
+            .map_err(|e| logged_internal_error("ingest.start", e))?;
+        Ok(AxonToolResponse::ok(
+            "ingest",
+            "start",
+            serde_json::json!({ "job_id": result.job_id }),
+        ))
+    }
+
+    async fn handle_ingest_list(
+        &self,
+        limit: Option<i64>,
+        offset: Option<usize>,
+        response_mode: Option<crate::crates::mcp::schema::ResponseMode>,
+    ) -> Result<AxonToolResponse, ErrorData> {
+        let limit = parse_limit(limit, 20);
+        let offset = parse_offset(offset);
+        let jobs =
+            crate::crates::services::ingest::ingest_list(self.cfg.as_ref(), limit, offset as i64)
+                .await
+                .map_err(|e| logged_internal_error("ingest.list", e))?;
+        respond_with_mode(
+            "ingest",
+            "list",
+            response_mode,
+            "ingest-list",
+            serde_json::json!({ "jobs": jobs.payload, "limit": limit, "offset": offset }),
+        )
+        .await
+    }
+
     pub(super) async fn handle_ingest(
         &self,
         mut req: IngestRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = req.response_mode;
         match req.subaction {
-            IngestSubaction::Start => {
-                let source = parse_ingest_source(&mut req)?;
-                let result = crate::crates::services::ingest::ingest_start(self.cfg.as_ref(), source)
-                    .await
-                    .map_err(|e| logged_internal_error("ingest.start", e))?;
-                Ok(AxonToolResponse::ok(
-                    "ingest",
-                    "start",
-                    serde_json::json!({ "job_id": result.job_id }),
-                ))
-            }
+            IngestSubaction::Start => self.handle_ingest_start(&mut req).await,
             IngestSubaction::Status => {
                 let id = parse_job_id(req.job_id.as_ref())?;
                 let job = crate::crates::services::ingest::ingest_status(self.cfg.as_ref(), id)
@@ -188,9 +225,10 @@ impl AxonMcpServer {
             }
             IngestSubaction::Cancel => {
                 let id = parse_job_id(req.job_id.as_ref())?;
-                let canceled = crate::crates::services::ingest::ingest_cancel(self.cfg.as_ref(), id)
-                    .await
-                    .map_err(|e| logged_internal_error("ingest.cancel", e))?;
+                let canceled =
+                    crate::crates::services::ingest::ingest_cancel(self.cfg.as_ref(), id)
+                        .await
+                        .map_err(|e| logged_internal_error("ingest.cancel", e))?;
                 Ok(AxonToolResponse::ok(
                     "ingest",
                     "cancel",
@@ -198,23 +236,8 @@ impl AxonMcpServer {
                 ))
             }
             IngestSubaction::List => {
-                let limit = parse_limit(req.limit, 20);
-                let offset = parse_offset(req.offset);
-                let jobs = crate::crates::services::ingest::ingest_list(
-                    self.cfg.as_ref(),
-                    limit,
-                    offset as i64,
-                )
-                .await
-                .map_err(|e| logged_internal_error("ingest.list", e))?;
-                respond_with_mode(
-                    "ingest",
-                    "list",
-                    response_mode,
-                    "ingest-list",
-                    serde_json::json!({ "jobs": jobs.payload, "limit": limit, "offset": offset }),
-                )
-                .await
+                self.handle_ingest_list(req.limit, req.offset, response_mode)
+                    .await
             }
             IngestSubaction::Cleanup => {
                 let deleted = crate::crates::services::ingest::ingest_cleanup(self.cfg.as_ref())

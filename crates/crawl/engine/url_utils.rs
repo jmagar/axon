@@ -335,8 +335,12 @@ mod tests {
         };
 
         assert_eq!(
-            normalize_map_candidate_url("https://example.github.io/project/docs/?q=1", &scope, true)
-                .as_deref(),
+            normalize_map_candidate_url(
+                "https://example.github.io/project/docs/?q=1",
+                &scope,
+                true
+            )
+            .as_deref(),
             Some("https://example.github.io/project/docs")
         );
     }

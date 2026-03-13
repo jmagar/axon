@@ -143,12 +143,11 @@ async fn stream_container_stats(
         let (mem_usage_mb, mem_limit_mb, mem_percent) = memory_metrics_from_stats(&stats);
         let (net_rx, net_tx) = network_totals_from_stats(&stats);
         let (blk_read, blk_write) = block_io_totals_from_stats(&stats);
-        let (net_rx_rate, net_tx_rate, blk_read_rate, blk_write_rate) =
-            compute_rates(
-                dt,
-                (net_rx, net_tx, blk_read, blk_write),
-                (prev_net_rx, prev_net_tx, prev_blk_read, prev_blk_write),
-            );
+        let (net_rx_rate, net_tx_rate, blk_read_rate, blk_write_rate) = compute_rates(
+            dt,
+            (net_rx, net_tx, blk_read, blk_write),
+            (prev_net_rx, prev_net_tx, prev_blk_read, prev_blk_write),
+        );
 
         prev_net_rx = net_rx;
         prev_net_tx = net_tx;
@@ -267,7 +266,11 @@ fn block_io_totals_from_stats(stats: &bollard::models::ContainerStatsResponse) -
         .unwrap_or((0, 0))
 }
 
-fn compute_rates(dt: f64, curr: (u64, u64, u64, u64), prev: (u64, u64, u64, u64)) -> (f64, f64, f64, f64) {
+fn compute_rates(
+    dt: f64,
+    curr: (u64, u64, u64, u64),
+    prev: (u64, u64, u64, u64),
+) -> (f64, f64, f64, f64) {
     let (net_rx, net_tx, blk_read, blk_write) = curr;
     let (prev_net_rx, prev_net_tx, prev_blk_read, prev_blk_write) = prev;
     let net_rx_rate = (net_rx.saturating_sub(prev_net_rx) as f64 / dt).max(0.0);

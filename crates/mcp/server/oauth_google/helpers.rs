@@ -39,9 +39,7 @@ pub(crate) fn normalize_loopback_redirect_uri(uri: &str) -> Option<String> {
 }
 
 fn is_loopback_host(host: &str) -> bool {
-    let normalized_host = host
-        .trim_matches(['[', ']'])
-        .trim_end_matches('.');
+    let normalized_host = host.trim_matches(['[', ']']).trim_end_matches('.');
     normalized_host.eq_ignore_ascii_case("localhost")
         || normalized_host
             .parse::<std::net::IpAddr>()

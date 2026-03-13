@@ -336,46 +336,31 @@ pub struct BackfillStats {
     pub failed: usize,
 }
 
-/// Discover sitemap URLs, fetch new ones, convert to markdown, and append
-/// to the manifest. Updates `summary.markdown_files` and `summary.thin_pages`.
-///
-/// This is the engine-level backfill that replaces the CLI's
-/// `append_robots_backfill`. It reuses `discover_sitemap_urls` for discovery
-/// and `fetch_text_with_retry` for fetching.
-pub async fn append_sitemap_backfill(
+pub(crate) async fn append_candidate_backfill(
     cfg: &Config,
-    start_url: &str,
     output_dir: &Path,
     seen_urls: &HashSet<String>,
+    candidates: Vec<String>,
     summary: &mut CrawlSummary,
-) -> Result<BackfillStats, Box<dyn Error>> {
-    let discovery = discover_sitemap_urls(cfg, start_url).await?;
+) -> Result<(BackfillStats, Vec<String>), Box<dyn Error>> {
     let manifest_path = output_dir.join("manifest.jsonl");
 
-    // Read existing manifest to avoid double-writing URLs already on disk.
     let previous_manifest =
         crate::crates::crawl::manifest::read_manifest_data(&manifest_path).await?;
     let manifest_urls: HashSet<String> = previous_manifest.keys().cloned().collect();
 
-    let candidates: Vec<String> = discovery
-        .urls
-        .iter()
-        .filter(|url| !seen_urls.contains(*url) && !manifest_urls.contains(*url))
-        .cloned()
+    let candidates: Vec<String> = candidates
+        .into_iter()
+        .filter(|url| !seen_urls.contains(url) && !manifest_urls.contains(url))
         .collect();
 
     if candidates.is_empty() {
-        return Ok(BackfillStats {
-            discovered_urls: discovery.discovered_urls,
-            ..BackfillStats::default()
-        });
+        return Ok((BackfillStats::default(), Vec::new()));
     }
 
     let markdown_dir = output_dir.join("markdown");
     tokio::fs::create_dir_all(&markdown_dir).await?;
 
-    // TODO: migrate to http_client() singleton once discover_sitemap_urls
-    // also switches — keep both paths consistent.
     let timeout_secs = cfg.request_timeout_ms.unwrap_or(30_000) / 1000;
     let client = build_client(timeout_secs)?;
     let mut manifest = BufWriter::new(
@@ -388,19 +373,16 @@ pub async fn append_sitemap_backfill(
 
     let mut idx = summary.markdown_files;
     let mut stats = BackfillStats {
-        discovered_urls: discovery.discovered_urls,
         candidates: candidates.len(),
         ..BackfillStats::default()
     };
+    let mut added_urls = Vec::new();
 
     let backfill_concurrency = cfg
         .backfill_concurrency_limit
         .unwrap_or(cfg.batch_concurrency)
         .clamp(1, 512);
 
-    // Process backfill candidates concurrently using JoinSet, bounded by
-    // backfill_concurrency. Each task fetches + converts independently;
-    // results are collected and written to the manifest sequentially.
     for chunk in candidates.chunks(backfill_concurrency) {
         let mut joins = tokio::task::JoinSet::new();
         for url in chunk.iter().cloned() {
@@ -436,6 +418,7 @@ pub async fn append_sitemap_backfill(
                 continue;
             };
             stats.fetched_ok += 1;
+            summary.pages_seen += 1;
             if is_thin {
                 summary.thin_pages += 1;
             }
@@ -464,9 +447,37 @@ pub async fn append_sitemap_backfill(
             manifest.write_all(line.as_bytes()).await?;
             summary.markdown_files += 1;
             stats.written += 1;
+            added_urls.push(url);
         }
     }
     manifest.flush().await?;
+    Ok((stats, added_urls))
+}
+
+/// Discover sitemap URLs, fetch new ones, convert to markdown, and append
+/// to the manifest. Updates `summary.markdown_files` and `summary.thin_pages`.
+///
+/// This is the engine-level backfill that replaces the CLI's
+/// `append_robots_backfill`. It reuses `discover_sitemap_urls` for discovery
+/// and `fetch_text_with_retry` for fetching.
+pub async fn append_sitemap_backfill(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+    seen_urls: &HashSet<String>,
+    summary: &mut CrawlSummary,
+) -> Result<BackfillStats, Box<dyn Error>> {
+    let discovery = discover_sitemap_urls(cfg, start_url).await?;
+    if discovery.urls.is_empty() {
+        return Ok(BackfillStats {
+            discovered_urls: discovery.discovered_urls,
+            ..BackfillStats::default()
+        });
+    }
+    let (mut stats, _) =
+        append_candidate_backfill(cfg, output_dir, seen_urls, discovery.urls.clone(), summary)
+            .await?;
+    stats.discovered_urls = discovery.discovered_urls;
     log_info(&format!(
         "sitemap backfill_complete urls_added={}",
         stats.written

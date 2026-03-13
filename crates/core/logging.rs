@@ -324,11 +324,8 @@ where
     }
 }
 
-pub fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    use tracing_subscriber::prelude::*;
-
-    let json_log_file = std::env::var("AXON_LOG_FILE")
+fn resolve_json_log_file() -> String {
+    std::env::var("AXON_LOG_FILE")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -339,7 +336,10 @@ pub fn init_tracing() {
                 .filter(|d| !d.is_empty())
                 .map(|d| format!("{d}/axon/logs/axon.log"))
         })
-        .unwrap_or_else(|| "logs/axon.log".to_string());
+        .unwrap_or_else(|| "logs/axon.log".to_string())
+}
+
+fn resolve_rotation_limits() -> (u64, usize) {
     let max_bytes = std::env::var("AXON_LOG_MAX_BYTES")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -350,6 +350,31 @@ pub fn init_tracing() {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(3)
         .max(1);
+    (max_bytes, max_files_total)
+}
+
+fn build_filter_with_noise(
+    default_level: &str,
+    noise_directives: &[&str],
+) -> tracing_subscriber::EnvFilter {
+    use tracing_subscriber::EnvFilter;
+    EnvFilter::try_from_default_env()
+        .map(|f| {
+            noise_directives.iter().fold(f, |acc, d| {
+                acc.add_directive(d.parse().expect("hard-coded directive is valid"))
+            })
+        })
+        .unwrap_or_else(|_| {
+            let extras = noise_directives.join(",");
+            EnvFilter::new(format!("{default_level},{extras}"))
+        })
+}
+
+pub fn init_tracing() {
+    use tracing_subscriber::prelude::*;
+
+    let json_log_file = resolve_json_log_file();
+    let (max_bytes, max_files_total) = resolve_rotation_limits();
 
     // Browserless (CDP proxy) sends non-standard session management frames over
     // the same WebSocket as standard CDP traffic. chromiumoxide's Message<T> is
@@ -370,27 +395,8 @@ pub fn init_tracing() {
 
     let noise_directives = [SUPPRESS_CDP_NOISE, SUPPRESS_ACP_DECODE_NOISE];
 
-    let console_filter = EnvFilter::try_from_default_env()
-        .map(|f| {
-            noise_directives.iter().fold(f, |acc, d| {
-                acc.add_directive(d.parse().expect("hard-coded directive is valid"))
-            })
-        })
-        .unwrap_or_else(|_| {
-            let extras = noise_directives.join(",");
-            EnvFilter::new(format!("warn,{extras}"))
-        });
-
-    let file_filter = EnvFilter::try_from_default_env()
-        .map(|f| {
-            noise_directives.iter().fold(f, |acc, d| {
-                acc.add_directive(d.parse().expect("hard-coded directive is valid"))
-            })
-        })
-        .unwrap_or_else(|_| {
-            let extras = noise_directives.join(",");
-            EnvFilter::new(format!("info,{extras}"))
-        });
+    let console_filter = build_filter_with_noise("warn", &noise_directives);
+    let file_filter = build_filter_with_noise("info", &noise_directives);
 
     let log_path = PathBuf::from(&json_log_file);
 
