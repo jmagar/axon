@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { JobDetail } from '@/app/api/jobs/[id]/route'
-import { flattenJsonEntries, getRefreshSummaryRows } from '@/app/jobs/[id]/page'
+import { flattenJsonEntries, getRefreshSummaryRows } from '@/app/jobs/[id]/job-detail-helpers'
 
 describe('job detail metadata helpers', () => {
   it('renders full result_json and config_json key-value metadata sections', () => {

@@ -47,40 +47,27 @@ function SessionCard({
       type="button"
       onClick={() => void handleClick()}
       disabled={loading}
-      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-50"
-      style={{
-        border: '1px solid var(--axon-border)',
-        background: loading ? 'rgba(175,215,255,0.04)' : 'transparent',
-      }}
-      onMouseEnter={(e) => {
-        if (!loading) e.currentTarget.style.background = 'rgba(175,215,255,0.06)'
-      }}
-      onMouseLeave={(e) => {
-        if (!loading) e.currentTarget.style.background = 'transparent'
-      }}
+      className="flex w-full items-center justify-between rounded-lg border border-[var(--axon-border)] px-3 py-2 text-left transition-colors hover:bg-[rgba(175,215,255,0.06)] disabled:opacity-50"
     >
       <div className="min-w-0 flex-1">
         {session.project !== 'tmp' && (
-          <span
-            className="block truncate text-xs font-semibold"
-            style={{ color: 'var(--axon-primary-strong)' }}
-          >
+          <span className="block truncate text-xs font-semibold text-[var(--axon-primary-strong)]">
             {session.project}
           </span>
         )}
-        <span className="block truncate text-[11px]" style={{ color: 'white' }}>
+        <span className="block truncate text-[11px] text-white">
           {session.preview ??
             (session.filename.length > 20 ? `${session.filename.slice(0, 20)}…` : session.filename)}
         </span>
       </div>
       <div className="ml-3 shrink-0 text-right">
         <span
-          className="block text-[11px]"
-          style={{ color: failed ? 'var(--axon-secondary)' : 'var(--text-dim)' }}
+          className={`block text-[11px] ${failed ? 'text-[var(--axon-secondary)]' : 'text-[var(--text-dim)]'}`}
+          suppressHydrationWarning
         >
           {loading ? 'Loading…' : failed ? 'Failed to load' : formatRelativeTime(session.mtimeMs)}
         </span>
-        <span className="block text-[10px]" style={{ color: 'var(--text-dim)' }}>
+        <span className="block text-[10px] text-[var(--text-dim)]">
           {formatBytes(session.sizeBytes)}
         </span>
       </div>
@@ -91,22 +78,18 @@ function SessionCard({
 export function RecentSessions() {
   const { sessions, isLoading, loadSession } = useRecentSessions()
 
-  if (isLoading) {
-    return (
-      <div className="mt-3 text-center text-xs" style={{ color: 'var(--text-dim)' }}>
-        Loading sessions…
-      </div>
-    )
+  // Only show "Loading…" on the very first cold load (no sessions yet).
+  // Once sessions are available, always render them — the hook keeps stale
+  // data visible during background refreshes.
+  if (isLoading && sessions.length === 0) {
+    return <div className="mt-3 text-center text-xs text-[var(--text-dim)]">Loading sessions…</div>
   }
 
   if (sessions.length === 0) return null
 
   return (
     <div className="mt-3">
-      <div
-        className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider"
-        style={{ color: '#ff87af' }}
-      >
+      <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--axon-secondary)]">
         Recent Sessions
       </div>
       <div className="flex flex-col gap-1">

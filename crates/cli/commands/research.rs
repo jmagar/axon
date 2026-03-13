@@ -1,10 +1,13 @@
 use crate::crates::cli::commands::common::parse_service_time_range;
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::{log_done, log_warn};
+#[cfg(test)]
+use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info};
 use crate::crates::core::ui::{muted, primary, print_phase};
 use crate::crates::services::search as search_service;
 use crate::crates::services::types::SearchOptions as ServiceSearchOptions;
-use spider_agent::{Agent, Message, SearchOptions, TimeRange, TokenUsage};
+#[cfg(test)]
+use spider_agent::TimeRange;
 use std::error::Error;
 use std::sync::{
     Arc,
@@ -12,158 +15,11 @@ use std::sync::{
 };
 use std::time::Instant;
 
-pub async fn research_payload(
-    cfg: &Config,
-    query: &str,
-    limit: usize,
-    offset: usize,
-    time_range: Option<TimeRange>,
-) -> Result<serde_json::Value, Box<dyn Error>> {
-    let started = Instant::now();
-    if cfg.tavily_api_key.is_empty() {
-        return Err("research requires TAVILY_API_KEY — set it in .env".into());
-    }
-    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
-        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
-    }
-
-    let base = cfg.openai_base_url.trim_end_matches('/');
-    if base.ends_with("/chat/completions") {
-        return Err(
-            "OPENAI_BASE_URL should not include /chat/completions — set the base URL only (e.g. http://host/v1)".into()
-        );
-    }
-    let _ = spider::url::Url::parse(base)
-        .map_err(|e| format!("invalid OPENAI_BASE_URL '{base}': {e}"))?;
-    let llm_url = format!("{base}/chat/completions");
-
-    let agent = Agent::builder()
-        .with_openai_compatible(llm_url, &cfg.openai_api_key, &cfg.openai_model)
-        .with_search_tavily(&cfg.tavily_api_key)
-        .build()?;
-
-    // Step 1: search — Tavily returns URLs + content excerpts
-    let mut search_options = SearchOptions::new().with_limit((limit + offset).clamp(1, 100));
-    if let Some(tr) = time_range {
-        search_options = search_options.with_time_range(tr);
-    }
-    let search_results = agent.search_with_options(query, search_options).await?;
-
-    // Step 2: use Tavily's content excerpts directly — skip redundant fetch+extract
-    let extractions: Vec<serde_json::Value> = search_results
-        .results
-        .iter()
-        .skip(offset)
-        .take(limit)
-        .map(|r| {
-            serde_json::json!({
-                "url": r.url,
-                "title": r.title,
-                "extracted": r.snippet.as_deref().unwrap_or(""),
-            })
-        })
-        .collect();
-
-    // Step 3: synthesize — one LLM call over the snippets
-    let (summary, usage) = synthesize(query, &extractions, &agent).await;
-
-    let search_results_json = search_results
-        .results
-        .iter()
-        .skip(offset)
-        .take(limit)
-        .map(|r| {
-            serde_json::json!({
-                "position": r.position,
-                "title": r.title,
-                "url": r.url,
-                "snippet": r.snippet,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    Ok(serde_json::json!({
-        "query": query,
-        "limit": limit,
-        "offset": offset,
-        "search_results": search_results_json,
-        "extractions": extractions,
-        "summary": summary,
-        "usage": {
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        },
-        "timing_ms": {
-            "total": started.elapsed().as_millis(),
-        },
-    }))
-}
-
-async fn synthesize(
-    query: &str,
-    extractions: &[serde_json::Value],
-    agent: &Agent,
-) -> (Option<String>, TokenUsage) {
-    if extractions.is_empty() {
-        return (None, TokenUsage::default());
-    }
-
-    let mut context = String::new();
-    for (i, e) in extractions.iter().enumerate() {
-        context.push_str(&format!(
-            "\n\nSource {} ({}): {}\n{}",
-            i + 1,
-            e["url"].as_str().unwrap_or(""),
-            e["title"].as_str().unwrap_or(""),
-            e["extracted"].as_str().unwrap_or(""),
-        ));
-    }
-
-    let messages = vec![
-        Message::system(
-            "You are a research synthesis assistant. Summarize the findings from multiple sources into a coherent response.",
-        ),
-        Message::user(format!(
-            "Topic: {query}\n\nSources:{context}\n\nProvide a comprehensive summary of the findings, citing sources where appropriate. Return as JSON with a 'summary' field."
-        )),
-    ];
-
-    match agent.complete(messages).await {
-        Ok(response) => {
-            let summary = serde_json::from_str::<serde_json::Value>(&response.content)
-                .ok()
-                .and_then(|v| {
-                    v.get("summary")
-                        .and_then(|s| s.as_str())
-                        .map(str::to_string)
-                })
-                .unwrap_or(response.content);
-            (Some(summary), response.usage)
-        }
-        Err(e) => {
-            log_warn(&format!("synthesis failed: {e}"));
-            (None, TokenUsage::default())
-        }
-    }
-}
-
 pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.tavily_api_key.is_empty() {
-        return Err("research requires TAVILY_API_KEY — set it in .env".into());
-    }
-    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
-        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
-    }
+    validate_research_prereqs(cfg)?;
+    let query = resolve_research_query(cfg)?;
 
-    let query = if let Some(q) = &cfg.query {
-        q.clone()
-    } else if !cfg.positional.is_empty() {
-        cfg.positional.join(" ")
-    } else {
-        return Err("research requires a query (positional or --query)".into());
-    };
-
+    log_info(&format!("command=research query_len={}", query.len()));
     if !cfg.json_output {
         print_phase("◐", "Researching", &query);
         println!("  {} {}", muted("provider=tavily model="), cfg.openai_model);
@@ -181,11 +37,10 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 if !running_tick.load(Ordering::Relaxed) {
                     break;
                 }
-                eprintln!(
-                    "  {} research in progress... {}ms",
-                    muted("progress"),
+                log_info(&format!(
+                    "research status=in_progress elapsed_ms={}",
                     tick_started.elapsed().as_millis()
-                );
+                ));
             }
         }))
     } else {
@@ -212,7 +67,36 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         log_done("command=research complete");
         return Ok(());
     }
+    print_human_research_output(&payload, started.elapsed().as_millis())?;
 
+    log_done("command=research complete");
+    Ok(())
+}
+
+fn validate_research_prereqs(cfg: &Config) -> Result<(), Box<dyn Error>> {
+    if cfg.tavily_api_key.is_empty() {
+        return Err("research requires TAVILY_API_KEY — set it in .env".into());
+    }
+    if cfg.openai_base_url.is_empty() || cfg.openai_model.is_empty() {
+        return Err("research requires OPENAI_BASE_URL and OPENAI_MODEL — set them in .env".into());
+    }
+    Ok(())
+}
+
+fn resolve_research_query(cfg: &Config) -> Result<String, Box<dyn Error>> {
+    if let Some(q) = &cfg.query {
+        return Ok(q.clone());
+    }
+    if !cfg.positional.is_empty() {
+        return Ok(cfg.positional.join(" "));
+    }
+    Err("research requires a query (positional or --query)".into())
+}
+
+fn print_human_research_output(
+    payload: &serde_json::Value,
+    total_ms: u128,
+) -> Result<(), Box<dyn Error>> {
     let search_results = payload["search_results"]
         .as_array()
         .cloned()
@@ -225,31 +109,14 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let prompt_tokens = payload["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
     let completion_tokens = payload["usage"]["completion_tokens"].as_u64().unwrap_or(0);
     let total_tokens = payload["usage"]["total_tokens"].as_u64().unwrap_or(0);
-    let total_ms = started.elapsed().as_millis();
 
     println!("{} {}", primary("Search Results:"), search_results.len());
     println!();
-
     println!("{} {}", primary("Pages Extracted:"), extractions.len());
     println!();
 
     for (i, extraction) in extractions.iter().enumerate() {
-        let title = extraction["title"].as_str().unwrap_or("");
-        let url = extraction["url"].as_str().unwrap_or("");
-        println!("{}. {}", i + 1, primary(title));
-        println!("   {}", muted(url));
-        let preview = serde_json::to_string(&extraction["extracted"])
-            .unwrap_or_default()
-            .chars()
-            .take(200)
-            .collect::<String>();
-        let preview = preview.trim();
-        if preview.is_empty() || preview == "null" || preview == "{}" {
-            println!("   {}", muted("(no data extracted)"));
-        } else {
-            println!("   {preview}");
-        }
-        println!();
+        print_extraction_preview(i, extraction)?;
     }
 
     if let Some(summary) = summary {
@@ -257,7 +124,6 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!("{summary}");
         println!();
     }
-
     if total_tokens > 0 {
         println!(
             "  {} prompt={} completion={} total={}",
@@ -268,8 +134,28 @@ pub async fn run_research(cfg: &Config) -> Result<(), Box<dyn Error>> {
         );
     }
     println!("  {} total={}ms", muted("timing"), total_ms);
+    Ok(())
+}
 
-    log_done("command=research complete");
+fn print_extraction_preview(
+    i: usize,
+    extraction: &serde_json::Value,
+) -> Result<(), Box<dyn Error>> {
+    let title = extraction["title"].as_str().unwrap_or("");
+    let url = extraction["url"].as_str().unwrap_or("");
+    println!("{}. {}", i + 1, primary(title));
+    println!("   {}", muted(url));
+    let preview = serde_json::to_string(&extraction["extracted"])?
+        .chars()
+        .take(200)
+        .collect::<String>();
+    let preview = preview.trim();
+    if preview.is_empty() || preview == "null" || preview == "{}" {
+        println!("   {}", muted("(no data extracted)"));
+    } else {
+        println!("   {preview}");
+    }
+    println!();
     Ok(())
 }
 

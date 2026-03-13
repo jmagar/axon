@@ -39,7 +39,7 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
       <div className="relative h-[3px] overflow-hidden rounded-full bg-[var(--surface-elevated)]">
         {isProcessing && discovered > 0 && pct < 100 ? (
           <div
-            className="h-full rounded-full transition-all duration-700"
+            className="h-full rounded-full transition-[width] duration-700"
             style={{
               width: `${pct}%`,
               background:
@@ -57,7 +57,7 @@ export function CrawlProgress({ progress, isProcessing }: CrawlProgressProps) {
           />
         ) : (
           <div
-            className="h-full rounded-full transition-all duration-500"
+            className="h-full rounded-full transition-[width] duration-500"
             style={{
               width: '100%',
               background:

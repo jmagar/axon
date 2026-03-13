@@ -24,11 +24,11 @@ fn refresh_schedule_help_exposes_worker_subcommand() {
 }
 
 #[test]
-fn youtube_help_describes_video_url_or_id_only() {
-    let stdout = run_help(&["youtube", "--help"]);
+fn ingest_help_describes_target_argument() {
+    let stdout = run_help(&["ingest", "--help"]);
     assert!(
-        stdout.contains("YouTube video URL or bare video ID"),
-        "expected youtube help to describe video URL or bare ID input, got:\n{stdout}"
+        stdout.contains("Ingest target"),
+        "expected ingest help to describe TARGET argument, got:\n{stdout}"
     );
 }
 

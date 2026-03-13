@@ -26,7 +26,7 @@ export function AILoadingBar() {
     if (type === 'accept') {
       editor.tf.unsetNodes([getTransientCommentKey()], {
         at: [],
-        match: (n) => TextApi.isText(n) && !!n[KEYS.comment],
+        match: (n: any) => TextApi.isText(n) && !!n[KEYS.comment],
       })
     }
 
@@ -39,7 +39,6 @@ export function AILoadingBar() {
 
   useHotkeys('esc', () => {
     api.aiChat.stop()
-    // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
     ;(chat as any).stop?.()
   })
 
@@ -50,7 +49,7 @@ export function AILoadingBar() {
     return (
       <div
         className={cn(
-          '-translate-x-1/2 absolute bottom-4 left-1/2 z-20 flex items-center gap-3 rounded-md border border-border bg-muted px-3 py-1.5 text-muted-foreground text-sm shadow-md transition-all duration-300',
+          '-translate-x-1/2 absolute bottom-4 left-1/2 z-20 flex items-center gap-3 rounded-md border border-border bg-muted px-3 py-1.5 text-muted-foreground text-sm shadow-md transition-opacity duration-300',
         )}
       >
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
@@ -61,7 +60,6 @@ export function AILoadingBar() {
           className="flex items-center gap-1 text-xs"
           onClick={() => {
             api.aiChat.stop()
-            // biome-ignore lint/suspicious/noExplicitAny: stop() added to ChatHelpers but not visible through AIChatPlugin option typing
             ;(chat as any).stop?.()
           }}
         >

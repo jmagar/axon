@@ -243,7 +243,8 @@ export class Neuron {
   }
 
   getRandomDendriteTip(): { x: number; y: number } {
-    const d = this.dendrites[Math.floor(Math.random() * this.dendrites.length)]
+    // Index is bounded by this.dendrites.length — always valid
+    const d = this.dendrites[Math.floor(Math.random() * this.dendrites.length)]!
     return d.getTip()
   }
 }

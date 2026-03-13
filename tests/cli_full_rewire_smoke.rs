@@ -167,15 +167,20 @@ use axon::crates::services::types::CrawlStartResult;
 
 #[test]
 fn smoke_map_crawl_start_result_wraps_job_ids() {
-    let ids = vec!["uuid-1".to_string(), "uuid-2".to_string()];
-    let result: CrawlStartResult = map_crawl_start_result(ids);
+    use std::path::Path;
+    let jobs = vec![
+        ("https://example.com".to_string(), "uuid-1".to_string()),
+        ("https://other.com".to_string(), "uuid-2".to_string()),
+    ];
+    let result: CrawlStartResult = map_crawl_start_result(Path::new("/tmp/output"), &jobs);
     assert_eq!(result.job_ids.len(), 2);
     assert_eq!(result.job_ids[0], "uuid-1");
 }
 
 #[test]
 fn smoke_map_crawl_start_result_empty() {
-    let result: CrawlStartResult = map_crawl_start_result(Vec::new());
+    use std::path::Path;
+    let result: CrawlStartResult = map_crawl_start_result(Path::new("/tmp/output"), &[]);
     assert!(result.job_ids.is_empty());
 }
 
@@ -320,4 +325,13 @@ fn smoke_search_options_type_is_constructible() {
     };
     assert_eq!(s.limit, 10);
     assert!(s.time_range.is_none());
+}
+
+#[test]
+fn refresh_service_exposes_schedule_lifecycle_wrappers() {
+    let _ = axon::crates::services::refresh::refresh_schedule_list;
+    let _ = axon::crates::services::refresh::refresh_schedule_create;
+    let _ = axon::crates::services::refresh::refresh_schedule_delete;
+    let _ = axon::crates::services::refresh::refresh_schedule_enable;
+    let _ = axon::crates::services::refresh::refresh_schedule_disable;
 }

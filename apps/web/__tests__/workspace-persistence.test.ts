@@ -48,7 +48,7 @@ describe('parsePersistedWorkspaceState', () => {
     lastResponseLatencyMs: 1500,
     lastResponseModel: 'sonnet',
     showChat: true,
-    showEditor: true,
+    rightPanel: 'editor',
     savedAt: Date.now(),
   }
 
@@ -89,7 +89,7 @@ describe('parsePersistedWorkspaceState', () => {
     expect(result!.documentMarkdown).toBe('# Hello')
     expect(result!.documentTitle).toBe('Test Doc')
     expect(result!.showChat).toBe(true)
-    expect(result!.showEditor).toBe(true)
+    expect(result!.rightPanel).toBe('editor')
   })
 
   it('accepts freeform model values', () => {
@@ -210,24 +210,31 @@ describe('parsePersistedWorkspaceState', () => {
     expect(result!.indexedSources).toEqual([])
   })
 
-  it('ensures both panels cannot be collapsed — forces showChat true', () => {
-    const state = { ...validState, showChat: false, showEditor: false }
+  it('ensures chat visible when rightPanel is null — forces showChat true', () => {
+    const state = { ...validState, showChat: false, rightPanel: null }
     const result = parsePersistedWorkspaceState(JSON.stringify(state))
     expect(result!.showChat).toBe(true)
-    expect(result!.showEditor).toBe(false)
+    expect(result!.rightPanel).toBeNull()
   })
 
-  it('migrates old desktopViewMode to showChat/showEditor', () => {
+  it('migrates old showEditor=true to rightPanel=editor', () => {
     const oldState = {
       ...validState,
-      showChat: undefined,
-      showEditor: undefined,
-      desktopViewMode: 'editor',
+      rightPanel: undefined,
+      showEditor: true,
     }
     const result = parsePersistedWorkspaceState(JSON.stringify(oldState))
-    // desktopViewMode 'editor' → showChat false, showEditor true
-    // But both-collapsed guard forces showChat=true when both would be false
-    expect(result!.showEditor).toBe(true)
+    expect(result!.rightPanel).toBe('editor')
+  })
+
+  it('migrates old showEditor=false to rightPanel=null', () => {
+    const oldState = {
+      ...validState,
+      rightPanel: undefined,
+      showEditor: false,
+    }
+    const result = parsePersistedWorkspaceState(JSON.stringify(oldState))
+    expect(result!.rightPanel).toBeNull()
   })
 })
 
@@ -248,7 +255,7 @@ describe('buildPersistedPayload', () => {
     lastResponseLatencyMs: 1500,
     lastResponseModel: 'sonnet' as const,
     showChat: true,
-    showEditor: true,
+    rightPanel: 'editor' as const,
   }
 
   it('adds savedAt timestamp', () => {
@@ -288,7 +295,7 @@ describe('buildPersistedPayload', () => {
     expect(result.documentTitle).toBe('Test Doc')
     expect(result.currentDocFilename).toBe('test.md')
     expect(result.showChat).toBe(true)
-    expect(result.showEditor).toBe(true)
+    expect(result.rightPanel).toBe('editor')
   })
 
   it('roundtrips through parse correctly', () => {

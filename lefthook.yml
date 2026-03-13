@@ -44,4 +44,4 @@ pre-commit:
       run: cargo check --all-targets --locked
     test:
       glob: "**/*.{rs,toml}"
-      run: cargo test --all --locked
+      run: cargo test --all --locked --features test-helpers

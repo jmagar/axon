@@ -102,7 +102,8 @@ export function parseRemoteUrl(url: string): string | null {
   try {
     // SSH: git@github.com:owner/repo.git
     const sshMatch = url.match(/^git@[^:]+:(.+?)(?:\.git)?$/)
-    if (sshMatch) return sshMatch[1]
+    // sshMatch[1] is always defined when the match succeeds (capture group 1)
+    if (sshMatch) return sshMatch[1]!
 
     // HTTPS: https://github.com/owner/repo.git
     const parsed = new URL(url)

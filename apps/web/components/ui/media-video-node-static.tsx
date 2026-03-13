@@ -14,7 +14,8 @@ export function VideoElementStatic(
         <figure className="group relative m-0 inline-block cursor-default" style={{ width }}>
           {/* biome-ignore lint/a11y/useMediaCaption: static export context does not provide caption tracks */}
           <video className="w-full max-w-full rounded-sm object-cover px-0" src={url} controls />
-          {caption && <figcaption>{NodeApi.string(caption[0])}</figcaption>}
+          {/* caption existence checked by the `caption &&` guard */}
+          {caption && <figcaption>{NodeApi.string(caption[0]!)}</figcaption>}
         </figure>
       </div>
       {props.children}

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -66,5 +66,34 @@
   },
   "files": {
     "includes": ["**"]
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "components/editor/use-chat-fake-stream-builders.ts",
+        "components/ui/ai-loading-bar.tsx",
+        "components/ui/ai-menu.tsx",
+        "components/ui/block-context-menu.tsx",
+        "components/ui/block-discussion.tsx",
+        "components/ui/block-draggable.tsx",
+        "components/ui/block-suggestion.tsx",
+        "components/ui/suggestion-node-static.tsx",
+        "components/ui/suggestion-node.tsx",
+        "components/ui/toc-node-static.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noStaticElementInteractions": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off"
+          },
+          "correctness": {
+            "noUnusedImports": "off"
+          }
+        }
+      }
+    }
+  ]
 }

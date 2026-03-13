@@ -1,11 +1,48 @@
 # Changelog
-Last Modified: 2026-03-08 (session: v0.11.1 — Expand test coverage across web app and Rust crates (+914 tests))
+Last Modified: 2026-03-13 (session: v0.21.1 — services layer migration + contract tests)
 
-## [Unreleased] — feat/services-layer-refactor
+## [Unreleased] — feat/github-code-aware-chunking
 
-This section documents commits on `feat/services-layer-refactor` relative to `main` (`51a2c9c8`).
+This section documents commits on `feat/github-code-aware-chunking` relative to `main` (`e2a503c7`).
 
 ### Highlights
+
+- **Services layer migration complete + contract tests (`ca7831c0` window)** — all CLI commands, MCP handlers, and web sync modes route through `crates::services::*`; dead-code exports (`run_evaluate_native`, `run_suggest_native`) removed; `watch` CLI command migrated to service layer; MCP contract parity tests hardened; map migration and scrape contract tests added.
+
+- **Session lifecycle hardening + tooling cleanup (`b39e83a0`)** — ACP/web/MCP lifecycle behavior and developer tooling were hardened in a single branch-head commit.
+
+- **Web performance/a11y hardening + ACP reliability follow-through (post-`e1e612c6`)** — landed five branch-head commits: web performance and accessibility improvements (`fb7a9f87`, `14d8edd3`), ACP session persistence through WebSocket disconnects (`4663ce65`), and shell/session UX reliability fixes for streaming/session list behavior (`80a7e21d`, `356ea87a`).
+
+- **Branch head sync (post-`5682daa2`)** — documented two previously missing branch-head commits: ACP session/config persistence hardening (`bbc1684b`) and GitHub TEI batch embedding performance improvements (`e1e612c6`).
+- **Assistant mode in Reboot sidebar and ACP path isolation (v0.18.0)** — added `assistant` rail mode with dedicated session list (`/api/assistant/sessions`), `useAssistantSessions` hook, and shell wiring for separate assistant session continuity; pulse chat now accepts `assistant_mode` and resolves CWD to `$AXON_DATA_DIR/axon/assistant` (fallback `~/.local/share/axon/axon/assistant`) with per-agent+mode ACP connection scoping.
+- **MCP config path alignment (v0.18.1 window)** — normalized config-path expectations to `mcp.json` across web/server/docs flows to remove path drift between UI settings and backend resolution.
+
+- **Verification hardening + pre-existing gate cleanup** — fixed pre-existing failing tests/clippy issues (`await_holding_lock`, `collapsible_if`, env-coupled health assertions, refresh DB test skip behavior) so `just verify` passes cleanly; aligned web lint configuration for upstream PlateJS-derived components via scoped Biome overrides and removed stale suppressions.
+
+- **Reboot UI cutover — chat-first interface promoted to root route (v0.16.0)** — `AxonShell` (the reboot UI) promoted from `/reboot` to `/`; legacy dashboard preserved at `/legacy`; `AppShell` sidebar guard updated to `hideAppSidebar` covering `/`, `/legacy`, `/reboot`; sidebar page links updated (removed duplicate `/reboot` entry, added `/legacy`); Docker stats wired to NeuralCanvas intensity via `canvasRef` + `useAxonWs` subscription (`command.done`/`command.error` pulse, CPU-normalized idle intensity); message edit and retry callbacks implemented (trim-and-resubmit pattern); settings dialog added with canvas profile picker (current/subtle/cinematic/electric/zen) persisted to localStorage; `useLogStream` hook extracted from `AxonLogsDialog` to eliminate SSE duplication with `logs-viewer.tsx`; TypeScript build errors from Plate.js untyped APIs resolved; 771 tests passing, Next.js build clean
+
+- **GraphRAG scaffolding** — `crates/core/neo4j.rs`, `crates/jobs/graph.rs`, `crates/jobs/graph/worker.rs`, `crates/services/graph.rs` stubs added; `ServiceResult` gains graph-related variants; `rust-toolchain.toml` updated
+
+- **MCP transport/docs alignment + shell completions/CORS/crawl output hardening (v0.15.0)** — `feat(mcp)` adds stdio + dual transport support (`a3c1f18e`), docs/env alignment for MCP transport settings (`ef2c4fad`), and feature-level CLI/web hardening for shell completions, CORS/origin handling, and crawl output path behavior (`3d3f9d98`); includes ingest progress fix baseline in this unreleased window (`e462931f`)
+
+- **GitHub ingest progress display fixes (v0.14.2)** — three bugs fixed: (1) `Authorization: Bearer` → `Authorization: token` for classic GitHub PATs (`ghp_`) in `files.rs` and `wiki.rs`; (2) added unauthenticated clone fallback for public repos; (3) final progress send (`5/5 tasks, chunks_embedded`) added after `tokio::join!` completes in `github.rs`; (4) `ingest_metrics_suffix()` completed branch in `metrics.rs` now handles `tasks_total` — `axon status` shows `5/5 tasks | N chunks` for completed GitHub ingests
+
+- **GitHub code-aware chunking + git clone performance + Qdrant tuning (v0.14.1)** — `embed_code_with_metadata()` added to `crates/vector/ops/tei.rs` — tries tree-sitter AST-aware chunking (Rust, Python, JS, TS, Go, Bash) with fallback to 2000-char prose; unified `GitHubPayloadParams` builder in `crates/ingest/github/meta.rs` produces 31 `gh_*` structured metadata fields per chunk; `--no-source` flag (source code included by default); GitHub repo re-ingest via refresh schedules gated on `pushed_at`; **performance**: replaced per-file HTTP API fetches with `git clone --depth=1` — 10K+ individual requests → single clone operation (biomejs/biome: 30+ min → seconds); live progress tracking via `UnboundedSender<serde_json::Value>` channel from `embed_files()` → DB writer task in `process.rs`; progress displays task-level phase, file-level counts, and final chunks in both `axon ingest list` and `axon status`; Qdrant `production.yaml` config added (on-disk payload + vectors + HNSW, memmap threshold 20KB); docker-compose gains Qdrant memory limits (1G–4G); `ssh_auth.rs` test cleanup (base64_encode moved inside test module)
+
+- **Web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0)** — SSH key auth (`crates/web/ssh_auth.rs`) validates SSH public keys from `~/.ssh/authorized_keys` or `AXON_SSH_AUTHORIZED_KEYS`; dual-auth mode (`AXON_REQUIRE_DUAL_AUTH`) requires both Tailscale identity AND API token; Tailscale auth module hardened with configurable allowed users/networks; Pulse workspace gains dedicated logs/MCP/terminal panes (`pulse-logs-pane.tsx`, `pulse-mcp-pane.tsx`, `pulse-terminal-pane.tsx`); mobile pane switcher improved; `use-split-pane` rewritten for new pane layout; proxy middleware updated; `axon.subdomain.conf` deleted (superseded by Tailscale auth); CLI: `spider_capture.rs` dead code deleted; `map.rs`/`scrape.rs`/`screenshot.rs` cleaned up; crawl runtime DB helpers expanded; AMQP channel improvements; `suggest.rs` simplified; `vector/ops/input` split into module; web download handler hardened; new `.env.example` entries for auth settings; `auth/` docs added
+
+- **Sync dispatch refactor + session guard scaffold (v0.13.2)** — `dispatch_service` split into focused per-mode helpers (`dispatch_query_modes`, `dispatch_acp_modes`, etc.) to keep the top-level router concise; `session_guard.rs` added as `pub(crate)` module under `crates/web/execute/` — polls `~/.claude/projects/` for `{session_id}.jsonl` after a Pulse turn completes (100ms × 50 retries); `#![allow(dead_code)]` suppresses warnings while the call site is wired; `AcpConn` type alias simplifies signatures in `acp_adapter.rs`; `subprocess.rs` restructured for cleaner fallback path; `pulse_chat.rs` session-file integration points added; ACP WS event tests updated to cover new event shapes
+
+
+- **Ingest progress display + embed list polish + crawl batch resilience (v0.13.1)** — `axon status` now shows live YouTube ingest progress (`videos_done/total`, `enumerating…` placeholder) via `result_json` COALESCE merge on completion; `axon embed list` displays rich per-job rows (target, metrics, collection, age, error) reusing `status/metrics` helpers (made `pub(crate)`); `crawl_batch` downgrades excluded-URL errors to warnings and only hard-fails if all URLs are excluded; `find_excluded_prefix` replaces `is_excluded_url_path` with clearer error message; `YoutubeVideoMeta` gains `video_id` + `thumbnail` fields stored as `yt_video_id`/`yt_thumbnail` Qdrant payload
+
+- **Multi-agent sessions sidebar (v0.13.0)** — `/reboot` sessions sidebar now surfaces Claude, Codex, and Gemini sessions with colored agent badge pills (CX green, G blue); `codex-scanner.ts` walks `~/.codex/sessions/{year}/{month}/{day}/*.jsonl`, `gemini-scanner.ts` walks `~/.gemini/tmp/{hash}/chats/session-*.json`; `session-utils.ts` extracted to break circular Turbopack module dependency; `codex-jsonl-parser.ts` + `gemini-json-parser.ts` parse history for the detail view; `[id]/route.ts` branches on `session.agent` to select the correct parser; per-agent representation guarantee (≥3 from each agent type) in the list route prevents all-Claude results when Claude sessions are most recent; `axon-shell.tsx` auto-switches agent selector to Codex/Gemini when a non-Claude session is clicked
+
+- **Unified `axon ingest` + structured metadata (v0.12.0)** — replaced three separate ingest commands (`axon github`, `axon reddit`, `axon youtube`) with a single `axon ingest <target>` that auto-detects source from input (GitHub slug/URL, YouTube URL/@handle/bare ID, Reddit r/name or URL); `crates/ingest/classify.rs` added with 17 tests; `gh_*` structured metadata added to all GitHub Qdrant chunks (repo, issue, PR) via new `crates/ingest/github/meta.rs`; `reddit_*` metadata added to all Reddit chunks (both subreddit listing and thread URL paths) via new `crates/ingest/reddit/meta.rs`; `regex` crate moved from `[dev-dependencies]` to `[dependencies]` (was breaking MCP compilation); `AntiBotTech.as_ref()` removed in collector.rs (spider updated enum from `Option<AntiBotTech>` to `AntiBotTech`)
+
+- **ACP performance + scalability fixes + modern Rust (v0.11.2)** — all 19 findings from the ACP performance/scalability analysis addressed: `crates/services/acp.rs` split from 2060-line monolith into a proper module (`acp/bridge.rs`, `acp/adapters.rs`, `acp/config.rs`, `acp/mapping.rs`, `acp/runtime.rs`, `acp/session.rs`); `Arc<Mutex<AcpRuntimeState>>` replaced with `OnceLock` + `RefCell` (no lock on streaming token hot path); `Arc<Mutex<HashMap>>` permission map replaced with `DashMap`; double `serde_json::to_value`+`to_string` on every streaming token replaced with direct `to_string` + string-concat envelope (FINDING-5); `tokio::runtime::Builder` with configurable `max_blocking_threads` replaces `#[tokio::main]` default (FINDING-6); `AdapterGuard` RAII kills subprocess on drop covering all error paths; `select! { biased; }` drains events before checking process exit; MCP server config TTL cache added; ACP session concurrency semaphore (`AXON_ACP_MAX_CONCURRENT_SESSIONS`, default 8); FINDING-14 fully fixed: exit watcher `drop(exit_tx)` on clean exit instead of `send(String::new())` — receiver `Err` = clean shutdown, `Ok(msg)` = crash; `mod.rs` → `.rs` files (`acp/mod.rs` → `acp.rs`, `types/mod.rs` → `types.rs`) per Rust 2018 module conventions; all clippy warnings resolved with `#[expect]` (not `#[allow]`)
+
+- **dev-setup bootstrap script (v0.11.1)** — `scripts/dev-setup.sh` auto-detects arch, installs `just` prebuilt, auto-generates secrets on first `.env` creation, prompts for `AXON_DATA_DIR`, pre-creates container data directories, starts test infra and populates test env URLs; `Justfile` gains `test-infra-up`/`test-infra-down` recipes; hook script paths made portable via `git rev-parse`
 
 - **Test coverage expansion — web app + Rust crates (v0.11.1)** — 914 new tests across 18 files: 6 new TypeScript test files (`api-fetch`, `api/cortex-routes`, `api/sessions-routes`, `api/workspace-route`, `pulse-chat-api-lib`, `pulse-session-store`) + 5 expanded TS test files; Rust tests added to `crates/web/` (execute/args, execute/cancel, execute/files, execute/overrides, download/archive, docker_stats, pack) and `crates/services/` (acp, events, query, search, system, types); two bugs fixed: `pushCapped` array spreading via `items.concat(item)` → `[...items, item]`, `window.localStorage` SSR guard added via `getLocalStorage()` helper with `typeof window !== 'undefined'` check; zip-slip vulnerability documented in `build_zip` (entry path stored verbatim); `LogLevel` case-sensitivity documented (`"WARN"` → `Info`); XML single-quote escaping gap documented in `pack.rs`
 
@@ -96,7 +133,147 @@ This section documents commits on `feat/services-layer-refactor` relative to `ma
 
 | Commit | Type | Message |
 |---|---|---|
-| `pending` | feat | Zed alignment patterns + ACP permission plumbing (v0.8.0) |
+| `ca7831c0` | fix | OAuth __Host- cookie HTTP bug, orphaned pending re-enqueue, youtube helper, evaluate dead code |
+| `a3120774` | chore | remove orphaned run_evaluate_native and run_suggest_native dead code |
+| `f508977f` | feat | add watch service module, migrate watch CLI command through services layer |
+| `c4dcb115` | fix | strengthen MCP contract parity tests from tautological to real assertions |
+| `c9e5c468` | fix | restore artifact path test, fix OAuth redirect URI normalization, fix MCP issuer |
+| `fddf8374` | fix | fix worker lane exit bug, Reddit ingest flags, and inverted routing test |
+| `b0db2244` | fix | restore auto-inline and artifacts param docs in MCP-TOOL-SCHEMA.md |
+| `5c298b29` | fix | fix next.config.ts typos, URL validation, and page.tsx re-export |
+| `01143928` | chore | stabilize branch and make all quality gates green |
+| `4fffcb68` | test | harden crawl fallback and oauth error contracts |
+| `3f8214ae` | chore | finalize service-layer migration task 9 |
+| `afe1ef60` | chore | finalize service layer migration v2 with guards and verifications |
+| `51775607` | refactor | route web async ingest modes through direct services |
+| `57ce5057` | refactor | split refresh schedule and route watch/scheduler through services |
+| `5d1960cf` | refactor | route cli lifecycle and system commands through services |
+| `318eae23` | refactor | complete mcp lifecycle and screenshot rewires to services |
+| `eb2895e9` | refactor | route mcp embed ingest handlers through services layer |
+| `84d0736f` | feat | add service-owned ingest target classification |
+| `5f91f82c` | feat | add service lifecycle wrappers for crawl extract embed ingest refresh |
+| `67808fd5` | test | add migration guardrails for CLI MCP and web ingest routing |
+| `68db1231` | chore | checkpoint current changes |
+| `b6149f31` | feat(web) | refresh shell mission control and provider branding |
+| `b39e83a0` | feat(acp,web,mcp) | harden session lifecycle and developer tooling |
+| `356ea87a` | fix(web) | make session list loading reliable |
+| `80a7e21d` | fix(web) | clear streaming flag on message when result arrives |
+| `14d8edd3` | feat(web) | performance/accessibility audit fixes + density feature + state split |
+| `4663ce65` | feat | ACP session persistence — survive WebSocket disconnects |
+| `fb7a9f87` | perf | web performance & accessibility improvements |
+| `e1e612c6` | perf(ingest) | batch GitHub TEI embeddings across documents |
+| `bbc1684b` | feat(acp) | persist MCP config and harden session scanning |
+| `5682daa2` | fix(mcp) | align config path to mcp.json across web/api/docs |
+| `98e7b96e` | feat(release) | ship assistant mode and stabilize verification gates (v0.18.0) |
+| `93537231` | feat(web) | wire assistant mode sessions through shell and ACP |
+| `aef2014f` | test(web) | fix cortex route mock arg typing |
+| `c54de559` | feat(web) | render assistant session list in sidebar |
+| `17a6d231` | feat(web) | add assistant rail mode to config |
+| `e7271b23` | feat(web) | add assistant sessions API route and scanner |
+| `c2d414c8` | feat(web) | use assistant CWD when assistant_mode=true |
+| `9c7e6a5f` | feat(web) | add assistant_mode to DirectParams and extract from flags |
+| `05d13ba5` | test(services) | align scrape payload contract assertion |
+| `df0f0ffe` | feat(web) | add assistant_mode to ALLOWED_FLAGS |
+| `4fdc70be` | feat | complete GraphRAG rollout and prune reboot remnants |
+| `4e107038` | feat | add graph worker, services layer, artifact context isolation, and toolchain bump (v0.16.0) |
+| `61568562` | dev-setup | arch-aware just prebuilt install with binary verification |
+| `c8ba34a8` | dev-setup | always backfill .env entries and data dirs on rerun |
+| `fea465cc` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `b645b204` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `fc197755` | Update scripts/dev-setup.sh | Update scripts/dev-setup.sh |
+| `60c50870` | dev-setup | fix die newlines and sed -i portability on macOS |
+| `8ea30464` | dev-setup | fix local-outside-function bug, drop dead just fallback |
+| `e900e335` | just | add test-infra-up/down recipes; use them in dev-setup |
+| `c308205f` | dev-setup | start test infra, populate test env URLs, fix stale summary |
+| `c762a652` | feat(dev-setup) | pre-create container data directories |
+| `f6098774` | feat(dev-setup) | auto-generate secrets on first .env creation |
+| `bc3dbc6b` | feat(dev-setup) | prompt for AXON_DATA_DIR on first .env creation |
+| `86062089` | fix(dev-setup) | fast just install + clarify entrypoint |
+| `08e35097` | feat | add dev-setup.sh bootstrap script |
+| `5179cba0` | fix | make hook script paths portable via git rev-parse |
+| `48d372d9` | fix | correct stale hook script paths in .claude/settings.json |
+| `706e84b7` | fix(sessions) | suppress biome dep warning, format shell-server.mjs |
+| `b488a20a` | feat(reboot) | add loading/error states to AxonMessageList |
+| `a83b1901` | feat(reboot) | disable AxonPromptComposer submit during streaming, add spinner |
+| `96120f43` | fix(sessions) | add repo/branch to SessionSummary type |
+| `8a0ada40` | fix(reboot) | add repo/branch to sidebar filter and card display |
+| `a2a252bb` | feat(reboot) | wire AxonSidebar to real SessionSummary list |
+| `dc51e2ed` | fix(reboot) | guard history sync during streaming, fix timestamp display |
+| `c0ffbf59` | fix(reboot) | wrap onTurnComplete callback in useCallback |
+| `9ce7c25a` | feat(reboot) | wire AxonShell to real session data and ACP WebSocket |
+| `eca13f44` | fix(hooks) | use randomUUID for message IDs + add ACP types to WsServerMsg |
+| `863cdee7` | test(hooks) | add behavioral tests for useAxonSession |
+| `ba85c64e` | refactor(reboot) | rename remaining REBOOT_ constants to AXON_ |
+| `ee1e5403` | refactor(reboot) | rename Reboot* components to Axon* |
+| `e3f2ae1c` | fix(pulse) | forward session_fallback through route handler + fix types |
+| `c1367c35` | feat(pulse) | handle session_fallback event in stream pipeline |
+| `bc2d691f` | style(sessions) | use template literals in git-metadata (biome) |
+| `26273571` | feat(sessions) | add git-metadata helper for repo/branch enrichment |
+| `adff1e2f` | merge | integrate feat/sidebar into main |
+| `3e8d7778` | chore(config) | update mcporter axon transport endpoint shape |
+| `5405832a` | fix(docker) | unblock worker/web healthchecks in local compose |
+| `fb91fadd` | chore(release) | v0.4.1 — stabilize web token/docs and prep services refactor execution |
+| `555ade14` | feat | add evaluate page, cortex suggest API, image SHA verification, CLI help contract; consolidate modules and expand command docs (v0.3.0) |
+| `460c8e30` | refactor | unify scrape response shaping and fetch pattern |
+| `cd831c88` | Merge pull request #7 from jmagar/add-claude-github-actions-1772591515488 | Merge pull request #7 from jmagar/add-claude-github-actions-1772591515488 |
+| `5472d9f3` | "Claude Code Review workflow" | "Claude Code Review workflow" |
+| `604d2d67` | "Claude PR Assistant workflow" | "Claude PR Assistant workflow" |
+| `cd8d172c` | feat(mcp) | add HTTP transport with Google OAuth + cleanup |
+| `4f71971d` | fix(web) | resolve TypeScript build errors from Plate.js untyped APIs |
+| `65a74309` | fix(web) | remove unused LogEntry import from axon-logs-dialog |
+| `a42cf681` | refactor(web) | extract shared log stream hook from AxonLogsDialog |
+| `4dcf1746` | feat(web) | add settings dialog with canvas profile to reboot shell |
+| `f7f60573` | feat(web) | wire message edit and retry in reboot chat |
+| `88cf67e3` | feat(web) | wire Docker stats and NeuralCanvas intensity into reboot shell |
+| `8dbbb1f1` | feat(web) | update reboot sidebar page links for root route |
+| `fdf06eee` | feat(web) | promote reboot UI to root route, move legacy dashboard to /legacy |
+| `163998b4` | feat | finalize mcp transport and review hardening (v0.15.0) |
+| `3d3f9d98` | feat | add shell completions, CORS guards, and crawl output paths |
+| `ef2c4fad` | docs(mcp) | align transport docs and env example |
+| `a3c1f18e` | feat(mcp) | support stdio and dual transport modes |
+| `e462931f` | fix(ingest) | GitHub clone auth + progress display fixes (v0.14.2) |
+| `1a4ded20` | fix(ingest) | GitHub clone auth + progress display fixes (v0.14.2) |
+| `0c8f2b57` | chore | Qdrant tuning + ssh_auth test cleanup (v0.14.1) |
+| `81e6a874` | fix(ingest) | display task-level and phase progress for GitHub ingest |
+| `17782382` | perf(ingest) | replace per-file GitHub API fetches with git clone --depth=1 |
+| `fa11b4a3` | feat(ingest) | add live progress tracking for GitHub repo ingestion |
+| `d29b1f4a` | docs | update all docs for GitHub code-aware chunking feature |
+| `ed336b16` | feat(refresh) | GitHub repo re-ingest schedules with pushed_at gating |
+| `31db768b` | feat(cli) | source code included by default in GitHub ingest |
+| `bdd687d1` | feat(ingest) | unified GitHub payload builder + code-aware chunking |
+| `61a0f387` | feat(vector) | add embed_code_with_metadata with AST chunking fallback |
+| `69f673c0` | feat(web) | web auth hardening + Pulse workspace improvements + CLI cleanup (v0.14.0) |
+| `0401eaa0` | feat(deps) | add text-splitter + tree-sitter grammar crates |
+| `717d37cc` | fix(review) | address 114 CodeRabbit threads + remove dead run_*_native functions (v0.13.3) |
+| `2f53720f` | fix(review) | address 14 CodeRabbit/cubic-dev-ai PR comments |
+| `b0f9ad34` | refactor(web) | sync dispatch helpers + session guard scaffold (v0.13.2) |
+| `775111dc` | fix(ingest) | progress display + embed list polish + crawl batch resilience (v0.13.1) |
+| `2cf2a067` | feat(web) | multi-agent sessions sidebar — Claude + Codex + Gemini (v0.13.0) |
+| `031af077` | feat(ingest) | unified axon ingest + structured metadata + MCP artifacts (v0.12.0) |
+| `a4ceffd7` | feat(acp) | wire `<axon:editor>` XML blocks to PlateJS editor |
+| `cbaa1eab` | feat(web) | add editor_update WS message type to protocol |
+| `175b0454` | fix(acp) | address all PR review comments + implement SEC-7 session-scoped permission routing |
+| `f6d9bace` | fix | address Codex + Copilot PR review comments |
+| `5279f7ad` | refactor(acp) | performance/scalability fixes + modern Rust idioms (v0.11.2) |
+| `e2a503c7` | chore | merge dev-setup script PR (#9) (arch-aware just install, secret gen, data dirs, test infra) |
+| `5fcbad02` | fix | patch zip-slip, LogLevel case-sensitivity, XML single-quote escaping |
+| `e012ce34` | test | expand coverage across web app + Rust crates (+914 tests, 18 files) |
+| `470ad642` | fix(ci) | resolve mcp-smoke and test job failures |
+| `47e62592` | fix | address misc/infra PR review comments (threads 1,3,4,5,7,11,34,36,37,40,41,43,51) |
+| `05152d9d` | fix | address Rust backend PR review comments (threads 10,17,19,22,26,27,31,47) |
+| `b5690063` | fix | address reboot + terminal component PR review comments (threads 42,44,46,49,50,52,53) |
+| `bbf962b3` | fix | address AI elements component PR review comments (threads 23,28,29,32,33,35,45) |
+| `197f4975` | fix | address Pulse component PR review comments (threads 9,13,15,24,25,54,55) |
+| `59df81cb` | fix | address API route PR review comments (threads 2,6,12,14,20,39) |
+| `7b0af2fe` | feat(reboot) | wire AxonShell to real ACP/session data, add hooks + UI polish (v0.11.0) |
+| `31cf6299` | fix(sessions) | use apiFetch to inject x-api-key on session load |
+| `45a19e59` | feat(hooks) | add useAxonSession for JSONL session history |
+| `9bb93bce` | feat(hooks) | add useAxonAcp for real ACP WebSocket prompt submission |
+| `9726772f` | feat(acp) | emit SessionFallback event on failed session resume |
+| `02e26020` | refactor(sessions) | hoist git enrichment to outer project loop |
+| `489c5435` | feat(sessions) | enrich session list with git repo/branch metadata |
+| `85518db6` | feat | reboot UI shell + logs SSE fix + CORS config + biome cleanup (v0.9.0) |
+| `e596f3e6` | feat | Zed alignment patterns + ACP permission plumbing (v0.8.0) |
 | `24e25081` | feat | add --root-selector/--exclude-selector + clean_markdown_whitespace (v0.7.5) |
 | `9c38b0fa` | refactor | split monolith-violating files (route.ts, use-pulse-chat.ts) |
 | `8d4603b7` | feat | address all ACP review findings (v0.7.4) |

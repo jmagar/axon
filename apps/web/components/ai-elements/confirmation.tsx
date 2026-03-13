@@ -93,7 +93,12 @@ export function ConfirmationContent({
 
   return (
     <>
-      <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
+      <button
+        type="button"
+        className="fixed inset-0 z-10 w-full h-full cursor-default"
+        onClick={() => setOpen(false)}
+        aria-label="Close panel"
+      />
       <div
         ref={panelRef}
         role="alertdialog"

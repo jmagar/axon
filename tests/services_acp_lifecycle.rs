@@ -6,11 +6,7 @@ use axon::crates::services::types::{AcpAdapterCommand, AcpPromptTurnRequest};
 use std::path::Path;
 
 fn test_scaffold() -> AcpClientScaffold {
-    AcpClientScaffold::new(AcpAdapterCommand {
-        program: "cat".to_string(),
-        args: vec!["--stdio".to_string()],
-        cwd: None,
-    })
+    AcpClientScaffold::new(AcpAdapterCommand::new("cat", vec!["--stdio".to_string()]))
 }
 
 #[test]
@@ -24,11 +20,7 @@ fn prepare_initialize_builds_latest_protocol_request() {
 
 #[test]
 fn prepare_initialize_fails_for_invalid_adapter() {
-    let scaffold = AcpClientScaffold::new(AcpAdapterCommand {
-        program: "   ".to_string(),
-        args: vec![],
-        cwd: None,
-    });
+    let scaffold = AcpClientScaffold::new(AcpAdapterCommand::new("   ", vec![]));
     let err = scaffold
         .prepare_initialize()
         .expect_err("invalid adapter should fail");
@@ -42,6 +34,8 @@ fn prepare_session_setup_builds_new_session_when_no_session_id() {
         session_id: None,
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let setup = scaffold
@@ -66,6 +60,8 @@ fn prepare_session_setup_builds_load_session_when_session_id_present() {
         session_id: Some("session-42".to_string()),
         prompt: vec!["continue".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let setup = scaffold
@@ -91,6 +87,8 @@ fn prepare_session_setup_rejects_blank_session_id() {
         session_id: Some("   ".to_string()),
         prompt: vec!["continue".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = scaffold
@@ -106,6 +104,8 @@ fn prepare_session_setup_rejects_relative_cwd() {
         session_id: None,
         prompt: vec!["hello".to_string()],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = scaffold
@@ -120,6 +120,8 @@ fn validate_prompt_turn_request_rejects_empty_prompt() {
         session_id: None,
         prompt: vec![],
         model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
         mcp_servers: vec![],
     };
     let err = validate_prompt_turn_request(&req).expect_err("empty prompt should fail");
@@ -130,4 +132,52 @@ fn validate_prompt_turn_request_rejects_empty_prompt() {
 fn validate_session_cwd_rejects_relative_path() {
     let err = validate_session_cwd(Path::new("relative")).expect_err("relative path should fail");
     assert!(err.to_string().contains("must be an absolute path"));
+}
+
+// ── Security regression: scaffold validates adapter on prepare_initialize ───
+
+#[test]
+fn prepare_initialize_rejects_empty_adapter_program() {
+    let scaffold = AcpClientScaffold::new(AcpAdapterCommand::new("", vec![]));
+    let err = scaffold
+        .prepare_initialize()
+        .expect_err("empty adapter program should fail at prepare_initialize");
+    assert!(
+        err.to_string().contains("cannot be empty"),
+        "error should mention empty program: {err}"
+    );
+}
+
+#[test]
+fn prepare_session_setup_rejects_empty_adapter_program() {
+    // Adapter validation is enforced by prepare_initialize, which always
+    // precedes prepare_session_setup in the real flow.  Verify that calling
+    // prepare_initialize on a whitespace-only program triggers that rejection.
+    let scaffold =
+        AcpClientScaffold::new(AcpAdapterCommand::new("  ", vec!["--stdio".to_string()]));
+    let err = scaffold
+        .prepare_initialize()
+        .expect_err("whitespace-only adapter program should fail at prepare_initialize");
+    assert!(
+        err.to_string().contains("cannot be empty"),
+        "error should mention empty program: {err}"
+    );
+}
+
+#[test]
+fn validate_prompt_turn_request_rejects_blank_session_id() {
+    let req = AcpPromptTurnRequest {
+        session_id: Some("   ".to_string()),
+        prompt: vec!["hello".to_string()],
+        model: None,
+        session_mode: None,
+        blocked_mcp_tools: vec![],
+        mcp_servers: vec![],
+    };
+    let err =
+        validate_prompt_turn_request(&req).expect_err("blank session_id should fail validation");
+    assert!(
+        err.to_string().contains("cannot be blank"),
+        "error should mention blank session_id: {err}"
+    );
 }

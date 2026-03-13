@@ -1,5 +1,5 @@
 # Testing Guide
-Last Modified: 2026-02-27
+Last Modified: 2026-03-09
 
 This document defines how to run tests locally and in CI for `axon`.
 
@@ -42,6 +42,150 @@ Behavior:
 - Runs ignored `worker_e2e` tests explicitly.
 - Requires local infra dependencies to be reachable.
 
+### Integration suite lane (infra-backed, skip-on-missing)
+
+A separate set of integration tests targets live Redis, RabbitMQ, Postgres, and Qdrant instances.
+These tests do **not** use `#[ignore]` — instead each test calls a resolver (`resolve_test_amqp_url()`, etc.)
+that returns `None` and exits cleanly when the corresponding env var is unset.
+This means they run in `just test` without error, but only exercise real I/O when infra is available.
+
+Start the isolated test containers (ephemeral — data wiped on stop):
+
+```bash
+just test-infra-up    # docker compose -f docker-compose.test.yaml up -d
+just test-infra-down  # docker compose -f docker-compose.test.yaml down -v
+```
+
+Then run the full suite normally:
+
+```bash
+just test
+```
+
+Integration suites currently covered:
+
+| File | Env var required | What it tests |
+|------|-----------------|---------------|
+| `crates/jobs/common/tests/amqp_integration.rs` | `AXON_TEST_AMQP_URL` | AMQP channel open, queue declare, publish/consume round-trip |
+| `crates/jobs/common/tests/redis_integration.rs` | `AXON_TEST_REDIS_URL` | Redis SET/GET/DEL cancel-key round-trip |
+| `crates/jobs/common/tests/pool_integration.rs` | `AXON_TEST_PG_URL` | PgPool acquire, health, concurrency |
+| `crates/jobs/common/tests/heartbeat.rs` | `AXON_TEST_PG_URL` | Heartbeat update lifecycle against live Postgres |
+| `crates/jobs/refresh/schedule_integration_tests.rs` | `AXON_TEST_PG_URL` | Refresh schedule CRUD and state transitions |
+| `crates/web/execute/tests/ws_protocol_tests.rs` | none | WebSocket protocol frame serialization/deserialization |
+
+## Test Infrastructure Environment Variables
+
+Set these in `.env` (populated automatically by `./scripts/dev-setup.sh`):
+
+| Variable | Default (test containers) | Purpose |
+|----------|--------------------------|---------|
+| `AXON_TEST_PG_URL` | `postgresql://axon:axontest@127.0.0.1:53434/axon_test` | Postgres integration tests |
+| `AXON_TEST_AMQP_URL` | `amqp://axon:axontest@127.0.0.1:45536/%2f` | AMQP/RabbitMQ integration tests |
+| `AXON_TEST_REDIS_URL` | `redis://127.0.0.1:53380` | Redis integration tests |
+| `AXON_TEST_QDRANT_URL` | `http://127.0.0.1:53335` | Qdrant integration tests |
+
+Test containers (from `docker-compose.test.yaml`) bind on ports that do not conflict with the dev stack:
+
+| Service | Image | Test port |
+|---------|-------|-----------|
+| `axon-postgres-test` | `postgres:17-alpine` | `53434` |
+| `axon-rabbitmq-test` | `rabbitmq:4.0-management` | `45536` (AMQP), `45537` (management) |
+| `axon-redis-test` | `redis:8.2-alpine` | `53380` |
+| `axon-qdrant-test` | `qdrant/qdrant:v1.13.1` | `53335` (HTTP), `53336` (gRPC) |
+
+All test containers use `tmpfs` mounts — data does not persist between `down -v` cycles.
+
+## Coverage Areas (v0.11.1+)
+
+### Rust: `crates/services/`
+
+Integration tests under `tests/` cover the ACP and services layer end-to-end:
+
+| File | Tests | What is covered |
+|------|-------|----------------|
+| `tests/services_acp_spawn_env.rs` | 4 | `spawn_adapter()` env-stripping regression (see below) |
+| `tests/services_acp_lifecycle.rs` | 11 | ACP session lifecycle (start, query, cancel, shutdown) |
+| `tests/services_acp_event_mapping.rs` | 12 | ACP event type mapping and serialization |
+| `tests/services_acp_security.rs` | 12 | ACP security model (SEC-7 session-scoped permission routing) |
+| `tests/services_acp_smoke.rs` | 3 | ACP compile-time smoke tests |
+| `tests/services_acp_bridge_event_serialize.rs` | 7 | Bridge event serialization round-trips |
+| `tests/services_discovery_services.rs` | 16 | Service discovery contracts |
+| `tests/services_lifecycle_services.rs` | 16 | Service lifecycle state machine |
+| `tests/services_query_services.rs` | 13 | Query service dispatch |
+| `tests/services_system_services.rs` | 8 | System-level service operations |
+| `tests/services_compile_services_smoke.rs` | 1 | Services crate compile smoke |
+
+### Rust: `crates/web/`
+
+WebSocket and execute-path tests:
+
+| File | Tests | What is covered |
+|------|-------|----------------|
+| `tests/web_ws_async_fire_and_forget.rs` | 9 | Async WS fire-and-forget execution paths |
+| `tests/web_ws_override_mapping.rs` | 19 | WS mode and flag override mapping |
+| `crates/web/execute/tests/ws_protocol_tests.rs` | (inline) | WS protocol frame encode/decode |
+| `crates/web/execute/tests/acp_ws_event_tests.rs` | (inline) | ACP WS event types |
+| `crates/web/execute/tests/ws_event_v2_tests.rs` | (inline) | WS event v2 serialization |
+
+### Rust: CLI and MCP contracts
+
+| File | Tests | What is covered |
+|------|-------|----------------|
+| `tests/cli_full_rewire_smoke.rs` | 28 | Full CLI flag rewire smoke (all commands) |
+| `tests/cli_system_rewire_regression.rs` | 11 | System command regression after CLI refactor |
+| `tests/cli_help_contract.rs` | 3 | `--help` output contracts |
+| `tests/mcp_contract_parity.rs` | 24 | MCP tool schema parity with handler implementations |
+| `tests/mcp_option_mappers.rs` | 15 | MCP option field mappers |
+
+### Rust: proptest suites
+
+Property-based tests with randomized inputs:
+
+| File | Subject |
+|------|---------|
+| `crates/core/http/proptest_tests.rs` | HTTP SSRF validator (`validate_url`) — arbitrary host/IP/port inputs |
+| `crates/crawl/engine/url_utils_proptest.rs` | `is_junk_discovered_url` — arbitrary URL strings |
+| `crates/vector/ops/input_proptest.rs` | Vector input chunking — arbitrary text lengths and overlaps |
+
+### TypeScript: `apps/web/__tests__/`
+
+New TypeScript test files added in v0.11.1:
+
+| File | What is covered |
+|------|----------------|
+| `api-fetch.test.ts` | `apiFetch` utility — token injection, error handling |
+| `api/cortex-routes.test.ts` | `/api/cortex/*` route handlers |
+| `api/sessions-routes.test.ts` | `/api/sessions/*` route handlers |
+| `api/workspace-route.test.ts` | `/api/workspace` route handler |
+| `pulse-chat-api-lib.test.ts` | Pulse chat API library — streaming, message assembly |
+| `pulse-session-store.test.ts` | Pulse session store — persistence, hydration, eviction |
+| `use-axon-acp-editor.test.ts` | `useAxonAcpEditor` hook — `<axon:editor>` XML block wiring to PlateJS |
+
+## ACP Regression Tests (`spawn_adapter` env stripping)
+
+`tests/services_acp_spawn_env.rs` covers a critical regression: `spawn_adapter()` must not leak
+specific environment variables to the child `claude-agent-acp` process.
+
+**Background:** When axon runs inside a Claude Code session, `CLAUDECODE=1` is set in the environment.
+If inherited by the ACP adapter, the inner `claude` CLI detects a nested session and exits 1
+("Claude Code cannot be launched inside another Claude Code session"), causing
+"Query closed before response received" in Pulse Chat.
+`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` point at Axon's local LLM proxy — if
+inherited, the claude/codex adapters would use the wrong endpoint and authentication scheme.
+
+**Tests:**
+
+| Test | What it asserts |
+|------|----------------|
+| `spawn_adapter_strips_claudecode_nested_session_guard` | `CLAUDECODE` is not present in child env |
+| `spawn_adapter_strips_llm_proxy_vars` | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` absent from child |
+| `spawn_adapter_passes_through_gemini_auth_vars` | Gemini auth vars (`GOOGLE_*`) are NOT stripped |
+| `spawn_adapter_strips_all_isolation_vars_together` | All isolation vars stripped in combination |
+
+These tests use a process-level `Mutex` to serialize `std::env::set_var` / `remove_var` calls
+(required in Rust 1.81+ where those functions are `unsafe`). The file-level `#![allow(unsafe_code)]`
+annotation is intentional — these are the only tests in the codebase that require it.
+
 ## Validation Commands
 
 ### Compile checks
@@ -64,8 +208,8 @@ just verify
 
 ## CI Mapping
 
-- `test` job: standard Rust test lane (`cargo test --all --locked`).
-- `test-infra` job: manual-only lane, triggered via `workflow_dispatch` input `run_infra_tests=true`.
+- `test` job: standard Rust test lane (`cargo test --all --locked`). Service containers: Redis 8.2-alpine, RabbitMQ 4.0-alpine. `AXON_TEST_REDIS_URL` and `AXON_TEST_AMQP_URL` are set so integration tests that resolve these vars exercise live I/O.
+- `test-infra` job: manual-only lane, triggered via `workflow_dispatch` input `run_infra_tests=true`. Runs `just test-infra` (the `#[ignore]` worker e2e suite).
 - `security` job: explicit `cargo audit --deny warnings` and `cargo deny check` with pinned tool versions.
 - `msrv` job: validates declared MSRV separately.
 
@@ -126,6 +270,10 @@ just coverage-branch
 - Cause: They are intentionally `#[ignore]` in default test lane.
 - Fix: Run `just test-infra`.
 
+### Integration tests silently skipping
+- Cause: `AXON_TEST_AMQP_URL` / `AXON_TEST_REDIS_URL` / `AXON_TEST_PG_URL` / `AXON_TEST_QDRANT_URL` not set.
+- Fix: Run `just test-infra-up`, then verify the vars are set (run `./scripts/dev-setup.sh` once, or add them to `.env` manually).
+
 ### Lockfile errors in CI/local commands
 - Cause: dependency graph changed but lockfile not updated.
 - Fix: run a lockfile-refreshing command locally, then rerun `just verify`.
@@ -135,7 +283,12 @@ just coverage-branch
 - If unset, test resolver falls back to `.env` and then defaults.
 - Ensure credentials in local `.env` match running Postgres.
 
+### `spawn_adapter` ACP tests failing on "unsafe_code"
+- Cause: Whole-crate `deny(unsafe_code)` applies before the file-level `allow`.
+- Fix: ensure `#![allow(unsafe_code)]` is present at the top of `tests/services_acp_spawn_env.rs` (not inside a module). This is intentional — do not remove it.
+
 ## Pull Request Checklist (Testing)
 - Ran `just test` after code changes.
 - Ran `just test-infra` when changing worker/queue/DB integration paths.
+- Ran `just test-infra-up && just test` when changing infra-backed integration suites (AMQP/Redis/Postgres/Qdrant).
 - Ran `just verify` before opening/updating PR.

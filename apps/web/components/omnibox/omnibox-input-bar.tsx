@@ -14,6 +14,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import type React from 'react'
 import { useEffect, useMemo } from 'react'
 import type {
   PulseWorkspaceAgent,
@@ -203,7 +204,7 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
         onBlur={() => setIsFocused(false)}
         rows={1}
         placeholder={PLACEHOLDER_TEXTS[0]}
-        className="min-w-0 flex-1 resize-none bg-transparent px-3 py-1.5 font-sans text-sm leading-[var(--leading-tight)] text-foreground outline-none placeholder:opacity-0 sm:py-2 sm:px-4"
+        className="min-w-0 flex-1 resize-none bg-transparent px-3 py-1.5 font-sans text-sm leading-[var(--leading-tight)] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-[var(--axon-primary)]/40 focus-visible:ring-offset-0 placeholder:opacity-0 sm:py-2 sm:px-4"
         style={{ overflowY: 'hidden' }}
         disabled={isProcessing}
       />
@@ -381,7 +382,7 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
                     name="omnibox_pulse_agent_selector"
                     value={pulseAgent}
                     onChange={(e) => setPulseAgent(e.target.value as PulseWorkspaceAgent)}
-                    className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none"
+                    className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--axon-primary)]/40"
                     aria-label="Agent selector"
                   >
                     <option value="claude">Claude</option>
@@ -395,7 +396,7 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
                     name="omnibox_pulse_model_selector"
                     value={pulseModel}
                     onChange={(e) => setPulseModel(e.target.value as PulseWorkspaceModel)}
-                    className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none"
+                    className="h-7 w-full rounded border border-[rgba(95,135,175,0.24)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--axon-primary)]/40"
                     aria-label="Model selector"
                   >
                     {modelOptions.map((option) => (
@@ -414,7 +415,7 @@ export function OmniboxInputBar(props: OmniboxInputBarProps) {
                     onChange={(e) =>
                       setPulsePermissionLevel(e.target.value as PulseWorkspacePermission)
                     }
-                    className="h-7 w-full rounded border border-[var(--border-standard)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none"
+                    className="h-7 w-full rounded border border-[var(--border-standard)] bg-[rgba(10,18,35,0.72)] px-2 text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.04em] text-[var(--text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--axon-primary)]/40"
                     aria-label="Permission selector"
                   >
                     <option value="plan">Plan</option>

@@ -1,9 +1,15 @@
+// NOTE: This file is named proxy.ts intentionally — Next.js 16 deprecated
+// middleware.ts in favor of proxy.ts. The exported `proxy` function and
+// `config.matcher` are the correct conventions. Do NOT rename to middleware.ts.
 import { timingSafeEqual } from 'node:crypto'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
+import { buildCspHeader } from '@/lib/server/csp'
+
 const API_TOKEN = process.env.AXON_WEB_API_TOKEN?.trim() || null
+const BROWSER_API_TOKEN = process.env.AXON_WEB_BROWSER_API_TOKEN?.trim() || null
 const ALLOWED_ORIGINS = (process.env.AXON_WEB_ALLOWED_ORIGINS ?? '')
   .split(',')
   .map((value) => value.trim().toLowerCase())
@@ -11,31 +17,11 @@ const ALLOWED_ORIGINS = (process.env.AXON_WEB_ALLOWED_ORIGINS ?? '')
 const ALLOW_INSECURE_LOCAL_DEV = process.env.AXON_WEB_ALLOW_INSECURE_DEV === 'true'
 const IS_DEV = process.env.NODE_ENV !== 'production'
 
-function buildConnectSrc(): string {
-  const sources = [
-    "'self'",
-    'ws://localhost:*',
-    'wss://localhost:*',
-    'ws://127.0.0.1:*',
-    'wss://127.0.0.1:*',
-    'http://localhost:*',
-    'http://127.0.0.1:*',
-  ]
-  // Allow connections to the configured backend URL (may be non-localhost in Docker/Tailscale)
-  const backendUrl = process.env.AXON_BACKEND_URL
-  if (backendUrl) {
-    try {
-      const parsed = new URL(backendUrl)
-      sources.push(`${parsed.origin}`)
-      const wsScheme = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
-      sources.push(`${wsScheme}//${parsed.host}`)
-    } catch {
-      // ignore malformed AXON_BACKEND_URL
-    }
-  }
-  return `connect-src ${sources.join(' ')}`
-}
-
+// S-M6: CSP is now built by the shared lib/server/csp.ts module. next.config.ts
+// uses the same builder so both layers always emit an identical policy string.
+// Previously this file had its own inline CSP that diverged from next.config.ts
+// (missing form-action, img-src lacked https:). That silent divergence is now
+// impossible — both call buildCspHeader() with the same options shape.
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ['X-Frame-Options', 'DENY'],
   ['X-Content-Type-Options', 'nosniff'],
@@ -43,19 +29,10 @@ const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ['Permissions-Policy', 'camera=(), microphone=(), geolocation=()'],
   [
     'Content-Security-Policy',
-    [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "frame-ancestors 'none'",
-      "object-src 'none'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      IS_DEV
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-        : "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      buildConnectSrc(),
-    ].join('; '),
+    buildCspHeader({
+      isDev: IS_DEV,
+      backendUrl: process.env.AXON_BACKEND_URL,
+    }),
   ],
 ]
 
@@ -84,7 +61,7 @@ function isAllowedOrigin(req: NextRequest): boolean {
     // Non-browser clients (curl, scripts) without Origin header:
     // allow if token auth is active (token check happens separately),
     // reject in insecure dev mode where origin is the only guard
-    return API_TOKEN !== null || !ALLOW_INSECURE_LOCAL_DEV
+    return API_TOKEN !== null || BROWSER_API_TOKEN !== null || !ALLOW_INSECURE_LOCAL_DEV
   }
 
   let parsed: URL
@@ -141,12 +118,16 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function isAuthorized(req: NextRequest): boolean {
-  if (API_TOKEN !== null) {
-    const token = extractToken(req)
-    return token.length > 0 && constantTimeEqual(token, API_TOKEN)
-  }
+  const isLocalhost = isLocalhostRequest(req)
+  if (ALLOW_INSECURE_LOCAL_DEV && isLocalhost) return true
 
-  return ALLOW_INSECURE_LOCAL_DEV && isLocalhostRequest(req)
+  const token = extractToken(req)
+  if (token.length === 0) return false
+
+  const apiTokenMatch = API_TOKEN !== null && constantTimeEqual(token, API_TOKEN)
+  const browserTokenMatch =
+    BROWSER_API_TOKEN !== null && constantTimeEqual(token, BROWSER_API_TOKEN)
+  return apiTokenMatch || browserTokenMatch
 }
 
 export function proxy(req: NextRequest) {
@@ -155,12 +136,12 @@ export function proxy(req: NextRequest) {
   }
 
   if (!isAuthorized(req)) {
-    if (!API_TOKEN && !ALLOW_INSECURE_LOCAL_DEV) {
+    if (!API_TOKEN && !BROWSER_API_TOKEN && !ALLOW_INSECURE_LOCAL_DEV) {
       return withSecurityHeaders(
         NextResponse.json(
           {
             error:
-              'API authentication is not configured. Set AXON_WEB_API_TOKEN or enable AXON_WEB_ALLOW_INSECURE_DEV=true for localhost development.',
+              'API authentication is not configured. Set AXON_WEB_API_TOKEN or AXON_WEB_BROWSER_API_TOKEN, or enable AXON_WEB_ALLOW_INSECURE_DEV=true for localhost development.',
           },
           { status: 503 },
         ),

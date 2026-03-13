@@ -8,11 +8,15 @@ mod thin_refetch;
 mod url_utils;
 
 use crate::crates::core::config::{Config, RenderMode};
-use crate::crates::core::content::{build_selector_config, build_transform_config};
-use crate::crates::core::logging::{log_info, log_warn};
+use crate::crates::core::content::{
+    build_selector_config, build_transform_config, extract_anchor_hrefs,
+};
+use crate::crates::core::http::{fetch_html, http_client, normalize_url, validate_url};
+use crate::crates::core::logging::{log_done, log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
 use collector::{CollectorConfig, collect_crawl_pages};
 use runtime::configure_website;
+use spider::url::Url;
 #[cfg(test)]
 use spider::website::Website;
 use std::collections::{HashMap, HashSet};
@@ -22,10 +26,12 @@ use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
 pub(crate) use runtime::resolve_cdp_ws_url;
+pub(crate) use sitemap::append_candidate_backfill;
 pub use sitemap::{BackfillStats, append_sitemap_backfill};
 pub(crate) use sitemap::{SitemapDiscovery, discover_sitemap_urls};
 pub(crate) use thin_refetch::chrome_refetch_thin_pages;
-pub(crate) use url_utils::{canonicalize_url_for_dedupe, is_excluded_url_path};
+use url_utils::normalize_map_candidate_url;
+pub(crate) use url_utils::{MapScope, canonicalize_url_for_dedupe, is_excluded_url_path};
 #[cfg(test)]
 pub(crate) use url_utils::{is_junk_discovered_url, regex_escape};
 
@@ -53,10 +59,10 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32, cfg: &C
     if summary.markdown_files == 0 {
         return true;
     }
-    // A single-page crawl does not provide enough HTTP-only signal to judge
+    // A very-low-page crawl does not provide enough HTTP-only signal to judge
     // whether the captured content is complete, so give AutoSwitch one Chrome
     // retry even if the page is not technically "thin".
-    if summary.pages_seen == 1 {
+    if summary.pages_seen <= 2 {
         return true;
     }
     let thin_ratio = if summary.pages_seen == 0 {
@@ -75,10 +81,142 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32, cfg: &C
     summary.markdown_files < (max_pages / 10).max(cfg.auto_switch_min_pages as u32)
 }
 
-pub async fn crawl_and_collect_map(
+fn should_retry_map_with_chrome(summary: &CrawlSummary) -> bool {
+    summary.pages_seen <= 2
+}
+
+fn should_retry_map_with_html_fallback(url_count: usize) -> bool {
+    url_count <= 2
+}
+
+fn merge_map_candidate_urls(
+    existing: Vec<String>,
+    candidates: Vec<String>,
+    scope: &MapScope,
+    drop_query: bool,
+) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut seen = HashSet::new();
+
+    for url in existing {
+        let Some(canonical) = canonicalize_url_for_dedupe(&url) else {
+            continue;
+        };
+        if seen.insert(canonical.clone()) {
+            merged.push(canonical);
+        }
+    }
+
+    for url in candidates {
+        let Some(canonical) = normalize_map_candidate_url(&url, scope, drop_query) else {
+            continue;
+        };
+        if seen.insert(canonical.clone()) {
+            merged.push(canonical);
+        }
+    }
+
+    merged
+}
+
+pub(crate) async fn append_html_anchor_backfill(
+    cfg: &Config,
+    start_url: &str,
+    output_dir: &Path,
+    seen_urls: &HashSet<String>,
+    summary: &mut CrawlSummary,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let crawl_start_url = resolve_map_seed_url(start_url)
+        .await
+        .unwrap_or_else(|_| normalize_url(start_url));
+    let scope =
+        derive_map_scope(start_url, &crawl_start_url).ok_or("failed to derive map scope")?;
+    let fallback_limit = if cfg.max_pages == 0 {
+        500
+    } else {
+        cfg.max_pages as usize
+    };
+
+    let client = http_client()?;
+    let html = fetch_html(client, &crawl_start_url).await?;
+    let fallback_urls = extract_anchor_hrefs(&crawl_start_url, &html, fallback_limit);
+
+    let existing_urls: Vec<String> = seen_urls.iter().cloned().collect();
+    let merged_urls = merge_map_candidate_urls(existing_urls.clone(), fallback_urls, &scope, true);
+    let existing: HashSet<String> = existing_urls.into_iter().collect();
+    let candidates: Vec<String> = merged_urls
+        .into_iter()
+        .filter(|url| {
+            !existing.contains(url) && !is_excluded_url_path(url, &cfg.exclude_path_prefix)
+        })
+        .collect();
+
+    let (_, added_urls) =
+        append_candidate_backfill(cfg, output_dir, seen_urls, candidates, summary).await?;
+    Ok(added_urls)
+}
+
+fn derive_map_scope_url(requested_url: &str, resolved_url: &str) -> Option<String> {
+    let requested_canonical = canonicalize_url_for_dedupe(requested_url)?;
+    let requested = Url::parse(&requested_canonical).ok()?;
+    let resolved_canonical = canonicalize_url_for_dedupe(resolved_url)
+        .or_else(|| canonicalize_url_for_dedupe(requested_url))?;
+    let mut resolved = Url::parse(&resolved_canonical).ok()?;
+
+    let requested_path = requested.path().trim_end_matches('/').to_string();
+    let resolved_path = resolved.path().trim_end_matches('/').to_string();
+    let scope_path = if !requested_path.is_empty()
+        && requested.host_str()? != resolved.host_str()?
+        && resolved_path.is_empty()
+    {
+        requested_path
+    } else {
+        resolved_path
+    };
+
+    resolved.set_path(if scope_path.is_empty() {
+        "/"
+    } else {
+        &scope_path
+    });
+    canonicalize_url_for_dedupe(resolved.as_ref())
+}
+
+fn derive_map_scope(requested_url: &str, resolved_url: &str) -> Option<MapScope> {
+    let scope_url = derive_map_scope_url(requested_url, resolved_url)?;
+    let parsed = Url::parse(&scope_url).ok()?;
+    let path = parsed.path().trim_end_matches('/');
+
+    Some(MapScope {
+        host: parsed.host_str()?.to_string(),
+        path_prefix: if path.is_empty() {
+            None
+        } else {
+            Some(path.to_string())
+        },
+    })
+}
+
+async fn resolve_map_seed_url(start_url: &str) -> Result<String, Box<dyn Error>> {
+    let normalized = normalize_url(start_url);
+    validate_url(&normalized)?;
+    let client = http_client()?;
+
+    if let Ok(response) = client.head(&normalized).send().await
+        && response.status().is_success()
+    {
+        return Ok(response.url().to_string());
+    }
+
+    let response = client.get(&normalized).send().await?.error_for_status()?;
+    Ok(response.url().to_string())
+}
+
+pub(crate) async fn crawl_and_collect_map(
     cfg: &Config,
     start_url: &str,
     mode: RenderMode,
+    scope: &MapScope,
 ) -> Result<(CrawlSummary, Vec<String>), Box<dyn Error>> {
     let mut website = configure_website(cfg, start_url, mode).await?;
     let start = Instant::now();
@@ -98,7 +236,7 @@ pub async fn crawl_and_collect_map(
         if is_excluded_url_path(&page_url, &exclude_path_prefix) {
             continue;
         }
-        let Some(canonical_url) = canonicalize_url_for_dedupe(&page_url) else {
+        let Some(canonical_url) = normalize_map_candidate_url(&page_url, scope, true) else {
             continue;
         };
         if !seen.insert(canonical_url.clone()) {
@@ -136,24 +274,47 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
         RenderMode::AutoSwitch => RenderMode::Http,
         m => m,
     };
+    let crawl_start_url = resolve_map_seed_url(start_url)
+        .await
+        .unwrap_or_else(|_| normalize_url(start_url));
+    let scope =
+        derive_map_scope(start_url, &crawl_start_url).ok_or("failed to derive map scope")?;
+    let scope_start_url = derive_map_scope_url(start_url, &crawl_start_url)
+        .unwrap_or_else(|| crawl_start_url.clone());
 
-    let (mut summary, mut urls) = crawl_and_collect_map(cfg, start_url, initial_mode).await?;
+    let (mut summary, mut urls) =
+        crawl_and_collect_map(cfg, &crawl_start_url, initial_mode, &scope).await?;
 
     if matches!(cfg.render_mode, RenderMode::AutoSwitch)
-        && summary.pages_seen == 0
+        && should_retry_map_with_chrome(&summary)
         && let Ok((chrome_summary, chrome_urls)) =
-            crawl_and_collect_map(cfg, start_url, RenderMode::Chrome).await
+            crawl_and_collect_map(cfg, &crawl_start_url, RenderMode::Chrome, &scope).await
+        && chrome_summary.pages_seen > summary.pages_seen
     {
         summary = chrome_summary;
         urls = chrome_urls;
     }
 
+    if should_retry_map_with_html_fallback(urls.len()) {
+        let fallback_limit = if cfg.max_pages == 0 {
+            500
+        } else {
+            cfg.max_pages as usize
+        };
+        if let Ok(client) = http_client()
+            && let Ok(html) = fetch_html(client, &crawl_start_url).await
+        {
+            let fallback_urls = extract_anchor_hrefs(&crawl_start_url, &html, fallback_limit);
+            urls = merge_map_candidate_urls(urls, fallback_urls, &scope, true);
+            summary.pages_seen = urls.len() as u32;
+        }
+    }
+
     let raw_sitemap_count = if cfg.discover_sitemaps {
-        let mut sitemap_url_list = discover_sitemap_urls(cfg, start_url).await?.urls;
+        let sitemap_url_list = discover_sitemap_urls(cfg, &scope_start_url).await?.urls;
         let count = sitemap_url_list.len();
-        urls.append(&mut sitemap_url_list);
-        urls.sort();
-        urls.dedup();
+        urls = merge_map_candidate_urls(urls, sitemap_url_list, &scope, true);
+        summary.pages_seen = urls.len() as u32;
         count
     } else {
         0
@@ -232,6 +393,12 @@ pub async fn run_crawl_once(
     previous_manifest: HashMap<String, ManifestEntry>,
     crawl_id: Option<&str>,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    log_info(&format!(
+        "crawl start url={} render_mode={:?} max_pages={} max_depth={}",
+        start_url, mode, cfg.max_pages, cfg.max_depth
+    ));
+    let _crawl_start = Instant::now();
+
     let markdown_dir = output_dir.join("markdown");
     let recycling_bin = output_dir.join("markdown.old");
 
@@ -306,6 +473,7 @@ pub async fn run_crawl_once(
             min_chars,
             drop_thin,
             exclude_path_prefix,
+            scope: None,
             transform_cfg,
             progress_tx,
             previous_manifest,
@@ -340,6 +508,12 @@ pub async fn run_crawl_once(
         log_info("Purged recycling bin — armory is now synchronized with battlefield.");
     }
 
+    log_done(&format!(
+        "crawl done url={} pages_fetched={} duration_ms={}",
+        start_url,
+        summary.pages_seen,
+        _crawl_start.elapsed().as_millis()
+    ));
     Ok((summary, urls))
 }
 
@@ -374,6 +548,7 @@ pub async fn run_sitemap_only(
             min_chars: cfg.min_markdown_chars,
             drop_thin: cfg.drop_thin_markdown,
             exclude_path_prefix: cfg.exclude_path_prefix.clone(),
+            scope: None,
             transform_cfg,
             progress_tx: None,
             previous_manifest,

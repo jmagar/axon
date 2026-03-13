@@ -13,6 +13,7 @@
 
 use crate::crates::core::config::Config;
 use crate::crates::core::content::redact_url;
+use crate::crates::core::logging::log_debug;
 use anyhow::{Context, Result};
 use lapin::types::FieldTable;
 use lapin::{Channel, Connection, ConnectionProperties};
@@ -20,6 +21,9 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use super::durable_queue_options;
+
+#[expect(dead_code)]
+pub const GRAPH_QUEUE_DEFAULT: &str = "axon.graph.jobs";
 
 /// Open an AMQP channel with a 5-second connection timeout and declare the given queue.
 ///
@@ -103,7 +107,7 @@ pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]
             queue_name.into(),
             BasicPublishOptions::default(),
             id.to_string().as_bytes(),
-            BasicProperties::default(),
+            BasicProperties::default().with_delivery_mode(2),
         )
         .await?;
         // Don't await the confirm here — collect them all at once below.
@@ -113,8 +117,16 @@ pub async fn batch_enqueue_jobs(cfg: &Config, queue_name: &str, job_ids: &[Uuid]
     ch.wait_for_confirms()
         .await
         .context("wait_for_confirms failed")?;
-    let _ = ch.close(0, "".into()).await;
-    let _ = conn.close(200, "".into()).await;
+    if let Err(e) = ch.close(0, "".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={queue_name} error={e}"
+        ));
+    }
+    if let Err(e) = conn.close(200, "".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={queue_name} error={e}"
+        ));
+    }
 
     Ok(())
 }
@@ -131,8 +143,16 @@ pub(crate) async fn purge_queue_safe(cfg: &Config, queue_name: &str) -> Result<(
     ch.queue_purge(queue_name.into(), QueuePurgeOptions::default())
         .await
         .context("queue_purge failed")?;
-    let _ = ch.close(0, "".into()).await;
-    let _ = conn.close(200, "".into()).await;
+    if let Err(e) = ch.close(0, "".into()).await {
+        log_debug(&format!(
+            "amqp ch_close failed queue={queue_name} error={e}"
+        ));
+    }
+    if let Err(e) = conn.close(200, "".into()).await {
+        log_debug(&format!(
+            "amqp conn_close failed queue={queue_name} error={e}"
+        ));
+    }
     Ok(())
 }
 

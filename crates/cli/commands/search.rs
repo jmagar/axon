@@ -1,47 +1,14 @@
 use crate::crates::cli::commands::common::parse_service_time_range;
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_done;
 #[cfg(test)]
 use crate::crates::core::logging::log_warn;
+use crate::crates::core::logging::{log_done, log_info};
 use crate::crates::core::ui::{muted, primary, print_phase};
 use crate::crates::services::search::search_batch;
 use crate::crates::services::types::SearchOptions as ServiceSearchOptions;
-use spider_agent::{Agent, SearchOptions, TimeRange};
+#[cfg(test)]
+use spider_agent::TimeRange;
 use std::error::Error;
-
-pub async fn search_results(
-    cfg: &Config,
-    query: &str,
-    limit: usize,
-    offset: usize,
-    time_range: Option<TimeRange>,
-) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
-    if cfg.tavily_api_key.is_empty() {
-        return Err("search requires TAVILY_API_KEY — set it in .env".into());
-    }
-    let mut search_opts = SearchOptions::new().with_limit((limit + offset).clamp(1, 100));
-    if let Some(tr) = time_range {
-        search_opts = search_opts.with_time_range(tr);
-    }
-    let agent = Agent::builder()
-        .with_search_tavily(&cfg.tavily_api_key)
-        .build()?;
-    let results = agent.search_with_options(query, search_opts).await?;
-    Ok(results
-        .results
-        .iter()
-        .skip(offset)
-        .take(limit)
-        .map(|r| {
-            serde_json::json!({
-                "position": r.position,
-                "title": r.title,
-                "url": r.url,
-                "snippet": r.snippet,
-            })
-        })
-        .collect::<Vec<_>>())
-}
 
 pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if cfg.tavily_api_key.is_empty() {
@@ -56,6 +23,10 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
     } else {
         return Err("search requires a query (positional or --query)".into());
     };
+    log_info(&format!(
+        "command=search query_len={}",
+        queries.iter().map(|q| q.len()).sum::<usize>()
+    ));
 
     let display_query = queries.join(", ");
     if !cfg.json_output {
@@ -68,8 +39,10 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         time_range: parse_service_time_range(cfg.search_time_range.as_deref()),
     };
 
+    let search_start = std::time::Instant::now();
     let refs: Vec<&str> = queries.iter().map(String::as_str).collect();
     let results = search_batch(cfg, &refs, opts, None).await?.results;
+    let duration_ms = search_start.elapsed().as_millis();
 
     if cfg.json_output {
         println!(
@@ -82,7 +55,11 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
                 "results": results,
             }))?
         );
-        log_done("command=search complete");
+        log_done(&format!(
+            "command=search complete query_len={} results={} duration_ms={duration_ms}",
+            display_query.len(),
+            results.len()
+        ));
         return Ok(());
     }
 
@@ -106,7 +83,11 @@ pub async fn run_search(cfg: &Config) -> Result<(), Box<dyn Error>> {
         println!();
     }
 
-    log_done("command=search complete");
+    log_done(&format!(
+        "command=search complete query_len={} results={} duration_ms={duration_ms}",
+        display_query.len(),
+        results.len()
+    ));
     Ok(())
 }
 

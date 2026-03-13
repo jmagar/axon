@@ -4,6 +4,12 @@
  * Rather than spawning the axon binary from axon-web (where the binary may
  * not exist), this connects to the WS execution bridge that runs inside the
  * axon-workers container, which always has the binary available.
+ *
+ * Connection strategy: module-level singleton with multiplexed request routing.
+ * A single persistent WebSocket connection is shared across all callers. Each
+ * request gets a unique exec_id (correlation ID) so responses can be routed
+ * back to the correct pending caller. The connection is kept alive for the
+ * lifetime of the process and re-established automatically on close/error.
  */
 
 const WORKERS_WS_URL =
@@ -57,9 +63,58 @@ export interface RunAxonCommandWsStreamOptions {
   onError?: (payload: { message: string; elapsed_ms?: number }) => void
 }
 
+// ---------------------------------------------------------------------------
+// Correlation-ID helpers
+// ---------------------------------------------------------------------------
+
+let _execIdCounter = 0
+
+function nextExecId(): string {
+  _execIdCounter += 1
+  return `ws-exec-${_execIdCounter}`
+}
+
+// ---------------------------------------------------------------------------
+// Pending request registry
+// ---------------------------------------------------------------------------
+
+interface PendingRequest {
+  options: RunAxonCommandWsStreamOptions
+  resolve: () => void
+  reject: (err: Error) => void
+  settled: boolean
+  timer: ReturnType<typeof setTimeout> | undefined
+}
+
+const _pending = new Map<string, PendingRequest>()
+
+function settlePending(execId: string, err?: Error): void {
+  const pending = _pending.get(execId)
+  if (!pending || pending.settled) return
+  pending.settled = true
+  clearTimeout(pending.timer)
+  _pending.delete(execId)
+  if (err) {
+    pending.reject(err)
+  } else {
+    pending.resolve()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket constructor resolution (Node.js / browser)
+// ---------------------------------------------------------------------------
+
+let _wsConstructorCache: WebSocketConstructor | null = null
+
 async function resolveWebSocketConstructor(): Promise<WebSocketConstructor> {
+  if (_wsConstructorCache) return _wsConstructorCache
+
   const nativeConstructor = globalThis.WebSocket as unknown as WebSocketConstructor | undefined
-  if (nativeConstructor) return nativeConstructor
+  if (nativeConstructor) {
+    _wsConstructorCache = nativeConstructor
+    return nativeConstructor
+  }
 
   // Use dynamic module name to avoid type-check coupling to ws type declarations.
   const wsModuleName = 'ws'
@@ -67,11 +122,164 @@ async function resolveWebSocketConstructor(): Promise<WebSocketConstructor> {
     WebSocket?: WebSocketConstructor
     default?: WebSocketConstructor
   }
-  if (wsModule.WebSocket) return wsModule.WebSocket
-  if (wsModule.default) return wsModule.default
+  if (wsModule.WebSocket) {
+    _wsConstructorCache = wsModule.WebSocket
+    return wsModule.WebSocket
+  }
+  if (wsModule.default) {
+    _wsConstructorCache = wsModule.default
+    return wsModule.default
+  }
 
   throw new Error('WebSocket runtime is unavailable. Install ws or use Node.js 22+.')
 }
+
+// ---------------------------------------------------------------------------
+// Singleton persistent connection
+// ---------------------------------------------------------------------------
+
+let _ws: WsLike | null = null
+let _connectPromise: Promise<WsLike> | null = null
+// Consecutive error-event count since the last successful open.
+// Informational only — logged in the error handler. Reconnection is implicit:
+// when _ws is null or closed, the next getConnection() call opens a new socket.
+let _reconnectAttempts = 0
+
+function handleIncomingMessage(event: WsMessageEvent): void {
+  try {
+    const parsed = JSON.parse(String(event.data)) as { type?: unknown; data?: unknown }
+    const type = typeof parsed.type === 'string' ? parsed.type : ''
+    const data =
+      parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)
+        ? (parsed.data as Record<string, unknown>)
+        : null
+
+    // Extract the correlation exec_id from the ctx field (server echoes it back).
+    const ctx =
+      data?.ctx && typeof data.ctx === 'object' && !Array.isArray(data.ctx)
+        ? (data.ctx as Record<string, unknown>)
+        : null
+    const execId = typeof ctx?.exec_id === 'string' ? ctx.exec_id : null
+
+    if (!execId) return
+
+    const pending = _pending.get(execId)
+    if (!pending) return
+
+    if (type === 'command.output.json') {
+      const outputData = data && data.data !== undefined ? data.data : data
+      pending.options.onJson?.(outputData)
+      return
+    }
+    if (type === 'command.output.line') {
+      pending.options.onOutputLine?.(typeof data?.line === 'string' ? data.line : '')
+      return
+    }
+    if (type === 'command.done') {
+      const payload =
+        data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
+          ? (data.payload as Record<string, unknown>)
+          : null
+      pending.options.onDone?.({
+        exit_code: typeof payload?.exit_code === 'number' ? payload.exit_code : 0,
+        elapsed_ms: typeof payload?.elapsed_ms === 'number' ? payload.elapsed_ms : undefined,
+      })
+      settlePending(execId)
+      return
+    }
+    if (type === 'command.error') {
+      const payload =
+        data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
+          ? (data.payload as Record<string, unknown>)
+          : null
+      pending.options.onError?.({
+        message:
+          typeof payload?.message === 'string' && payload.message.length > 0
+            ? payload.message
+            : 'axon command failed',
+        elapsed_ms: typeof payload?.elapsed_ms === 'number' ? payload.elapsed_ms : undefined,
+      })
+      settlePending(execId)
+    }
+  } catch {
+    /* ignore non-JSON messages */
+  }
+}
+
+function failAllPending(err: Error): void {
+  for (const execId of _pending.keys()) {
+    settlePending(execId, err)
+  }
+}
+
+function getConnection(): Promise<WsLike> {
+  if (_ws) {
+    // Check readyState if available (native WebSocket / ws package both expose it).
+    const state = (_ws as unknown as { readyState?: number }).readyState
+    if (state === undefined || state === 1 /* OPEN */) {
+      return Promise.resolve(_ws)
+    }
+    // Socket exists but is no longer open; drop the reference.
+    _ws = null
+  }
+
+  if (_connectPromise) return _connectPromise
+
+  // Assign _connectPromise synchronously before any await so that concurrent
+  // callers coalesce onto a single connection attempt rather than each spawning
+  // a new WebSocket. Using .then() chains instead of async/await guarantees the
+  // assignment happens in the current microtask, not after an await suspension.
+  const workersWsUrl = buildWorkersWsUrl()
+
+  _connectPromise = resolveWebSocketConstructor()
+    .then((WebSocketImpl) => {
+      return new Promise<WsLike>((resolve, reject) => {
+        const ws = new WebSocketImpl(workersWsUrl)
+
+        ws.addEventListener('open', () => {
+          _reconnectAttempts = 0
+          _ws = ws
+          _connectPromise = null
+          try {
+            const { hostname, pathname } = new URL(workersWsUrl)
+            console.log(`[axon-ws] persistent connection established to ${hostname}${pathname}`)
+          } catch {
+            console.log('[axon-ws] persistent connection established')
+          }
+          resolve(ws)
+        })
+
+        ws.addEventListener('message', handleIncomingMessage)
+
+        ws.addEventListener('error', () => {
+          _reconnectAttempts += 1
+          console.error(
+            `[axon-ws] connection error (consecutive error count: ${_reconnectAttempts})`,
+          )
+        })
+
+        ws.addEventListener('close', (event) => {
+          console.log(`[axon-ws] connection closed (code ${event.code})`)
+          if (_ws === ws) _ws = null
+          _connectPromise = null
+          // Fail all in-flight requests — they will reconnect on next call.
+          failAllPending(new Error(`WebSocket closed unexpectedly (code ${event.code})`))
+          reject(new Error(`WebSocket closed before open (code ${event.code})`))
+        })
+      })
+    })
+    .catch((error: unknown) => {
+      _connectPromise = null
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      throw new Error(`Failed to initialize WebSocket runtime: ${reason}`)
+    })
+
+  return _connectPromise
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
  * Run a synchronous axon command via the axon-workers WS bridge and return
@@ -109,39 +317,19 @@ export async function runAxonCommandWsStream(
   mode: string,
   options: RunAxonCommandWsStreamOptions = {},
 ): Promise<void> {
-  let WebSocketImpl: WebSocketConstructor
-  try {
-    WebSocketImpl = await resolveWebSocketConstructor()
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'unknown error'
-    throw new Error(`Failed to initialize WebSocket runtime for axon ${mode}: ${reason}`)
-  }
-  const workersWsUrl = buildWorkersWsUrl()
   const timeoutMs = options.timeoutMs ?? 30_000
   const input = options.input ?? ''
   const flags = options.flags ?? {}
-  const maxConnectAttempts = 4
+  const abortSignal = options.signal
 
-  return new Promise((resolve, reject) => {
-    let settled = false
+  const execId = nextExecId()
+
+  return new Promise<void>((resolve, reject) => {
     let ws: WsLike | null = null
-    let opened = false
-    let connectAttempts = 0
-    const abortSignal = options.signal
-    let timer: ReturnType<typeof setTimeout> | undefined
 
     const finish = (err?: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
+      settlePending(execId, err)
       abortSignal?.removeEventListener('abort', onAbort)
-      try {
-        ws?.close()
-      } catch {
-        /* ignore */
-      }
-      if (err) reject(err)
-      else resolve()
     }
 
     const onAbort = () => {
@@ -149,105 +337,73 @@ export async function runAxonCommandWsStream(
     }
 
     if (abortSignal?.aborted) {
-      onAbort()
+      reject(new Error(`axon ${mode} request aborted`))
       return
     }
     abortSignal?.addEventListener('abort', onAbort, { once: true })
 
-    timer = setTimeout(
+    const timer = setTimeout(
       () => finish(new Error(`Timeout waiting for axon ${mode} (${timeoutMs}ms)`)),
       timeoutMs,
     )
 
-    const connect = () => {
-      if (settled) return
-      connectAttempts += 1
-      ws = new WebSocketImpl(workersWsUrl)
-
-      ws.addEventListener('open', () => {
-        opened = true
-        try {
-          const { hostname, pathname } = new URL(workersWsUrl)
-          console.log(`[axon-ws] connected to ${hostname}${pathname} for mode=${mode}`)
-        } catch {
-          console.log(`[axon-ws] connected for mode=${mode}`)
-        }
-        ws?.send(JSON.stringify({ type: 'execute', mode, input, flags }))
-      })
-
-      ws.addEventListener('message', (event) => {
-        try {
-          const parsed = JSON.parse(String(event.data)) as { type?: unknown; data?: unknown }
-          const type = typeof parsed.type === 'string' ? parsed.type : ''
-          const data =
-            parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)
-              ? (parsed.data as Record<string, unknown>)
-              : null
-
-          if (type === 'command.output.json') {
-            const outputData = data && data.data !== undefined ? data.data : data
-            options.onJson?.(outputData)
-            return
-          }
-          if (type === 'command.output.line') {
-            options.onOutputLine?.(typeof data?.line === 'string' ? data.line : '')
-            return
-          }
-          if (type === 'command.done') {
-            const payload =
-              data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
-                ? (data.payload as Record<string, unknown>)
-                : null
-            options.onDone?.({
-              exit_code: typeof payload?.exit_code === 'number' ? payload.exit_code : 0,
-              elapsed_ms: typeof payload?.elapsed_ms === 'number' ? payload.elapsed_ms : undefined,
-            })
-            finish()
-            return
-          }
-          if (type === 'command.error') {
-            const payload =
-              data?.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)
-                ? (data.payload as Record<string, unknown>)
-                : null
-            options.onError?.({
-              message:
-                typeof payload?.message === 'string' && payload.message.length > 0
-                  ? payload.message
-                  : `axon ${mode} failed`,
-              elapsed_ms: typeof payload?.elapsed_ms === 'number' ? payload.elapsed_ms : undefined,
-            })
-            finish()
-          }
-        } catch {
-          /* ignore non-JSON messages */
-        }
-      })
-
-      ws.addEventListener('error', () => {
-        console.error(
-          `[axon-ws] error for mode=${mode} opened=${opened} attempt=${connectAttempts}/${maxConnectAttempts}`,
-        )
-        if (!opened && connectAttempts < maxConnectAttempts) {
-          // 'close' always fires after 'error'; let it handle the retry
-          return
-        }
-        finish(new Error(`WebSocket connection error (${WORKERS_WS_URL})`))
-      })
-
-      ws.addEventListener('close', (event) => {
-        console.log(
-          `[axon-ws] close for mode=${mode} code=${event.code} opened=${opened} settled=${settled}`,
-        )
-        if (settled) return
-        if (!opened && connectAttempts < maxConnectAttempts) {
-          setTimeout(connect, 250 * connectAttempts)
-          return
-        }
-        finish(new Error(`WebSocket closed unexpectedly (code ${event.code})`))
-      })
+    const pending: PendingRequest = {
+      options,
+      resolve: () => {
+        abortSignal?.removeEventListener('abort', onAbort)
+        resolve()
+      },
+      reject: (err: Error) => {
+        abortSignal?.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+      settled: false,
+      timer,
     }
 
-    connect()
+    _pending.set(execId, pending)
+
+    getConnection()
+      .then((conn) => {
+        ws = conn
+        if (pending.settled) return
+        try {
+          console.log(`[axon-ws] executing mode=${mode} exec_id=${execId}`)
+          ws.send(JSON.stringify({ type: 'execute', mode, input, flags, exec_id: execId }))
+        } catch (err) {
+          finish(
+            new Error(
+              `Failed to send execute message: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          )
+        }
+      })
+      .catch((err: unknown) => {
+        if (!pending.settled) {
+          finish(
+            new Error(
+              `WebSocket connection error (${WORKERS_WS_URL}): ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          )
+        }
+      })
   })
+}
+
+/**
+ * Close the singleton connection and reset module state.
+ * Intended for test teardown — do not call in production code.
+ */
+export function closeConnection(): void {
+  try {
+    _ws?.close()
+  } catch {
+    /* ignore */
+  }
+  _ws = null
+  _connectPromise = null
+  _wsConstructorCache = null
+  _reconnectAttempts = 0
+  failAllPending(new Error('Connection closed by closeConnection()'))
+  _pending.clear()
 }

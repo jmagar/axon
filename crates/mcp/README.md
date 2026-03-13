@@ -1,5 +1,5 @@
 # crates/mcp
-Last Modified: 2026-03-03
+Last Modified: 2026-03-10
 
 Axon MCP server crate backing the `axon mcp` command.
 
@@ -10,7 +10,7 @@ Axon MCP server crate backing the `axon mcp` command.
 
 ## Public Contract
 - Single MCP tool: `axon`
-- Transport: HTTP-only (`mcp-http` runtime); no stdio transport
+- Transport: `http`, `stdio`, or `both` via `axon mcp --transport ...`
 - Primary request shape: action-routed requests via `action` + `subaction`
 - Parser is strict (no fallback action keys, no alias remapping)
 - Context-safe default: `response_mode=path` (artifact-first output in `.cache/axon-mcp/`)
@@ -24,9 +24,11 @@ See source-of-truth docs:
 ```bash
 cargo check --bin axon
 cargo run --bin axon -- mcp
+cargo run --bin axon -- mcp --transport stdio
+cargo run --bin axon -- mcp --transport both
 ```
 
-HTTP MCP transport is managed via container runtime/s6 (`mcp-http`) and documented in `docs/MCP.md`.
+HTTP MCP transport is still the default and is commonly managed via container runtime/s6 (`mcp-http`), but the CLI now also supports stdio-only and dual-transport modes. See `docs/MCP.md`.
 
 ## Schema Validation / Smoke Tests
 Primary MCP smoke path:

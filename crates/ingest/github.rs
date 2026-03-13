@@ -1,12 +1,30 @@
 use crate::crates::core::config::Config;
-use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
+use crate::crates::ingest::embed_pipeline::embed_documents_in_batches;
+use crate::crates::vector::ops::{EmbedDocument, embed_text_with_extra_payload};
 use octocrab::Octocrab;
 use std::error::Error;
 
 mod files;
 mod issues;
+pub(super) mod meta;
 mod wiki;
+
+use meta::{GitHubPayloadParams, build_github_payload};
+
+// ── Shared repo context passed to all sub-tasks ──────────────────────────────
+
+/// Common fields extracted once from `repos().get()` and shared across all
+/// concurrent sub-tasks (files, issues, PRs, wiki, metadata).
+pub(crate) struct GitHubCommonFields {
+    pub owner: String,
+    pub name: String,
+    pub repo_slug: String,
+    pub default_branch: String,
+    pub repo_description: Option<String>,
+    pub pushed_at: Option<String>,
+    pub is_private: Option<bool>,
+}
 
 // ── Pure helper functions (re-exported for tests and cli command) ──────────────
 
@@ -85,8 +103,9 @@ fn build_octocrab(cfg: &Config) -> Result<Octocrab, Box<dyn Error>> {
 async fn embed_repo_metadata(
     cfg: &Config,
     repo: &octocrab::models::Repository,
+    common: &GitHubCommonFields,
 ) -> Result<usize, Box<dyn Error>> {
-    let owner_name = repo.full_name.as_deref().unwrap_or("");
+    let owner_name = &common.repo_slug;
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(desc) = &repo.description
@@ -117,7 +136,56 @@ async fn embed_repo_metadata(
 
     let content = format!("# {owner_name}\n\n{}", parts.join("\n"));
     let url = format!("https://github.com/{owner_name}");
-    embed_text_with_metadata(cfg, &content, &url, "github", Some(owner_name)).await
+    let language = repo.language.as_ref().and_then(|v| v.as_str());
+    let extra = build_github_payload(&GitHubPayloadParams {
+        repo: common.name.clone(),
+        owner: common.owner.clone(),
+        content_kind: "repo_metadata".into(),
+        default_branch: Some(common.default_branch.clone()),
+        repo_description: common.repo_description.clone(),
+        pushed_at: common.pushed_at.clone(),
+        is_private: common.is_private,
+        stars: repo.stargazers_count,
+        forks: repo.forks_count,
+        open_issues: repo.open_issues_count,
+        language: language.map(|s| s.to_string()),
+        topics: repo.topics.clone(),
+        is_fork: repo.fork,
+        is_archived: repo.archived,
+        ..Default::default()
+    });
+    let docs = vec![EmbedDocument {
+        content,
+        url,
+        source_type: "github".to_string(),
+        title: Some(owner_name.to_string()),
+        extra: Some(extra),
+        file_extension: None,
+    }];
+    let result = embed_documents_in_batches(
+        cfg,
+        &docs,
+        1,
+        "ingest_github",
+        |cfg, doc| {
+            Box::pin(async move {
+                let extra_owned = doc.extra.clone().unwrap_or_default();
+                embed_text_with_extra_payload(
+                    cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                    &extra_owned,
+                )
+                .await
+                .map_err(|err| err.to_string())
+            })
+        },
+        |_| {},
+    )
+    .await;
+    Ok(result.chunks_embedded)
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────────
@@ -130,11 +198,17 @@ async fn embed_repo_metadata(
 ///
 /// Each sub-task is run concurrently via `tokio::join!`. Individual failures
 /// are logged and counted as zero rather than aborting the whole run.
+///
+/// If `progress_tx` is provided, sends live progress updates as files are
+/// embedded and sub-tasks complete. The worker uses this to persist progress
+/// to `result_json` so `axon ingest list` and `axon status` show live data.
 pub async fn ingest_github(
     cfg: &Config,
     repo: &str,
     include_source: bool,
+    progress_tx: Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
 ) -> Result<usize, Box<dyn Error>> {
+    log_info(&format!("command=ingest source=github repo={repo}"));
     let (owner, name) =
         parse_github_repo(repo).ok_or_else(|| format!("invalid GitHub repo: {repo}"))?;
 
@@ -148,22 +222,59 @@ pub async fn ingest_github(
         .unwrap_or("main")
         .to_string();
 
+    let common = GitHubCommonFields {
+        repo_slug: format!("{owner}/{name}"),
+        owner: owner.clone(),
+        name: name.clone(),
+        default_branch: default_branch.clone(),
+        repo_description: repo_info.description.clone(),
+        pushed_at: repo_info.pushed_at.map(|dt| dt.to_rfc3339()),
+        is_private: repo_info.private,
+    };
+
+    async fn send_ingest_progress(
+        tx: &Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
+        progress: serde_json::Value,
+    ) {
+        if let Some(tx) = tx
+            && let Err(err) = tx.send(progress).await
+        {
+            log_warn(&format!(
+                "command=ingest_github progress_send_failed err={err}"
+            ));
+        }
+    }
+
+    // Send initial progress so status shows activity immediately
+    if let Some(ref tx) = progress_tx {
+        send_ingest_progress(
+            &Some(tx.clone()),
+            serde_json::json!({
+                "phase": "ingesting",
+                "tasks_total": 5,
+                "tasks_done": 0,
+            }),
+        )
+        .await;
+    }
+
     let (files_result, metadata_result, issues_result, prs_result, wiki_result) = tokio::join!(
         files::embed_files(
             cfg,
-            &owner,
-            &name,
-            &default_branch,
+            &common,
             include_source,
-            cfg.github_token.as_deref()
+            cfg.github_token.as_deref(),
+            progress_tx.as_ref(),
         ),
-        embed_repo_metadata(cfg, &repo_info),
-        issues::ingest_issues(cfg, &octo, &owner, &name),
-        issues::ingest_pull_requests(cfg, &octo, &owner, &name),
-        wiki::ingest_wiki(cfg, &owner, &name, cfg.github_token.as_deref()),
+        embed_repo_metadata(cfg, &repo_info, &common),
+        issues::ingest_issues(cfg, &octo, &common),
+        issues::ingest_pull_requests(cfg, &octo, &common),
+        wiki::ingest_wiki(cfg, &common, cfg.github_token.as_deref()),
     );
 
     let mut total = 0usize;
+    let mut issues_count = 0usize;
+    let mut prs_count = 0usize;
     for (label, result) in [
         ("files", files_result),
         ("metadata", metadata_result),
@@ -172,13 +283,40 @@ pub async fn ingest_github(
         ("wiki", wiki_result),
     ] {
         match result {
-            Ok(n) => total += n,
+            Ok(n) => {
+                if label == "issues" {
+                    issues_count = n;
+                } else if label == "prs" {
+                    prs_count = n;
+                }
+                total += n;
+            }
             Err(e) => log_warn(&format!(
                 "command=ingest_github {label}_failed repo={repo} err={e}"
             )),
         }
     }
 
+    // Send final progress so completed state shows accurate task counts
+    if let Some(ref tx) = progress_tx {
+        send_ingest_progress(
+            &Some(tx.clone()),
+            serde_json::json!({
+                "tasks_done": 5,
+                "tasks_total": 5,
+                "chunks_embedded": total,
+                "phase": "completed",
+            }),
+        )
+        .await;
+    }
+
+    log_info(&format!(
+        "github issues_fetched={issues_count} prs_fetched={prs_count}"
+    ));
+    log_done(&format!(
+        "command=ingest source=github repo={repo} chunk_count={total}"
+    ));
     Ok(total)
 }
 

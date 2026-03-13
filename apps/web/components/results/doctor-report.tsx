@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import type React from 'react'
 import type { DoctorResult, DoctorServiceStatus } from '@/lib/result-types'
 import { fmtMs as formatDurationMs } from './shared'
 

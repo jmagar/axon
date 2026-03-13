@@ -1,14 +1,14 @@
 # Axon MCP Server Guide
-Last Modified: 2026-03-03
+Last Modified: 2026-03-11
 
 ## Purpose
 `axon mcp` exposes Axon through one MCP tool named `axon`.
 
-- Transport: RMCP streamable HTTP (`/mcp`, stateful sessions)
+- Transport: RMCP `stdio`, streamable HTTP (`/mcp`), or both simultaneously
 - Tool count: 1
 - Tool name: `axon`
 - Routing fields: `action` + `subaction` for lifecycle families
-- Response behavior field: `response_mode` (`path|inline|both`, default `path`)
+- Response behavior field: `response_mode` (`path|inline|both|auto-inline`, default `path`; `auto-inline` is system-assigned)
 
 Canonical schema and action contract:
 - `docs/MCP-TOOL-SCHEMA.md`
@@ -33,10 +33,14 @@ Core stack env vars are reused:
 - `TAVILY_API_KEY`
 
 MCP transport env vars:
+- `AXON_MCP_TRANSPORT` (`http` default; `stdio|http|both`)
 - `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
 - `AXON_MCP_HTTP_PORT` (default `8001`)
 
-OAuth broker env vars (required for protected `/mcp` access):
+MCP HTTP auth env vars:
+- `AXON_MCP_API_KEY` (optional static bearer token for `/mcp`)
+
+OAuth broker env vars (optional; enables OAuth bearer tokens for `/mcp`):
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 
@@ -58,12 +62,107 @@ Optional OAuth overrides:
 - `loopback_only`: allow only loopback HTTP callbacks
 - `any`: allow any HTTP/HTTPS callback URI
 
-If OAuth is not configured, requests to `/mcp` return unauthorized.
+`/mcp` accepts either `Authorization: Bearer <AXON_MCP_API_KEY>` or a valid OAuth bearer token (`atk_...`). If neither auth mode is configured, requests to `/mcp` return unauthorized.
 
 ## Transport Notes
-`axon mcp` starts the HTTP server (`run_http_server`) and serves `/mcp`.
+`axon mcp` supports three transport modes:
 
-There is also an internal stdio server implementation (`run_stdio_server`) in code, but it is not what the `axon mcp` command launches.
+- `axon mcp`
+  Starts HTTP transport only. This remains the default for backward compatibility.
+- `axon mcp --transport stdio`
+  Starts stdio transport only. Use this for local MCP clients such as Claude Desktop.
+- `axon mcp --transport both`
+  Starts stdio and HTTP concurrently.
+
+Equivalent env override:
+
+```bash
+AXON_MCP_TRANSPORT=stdio   # or http / both
+```
+
+HTTP transport uses:
+- `AXON_MCP_HTTP_HOST` (default `0.0.0.0`)
+- `AXON_MCP_HTTP_PORT` (default `8001`)
+
+## ACP MCP Server Store (Web UI + Pulse ACP)
+
+ACP sessions (`pulse_chat`) read MCP server definitions from:
+
+- `${AXON_DATA_DIR}/axon/mcp.json` when `AXON_DATA_DIR` is set
+- `~/.config/axon/mcp.json` fallback when `AXON_DATA_DIR` is unset
+
+The Web UI MCP settings page (`/api/mcp`) writes to this same file, so servers
+added in the UI are the servers passed into ACP sessions.
+
+Hot reload behavior:
+- ACP watches `mcp.json` changes via file metadata checks.
+- When MCP server config changes, Pulse ACP respawns the persistent adapter
+  session with the updated MCP server list on the next turn.
+
+### Config File Examples
+
+Stdio MCP server example:
+
+```json
+{
+  "mcpServers": {
+    "axon-stdio": {
+      "command": "axon",
+      "args": ["mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+HTTP MCP server example:
+
+```json
+{
+  "mcpServers": {
+    "axon-http": {
+      "url": "https://axon.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <AXON_MCP_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+OAuth bearer token is also accepted on `/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "axon-http": {
+      "url": "https://axon.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer atk_your_oauth_token_here"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop Example
+
+```json
+{
+  "mcpServers": {
+    "axon": {
+      "command": "axon",
+      "args": ["mcp", "--transport", "stdio"],
+      "env": {
+        "AXON_PG_URL": "postgresql://axon:postgres@127.0.0.1:53432/axon",
+        "AXON_REDIS_URL": "redis://127.0.0.1:53379",
+        "AXON_AMQP_URL": "amqp://axon:axonrabbit@127.0.0.1:45535/%2f",
+        "QDRANT_URL": "http://127.0.0.1:53333",
+        "TEI_URL": "http://YOUR_TEI_HOST:52000"
+      }
+    }
+  }
+}
+```
 
 ## OAuth Endpoints and Flow
 Implemented endpoints:
@@ -84,6 +183,11 @@ High-level flow:
 3. User authenticates via Google (`/oauth/google/login` -> Google -> `/oauth/google/callback`).
 4. Authorization code flow completes via `/oauth/authorize` and `/oauth/token`.
 5. Client calls `/mcp` with bearer token.
+
+Static API key alternative:
+- Clients can call `/mcp` directly with `Authorization: Bearer <AXON_MCP_API_KEY>`.
+- API key auth is full `/mcp` access and does not apply OAuth scope checks.
+- OAuth discovery endpoints remain available unchanged.
 
 ## Token Persistence
 OAuth state is persisted in Redis when available; otherwise in-memory fallback is used.
@@ -133,7 +237,7 @@ Use CLI-identical action names:
 - `query`, `retrieve`
 - `doctor`, `domains`, `sources`, `stats`
 - `search`, `map`
-- `artifacts` (with subactions `head|grep|wc|read`)
+- `artifacts` (with subactions `head|grep|wc|read|list|delete|clean|search`)
 - `scrape`, `research`, `ask`, `screenshot`, `help`, `status`
 
 Examples:
@@ -205,4 +309,45 @@ mcporter call axon.axon action:crawl subaction:list limit:5 offset:0
 mcporter call axon.axon action:refresh subaction:list limit:5 offset:0
 mcporter call axon.axon action:refresh subaction:schedule schedule_subaction:list
 mcporter call axon.axon action:artifacts subaction:head path:.cache/axon-mcp/help-actions.json limit:20
+mcporter call axon.axon action:artifacts subaction:list
+mcporter call axon.axon action:artifacts subaction:search pattern:failed limit:25
 ```
+
+## Artifact Inspection Workflow
+
+Artifact responses written in path mode are pretty-printed JSON. The preferred inspection order (least to most expensive):
+
+1. **Shape summary** — path-mode responses include a `shape` field that summarises key/value types without reading the file. Often sufficient.
+2. `artifacts head` — first N lines (default 25). Quick orientation for any artifact.
+3. `artifacts grep pattern="..." context_lines=N` — regex search with context. Targeted lookup.
+4. `artifacts search pattern="..."` — cross-artifact regex search. Find which files contain a term.
+5. `artifacts read pattern="..."` — filtered line dump. Reads whole file but returns only matching lines.
+6. `artifacts read full=true` — full paginated dump. Last resort; explicit opt-in required.
+
+### Artifact Lifecycle
+
+- `artifacts list` — all files in artifact dir, sorted newest first (name, bytes, age).
+- `artifacts delete path=<path>` — delete a single file. Path is validated to be within artifact root.
+- `artifacts clean max_age_hours=N` — bulk cleanup. `dry_run` defaults to `true` (preview only).
+  - `max_age_hours` is **required** — there is no default. Caller must declare intent explicitly.
+  - Never deletes files inside `screenshots/` — those are user assets, not ephemeral artifacts.
+  - Set `dry_run=false` to execute the deletion after reviewing the preview.
+
+### `response_mode` on All Actions
+
+`doctor`, `stats`, and `status` now support `response_mode`. Default is `path`, writing the payload to an artifact and returning a compact shape summary. Use `response_mode=inline` to get the payload directly in the response.
+
+Valid `response_mode` values: `path|inline|both|auto-inline`. Note that `auto-inline` is system-assigned — it cannot be requested by the caller. See [`MCP-TOOL-SCHEMA.md`](MCP-TOOL-SCHEMA.md) for the full enum definition.
+
+### Auto-inline for Small Payloads
+
+Regardless of the requested `response_mode`, any payload serializing to ≤ `AXON_INLINE_BYTES_THRESHOLD` bytes (default 8 192) is returned inline without requiring an `artifacts.read` follow-up call. The response includes `"response_mode": "auto-inline"`, the full `data` object, and an `artifact` pointer for persistence. Set `AXON_INLINE_BYTES_THRESHOLD=0` to disable auto-inline and always use explicit `response_mode` selection.
+
+### Shape Preview Improvements
+
+Path-mode responses include a `shape` field summarizing the payload structure:
+- **Strings ≤ 100 chars**: returned verbatim so Claude reads real values without a follow-up read.
+- **Strings > 100 chars**: summarized as `"<string N>"`.
+- **Arrays of objects with a `status`, `phase`, or `state` field**: summarized as `{"total": N, "by_status": {"completed": N, "running": N, ...}}`. Claude can answer status questions from the shape alone — no follow-up read needed.
+- **Other arrays**: `"<array[N]>"`.
+- **Primitives**: verbatim.

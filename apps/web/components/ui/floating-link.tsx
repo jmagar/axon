@@ -99,6 +99,7 @@ export function FloatingLink() {
           <button
             type="button"
             className={iconBtnCls}
+            aria-label="Open link in new tab"
             title="Open link"
             onClick={() => {
               const linkNode = editor.api.node({ match: { type: editor.getType?.('a') ?? 'a' } })
@@ -109,7 +110,13 @@ export function FloatingLink() {
           >
             <ExternalLink className="size-3.5" />
           </button>
-          <button type="button" className={iconBtnCls} title="Remove link" {...unlinkButtonProps}>
+          <button
+            type="button"
+            className={iconBtnCls}
+            aria-label="Remove link"
+            title="Remove link"
+            {...unlinkButtonProps}
+          >
             <Link2Off className="size-3.5" />
           </button>
         </div>

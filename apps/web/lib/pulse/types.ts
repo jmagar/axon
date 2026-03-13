@@ -73,36 +73,6 @@ export const PulseChatRequestSchema = z.object({
   permissionLevel: PulsePermissionLevel.default('accept-edits'),
   agent: PulseAgent.default('claude'),
   model: PulseModel,
-  effort: z.enum(['low', 'medium', 'high']).default('medium'),
-  maxTurns: z.number().int().min(0).max(100).default(0),
-  maxBudgetUsd: z.number().min(0).max(1000).default(0),
-  appendSystemPrompt: z.string().max(4000).default(''),
-  // Additional CLI flags from Claude Code docs
-  /** --disable-slash-commands: disable all skills and slash commands */
-  disableSlashCommands: z.boolean().default(false),
-  /** --no-session-persistence: sessions are not saved to disk */
-  noSessionPersistence: z.boolean().default(false),
-  /** --fallback-model: fallback model alias when primary is overloaded ('' = disabled) */
-  fallbackModel: z.string().max(128).default(''),
-  /** --allowedTools: comma-separated tools that execute without permission prompts */
-  allowedTools: z.string().max(2000).default(''),
-  /** --disallowedTools: comma-separated tools removed from model context */
-  disallowedTools: z.string().max(2000).default(''),
-  /** --add-dir: comma-separated directories Claude can access beyond the working dir */
-  addDir: z.string().optional(),
-  /** --betas: comma-separated beta headers (e.g. interleaved-thinking) */
-  betas: z
-    .string()
-    .regex(/^[a-zA-Z0-9,\-.:]*$/, 'betas contains invalid characters')
-    .optional(),
-  /** --tools: restrict which built-in tools are available (comma-separated, e.g. "Bash,Read") */
-  toolsRestrict: z
-    .string()
-    .regex(
-      /^[A-Za-z*]([A-Za-z0-9_*]*)(,[A-Za-z*]([A-Za-z0-9_*]*))*$/,
-      'toolsRestrict must be a comma-separated list of tool names (e.g. "Bash,Read,Write")',
-    )
-    .optional(),
   /** Stream replay: resume from this event ID. */
   lastEventId: z.string().max(128).optional(),
   /** @deprecated Use `lastEventId` instead. Kept for backward compatibility with existing callers. */
@@ -133,8 +103,14 @@ export interface PulseToolUse {
   name: string
   input: Record<string, unknown>
   toolCallId?: string
+  sequence?: number
   status?: string
   content?: string
+  locations?: string[]
+  startedAtMs?: number
+  updatedAtMs?: number
+  completedAtMs?: number
+  durationMs?: number
 }
 
 export type PulseMessageBlock =
@@ -145,8 +121,14 @@ export type PulseMessageBlock =
       input: Record<string, unknown>
       result?: string
       toolCallId?: string
+      sequence?: number
       status?: string
       content?: string
+      locations?: string[]
+      startedAtMs?: number
+      updatedAtMs?: number
+      completedAtMs?: number
+      durationMs?: number
     }
   | { type: 'thinking'; content: string }
 
@@ -180,7 +162,8 @@ export type PulseSourceRequest = z.infer<typeof PulseSourceRequestSchema>
 export interface PulseSourceResponse {
   indexed: string[]
   command: string
-  output: string
+  /** @deprecated Raw subprocess output is no longer returned to avoid leaking internals. */
+  output?: string
   /** Scraped markdown keyed by URL — available when a single URL is indexed. */
   markdownBySrc?: Record<string, string>
 }
@@ -194,3 +177,5 @@ export interface PulseDocument {
   selectedCollections: string[]
   tags: string[]
 }
+
+export type RightPanelId = 'editor' | 'terminal' | 'logs' | 'mcp' | 'settings' | 'cortex'

@@ -1,7 +1,8 @@
 use super::{CrawlSummary, canonicalize_url_for_dedupe};
 use crate::crates::core::config::Config;
 use crate::crates::core::content::{
-    build_selector_config, build_transform_config, clean_markdown_whitespace, url_to_filename,
+    BOILERPLATE_SELECTORS, build_selector_config, build_transform_config,
+    clean_markdown_whitespace, url_to_filename,
 };
 use crate::crates::core::logging::{log_info, log_warn};
 use crate::crates::crawl::manifest::ManifestEntry;
@@ -117,7 +118,7 @@ async fn fetch_url_with_chrome(cfg: &Config, url: &str, min_chars: usize) -> Opt
         screenshot_bytes: None,
         encoding: None,
         selector_config: sel_cfg.as_ref(),
-        ignore_tags: None,
+        ignore_tags: Some(BOILERPLATE_SELECTORS),
     };
     let markdown = transform_content_input(input, transform_cfg);
     let trimmed = clean_markdown_whitespace(markdown.trim());

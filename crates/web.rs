@@ -1,25 +1,44 @@
+pub(crate) mod cors;
 mod docker_stats;
 mod download;
 pub mod execute;
 mod pack;
 mod shell;
+pub mod tailscale_auth;
+mod ws_handler;
 
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::log_info;
-use crate::crates::services::acp::PermissionResponderMap;
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{ConnectInfo, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use dashmap::DashMap;
-use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
+use tailscale_auth::{AuthOutcome, DenyReason, auth_log_message, check_auth};
+use tokio::sync::broadcast;
+
+use cors::{effective_shell_allowed_origins, web_cors_middleware, websocket_origin_is_allowed};
+
+/// Global semaphore limiting concurrent ACP sessions (pulse_chat + pulse_chat_probe).
+/// Prevents unbounded `spawn_blocking` thread consumption — each ACP session holds a
+/// thread for up to 300 seconds.  Read from `AXON_ACP_MAX_CONCURRENT_SESSIONS` env var;
+/// default 8.  (SEC-8 / PERF-1 / PERF-10)
+pub(crate) static ACP_SESSION_SEMAPHORE: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| {
+        let max = std::env::var("AXON_ACP_MAX_CONCURRENT_SESSIONS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(8);
+        tokio::sync::Semaphore::new(max)
+    });
 
 /// Shared state across all WS connections.
 pub(crate) struct AppState {
@@ -28,15 +47,16 @@ pub(crate) struct AppState {
     /// Registry of completed job IDs → output directories for download routes.
     job_dirs: Arc<DashMap<String, PathBuf>>,
     /// Static API token for the WS gate. Set from AXON_WEB_API_TOKEN.
-    /// Same token used by the Next.js proxy for /api/* routes.
     /// None = gate disabled (open WS, trusted-network deployments only).
     api_token: Option<String>,
     /// Base server config — shared across all connections.
-    ///
-    /// Tasks 5.2 and 5.3 will use this to drive direct service dispatch
-    /// instead of spawning a subprocess.  Carried as `Arc` so WS handler
-    /// tasks can clone a cheap reference without copying the whole struct.
     pub(crate) cfg: Arc<Config>,
+}
+
+/// State for download routes — lighter than AppState (no WS/stats fields).
+pub(crate) struct DownloadAuthState {
+    pub job_dirs: Arc<DashMap<String, PathBuf>>,
+    pub api_token: Option<String>,
 }
 
 /// Query parameters for the `/ws` upgrade request.
@@ -47,7 +67,6 @@ struct WsQuery {
 
 // ── Server startup ────────────────────────────────────────────────────────────
 
-/// Start the axum server on the given port, running until interrupted.
 pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Error>> {
     let (stats_tx, _) = broadcast::channel::<String>(64);
     let job_dirs: Arc<DashMap<String, PathBuf>> = Arc::new(DashMap::new());
@@ -55,36 +74,43 @@ pub async fn start_server(port: u16, cfg: Arc<Config>) -> Result<(), Box<dyn Err
     let api_token = std::env::var("AXON_WEB_API_TOKEN")
         .ok()
         .filter(|t| !t.is_empty());
+
     match &api_token {
-        Some(_) => log_info("WS gate: active (AXON_WEB_API_TOKEN)"),
-        None => log_info("WS gate: disabled (set AXON_WEB_API_TOKEN to enable)"),
+        Some(_) => log_info("WS gate: api token"),
+        None => log_info("WS gate: open in debug/test builds; set AXON_WEB_API_TOKEN for auth"),
     }
 
     let state = Arc::new(AppState {
         stats_tx: stats_tx.clone(),
         job_dirs: job_dirs.clone(),
-        api_token,
-        cfg,
+        api_token: api_token.clone(),
+        cfg: cfg.clone(),
     });
 
-    // Spawn Docker stats poller in background
     tokio::spawn(docker_stats::run_stats_loop(stats_tx));
 
-    // Download routes use a separate state (just the DashMap) to avoid
-    // coupling the download handlers to the full AppState.
+    let download_state = Arc::new(DownloadAuthState {
+        job_dirs: job_dirs.clone(),
+        api_token,
+    });
+
     let download_routes = Router::new()
         .route("/download/{job_id}/pack.md", get(download::serve_pack_md))
         .route("/download/{job_id}/pack.xml", get(download::serve_pack_xml))
         .route("/download/{job_id}/archive.zip", get(download::serve_zip))
         .route("/download/{job_id}/file/{*path}", get(download::serve_file))
-        .with_state(job_dirs);
+        .with_state(download_state);
 
     let app = Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/ws/shell", get(shell_ws_upgrade))
         .route("/output/{*path}", get(serve_output_file))
         .with_state(state)
-        .merge(download_routes);
+        .merge(download_routes)
+        .layer(middleware::from_fn_with_state(
+            cfg.clone(),
+            web_cors_middleware,
+        ));
 
     let host = std::env::var("AXON_SERVE_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     log_info(&format!(
@@ -114,18 +140,35 @@ async fn shutdown_signal() {
         .expect("failed to listen for ctrl+c");
 }
 
+// ── Auth helper ───────────────────────────────────────────────────────────────
+
+fn http_auth(
+    req_headers: &HeaderMap,
+    query_token: Option<&str>,
+    api_token: Option<&str>,
+) -> AuthOutcome {
+    check_auth(req_headers, query_token, api_token)
+}
+
 // ── Output file serving ───────────────────────────────────────────────────────
 
-/// `GET /output/{*path}` — serve files from the CLI output directory.
-///
-/// Used to display screenshots and other generated assets in the browser.
-/// Path traversal is prevented via canonicalization + prefix check.
 async fn serve_output_file(
     axum::extract::Path(file_path): axum::extract::Path<String>,
+    req_headers: HeaderMap,
+    Query(params): Query<WsQuery>,
+    State(state): State<Arc<AppState>>,
 ) -> Response {
-    use axum::http::{HeaderMap, StatusCode, header};
+    use axum::http::header;
 
-    // Reject obvious traversal
+    let auth = http_auth(
+        &req_headers,
+        params.token.as_deref(),
+        state.api_token.as_deref(),
+    );
+    if matches!(auth, AuthOutcome::Denied(_)) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
     if file_path.contains("..") || file_path.contains('\0') {
         return (StatusCode::BAD_REQUEST, "invalid path").into_response();
     }
@@ -133,7 +176,6 @@ async fn serve_output_file(
     let base = execute::files::output_dir();
     let full_path = base.join(&file_path);
 
-    // Canonicalize both and verify containment
     let Ok(canonical_base) = tokio::fs::canonicalize(&base).await else {
         return (StatusCode::NOT_FOUND, "output directory not found").into_response();
     };
@@ -150,7 +192,6 @@ async fn serve_output_file(
         Err(_) => return (StatusCode::NOT_FOUND, "file not found").into_response(),
     };
 
-    // Sniff content type from extension
     let content_type = match canonical_file.extension().and_then(|e| e.to_str()) {
         Some("png") => "image/png",
         Some("jpg" | "jpeg") => "image/jpeg",
@@ -162,47 +203,69 @@ async fn serve_output_file(
         _ => "application/octet-stream",
     };
 
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-    // Allow browser caching for 5 minutes (screenshots are immutable once written)
-    headers.insert(
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+    resp_headers.insert(
         header::CACHE_CONTROL,
         "public, max-age=300".parse().unwrap(),
     );
 
-    (headers, bytes).into_response()
+    (resp_headers, bytes).into_response()
 }
 
-// ── WebSocket handler ────────────────────────────────────────────────────────
+// ── WebSocket upgrade handlers ────────────────────────────────────────────────
 
 async fn ws_upgrade(
     ws: WebSocketUpgrade,
     Query(params): Query<WsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    if let Some(ref expected) = state.api_token {
-        let token = params.token.as_deref().unwrap_or("").trim();
-        if token.is_empty() {
-            log::warn!("ws upgrade rejected: no token from {}", addr.ip());
-            return (axum::http::StatusCode::UNAUTHORIZED, "token required").into_response();
-        }
-        if token != expected.as_str() {
-            log::warn!("ws upgrade rejected: invalid token from {}", addr.ip());
-            return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
-        }
+    if !websocket_origin_is_allowed(&headers, &state.cfg.web_allowed_origins) {
+        return (StatusCode::FORBIDDEN, "forbidden: origin not allowed").into_response();
     }
-    ws.on_upgrade(move |socket| handle_ws(socket, state))
+
+    let outcome = http_auth(
+        &headers,
+        params.token.as_deref(),
+        state.api_token.as_deref(),
+    );
+
+    let log_msg = auth_log_message(&outcome, addr);
+    match &outcome {
+        AuthOutcome::Token => log::info!("{log_msg}"),
+        AuthOutcome::Denied(_) => log::warn!("{log_msg}"),
+    }
+
+    if matches!(outcome, AuthOutcome::Denied(_)) {
+        let body = match outcome {
+            AuthOutcome::Denied(DenyReason::NoAuthConfigured) => {
+                "unauthorized: configure AXON_WEB_API_TOKEN"
+            }
+            _ => "unauthorized",
+        };
+        return (StatusCode::UNAUTHORIZED, body).into_response();
+    }
+
+    ws.on_upgrade(move |socket| ws_handler::handle_ws(socket, state))
 }
 
 async fn shell_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(params): Query<WsQuery>,
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    // H-07: also accept IPv4-mapped loopback (::ffff:127.0.0.1) which Rust's
-    // IpAddr::is_loopback() returns false for on some platforms.
+    let allowed_origins = effective_shell_allowed_origins(
+        &state.cfg.shell_allowed_origins,
+        &state.cfg.web_allowed_origins,
+    );
+    if !websocket_origin_is_allowed(&headers, allowed_origins) {
+        return (StatusCode::FORBIDDEN, "forbidden: shell origin not allowed").into_response();
+    }
+
     let is_loopback = match addr.ip() {
         IpAddr::V4(v4) => v4.is_loopback(),
         IpAddr::V6(v6) => {
@@ -211,219 +274,24 @@ async fn shell_ws_upgrade(
     };
 
     if !is_loopback {
-        // Non-loopback: require a valid API token (same credential as /ws).
-        match &state.api_token {
-            Some(expected) => {
-                let token = params.token.as_deref().unwrap_or("").trim();
-                if token.is_empty() {
-                    log::warn!("shell ws upgrade rejected: no token from {}", addr.ip());
-                    return (axum::http::StatusCode::UNAUTHORIZED, "token required")
-                        .into_response();
-                }
-                if token != expected.as_str() {
-                    log::warn!(
-                        "shell ws upgrade rejected: invalid token from {}",
-                        addr.ip()
-                    );
-                    return (axum::http::StatusCode::FORBIDDEN, "invalid token").into_response();
-                }
-            }
-            None => {
-                // No token configured and not loopback — deny for safety.
-                log::warn!(
-                    "shell ws upgrade rejected: remote connection from {} without AXON_WEB_API_TOKEN",
-                    addr.ip()
-                );
-                return (
-                    axum::http::StatusCode::FORBIDDEN,
-                    "Shell access requires AXON_WEB_API_TOKEN for non-loopback connections",
-                )
-                    .into_response();
-            }
+        let outcome = http_auth(
+            &headers,
+            params.token.as_deref(),
+            state.api_token.as_deref(),
+        );
+        let log_msg = auth_log_message(&outcome, addr);
+        match &outcome {
+            AuthOutcome::Token => log::info!("shell ws: {log_msg}"),
+            AuthOutcome::Denied(_) => log::warn!("shell ws: {log_msg}"),
+        }
+        if matches!(outcome, AuthOutcome::Denied(_)) {
+            return (
+                StatusCode::FORBIDDEN,
+                "shell access denied — set AXON_WEB_API_TOKEN",
+            )
+                .into_response();
         }
     }
+
     ws.on_upgrade(shell::handle_shell_ws)
-}
-
-/// Incoming WS message from the browser.
-#[derive(Deserialize)]
-struct WsClientMsg {
-    #[serde(rename = "type")]
-    msg_type: String,
-    #[serde(default)]
-    mode: String,
-    #[serde(default)]
-    input: String,
-    #[serde(default)]
-    flags: serde_json::Value,
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    path: String,
-    /// Permission response: the tool_call_id being responded to.
-    #[serde(default)]
-    tool_call_id: String,
-    /// Permission response: the chosen option_id.
-    #[serde(default)]
-    option_id: String,
-}
-
-async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
-    let (mut ws_tx, mut ws_rx) = socket.split();
-
-    // Channel for the execute task to send messages back through the WS
-    let (exec_tx, mut exec_rx) = tokio::sync::mpsc::channel::<String>(256);
-
-    // Per-connection state: last crawl output dir for read_file resolution
-    let crawl_base_dir: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
-
-    // Per-connection state: current async job ID for cancel support
-    let crawl_job_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-
-    // Per-connection state: permission response channels for active ACP sessions.
-    // Shared between the execute task (which inserts senders) and the WS read
-    // loop (which routes frontend permission_response messages to them).
-    let permission_responders: PermissionResponderMap =
-        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
-
-    // Shared job_dirs registry for registering completed jobs
-    let job_dirs = state.job_dirs.clone();
-
-    // Base config — cloned once per connection, then cheaply per-command via Arc
-    let conn_cfg = state.cfg.clone();
-
-    // Subscribe to Docker stats broadcast
-    let mut stats_rx = state.stats_tx.subscribe();
-
-    // Track crawl_files messages to capture the output_dir for read_file
-    let base_dir_tracker = crawl_base_dir.clone();
-    let job_dirs_tracker = job_dirs.clone();
-    let (tracking_tx, mut tracking_rx) = tokio::sync::mpsc::channel::<String>(256);
-
-    // Forward task: sends exec output + stats to the WS client,
-    // and tracks crawl_files messages to capture base_dir + register job_dirs
-    let forward = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                Some(msg) = exec_rx.recv() => {
-                    // Sniff crawl_files messages to extract output_dir and job_id
-                    if msg.contains("\"crawl_files\"")
-                        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
-                            if let Some(dir) = parsed.get("output_dir").and_then(|v| v.as_str()) {
-                                *base_dir_tracker.lock().await = Some(PathBuf::from(dir));
-                            }
-                            // Register in job_dirs for download routes
-                            if let (Some(job_id), Some(dir)) = (
-                                parsed.get("job_id").and_then(|v| v.as_str()),
-                                parsed.get("output_dir").and_then(|v| v.as_str()),
-                            ) {
-                                job_dirs_tracker.insert(job_id.to_string(), PathBuf::from(dir));
-                            }
-                        }
-                    if ws_tx.send(Message::Text(msg.into())).await.is_err() {
-                        break;
-                    }
-                }
-                Some(msg) = tracking_rx.recv() => {
-                    if ws_tx.send(Message::Text(msg.into())).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(stats_msg) = stats_rx.recv() => {
-                    if ws_tx.send(Message::Text(stats_msg.into())).await.is_err() {
-                        break;
-                    }
-                }
-                else => break,
-            }
-        }
-    });
-
-    // Read loop: receives commands from the browser
-    while let Some(Ok(msg)) = ws_rx.next().await {
-        if let Message::Text(text) = msg {
-            let Ok(client_msg) = serde_json::from_str::<WsClientMsg>(&text) else {
-                let _ = exec_tx
-                    .send(r#"{"type":"error","message":"invalid JSON"}"#.to_string())
-                    .await;
-                continue;
-            };
-
-            match client_msg.msg_type.as_str() {
-                "execute" => {
-                    let tx = exec_tx.clone();
-                    let job_id = crawl_job_id.clone();
-                    let cmd_cfg = conn_cfg.clone();
-                    let perm_map = permission_responders.clone();
-                    // Move owned Strings into the spawned future.  handle_command
-                    // takes owned String/Value so no &str borrow escapes the spawn
-                    // boundary, satisfying the `Send + 'static` bound for
-                    // tokio::spawn.
-                    let exec_mode = client_msg.mode.clone();
-                    let exec_input = client_msg.input.clone();
-                    let exec_flags = client_msg.flags.clone();
-                    tokio::spawn(async move {
-                        execute::handle_command(
-                            exec_mode, exec_input, exec_flags, tx, job_id, cmd_cfg, perm_map,
-                        )
-                        .await;
-                    });
-                }
-                "cancel" => {
-                    let tx = exec_tx.clone();
-                    let job_id_arc = crawl_job_id.clone();
-                    let cancel_mode = client_msg.mode.clone();
-                    let cancel_cfg = conn_cfg.clone();
-                    tokio::spawn(async move {
-                        // Use stored async job ID if available, fall back to client-provided ID
-                        let stored = job_id_arc.lock().await.clone();
-                        let id = stored.or_else(|| {
-                            if client_msg.id.is_empty() {
-                                None
-                            } else {
-                                Some(client_msg.id.clone())
-                            }
-                        });
-                        if let Some(id) = id {
-                            execute::handle_cancel(&cancel_mode, &id, tx, cancel_cfg).await;
-                        }
-                    });
-                }
-                "permission_response" => {
-                    let tool_call_id = client_msg.tool_call_id;
-                    let option_id = client_msg.option_id;
-                    if !tool_call_id.is_empty()
-                        && !option_id.is_empty()
-                        && let Ok(mut map) = permission_responders.lock()
-                        && let Some(sender) = map.remove(&tool_call_id)
-                    {
-                        let _ = sender.send(option_id);
-                    }
-                }
-                "read_file" => {
-                    if !client_msg.path.is_empty() {
-                        let tx = tracking_tx.clone();
-                        let path = client_msg.path.clone();
-                        let base = crawl_base_dir.clone();
-                        tokio::spawn(async move {
-                            let guard = base.lock().await;
-                            if let Some(base_dir) = guard.as_ref() {
-                                execute::handle_read_file(&path, base_dir, tx).await;
-                            } else {
-                                let _ = tx
-                                    .send(
-                                        r#"{"type":"error","message":"no crawl output available"}"#
-                                            .to_string(),
-                                    )
-                                    .await;
-                            }
-                        });
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    forward.abort();
 }

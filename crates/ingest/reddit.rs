@@ -1,13 +1,15 @@
 mod client;
 mod comments;
+mod meta;
 mod types;
 
 pub use client::get_access_token;
 pub use types::{RedditTarget, classify_target};
 
 use crate::crates::core::config::{Config, RedditSort};
-use crate::crates::core::logging::log_warn;
-use crate::crates::vector::ops::embed_text_with_metadata;
+use crate::crates::core::logging::{log_done, log_info, log_warn};
+use crate::crates::ingest::embed_pipeline::embed_documents_in_batches;
+use crate::crates::vector::ops::{EmbedDocument, embed_text_with_extra_payload};
 use std::error::Error;
 use std::time::Duration;
 
@@ -95,16 +97,17 @@ async fn ingest_subreddit(cfg: &Config, token: &str, name: &str) -> Result<usize
                         return;
                     }
 
-                    match embed_text_with_metadata(cfg, &content, &post_url, "reddit", Some(title))
-                        .await
-                    {
-                        Ok(n) => {
-                            count_ref.fetch_add(n, Ordering::SeqCst);
-                        }
-                        Err(e) => log_warn(&format!(
-                            "command=ingest_reddit embed_failed url={post_url} err={e}"
-                        )),
-                    }
+                    let extra = meta::build_reddit_post_extra_payload(data);
+                    let doc = EmbedDocument {
+                        content,
+                        url: post_url.clone(),
+                        source_type: "reddit".to_string(),
+                        title: Some(title.to_string()),
+                        extra: Some(extra.clone()),
+                        file_extension: None,
+                    };
+                    let embedded = embed_reddit_documents(cfg, &[doc]).await;
+                    count_ref.fetch_add(embedded, Ordering::SeqCst);
                 }
             })
             .await;
@@ -166,15 +169,16 @@ async fn ingest_thread(cfg: &Config, token: &str, url: &str) -> Result<usize, Bo
         format_comments_into(&mut content, title, &comments);
     }
 
-    match embed_text_with_metadata(cfg, &content, &canonical_url, "reddit", Some(title)).await {
-        Ok(n) => Ok(n),
-        Err(e) => {
-            log_warn(&format!(
-                "command=ingest_reddit embed_failed url={canonical_url} err={e}"
-            ));
-            Ok(0)
-        }
-    }
+    let extra = meta::build_reddit_post_extra_payload(post_data);
+    let doc = EmbedDocument {
+        content,
+        url: canonical_url,
+        source_type: "reddit".to_string(),
+        title: Some(title.to_string()),
+        extra: Some(extra.clone()),
+        file_extension: None,
+    };
+    Ok(embed_reddit_documents(cfg, &[doc]).await)
 }
 
 /// Append formatted comments to the content string.
@@ -192,8 +196,9 @@ fn format_comments_into(content: &mut String, title: &str, comments: &[CommentWi
 /// Ingest Reddit content:
 /// - For a subreddit: fetches posts (configurable sort/limit/score/depth) + recursive comments
 /// - For a thread URL: fetches that thread + full recursive comment tree
-/// - Embeds all content into Qdrant via embed_text_with_metadata
+/// - Embeds all content into Qdrant via embed_text_with_extra_payload with reddit_* metadata
 pub async fn ingest_reddit(cfg: &Config, target: &str) -> Result<usize, Box<dyn Error>> {
+    log_info(&format!("command=ingest source=reddit target={target}"));
     let client_id = cfg
         .reddit_client_id
         .as_deref()
@@ -204,9 +209,41 @@ pub async fn ingest_reddit(cfg: &Config, target: &str) -> Result<usize, Box<dyn 
         .ok_or("REDDIT_CLIENT_SECRET not configured (--reddit-client-secret or env var)")?;
 
     let token = get_access_token(client_id, client_secret).await?;
+    log_info("reddit oauth_acquired");
 
-    match classify_target(target) {
-        RedditTarget::Subreddit(name) => ingest_subreddit(cfg, &token, &name).await,
-        RedditTarget::Thread(url) => ingest_thread(cfg, &token, &url).await,
-    }
+    let chunk_count = match classify_target(target) {
+        RedditTarget::Subreddit(name) => ingest_subreddit(cfg, &token, &name).await?,
+        RedditTarget::Thread(url) => ingest_thread(cfg, &token, &url).await?,
+    };
+    log_done(&format!(
+        "command=ingest source=reddit target={target} chunk_count={chunk_count}"
+    ));
+    Ok(chunk_count)
+}
+
+async fn embed_reddit_documents(cfg: &Config, docs: &[EmbedDocument]) -> usize {
+    let result = embed_documents_in_batches(
+        cfg,
+        docs,
+        64,
+        "ingest_reddit",
+        |cfg, doc| {
+            Box::pin(async move {
+                let extra_owned = doc.extra.clone().unwrap_or_default();
+                embed_text_with_extra_payload(
+                    cfg,
+                    &doc.content,
+                    &doc.url,
+                    &doc.source_type,
+                    doc.title.as_deref(),
+                    &extra_owned,
+                )
+                .await
+                .map_err(|err| err.to_string())
+            })
+        },
+        |_| {},
+    )
+    .await;
+    result.chunks_embedded
 }

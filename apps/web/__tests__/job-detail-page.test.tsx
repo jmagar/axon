@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildJobDetailRequestPath,
   shouldRefetchArtifactsOnTerminalTransition,
-} from '@/app/jobs/[id]/page'
+} from '@/app/jobs/[id]/job-detail-helpers'
 
 describe('job detail page polling behavior', () => {
   it('re-requests includeArtifacts=1 after status transitions from running to completed', () => {

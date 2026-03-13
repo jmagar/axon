@@ -161,40 +161,22 @@ describe('runChatPrompt — request construction', () => {
     expect(body.sessionId).toBeUndefined()
   })
 
-  it('includes optional fields when provided', async () => {
+  it('sends required fields in request body', async () => {
     fetchMock.mockResolvedValueOnce(makeJsonResponse(makeDoneResponse()))
 
     await runChatPrompt(
       makeOpts({
-        effort: 'high',
-        maxTurns: 5,
-        maxBudgetUsd: 1.5,
-        appendSystemPrompt: 'Be terse.',
-        disableSlashCommands: true,
-        noSessionPersistence: true,
-        fallbackModel: 'haiku',
-        allowedTools: 'Bash,Read',
-        disallowedTools: 'Write',
-        addDir: '/tmp/docs',
-        betas: 'interleaved-thinking',
-        toolsRestrict: 'Bash,Read',
+        agent: 'claude',
+        model: 'sonnet',
+        permissionLevel: 'bypass-permissions',
       }),
     )
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const body = JSON.parse(init.body as string)
-    expect(body.effort).toBe('high')
-    expect(body.maxTurns).toBe(5)
-    expect(body.maxBudgetUsd).toBe(1.5)
-    expect(body.appendSystemPrompt).toBe('Be terse.')
-    expect(body.disableSlashCommands).toBe(true)
-    expect(body.noSessionPersistence).toBe(true)
-    expect(body.fallbackModel).toBe('haiku')
-    expect(body.allowedTools).toBe('Bash,Read')
-    expect(body.disallowedTools).toBe('Write')
-    expect(body.addDir).toBe('/tmp/docs')
-    expect(body.betas).toBe('interleaved-thinking')
-    expect(body.toolsRestrict).toBe('Bash,Read')
+    expect(body.agent).toBe('claude')
+    expect(body.model).toBe('sonnet')
+    expect(body.permissionLevel).toBe('bypass-permissions')
   })
 
   it('includes scrapedContext when provided', async () => {

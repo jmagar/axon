@@ -1,5 +1,5 @@
 # crates/vector — Embeddings & Vector Search
-Last Modified: 2026-02-27
+Last Modified: 2026-03-10
 
 TEI embedding + Qdrant vector store ops.
 
@@ -8,12 +8,15 @@ TEI embedding + Qdrant vector store ops.
 ```
 vector/ops/
 ├── commands/        # ask/, ask.rs, evaluate.rs, query.rs, streaming.rs, suggest.rs
-├── input.rs         # chunking, URL→metadata extraction
+├── input.rs         # module root: chunk_text(), url_lookup_candidates()
+├── input/
+│   ├── classify.rs  # classify_file_type(), language_name(), is_test_path()
+│   └── code.rs      # chunk_code() — tree-sitter AST-aware code chunking
 ├── qdrant/          # client.rs, commands.rs, types.rs, utils.rs
 ├── ranking.rs       # BM25-style reranking module root
 ├── ranking/         # snippet.rs (helpers used by ranking.rs)
 ├── stats/           # display.rs, pg.rs, qdrant_fetch.rs
-├── tei.rs           # tei_embed(), tei_embed_batch(), embed_text_with_metadata()
+├── tei.rs           # tei_embed(), embed_text_with_metadata(), embed_code_with_metadata()
 ├── tei/             # tei_manifest.rs
 └── source_display.rs
 ```
@@ -41,6 +44,11 @@ On 429 or 503, `tei_embed()` retries up to **10 times** with exponential backoff
 
 Any new command that needs URL counts/dedup **must** use `qdrant_url_facets`. A full scroll on a 2M+ point collection takes 60-80 seconds.
 
+### Code Chunking (tree-sitter)
+`chunk_code()` in `input/code.rs` splits source code at AST boundaries (functions, structs, classes) using tree-sitter grammars. Returns `Option<Vec<String>>` — `None` means no grammar for the extension, caller should fall back to `chunk_text()`. Supported: Rust, Python, JavaScript, TypeScript/TSX, Go, Bash. Chunk range: 500–2000 chars. `embed_code_with_metadata()` in `tei.rs` wraps this with the fallback logic built in.
+
+`classify_file_type()` in `input/classify.rs` tags files as `test`/`config`/`doc`/`source` for metadata enrichment. Pure function, no I/O.
+
 ### Ranking Pipeline
 `ranking.rs` applies BM25-style scoring on top of Qdrant cosine results. `ranking/snippet.rs` extracts and highlights matching text fragments. Used by `ask` and `query` commands. Do not bypass ranking in new retrieval commands — it significantly improves answer quality.
 
@@ -54,6 +62,8 @@ cargo test tei            # TEI embed, batch-split, 413/429 retry logic (uses ht
 cargo test ranking        # BM25 ranking pipeline + snippet extraction
 cargo test qdrant         # Qdrant client, scroll, facet, ensure_collection
 cargo test chunk_text     # text chunking (7 tests, no services needed)
+cargo test chunk_code     # tree-sitter AST code chunking (23 tests)
+cargo test classify_file  # file type classification (46 tests)
 cargo test -- --nocapture # show request/response debug output
 ```
 
