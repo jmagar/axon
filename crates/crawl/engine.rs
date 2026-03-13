@@ -53,10 +53,10 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32, cfg: &C
     if summary.markdown_files == 0 {
         return true;
     }
-    // A single-page crawl does not provide enough HTTP-only signal to judge
+    // A very-low-page crawl does not provide enough HTTP-only signal to judge
     // whether the captured content is complete, so give AutoSwitch one Chrome
     // retry even if the page is not technically "thin".
-    if summary.pages_seen == 1 {
+    if summary.pages_seen <= 2 {
         return true;
     }
     let thin_ratio = if summary.pages_seen == 0 {
@@ -73,6 +73,10 @@ pub fn should_fallback_to_chrome(summary: &CrawlSummary, max_pages: u32, cfg: &C
         return false;
     }
     summary.markdown_files < (max_pages / 10).max(cfg.auto_switch_min_pages as u32)
+}
+
+fn should_retry_map_with_chrome(summary: &CrawlSummary) -> bool {
+    summary.pages_seen <= 2
 }
 
 pub async fn crawl_and_collect_map(
@@ -140,12 +144,14 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
     let (mut summary, mut urls) = crawl_and_collect_map(cfg, start_url, initial_mode).await?;
 
     if matches!(cfg.render_mode, RenderMode::AutoSwitch)
-        && summary.pages_seen == 0
+        && should_retry_map_with_chrome(&summary)
         && let Ok((chrome_summary, chrome_urls)) =
             crawl_and_collect_map(cfg, start_url, RenderMode::Chrome).await
     {
-        summary = chrome_summary;
-        urls = chrome_urls;
+        if chrome_summary.pages_seen > summary.pages_seen {
+            summary = chrome_summary;
+            urls = chrome_urls;
+        }
     }
 
     let raw_sitemap_count = if cfg.discover_sitemaps {

@@ -56,6 +56,32 @@ pub async fn embed_recover(cfg: &Config) -> Result<u64, Box<dyn Error>> {
 
 // --- Service functions ---
 
+pub async fn embed_start_with_input(
+    cfg: &Config,
+    input: &str,
+    tx: Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<EmbedStartResult, Box<dyn Error>> {
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!("enqueueing embed job for input: {input}"),
+        },
+    );
+
+    let job_id = start_embed_job(cfg, input).await?;
+
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!("enqueued embed job: {job_id}"),
+        },
+    );
+
+    Ok(map_embed_start_result(job_id.to_string()))
+}
+
 /// Enqueue an embed job for the input specified in cfg and return its job ID
 /// immediately. The embed input is resolved from cfg.positional or cfg.output_dir
 /// following the same logic as the CLI embed command.

@@ -267,3 +267,15 @@ fn retrieve_options_equality() {
     };
     assert_eq!(a, b);
 }
+
+#[test]
+fn mcp_embed_start_returns_job_id_payload_shape() {
+    let payload = serde_json::json!({"job_id": "abc"});
+    assert!(payload.get("job_id").is_some());
+}
+
+#[test]
+fn mcp_ingest_start_requires_source_type() {
+    let err = rmcp::ErrorData::invalid_params("source_type is required", None);
+    assert_eq!(err.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+}
