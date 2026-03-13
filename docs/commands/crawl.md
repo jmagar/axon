@@ -84,5 +84,7 @@ axon crawl status 550e8400-e29b-41d4-a716-446655440000
 - Async JSON output now includes the predicted `output_dir` plus `predicted_paths` for each enqueued job.
 - Sync mode writes crawl artifacts under `<output-dir>/domains/<domain>/sync/`.
 - Completed crawl status JSON may include `output_files` when the worker has a manifest-backed file list available.
+- `--render-mode auto-switch` now treats one- and two-page HTTP crawls as too little signal and may retry in Chrome even when the pages are not technically thin.
+- Malformed discovered URLs are filtered before they enter the accepted result set, which keeps crawl/page counts aligned with canonical URLs instead of raw Spider candidates.
 - `clear` is destructive and prompts unless `--yes` is passed.
 - URLs that look like local filenames (for example `README.md` as host) trigger a warning and are still treated as web URLs.

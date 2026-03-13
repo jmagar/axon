@@ -78,7 +78,7 @@ fn test_map_scope_allows_root_seed_without_path_filter() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test test_map_seed_scope_uses_resolved_project_prefix -- --exact`
+Run: `cargo test test_map_seed_scope_uses_resolved_project_prefix --lib`
 Expected: FAIL with unresolved function/type errors for `derive_map_scope`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -115,7 +115,10 @@ Keep this helper private to the crawl engine unless another caller truly needs i
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cargo test test_map_seed_scope_uses_resolved_project_prefix test_map_scope_allows_root_seed_without_path_filter -- --exact`
+Run: `cargo test test_map_seed_scope_uses_resolved_project_prefix --lib`
+Expected: PASS.
+
+Run: `cargo test test_map_scope_allows_root_seed_without_path_filter --lib`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -125,7 +128,7 @@ git add crates/crawl/engine.rs crates/crawl/engine/url_utils.rs crates/crawl/eng
 git commit -m "feat: derive deterministic map scope from resolved seed urls"
 ```
 
-### Task 2: Harden discovered-URL normalization and malformed-link rejection
+### Task 2: Expand discovered-URL normalization coverage and count only accepted candidates
 
 **Files:**
 - Modify: `crates/crawl/engine/url_utils.rs:93-156`
@@ -136,13 +139,6 @@ git commit -m "feat: derive deterministic map scope from resolved seed urls"
 - [ ] **Step 1: Write the failing tests**
 
 ```rust
-#[test]
-fn test_junk_url_rejects_percent_encoded_doctype_blob() {
-    assert!(is_junk_discovered_url(
-        "https://example.com/%3C!doctype%20html%3E%3Chtml%3E"
-    ));
-}
-
 #[test]
 fn test_normalize_map_candidate_strips_fragment_and_trailing_slash() {
     let scope = MapScope {
@@ -173,26 +169,36 @@ fn test_normalize_map_candidate_rejects_out_of_scope_paths() {
     )
     .is_none());
 }
+
+#[test]
+fn test_normalize_map_candidate_drops_query_when_requested() {
+    let scope = MapScope {
+        host: "example.github.io".to_string(),
+        path_prefix: Some("/project".to_string()),
+    };
+
+    assert_eq!(
+        normalize_map_candidate_url(
+            "https://example.github.io/project/docs/?q=1",
+            &scope,
+            true
+        )
+        .as_deref(),
+        Some("https://example.github.io/project/docs")
+    );
+}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test test_junk_url_rejects_percent_encoded_doctype_blob -- --exact`
-Expected: FAIL if the new junk case is not rejected.
+Run: `cargo test test_normalize_map_candidate_drops_query_when_requested --lib`
+Expected: FAIL until the query-dropping case is covered.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Implement two focused helpers in `url_utils.rs`:
+`MapScope` and `normalize_map_candidate_url()` now exist from the spike. Extend them only as needed for the wired path:
 
 ```rust
-fn is_probably_html_blob(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.contains("%3c!doctype")
-        || lower.contains("%3chtml")
-        || lower.contains("%3chead")
-        || lower.contains("%3cbody")
-}
-
 fn normalize_map_candidate_url(raw: &str, scope: &MapScope, drop_query: bool) -> Option<String> {
     if is_junk_discovered_url(raw) {
         return None;
@@ -209,7 +215,7 @@ fn normalize_map_candidate_url(raw: &str, scope: &MapScope, drop_query: bool) ->
 }
 ```
 
-Make `is_junk_discovered_url()` call the new HTML-blob helper before returning `false`.
+Do **not** add a `%3C!doctype...` regression as the main canary here — the existing encoded-tag heuristic already rejects `%3C` / `%3E`, so that test would not validate any new behavior.
 
 - [ ] **Step 4: Update the map collector loop to normalize before counting**
 
@@ -222,7 +228,13 @@ This keeps `pages_seen` aligned with the actual deduped result set and avoids lo
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cargo test test_junk_url_rejects_percent_encoded_doctype_blob test_normalize_map_candidate_strips_fragment_and_trailing_slash test_normalize_map_candidate_rejects_out_of_scope_paths -- --exact`
+Run: `cargo test test_normalize_map_candidate_strips_fragment_and_trailing_slash --lib`
+Expected: PASS.
+
+Run: `cargo test test_normalize_map_candidate_rejects_out_of_scope_paths --lib`
+Expected: PASS.
+
+Run: `cargo test test_normalize_map_candidate_drops_query_when_requested --lib`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -245,60 +257,54 @@ git commit -m "fix: normalize and reject malformed map candidates"
 
 ```rust
 #[test]
-fn test_extract_anchor_hrefs_resolves_relative_links_against_base_url() {
-    let html = r#"
-        <a href="/project/docs/intro/">Intro</a>
-        <a href="./api">API</a>
-        <a href="#local">Local</a>
-        <a href="javascript:void(0)">Ignore</a>
-    "#;
-
-    let links = extract_anchor_hrefs("https://example.github.io/project/", html, 10);
-
-    assert_eq!(
-        links,
-        vec![
-            "https://example.github.io/project/docs/intro/".to_string(),
-            "https://example.github.io/project/api".to_string(),
-        ]
-    );
-}
-
-#[test]
 fn test_should_retry_map_with_html_fallback_for_two_or_fewer_urls() {
     assert!(should_retry_map_with_html_fallback(0));
     assert!(should_retry_map_with_html_fallback(1));
     assert!(should_retry_map_with_html_fallback(2));
     assert!(!should_retry_map_with_html_fallback(3));
 }
+
+#[test]
+fn test_merge_map_candidate_urls_adds_only_new_scoped_urls() {
+    let scope = MapScope {
+        host: "example.github.io".to_string(),
+        path_prefix: Some("/project".to_string()),
+    };
+
+    let merged = merge_map_candidate_urls(
+        vec!["https://example.github.io/project/overview".to_string()],
+        vec![
+            "https://example.github.io/project/overview/".to_string(),
+            "https://example.github.io/project/api".to_string(),
+            "https://example.github.io/other/out-of-scope".to_string(),
+        ],
+        &scope,
+        true,
+    );
+
+    assert_eq!(
+        merged,
+        vec![
+            "https://example.github.io/project/overview".to_string(),
+            "https://example.github.io/project/api".to_string(),
+        ]
+    );
+}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test test_extract_anchor_hrefs_resolves_relative_links_against_base_url -- --exact`
-Expected: FAIL with unresolved function errors for `extract_anchor_hrefs`.
+`extract_anchor_hrefs()` already exists from the spike and should be retained unchanged.
+
+Run: `cargo test test_should_retry_map_with_html_fallback_for_two_or_fewer_urls --lib`
+Expected: FAIL with unresolved function errors for the fallback gate/helper.
+
+Run: `cargo test test_merge_map_candidate_urls_adds_only_new_scoped_urls --lib`
+Expected: FAIL with unresolved helper errors until the merge logic exists.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add a new deterministic extractor in `crates/core/content.rs`:
-
-```rust
-pub fn extract_anchor_hrefs(base_url: &str, html: &str, limit: usize) -> Vec<String> {
-    let base = spider::url::Url::parse(base_url).ok();
-    let mut out = Vec::new();
-    let mut pos = 0usize;
-
-    while let Some(rel) = html[pos..].find("href=") {
-        // parse quoted hrefs, resolve relative URLs against `base`,
-        // skip empty, fragment-only, javascript:, mailto:, and duplicate results
-        // stop at `limit`
-    }
-
-    out
-}
-```
-
-Then in `map_with_sitemap()`:
+Keep the existing deterministic extractor and wire it into `map_with_sitemap()`:
 - keep the current HTTP-first / Chrome-second behavior,
 - after Chrome retry (if any), if the accepted URL count is still `<= 2`, fetch the seed HTML once with the shared client,
 - extract deterministic anchor links,
@@ -309,7 +315,13 @@ Do **not** use this fallback when the map already has healthy coverage.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test test_extract_anchor_hrefs_resolves_relative_links_against_base_url test_should_retry_map_with_html_fallback_for_two_or_fewer_urls -- --exact`
+Run: `cargo test test_extract_anchor_hrefs_resolves_relative_links_against_base_url --lib`
+Expected: PASS.
+
+Run: `cargo test test_should_retry_map_with_html_fallback_for_two_or_fewer_urls --lib`
+Expected: PASS.
+
+Run: `cargo test test_merge_map_candidate_urls_adds_only_new_scoped_urls --lib`
 Expected: PASS.
 
 - [ ] **Step 5: Add an engine-level regression for merge behavior**
@@ -390,6 +402,7 @@ git commit -m "docs: describe map scope normalization and low coverage fallback"
 
 ## Implementation notes
 
+- The spike already landed `MapScope`, `normalize_map_candidate_url()`, and `extract_anchor_hrefs()`. Treat this plan as wiring + regression expansion, not a greenfield implementation.
 - Prefer pure helpers for scope derivation, candidate normalization, and merge behavior so the tricky parts stay unit-testable.
 - Reuse `canonicalize_url_for_dedupe()` rather than adding a second canonicalization policy.
 - Do not alter the existing `crawl_raw()` vs `crawl()` split documented in `crates/crawl/AGENTS.md`.
