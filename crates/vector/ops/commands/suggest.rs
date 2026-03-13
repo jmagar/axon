@@ -1,6 +1,5 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::http::{http_client, normalize_url};
-use crate::crates::core::ui::{muted, primary};
 use crate::crates::vector::ops::{input, qdrant};
 use spider::url::Url;
 use std::collections::HashSet;
@@ -145,10 +144,6 @@ struct SuggestPromptContext {
     focus: String,
     base_context: String,
     existing_url_context: String,
-}
-
-fn suggestion_focus(cfg: &Config) -> String {
-    super::resolve_query_text(cfg).unwrap_or_default()
 }
 
 async fn build_suggest_prompt_context(
@@ -309,63 +304,6 @@ fn filter_new_suggestions(
         }
     }
     (diversified, rejected_existing)
-}
-
-fn emit_suggest_output(
-    cfg: &Config,
-    ctx: &SuggestPromptContext,
-    accepted: &[Suggestion],
-    rejected_existing: &[String],
-    content: &str,
-) -> Result<(), Box<dyn Error>> {
-    if cfg.json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "collection": cfg.collection,
-                "requested": ctx.desired,
-                "indexed_urls_count": ctx.indexed_urls.len(),
-                "indexed_base_urls_count": ctx.ranked_base_urls.len(),
-                "suggestions": accepted.iter().map(|s| serde_json::json!({"url": s.url, "reason": s.reason})).collect::<Vec<_>>(),
-                "rejected_existing": rejected_existing,
-                "raw_model_output": content,
-            }))?
-        );
-        return Ok(());
-    }
-
-    println!("{}", primary("Suggested Crawl Targets"));
-    println!(
-        "  {} requested={} accepted={} filtered_existing={}",
-        muted("Summary:"),
-        ctx.desired,
-        accepted.len(),
-        rejected_existing.len()
-    );
-    for (idx, suggestion) in accepted.iter().enumerate() {
-        println!("  {}. {}", idx + 1, suggestion.url);
-        println!("     {}", muted(&suggestion.reason));
-    }
-    if accepted.is_empty() {
-        println!(
-            "  {}",
-            muted(
-                "No new URLs survived filtering. Retry with a different focus or higher model temperature."
-            )
-        );
-    }
-    Ok(())
-}
-
-pub async fn run_suggest_native(cfg: &Config) -> Result<(), Box<dyn Error>> {
-    if cfg.openai_base_url.trim().is_empty() || cfg.openai_model.trim().is_empty() {
-        return Err("OPENAI_BASE_URL and OPENAI_MODEL required for suggest".into());
-    }
-    let desired = cfg.search_limit.clamp(1, 100);
-    let focus = suggestion_focus(cfg);
-    let (accepted, rejected_existing, content, ctx) =
-        discover_suggestions_with_context(cfg, &focus, desired).await?;
-    emit_suggest_output(cfg, &ctx, &accepted, &rejected_existing, &content)
 }
 
 async fn discover_suggestions_with_context(

@@ -146,7 +146,9 @@ pub(crate) async fn append_html_anchor_backfill(
     let existing: HashSet<String> = existing_urls.into_iter().collect();
     let candidates: Vec<String> = merged_urls
         .into_iter()
-        .filter(|url| !existing.contains(url))
+        .filter(|url| {
+            !existing.contains(url) && !is_excluded_url_path(url, &cfg.exclude_path_prefix)
+        })
         .collect();
 
     let (_, added_urls) =
@@ -471,6 +473,7 @@ pub async fn run_crawl_once(
             min_chars,
             drop_thin,
             exclude_path_prefix,
+            scope: None,
             transform_cfg,
             progress_tx,
             previous_manifest,
@@ -545,6 +548,7 @@ pub async fn run_sitemap_only(
             min_chars: cfg.min_markdown_chars,
             drop_thin: cfg.drop_thin_markdown,
             exclude_path_prefix: cfg.exclude_path_prefix.clone(),
+            scope: None,
             transform_cfg,
             progress_tx: None,
             previous_manifest,
