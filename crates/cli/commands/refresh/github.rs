@@ -1,14 +1,15 @@
 use crate::crates::core::config::Config;
 use crate::crates::core::logging::{log_debug, log_info, log_warn};
 use crate::crates::core::ui::{accent, muted, symbol_for_status};
-use crate::crates::jobs::ingest::{IngestSource, start_ingest_job};
 use crate::crates::jobs::refresh::{
     RefreshSchedule, RefreshScheduleCreate, create_refresh_schedule,
     mark_refresh_schedule_ran_with_pool, should_reingest_github,
 };
+use crate::crates::services::ingest::{self as ingest_service, IngestSource};
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
 use std::error::Error;
+use uuid::Uuid;
 
 use super::schedule::tier_to_seconds;
 
@@ -126,7 +127,7 @@ pub(crate) async fn dispatch_github_refresh(
     match check_github_pushed_at(cfg, target).await {
         Ok(pushed_at) => {
             if should_reingest_github(&pushed_at, schedule.last_run_at) {
-                match start_ingest_job(
+                match ingest_service::ingest_start(
                     cfg,
                     IngestSource::Github {
                         repo: target.to_string(),
@@ -135,7 +136,8 @@ pub(crate) async fn dispatch_github_refresh(
                 )
                 .await
                 {
-                    Ok(job_id) => {
+                    Ok(started) => {
+                        let job_id = Uuid::parse_str(&started.job_id).unwrap_or_else(|_| Uuid::nil());
                         log_info(&format!(
                             "refresh github_ingest_queued repo={target} job_id={job_id}"
                         ));
