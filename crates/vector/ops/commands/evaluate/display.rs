@@ -1,3 +1,6 @@
+// Scaffolding for the streaming evaluate UI — not all functions are wired up yet.
+#![allow(dead_code)]
+
 use crate::crates::core::config::{Config, EvaluateResponsesMode};
 use crate::crates::core::ui::{muted, primary};
 use std::error::Error;
