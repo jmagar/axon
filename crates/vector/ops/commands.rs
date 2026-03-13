@@ -5,10 +5,8 @@ pub(crate) mod streaming;
 mod suggest;
 
 pub use evaluate::evaluate_payload;
-pub use evaluate::run_evaluate_native;
 pub use query::query_results;
 pub use suggest::discover_crawl_suggestions;
-pub use suggest::run_suggest_native;
 
 use crate::crates::core::config::Config;
 
