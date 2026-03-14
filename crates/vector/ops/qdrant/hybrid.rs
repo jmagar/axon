@@ -13,20 +13,12 @@ use std::time::Instant;
 use super::types::{QdrantSearchHit, QdrantSearchResponse};
 use super::utils::qdrant_base;
 
-/// Candidate multiplier when `hybrid_search_candidates` is not yet wired into Config.
-///
-/// TODO(Task 6): replace with `cfg.hybrid_search_candidates` once that field is added.
-// Allow dead_code: CANDIDATE_MULTIPLIER and qdrant_hybrid_search are intentionally unused until
-// Task 6 wires them into the query pipeline.
-#[allow(dead_code)]
-const CANDIDATE_MULTIPLIER: usize = 2;
-
 /// Perform hybrid search using dense + BM42 sparse prefetch with RRF fusion.
 ///
 /// Issues a single POST to `/collections/{name}/points/query` with two `prefetch` arms
 /// (one dense, one sparse) and `"query": {"fusion": "rrf"}` to combine them.
 /// `limit` is the final number of results after fusion. Each prefetch arm fetches
-/// `limit * CANDIDATE_MULTIPLIER` candidates. Requires a Named-mode collection.
+/// `cfg.hybrid_search_candidates` candidates before RRF fusion. Requires a Named-mode collection.
 #[allow(dead_code)]
 pub(crate) async fn qdrant_hybrid_search(
     cfg: &Config,
@@ -41,8 +33,7 @@ pub(crate) async fn qdrant_hybrid_search(
         cfg.collection
     );
 
-    // TODO(Task 6): use cfg.hybrid_search_candidates once that field is added to Config.
-    let candidates = (limit * CANDIDATE_MULTIPLIER).max(limit);
+    let candidates = cfg.hybrid_search_candidates.max(limit);
 
     let body = serde_json::json!({
         "prefetch": [

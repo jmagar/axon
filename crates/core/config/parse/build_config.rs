@@ -20,6 +20,16 @@ fn parse_origin_allowlist(raw: &str) -> Vec<String> {
         .collect()
 }
 
+fn env_bool(name: &str, default: bool) -> bool {
+    match env::var(name) {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => default,
+    }
+}
+
 pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let global = cli.global;
     let fetch_retries_was_set = global.fetch_retries.is_some();
@@ -461,6 +471,13 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             2,
             1,
             5,
+        ),
+        hybrid_search_enabled: env_bool("AXON_HYBRID_SEARCH", true),
+        hybrid_search_candidates: performance::env_usize_clamped(
+            "AXON_HYBRID_CANDIDATES",
+            100,
+            10,
+            500,
         ),
         cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
         cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
