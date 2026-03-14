@@ -1,6 +1,8 @@
 use crate::crates::core::config::Config;
 use crate::crates::vector::ops::input;
 use crate::crates::vector::ops::qdrant::qdrant_delete_stale_tail;
+use crate::crates::vector::ops::sparse;
+use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
 use std::error::Error;
 
 mod pipeline;
@@ -54,6 +56,58 @@ struct PreparedBatchDocument {
     chunks: Vec<String>,
 }
 
+/// Build a single Qdrant point JSON with the appropriate vector format for `mode`.
+///
+/// - `Named`: `{"id": …, "vector": {"dense": […], "bm42": {"indices": […], "values": […]}}, "payload": {…}}`
+/// - `Unnamed`: `{"id": …, "vector": […], "payload": {…}}`
+fn build_point(
+    point_id: uuid::Uuid,
+    vecv: Vec<f32>,
+    chunk: &str,
+    payload: serde_json::Value,
+    mode: VectorMode,
+) -> serde_json::Value {
+    match mode {
+        VectorMode::Named => {
+            let sv = sparse::compute_sparse_vector(chunk);
+            serde_json::json!({
+                "id": point_id.to_string(),
+                "vector": {
+                    "dense": vecv,
+                    "bm42": sv.to_json(),
+                },
+                "payload": payload,
+            })
+        }
+        VectorMode::Unnamed => serde_json::json!({
+            "id": point_id.to_string(),
+            "vector": vecv,
+            "payload": payload,
+        }),
+    }
+}
+
+/// Test-only helper: build one point JSON for the given mode without touching Qdrant.
+#[cfg(test)]
+pub(crate) fn build_point_for_test(
+    dense: Vec<f32>,
+    chunk: &str,
+    url: &str,
+    chunk_index: usize,
+    mode: VectorMode,
+) -> serde_json::Value {
+    let id = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!("{url}:{chunk_index}").as_bytes(),
+    );
+    let payload = serde_json::json!({
+        "url": url,
+        "chunk_index": chunk_index,
+        "chunk_text": chunk,
+    });
+    build_point(id, dense, chunk, payload, mode)
+}
+
 /// Shared implementation for text embedding with optional extra payload fields.
 async fn embed_text_impl(
     cfg: &Config,
@@ -95,7 +149,7 @@ async fn embed_chunks_impl(
         .into());
     }
     let dim = vectors[0].len();
-    qdrant_store::collection_init_or_cached(cfg, dim).await?;
+    let mode = qdrant_store::collection_init_or_cached(cfg, dim).await?;
     let domain = spider::url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))
@@ -126,11 +180,7 @@ async fn embed_chunks_impl(
                 payload[k] = v.clone();
             }
         }
-        points.push(serde_json::json!({
-            "id": point_id.to_string(),
-            "vector": vecv,
-            "payload": payload,
-        }));
+        points.push(build_point(point_id, vecv, &chunk, payload, mode));
     }
     // Upsert FIRST so the fresh document is always available in the index.
     // Never delete before the upsert succeeds — a pre-delete followed by a
@@ -247,6 +297,7 @@ fn validate_batch_vectors(
 fn build_batch_points(
     prepared: &[PreparedBatchDocument],
     vectors: Vec<Vec<f32>>,
+    mode: VectorMode,
 ) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
     let chunks_embedded: usize = prepared.iter().map(|doc| doc.chunks.len()).sum();
     let mut points: Vec<serde_json::Value> = Vec::with_capacity(chunks_embedded);
@@ -278,11 +329,7 @@ fn build_batch_points(
                     payload[k] = v.clone();
                 }
             }
-            points.push(serde_json::json!({
-                "id": point_id.to_string(),
-                "vector": vector,
-                "payload": payload,
-            }));
+            points.push(build_point(point_id, vector, chunk, payload, mode));
         }
     }
     Ok(points)
@@ -324,9 +371,9 @@ pub async fn embed_documents_batch(
     validate_batch_vectors(vectors.len(), chunks_embedded)?;
 
     let dim = vectors[0].len();
-    qdrant_store::collection_init_or_cached(cfg, dim).await?;
+    let mode = qdrant_store::collection_init_or_cached(cfg, dim).await?;
 
-    let points = build_batch_points(&prepared, vectors)?;
+    let points = build_batch_points(&prepared, vectors, mode)?;
     qdrant_store::qdrant_upsert(cfg, &points).await?;
     cleanup_batch_stale_tails(cfg, &prepared).await?;
 
