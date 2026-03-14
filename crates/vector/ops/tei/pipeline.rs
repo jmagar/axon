@@ -28,6 +28,7 @@ fn strict_predelete() -> bool {
 async fn embed_prepared_doc(
     cfg: &Config,
     doc: PreparedDoc,
+    mode: qdrant_store::VectorMode,
 ) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
     if let Err(err) = qdrant_delete_by_url_filter(cfg, &doc.url).await {
         if strict_predelete() {
@@ -57,7 +58,6 @@ async fn embed_prepared_doc(
         doc.chunks.len()
     ));
     let dim = vectors[0].len();
-    let mode = qdrant_store::collection_init_or_cached(cfg, dim).await?;
     let timestamp = Utc::now().to_rfc3339();
     let mut points = Vec::with_capacity(vectors.len());
     for (idx, (chunk, vecv)) in doc.chunks.into_iter().zip(vectors.into_iter()).enumerate() {
@@ -83,11 +83,12 @@ async fn embed_prepared_doc_with_timeout(
     cfg: &Config,
     doc: PreparedDoc,
     timeout_secs: u64,
+    mode: qdrant_store::VectorMode,
 ) -> Result<(usize, Vec<serde_json::Value>), Box<dyn Error>> {
     let url = doc.url.clone();
     match tokio::time::timeout(
         Duration::from_secs(timeout_secs),
-        embed_prepared_doc(cfg, doc),
+        embed_prepared_doc(cfg, doc, mode),
     )
     .await
     {
@@ -132,9 +133,17 @@ pub(super) async fn run_embed_pipeline(
             })
             .await;
     }
+    // Mode is unknown until the first doc returns its dim; seed the initial batch
+    // with Unnamed — once collection_init_or_cached resolves mode below, all
+    // subsequent work items receive the correct mode.
     for _ in 0..doc_concurrency {
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc_with_timeout(cfg, doc, doc_timeout_secs));
+            inflight.push(embed_prepared_doc_with_timeout(
+                cfg,
+                doc,
+                doc_timeout_secs,
+                qdrant_store::VectorMode::Unnamed,
+            ));
         }
     }
 
@@ -142,11 +151,14 @@ pub(super) async fn run_embed_pipeline(
     let mut docs_completed = 0usize;
     let mut pending_points: Vec<serde_json::Value> = Vec::new();
     let mut collection_dim: Option<usize> = None;
+    let mut collection_mode: Option<qdrant_store::VectorMode> = None;
 
     while let Some(result) = inflight.next().await {
         let (dim, mut points) = result?;
         match collection_dim {
             None => {
+                let mode = qdrant_store::collection_init_or_cached(cfg, dim).await?;
+                collection_mode = Some(mode);
                 collection_dim = Some(dim);
             }
             Some(existing) if existing != dim => {
@@ -176,7 +188,12 @@ pub(super) async fn run_embed_pipeline(
         }
 
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc_with_timeout(cfg, doc, doc_timeout_secs));
+            inflight.push(embed_prepared_doc_with_timeout(
+                cfg,
+                doc,
+                doc_timeout_secs,
+                collection_mode.unwrap_or(qdrant_store::VectorMode::Unnamed),
+            ));
         }
     }
     if !pending_points.is_empty() {
@@ -193,8 +210,13 @@ pub(super) async fn run_embed_pipeline(
 mod tests {
     use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
 
+    /// Verifies that `build_point` — the helper called by `embed_prepared_doc` with
+    /// the `mode` parameter it receives — produces the named-vector shape when given
+    /// `VectorMode::Named`. This covers the point-construction logic exercised by the
+    /// pipeline; the pipeline orchestration itself (TEI calls, Qdrant upsert) requires
+    /// live services and is covered by integration tests.
     #[test]
-    fn embed_prepared_doc_builds_named_points_for_named_mode() {
+    fn build_point_produces_named_format_for_named_mode() {
         use crate::crates::vector::ops::tei::build_point_for_test;
         let point = build_point_for_test(
             vec![0.1f32, 0.2, 0.3],
