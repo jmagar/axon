@@ -34,8 +34,8 @@ pub(super) async fn retrieve_ask_candidates(cfg: &Config, query: &str) -> Result
         let mode = get_or_fetch_vector_mode(cfg)
             .await
             .unwrap_or(VectorMode::Unnamed);
-        if mode == VectorMode::Named {
-            let sparse_vec = sparse::compute_sparse_vector(query);
+        let sparse_vec = sparse::compute_sparse_vector(query);
+        if mode == VectorMode::Named && !sparse_vec.is_empty() {
             qdrant::qdrant_hybrid_search(cfg, &vecq, &sparse_vec, cfg.ask_candidate_limit)
                 .await
                 .map_err(|e| anyhow!(e.to_string()))?

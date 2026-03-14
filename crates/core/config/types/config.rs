@@ -338,7 +338,7 @@ pub struct Config {
     /// Env: `AXON_ASK_MIN_CITATIONS_NONTRIVIAL` (clamped 1–5). Default: 2.
     pub ask_min_citations_nontrivial: usize,
 
-    /// Enable hybrid search (dense + BM25 sparse + RRF) for Named-mode collections.
+    /// Enable hybrid search (dense + BM42 sparse + RRF) for Named-mode collections.
     /// Env: `AXON_HYBRID_SEARCH` (true/false/1/0). Default: true.
     pub hybrid_search_enabled: bool,
 

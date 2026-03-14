@@ -22,8 +22,8 @@ pub async fn query_results(
         let mode = get_or_fetch_vector_mode(cfg)
             .await
             .unwrap_or(VectorMode::Unnamed);
-        if mode == VectorMode::Named {
-            let sparse_vec = sparse::compute_sparse_vector(query);
+        let sparse_vec = sparse::compute_sparse_vector(query);
+        if mode == VectorMode::Named && !sparse_vec.is_empty() {
             qdrant::qdrant_hybrid_search(cfg, &vector, &sparse_vec, fetch_limit)
                 .await
                 .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
