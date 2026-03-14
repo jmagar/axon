@@ -41,6 +41,13 @@ pub(super) fn cache_vector_mode(name: &str, mode: VectorMode) {
 /// if this is the first call for that collection in this process.
 ///
 /// Subsequent calls return the cached mode without hitting Qdrant.
+///
+/// # Concurrency note
+/// There is a TOCTOU window: two concurrent first-time callers can both see `None`
+/// from `cached_vector_mode` and both call `ensure_collection`. This is safe because
+/// `ensure_collection` is idempotent — the second PUT gets a 409 CONFLICT that is
+/// explicitly ignored, and both callers end up with a consistent `VectorMode`.
+/// The eventual-consistency guarantee is sufficient for this use case.
 pub(super) async fn collection_init_or_cached(
     cfg: &Config,
     dim: usize,
@@ -57,6 +64,12 @@ pub(super) async fn collection_init_or_cached(
 ///
 /// Used by search-only paths (query/ask) where `collection_init_or_cached` may not
 /// have been called yet. Checks cache first; falls back to a GET if not cached.
+///
+/// # Degradation policy
+/// If Qdrant is unreachable or returns a non-2xx response, falls back to
+/// `VectorMode::Unnamed` (dense-only search) rather than propagating an error.
+/// This is a deliberate degradation choice: a transient connection failure causes
+/// silent fallback to legacy search rather than a hard query failure.
 // Used in Tasks 3+ (query.rs, retrieval.rs) — allow until those callers are wired in.
 #[allow(dead_code)]
 pub(crate) async fn get_or_fetch_vector_mode(cfg: &Config) -> Result<VectorMode, Box<dyn Error>> {
@@ -233,6 +246,38 @@ pub(super) async fn qdrant_upsert(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── detect_vector_mode (pure parsing logic) ─────────────────────────────────
+
+    #[test]
+    fn detect_vector_mode_named_collection() {
+        let body = serde_json::json!({
+            "result": {
+                "config": {
+                    "params": {
+                        "vectors": {
+                            "dense": {"size": 384, "distance": "Cosine"}
+                        }
+                    }
+                }
+            }
+        });
+        assert_eq!(detect_vector_mode(&body), VectorMode::Named);
+    }
+
+    #[test]
+    fn detect_vector_mode_unnamed_collection() {
+        let body = serde_json::json!({
+            "result": {
+                "config": {
+                    "params": {
+                        "vectors": {"size": 384, "distance": "Cosine"}
+                    }
+                }
+            }
+        });
+        assert_eq!(detect_vector_mode(&body), VectorMode::Unnamed);
+    }
 
     // ── VectorMode cache ────────────────────────────────────────────────────────
 
