@@ -77,42 +77,52 @@ pub(crate) async fn get_or_fetch_vector_mode(cfg: &Config) -> Result<VectorMode,
     let client = http_client()?;
     let url = format!("{}/collections/{}", qdrant_base(cfg), cfg.collection);
 
-    // Transport error (connection refused, timeout) -> degrade to Unnamed
+    // Transport error (connection refused, timeout) -> degrade to Unnamed but do NOT cache.
+    // Caching here would permanently downgrade hybrid search for the process lifetime
+    // on a transient failure.
     let resp = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
             log_warn(&format!(
-                "qdrant unreachable for collection '{}', degrading to dense-only: {e}",
+                "qdrant unreachable for collection '{}', degrading to dense-only (not cached): {e}",
                 cfg.collection
             ));
-            cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
             return Ok(VectorMode::Unnamed);
         }
     };
 
-    // Non-2xx -> degrade to Unnamed
-    if !resp.status().is_success() {
-        let status = resp.status();
-        log_warn(&format!(
-            "qdrant returned {} for collection '{}', degrading to dense-only",
-            status, cfg.collection
+    let status = resp.status();
+
+    // 404 -> collection doesn't exist yet -> Unnamed is correct, safe to cache.
+    if status == StatusCode::NOT_FOUND {
+        log_debug(&format!(
+            "qdrant collection '{}' not found (404), caching Unnamed mode",
+            cfg.collection
         ));
-        // Auth failures (401/403) are likely misconfiguration — don't cache permanently
-        if status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN {
-            cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
-        }
+        cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
         return Ok(VectorMode::Unnamed);
     }
 
-    // JSON parse error -> degrade to Unnamed
+    // Non-2xx (except 404 handled above) -> degrade but do NOT cache.
+    // 401/403 = misconfiguration; 500/503 = transient server error — neither should
+    // poison the cache for the entire process lifetime.
+    if !status.is_success() {
+        log_warn(&format!(
+            "qdrant returned {} for collection '{}', degrading to dense-only (not cached)",
+            status, cfg.collection
+        ));
+        return Ok(VectorMode::Unnamed);
+    }
+
+    // HTTP 200 -> parse and cache the authoritative mode.
     let mode = match resp.json::<serde_json::Value>().await {
         Ok(body) => detect_vector_mode(&body),
         Err(e) => {
             log_warn(&format!(
-                "qdrant malformed JSON for collection '{}', degrading to dense-only: {e}",
+                "qdrant malformed JSON for collection '{}', degrading to dense-only (not cached): {e}",
                 cfg.collection
             ));
-            VectorMode::Unnamed
+            return Ok(VectorMode::Unnamed);
         }
     };
     cache_vector_mode(&cfg.collection, mode);

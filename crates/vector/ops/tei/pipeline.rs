@@ -126,7 +126,16 @@ fn rebuild_points_with_mode(
             .parse()
             .map_err(|e| format!("rebuild: bad uuid: {e}"))?;
         let payload = point["payload"].clone();
-        let chunk = point["payload"]["chunk_text"].as_str().unwrap_or_default();
+        let chunk = match point["payload"]["chunk_text"].as_str() {
+            Some(s) => s,
+            None => {
+                log_warn(&format!(
+                    "rebuild_points_with_mode: missing chunk_text for point {:?}",
+                    point["id"]
+                ));
+                ""
+            }
+        };
 
         // Extract dense vector — may be flat array (Unnamed) or nested under "dense" (Named).
         let dense: Vec<f32> = if let Some(arr) = point["vector"].as_array() {
@@ -237,7 +246,7 @@ pub(super) async fn run_embed_pipeline(
         }
     }
 
-    let (total_chunks, _total_docs) = drain_embed_inflight(
+    let (total_chunks, total_docs) = drain_embed_inflight(
         cfg,
         &mut inflight,
         &mut work,
@@ -254,7 +263,7 @@ pub(super) async fn run_embed_pipeline(
     .await?;
 
     Ok(EmbedSummary {
-        docs_embedded,
+        docs_embedded: total_docs,
         chunks_embedded: total_chunks,
     })
 }

@@ -231,7 +231,7 @@ async fn get_or_fetch_mode_403_is_not_cached() {
 }
 
 #[tokio::test]
-async fn get_or_fetch_mode_500_is_cached() {
+async fn get_or_fetch_mode_500_is_not_cached() {
     use crate::crates::jobs::common::test_config;
     use httpmock::MockServer;
 
@@ -252,10 +252,10 @@ async fn get_or_fetch_mode_500_is_cached() {
     let mode = get_or_fetch_vector_mode(&cfg).await.unwrap();
     assert_eq!(mode, VectorMode::Unnamed);
 
-    // 500 IS cached (transient server error, not auth misconfiguration)
-    assert_eq!(
-        cached_vector_mode("auth_test_col_500"),
-        Some(VectorMode::Unnamed),
-        "500 server error should be cached as Unnamed fallback"
+    // 500 must NOT be cached — transient server errors should not permanently
+    // downgrade the collection mode for the entire process lifetime.
+    assert!(
+        cached_vector_mode("auth_test_col_500").is_none(),
+        "500 server error must not be cached (transient failure)"
     );
 }
