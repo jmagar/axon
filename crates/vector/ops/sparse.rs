@@ -7,6 +7,14 @@
 //! # Hash stability
 //! `term_to_index` uses a fixed-seed FNV-1a hash. The seed is baked into the constant
 //! so the same term always maps to the same bucket index across process restarts.
+//!
+//! # Collision characteristics
+//! With `SPARSE_DIM = 30_522` buckets and FNV-1a hashing, the birthday paradox gives
+//! approximately 15% collision probability for 100 unique terms, 48% for 200 terms.
+//! For typical web documents this means some distinct terms will share a bucket and
+//! have their TF counts summed. This is a deliberate trade-off: using the actual BERT
+//! tokenizer vocabulary would eliminate collisions but requires an external dependency.
+//! Qdrant's IDF weighting mitigates the impact — high-IDF terms are unlikely to collide.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -67,7 +75,8 @@ pub fn term_to_index(term: &str) -> u32 {
 /// Compute a BM42-style sparse vector for `text`.
 ///
 /// Returns a `SparseVector` with one entry per unique token bucket.
-/// Short tokens (< 3 chars), stopwords, and non-alphanumeric tokens are excluded.
+/// Short tokens (< 3 bytes; equivalent to < 3 chars for ASCII-only alphanumeric tokens),
+/// stopwords, and non-alphanumeric tokens are excluded.
 /// On hash collision two distinct terms map to the same bucket; their TF counts are summed.
 pub fn compute_sparse_vector(text: &str) -> SparseVector {
     let mut bucket_tf: HashMap<u32, u32> = HashMap::new();
@@ -86,7 +95,7 @@ pub fn compute_sparse_vector(text: &str) -> SparseVector {
     let mut values = Vec::with_capacity(bucket_tf.len());
     for (idx, count) in bucket_tf {
         indices.push(idx);
-        values.push(count as f32);
+        values.push(count as f32); // raw TF; Qdrant applies IDF server-side (see collision note in module doc)
     }
     SparseVector { indices, values }
 }
@@ -142,14 +151,14 @@ mod tests {
             .indices
             .iter()
             .zip(&sv_single.values)
-            .find(|(i, _)| **i == rust_idx)
+            .find(|&(&i, _)| i == rust_idx)
             .map(|(_, &v)| v)
             .unwrap_or(0.0);
         let triple_val = sv_triple
             .indices
             .iter()
             .zip(&sv_triple.values)
-            .find(|(i, _)| **i == rust_idx)
+            .find(|&(&i, _)| i == rust_idx)
             .map(|(_, &v)| v)
             .unwrap_or(0.0);
         assert!(
