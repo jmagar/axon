@@ -7,7 +7,7 @@ use std::error::Error;
 
 mod pipeline;
 mod prepare;
-mod qdrant_store;
+pub(crate) mod qdrant_store;
 mod tei_client;
 mod tei_manifest;
 #[cfg(test)]

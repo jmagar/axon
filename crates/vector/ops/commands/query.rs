@@ -1,5 +1,7 @@
 use crate::crates::core::config::Config;
 use crate::crates::vector::ops::source_display::display_source;
+use crate::crates::vector::ops::sparse;
+use crate::crates::vector::ops::tei::qdrant_store::{VectorMode, get_or_fetch_vector_mode};
 use crate::crates::vector::ops::{qdrant, ranking, tei};
 use std::error::Error;
 
@@ -16,7 +18,21 @@ pub async fn query_results(
     let vector = query_vectors.remove(0);
 
     let fetch_limit = ((limit + offset).max(1) * 8).max(limit + offset).min(500);
-    let hits = qdrant::qdrant_search(cfg, &vector, fetch_limit).await?;
+    let hits = if cfg.hybrid_search_enabled {
+        let mode = get_or_fetch_vector_mode(cfg)
+            .await
+            .unwrap_or(VectorMode::Unnamed);
+        if mode == VectorMode::Named {
+            let sparse_vec = sparse::compute_sparse_vector(query);
+            qdrant::qdrant_hybrid_search(cfg, &vector, &sparse_vec, fetch_limit)
+                .await
+                .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
+        } else {
+            qdrant::qdrant_search(cfg, &vector, fetch_limit).await?
+        }
+    } else {
+        qdrant::qdrant_search(cfg, &vector, fetch_limit).await?
+    };
     let query_tokens = ranking::tokenize_query(query);
     let candidates: Vec<ranking::AskCandidate> = hits
         .into_iter()
@@ -74,4 +90,113 @@ pub async fn query_results(
             })
         })
         .collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crates::jobs::common::test_config;
+    use httpmock::prelude::*;
+
+    fn mock_tei_response(server: &MockServer, dim: usize) {
+        server.mock(|when, then| {
+            when.method(POST).path("/embed");
+            then.status(200)
+                .json_body(serde_json::json!([vec![0.1f32; dim]]));
+        });
+    }
+
+    fn mock_qdrant_query_response(server: &MockServer, collection: &str) {
+        let path = format!("/collections/{collection}/points/query");
+        server.mock(|when, then| {
+            when.method(POST).path(path);
+            then.status(200).json_body(serde_json::json!({
+                "result": [{
+                    "id": "test-id",
+                    "score": 0.9,
+                    "payload": {
+                        "url": "https://docs.example.com/page",
+                        "chunk_text": "axon hybrid search result content",
+                        "chunk_index": 0
+                    }
+                }]
+            }));
+        });
+    }
+
+    fn mock_qdrant_search_response(server: &MockServer, collection: &str) {
+        let path = format!("/collections/{collection}/points/search");
+        server.mock(|when, then| {
+            when.method(POST).path(path);
+            then.status(200).json_body(serde_json::json!({
+                "result": [{
+                    "id": "test-id",
+                    "score": 0.85,
+                    "payload": {
+                        "url": "https://docs.example.com/page",
+                        "chunk_text": "axon dense search result content",
+                        "chunk_index": 0
+                    }
+                }]
+            }));
+        });
+    }
+
+    #[tokio::test]
+    async fn query_results_uses_hybrid_search_when_named_collection() {
+        let col = "query_hybrid_named";
+        let qdrant_server = MockServer::start_async().await;
+        let tei_server = MockServer::start_async().await;
+        mock_tei_response(&tei_server, 4);
+        // Named collection: GET returns named dense vectors config
+        let col_path = format!("/collections/{col}");
+        qdrant_server.mock(|when, then| {
+            when.method(GET).path(col_path);
+            then.status(200).json_body(serde_json::json!({
+                "result": {
+                    "config": {
+                        "params": {
+                            "vectors": {"dense": {"size": 4, "distance": "Cosine"}}
+                        }
+                    }
+                }
+            }));
+        });
+        mock_qdrant_query_response(&qdrant_server, col);
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.collection = col.to_string();
+        cfg.qdrant_url = qdrant_server.base_url();
+        cfg.tei_url = tei_server.base_url();
+        cfg.hybrid_search_enabled = true;
+
+        let result = query_results(&cfg, "axon search query", 5, 0).await;
+        assert!(
+            result.is_ok(),
+            "query_results must succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn query_results_falls_back_to_dense_when_hybrid_disabled() {
+        let col = "query_dense_fallback";
+        let qdrant_server = MockServer::start_async().await;
+        let tei_server = MockServer::start_async().await;
+        mock_tei_response(&tei_server, 4);
+        mock_qdrant_search_response(&qdrant_server, col);
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.collection = col.to_string();
+        cfg.qdrant_url = qdrant_server.base_url();
+        cfg.tei_url = tei_server.base_url();
+        cfg.hybrid_search_enabled = false;
+
+        let result = query_results(&cfg, "dense only query", 5, 0).await;
+        assert!(
+            result.is_ok(),
+            "dense fallback must succeed: {:?}",
+            result.err()
+        );
+    }
 }

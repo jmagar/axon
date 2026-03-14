@@ -70,8 +70,6 @@ pub(super) async fn collection_init_or_cached(
 /// `VectorMode::Unnamed` (dense-only search) rather than propagating an error.
 /// This is a deliberate degradation choice: a transient connection failure causes
 /// silent fallback to legacy search rather than a hard query failure.
-// Used in Tasks 3+ (query.rs, retrieval.rs) — allow until those callers are wired in.
-#[allow(dead_code)]
 pub(crate) async fn get_or_fetch_vector_mode(cfg: &Config) -> Result<VectorMode, Box<dyn Error>> {
     if let Some(mode) = cached_vector_mode(&cfg.collection) {
         return Ok(mode);

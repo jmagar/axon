@@ -3,6 +3,8 @@ use super::heuristics::{
     query_requests_low_signal_sources, top_domains, url_matches_domain_list,
 };
 use crate::crates::core::config::Config;
+use crate::crates::vector::ops::sparse;
+use crate::crates::vector::ops::tei::qdrant_store::{VectorMode, get_or_fetch_vector_mode};
 use crate::crates::vector::ops::{qdrant, ranking, tei};
 use anyhow::{Result, anyhow};
 
@@ -28,9 +30,26 @@ pub(super) async fn retrieve_ask_candidates(cfg: &Config, query: &str) -> Result
     let vecq = ask_vectors.remove(0);
     let query_tokens = ranking::tokenize_query(query);
     let allow_low_signal = query_requests_low_signal_sources(&query_tokens, query);
-    let hits = qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
-        .await
-        .map_err(|e| anyhow!(e.to_string()))?;
+    let hits = if cfg.hybrid_search_enabled {
+        let mode = get_or_fetch_vector_mode(cfg)
+            .await
+            .map_err(|e| anyhow!(e.to_string()))
+            .unwrap_or(VectorMode::Unnamed);
+        if mode == VectorMode::Named {
+            let sparse_vec = sparse::compute_sparse_vector(query);
+            qdrant::qdrant_hybrid_search(cfg, &vecq, &sparse_vec, cfg.ask_candidate_limit)
+                .await
+                .map_err(|e| anyhow!(e.to_string()))?
+        } else {
+            qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
+                .await
+                .map_err(|e| anyhow!(e.to_string()))?
+        }
+    } else {
+        qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
+            .await
+            .map_err(|e| anyhow!(e.to_string()))?
+    };
     let mut candidates = Vec::new();
     let mut dropped_by_allowlist = 0usize;
     for hit in hits {

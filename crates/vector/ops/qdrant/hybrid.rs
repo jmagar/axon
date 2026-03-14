@@ -19,7 +19,6 @@ use super::utils::qdrant_base;
 /// (one dense, one sparse) and `"query": {"fusion": "rrf"}` to combine them.
 /// `limit` is the final number of results after fusion. Each prefetch arm fetches
 /// `cfg.hybrid_search_candidates` candidates before RRF fusion. Requires a Named-mode collection.
-#[allow(dead_code)]
 pub(crate) async fn qdrant_hybrid_search(
     cfg: &Config,
     dense_vector: &[f32],
