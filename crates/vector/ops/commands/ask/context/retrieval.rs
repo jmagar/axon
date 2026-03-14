@@ -33,7 +33,6 @@ pub(super) async fn retrieve_ask_candidates(cfg: &Config, query: &str) -> Result
     let hits = if cfg.hybrid_search_enabled {
         let mode = get_or_fetch_vector_mode(cfg)
             .await
-            .map_err(|e| anyhow!(e.to_string()))
             .unwrap_or(VectorMode::Unnamed);
         if mode == VectorMode::Named {
             let sparse_vec = sparse::compute_sparse_vector(query);
