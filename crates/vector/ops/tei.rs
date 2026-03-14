@@ -60,7 +60,7 @@ struct PreparedBatchDocument {
 ///
 /// - `Named`: `{"id": …, "vector": {"dense": […], "bm42": {"indices": […], "values": […]}}, "payload": {…}}`
 /// - `Unnamed`: `{"id": …, "vector": […], "payload": {…}}`
-fn build_point(
+pub(super) fn build_point(
     point_id: uuid::Uuid,
     vecv: Vec<f32>,
     chunk: &str,
