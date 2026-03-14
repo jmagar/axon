@@ -1,5 +1,32 @@
 # Changelog
-Last Modified: 2026-03-14 (session: v0.23.3 — secondary violation fixes: rate-limit eviction, sentinel type, elicit error, mcporter path, docs)
+Last Modified: 2026-03-14 (session: v0.24.0 — hybrid search: BM42 sparse vectors + Qdrant RRF fusion, wired into query and ask)
+
+## [Unreleased] — feat/hybrid-search
+
+This section documents commits on `feat/hybrid-search` relative to `main` (`e22f6115`).
+
+### Highlights
+
+- **Hybrid search end-to-end (v0.24.0)** — combines dense vector search with BM42 sparse vectors via Qdrant `/query` RRF fusion. All 7 tasks completed: (1) BM42 sparse vector computation via FNV-1a hash + TF weighting (`crates/vector/ops/sparse.rs`); (2) `VectorMode` detection probes Qdrant collection config, returns `Named` when `vectors` is an object with named sub-vectors (new-style Qdrant) vs `Unnamed` (legacy flat vector), cached in `OnceLock`; (3) embed pipeline writes named `dense` + `bm42` sparse vectors for `Named` collections; (4) `qdrant_hybrid_search` calls `/collections/{name}/points/query` with two prefetch arms (dense cosine + sparse dot-product) and `"query":{"fusion":"rrf"}`; (5) config fields `hybrid_search_enabled` / `hybrid_search_candidates` with `AXON_HYBRID_SEARCH` / `AXON_HYBRID_CANDIDATES` env vars; (6) `.env.example` entries added; (7) hybrid dispatch wired into both `query.rs` and `ask/context/retrieval.rs` — uses `/query` RRF for Named collections when `AXON_HYBRID_SEARCH=true`, falls back to dense-only for Unnamed collections or stopword-only queries (empty sparse vector guard). Full integration-test coverage (4 new tests). 1297 tests passing.
+
+| SHA | Summary |
+|-----|---------|
+| `be1ff7a4` | fix(vector): guard empty sparse vector; fix BM25→BM42 doc comment |
+| `e4cdc28b` | fix(vector): remove redundant map_err before unwrap_or in retrieve_ask_candidates |
+| `7fe25020` | feat(vector): wire hybrid search into query and ask — uses /query RRF for Named collections |
+| `0db1132f` | chore(config): add AXON_HYBRID_SEARCH and AXON_HYBRID_CANDIDATES to .env.example |
+| `01f5085f` | feat(config): add hybrid_search_enabled and hybrid_search_candidates env vars |
+| `846fa59f` | feat(vector): add qdrant_hybrid_search using /query RRF fusion endpoint |
+| `53ee3b49` | docs(vector): clarify initial-batch VectorMode seeding trade-off in pipeline.rs |
+| `1f476871` | refactor(vector): hoist collection_init_or_cached to run_embed_pipeline, pass VectorMode to embed_prepared_doc |
+| `c6bc6668` | feat(vector): update embed pipeline to include sparse vectors for Named collections |
+| `a758c5b1` | refactor(vector): expose build_point as pub(super) for pipeline.rs access |
+| `3daf3b70` | feat(vector): include BM42 sparse vectors in document upsert (Named collections) |
+| `e78e6958` | test(vector): add detect_vector_mode unit tests + document TOCTOU and degradation policy |
+| `00b7aba9` | feat(vector): add VectorMode detection — new collections use named dense+BM42 sparse |
+| `1bcf15b3` | docs(vector): clarify sparse.rs collision characteristics and byte-length filter |
+| `caf3e61f` | fix(vector): move sparse.rs to correct path crates/vector/ops/sparse.rs |
+| `b40e2bf0` | feat(vector): add BM42 sparse vector computation (FNV-1a hash, TF weights) |
 
 ## [Unreleased] — feat/web-integration-review-fixes
 
