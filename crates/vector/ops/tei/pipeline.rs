@@ -133,9 +133,14 @@ pub(super) async fn run_embed_pipeline(
             })
             .await;
     }
-    // Mode is unknown until the first doc returns its dim; seed the initial batch
-    // with Unnamed — once collection_init_or_cached resolves mode below, all
-    // subsequent work items receive the correct mode.
+    // Seed the initial concurrent batch with VectorMode::Unnamed.
+    // The first document to complete will trigger collection_init_or_cached (below),
+    // which sets collection_mode for all subsequent work items.
+    //
+    // Trade-off: if the collection is Named, the initial batch's points are built
+    // in Unnamed format and will be rejected by Qdrant at upsert with a 400 error.
+    // This is the intended early-failure behavior — re-run after the collection has
+    // been initialized by a prior embed call.
     for _ in 0..doc_concurrency {
         if let Some(doc) = work.next() {
             inflight.push(embed_prepared_doc_with_timeout(
@@ -231,5 +236,6 @@ mod tests {
         );
         assert!(point["vector"]["dense"].is_array());
         assert!(point["vector"]["bm42"]["indices"].is_array());
+        assert!(point["vector"]["bm42"]["values"].is_array());
     }
 }
