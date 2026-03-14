@@ -176,6 +176,71 @@ async fn tei_embed_retries_on_500() {
     assert_eq!(result.len(), 1, "must return one embedding vector");
 }
 
+// ── Named / Unnamed point format tests ─────────────────────────────────────
+
+#[test]
+fn named_mode_point_has_dense_and_bm42_in_vector_field() {
+    use crate::crates::vector::ops::tei::build_point_for_test;
+    use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
+
+    let dense = vec![0.1f32, 0.2, 0.3, 0.4];
+    let chunk = "embed axon qdrant vector search collection";
+    let point = build_point_for_test(dense, chunk, "https://ex.com/a", 0, VectorMode::Named);
+
+    let vector_obj = point["vector"]
+        .as_object()
+        .expect("vector must be an object for Named mode");
+    assert!(
+        vector_obj.contains_key("dense"),
+        "Named point must have 'dense' key"
+    );
+    assert!(
+        vector_obj.contains_key("bm42"),
+        "Named point must have 'bm42' key"
+    );
+
+    let bm42 = &vector_obj["bm42"];
+    assert!(bm42["indices"].is_array(), "bm42.indices must be an array");
+    assert!(bm42["values"].is_array(), "bm42.values must be an array");
+    assert_eq!(
+        bm42["indices"].as_array().unwrap().len(),
+        bm42["values"].as_array().unwrap().len(),
+        "bm42 indices and values must have the same length"
+    );
+}
+
+#[test]
+fn unnamed_mode_point_has_flat_array_vector() {
+    use crate::crates::vector::ops::tei::build_point_for_test;
+    use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
+
+    let dense = vec![0.1f32, 0.2, 0.3, 0.4];
+    let chunk = "embed qdrant vector";
+    let point = build_point_for_test(dense, chunk, "https://ex.com/b", 0, VectorMode::Unnamed);
+
+    assert!(
+        point["vector"].is_array(),
+        "Unnamed point must have a flat array vector"
+    );
+}
+
+#[test]
+fn named_mode_bm42_values_non_empty_for_content_chunk() {
+    use crate::crates::vector::ops::tei::build_point_for_test;
+    use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
+
+    let dense = vec![0.1f32, 0.2, 0.3, 0.4];
+    let chunk = "axon hybrid search qdrant embedding pipeline";
+    let point = build_point_for_test(dense, chunk, "https://ex.com/c", 0, VectorMode::Named);
+
+    let bm42 = &point["vector"]["bm42"];
+    let values = bm42["values"].as_array().unwrap();
+    assert!(
+        !values.is_empty(),
+        "non-empty chunk must produce non-empty sparse vector"
+    );
+}
+
 /// Hard client errors should fail fast (no retry storm).
 #[tokio::test]
 async fn tei_embed_fails_fast_on_404() {

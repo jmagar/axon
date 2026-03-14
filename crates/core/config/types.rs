@@ -80,6 +80,19 @@ mod tests {
     }
 
     #[test]
+    fn config_default_hybrid_search_settings() {
+        let cfg = Config::default();
+        assert!(
+            cfg.hybrid_search_enabled,
+            "hybrid search must default to enabled"
+        );
+        assert_eq!(
+            cfg.hybrid_search_candidates, 100,
+            "hybrid candidates default must be 100"
+        );
+    }
+
+    #[test]
     fn config_default_queue_settings() {
         let cfg = Config::default();
         assert!(cfg.shared_queue);

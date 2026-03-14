@@ -20,6 +20,17 @@ fn parse_origin_allowlist(raw: &str) -> Vec<String> {
         .collect()
 }
 
+fn env_bool(name: &str, default: bool) -> bool {
+    match env::var(name) {
+        Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => default,
+        },
+        Err(_) => default,
+    }
+}
+
 pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
     let global = cli.global;
     let fetch_retries_was_set = global.fetch_retries.is_some();
@@ -462,6 +473,13 @@ pub(super) fn into_config(cli: Cli) -> Result<Config, String> {
             1,
             5,
         ),
+        hybrid_search_enabled: env_bool("AXON_HYBRID_SEARCH", true),
+        hybrid_search_candidates: performance::env_usize_clamped(
+            "AXON_HYBRID_CANDIDATES",
+            100,
+            10,
+            500,
+        ),
         cron_every_seconds: global.cron_every_seconds.filter(|value| *value > 0),
         cron_max_runs: global.cron_max_runs.filter(|value| *value > 0),
         watchdog_stale_timeout_secs: global.watchdog_stale_timeout_secs.max(30),
@@ -588,6 +606,49 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn env_bool_symmetric_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const VAR: &str = "AXON_TEST_BOOL_ENV_BOOL_BEHAVIOR";
+
+        // Typo falls back to default, not false
+        unsafe { env::set_var(VAR, "tru") };
+        assert!(
+            env_bool(VAR, true),
+            "typo with default=true must return true"
+        );
+        assert!(
+            !env_bool(VAR, false),
+            "typo with default=false must return false"
+        );
+
+        // Explicit truthy
+        unsafe { env::set_var(VAR, "on") };
+        assert!(
+            env_bool(VAR, false),
+            "'on' must return true regardless of default"
+        );
+
+        // Explicit falsy
+        unsafe { env::set_var(VAR, "off") };
+        assert!(
+            !env_bool(VAR, true),
+            "'off' must return false regardless of default"
+        );
+
+        // Unset falls back to default
+        unsafe { env::remove_var(VAR) };
+        assert!(
+            env_bool(VAR, true),
+            "unset with default=true must return true"
+        );
+        assert!(
+            !env_bool(VAR, false),
+            "unset with default=false must return false"
+        );
+    }
 
     #[allow(unsafe_code)]
     #[test]
