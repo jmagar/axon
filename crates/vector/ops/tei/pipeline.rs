@@ -149,9 +149,7 @@ pub(super) async fn run_embed_pipeline(
         let (dim, mut points) = result?;
         match collection_dim {
             None => {
-                if qdrant_store::collection_needs_init(&cfg.collection) {
-                    qdrant_store::ensure_collection(cfg, dim).await?;
-                }
+                qdrant_store::collection_init_or_cached(cfg, dim).await?;
                 collection_dim = Some(dim);
             }
             Some(existing) if existing != dim => {

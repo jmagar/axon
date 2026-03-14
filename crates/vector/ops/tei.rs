@@ -95,9 +95,7 @@ async fn embed_chunks_impl(
         .into());
     }
     let dim = vectors[0].len();
-    if qdrant_store::collection_needs_init(&cfg.collection) {
-        qdrant_store::ensure_collection(cfg, dim).await?;
-    }
+    qdrant_store::collection_init_or_cached(cfg, dim).await?;
     let domain = spider::url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()))
@@ -326,9 +324,7 @@ pub async fn embed_documents_batch(
     validate_batch_vectors(vectors.len(), chunks_embedded)?;
 
     let dim = vectors[0].len();
-    if qdrant_store::collection_needs_init(&cfg.collection) {
-        qdrant_store::ensure_collection(cfg, dim).await?;
-    }
+    qdrant_store::collection_init_or_cached(cfg, dim).await?;
 
     let points = build_batch_points(&prepared, vectors)?;
     qdrant_store::qdrant_upsert(cfg, &points).await?;
