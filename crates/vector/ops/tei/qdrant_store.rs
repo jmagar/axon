@@ -92,7 +92,15 @@ pub(crate) async fn get_or_fetch_vector_mode(cfg: &Config) -> Result<VectorMode,
 
     // Non-2xx -> degrade to Unnamed
     if !resp.status().is_success() {
-        cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
+        let status = resp.status();
+        log_warn(&format!(
+            "qdrant returned {} for collection '{}', degrading to dense-only",
+            status, cfg.collection
+        ));
+        // Auth failures (401/403) are likely misconfiguration — don't cache permanently
+        if status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN {
+            cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
+        }
         return Ok(VectorMode::Unnamed);
     }
 
@@ -383,7 +391,11 @@ mod tests {
     fn validate_dim_mismatch_named() {
         let b =
             serde_json::json!({"result":{"config":{"params":{"vectors":{"dense":{"size":1024}}}}}});
-        assert!(validate_existing_dim(&b, VectorMode::Named, 384, "c").is_err());
+        let msg = validate_existing_dim(&b, VectorMode::Named, 384, "my_col")
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("my_col") && msg.contains("dim=1024") && msg.contains("dim=384"));
+        assert!(msg.contains("AXON_COLLECTION"));
     }
 
     #[test]
