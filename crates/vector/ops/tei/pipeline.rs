@@ -57,6 +57,7 @@ async fn embed_prepared_doc(
         doc.chunks.len()
     ));
     let dim = vectors[0].len();
+    let mode = qdrant_store::collection_init_or_cached(cfg, dim).await?;
     let timestamp = Utc::now().to_rfc3339();
     let mut points = Vec::with_capacity(vectors.len());
     for (idx, (chunk, vecv)) in doc.chunks.into_iter().zip(vectors.into_iter()).enumerate() {
@@ -64,19 +65,16 @@ async fn embed_prepared_doc(
             &Uuid::NAMESPACE_URL,
             format!("{}:{}", doc.url, idx).as_bytes(),
         );
-        points.push(serde_json::json!({
-            "id": point_id.to_string(),
-            "vector": vecv,
-            "payload": {
-                "url": doc.url,
-                "domain": doc.domain,
-                "source_command": "embed",
-                "content_type": "markdown",
-                "chunk_index": idx,
-                "chunk_text": chunk,
-                "scraped_at": timestamp,
-            }
-        }));
+        let payload = serde_json::json!({
+            "url": doc.url,
+            "domain": doc.domain,
+            "source_command": "embed",
+            "content_type": "markdown",
+            "chunk_index": idx,
+            "chunk_text": chunk,
+            "scraped_at": timestamp,
+        });
+        points.push(super::build_point(point_id, vecv, &chunk, payload, mode));
     }
     Ok((dim, points))
 }
@@ -149,7 +147,6 @@ pub(super) async fn run_embed_pipeline(
         let (dim, mut points) = result?;
         match collection_dim {
             None => {
-                qdrant_store::collection_init_or_cached(cfg, dim).await?;
                 collection_dim = Some(dim);
             }
             Some(existing) if existing != dim => {
@@ -190,4 +187,27 @@ pub(super) async fn run_embed_pipeline(
         docs_embedded,
         chunks_embedded,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::crates::vector::ops::tei::qdrant_store::VectorMode;
+
+    #[test]
+    fn embed_prepared_doc_builds_named_points_for_named_mode() {
+        use crate::crates::vector::ops::tei::build_point_for_test;
+        let point = build_point_for_test(
+            vec![0.1f32, 0.2, 0.3],
+            "pipeline test chunk with content",
+            "https://pipeline.example/doc",
+            0,
+            VectorMode::Named,
+        );
+        assert!(
+            point["vector"].is_object(),
+            "Named pipeline point must have object vector"
+        );
+        assert!(point["vector"]["dense"].is_array());
+        assert!(point["vector"]["bm42"]["indices"].is_array());
+    }
 }
