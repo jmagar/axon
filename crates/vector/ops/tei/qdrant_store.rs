@@ -76,12 +76,37 @@ pub(crate) async fn get_or_fetch_vector_mode(cfg: &Config) -> Result<VectorMode,
     }
     let client = http_client()?;
     let url = format!("{}/collections/{}", qdrant_base(cfg), cfg.collection);
-    let resp = client.get(&url).send().await?;
+
+    // Transport error (connection refused, timeout) -> degrade to Unnamed
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            log_warn(&format!(
+                "qdrant unreachable for collection '{}', degrading to dense-only: {e}",
+                cfg.collection
+            ));
+            cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
+            return Ok(VectorMode::Unnamed);
+        }
+    };
+
+    // Non-2xx -> degrade to Unnamed
     if !resp.status().is_success() {
+        cache_vector_mode(&cfg.collection, VectorMode::Unnamed);
         return Ok(VectorMode::Unnamed);
     }
-    let body: serde_json::Value = resp.json().await?;
-    let mode = detect_vector_mode(&body);
+
+    // JSON parse error -> degrade to Unnamed
+    let mode = match resp.json::<serde_json::Value>().await {
+        Ok(body) => detect_vector_mode(&body),
+        Err(e) => {
+            log_warn(&format!(
+                "qdrant malformed JSON for collection '{}', degrading to dense-only: {e}",
+                cfg.collection
+            ));
+            VectorMode::Unnamed
+        }
+    };
     cache_vector_mode(&cfg.collection, mode);
     Ok(mode)
 }
@@ -96,6 +121,36 @@ fn detect_vector_mode(body: &serde_json::Value) -> VectorMode {
     } else {
         VectorMode::Unnamed
     }
+}
+
+/// Check that the existing collection's dense vector dimension matches `expected_dim`.
+///
+/// Returns `Ok(())` when dimensions match or when the stored dimension cannot be
+/// determined (ambiguous schema is not an error — only a confirmed mismatch is).
+fn validate_existing_dim(
+    body: &serde_json::Value,
+    mode: VectorMode,
+    expected_dim: usize,
+    collection: &str,
+) -> Result<(), Box<dyn Error>> {
+    let stored = match mode {
+        VectorMode::Unnamed => body.pointer("/result/config/params/vectors/size"),
+        VectorMode::Named => body.pointer("/result/config/params/vectors/dense/size"),
+    };
+    if let Some(serde_json::Value::Number(n)) = stored
+        && let Some(stored_dim) = n.as_u64()
+    {
+        let stored_dim = stored_dim as usize;
+        if stored_dim != expected_dim {
+            return Err(format!(
+                "collection '{}' has dense dim={} but current embedder uses dim={} \
+                 -- set AXON_COLLECTION to a new name to re-index",
+                collection, stored_dim, expected_dim
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Creates keyword payload indexes on `url` and `domain` fields.
@@ -141,9 +196,12 @@ pub(super) async fn ensure_collection(
     let url = format!("{}/collections/{}", qdrant_base(cfg), cfg.collection);
 
     let get_resp = client.get(&url).send().await?;
-    if get_resp.status().is_success() {
+    let get_status = get_resp.status();
+
+    if get_status.is_success() {
         let body: serde_json::Value = get_resp.json().await?;
         let mode = detect_vector_mode(&body);
+        validate_existing_dim(&body, mode, dim, &cfg.collection)?;
         match mode {
             VectorMode::Named => {
                 let has_sparse = body
@@ -168,6 +226,14 @@ pub(super) async fn ensure_collection(
         ));
         ensure_payload_indexes(cfg).await?;
         return Ok(mode);
+    } else if get_status != StatusCode::NOT_FOUND {
+        // 500, 401, 403, etc. -- do not silently fall through to collection creation.
+        let body = get_resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "Qdrant GET collection/{} failed: {} -- {}",
+            cfg.collection, get_status, body
+        )
+        .into());
     }
 
     let create = serde_json::json!({
@@ -245,20 +311,14 @@ pub(super) async fn qdrant_upsert(
 mod tests {
     use super::*;
 
-    // ── detect_vector_mode (pure parsing logic) ─────────────────────────────────
+    // -- detect_vector_mode (pure parsing logic) --
 
     #[test]
     fn detect_vector_mode_named_collection() {
         let body = serde_json::json!({
-            "result": {
-                "config": {
-                    "params": {
-                        "vectors": {
-                            "dense": {"size": 384, "distance": "Cosine"}
-                        }
-                    }
-                }
-            }
+            "result": {"config": {"params": {"vectors": {
+                "dense": {"size": 384, "distance": "Cosine"}
+            }}}}
         });
         assert_eq!(detect_vector_mode(&body), VectorMode::Named);
     }
@@ -266,23 +326,15 @@ mod tests {
     #[test]
     fn detect_vector_mode_unnamed_collection() {
         let body = serde_json::json!({
-            "result": {
-                "config": {
-                    "params": {
-                        "vectors": {"size": 384, "distance": "Cosine"}
-                    }
-                }
-            }
+            "result": {"config": {"params": {"vectors": {"size": 384, "distance": "Cosine"}}}}
         });
         assert_eq!(detect_vector_mode(&body), VectorMode::Unnamed);
     }
 
-    // ── VectorMode cache ────────────────────────────────────────────────────────
-
+    // -- VectorMode cache --
     #[test]
     fn cached_vector_mode_returns_none_for_unknown_collection() {
-        let result = cached_vector_mode("test_no_such_collection_xyz_999");
-        assert!(result.is_none(), "unknown collection must return None");
+        assert!(cached_vector_mode("test_no_such_collection_xyz_999").is_none());
     }
 
     #[test]
@@ -303,10 +355,47 @@ mod tests {
         );
     }
 
-    // ── ensure_collection (integration — requires live Qdrant) ──────────────────
+    // -- validate_existing_dim --
+
+    #[test]
+    fn validate_dim_match_unnamed() {
+        let b = serde_json::json!({"result":{"config":{"params":{"vectors":{"size":384}}}}});
+        assert!(validate_existing_dim(&b, VectorMode::Unnamed, 384, "c").is_ok());
+    }
+
+    #[test]
+    fn validate_dim_match_named() {
+        let b =
+            serde_json::json!({"result":{"config":{"params":{"vectors":{"dense":{"size":384}}}}}});
+        assert!(validate_existing_dim(&b, VectorMode::Named, 384, "c").is_ok());
+    }
+
+    #[test]
+    fn validate_dim_mismatch_unnamed() {
+        let b = serde_json::json!({"result":{"config":{"params":{"vectors":{"size":768}}}}});
+        let msg = validate_existing_dim(&b, VectorMode::Unnamed, 384, "col")
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("dim=768") && msg.contains("dim=384") && msg.contains("col"));
+    }
+
+    #[test]
+    fn validate_dim_mismatch_named() {
+        let b =
+            serde_json::json!({"result":{"config":{"params":{"vectors":{"dense":{"size":1024}}}}}});
+        assert!(validate_existing_dim(&b, VectorMode::Named, 384, "c").is_err());
+    }
+
+    #[test]
+    fn validate_dim_missing_is_ok() {
+        let b = serde_json::json!({"result":{"config":{"params":{}}}});
+        assert!(validate_existing_dim(&b, VectorMode::Unnamed, 384, "c").is_ok());
+    }
+
+    // -- ensure_collection (integration -- requires live Qdrant) --
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    #[ignore = "integration test — requires running Qdrant; run with cargo test -- --ignored"]
+    #[ignore = "integration test -- requires running Qdrant; run with cargo test -- --ignored"]
     async fn ensure_collection_new_collection_returns_named_mode() -> Result<(), Box<dyn Error>> {
         use crate::crates::jobs::common::resolve_test_qdrant_url;
         let Some(qdrant_url) = resolve_test_qdrant_url() else {
@@ -333,7 +422,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    #[ignore = "integration test — requires running Qdrant; run with cargo test -- --ignored"]
+    #[ignore = "integration test -- requires running Qdrant; run with cargo test -- --ignored"]
     async fn ensure_collection_existing_unnamed_returns_unnamed_mode() -> Result<(), Box<dyn Error>>
     {
         use crate::crates::jobs::common::resolve_test_qdrant_url;
@@ -366,13 +455,13 @@ mod tests {
         assert_eq!(
             mode,
             VectorMode::Unnamed,
-            "existing unnamed collection must return Unnamed"
+            "existing unnamed must return Unnamed"
         );
         Ok(())
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    #[ignore = "integration test — requires running Qdrant; run with cargo test -- --ignored"]
+    #[ignore = "integration test -- requires running Qdrant; run with cargo test -- --ignored"]
     async fn ensure_collection_is_idempotent() -> Result<(), Box<dyn Error>> {
         use crate::crates::jobs::common::resolve_test_qdrant_url;
         let Some(qdrant_url) = resolve_test_qdrant_url() else {
@@ -383,12 +472,9 @@ mod tests {
         cfg.qdrant_url = qdrant_url;
         cfg.collection = format!("test_{}", uuid::Uuid::new_v4().simple());
 
-        // First call creates the collection.
         ensure_collection(&cfg, 4).await?;
-        // Second call must not error — verifies the GET-first bug fix (no 409 Conflict).
         ensure_collection(&cfg, 4).await?;
 
-        // Cleanup: delete the ephemeral test collection.
         let base = cfg.qdrant_url.trim_end_matches('/');
         let _ = reqwest::Client::new()
             .delete(format!("{}/collections/{}", base, cfg.collection))
