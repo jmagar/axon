@@ -86,14 +86,15 @@ pub(crate) async fn qdrant_hybrid_search(
     Ok(parsed.result)
 }
 
-/// Dense-only search for Named collections via `/points/query`.
+/// Dense-only search for Named collections using the `/points/query` endpoint.
 ///
-/// Used when hybrid search is disabled or the sparse vector is empty (stopword-only query).
-/// Named collections expect `{"dense": [...]}` format — the legacy `/points/search` endpoint
-/// sends `[...]` (unnamed format) and Qdrant returns 400.
+/// Named collections reject `/points/search` requests that send a flat `"vector": [...]`
+/// payload — they expect requests that address a named vector config. The `/points/query`
+/// endpoint accepts a bare array in `"query": [...]` with `"using": "dense"` to specify
+/// which named vector to search against. This function uses that form to run dense-only
+/// retrieval when sparse vectors are unavailable (empty query, hybrid disabled).
 ///
-/// Issues a single POST to `/collections/{name}/points/query` with one dense prefetch arm
-/// and no fusion. This is the Named-collection equivalent of `qdrant_search`.
+/// Use `qdrant_hybrid_search` when a sparse vector is available for RRF fusion.
 pub(crate) async fn qdrant_named_dense_search(
     cfg: &Config,
     dense_vector: &[f32],
