@@ -233,6 +233,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn query_results_named_uses_dense_query_when_sparse_empty() {
+        let col = "query_named_sparse_empty";
+        let qdrant_server = MockServer::start_async().await;
+        let tei_server = MockServer::start_async().await;
+        mock_tei_response(&tei_server, 4);
+        mock_named_collection(&qdrant_server, col);
+        let query_mock = mock_qdrant_query_response(&qdrant_server, col);
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.collection = col.to_string();
+        cfg.qdrant_url = qdrant_server.base_url();
+        cfg.tei_url = tei_server.base_url();
+        cfg.hybrid_search_enabled = true;
+
+        // All tokens are stopwords → compute_sparse_vector returns empty →
+        // must fall through to qdrant_named_dense_search (/points/query),
+        // NOT qdrant_search (/points/search) which has no mock and would fail.
+        let result = query_results(&cfg, "the and for", 5, 0).await;
+        assert!(
+            result.is_ok(),
+            "named+hybrid with empty sparse must succeed: {:?}",
+            result.err()
+        );
+        query_mock.assert();
+    }
+
+    #[tokio::test]
     async fn query_results_unnamed_uses_search_endpoint() {
         let col = "query_unnamed_search";
         let qdrant_server = MockServer::start_async().await;

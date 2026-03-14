@@ -5,9 +5,15 @@ use crate::crates::vector::ops::qdrant::{env_usize_clamped, qdrant_delete_by_url
 use chrono::Utc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use std::error::Error;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::OnceLock;
 use std::time::Duration;
 use uuid::Uuid;
+
+type EmbedFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<(usize, Vec<serde_json::Value>), Box<dyn Error>>> + Send + 'a>,
+>;
 
 fn env_bool(name: &str, default: bool) -> bool {
     match std::env::var(name) {
@@ -160,7 +166,7 @@ pub(super) async fn run_embed_pipeline(
     let flush_point_threshold = env_usize_clamped("AXON_QDRANT_POINT_BUFFER", 256, 128, 16384);
 
     let mut work = prepared.into_iter();
-    let mut inflight = FuturesUnordered::new();
+    let mut inflight: FuturesUnordered<EmbedFuture<'_>> = FuturesUnordered::new();
     if let Some(tx) = &progress_tx {
         let _ = tx
             .send(EmbedProgress {
@@ -171,13 +177,8 @@ pub(super) async fn run_embed_pipeline(
             .await;
     }
 
-    // Phase 1: Embed the first document serially to determine dim and VectorMode.
-    //
-    // This avoids the P0 bug where seeding the initial concurrent batch with
-    // VectorMode::Unnamed caused Qdrant 400 errors on existing Named collections.
-    // By processing one document first, we get the real embedding dimension, call
-    // collection_init_or_cached to resolve the true VectorMode, and then seed all
-    // concurrent work with the correct mode from the start.
+    // Phase 1: Embed one doc serially to discover dim + resolve VectorMode before
+    // seeding the concurrent batch (avoids P0 Qdrant 400 on Named collections).
     let mut chunks_embedded = 0usize;
     let mut docs_completed = 0usize;
     let mut pending_points: Vec<serde_json::Value> = Vec::new();
@@ -202,16 +203,11 @@ pub(super) async fn run_embed_pipeline(
     let (first_dim, mut first_points) =
         embed_prepared_doc_with_timeout(cfg, first_doc, doc_timeout_secs, pre_fetched_mode).await?;
 
-    // Now we have a real dim — ensure collection exists and get the authoritative mode.
-    // For existing Named collections, this confirms Named. For new collections, this
-    // creates the collection as Named and returns Named — if pre_fetched_mode was
-    // Unnamed (new collection), we must rebuild the first doc's points.
+    // Ensure collection exists and resolve authoritative mode (may differ from pre-fetch).
     let collection_mode = qdrant_store::collection_init_or_cached(cfg, first_dim).await?;
 
     if collection_mode != pre_fetched_mode {
-        // The pre-fetch returned Unnamed (collection didn't exist), but
-        // collection_init_or_cached created it as Named. Rebuild the first
-        // document's points with the correct mode.
+        // Pre-fetch was Unnamed (new collection) but init created Named — rebuild.
         log_info("embed_pipeline rebuilding first doc points after collection creation");
         first_points = rebuild_points_with_mode(&first_points, collection_mode)?;
     }
@@ -232,29 +228,70 @@ pub(super) async fn run_embed_pipeline(
     // Phase 2: Seed the concurrent batch with the known-correct VectorMode.
     for _ in 0..doc_concurrency {
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc_with_timeout(
+            inflight.push(Box::pin(embed_prepared_doc_with_timeout(
                 cfg,
                 doc,
                 doc_timeout_secs,
                 collection_mode,
-            ));
+            )));
         }
     }
 
+    let (total_chunks, _total_docs) = drain_embed_inflight(
+        cfg,
+        &mut inflight,
+        &mut work,
+        first_dim,
+        doc_timeout_secs,
+        collection_mode,
+        flush_point_threshold,
+        progress_tx.as_ref(),
+        docs_embedded,
+        chunks_embedded,
+        docs_completed,
+        &mut pending_points,
+    )
+    .await?;
+
+    Ok(EmbedSummary {
+        docs_embedded,
+        chunks_embedded: total_chunks,
+    })
+}
+
+/// Drain the concurrent embed queue, flushing points to Qdrant in batches.
+///
+/// Consumes results from `inflight`, accumulates points into `pending_points`,
+/// flushes when the threshold is reached, and refills from `work`. Returns
+/// the final `(chunks_embedded, docs_completed)` totals.
+#[allow(clippy::too_many_arguments)]
+async fn drain_embed_inflight<'a>(
+    cfg: &'a Config,
+    inflight: &mut FuturesUnordered<EmbedFuture<'a>>,
+    work: &mut impl Iterator<Item = PreparedDoc>,
+    expected_dim: usize,
+    doc_timeout_secs: u64,
+    collection_mode: qdrant_store::VectorMode,
+    flush_point_threshold: usize,
+    progress_tx: Option<&tokio::sync::mpsc::Sender<EmbedProgress>>,
+    docs_total: usize,
+    mut chunks_embedded: usize,
+    mut docs_completed: usize,
+    pending_points: &mut Vec<serde_json::Value>,
+) -> Result<(usize, usize), Box<dyn Error>> {
     while let Some(result) = inflight.next().await {
         let (dim, mut points) = result?;
-        if dim != first_dim {
+        if dim != expected_dim {
             return Err(format!(
-                "TEI embedding dimension mismatch: expected {}, got {}",
-                first_dim, dim
+                "TEI embedding dimension mismatch: expected {expected_dim}, got {dim}",
             )
             .into());
         }
         chunks_embedded += points.len();
         docs_completed += 1;
-        if let Some(tx) = &progress_tx {
+        if let Some(tx) = progress_tx {
             tx.send(EmbedProgress {
-                docs_total: docs_embedded,
+                docs_total,
                 docs_completed,
                 chunks_embedded,
             })
@@ -263,27 +300,23 @@ pub(super) async fn run_embed_pipeline(
         }
         pending_points.append(&mut points);
         if pending_points.len() >= flush_point_threshold {
-            qdrant_store::qdrant_upsert(cfg, &pending_points).await?;
+            qdrant_store::qdrant_upsert(cfg, pending_points).await?;
             pending_points.clear();
         }
 
         if let Some(doc) = work.next() {
-            inflight.push(embed_prepared_doc_with_timeout(
+            inflight.push(Box::pin(embed_prepared_doc_with_timeout(
                 cfg,
                 doc,
                 doc_timeout_secs,
                 collection_mode,
-            ));
+            )));
         }
     }
     if !pending_points.is_empty() {
-        qdrant_store::qdrant_upsert(cfg, &pending_points).await?;
+        qdrant_store::qdrant_upsert(cfg, pending_points).await?;
     }
-
-    Ok(EmbedSummary {
-        docs_embedded,
-        chunks_embedded,
-    })
+    Ok((chunks_embedded, docs_completed))
 }
 
 #[cfg(test)]
