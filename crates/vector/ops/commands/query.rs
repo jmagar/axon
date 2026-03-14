@@ -18,20 +18,29 @@ pub async fn query_results(
     let vector = query_vectors.remove(0);
 
     let fetch_limit = ((limit + offset).max(1) * 8).max(limit + offset).min(500);
-    let hits = if cfg.hybrid_search_enabled {
-        let mode = get_or_fetch_vector_mode(cfg)
-            .await
-            .unwrap_or(VectorMode::Unnamed);
-        let sparse_vec = sparse::compute_sparse_vector(query);
-        if mode == VectorMode::Named && !sparse_vec.is_empty() {
-            qdrant::qdrant_hybrid_search(cfg, &vector, &sparse_vec, fetch_limit)
-                .await
-                .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
-        } else {
-            qdrant::qdrant_search(cfg, &vector, fetch_limit).await?
+    let mode = get_or_fetch_vector_mode(cfg)
+        .await
+        .unwrap_or(VectorMode::Unnamed);
+    let hits = match mode {
+        VectorMode::Unnamed => qdrant::qdrant_search(cfg, &vector, fetch_limit).await?,
+        VectorMode::Named => {
+            if cfg.hybrid_search_enabled {
+                let sparse_vec = sparse::compute_sparse_vector(query);
+                if !sparse_vec.is_empty() {
+                    qdrant::qdrant_hybrid_search(cfg, &vector, &sparse_vec, fetch_limit)
+                        .await
+                        .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
+                } else {
+                    qdrant::qdrant_named_dense_search(cfg, &vector, fetch_limit)
+                        .await
+                        .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
+                }
+            } else {
+                qdrant::qdrant_named_dense_search(cfg, &vector, fetch_limit)
+                    .await
+                    .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
+            }
         }
-    } else {
-        qdrant::qdrant_search(cfg, &vector, fetch_limit).await?
     };
     let query_tokens = ranking::tokenize_query(query);
     let candidates: Vec<ranking::AskCandidate> = hits
@@ -96,6 +105,7 @@ pub async fn query_results(
 mod tests {
     use super::*;
     use crate::crates::jobs::common::test_config;
+    use httpmock::Mock;
     use httpmock::prelude::*;
 
     fn mock_tei_response(server: &MockServer, dim: usize) {
@@ -106,7 +116,7 @@ mod tests {
         });
     }
 
-    fn mock_qdrant_query_response(server: &MockServer, collection: &str) {
+    fn mock_qdrant_query_response<'a>(server: &'a MockServer, collection: &str) -> Mock<'a> {
         let path = format!("/collections/{collection}/points/query");
         server.mock(|when, then| {
             when.method(POST).path(path);
@@ -121,10 +131,10 @@ mod tests {
                     }
                 }]
             }));
-        });
+        })
     }
 
-    fn mock_qdrant_search_response(server: &MockServer, collection: &str) {
+    fn mock_qdrant_search_response<'a>(server: &'a MockServer, collection: &str) -> Mock<'a> {
         let path = format!("/collections/{collection}/points/search");
         server.mock(|when, then| {
             when.method(POST).path(path);
@@ -139,18 +149,12 @@ mod tests {
                     }
                 }]
             }));
-        });
+        })
     }
 
-    #[tokio::test]
-    async fn query_results_uses_hybrid_search_when_named_collection() {
-        let col = "query_hybrid_named";
-        let qdrant_server = MockServer::start_async().await;
-        let tei_server = MockServer::start_async().await;
-        mock_tei_response(&tei_server, 4);
-        // Named collection: GET returns named dense vectors config
+    fn mock_named_collection(server: &MockServer, col: &str) {
         let col_path = format!("/collections/{col}");
-        qdrant_server.mock(|when, then| {
+        server.mock(|when, then| {
             when.method(GET).path(col_path);
             then.status(200).json_body(serde_json::json!({
                 "result": {
@@ -162,7 +166,32 @@ mod tests {
                 }
             }));
         });
-        mock_qdrant_query_response(&qdrant_server, col);
+    }
+
+    fn mock_unnamed_collection(server: &MockServer, col: &str) {
+        let col_path = format!("/collections/{col}");
+        server.mock(|when, then| {
+            when.method(GET).path(col_path);
+            then.status(200).json_body(serde_json::json!({
+                "result": {
+                    "config": {
+                        "params": {
+                            "vectors": {"size": 4, "distance": "Cosine"}
+                        }
+                    }
+                }
+            }));
+        });
+    }
+
+    #[tokio::test]
+    async fn query_results_uses_hybrid_search_when_named_collection() {
+        let col = "query_hybrid_named";
+        let qdrant_server = MockServer::start_async().await;
+        let tei_server = MockServer::start_async().await;
+        mock_tei_response(&tei_server, 4);
+        mock_named_collection(&qdrant_server, col);
+        let query_mock = mock_qdrant_query_response(&qdrant_server, col);
 
         let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
         cfg.collection = col.to_string();
@@ -176,15 +205,17 @@ mod tests {
             "query_results must succeed: {:?}",
             result.err()
         );
+        query_mock.assert();
     }
 
     #[tokio::test]
-    async fn query_results_falls_back_to_dense_when_hybrid_disabled() {
-        let col = "query_dense_fallback";
+    async fn query_results_named_uses_query_endpoint_when_hybrid_disabled() {
+        let col = "query_named_no_hybrid";
         let qdrant_server = MockServer::start_async().await;
         let tei_server = MockServer::start_async().await;
         mock_tei_response(&tei_server, 4);
-        mock_qdrant_search_response(&qdrant_server, col);
+        mock_named_collection(&qdrant_server, col);
+        let query_mock = mock_qdrant_query_response(&qdrant_server, col);
 
         let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
         cfg.collection = col.to_string();
@@ -195,8 +226,33 @@ mod tests {
         let result = query_results(&cfg, "dense only query", 5, 0).await;
         assert!(
             result.is_ok(),
-            "dense fallback must succeed: {:?}",
+            "named dense-only must succeed: {:?}",
             result.err()
         );
+        query_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn query_results_unnamed_uses_search_endpoint() {
+        let col = "query_unnamed_search";
+        let qdrant_server = MockServer::start_async().await;
+        let tei_server = MockServer::start_async().await;
+        mock_tei_response(&tei_server, 4);
+        mock_unnamed_collection(&qdrant_server, col);
+        let search_mock = mock_qdrant_search_response(&qdrant_server, col);
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.collection = col.to_string();
+        cfg.qdrant_url = qdrant_server.base_url();
+        cfg.tei_url = tei_server.base_url();
+        cfg.hybrid_search_enabled = false;
+
+        let result = query_results(&cfg, "unnamed query", 5, 0).await;
+        assert!(
+            result.is_ok(),
+            "unnamed search must succeed: {:?}",
+            result.err()
+        );
+        search_mock.assert();
     }
 }

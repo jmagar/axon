@@ -30,24 +30,31 @@ pub(super) async fn retrieve_ask_candidates(cfg: &Config, query: &str) -> Result
     let vecq = ask_vectors.remove(0);
     let query_tokens = ranking::tokenize_query(query);
     let allow_low_signal = query_requests_low_signal_sources(&query_tokens, query);
-    let hits = if cfg.hybrid_search_enabled {
-        let mode = get_or_fetch_vector_mode(cfg)
+    let mode = get_or_fetch_vector_mode(cfg)
+        .await
+        .unwrap_or(VectorMode::Unnamed);
+    let hits = match mode {
+        VectorMode::Unnamed => qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
             .await
-            .unwrap_or(VectorMode::Unnamed);
-        let sparse_vec = sparse::compute_sparse_vector(query);
-        if mode == VectorMode::Named && !sparse_vec.is_empty() {
-            qdrant::qdrant_hybrid_search(cfg, &vecq, &sparse_vec, cfg.ask_candidate_limit)
-                .await
-                .map_err(|e| anyhow!(e.to_string()))?
-        } else {
-            qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
-                .await
-                .map_err(|e| anyhow!(e.to_string()))?
+            .map_err(|e| anyhow!(e.to_string()))?,
+        VectorMode::Named => {
+            if cfg.hybrid_search_enabled {
+                let sparse_vec = sparse::compute_sparse_vector(query);
+                if !sparse_vec.is_empty() {
+                    qdrant::qdrant_hybrid_search(cfg, &vecq, &sparse_vec, cfg.ask_candidate_limit)
+                        .await
+                        .map_err(|e| anyhow!(e.to_string()))?
+                } else {
+                    qdrant::qdrant_named_dense_search(cfg, &vecq, cfg.ask_candidate_limit)
+                        .await
+                        .map_err(|e| anyhow!(e.to_string()))?
+                }
+            } else {
+                qdrant::qdrant_named_dense_search(cfg, &vecq, cfg.ask_candidate_limit)
+                    .await
+                    .map_err(|e| anyhow!(e.to_string()))?
+            }
         }
-    } else {
-        qdrant::qdrant_search(cfg, &vecq, cfg.ask_candidate_limit)
-            .await
-            .map_err(|e| anyhow!(e.to_string()))?
     };
     let mut candidates = Vec::new();
     let mut dropped_by_allowlist = 0usize;

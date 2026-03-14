@@ -86,6 +86,67 @@ pub(crate) async fn qdrant_hybrid_search(
     Ok(parsed.result)
 }
 
+/// Dense-only search for Named collections via `/points/query`.
+///
+/// Used when hybrid search is disabled or the sparse vector is empty (stopword-only query).
+/// Named collections expect `{"dense": [...]}` format — the legacy `/points/search` endpoint
+/// sends `[...]` (unnamed format) and Qdrant returns 400.
+///
+/// Issues a single POST to `/collections/{name}/points/query` with one dense prefetch arm
+/// and no fusion. This is the Named-collection equivalent of `qdrant_search`.
+pub(crate) async fn qdrant_named_dense_search(
+    cfg: &Config,
+    dense_vector: &[f32],
+    limit: usize,
+) -> Result<Vec<QdrantSearchHit>> {
+    let client = http_client()?;
+    let url = format!(
+        "{}/collections/{}/points/query",
+        qdrant_base(cfg),
+        cfg.collection
+    );
+
+    let body = serde_json::json!({
+        "query": dense_vector,
+        "using": "dense",
+        "limit": limit,
+        "with_payload": true,
+        "with_vector": false
+    });
+
+    let search_start = Instant::now();
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            log_warn(&format!(
+                "qdrant_named_dense_search transport_error collection={} duration_ms={} err={e}",
+                cfg.collection,
+                search_start.elapsed().as_millis()
+            ));
+            anyhow!(e.to_string())
+        })?
+        .error_for_status()
+        .map_err(|e| {
+            log_warn(&format!(
+                "qdrant_named_dense_search status_error collection={} duration_ms={} err={e}",
+                cfg.collection,
+                search_start.elapsed().as_millis()
+            ));
+            anyhow!(e.to_string())
+        })?;
+
+    let parsed: QdrantSearchResponse = resp.json().await?;
+    log_debug(&format!(
+        "qdrant named_dense_search hits={} collection={}",
+        parsed.result.len(),
+        cfg.collection
+    ));
+    Ok(parsed.result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +223,57 @@ mod tests {
         };
         let _ = qdrant_hybrid_search(&cfg, &dense, &sparse, 10).await;
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn qdrant_named_dense_search_uses_query_endpoint_with_dense_using() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/collections/test_col/points/query")
+                    .json_body_includes(r#"{"using":"dense"}"#);
+                then.status(200).json_body(make_search_response(vec![(
+                    "https://example.com/dense",
+                    0.88,
+                )]));
+            })
+            .await;
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.qdrant_url = server.base_url();
+        cfg.collection = "test_col".to_string();
+
+        let dense = vec![0.1f32, 0.2, 0.3, 0.4];
+        let result = qdrant_named_dense_search(&cfg, &dense, 5).await;
+
+        mock.assert_async().await;
+        assert!(
+            result.is_ok(),
+            "named dense search must succeed: {:?}",
+            result.err()
+        );
+        let hits = result.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].payload.url, "https://example.com/dense");
+    }
+
+    #[tokio::test]
+    async fn qdrant_named_dense_search_propagates_error() {
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(POST).path("/collections/test_col/points/query");
+                then.status(500).body("internal server error");
+            })
+            .await;
+
+        let mut cfg = test_config("postgresql://dummy@127.0.0.1:1/dummy");
+        cfg.qdrant_url = server.base_url();
+        cfg.collection = "test_col".to_string();
+
+        let result = qdrant_named_dense_search(&cfg, &[0.1f32], 5).await;
+        assert!(result.is_err(), "HTTP 500 must propagate as Err");
     }
 
     #[tokio::test]
