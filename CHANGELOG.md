@@ -1,5 +1,59 @@
 # Changelog
-Last Modified: 2026-03-14 (session: v0.23.3 — secondary violation fixes: rate-limit eviction, sentinel type, elicit error, mcporter path, docs)
+Last Modified: 2026-03-15 (session: v0.25.0 — Pulse shell redesign, AI elements, hybrid search, new API routes)
+
+## [0.25.0] — feat/pulse-shell-and-hybrid-search
+
+This section documents commits on `feat/pulse-shell-and-hybrid-search` relative to `main` (`96773a08`).
+
+### Highlights
+
+- **Pulse shell redesign** — comprehensive overhaul of all shell components: `axon-shell.tsx`, `axon-shell-state.ts`, `axon-sidebar.tsx`, `axon-prompt-composer.tsx`, `axon-message-list.tsx`, `axon-mcp-pane.tsx`, `axon-settings-pane.tsx`, `axon-terminal-pane.tsx`, `axon-logs-dialog.tsx`, `axon-pane-handle.tsx`, `axon-shell-resize-divider.tsx`, mobile pane switcher, density selector, and canvas profile selector.
+- **AI elements components** — new structured components for AI conversation rendering: `conversation.tsx`, `confirmation.tsx`, `message.tsx`, `queue.tsx`, `tool.tsx` for displaying ACP turn results in the shell.
+- **Hybrid vector+sparse search** — new `crates/vector/ops/qdrant/hybrid.rs` combining dense embedding and sparse BM25 retrieval for improved recall; sparse query support added to `ops/sparse.rs` and wired into `query.rs`.
+- **New API routes** — `/api/ai/chat` (SSE LLM streaming), `/api/ai/command` (Plate.js editor AI), `/api/logs` (Docker container log SSE stream), `/api/workspace` (filesystem browser).
+- **New UI primitives** — `alert-dialog.tsx`, `card.tsx`, `progress.tsx`, `sheet.tsx`, `skeleton.tsx` from shadcn/ui added to component library.
+- **TEI pipeline refactor** — `qdrant_store.rs` split into `qdrant_store/` module, `code_embed.rs` deleted (logic merged into pipeline), `text_embed.rs` consolidated; `pipeline.rs` restructured for clearer chunking + embed + upsert flow.
+- **DB migration** — `migrations/002_job_status_indexes.sql` adds composite indexes on job status columns for query performance.
+- **Server-side jobs lib** — `apps/web/lib/server/jobs.ts` extracted as shared server-side job querying layer; `/api/jobs` and `/api/jobs/[id]` routes updated to use it.
+- **Shell-store** — `lib/shell-store.ts` and `axon-shell-state.ts` refactored; `use-is-mobile.ts` hook added.
+- **CLI/crawl improvements** — crawl audit manifest, job contracts, `crates/cli/commands/common.rs` hardening.
+- **Config** — `build_config.rs`, `config.rs`, `config_impls.rs` updated for new feature flags.
+- **Docs** — `ARCHITECTURE.md`, `JOB-LIFECYCLE.md`, all ingest docs updated; `CLAUDE.md` files refreshed for `crates/ingest`, `crates/vector`, `crates/cli`, and `apps/web`.
+
+### Commits since `main` (`96773a08`)
+
+| SHA | Message |
+|-----|---------|
+| (pending) | feat(web,vector): Pulse shell redesign, AI elements, hybrid search, new API routes (v0.25.0) |
+
+## [0.24.1] — fix/embed-pipeline-resilience
+
+This section documents commits on `fix/embed-pipeline-resilience` relative to `main` (`e9353d67`).
+
+### Highlights
+
+- **Embed pipeline resilience (v0.24.1)** — three structural fixes for the embed pipeline identified via systematic debugging of production ingest failures: (1) pipeline skip-and-continue — `run_embed_pipeline` now catches per-doc errors and continues instead of aborting the entire batch, tracking failures in `EmbedSummary.docs_failed`; (2) upsert-first pattern — removed pre-delete step that caused permanent data loss when TEI timed out mid-embed, replaced with deterministic UUID v5 point IDs (overwrite on upsert) followed by `qdrant_delete_stale_tail` only after successful upsert; (3) TEI retry budget tuning — `TEI_MAX_RETRIES_DEFAULT` reduced from 10 to 5, worst-case budget 181s fits inside 300s doc timeout. Two new tests: `embed_summary_exposes_docs_failed` and `tei_max_retries_default_fits_doc_timeout`.
+
+### Commits since `main` (`e9353d67`)
+
+| SHA | Message |
+|-----|---------|
+| 96773a08 | fix(embed): pipeline resilience — skip failed docs, upsert-first, tune retry budget (v0.24.1) |
+
+## [0.24.0] — main
+
+This section documents commits on `main` relative to `fe11a78d`.
+
+### Highlights
+
+- **Scrape format params, search pagination, TEI chunking metadata, Qdrant retry (`e9353d67`)** — MCP scrape format parameters, search result pagination, TEI chunking metadata fields, and Qdrant upsert retry logic.
+- **GitHub ingest code review fixes (`954f480c`)** — all code review findings addressed for ingest/github module.
+- **Centralized heartbeat (`a8fae674`)** — heartbeat logic moved into `worker_lane` via `wrap_with_heartbeat`, eliminating per-worker duplication.
+- **Batch pipeline deletion (`89c4011d`)** — removed `EmbedDocument`, `embed_documents_batch`, and `embed_pipeline.rs` in favor of unified `PreparedDoc` pipeline.
+- **Unified PreparedDoc pipeline (`8d22e7f5`–`99dfb55d`)** — migrated sessions, reddit, youtube, github issues/PRs/wiki/metadata, and github files to the unified `PreparedDoc` embed pipeline.
+- **PreparedDoc metadata fields (`95add431`)** — `source_type`, `content_type`, `title`, `extra` fields added to `PreparedDoc`, exposed `embed_prepared_docs` entry point.
+- **Pre-chunking optimization (`1a78dc82`)** — github files pre-chunked before TEI batching, eliminating 413 fallback path.
+- **Worker CPU tuning (`5802ff62`)** — CPU-based lane defaults and async stale-tail deletes for better throughput.
 
 ## [Unreleased] — feat/web-integration-review-fixes
 
