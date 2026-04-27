@@ -94,3 +94,5 @@ pub async fn run_map(cfg: &Config, start_url: &str) -> Result<(), Box<dyn Error>
 
 #[cfg(test)]
 mod map_migration_tests;
+#[cfg(test)]
+mod map_sitemap_tests;
