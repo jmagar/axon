@@ -69,10 +69,6 @@ pub fn path_basename<'a>(path: &'a str, fallback: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // Serializes tests that mutate HOME — env mutation is process-wide and not thread-safe.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn path_basename_extracts_filename() {
@@ -89,7 +85,6 @@ mod tests {
     #[serial_test::serial]
     #[test]
     fn axon_home_dir_returns_some_when_home_set() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("HOME").ok();
         unsafe { std::env::set_var("HOME", "/home/testuser") };
         let result = axon_home_dir();
@@ -105,7 +100,6 @@ mod tests {
     #[serial_test::serial]
     #[test]
     fn axon_home_dir_returns_none_when_home_unset() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("HOME").ok();
         unsafe { std::env::remove_var("HOME") };
         let result = axon_home_dir();
@@ -120,7 +114,6 @@ mod tests {
     #[serial_test::serial]
     #[test]
     fn axon_config_path_returns_none_when_home_unset() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("HOME").ok();
         unsafe { std::env::remove_var("HOME") };
         let result = axon_config_path();
@@ -135,7 +128,6 @@ mod tests {
     #[serial_test::serial]
     #[test]
     fn axon_home_dir_returns_none_when_home_is_relative() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("HOME").ok();
         unsafe { std::env::set_var("HOME", "../relative/path") };
         let result = axon_home_dir();
