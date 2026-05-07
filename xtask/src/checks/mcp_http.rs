@@ -30,21 +30,21 @@ const FILE_SPECS: &[FileSpec] = &[
         "src/core/config/cli.rs",
         &[(
             "transport: Option<McpTransport>",
-            "ERROR: MCP CLI must expose --transport in crates/core/config/cli.rs",
+            "ERROR: MCP CLI must expose --transport in src/core/config/cli.rs",
         )],
     ),
     (
         "src/core/config/parse/build_config.rs",
         &[(
             "resolve_mcp_transport(mcp_transport, mcp_transport_default)",
-            "ERROR: MCP transport resolver not wired into config build in crates/core/config/parse/build_config.rs",
+            "ERROR: MCP transport resolver not wired into config build in src/core/config/parse/build_config.rs",
         )],
     ),
     (
         "src/core/config/parse/helpers.rs",
         &[(
             "AXON_MCP_TRANSPORT",
-            "ERROR: MCP transport env override missing in crates/core/config/parse/helpers.rs",
+            "ERROR: MCP transport env override missing in src/core/config/parse/helpers.rs",
         )],
     ),
 ];
