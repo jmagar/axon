@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn ext_nested_path() {
-        assert_eq!(path_extension("crates/vector/ops/input.rs"), "rs");
+        assert_eq!(path_extension("src/vector/ops/input.rs"), "rs");
     }
 
     #[test]
