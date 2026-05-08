@@ -1,6 +1,8 @@
 use super::AxonMcpServer;
 use crate::core::config::Config;
-use crate::mcp::auth::{mcp_auth_middleware, mcp_http_token_is_configured};
+use crate::mcp::auth::{
+    AuthPolicy, build_auth_layer, build_auth_policy, configured_mcp_http_token,
+};
 use crate::mcp::cors::cors_middleware;
 use crate::web::security::{HostAllowlist, host_validation_middleware};
 use axum::{Router, body::Body, extract::State, middleware, middleware::Next, response::Response};
@@ -15,23 +17,17 @@ pub async fn run_http_server(
     host: &str,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    enforce_mcp_http_startup_policy(host)?;
+    let auth_policy = build_auth_policy(host, false).await?;
     let host_allowlist = HostAllowlist::new(host, port, &cfg.mcp_allowed_origins);
 
-    let app = mcp_http_router(cfg)
-        .await?
-        .layer(middleware::from_fn_with_state(
-            host_allowlist,
-            host_validation_middleware,
-        ));
+    let app =
+        mcp_http_router(cfg, host, port, auth_policy)
+            .await?
+            .layer(middleware::from_fn_with_state(
+                host_allowlist,
+                host_validation_middleware,
+            ));
 
-    if !mcp_http_token_is_configured() {
-        tracing::warn!(
-            context = "mcp_http_startup",
-            host = %host,
-            "AXON_MCP_HTTP_TOKEN not set \u{2014} loopback MCP HTTP server is unauthenticated"
-        );
-    }
     tracing::info!(host = %host, port, "mcp_http: server starting");
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     if let Err(err) = axum::serve(listener, app).await {
@@ -47,13 +43,13 @@ pub async fn run_unified_server(
     host: &str,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    enforce_mcp_http_startup_policy(host)?;
+    let auth_policy = build_auth_policy(host, false).await?;
     let host_allowlist = HostAllowlist::new(host, port, &cfg.mcp_allowed_origins);
     let panel = Arc::new(crate::web::PanelRuntimeState::initialize(host, port)?);
     let setup_required = panel.setup_required();
     let cfg_arc = Arc::new(cfg.clone());
     let web_router = crate::web::router(Arc::clone(&cfg_arc), panel);
-    let app = mcp_http_router(cfg)
+    let app = mcp_http_router(cfg, host, port, auth_policy)
         .await?
         .merge(web_router)
         .layer(middleware::from_fn_with_state(
@@ -61,13 +57,6 @@ pub async fn run_unified_server(
             host_validation_middleware,
         ));
 
-    if !mcp_http_token_is_configured() {
-        tracing::warn!(
-            context = "mcp_http_startup",
-            host = %host,
-            "AXON_MCP_HTTP_TOKEN not set \u{2014} loopback /mcp endpoint is unauthenticated"
-        );
-    }
     tracing::info!(host = %host, port, "serve: unified web and mcp server starting");
     let listener = tokio::net::TcpListener::bind((host, port)).await?;
     if setup_required {
@@ -115,7 +104,12 @@ fn open_setup_browser(host: &str, port: u16) {
     }
 }
 
-async fn mcp_http_router(cfg: Config) -> Result<Router, Box<dyn std::error::Error>> {
+async fn mcp_http_router(
+    cfg: Config,
+    host: &str,
+    port: u16,
+    auth_policy: AuthPolicy,
+) -> Result<Router, Box<dyn std::error::Error>> {
     let cors_cfg = Arc::new(cfg.clone());
     let cfg_arc = Arc::new(cfg);
     let service_context = Arc::new(OnceCell::new());
@@ -124,13 +118,17 @@ async fn mcp_http_router(cfg: Config) -> Result<Router, Box<dyn std::error::Erro
         .await
         .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
+    // Clone auth_policy into the factory closure so each server instance
+    // created by StreamableHttpService carries the correct policy.
+    let auth_policy_for_factory = auth_policy.clone();
     let mcp_service: StreamableHttpService<AxonMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             move || {
                 Ok(AxonMcpServer::new_with_service_context_cell(
                     (*cfg_arc).clone(),
                     Arc::clone(&service_context),
-                ))
+                )
+                .with_auth_policy(auth_policy_for_factory.clone()))
             },
             Default::default(),
             {
@@ -140,48 +138,85 @@ async fn mcp_http_router(cfg: Config) -> Result<Router, Box<dyn std::error::Erro
             },
         );
 
-    Ok(Router::new()
-        .nest_service("/mcp", mcp_service)
-        .layer(middleware::from_fn(mcp_auth_middleware))
-        .layer(middleware::from_fn_with_state(
-            cors_cfg,
-            mcp_http_cors_middleware,
-        )))
-}
+    // Compute resource_url from AXON_MCP_PUBLIC_URL (required for OAuth
+    // WWW-Authenticate metadata; unused in bearer-only/LoopbackDev modes).
+    let resource_url: Option<Arc<str>> = match &auth_policy {
+        AuthPolicy::Mounted { .. } => std::env::var("AXON_MCP_PUBLIC_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(|u| Arc::from(format!("{}/mcp", u.trim_end_matches('/')))),
+        AuthPolicy::LoopbackDev => None,
+    };
 
-fn enforce_mcp_http_startup_policy(host: &str) -> Result<(), Box<dyn std::error::Error>> {
-    enforce_mcp_http_startup_policy_with_token(host, mcp_http_token_is_configured())
-}
+    let static_token: Option<Arc<str>> = configured_mcp_http_token().map(Arc::from);
 
-fn enforce_mcp_http_startup_policy_with_token(
-    host: &str,
-    token_configured: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if mcp_http_bind_is_loopback(host) || token_configured {
-        return Ok(());
+    // Apply auth layer (or skip for LoopbackDev).
+    let mcp_router = Router::new().nest_service("/mcp", mcp_service);
+    let authenticated: Router =
+        if let Some(layer) = build_auth_layer(&auth_policy, static_token, resource_url) {
+            mcp_router.layer(layer)
+        } else {
+            mcp_router
+        };
+
+    // Mount the OAuth router when OAuth is active. These routes ARE the auth
+    // flow and MUST be unauthenticated (no auth layer applied to them).
+    //
+    // Locked Decision: use lab_auth::routes::router() (full), NOT
+    // bearer_only_router() — the full router gates /register on
+    // enable_dynamic_registration (set to true in build_auth_policy), so DCR
+    // is available for MCP clients (e.g. claude.ai).
+    // bearer_only_router() excludes /register unconditionally.
+    //
+    // Locked Decision: OAuth router only when auth_state: Some(_).
+    // Bearer-only (auth_state: None) and LoopbackDev have no OAuth routes.
+    let oauth_router: Option<Router> = if let AuthPolicy::Mounted {
+        auth_state: Some(ref state_arc),
+    } = auth_policy
+    {
+        tracing::info!(
+            "OAuth router mounted: /.well-known/oauth-authorization-server, \
+             /.well-known/oauth-protected-resource, /jwks, /authorize, \
+             /auth/google/callback, /token, /register"
+        );
+        Some(lab_auth::routes::router(state_arc.as_ref().clone()))
+    } else {
+        None
+    };
+
+    // Log auth startup status.
+    match &auth_policy {
+        AuthPolicy::LoopbackDev => tracing::warn!(
+            host = %host,
+            port,
+            "axon: MCP HTTP server starting WITHOUT authentication (loopback dev mode)"
+        ),
+        AuthPolicy::Mounted { auth_state: None } => tracing::info!(
+            host = %host,
+            port,
+            "axon: MCP HTTP server starting with static bearer auth"
+        ),
+        AuthPolicy::Mounted {
+            auth_state: Some(_),
+        } => tracing::info!(
+            host = %host,
+            port,
+            "axon: MCP HTTP server starting with OAuth 2.0 + static bearer dual-mode auth"
+        ),
     }
 
-    Err(format!(
-        "refusing to start unauthenticated MCP HTTP server on non-loopback host '{host}'; \
-         set AXON_MCP_HTTP_TOKEN or bind AXON_MCP_HTTP_HOST to 127.0.0.1/localhost"
-    )
-    .into())
-}
+    // Build combined router. The OAuth router is Router<()> (AuthState baked
+    // in via with_state inside lab_auth::routes::router). The cors layer is
+    // applied at the outermost level.
+    let base = match oauth_router {
+        Some(oauth) => Router::new().merge(authenticated).merge(oauth),
+        None => Router::new().merge(authenticated),
+    };
 
-fn mcp_http_bind_is_loopback(host: &str) -> bool {
-    let host = host.trim();
-    if host.eq_ignore_ascii_case("localhost") {
-        return true;
-    }
-
-    let host = host
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .unwrap_or(host);
-
-    host.parse::<std::net::IpAddr>()
-        .map(|addr| addr.is_loopback())
-        .unwrap_or(false)
+    Ok(base.layer(middleware::from_fn_with_state(
+        cors_cfg,
+        mcp_http_cors_middleware,
+    )))
 }
 
 async fn mcp_http_cors_middleware(
@@ -194,47 +229,35 @@ async fn mcp_http_cors_middleware(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    fn is_loopback(host: &str) -> bool {
+        use std::net::IpAddr;
+        use std::str::FromStr;
+        let h = host.trim();
+        if h.eq_ignore_ascii_case("localhost") {
+            return true;
+        }
+        let h = h
+            .strip_prefix('[')
+            .and_then(|v| v.strip_suffix(']'))
+            .unwrap_or(h);
+        IpAddr::from_str(h)
+            .map(|addr| addr.is_loopback())
+            .unwrap_or(false)
+    }
 
     #[test]
     fn mcp_http_bind_loopback_detection_accepts_loopback_hosts() {
-        assert!(mcp_http_bind_is_loopback("127.0.0.1"));
-        assert!(mcp_http_bind_is_loopback("::1"));
-        assert!(mcp_http_bind_is_loopback("[::1]"));
-        assert!(mcp_http_bind_is_loopback("localhost"));
+        assert!(is_loopback("127.0.0.1"));
+        assert!(is_loopback("::1"));
+        assert!(is_loopback("[::1]"));
+        assert!(is_loopback("localhost"));
     }
 
     #[test]
     fn mcp_http_bind_loopback_detection_rejects_wildcard_and_remote_hosts() {
-        assert!(!mcp_http_bind_is_loopback("0.0.0.0"));
-        assert!(!mcp_http_bind_is_loopback("::"));
-        assert!(!mcp_http_bind_is_loopback("192.168.1.10"));
-        assert!(!mcp_http_bind_is_loopback("axon.example.com"));
-    }
-
-    #[test]
-    fn startup_policy_allows_loopback_without_token() {
-        let result = enforce_mcp_http_startup_policy_with_token("127.0.0.1", false);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn startup_policy_rejects_non_loopback_without_token() {
-        let err =
-            enforce_mcp_http_startup_policy_with_token("0.0.0.0", false).expect_err("must reject");
-
-        assert!(
-            err.to_string()
-                .contains("refusing to start unauthenticated"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn startup_policy_allows_non_loopback_with_token() {
-        let result = enforce_mcp_http_startup_policy_with_token("0.0.0.0", true);
-
-        assert!(result.is_ok());
+        assert!(!is_loopback("0.0.0.0"));
+        assert!(!is_loopback("::"));
+        assert!(!is_loopback("192.168.1.10"));
+        assert!(!is_loopback("axon.example.com"));
     }
 }
