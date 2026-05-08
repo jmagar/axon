@@ -110,7 +110,7 @@ async fn mcp_http_router(
     port: u16,
     auth_policy: AuthPolicy,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    let cors_cfg = Arc::new(cfg.clone());
+    // Wrap cfg in Arc once; share via clone of the Arc rather than cloning Config.
     let cfg_arc = Arc::new(cfg);
     let service_context = Arc::new(OnceCell::new());
     AxonMcpServer::new_with_service_context_cell((*cfg_arc).clone(), Arc::clone(&service_context))
@@ -121,11 +121,12 @@ async fn mcp_http_router(
     // Clone auth_policy into the factory closure so each server instance
     // created by StreamableHttpService carries the correct policy.
     let auth_policy_for_factory = auth_policy.clone();
+    let cfg_arc_for_factory = Arc::clone(&cfg_arc);
     let mcp_service: StreamableHttpService<AxonMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             move || {
                 Ok(AxonMcpServer::new_with_service_context_cell(
-                    (*cfg_arc).clone(),
+                    (*cfg_arc_for_factory).clone(),
                     Arc::clone(&service_context),
                 )
                 .with_auth_policy(auth_policy_for_factory.clone()))
@@ -138,23 +139,33 @@ async fn mcp_http_router(
             },
         );
 
-    // Compute resource_url from AXON_MCP_PUBLIC_URL (required for OAuth
-    // WWW-Authenticate metadata; unused in bearer-only/LoopbackDev modes).
+    // Compute resource_url from AXON_MCP_PUBLIC_URL only when OAuth is active
+    // (required for WWW-Authenticate metadata). Bearer-only and LoopbackDev
+    // modes don't issue WWW-Authenticate with resource metadata.
     let resource_url: Option<Arc<str>> = match &auth_policy {
-        AuthPolicy::Mounted { .. } => std::env::var("AXON_MCP_PUBLIC_URL")
+        AuthPolicy::Mounted {
+            auth_state: Some(_),
+        } => std::env::var("AXON_MCP_PUBLIC_URL")
             .ok()
             .filter(|s| !s.trim().is_empty())
             .map(|u| Arc::from(format!("{}/mcp", u.trim_end_matches('/')))),
-        AuthPolicy::LoopbackDev => None,
+        _ => None,
     };
 
     let static_token: Option<Arc<str>> = configured_mcp_http_token().map(Arc::from);
 
     // Apply auth layer (or skip for LoopbackDev).
+    // Prepend the x-api-key normalizer so that clients that previously used
+    // `x-api-key: <token>` continue to work — the normalizer rewrites that
+    // header to `Authorization: Bearer <token>` before AuthLayer sees the request.
+    // lab-auth's AuthLayer contract is Bearer-only; normalisation happens at the
+    // axon boundary so lab-auth stays header-agnostic.
     let mcp_router = Router::new().nest_service("/mcp", mcp_service);
     let authenticated: Router =
         if let Some(layer) = build_auth_layer(&auth_policy, static_token, resource_url) {
-            mcp_router.layer(layer)
+            mcp_router
+                .layer(layer)
+                .layer(middleware::from_fn(normalize_api_key_header))
         } else {
             mcp_router
         };
@@ -214,9 +225,29 @@ async fn mcp_http_router(
     };
 
     Ok(base.layer(middleware::from_fn_with_state(
-        cors_cfg,
+        Arc::clone(&cfg_arc),
         mcp_http_cors_middleware,
     )))
+}
+
+/// Rewrite `x-api-key: <token>` to `Authorization: Bearer <token>` so that
+/// clients using the legacy header continue to work with `AuthLayer` (which
+/// exclusively reads `Authorization: Bearer`).
+///
+/// This runs before `AuthLayer` in the middleware stack. If `Authorization` is
+/// already set, the request is passed through unchanged — we never override an
+/// explicitly-set Authorization header.
+async fn normalize_api_key_header(mut req: axum::http::Request<Body>, next: Next) -> Response {
+    if !req.headers().contains_key("authorization")
+        && let Some(key_val) = req
+            .headers()
+            .get("x-api-key")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| format!("Bearer {v}").parse().ok())
+    {
+        req.headers_mut().insert("authorization", key_val);
+    }
+    next.run(req).await
 }
 
 async fn mcp_http_cors_middleware(

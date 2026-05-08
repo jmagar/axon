@@ -104,10 +104,27 @@ pub fn build_auth_layer(
 ) -> Option<AuthLayer> {
     match policy {
         AuthPolicy::LoopbackDev => None,
-        AuthPolicy::Mounted { auth_state } => Some(
+        AuthPolicy::Mounted { auth_state: None } => Some(
+            // Bearer-only mode: explicitly grant both scopes to the static
+            // token so that callers with a valid token can reach write actions
+            // (matching how the OAuth path sets static_token_scopes in
+            // AuthConfigBuilder). Without this, `static_token_scopes` is an
+            // empty Vec and every scope check would fail even with a valid token.
             AuthLayer::new()
                 .with_static_token(static_token)
-                .with_auth_state(auth_state.clone())
+                .with_static_token_scopes(vec!["axon:read".into(), "axon:write".into()])
+                .with_resource_url(resource_url)
+                .with_allow_session_cookie(false),
+        ),
+        AuthPolicy::Mounted {
+            auth_state: Some(state),
+        } => Some(
+            // OAuth mode: AuthConfig already sets static_token_scopes via
+            // AuthConfigBuilder::static_token_scopes; with_auth_state pulls
+            // them from config automatically.
+            AuthLayer::new()
+                .with_static_token(static_token)
+                .with_auth_state(Some(state.clone()))
                 .with_resource_url(resource_url)
                 .with_allow_session_cookie(false),
         ),
@@ -234,9 +251,16 @@ pub async fn build_auth_policy(
     }
 
     // No auth at all — only legal on loopback.
-    let bind_is_loopback = IpAddr::from_str(host.trim())
+    // Strip IPv6 brackets ([::1] → ::1) before parsing so that bracketed
+    // literals are recognised. Only strip if both brackets are present.
+    let host_trimmed = host.trim();
+    let host_for_parse = host_trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host_trimmed);
+    let bind_is_loopback = IpAddr::from_str(host_for_parse)
         .map(|ip| ip.is_loopback())
-        .unwrap_or_else(|_| host.trim().eq_ignore_ascii_case("localhost"));
+        .unwrap_or_else(|_| host_trimmed.eq_ignore_ascii_case("localhost"));
 
     if bind_is_loopback {
         tracing::info!(

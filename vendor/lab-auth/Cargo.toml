@@ -27,9 +27,17 @@ reqwest = { version = "0.13", default-features = false, features = [
   "form",
 ] }
 rsa = "0.10.0-rc.16"
-# Use rusqlite 0.32 which needs libsqlite3-sys 0.30 — same as sqlx-sqlite 0.8
-# (sqlx-sqlite 0.8 pins libsqlite3-sys = "0.30.1"). Using 0.39 here would pull
-# in libsqlite3-sys 0.37 which conflicts because both declare links = "sqlite3".
+# PINNED: rusqlite 0.32 (do not upgrade without reading this comment)
+#
+# rusqlite 0.32 depends on libsqlite3-sys 0.30, which is the same version that
+# sqlx-sqlite 0.8 pins (libsqlite3-sys = "0.30.1"). Both crates declare
+# `links = "sqlite3"` — only one version of a links-key crate may appear in a
+# build graph. Upgrading to rusqlite 0.39 would pull libsqlite3-sys 0.37, which
+# conflicts with sqlx's 0.30 and causes a link error.
+#
+# To unpin: upgrade sqlx-sqlite to a version that uses libsqlite3-sys >= 0.37,
+# then upgrade rusqlite to match, keeping both on the same libsqlite3-sys minor.
+# Verify with `cargo tree -d` that no duplicate libsqlite3-sys versions appear.
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
