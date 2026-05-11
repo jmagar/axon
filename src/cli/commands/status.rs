@@ -407,4 +407,30 @@ mod tests {
         assert!(from_payload.contains("Embed"));
         assert!(from_payload.contains("2 docs"));
     }
+
+    #[test]
+    fn render_status_payload_surfaces_reclaimed_pending_crawl_rows() {
+        let mut reclaimed = job("pending");
+        reclaimed.error_text = Some("reclaimed after unexpected shutdown".to_string());
+        reclaimed.result_json = None;
+
+        let payload = build_status_payload(
+            &[reclaimed],
+            &[],
+            &[],
+            &[],
+            &crate::services::types::StatusTotals::default(),
+        );
+
+        let rendered = render_status_payload(&payload).expect("payload should render");
+
+        assert!(
+            rendered.contains("recovered after worker shutdown"),
+            "expected reclaim hint; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("reclaimed after unexpected shutdown"),
+            "raw reclaim marker leaked into output:\n{rendered}"
+        );
+    }
 }
