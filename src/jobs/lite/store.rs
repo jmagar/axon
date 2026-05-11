@@ -84,6 +84,13 @@ pub async fn open_sqlite_pool(path: &str) -> Result<SqlitePool, sqlx::Error> {
     Ok(pool)
 }
 
+/// Error text written into `error_text` when the watchdog reclaims a stale running job.
+///
+/// All three read sites (`jobs/lite/store.rs`, `cli/commands/status.rs`,
+/// `jobs/lite/ops/tests.rs`) import this constant so a one-character change never
+/// silently breaks the renderer.
+pub(crate) const RECLAIMED_ERROR_TEXT: &str = "reclaimed after unexpected shutdown";
+
 /// Reclaim jobs stuck in `running` state from a previous crashed process.
 pub async fn reclaim_stale_running_jobs(
     pool: &SqlitePool,
@@ -127,10 +134,11 @@ pub async fn reclaim_stale_running_jobs_for_table(
     .fetch_all(pool)
     .await?;
     let result = sqlx::query(&format!(
-        "UPDATE {} SET status='pending', error_text='reclaimed after unexpected shutdown', \
+        "UPDATE {} SET status='pending', error_text=?, \
          updated_at=? WHERE status='running' AND updated_at < ?",
         table
     ))
+    .bind(RECLAIMED_ERROR_TEXT)
     .bind(now_ms())
     .bind(threshold)
     .execute(pool)

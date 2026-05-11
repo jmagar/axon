@@ -4,6 +4,7 @@ pub(crate) mod metrics;
 use crate::core::config::Config;
 use crate::core::logging::log_info;
 use crate::core::ui::{muted, primary, status_text as human_status_text, symbol_for_status};
+use crate::jobs::lite::store::RECLAIMED_ERROR_TEXT;
 use crate::services::context::ServiceContext;
 use crate::services::system::{build_status_payload, load_status_jobs};
 use crate::services::types::ServiceJob;
@@ -337,7 +338,7 @@ fn write_status_section(
 }
 
 fn job_error_hint(status: &str, error_text: &str) -> Option<String> {
-    if error_text.trim_start() == "reclaimed after unexpected shutdown" {
+    if error_text.trim_start() == RECLAIMED_ERROR_TEXT {
         return match status {
             "pending" => Some(
                 "recovered after worker shutdown; waiting for a worker to claim it".to_string(),
@@ -411,7 +412,7 @@ mod tests {
     #[test]
     fn render_status_payload_surfaces_reclaimed_pending_crawl_rows() {
         let mut reclaimed = job("pending");
-        reclaimed.error_text = Some("reclaimed after unexpected shutdown".to_string());
+        reclaimed.error_text = Some(RECLAIMED_ERROR_TEXT.to_string());
         reclaimed.result_json = None;
 
         let payload = build_status_payload(
@@ -429,7 +430,7 @@ mod tests {
             "expected reclaim hint; got:\n{rendered}"
         );
         assert!(
-            !rendered.contains("reclaimed after unexpected shutdown"),
+            !rendered.contains(RECLAIMED_ERROR_TEXT),
             "raw reclaim marker leaked into output:\n{rendered}"
         );
     }
