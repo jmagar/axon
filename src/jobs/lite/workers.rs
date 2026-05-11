@@ -37,7 +37,6 @@ pub(crate) fn resolve_lane_count(env_var: &str, cpu_min: usize, cpu_max: usize) 
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const WORKER_BATCH_LIMIT: usize = 32;
-const WATCHDOG_SWEEP_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Handles to wake specific worker types when new jobs are enqueued.
 pub struct WorkerHandles {
@@ -180,15 +179,13 @@ pub fn spawn_workers(
     }
 }
 
-/// Periodic watchdog: sweeps all job tables every 15s while the process is alive.
+/// Periodic watchdog: sweeps all job tables on a config-driven interval
+/// (`cfg.watchdog_sweep_secs`, default 15s) while the process is alive.
 ///
 /// Pairs with `HeartbeatGuard` — heartbeat keeps `updated_at` fresh for live jobs;
 /// watchdog reclaims rows whose `updated_at` has gone stale (process died, runner
-/// panicked, etc.). After any reclaim, wakes all four worker channels so pending
-/// rows are picked up within milliseconds rather than waiting for `POLL_INTERVAL`.
-///
-/// Uses `match` instead of `if let Err` so reclaimed > 0 can trigger worker wakeups.
-/// `.await?` inside `tokio::spawn` returning `()` is a compile error — do not use it.
+/// panicked, etc.). After a reclaim, wakes the worker channels whose kind had
+/// rows reclaimed — not the others — so untouched lanes stay parked.
 async fn watchdog_loop(
     pool: Arc<SqlitePool>,
     cfg: Arc<Config>,
@@ -200,7 +197,8 @@ async fn watchdog_loop(
 ) {
     let stale_threshold_ms =
         (cfg.watchdog_stale_timeout_secs + cfg.watchdog_confirm_secs).max(0) * 1_000i64;
-    let mut ticker = tokio::time::interval(WATCHDOG_SWEEP_INTERVAL);
+    let sweep_interval = Duration::from_secs(cfg.watchdog_sweep_secs.max(1) as u64);
+    let mut ticker = tokio::time::interval(sweep_interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Skip immediate tick — startup-time reclaim already ran in LiteBackend::init.
     ticker.tick().await;
@@ -209,25 +207,29 @@ async fn watchdog_loop(
             biased;
             _ = shutdown.cancelled() => break,
             _ = ticker.tick() => {
-                match crate::jobs::lite::store::reclaim_stale_running_jobs(
+                match crate::jobs::lite::store::reclaim_stale_running_jobs_detailed(
                     &pool,
                     stale_threshold_ms,
                 )
                 .await
                 {
-                    Ok(total) if total > 0 => {
-                        tracing::info!(
-                            reclaimed = total,
-                            "watchdog: reclaimed stale jobs, waking workers"
-                        );
+                    Ok(counts) if counts.total() > 0 => {
                         // notify_waiters (not notify_one) so all parked lanes
                         // for each kind wake — a single reclaim sweep can free
                         // multiple jobs of the same kind, and embed/ingest run
                         // multiple lanes that share one Notify handle.
-                        crawl_notify.notify_waiters();
-                        embed_notify.notify_waiters();
-                        extract_notify.notify_waiters();
-                        ingest_notify.notify_waiters();
+                        if counts.crawl > 0 {
+                            crawl_notify.notify_waiters();
+                        }
+                        if counts.embed > 0 {
+                            embed_notify.notify_waiters();
+                        }
+                        if counts.extract > 0 {
+                            extract_notify.notify_waiters();
+                        }
+                        if counts.ingest > 0 {
+                            ingest_notify.notify_waiters();
+                        }
                     }
                     Ok(_) => {}
                     Err(e) => {

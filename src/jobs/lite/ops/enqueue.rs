@@ -2,32 +2,28 @@ use sqlx::{SqliteConnection, SqlitePool, pool::PoolConnection};
 use uuid::Uuid;
 
 use crate::core::config::Config;
-use crate::jobs::backend::JobPayload;
+use crate::jobs::backend::{JobKind, JobPayload};
 use crate::jobs::error::JobError;
 use crate::jobs::lite::store::now_ms;
 
-/// Check whether the pending job count for a given queue is at or above the configured cap.
+/// Reject the enqueue when the queue is at or above its pending cap.
 ///
-/// `table` is the SQL table name (e.g. `axon_crawl_jobs`).
-/// `queue_name` is the human-readable queue name used in the error variant.
-/// `cap` is the cap (`0` = unlimited; `>= 1` rejects when `pending >= cap`).
+/// `cap == 0` is treated as unlimited. Generic over the executor so callers
+/// can pass `&SqlitePool` (test helpers) or `&mut SqliteConnection` (the
+/// immediate-transaction path used by `enqueue_job`).
 ///
-/// Generic over the executor so callers can pass `&SqlitePool` (test helpers)
-/// or `&mut SqliteConnection` (the immediate-transaction path used by
-/// `enqueue_job`). Both call sites share the same COUNT + threshold logic.
+/// Implementation note: we ask SQLite to return at most `cap + 1` row
+/// stubs (`SELECT 1 ... LIMIT cap+1`) instead of `SELECT COUNT(*)`. Cost is
+/// O(cap) on the `(status, created_at DESC)` index added in migration 0004,
+/// not O(pending) — caps below ~100 stay constant-time even when the
+/// pending queue grows large.
 ///
-/// # SQL injection safety
-///
-/// `table` is interpolated directly into the SQL string because sqlx does not
-/// support binding a table name. The invariant is that `table` is a compile-time
-/// `&'static str` literal, supplied only by the `enqueue_job` callsites in this
-/// file (`"axon_crawl_jobs"`, `"axon_embed_jobs"`, `"axon_extract_jobs"`,
-/// `"axon_ingest_jobs"`). Do **not** call this function with attacker- or
-/// caller-controlled `table` values.
+/// SAFETY: `kind.table_name()` returns a compile-time `&'static str` from a
+/// closed enum dispatch; no caller-controlled value reaches `format!`. Do
+/// not change to accept a runtime-derived table name.
 pub(super) async fn check_pending_cap_for<'e, E>(
     executor: E,
-    table: &'static str,
-    queue_name: &'static str,
+    kind: JobKind,
     cap: u64,
 ) -> Result<(), JobError>
 where
@@ -36,16 +32,19 @@ where
     if cap == 0 {
         return Ok(());
     }
-    let query = format!("SELECT COUNT(*) FROM {table} WHERE status = 'pending'");
-    let count_i64: i64 = sqlx::query_scalar(&query).fetch_one(executor).await?;
-    // SQLite COUNT(*) is non-negative in practice, but defend against a wrapping
-    // cast: clamp negatives to 0 and refuse to consult the cap if conversion fails.
-    let count: u64 = u64::try_from(count_i64).unwrap_or(0);
-    if count >= cap {
+    let table = kind.table_name();
+    let limit = i64::try_from(cap.saturating_add(1)).unwrap_or(i64::MAX);
+    let query = format!("SELECT 1 FROM {table} WHERE status = 'pending' LIMIT ?");
+    let rows: Vec<i64> = sqlx::query_scalar(&query)
+        .bind(limit)
+        .fetch_all(executor)
+        .await?;
+    let observed = rows.len() as u64;
+    if observed >= cap {
         return Err(JobError::QueueCapacityExceeded {
-            kind: queue_name,
+            kind: kind.queue_name(),
             cap,
-            current: count,
+            current: observed,
         });
     }
     Ok(())
@@ -81,7 +80,7 @@ async fn rollback_best_effort(conn: &mut SqliteConnection) {
 /// tests to use the built-in defaults (100/50/50/50) — those are well above any
 /// reasonable test fixture so production caps don't accidentally fail tests.
 ///
-/// The cap COUNT and the INSERT run inside a `BEGIN IMMEDIATE` transaction so
+/// The cap check and the INSERT run inside a `BEGIN IMMEDIATE` transaction so
 /// concurrent enqueues serialize on the SQLite RESERVED write lock — without
 /// it, two callers can both observe `count=0`, pass the cap check, and
 /// double-insert past the configured cap.
@@ -93,36 +92,16 @@ pub async fn enqueue_job(
     let id = Uuid::new_v4();
     let now = now_ms();
     let id_str = id.to_string();
+    let kind = payload.kind();
+    let cap = cap_for(kind, cfg);
 
     let mut conn = begin_immediate(pool).await?;
 
-    let result = match payload {
-        JobPayload::Crawl { url, config_json } => {
-            insert_crawl(&mut conn, &id_str, url, config_json, now, cfg).await
-        }
-        JobPayload::Embed { input, config_json } => {
-            insert_embed(&mut conn, &id_str, input, config_json, now, cfg).await
-        }
-        JobPayload::Extract { urls, config_json } => {
-            insert_extract(&mut conn, &id_str, urls, config_json, now, cfg).await
-        }
-        JobPayload::Ingest {
-            target,
-            source_type,
-            config_json,
-        } => {
-            insert_ingest(
-                &mut conn,
-                &id_str,
-                target,
-                source_type,
-                config_json,
-                now,
-                cfg,
-            )
-            .await
-        }
-    };
+    let result: Result<(), JobError> = async {
+        check_pending_cap_for(&mut *conn, kind, cap).await?;
+        insert_payload(&mut conn, &id_str, now, payload).await
+    }
+    .await;
 
     match result {
         Ok(()) => match commit(&mut conn).await {
@@ -142,121 +121,81 @@ pub async fn enqueue_job(
     }
 }
 
-async fn insert_crawl(
-    conn: &mut SqliteConnection,
-    id_str: &str,
-    url: &str,
-    config_json: &str,
-    now: i64,
-    cfg: &Config,
-) -> Result<(), JobError> {
-    check_pending_cap_for(
-        &mut *conn,
-        "axon_crawl_jobs",
-        "crawl",
-        cfg.max_pending_crawl_jobs as u64,
-    )
-    .await?;
-    sqlx::query(
-        "INSERT INTO axon_crawl_jobs (id, status, url, config_json, created_at, updated_at) \
-         VALUES (?, 'pending', ?, ?, ?, ?)",
-    )
-    .bind(id_str)
-    .bind(url)
-    .bind(config_json)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
+fn cap_for(kind: JobKind, cfg: &Config) -> u64 {
+    match kind {
+        JobKind::Crawl => cfg.max_pending_crawl_jobs as u64,
+        JobKind::Embed => cfg.max_pending_embed_jobs as u64,
+        JobKind::Extract => cfg.max_pending_extract_jobs as u64,
+        JobKind::Ingest => cfg.max_pending_ingest_jobs as u64,
+    }
 }
 
-async fn insert_embed(
+async fn insert_payload(
     conn: &mut SqliteConnection,
     id_str: &str,
-    input: &str,
-    config_json: &str,
     now: i64,
-    cfg: &Config,
+    payload: &JobPayload,
 ) -> Result<(), JobError> {
-    check_pending_cap_for(
-        &mut *conn,
-        "axon_embed_jobs",
-        "embed",
-        cfg.max_pending_embed_jobs as u64,
-    )
-    .await?;
-    sqlx::query(
-        "INSERT INTO axon_embed_jobs (id, status, input_text, config_json, created_at, updated_at) \
-         VALUES (?, 'pending', ?, ?, ?, ?)",
-    )
-    .bind(id_str)
-    .bind(input)
-    .bind(config_json)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
-
-async fn insert_extract(
-    conn: &mut SqliteConnection,
-    id_str: &str,
-    urls: &[String],
-    config_json: &str,
-    now: i64,
-    cfg: &Config,
-) -> Result<(), JobError> {
-    check_pending_cap_for(
-        &mut *conn,
-        "axon_extract_jobs",
-        "extract",
-        cfg.max_pending_extract_jobs as u64,
-    )
-    .await?;
-    let urls_json = serde_json::to_string(urls).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-    sqlx::query(
-        "INSERT INTO axon_extract_jobs (id, status, urls_json, config_json, created_at, updated_at) \
-         VALUES (?, 'pending', ?, ?, ?, ?)",
-    )
-    .bind(id_str)
-    .bind(&urls_json)
-    .bind(config_json)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
-
-async fn insert_ingest(
-    conn: &mut SqliteConnection,
-    id_str: &str,
-    target: &str,
-    source_type: &str,
-    config_json: &str,
-    now: i64,
-    cfg: &Config,
-) -> Result<(), JobError> {
-    check_pending_cap_for(
-        &mut *conn,
-        "axon_ingest_jobs",
-        "ingest",
-        cfg.max_pending_ingest_jobs as u64,
-    )
-    .await?;
-    sqlx::query(
-        "INSERT INTO axon_ingest_jobs (id, status, target, source_type, config_json, created_at, updated_at) \
-         VALUES (?, 'pending', ?, ?, ?, ?, ?)",
-    )
-    .bind(id_str)
-    .bind(target)
-    .bind(source_type)
-    .bind(config_json)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *conn)
-    .await?;
+    match payload {
+        JobPayload::Crawl { url, config_json } => {
+            sqlx::query(
+                "INSERT INTO axon_crawl_jobs (id, status, url, config_json, created_at, updated_at) \
+                 VALUES (?, 'pending', ?, ?, ?, ?)",
+            )
+            .bind(id_str)
+            .bind(url)
+            .bind(config_json)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *conn)
+            .await?;
+        }
+        JobPayload::Embed { input, config_json } => {
+            sqlx::query(
+                "INSERT INTO axon_embed_jobs (id, status, input_text, config_json, created_at, updated_at) \
+                 VALUES (?, 'pending', ?, ?, ?, ?)",
+            )
+            .bind(id_str)
+            .bind(input)
+            .bind(config_json)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *conn)
+            .await?;
+        }
+        JobPayload::Extract { urls, config_json } => {
+            let urls_json =
+                serde_json::to_string(urls).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+            sqlx::query(
+                "INSERT INTO axon_extract_jobs (id, status, urls_json, config_json, created_at, updated_at) \
+                 VALUES (?, 'pending', ?, ?, ?, ?)",
+            )
+            .bind(id_str)
+            .bind(&urls_json)
+            .bind(config_json)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *conn)
+            .await?;
+        }
+        JobPayload::Ingest {
+            target,
+            source_type,
+            config_json,
+        } => {
+            sqlx::query(
+                "INSERT INTO axon_ingest_jobs (id, status, target, source_type, config_json, created_at, updated_at) \
+                 VALUES (?, 'pending', ?, ?, ?, ?, ?)",
+            )
+            .bind(id_str)
+            .bind(target)
+            .bind(source_type)
+            .bind(config_json)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *conn)
+            .await?;
+        }
+    }
     Ok(())
 }

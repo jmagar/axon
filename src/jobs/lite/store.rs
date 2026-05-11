@@ -91,31 +91,58 @@ pub async fn open_sqlite_pool(path: &str) -> Result<SqlitePool, sqlx::Error> {
 /// silently breaks the renderer.
 pub(crate) const RECLAIMED_ERROR_TEXT: &str = "reclaimed after unexpected shutdown";
 
+/// Per-kind reclaim count returned by `reclaim_stale_running_jobs_detailed`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ReclaimCounts {
+    pub crawl: u64,
+    pub embed: u64,
+    pub extract: u64,
+    pub ingest: u64,
+}
+
+impl ReclaimCounts {
+    pub fn total(&self) -> u64 {
+        self.crawl + self.embed + self.extract + self.ingest
+    }
+}
+
 /// Reclaim jobs stuck in `running` state from a previous crashed process.
+/// Returns the total count for backwards compatibility; the watchdog uses
+/// `reclaim_stale_running_jobs_detailed` to drive per-kind worker wakeups.
 pub async fn reclaim_stale_running_jobs(
     pool: &SqlitePool,
     stale_threshold_ms: i64,
 ) -> Result<u64, sqlx::Error> {
-    tracing::debug!(
-        stale_threshold_ms,
-        "watchdog: starting stale-running-job sweep across all tables"
-    );
-    let mut total: u64 = 0;
+    Ok(
+        reclaim_stale_running_jobs_detailed(pool, stale_threshold_ms)
+            .await?
+            .total(),
+    )
+}
+
+pub async fn reclaim_stale_running_jobs_detailed(
+    pool: &SqlitePool,
+    stale_threshold_ms: i64,
+) -> Result<ReclaimCounts, sqlx::Error> {
+    let mut counts = ReclaimCounts::default();
     for kind in JobKind::all() {
-        match reclaim_stale_running_jobs_for_table(pool, *kind, stale_threshold_ms).await {
-            Ok(n) => total += n,
-            Err(e) => {
+        let n = reclaim_stale_running_jobs_for_table(pool, *kind, stale_threshold_ms)
+            .await
+            .inspect_err(|e| {
                 tracing::error!(table = kind.table_name(), error = %e, "watchdog: per-table sweep failed");
-                return Err(e);
-            }
+            })?;
+        match kind {
+            JobKind::Crawl => counts.crawl = n,
+            JobKind::Embed => counts.embed = n,
+            JobKind::Extract => counts.extract = n,
+            JobKind::Ingest => counts.ingest = n,
         }
     }
+    let total = counts.total();
     if total > 0 {
         tracing::info!(reclaimed = total, "watchdog: sweep complete");
-    } else {
-        tracing::debug!("watchdog: sweep complete, no stale jobs");
     }
-    Ok(total)
+    Ok(counts)
 }
 
 pub async fn reclaim_stale_running_jobs_for_table(
@@ -123,8 +150,10 @@ pub async fn reclaim_stale_running_jobs_for_table(
     kind: JobKind,
     stale_threshold_ms: i64,
 ) -> Result<u64, sqlx::Error> {
+    // SAFETY: `kind.table_name()` returns a compile-time `&'static str` from
+    // a closed enum dispatch; no caller-controlled value reaches `format!`.
+    // Status literals come from a closed enum too.
     let table = kind.table_name();
-    tracing::debug!(table, stale_threshold_ms, "watchdog: sweep table start");
     let threshold = now_ms() - stale_threshold_ms;
     let stale_ids = sqlx::query_scalar::<_, String>(&format!(
         "SELECT id FROM {} WHERE status='running' AND updated_at < ?",

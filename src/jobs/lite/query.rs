@@ -270,10 +270,13 @@ pub async fn list_service_jobs(
              END, \
              created_at DESC, \
              updated_at DESC, \
-             id"
+             id ASC"
         }
-        _ => "ORDER BY created_at DESC, updated_at DESC, id",
+        _ => "ORDER BY created_at DESC, updated_at DESC, id ASC",
     };
+    // SAFETY: service_select_from(kind) and order_by are compile-time `&'static
+    // str` from a closed enum dispatch; no caller-controlled values reach this
+    // format!(). Limit/offset are bound parameters.
     let query = format!(
         "{} {} LIMIT ?1 OFFSET ?2",
         service_select_from(kind),

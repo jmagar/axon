@@ -69,7 +69,7 @@ async fn run_status_impl(
     Ok(())
 }
 
-pub(crate) fn render_status_payload(payload: &serde_json::Value) -> Result<String, Box<dyn Error>> {
+pub(crate) fn render_status_payload(value: &serde_json::Value) -> Result<String, Box<dyn Error>> {
     #[derive(serde::Deserialize)]
     struct StatusPayload {
         local_crawl_jobs: Vec<ServiceJob>,
@@ -78,30 +78,46 @@ pub(crate) fn render_status_payload(payload: &serde_json::Value) -> Result<Strin
         local_ingest_jobs: Vec<ServiceJob>,
     }
 
-    let crawl_total = payload
+    // Defensive: clamp negative totals to 0 so a malformed payload can't
+    // either suppress the truncation note or panic the formatter.
+    let crawl_total = value
         .get("totals")
         .and_then(|t| t.get("crawl"))
         .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(0);
 
-    let p: StatusPayload = serde_json::from_value(payload.clone())?;
+    let parsed: StatusPayload = serde_json::from_value(value.clone())?;
+    let crawl_note = crawl_truncation_note(parsed.local_crawl_jobs.len(), crawl_total);
     Ok(render_status_jobs_from_slices(
-        &p.local_crawl_jobs,
-        &p.local_extract_jobs,
-        &p.local_embed_jobs,
-        &p.local_ingest_jobs,
-        crawl_total,
+        &parsed.local_crawl_jobs,
+        &parsed.local_extract_jobs,
+        &parsed.local_embed_jobs,
+        &parsed.local_ingest_jobs,
+        crawl_note.as_deref(),
     ))
 }
 
 fn render_status_jobs(jobs: &crate::services::system::StatusJobs, crawl_total: i64) -> String {
+    let crawl_note = crawl_truncation_note(jobs.crawl.len(), crawl_total.max(0));
     render_status_jobs_from_slices(
         &jobs.crawl,
         &jobs.extract,
         &jobs.embed,
         &jobs.ingest,
-        crawl_total,
+        crawl_note.as_deref(),
     )
+}
+
+/// Returns "showing N of M …" when the renderer will hide rows. N reflects
+/// what `write_status_section` will actually display (capped at
+/// `SECTION_DISPLAY_LIMIT`), so the note never advertises a count the
+/// renderer won't show.
+fn crawl_truncation_note(slice_len: usize, total: i64) -> Option<String> {
+    let displayed = slice_len.min(SECTION_DISPLAY_LIMIT);
+    let displayed_i64 = i64::try_from(displayed).unwrap_or(i64::MAX);
+    (total > displayed_i64)
+        .then(|| format!("showing {displayed} of {total} total · running jobs listed first"))
 }
 
 fn render_status_jobs_from_slices(
@@ -109,7 +125,7 @@ fn render_status_jobs_from_slices(
     extract_jobs: &[ServiceJob],
     embed_jobs: &[ServiceJob],
     ingest_jobs: &[ServiceJob],
-    crawl_total: i64,
+    crawl_note: Option<&str>,
 ) -> String {
     let crawl_url_map: HashMap<uuid::Uuid, &str> = crawl_jobs
         .iter()
@@ -123,18 +139,11 @@ fn render_status_jobs_from_slices(
         .map(|job| (job.id.to_string(), job))
         .collect();
     let embed_doc_totals = embed_doc_totals_from_crawls(crawl_jobs);
-    // write_status_section caps display at SECTION_DISPLAY_LIMIT rows; mirror
-    // that here so the truncation note never advertises a count the renderer
-    // won't actually show.
-    let crawl_displayed = crawl_jobs.len().min(SECTION_DISPLAY_LIMIT);
-    let crawl_note = (crawl_total > crawl_displayed as i64).then(|| {
-        format!("showing {crawl_displayed} of {crawl_total} total · running jobs listed first")
-    });
     let mut out = String::new();
     write_status_section(
         &mut out,
         "Crawl",
-        crawl_note.as_deref(),
+        crawl_note,
         crawl_jobs,
         |job| job.url.clone().unwrap_or_else(|| job.id.to_string()),
         |job| crawl_progress_summary(job, &embed_jobs_by_id, &embed_doc_totals),

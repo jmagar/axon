@@ -312,7 +312,7 @@ async fn embed_queue_cap_rejects_when_full() {
     .await
     .expect("seed rows");
 
-    let err = check_pending_cap_for(&pool, "axon_embed_jobs", "embed", 2)
+    let err = check_pending_cap_for(&pool, JobKind::Embed, 2)
         .await
         .expect_err("should be at capacity");
     let msg = err.to_string();
@@ -322,7 +322,7 @@ async fn embed_queue_cap_rejects_when_full() {
     );
 
     // limit=3 allows one more
-    check_pending_cap_for(&pool, "axon_embed_jobs", "embed", 3)
+    check_pending_cap_for(&pool, JobKind::Embed, 3)
         .await
         .expect("limit=3 should allow 2 pending jobs");
 }
@@ -339,7 +339,7 @@ async fn extract_queue_cap_rejects_when_full() {
     .await
     .expect("seed row");
 
-    let err = check_pending_cap_for(&pool, "axon_extract_jobs", "extract", 1)
+    let err = check_pending_cap_for(&pool, JobKind::Extract, 1)
         .await
         .expect_err("should be at capacity");
     let msg = err.to_string();
@@ -361,7 +361,7 @@ async fn ingest_queue_cap_rejects_when_full() {
     .await
     .expect("seed row");
 
-    let err = check_pending_cap_for(&pool, "axon_ingest_jobs", "ingest", 1)
+    let err = check_pending_cap_for(&pool, JobKind::Ingest, 1)
         .await
         .expect_err("should be at capacity");
     let msg = err.to_string();
@@ -388,7 +388,7 @@ async fn embed_queue_cap_zero_disables_limit() {
         .unwrap_or_else(|e| panic!("enqueue {i} failed: {e}"));
     }
     // With 5 pending jobs, limit=0 still allows more.
-    check_pending_cap_for(&pool, "axon_embed_jobs", "embed", 0)
+    check_pending_cap_for(&pool, JobKind::Embed, 0)
         .await
         .expect("limit=0 should be unlimited");
 }
@@ -408,7 +408,7 @@ async fn embed_queue_cap_allows_after_drain() {
     .expect("first enqueue");
 
     // Queue is at cap (1 pending, limit=1) — check should reject.
-    check_pending_cap_for(&pool, "axon_embed_jobs", "embed", 1)
+    check_pending_cap_for(&pool, JobKind::Embed, 1)
         .await
         .expect_err("should be at capacity");
 
@@ -421,7 +421,7 @@ async fn embed_queue_cap_allows_after_drain() {
         .expect("complete");
 
     // Now the cap check should pass (0 pending, limit=1).
-    check_pending_cap_for(&pool, "axon_embed_jobs", "embed", 1)
+    check_pending_cap_for(&pool, JobKind::Embed, 1)
         .await
         .expect("cap check after drain should succeed");
 }
