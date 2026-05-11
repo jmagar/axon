@@ -220,10 +220,14 @@ async fn watchdog_loop(
                             reclaimed = total,
                             "watchdog: reclaimed stale jobs, waking workers"
                         );
-                        crawl_notify.notify_one();
-                        embed_notify.notify_one();
-                        extract_notify.notify_one();
-                        ingest_notify.notify_one();
+                        // notify_waiters (not notify_one) so all parked lanes
+                        // for each kind wake — a single reclaim sweep can free
+                        // multiple jobs of the same kind, and embed/ingest run
+                        // multiple lanes that share one Notify handle.
+                        crawl_notify.notify_waiters();
+                        embed_notify.notify_waiters();
+                        extract_notify.notify_waiters();
+                        ingest_notify.notify_waiters();
                     }
                     Ok(_) => {}
                     Err(e) => {
