@@ -1,10 +1,34 @@
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
 use crate::core::config::Config;
 use crate::jobs::backend::JobPayload;
 use crate::jobs::error::JobError;
 use crate::jobs::lite::store::now_ms;
+
+/// Same as `check_pending_cap_for` but runs against an open transaction so the
+/// COUNT and the subsequent INSERT serialize against concurrent enqueues.
+async fn check_pending_cap_for_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    table: &'static str,
+    queue_name: &'static str,
+    cap: u64,
+) -> Result<(), JobError> {
+    if cap == 0 {
+        return Ok(());
+    }
+    let query = format!("SELECT COUNT(*) FROM {table} WHERE status = 'pending'");
+    let count_i64: i64 = sqlx::query_scalar(&query).fetch_one(&mut **tx).await?;
+    let count: u64 = u64::try_from(count_i64).unwrap_or(0);
+    if count >= cap {
+        return Err(JobError::QueueCapacityExceeded {
+            kind: queue_name,
+            cap,
+            current: count,
+        });
+    }
+    Ok(())
+}
 
 /// Check whether the pending job count for a given queue is at or above the configured cap.
 ///
@@ -22,6 +46,7 @@ use crate::jobs::lite::store::now_ms;
 /// file (`"axon_crawl_jobs"`, `"axon_embed_jobs"`, `"axon_extract_jobs"`,
 /// `"axon_ingest_jobs"`). Do **not** call this function with attacker- or
 /// caller-controlled `table` values.
+#[cfg(test)]
 pub(super) async fn check_pending_cap_for(
     pool: &SqlitePool,
     table: &'static str,
@@ -61,10 +86,16 @@ pub async fn enqueue_job(
     let now = now_ms();
     let id_str = id.to_string();
 
+    // Use BEGIN IMMEDIATE so the cap COUNT and the INSERT serialize against
+    // concurrent enqueues. Without it, two callers can both observe count=0,
+    // pass the cap check, and double-insert past the configured cap.
+    let mut tx = pool.begin().await?;
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *tx).await.ok();
+
     match payload {
         JobPayload::Crawl { url, config_json } => {
-            check_pending_cap_for(
-                pool,
+            check_pending_cap_for_tx(
+                &mut tx,
                 "axon_crawl_jobs",
                 "crawl",
                 cfg.max_pending_crawl_jobs as u64,
@@ -79,12 +110,12 @@ pub async fn enqueue_job(
             .bind(config_json)
             .bind(now)
             .bind(now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
         JobPayload::Embed { input, config_json } => {
-            check_pending_cap_for(
-                pool,
+            check_pending_cap_for_tx(
+                &mut tx,
                 "axon_embed_jobs",
                 "embed",
                 cfg.max_pending_embed_jobs as u64,
@@ -99,12 +130,12 @@ pub async fn enqueue_job(
             .bind(config_json)
             .bind(now)
             .bind(now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
         JobPayload::Extract { urls, config_json } => {
-            check_pending_cap_for(
-                pool,
+            check_pending_cap_for_tx(
+                &mut tx,
                 "axon_extract_jobs",
                 "extract",
                 cfg.max_pending_extract_jobs as u64,
@@ -121,7 +152,7 @@ pub async fn enqueue_job(
             .bind(config_json)
             .bind(now)
             .bind(now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
         JobPayload::Ingest {
@@ -129,8 +160,8 @@ pub async fn enqueue_job(
             source_type,
             config_json,
         } => {
-            check_pending_cap_for(
-                pool,
+            check_pending_cap_for_tx(
+                &mut tx,
                 "axon_ingest_jobs",
                 "ingest",
                 cfg.max_pending_ingest_jobs as u64,
@@ -146,10 +177,11 @@ pub async fn enqueue_job(
             .bind(config_json)
             .bind(now)
             .bind(now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
     }
 
+    tx.commit().await?;
     Ok(id)
 }

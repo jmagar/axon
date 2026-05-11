@@ -67,7 +67,7 @@ pub async fn open_sqlite_pool(path: &str) -> Result<SqlitePool, sqlx::Error> {
     let opts: SqliteConnectOptions = connect_str.parse()?;
     let opts = opts
         .pragma("journal_mode", "WAL")
-        .pragma("busy_timeout", "5000")
+        .pragma("busy_timeout", "10000")
         .pragma("foreign_keys", "ON");
 
     let pool = SqlitePoolOptions::new()
