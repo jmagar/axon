@@ -12,6 +12,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Write as _;
 
+/// Maximum number of rows rendered per section in the human status output.
+/// The truncation note ("showing N of M") is sized against this cap.
+const SECTION_DISPLAY_LIMIT: usize = 10;
+
 pub async fn run_status(
     cfg: &Config,
     service_context: &ServiceContext,
@@ -119,12 +123,12 @@ fn render_status_jobs_from_slices(
         .map(|job| (job.id.to_string(), job))
         .collect();
     let embed_doc_totals = embed_doc_totals_from_crawls(crawl_jobs);
-    let crawl_note = (crawl_total > crawl_jobs.len() as i64).then(|| {
-        format!(
-            "showing {} of {} total · running jobs listed first",
-            crawl_jobs.len(),
-            crawl_total,
-        )
+    // write_status_section caps display at SECTION_DISPLAY_LIMIT rows; mirror
+    // that here so the truncation note never advertises a count the renderer
+    // won't actually show.
+    let crawl_displayed = crawl_jobs.len().min(SECTION_DISPLAY_LIMIT);
+    let crawl_note = (crawl_total > crawl_displayed as i64).then(|| {
+        format!("showing {crawl_displayed} of {crawl_total} total · running jobs listed first")
     });
     let mut out = String::new();
     write_status_section(
@@ -333,7 +337,7 @@ fn write_status_section(
         return;
     }
 
-    for job in jobs.iter().take(10) {
+    for job in jobs.iter().take(SECTION_DISPLAY_LIMIT) {
         let label = label_for(job);
         if let Some(p) = progress_for(job) {
             let _ = writeln!(

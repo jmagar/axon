@@ -503,8 +503,11 @@ async fn enqueue_retries_when_sqlite_write_lock_is_temporarily_held() {
         .await
         .expect("hold write lock");
 
+    // 1.5s hold exercises the retry/wait path while staying well inside the
+    // 10s busy_timeout configured in open_sqlite_pool. The original 5.2s was
+    // chosen to outwait the prior 5s timeout — no longer needed.
     let release = tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(5_200)).await;
+        tokio::time::sleep(Duration::from_millis(1_500)).await;
         sqlx::query("ROLLBACK")
             .execute(&mut *lock_conn)
             .await
