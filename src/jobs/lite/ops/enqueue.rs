@@ -70,9 +70,6 @@ async fn commit(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
 
 async fn rollback_best_effort(conn: &mut SqliteConnection) {
     if let Err(e) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
-        // Log so a failing ROLLBACK (disk-full, broken connection) is at
-        // least observable — the connection still goes back to the pool but
-        // we want operators to see it.
         tracing::warn!(error = %e, "enqueue: ROLLBACK after failed transaction errored");
     }
 }
@@ -131,10 +128,9 @@ pub async fn enqueue_job(
         Ok(()) => match commit(&mut conn).await {
             Ok(()) => Ok(id),
             Err(commit_err) => {
-                // COMMIT failed — explicitly ROLLBACK before the connection
-                // returns to the pool so a stale `BEGIN IMMEDIATE` doesn't
-                // poison the next checkout. sqlx does not auto-rollback on
-                // PoolConnection::drop.
+                // sqlx doesn't auto-rollback on PoolConnection::drop, so a
+                // failed COMMIT would leave the next pool checkout inside a
+                // stale BEGIN IMMEDIATE.
                 rollback_best_effort(&mut conn).await;
                 Err(commit_err.into())
             }
