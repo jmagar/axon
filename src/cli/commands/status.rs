@@ -60,8 +60,8 @@ async fn run_status_impl(
     _cfg: &Config,
     service_context: &ServiceContext,
 ) -> Result<(), Box<dyn Error>> {
-    let (jobs, _totals) = load_status_jobs(service_context).await?;
-    print!("{}", render_status_jobs(&jobs));
+    let (jobs, totals) = load_status_jobs(service_context).await?;
+    print!("{}", render_status_jobs(&jobs, totals.crawl));
     Ok(())
 }
 
@@ -74,17 +74,30 @@ pub(crate) fn render_status_payload(payload: &serde_json::Value) -> Result<Strin
         local_ingest_jobs: Vec<ServiceJob>,
     }
 
-    let payload: StatusPayload = serde_json::from_value(payload.clone())?;
+    let crawl_total = payload
+        .get("totals")
+        .and_then(|t| t.get("crawl"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    let p: StatusPayload = serde_json::from_value(payload.clone())?;
     Ok(render_status_jobs_from_slices(
-        &payload.local_crawl_jobs,
-        &payload.local_extract_jobs,
-        &payload.local_embed_jobs,
-        &payload.local_ingest_jobs,
+        &p.local_crawl_jobs,
+        &p.local_extract_jobs,
+        &p.local_embed_jobs,
+        &p.local_ingest_jobs,
+        crawl_total,
     ))
 }
 
-fn render_status_jobs(jobs: &crate::services::system::StatusJobs) -> String {
-    render_status_jobs_from_slices(&jobs.crawl, &jobs.extract, &jobs.embed, &jobs.ingest)
+fn render_status_jobs(jobs: &crate::services::system::StatusJobs, crawl_total: i64) -> String {
+    render_status_jobs_from_slices(
+        &jobs.crawl,
+        &jobs.extract,
+        &jobs.embed,
+        &jobs.ingest,
+        crawl_total,
+    )
 }
 
 fn render_status_jobs_from_slices(
@@ -92,6 +105,7 @@ fn render_status_jobs_from_slices(
     extract_jobs: &[ServiceJob],
     embed_jobs: &[ServiceJob],
     ingest_jobs: &[ServiceJob],
+    crawl_total: i64,
 ) -> String {
     let crawl_url_map: HashMap<uuid::Uuid, &str> = crawl_jobs
         .iter()
@@ -105,10 +119,18 @@ fn render_status_jobs_from_slices(
         .map(|job| (job.id.to_string(), job))
         .collect();
     let embed_doc_totals = embed_doc_totals_from_crawls(crawl_jobs);
+    let crawl_note = (crawl_total > crawl_jobs.len() as i64).then(|| {
+        format!(
+            "showing {} of {} total · running jobs listed first",
+            crawl_jobs.len(),
+            crawl_total,
+        )
+    });
     let mut out = String::new();
     write_status_section(
         &mut out,
         "Crawl",
+        crawl_note.as_deref(),
         crawl_jobs,
         |job| job.url.clone().unwrap_or_else(|| job.id.to_string()),
         |job| crawl_progress_summary(job, &embed_jobs_by_id, &embed_doc_totals),
@@ -116,6 +138,7 @@ fn render_status_jobs_from_slices(
     write_status_section(
         &mut out,
         "Extract",
+        None,
         extract_jobs,
         |job| {
             job.urls_json
@@ -128,6 +151,7 @@ fn render_status_jobs_from_slices(
     write_status_section(
         &mut out,
         "Embed",
+        None,
         embed_jobs,
         |job| {
             job.target
@@ -140,6 +164,7 @@ fn render_status_jobs_from_slices(
     write_status_section(
         &mut out,
         "Ingest",
+        None,
         ingest_jobs,
         |job| match (&job.source_type, &job.target) {
             (Some(source_type), Some(target)) => format!("{source_type}: {target}"),
@@ -293,11 +318,15 @@ fn ingest_progress_summary(job: &ServiceJob) -> Option<String> {
 fn write_status_section(
     out: &mut String,
     title: &str,
+    section_note: Option<&str>,
     jobs: &[ServiceJob],
     label_for: impl Fn(&ServiceJob) -> String,
     progress_for: impl Fn(&ServiceJob) -> Option<String>,
 ) {
     let _ = writeln!(out, "{}", primary(title));
+    if let Some(note) = section_note {
+        let _ = writeln!(out, "  {}", muted(note));
+    }
     if jobs.is_empty() {
         let _ = writeln!(out, "  {}", muted("None."));
         let _ = writeln!(out);
@@ -400,13 +429,39 @@ mod tests {
             &crate::services::types::StatusTotals::default(),
         );
 
-        let from_jobs = render_status_jobs(&jobs);
+        let totals = crate::services::types::StatusTotals::default();
+        let from_jobs = render_status_jobs(&jobs, totals.crawl);
         let from_payload = render_status_payload(&payload).expect("payload should render");
 
         assert_eq!(from_payload, from_jobs);
         assert!(from_payload.contains("Crawl"));
         assert!(from_payload.contains("Embed"));
         assert!(from_payload.contains("2 docs"));
+    }
+
+    #[test]
+    fn render_status_payload_mentions_when_crawl_rows_are_truncated() {
+        let payload = build_status_payload(
+            &[job("running"), job("pending")],
+            &[],
+            &[],
+            &[],
+            &crate::services::types::StatusTotals {
+                crawl: 24,
+                ..Default::default()
+            },
+        );
+
+        let rendered = render_status_payload(&payload).expect("payload should render");
+
+        assert!(
+            rendered.contains("showing 2 of 24"),
+            "expected truncation note; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("running jobs listed first"),
+            "expected ordering note; got:\n{rendered}"
+        );
     }
 
     #[test]
