@@ -96,8 +96,10 @@ jobs:
           shared-key: axon-windows-cross
       # aws-lc-rs (rustls crypto backend) + libsqlite3-sys + tree-sitter
       # parsers all run bindgen during cross-compile, which needs libclang.
+      # cmake is required by aws-lc-rs's vendored libcrypto build, nasm is
+      # required by its x86-64 assembly path.
       - name: Install cross-compile build deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake nasm
       - name: Install zig + cargo-zigbuild
         run: |
           set -euo pipefail
