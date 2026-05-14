@@ -38,5 +38,7 @@ gpui_linux = { git = "https://github.com/zed-industries/zed", rev = "5f5dd7ae301
 # Windows builds need the windows-manifest feature on gpui itself (DPI
 # awareness, UTF-8 codepage) plus the platform backend.
 [target.'cfg(target_os = "windows")'.dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "5f5dd7ae301dd265e5020fd65cd20769a81d0d5b", features = ["windows-manifest"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "5f5dd7ae301dd265e5020fd65cd20769a81d0d5b", features = [
+  "windows-manifest",
+] }
 gpui_windows = { git = "https://github.com/zed-industries/zed", rev = "5f5dd7ae301dd265e5020fd65cd20769a81d0d5b" }
