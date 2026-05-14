@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask"]
+members = ["xtask", "apps/desktop"]
 resolver = "2"
 
 # Override lab-auth from the git source with a local vendored copy that uses

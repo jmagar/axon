@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-05-14
+
+### Added
+
+- desktop: new `axon-palette` workspace member at `apps/desktop` — a global-hotkey command palette built with GPUI. Press Ctrl+Shift+Space to bring the palette forward, type to filter actions (Scrape/Crawl/Map/Ask/Search/Research/Ingest/Status/Doctor), optional argument after a space, Enter to spawn `axon` as a subprocess. MVP scaffold; runs on X11 today (Wayland global hotkeys depend on compositor support).
+
 ## [1.11.3] - 2026-05-14
 
 ### Fixed
