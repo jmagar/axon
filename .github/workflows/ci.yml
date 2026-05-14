@@ -78,6 +78,25 @@ jobs:
       - name: cargo xtask check-mcp-http
         run: cargo xtask check-mcp-http
 
+  windows-build:
+    name: windows-build (axon.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: axon-windows
+      - name: cargo build --release -p axon
+        run: cargo build --release --locked -p axon
+      - name: Upload axon.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: axon-windows-x86_64
+          path: target/release/axon.exe
+
   shell-completions-smoke:
     name: shell-completions-smoke
     runs-on: ubuntu-latest
