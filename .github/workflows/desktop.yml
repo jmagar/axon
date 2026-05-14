@@ -19,31 +19,21 @@ env:
   CARGO_MANIFEST_PATH: apps/desktop/Cargo.toml
 
 jobs:
-  build:
-    name: build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: windows-latest
-
+  build-linux:
+    name: build (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop
-          shared-key: axon-palette-${{ matrix.os }}
+          shared-key: axon-palette-ubuntu-latest
 
-      # Linux build deps required by GPUI (X11 + Wayland) and global-hotkey.
+      # GPUI on Linux links against X11 + Wayland + xcb headers.
       - name: Install Linux system deps
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -56,15 +46,33 @@ jobs:
         run: cargo build --release --locked --manifest-path apps/desktop/Cargo.toml
 
       - name: Upload Linux binary
-        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: axon-palette-linux-x86_64
           path: apps/desktop/target/release/axon-palette
           if-no-files-found: error
 
+  build-windows:
+    name: build (windows, self-hosted)
+    # Self-hosted runner: only run on pushes to this repo and PRs from same-repo
+    # branches. Fork PRs fall through (no Windows artifact for them), so a
+    # malicious fork can't execute on the self-hosted box even if approved.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop
+          shared-key: axon-palette-windows
+
+      - name: cargo build --release
+        run: cargo build --release --locked --manifest-path apps/desktop/Cargo.toml
+
       - name: Upload Windows binary
-        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: axon-palette-windows-x86_64
