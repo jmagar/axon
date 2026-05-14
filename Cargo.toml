@@ -59,6 +59,14 @@ tempfile = "3"
 thiserror = "2"
 # NOTE: In spider v2.45.x these are valid optional features and are required
 # for our crawl/render pipeline.
+#
+# `firewall` is intentionally OFF: it pulls in spider_firewall, whose build.rs
+# fetches blocklists from api.github.com unauthenticated and panics when
+# GitHub rate-limits the runner. The crate doesn't read GITHUB_TOKEN, so we
+# can't authenticate the request from outside. validate_url() in
+# src/core/http/ssrf.rs remains the primary SSRF guard; spider_firewall was a
+# defense-in-depth blocklist on top of that. Re-enable once the upstream
+# build script supports an auth env var (or pre-bundled lists).
 spider = { version = "2", default-features = false, features = [
   "basic",
   "chrome",
@@ -77,7 +85,6 @@ spider = { version = "2", default-features = false, features = [
   "headers",
   "time",
   "control",
-  "firewall",
   "hedge",
 ] }
 spider_agent = { version = "2.47.89", default-features = false, features = [
