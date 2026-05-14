@@ -53,12 +53,12 @@ jobs:
           if-no-files-found: error
 
   build-windows:
-    name: build (windows, self-hosted)
-    # Self-hosted runner: only run on pushes to this repo and PRs from same-repo
-    # branches. Fork PRs fall through (no Windows artifact for them), so a
-    # malicious fork can't execute on the self-hosted box even if approved.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, windows]
+    name: build (windows-latest)
+    # GitHub-hosted Windows runner. axon-palette uses GPUI which depends on
+    # Direct3D + windows-rs; cross-compiling that from Linux is fragile, so
+    # the palette stays on native Windows. The main axon.exe is cross-compiled
+    # in ci.yml instead.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

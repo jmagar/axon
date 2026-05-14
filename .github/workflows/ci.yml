@@ -80,26 +80,36 @@ jobs:
 
   windows-build:
     name: windows-build (axon.exe)
-    # Self-hosted runner: only run on pushes to this repo and PRs from same-repo
-    # branches. Fork PRs fall through (no Windows artifact for them), so a
-    # malicious fork can't execute on the self-hosted box even if approved.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, windows]
+    # Cross-compile axon.exe from Linux via cargo-zigbuild + the MSVC target.
+    # This sidesteps the rustup-on-Windows-runner pain and runs in ~5 min on
+    # cheap ubuntu-latest. axon has no Windows-only deps (openssh was removed),
+    # so a Linux build host produces an identical x86_64-pc-windows-msvc PE.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: axon-windows
-      - name: cargo build --release -p axon
-        run: cargo build --release --locked -p axon
+          shared-key: axon-windows-cross
+      - name: Install zig + cargo-zigbuild
+        run: |
+          set -euo pipefail
+          ZIG_VERSION=0.13.0
+          curl -sSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
+            | tar xJ -C /tmp
+          sudo mv "/tmp/zig-linux-x86_64-${ZIG_VERSION}" /opt/zig
+          echo "/opt/zig" >> "$GITHUB_PATH"
+          cargo install --locked cargo-zigbuild
+      - name: cargo zigbuild --release -p axon --target x86_64-pc-windows-msvc
+        run: cargo zigbuild --release --locked -p axon --target x86_64-pc-windows-msvc
       - name: Upload axon.exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: axon-windows-x86_64
-          path: target/release/axon.exe
+          path: target/x86_64-pc-windows-msvc/release/axon.exe
           if-no-files-found: error
 
   shell-completions-smoke:
