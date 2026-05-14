@@ -1,5 +1,11 @@
 [workspace]
-members = ["xtask", "apps/desktop"]
+members = ["xtask"]
+# apps/desktop is intentionally a separate workspace: it pulls in GPUI from
+# zed-industries/zed, whose transitive deps (gpui_wgpu → wasm-bindgen 0.2.120+)
+# conflict with axon's reqwest/web-sys-locked wasm-bindgen 0.2.118. Keeping it
+# out of the root workspace lets each project resolve deps independently and
+# means `cargo check` on axon does not require network access to the zed repo.
+exclude = ["apps/desktop"]
 resolver = "2"
 
 # Override lab-auth from the git source with a local vendored copy that uses

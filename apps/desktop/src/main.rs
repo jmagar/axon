@@ -19,6 +19,14 @@ use gpui::{
     WindowOptions, actions, div, prelude::*, px, rgb, size,
 };
 
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+compile_error!("axon-palette currently supports Linux/FreeBSD only");
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+fn build_application() -> Application {
+    Application::with_platform(gpui_linux::current_platform(false))
+}
+
 #[derive(Clone, Copy)]
 struct CommandAction {
     label: &'static str,
@@ -93,11 +101,9 @@ impl Palette {
 
         let cmd_str = action.template.replace("{}", arg);
         let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-        let (Some(sub), rest) = parts.split_first().map(|(s, r)| (Some(*s), r)).unwrap_or((None, &[]))
-        else {
+        let Some((sub, rest)) = parts.split_first() else {
             return;
         };
-        let Some(sub) = sub else { return };
 
         match Command::new("axon").arg(sub).args(rest).spawn() {
             Ok(child) => {
@@ -236,7 +242,7 @@ fn main() -> Result<()> {
         }
     });
 
-    Application::new().run(move |cx: &mut App| {
+    build_application().run(move |cx: &mut App| {
         cx.bind_keys([
             KeyBinding::new("enter", Submit, Some("Palette")),
             KeyBinding::new("down", MoveDown, Some("Palette")),
@@ -257,7 +263,7 @@ fn main() -> Result<()> {
                 |window, cx| {
                     let view = cx.new(Palette::new);
                     let handle = view.focus_handle(cx);
-                    window.focus(&handle);
+                    window.focus(&handle, cx);
                     view
                 },
             )
