@@ -94,6 +94,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: axon-windows-cross
+      # aws-lc-rs (rustls crypto backend) + libsqlite3-sys + tree-sitter
+      # parsers all run bindgen during cross-compile, which needs libclang.
+      - name: Install cross-compile build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev
       - name: Install zig + cargo-zigbuild
         run: |
           set -euo pipefail
