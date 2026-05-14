@@ -19,12 +19,20 @@ use gpui::{
     WindowOptions, actions, div, prelude::*, px, rgb, size,
 };
 
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-compile_error!("axon-palette currently supports Linux/FreeBSD only");
+#[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "windows")))]
+compile_error!("axon-palette currently supports Linux/FreeBSD/Windows only");
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn build_application() -> Application {
     Application::with_platform(gpui_linux::current_platform(false))
+}
+
+#[cfg(target_os = "windows")]
+fn build_application() -> Application {
+    Application::with_platform(std::rc::Rc::new(
+        gpui_windows::WindowsPlatform::new(false)
+            .expect("failed to initialize Windows platform"),
+    ))
 }
 
 #[derive(Clone, Copy)]

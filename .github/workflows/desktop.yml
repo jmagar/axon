@@ -1,0 +1,70 @@
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # apps/desktop is its own workspace (see apps/desktop/Cargo.toml).
+  CARGO_MANIFEST_PATH: apps/desktop/Cargo.toml
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop
+          shared-key: axon-palette-${{ matrix.os }}
+
+      # Linux build deps required by GPUI (X11 + Wayland) and global-hotkey.
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libssl-dev libfontconfig1-dev \
+            libxcb-randr0-dev libxcb-xkb-dev libxcb-cursor-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-keysyms1-dev libxcb-image0-dev
+
+      - name: cargo build --release
+        run: cargo build --release --locked --manifest-path apps/desktop/Cargo.toml
+
+      - name: Upload Linux binary
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: axon-palette-linux-x86_64
+          path: apps/desktop/target/release/axon-palette
+
+      - name: Upload Windows binary
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: axon-palette-windows-x86_64
+          path: apps/desktop/target/release/axon-palette.exe
