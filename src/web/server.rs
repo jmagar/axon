@@ -131,7 +131,6 @@ pub(crate) fn router(
             post(super::panel_first_run::first_run_ask),
         )
         .route("/api/panel/setup/targets", get(setup_targets))
-        .route("/api/panel/setup/deploy", post(setup_deploy))
         .merge(ask_router)
         .fallback(super::static_assets::serve_static)
         .with_state((state, Arc::clone(&cfg)));
@@ -260,20 +259,6 @@ async fn setup_targets(
             Json(Vec::<setup::SshTarget>::new()).into_response()
         }
         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
-    }
-}
-
-async fn setup_deploy(
-    State((state, _)): State<(AppState, Arc<crate::core::config::Config>)>,
-    headers: HeaderMap,
-    Json(req): Json<setup::DeployRequest>,
-) -> impl IntoResponse {
-    if !authorized(&state, &headers) {
-        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
-    }
-    match setup::deploy_remote(req).await {
-        Ok(result) => Json(result).into_response(),
-        Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
     }
 }
 

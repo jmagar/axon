@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-14
+
+### Removed (breaking)
+
+- setup: remove the `axon setup deploy` subcommand and its supporting SSH-over-Docker remote-deployment plumbing. `setup deploy <ssh-alias> [--remote-dir ...] [--accept-new-host-key] [--public-exposure]` no longer exists; the corresponding `POST /api/panel/setup/deploy` route and the "Remote Docker Deploy" panel in `apps/web` are gone. The `axon setup targets` listing of `~/.ssh/config` aliases remains (informational only).
+- deps: drop `openssh` and `openssh-sftp-client` from `Cargo.toml`. These were the only Unix-only deps in the main crate; removing them unblocks future native Windows builds of the `axon` CLI.
+
 ## [1.12.0] - 2026-05-14
 
 ### Added
