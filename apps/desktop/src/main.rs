@@ -121,9 +121,15 @@ impl Palette {
         }
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
                 self.last_status =
                     Some(format!("spawned axon {sub} (pid {})", child.id()).into());
+                // Reap the child off-thread so it doesn't become a zombie on
+                // Unix. The palette is a long-lived UI process, so dropping
+                // Child without waiting would accumulate <defunct> entries.
+                thread::spawn(move || {
+                    let _ = child.wait();
+                });
                 self.query.clear();
                 self.selected = 0;
             }
