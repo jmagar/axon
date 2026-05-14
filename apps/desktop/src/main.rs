@@ -99,13 +99,20 @@ impl Palette {
             return;
         }
 
-        let cmd_str = action.template.replace("{}", arg);
-        let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-        let Some((sub, rest)) = parts.split_first() else {
+        // The template is always "<subcommand>" or "<subcommand> {}" — take the
+        // subcommand verbatim and pass `arg` as a single argv entry so that
+        // multi-word inputs (e.g. `ask what is embedding`) survive intact.
+        let Some(sub) = action.template.split_whitespace().next() else {
             return;
         };
 
-        match Command::new("axon").arg(sub).args(rest).spawn() {
+        let mut cmd = Command::new("axon");
+        cmd.arg(sub);
+        if action.needs_arg {
+            cmd.arg(arg);
+        }
+
+        match cmd.spawn() {
             Ok(child) => {
                 self.last_status =
                     Some(format!("spawned axon {sub} (pid {})", child.id()).into());
