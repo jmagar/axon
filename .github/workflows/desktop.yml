@@ -61,6 +61,7 @@ jobs:
         with:
           name: axon-palette-linux-x86_64
           path: apps/desktop/target/release/axon-palette
+          if-no-files-found: error
 
       - name: Upload Windows binary
         if: runner.os == 'Windows'
@@ -68,3 +69,4 @@ jobs:
         with:
           name: axon-palette-windows-x86_64
           path: apps/desktop/target/release/axon-palette.exe
+          if-no-files-found: error

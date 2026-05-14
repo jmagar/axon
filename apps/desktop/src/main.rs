@@ -38,21 +38,22 @@ fn build_application() -> Application {
 #[derive(Clone, Copy)]
 struct CommandAction {
     label: &'static str,
-    /// Subcommand template; `{}` is replaced by the user-supplied argument.
-    template: &'static str,
+    /// `axon` subcommand to invoke. The optional user argument is passed as a
+    /// single trailing argv entry when `needs_arg` is true.
+    subcommand: &'static str,
     needs_arg: bool,
 }
 
 const ACTIONS: &[CommandAction] = &[
-    CommandAction { label: "Scrape URL", template: "scrape {}", needs_arg: true },
-    CommandAction { label: "Crawl URL", template: "crawl {}", needs_arg: true },
-    CommandAction { label: "Map URL", template: "map {}", needs_arg: true },
-    CommandAction { label: "Ask question", template: "ask {}", needs_arg: true },
-    CommandAction { label: "Search the web", template: "search {}", needs_arg: true },
-    CommandAction { label: "Research the web", template: "research {}", needs_arg: true },
-    CommandAction { label: "Ingest target", template: "ingest {}", needs_arg: true },
-    CommandAction { label: "Job status", template: "status", needs_arg: false },
-    CommandAction { label: "Doctor", template: "doctor", needs_arg: false },
+    CommandAction { label: "Scrape URL",       subcommand: "scrape",   needs_arg: true  },
+    CommandAction { label: "Crawl URL",        subcommand: "crawl",    needs_arg: true  },
+    CommandAction { label: "Map URL",          subcommand: "map",      needs_arg: true  },
+    CommandAction { label: "Ask question",     subcommand: "ask",      needs_arg: true  },
+    CommandAction { label: "Search the web",   subcommand: "search",   needs_arg: true  },
+    CommandAction { label: "Research the web", subcommand: "research", needs_arg: true  },
+    CommandAction { label: "Ingest target",    subcommand: "ingest",   needs_arg: true  },
+    CommandAction { label: "Job status",       subcommand: "status",   needs_arg: false },
+    CommandAction { label: "Doctor",           subcommand: "doctor",   needs_arg: false },
 ];
 
 actions!(palette, [Submit, MoveDown, MoveUp]);
@@ -107,12 +108,9 @@ impl Palette {
             return;
         }
 
-        // The template is always "<subcommand>" or "<subcommand> {}" — take the
-        // subcommand verbatim and pass `arg` as a single argv entry so that
-        // multi-word inputs (e.g. `ask what is embedding`) survive intact.
-        let Some(sub) = action.template.split_whitespace().next() else {
-            return;
-        };
+        // `arg` is passed as a single argv entry so multi-word inputs (e.g.
+        // `ask what is embedding`) survive intact.
+        let sub = action.subcommand;
 
         let mut cmd = Command::new("axon");
         cmd.arg(sub);
@@ -168,8 +166,16 @@ impl Palette {
                 self.query.clear();
             }
             _ => {
-                if let Some(ch) = ev.keystroke.key_char.as_deref() {
-                    self.query.push_str(ch);
+                // Only accept plain text input: ignore Ctrl/Alt/Cmd/Function
+                // combos so an unrelated shortcut (e.g. Alt+letter producing
+                // an accented char on some layouts) doesn't leak into the
+                // query buffer. Shift is intentionally allowed so the user
+                // can type uppercase letters.
+                let m = &ev.keystroke.modifiers;
+                if !m.control && !m.alt && !m.platform && !m.function {
+                    if let Some(ch) = ev.keystroke.key_char.as_deref() {
+                        self.query.push_str(ch);
+                    }
                 }
             }
         }

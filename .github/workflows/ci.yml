@@ -96,6 +96,7 @@ jobs:
         with:
           name: axon-windows-x86_64
           path: target/release/axon.exe
+          if-no-files-found: error
 
   shell-completions-smoke:
     name: shell-completions-smoke
