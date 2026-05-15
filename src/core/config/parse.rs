@@ -647,5 +647,4 @@ mod tests {
             vec!["repair".to_string(), "--migrate-env".to_string()]
         );
     }
-
 }
