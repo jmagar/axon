@@ -23,7 +23,7 @@ jobs:
     name: build (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -46,7 +46,7 @@ jobs:
         run: cargo build --release --locked --manifest-path apps/desktop/Cargo.toml
 
       - name: Upload Linux binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: axon-palette-linux-x86_64
           path: apps/desktop/target/release/axon-palette
@@ -60,7 +60,7 @@ jobs:
     # in ci.yml instead.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -73,7 +73,7 @@ jobs:
         run: cargo build --release --locked --manifest-path apps/desktop/Cargo.toml
 
       - name: Upload Windows binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: axon-palette-windows-x86_64
           path: apps/desktop/target/release/axon-palette.exe
