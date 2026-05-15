@@ -80,26 +80,27 @@ jobs:
 
   windows-build:
     name: windows-build (axon.exe)
-    # Cross-compile axon.exe from Linux via cargo-zigbuild + the MSVC target.
-    # This sidesteps the rustup-on-Windows-runner pain and runs in ~5 min on
-    # cheap ubuntu-latest. axon has no Windows-only deps (openssh was removed),
-    # so a Linux build host produces an identical x86_64-pc-windows-msvc PE.
+    # Cross-compile axon.exe from Linux via cargo-zigbuild + the GNU target.
+    # The MSVC target needs Microsoft's Windows SDK (windows.h) which zig
+    # doesn't bundle — aws-lc-sys's jitterentropy code fails to find it.
+    # The GNU target uses mingw-w64 headers that zig DOES bundle, so
+    # aws-lc-sys / libsqlite3-sys / tree-sitter all build cleanly. The
+    # resulting axon.exe runs on plain Windows with no extra runtime.
+    # axon has no Windows-only deps (openssh was removed in 2.0.0).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
-          targets: x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: axon-windows-cross
-      # aws-lc-rs (rustls crypto backend) + libsqlite3-sys + tree-sitter
-      # parsers all run bindgen during cross-compile, which needs libclang.
-      # cmake is required by aws-lc-rs's vendored libcrypto build, nasm is
-      # required by its x86-64 assembly path.
+      # libsqlite3-sys + tree-sitter parsers run bindgen during cross-compile,
+      # which needs libclang.
       - name: Install cross-compile build deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake nasm
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev
       - name: Install zig + cargo-zigbuild
         run: |
           set -euo pipefail
@@ -109,13 +110,13 @@ jobs:
           sudo mv "/tmp/zig-linux-x86_64-${ZIG_VERSION}" /opt/zig
           echo "/opt/zig" >> "$GITHUB_PATH"
           cargo install --locked cargo-zigbuild
-      - name: cargo zigbuild --release -p axon --target x86_64-pc-windows-msvc
-        run: cargo zigbuild --release --locked -p axon --target x86_64-pc-windows-msvc
+      - name: cargo zigbuild --release -p axon --target x86_64-pc-windows-gnu
+        run: cargo zigbuild --release --locked -p axon --target x86_64-pc-windows-gnu
       - name: Upload axon.exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: axon-windows-x86_64
-          path: target/x86_64-pc-windows-msvc/release/axon.exe
+          path: target/x86_64-pc-windows-gnu/release/axon.exe
           if-no-files-found: error
 
   shell-completions-smoke:
