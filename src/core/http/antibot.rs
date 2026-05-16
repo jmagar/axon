@@ -9,9 +9,9 @@
 //! The crawl/scrape path runs `detect_challenge` BEFORE the thin-page filter.
 //! A CF challenge HTML body is 200–500 chars of "checking your browser" —
 //! today axon's `--drop-thin-markdown` filter silently drops it. Wiring this
-//! upstream is what unlocks `ServiceTaxonomyError::ChallengeDetected` and the
-//! Akamai cookie-warmup retry (cookie warmup helper lives in the sibling
-//! `cookie_warmup.rs` module).
+//! upstream is what unlocks `ServiceTaxonomyError::ChallengeDetected` and a
+//! future Akamai cookie-warmup retry (deferred — warmup helper will live in
+//! a sibling `cookie_warmup.rs` module when that path is implemented).
 //!
 //! ## Page-size gates
 //! Per-vendor gates from webclaw — pages larger than the cap likely embed the
@@ -94,7 +94,7 @@ where
     // ── Akamai Bot Manager: bazadebezolkohpepadr is the canonical token ──
     //
     // This is the strongest signal documented. When it fires, the homepage
-    // cookie-warmup retry is the recovery path (see cookie_warmup.rs).
+    // cookie-warmup retry is the recovery path (deferred to future PR).
     if scan_window.contains("bazadebezolkohpepadr") {
         return Some(ChallengeDetection {
             vendor: ChallengeVendor::Akamai,
