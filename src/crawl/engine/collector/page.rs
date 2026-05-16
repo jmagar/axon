@@ -11,6 +11,7 @@ use super::super::{
     CrawlSummary, MapScope, canonicalize_url_for_dedupe, normalize_map_candidate_url,
 };
 use crate::core::content::{bytes_to_markdown, url_to_stable_filename};
+use crate::core::http::detect_challenge;
 use crate::crawl::manifest::ManifestEntry;
 
 pub struct CollectorConfig {
@@ -26,9 +27,22 @@ pub struct CollectorConfig {
     pub chrome_ws_url: Option<String>,
     pub chrome_timeout_secs: u64,
     pub output_dir: PathBuf,
+    /// Enable Akamai cookie-warmup retry on challenge detection. Threaded from
+    /// `cfg.antibot_cookie_warmup` (default `true`). Note: warmup retry is
+    /// deferred in this PR; field is present for future use.
+    #[allow(dead_code)]
+    pub antibot_cookie_warmup: bool,
+    /// Maximum bytes to scan per page for antibot fingerprints. Threaded from
+    /// `cfg.antibot_max_body_scan_bytes` (default `150_000`).
+    pub antibot_max_body_scan_bytes: usize,
 }
 
 pub enum PageOutcome {
+    /// Antibot challenge page detected — skip without embedding.
+    /// Vendor name is included for diagnostic logging.
+    Challenged {
+        vendor: String,
+    },
     Thin {
         trimmed: String,
         content_hash: String,
@@ -47,6 +61,17 @@ pub enum PageOutcome {
 }
 
 pub fn process_page(html_bytes: &[u8], url: &str, col: &CollectorConfig) -> PageOutcome {
+    // Challenge detection runs BEFORE markdown conversion — cheap string scan on
+    // raw HTML beats converting a challenge page to markdown then discarding it.
+    let html_str = String::from_utf8_lossy(html_bytes);
+    if let Some(detection) =
+        detect_challenge(html_str.as_ref(), |_| None, col.antibot_max_body_scan_bytes)
+    {
+        return PageOutcome::Challenged {
+            vendor: detection.vendor.to_string(),
+        };
+    }
+
     let trimmed = bytes_to_markdown(html_bytes, col.selector_config.as_ref());
     let chars = trimmed.len();
 

@@ -19,6 +19,7 @@ use tokio::task::JoinSet;
 use super::thin_refetch::{RefetchResult, THIN_REFETCH_CONCURRENCY, write_refetch_results};
 use super::{CrawlDiagnostic, CrawlSummary};
 use crate::core::logging::log_warn;
+use tracing;
 
 /// Apply the outcome of `process_page()`: update summary counters, spawn Chrome
 /// renders for thin pages, write good pages to the manifest. Returns `true` when
@@ -38,6 +39,23 @@ async fn apply_page_outcome(
     chrome_semaphore: Arc<Semaphore>,
 ) -> Result<bool, String> {
     match outcome {
+        PageOutcome::Challenged { ref vendor } => {
+            summary.challenge_detected_pages += 1;
+            tracing::warn!(
+                url = url,
+                vendor = vendor.as_str(),
+                "antibot challenge detected — skipping page"
+            );
+            summary.push_diagnostic(
+                CrawlDiagnostic::new(
+                    "antibot",
+                    "challenge_detected",
+                    format!("antibot challenge page detected (vendor={vendor})"),
+                )
+                .with_url(url.to_string()),
+            );
+            return Ok(true);
+        }
         PageOutcome::Thin {
             trimmed,
             content_hash,
@@ -247,6 +265,8 @@ mod tests {
             chrome_ws_url: None,
             chrome_timeout_secs: 1,
             output_dir: std::env::temp_dir(),
+            antibot_cookie_warmup: true,
+            antibot_max_body_scan_bytes: 150_000,
         }
     }
 

@@ -108,6 +108,10 @@ pub struct CrawlSummary {
     pub waf_blocked_pages: u32,
     /// Canonical URLs of WAF-blocked pages; used for targeted stealth Chrome retry.
     pub waf_blocked_urls: HashSet<String>,
+    /// Pages where `detect_challenge()` fired — flagged before the thin-page filter.
+    /// Distinct from `waf_blocked_pages` (spider's native WAF detection) to allow
+    /// separate tracking in diagnostics.
+    pub challenge_detected_pages: u32,
     /// Bounded diagnostic samples for operator-facing `axon crawl errors`.
     pub diagnostics: Vec<CrawlDiagnostic>,
 }
@@ -222,6 +226,8 @@ pub async fn run_crawl_once(
             chrome_ws_url: inline_chrome_ws_url,
             chrome_timeout_secs: cfg.chrome_network_idle_timeout_secs,
             output_dir: output_dir.to_path_buf(),
+            antibot_cookie_warmup: cfg.antibot_cookie_warmup,
+            antibot_max_body_scan_bytes: cfg.antibot_max_body_scan_bytes,
         },
     ));
 
@@ -309,6 +315,8 @@ pub async fn run_sitemap_only(
             chrome_ws_url: None,
             chrome_timeout_secs: cfg.chrome_network_idle_timeout_secs,
             output_dir: output_dir.to_path_buf(),
+            antibot_cookie_warmup: cfg.antibot_cookie_warmup,
+            antibot_max_body_scan_bytes: cfg.antibot_max_body_scan_bytes,
         },
     ));
 

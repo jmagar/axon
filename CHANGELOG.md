@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-05-16
+
+### Added
+
+- crawl: wire `detect_challenge()` into the crawl fetch path — antibot challenge pages (Cloudflare, Akamai, DataDome, AWS WAF, hCaptcha) are now detected BEFORE the thin-page filter and logged with vendor info rather than silently discarded. Challenged pages increment `CrawlSummary.challenge_detected_pages` and emit a structured `CrawlDiagnostic` visible via `axon crawl errors`. (bd axon_rust-jej7.1)
+- core: port `detect_challenge()` + 18 unit tests from gc59 worktree to `src/core/http/antibot.rs` with sidecar test file per CLAUDE.md convention.
+
 ## [2.1.0] - 2026-05-16
 
 ### Added
