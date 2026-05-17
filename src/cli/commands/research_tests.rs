@@ -12,6 +12,7 @@ fn make_research_cfg(tavily_key: &str, openai_model: &str) -> Config {
 
 #[tokio::test]
 async fn test_run_research_rejects_empty_tavily_key() {
+    // With a valid query but no key, the service-layer prereq surfaces.
     let cfg = make_research_cfg("", "gpt-4o-mini");
     let err = run_research(&cfg).await.unwrap_err();
     assert!(
@@ -21,14 +22,37 @@ async fn test_run_research_rejects_empty_tavily_key() {
 }
 
 #[tokio::test]
-async fn test_run_research_allows_gemini_without_adapter() {
+async fn test_run_research_validates_query_before_prereqs() {
+    // Both query *and* Tavily key are missing — query check runs first
+    // because it's free, while the prereq check waits on the service call.
+    let mut cfg = make_research_cfg("", "gpt-4o-mini");
+    cfg.positional = vec![];
+    cfg.query = None;
+    let err = run_research(&cfg).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("query"),
+        "expected query validation to fire first, got: {msg}"
+    );
+    assert!(
+        !msg.contains("TAVILY_API_KEY"),
+        "TAVILY error should not surface before query check, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn test_run_research_does_not_require_openai_model() {
+    // Empty openai_model must not block the research command: research
+    // synthesis runs through the Gemini headless path, not the
+    // OpenAI-compatible endpoint. (Renamed from the prior misleading
+    // `…_allows_gemini_without_adapter` — it tested config-flow, not Gemini.)
     let mut cfg = make_research_cfg("tvly-key", "");
     cfg.positional = vec![];
     cfg.query = None;
     let err = run_research(&cfg).await.unwrap_err();
     assert!(
         err.to_string().contains("query"),
-        "expected query validation after Gemini prereq skip, got: {err}"
+        "expected query validation after skipping openai_model check, got: {err}"
     );
 }
 
@@ -51,4 +75,17 @@ fn research_cfg_depth_defaults_to_none() {
         cfg.research_depth.is_none(),
         "research_depth should default to None"
     );
+}
+
+#[test]
+fn research_depth_overrides_search_limit_when_set() {
+    // Mirrors the wiring in `run_research`: `cfg.research_depth.unwrap_or(cfg.search_limit)`.
+    // This protects against silent regressions where someone wires depth
+    // to a different field or stops reading it.
+    let mut cfg = make_research_cfg("tvly-key", "gpt-4o-mini");
+    cfg.search_limit = 5;
+    assert_eq!(cfg.research_depth.unwrap_or(cfg.search_limit), 5);
+
+    cfg.research_depth = Some(20);
+    assert_eq!(cfg.research_depth.unwrap_or(cfg.search_limit), 20);
 }

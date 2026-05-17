@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-05-17
+
+### Added
+
+- research: `--research-depth <N>` is now wired into the synthesis pipeline. When set, it overrides `--limit` as the number of Tavily sources synthesized over; falls back to `--limit` (default 10) when unset. Capped at 100 together with `--offset`.
+- research: typed `ResearchPayload` replaces the untyped `serde_json::Value` payload at the service boundary. Adds `summary_source: "llm" | "fallback" | "none"` so callers can distinguish an LLM-produced summary from the deterministic fallback substituted on synthesis failure, and from the no-extractions case.
+- research/search: bounded Tavily retry (3 attempts, 750ms exponential backoff) on transient provider failures, matching the resilience pattern used by `tei_embed`.
+- research/search: pagination window enforcement — `limit + offset > 100` is now rejected at the service boundary with a clear error, instead of silently returning a truncated page.
+- research/search: extended secret-redaction heuristic in log previews (AWS, JWT, Slack, Stripe, Google API keys, Tavily). Splits on `=`/`&`/`;`/`?`/`,` so `?key=sk-…` query-string forms are caught.
+- research: XML-attribute escaping (`"`, `<`, `>`, `&`, control chars) on URLs and titles inside the synthesis prompt's `<untrusted_source>` framing, hardening prompt-injection defenses.
+
+### Changed
+
+- research: human-readable summary now labels fallback summaries explicitly (`=== Summary === (fallback — LLM synthesis unavailable)`).
+- research: extraction preview no longer JSON-encodes the snippet (was showing `"\nescaped\n"`); now takes the raw text and char-truncates to 200.
+- research: query validation runs before Tavily prereq check so a user with neither set gets the cheaper error first.
+- research: synthesis-delta drop warnings rate-limited to one per session (was one per dropped token).
+- research: consumer-drain timeout raised from 5s to 10s, with a clearer warning message.
+- research/search: `map_research_payload` accepts a typed `ResearchPayload` (was `serde_json::Value`). MCP handler serializes the payload to JSON at the wire boundary.
+
+### Removed
+
+- research: `pub use synthesis::research_payload` re-export (only `research` is consumed by external callers). `research_payload` remains accessible inside the synthesis module.
+- research: duplicate Tavily prereq check in the CLI handler (`validate_research_prereqs`). The service layer remains the single source of truth.
+
+### Fixed
+
+- research: misleading test name `test_run_research_allows_gemini_without_adapter` → `test_run_research_does_not_require_openai_model`.
+
 ## [2.3.1] - 2026-05-17
 
 ### Fixed
