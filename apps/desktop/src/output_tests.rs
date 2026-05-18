@@ -204,7 +204,25 @@ Follow progress
 
     assert_eq!(
         crawl_summary(input),
-        "Crawl queued\nhttps://docs.example.com\nJob 018f-example"
+        "Crawl queued\nhttps://docs.example.com\nJob 018f-example\nNext: axon status"
+    );
+}
+
+#[test]
+fn ingest_summary_suggests_status_for_async_job() {
+    let output = BoundedProcessOutput {
+        status: success_status(),
+        stdout: b"  Ingest Job 018f-ingest\nJob ID: 018f-ingest\n".to_vec(),
+        stderr: Vec::new(),
+    };
+
+    let rendered = CommandOutput::from_process("axon --local ingest owner/repo", "ingest", output);
+    assert_eq!(
+        rendered
+            .stdout
+            .as_ref()
+            .map(|section| section.text.as_str()),
+        Some("Job ID: 018f-ingest\nNext: axon status")
     );
 }
 
