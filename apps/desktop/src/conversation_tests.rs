@@ -131,12 +131,16 @@ fn restore_from_latest_returns_none_when_session_file_empty() {
 fn restore_from_latest_returns_none_when_last_turn_stale() {
     let tmp = TempDir::new().unwrap();
     let now = Utc::now();
-    let stale = now - chrono::Duration::from_std(CONVERSATION_IDLE_TIMEOUT).unwrap()
+    let stale = now
+        - chrono::Duration::from_std(CONVERSATION_IDLE_TIMEOUT).unwrap()
         - chrono::Duration::seconds(5);
     write_latest(tmp.path(), "stale");
     write_session(tmp.path(), "stale", &(turn_line(stale, "hi", "yo") + "\n"));
     let got = restore_from_latest_at(tmp.path(), now, Instant::now());
-    assert!(got.is_none(), "turn older than idle window should not restore");
+    assert!(
+        got.is_none(),
+        "turn older than idle window should not restore"
+    );
 }
 
 #[test]
@@ -155,15 +159,14 @@ fn restore_from_latest_returns_some_with_correct_turn_count_when_fresh() {
     );
     write_session(tmp.path(), "live", &body);
     let now_instant = Instant::now();
-    let convo = restore_from_latest_at(tmp.path(), now, now_instant)
-        .expect("fresh session should restore");
+    let convo =
+        restore_from_latest_at(tmp.path(), now, now_instant).expect("fresh session should restore");
     assert_eq!(convo.turn_count, 3);
     // last_turn_at should be ~10s before now_instant, well inside the idle window.
     assert!(!convo.is_stale(now_instant));
     let reconstructed_age = now_instant.saturating_duration_since(convo.last_turn_at);
     assert!(
-        reconstructed_age >= Duration::from_secs(5)
-            && reconstructed_age <= Duration::from_secs(20),
+        reconstructed_age >= Duration::from_secs(5) && reconstructed_age <= Duration::from_secs(20),
         "reconstructed Instant should reflect ~10s wall-clock age, got {reconstructed_age:?}"
     );
 }
@@ -217,7 +220,10 @@ fn restore_from_latest_does_not_panic_on_garbage_file() {
         "this is not json\nneither is this\n{not even close}\n",
     );
     let got = restore_from_latest_at(tmp.path(), Utc::now(), Instant::now());
-    assert!(got.is_none(), "all-corrupt file should yield None, not panic");
+    assert!(
+        got.is_none(),
+        "all-corrupt file should yield None, not panic"
+    );
 }
 
 #[test]

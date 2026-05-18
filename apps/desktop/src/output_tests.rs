@@ -156,3 +156,123 @@ fn map_url_listing_keeps_non_map_output_when_no_urls_found() {
     let input = "Map failed before producing URLs";
     assert_eq!(map_url_listing(input), input);
 }
+
+#[test]
+fn scrape_body_removes_cli_header() {
+    let input = "\
+Scrape Results for https://example.com
+As of: now
+
+# Example
+
+Body text";
+
+    assert_eq!(scrape_body(input), "# Example\n\nBody text");
+}
+
+#[test]
+fn ask_answer_keeps_only_assistant_response() {
+    let input = "\
+Conversation
+  You: what changed?
+  Assistant:
+The direct answer.
+
+  Timing: retrieval=1ms | context=2ms | llm=3ms | total=6ms
+  Session: default";
+
+    assert_eq!(ask_answer(input), "The direct answer.");
+}
+
+#[test]
+fn crawl_summary_keeps_result_target_and_job() {
+    let input = "\
+● Crawl queued
+
+  https://docs.example.com
+
+  Strategy  HTTP first, Chrome fallback
+  Scope     same domain, depth 5, uncapped pages
+  Pipeline  crawl -> sitemap -> embed
+  Runtime   background workers
+
+  Job       018f-example
+
+Follow progress
+  axon crawl status 018f-example
+  axon status";
+
+    assert_eq!(
+        crawl_summary(input),
+        "Crawl queued\nhttps://docs.example.com\nJob 018f-example"
+    );
+}
+
+#[test]
+fn successful_process_output_drops_progress_stderr() {
+    let output = Output {
+        status: success_status(),
+        stdout: b"Search Results for \"axon\"\nFound 1\n\n1. Axon\n   https://example.com\n"
+            .to_vec(),
+        stderr: b"02:50:24 INFO command=search query_len=4\n".to_vec(),
+    };
+
+    let rendered = CommandOutput::from_process("axon --local search axon", "search", output);
+    assert!(rendered.stderr.is_none());
+    assert_eq!(
+        rendered
+            .stdout
+            .as_ref()
+            .map(|section| section.text.as_str()),
+        Some("1. Axon\n   https://example.com")
+    );
+}
+
+#[test]
+fn drop_cli_scaffolding_keeps_pending_status_rows() {
+    let input = "\
+Crawl
+  ◐ pending https://example.com 018f-example
+
+Extract
+  None.";
+
+    assert_eq!(
+        drop_cli_scaffolding(input),
+        "Crawl\n  ◐ pending https://example.com 018f-example\nExtract\n  None."
+    );
+}
+
+#[test]
+fn actionable_error_text_prefers_final_error_line() {
+    let input = "\
+02:50:24  WARN  tei_embed retry transport_error attempt=1/6
+02:50:27  WARN  tei_embed retry transport_error attempt=2/6
+Error: ServiceError { message: \"TEI unavailable\" }";
+
+    assert_eq!(
+        actionable_error_text(input),
+        "Error: ServiceError { message: \"TEI unavailable\" }"
+    );
+}
+
+#[test]
+fn actionable_error_text_drops_log_lines_when_no_error_prefix() {
+    let input = "\
+02:50:24  WARN  tei_embed retry transport_error
+failed to connect to service";
+
+    assert_eq!(actionable_error_text(input), "failed to connect to service");
+}
+
+#[cfg(unix)]
+fn success_status() -> std::process::ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(0)
+}
+
+#[cfg(windows)]
+fn success_status() -> std::process::ExitStatus {
+    use std::os::windows::process::ExitStatusExt;
+    std::process::ExitStatus::from_raw(0)
+}
