@@ -199,6 +199,7 @@ These keys are read directly in source code but already have registry classifica
 | `AXON_ASK_AUTHORITATIVE_DOMAINS` | `src/core/config/parse/build_config/config_literal.rs:243` | move-toml → `ask.authoritative-domains` | Registered in migration.rs |
 | `AXON_CHROME_PROXY` | `src/core/config/parse/build_config/config_literal.rs:101` | keep-env | Registered in runtime.rs |
 | `AXON_CHROME_USER_AGENT` | `src/core/http/client.rs:13,20` + `config_literal.rs:105` | move-toml → `chrome.user-agent` | Registered in migration.rs |
+| `AXON_USER_AGENT` | `src/core/http/ua.rs` + `config_literal.rs` | keep-env | General-purpose UA override for all HTTP requests; AXON_CHROME_USER_AGENT falls back to this |
 | `AXON_DOMAINS_DETAILED` | `src/cli/commands/domains.rs:21` | trusted-bootstrap | Registered in advanced.rs |
 | `AXON_DOMAINS_FACET_LIMIT` | `src/cli/commands/domains.rs:30` | trusted-bootstrap | Registered in advanced.rs |
 | `AXON_JOB_WAIT_TIMEOUT_SECS` | `src/jobs/backend.rs:148` | move-toml → `workers.job-wait-timeout-secs` | Registered in migration.rs |

@@ -899,6 +899,18 @@ compatibility = "canonical"
 reason = "Non-secret tuning knob; migrate to config.toml. Kept in env until a typed config.toml field is wired."
 
 [[env]]
+key = "AXON_USER_AGENT"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs", "tests"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "General-purpose User-Agent override for all HTTP requests. AXON_CHROME_USER_AGENT falls back to this when unset."
+
+[[env]]
 key = "AXON_COLLECTION"
 classification = "trusted-operator-bootstrap"
 runtime_placement = "host-only"
@@ -2481,3 +2493,39 @@ container_allowed = false
 toml_destination = ""
 compatibility = "canonical"
 reason = "CLI shortcut env var read by `axon scrape` to force a specific vertical extractor by name (e.g. AXON_VERTICAL=amazon). One-shot operator override; not threaded through Config."
+
+[[env]]
+key = "AXON_API_UA"
+classification = "keep-env"
+runtime_placement = "not-runtime"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Bot-identifying User-Agent constant for structured API calls. Not a user-configurable env var."
+
+[[env]]
+key = "TAVILY_BACKOFF_BASE"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Base delay in seconds for Tavily API retry backoff. Defaults to 1.0s when unset."
+
+[[env]]
+key = "TAVILY_MAX_ATTEMPTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Maximum retry attempts for Tavily API requests. Defaults to 3 when unset."
