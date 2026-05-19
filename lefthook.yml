@@ -3,6 +3,8 @@ pre-commit:
   commands:
     compose-ports:
       run: python3 scripts/check_compose_port_bindings.py --staged
+    secrets:
+      run: cargo xtask check-secrets
     env-guard:
       run: cargo xtask check-env-staged
     claude-symlinks:
