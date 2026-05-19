@@ -101,11 +101,16 @@ fn populate_chrome_and_filtering(cfg: &mut Config, inputs: &LiteralInputs<'_>) {
         .chrome_proxy
         .clone()
         .or_else(|| env::var("AXON_CHROME_PROXY").ok());
+    cfg.user_agent = g
+        .user_agent
+        .clone()
+        .or_else(|| env::var("AXON_USER_AGENT").ok());
     cfg.chrome_user_agent = g
         .chrome_user_agent
         .clone()
         .or_else(|| env::var("AXON_CHROME_USER_AGENT").ok())
-        .or_else(|| inputs.toml.chrome.user_agent.clone());
+        .or_else(|| inputs.toml.chrome.user_agent.clone())
+        .or_else(|| cfg.user_agent.clone());
     cfg.chrome_headless = g.chrome_headless;
     cfg.chrome_anti_bot = g.chrome_anti_bot;
     cfg.chrome_intercept = g.chrome_intercept;

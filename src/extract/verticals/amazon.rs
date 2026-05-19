@@ -54,7 +54,7 @@ pub fn matches(url: &str) -> bool {
     false
 }
 
-pub async fn extract(url: &str, _ctx: &VerticalContext) -> Result<ScrapedDoc, VerticalError> {
+pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, VerticalError> {
     let client = http_client().map_err(|_| VerticalError::VerticalTargetUnavailable {
         vertical: INFO.name,
         status: 0,
@@ -62,7 +62,7 @@ pub async fn extract(url: &str, _ctx: &VerticalContext) -> Result<ScrapedDoc, Ve
 
     let resp = client
         .get(url)
-        .header("User-Agent", "Mozilla/5.0 (compatible; axon-bot/1.0)")
+        .header("User-Agent", ctx.ua())
         .header("Accept", "text/html,application/xhtml+xml")
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()

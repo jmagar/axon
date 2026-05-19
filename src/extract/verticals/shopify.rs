@@ -75,7 +75,7 @@ fn extract_handle(url: &str) -> Option<(String, String)> {
     Some((host, handle))
 }
 
-pub async fn extract(url: &str, _ctx: &VerticalContext) -> Result<ScrapedDoc, VerticalError> {
+pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, VerticalError> {
     let (host, handle) =
         extract_handle(url).ok_or_else(|| VerticalError::VerticalUnsupportedUrl {
             vertical: INFO.name,
@@ -91,13 +91,7 @@ pub async fn extract(url: &str, _ctx: &VerticalContext) -> Result<ScrapedDoc, Ve
 
     let resp = client
         .get(&api_url)
-        .header(
-            "User-Agent",
-            format!(
-                "axon/{} (+https://github.com/jmagar/axon_rust)",
-                env!("CARGO_PKG_VERSION")
-            ),
-        )
+        .header("User-Agent", ctx.ua())
         .header("Accept", "application/json")
         .send()
         .await

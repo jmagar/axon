@@ -6,6 +6,7 @@
 //! re-created per call.
 
 use crate::core::config::Config;
+use crate::core::http::axon_ua;
 use std::sync::Arc;
 
 /// Narrowed view over `ServiceContext` for vertical extractors.
@@ -22,6 +23,12 @@ pub struct VerticalContext {
 impl VerticalContext {
     pub fn new(cfg: Arc<Config>) -> Self {
         Self { cfg }
+    }
+
+    /// Resolved User-Agent for this extractor's HTTP requests.
+    /// Uses `cfg.user_agent` when set, otherwise falls back to [`axon_ua()`].
+    pub fn ua(&self) -> &str {
+        self.cfg.user_agent.as_deref().unwrap_or_else(|| axon_ua())
     }
 }
 

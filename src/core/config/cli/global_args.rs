@@ -50,7 +50,14 @@ pub(in crate::core::config) struct GlobalArgs {
     #[arg(global = true, long, env = "AXON_CHROME_PROXY", hide_env_values = true)]
     pub(in crate::core::config) chrome_proxy: Option<String>,
 
-    /// Custom User-Agent header for Chrome requests
+    /// User-Agent for all HTTP requests (API calls, vertical extractors, web scraping).
+    /// Falls back to a real browser UA when unset. AXON_CHROME_USER_AGENT inherits
+    /// this value when not set explicitly.
+    #[arg(global = true, long, env = "AXON_USER_AGENT")]
+    pub(in crate::core::config) user_agent: Option<String>,
+
+    /// Custom User-Agent header for Chrome crawl requests. Falls back to
+    /// AXON_USER_AGENT, then the built-in browser default.
     #[arg(
         global = true,
         long,

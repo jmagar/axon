@@ -29,6 +29,7 @@ impl Default for Config {
             render_mode: RenderMode::AutoSwitch,
             chrome_remote_url: None,
             chrome_proxy: None,
+            user_agent: None,
             chrome_user_agent: None,
             chrome_headless: true,
             chrome_anti_bot: true,
