@@ -60,8 +60,16 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
     })?;
 
     let data = fetch_crate_json(client, name, url, ua).await?;
-    let readme_text = fetch_readme(client, name, &resolve_version(&data, name), ua).await;
+    let version = resolve_version(&data, name);
+    let readme_text = fetch_readme(client, name, &version, ua).await;
     let (markdown, title) = build_markdown(&data, name, url, readme_text.as_deref());
+
+    // Collect the docs.rs URL so the caller can crawl the full API docs.
+    let follow_crawl_urls = data["crate"]["documentation"]
+        .as_str()
+        .filter(|u| !u.is_empty())
+        .map(|u| vec![u.to_string()])
+        .unwrap_or_default();
 
     Ok(ScrapedDoc {
         url: url.to_string(),
@@ -70,6 +78,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
         extractor_name: INFO.name,
         extractor_version: 2,
         structured: Some(data),
+        follow_crawl_urls,
     })
 }
 

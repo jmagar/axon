@@ -792,6 +792,10 @@ pub struct ScrapeResult {
     pub remaining_tokens_estimate: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<DocumentBackend>,
+    /// URLs the extractor recommends crawling as a follow-up (e.g. docs.rs for
+    /// a crates.io crate). Empty for generic scrapes and most verticals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub follow_crawl_urls: Vec<String>,
 }
 
 /// Typed result of a `map` (URL discovery) operation.

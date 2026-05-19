@@ -227,7 +227,7 @@ temporary overrides and legacy scripts.
 | `workers.max-pending-embed-jobs` | `AXON_MAX_PENDING_EMBED_JOBS` | `50` | Embed queue cap — reject new jobs above this count (0 = unlimited) |
 | `workers.max-pending-extract-jobs` | `AXON_MAX_PENDING_EXTRACT_JOBS` | `50` | Extract queue cap (0 = unlimited) |
 | `workers.max-pending-ingest-jobs` | `AXON_MAX_PENDING_INGEST_JOBS` | `50` | Ingest queue cap (0 = unlimited) |
-| `chrome.user-agent` | `AXON_CHROME_USER_AGENT` | *(Spider default)* | Custom User-Agent sent by Chrome |
+| `chrome.user-agent` | `AXON_CHROME_USER_AGENT` | *(inherits `AXON_USER_AGENT`)* | Chrome-specific User-Agent override; falls back to `AXON_USER_AGENT` |
 
 ### Search and research
 
@@ -249,8 +249,9 @@ temporary overrides and legacy scripts.
 |----------|---------|-------------|
 | `AXON_CHROME_REMOTE_URL` | `http://axon-chrome:6000` | CDP management endpoint |
 | `CHROME_URL` | `http://127.0.0.1:6000` | Spider-rs native CDP var (always use localhost URL here) |
+| `AXON_USER_AGENT` | `Mozilla/5.0 ... Firefox/128.0 axon/{version}` | General-purpose UA for all HTTP requests — API calls, vertical extractors, web scraping. `AXON_CHROME_USER_AGENT` inherits this when not set. |
 | `AXON_CHROME_PROXY` | -- | Proxy URL for Chrome requests |
-| `AXON_CHROME_USER_AGENT` | -- | User-Agent override for Chrome requests |
+| `AXON_CHROME_USER_AGENT` | *(inherits `AXON_USER_AGENT`)* | Chrome-specific UA override for Spider crawl and render paths |
 | `AXON_CHROME_DIAGNOSTICS` | `false` | Enable browser diagnostics artifact collection |
 | `AXON_CHROME_DIAGNOSTICS_DIR` | `$AXON_DATA_DIR/chrome-diagnostics` (default `~/.axon/chrome-diagnostics`) | Output directory for diagnostics artifacts |
 | `AXON_CHROME_DIAGNOSTICS_EVENTS` | `false` | Include event-log capture in diagnostics |

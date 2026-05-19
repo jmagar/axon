@@ -147,5 +147,6 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
         extractor_name: INFO.name,
         extractor_version: 1,
         structured: Some(data),
+        follow_crawl_urls: vec![],
     })
 }
