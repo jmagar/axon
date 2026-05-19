@@ -32,6 +32,7 @@ jobs:
             xtask
             benches
             apps/web
+            plugins
             tests
             scripts
             config
@@ -70,6 +71,7 @@ jobs:
             xtask
             benches
             apps/web
+            plugins
             tests
             scripts
             config
@@ -111,6 +113,7 @@ jobs:
             xtask
             benches
             apps/web
+            plugins
             tests
             scripts
             config
@@ -159,6 +162,7 @@ jobs:
             xtask
             benches
             apps/web
+            plugins
             tests
             scripts
             config
