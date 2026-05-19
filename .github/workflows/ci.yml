@@ -38,6 +38,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -63,6 +64,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -88,6 +90,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -112,6 +115,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -149,6 +153,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -184,6 +189,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -230,6 +236,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -257,6 +264,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -298,6 +306,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -329,6 +338,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -383,6 +393,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -409,6 +420,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -436,6 +448,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -461,6 +474,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -492,6 +506,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -524,6 +539,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -557,6 +573,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -582,6 +599,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
@@ -622,6 +640,7 @@ jobs:
             apps/web
             plugins
             docs
+            .github
             tests
             scripts
             config
