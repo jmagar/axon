@@ -1,12 +1,13 @@
 //! crates.io package vertical extractor.
 //!
-//! Matches crates.io/crates/{name} or /crates/{name}/{version}.
-//! crates.io hard-fails (HTTP 403) on empty User-Agent — always set it.
+//! Three network calls (README + rustdoc JSON are parallel):
+//!   1. `crates.io/api/v1/crates/{name}` — metadata (sequential, version needed)
+//!   2. `crates.io/api/v1/crates/{name}/{version}/readme` — README HTML
+//!   3. `docs.rs/crate/{name}/{version}/json.gz` — rustdoc JSON (all public items)
 //!
-//! One call to `/api/v1/crates/{name}` returns the full metadata object.
-//! A second call to `/api/v1/crates/{name}/{version}/readme` fetches the
-//! README (returned as HTML, stripped to plain text for RAG). README fetch
-//! is non-fatal — a missing README degrades gracefully.
+//! README and rustdoc fetches are non-fatal and run concurrently via `tokio::join!`.
+//! docs.rs started building rustdoc JSON on 2025-05-23; older releases fall back
+//! gracefully to metadata + README only.
 
 use crate::core::http::http_client;
 use crate::extract::context::VerticalContext;
@@ -16,8 +17,9 @@ use crate::extract::types::{ExtractorInfo, ScrapedDoc};
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "crates_io",
     label: "crates.io Crate",
-    description: "Fetches crate metadata + README from crates.io API — version, description, \
-        downloads, license, MSRV, Rust edition, features, categories, keywords.",
+    description: "Fetches crate metadata, README, and full API docs (rustdoc JSON) from \
+        crates.io + docs.rs — version, MSRV, edition, downloads, license, features, \
+        categories, keywords, and all public items with their doc comments.",
     url_patterns: &[
         "https://crates.io/crates/{name}",
         "https://crates.io/crates/{name}/{version}",
@@ -61,24 +63,29 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
 
     let data = fetch_crate_json(client, name, url, ua).await?;
     let version = resolve_version(&data, name);
-    let readme_text = fetch_readme(client, name, &version, ua).await;
-    let (markdown, title) = build_markdown(&data, name, url, readme_text.as_deref());
 
-    // Collect the docs.rs URL so the caller can crawl the full API docs.
-    let follow_crawl_urls = data["crate"]["documentation"]
-        .as_str()
-        .filter(|u| !u.is_empty())
-        .map(|u| vec![u.to_string()])
-        .unwrap_or_default();
+    // Fetch README and rustdoc JSON concurrently — both non-fatal.
+    let (readme_text, rustdoc_text) = tokio::join!(
+        fetch_readme(client, name, &version, ua),
+        fetch_rustdoc_docs(client, name, &version, ua),
+    );
+
+    let (markdown, title) = build_markdown(
+        &data,
+        name,
+        url,
+        readme_text.as_deref(),
+        rustdoc_text.as_deref(),
+    );
 
     Ok(ScrapedDoc {
         url: url.to_string(),
         markdown,
         title,
         extractor_name: INFO.name,
-        extractor_version: 2,
+        extractor_version: 3,
         structured: Some(data),
-        follow_crawl_urls,
+        follow_crawl_urls: vec![],
     })
 }
 
@@ -131,7 +138,7 @@ async fn fetch_crate_json(
         })
 }
 
-fn resolve_version<'a>(data: &'a serde_json::Value, fallback: &'a str) -> String {
+fn resolve_version(data: &serde_json::Value, fallback: &str) -> String {
     let krate = &data["crate"];
     krate["max_stable_version"]
         .as_str()
@@ -140,11 +147,195 @@ fn resolve_version<'a>(data: &'a serde_json::Value, fallback: &'a str) -> String
         .to_string()
 }
 
+// ── README ────────────────────────────────────────────────────────────────────
+
+async fn fetch_readme(
+    client: &reqwest::Client,
+    name: &str,
+    version: &str,
+    ua: &str,
+) -> Option<String> {
+    let url = format!("https://crates.io/api/v1/crates/{name}/{version}/readme");
+    let resp = client
+        .get(&url)
+        .header("User-Agent", ua)
+        .header("Accept", "text/html, text/plain")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    Some(strip_html(&resp.text().await.ok()?))
+}
+
+/// Strip HTML tags and collapse whitespace — keeps README readable as plain text.
+fn strip_html(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                out.push('\n');
+            }
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    let mut result = String::new();
+    let mut prev_blank = false;
+    for line in out.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            if !prev_blank {
+                result.push('\n');
+            }
+            prev_blank = true;
+        } else {
+            result.push_str(t);
+            result.push('\n');
+            prev_blank = false;
+        }
+    }
+    result.trim().to_string()
+}
+
+// ── Rustdoc JSON ──────────────────────────────────────────────────────────────
+
+/// Fetch and convert the rustdoc JSON for the crate. Returns `None` when docs.rs
+/// has no JSON for this version (pre-2025-05-23 releases) or on any error.
+async fn fetch_rustdoc_docs(
+    client: &reqwest::Client,
+    name: &str,
+    version: &str,
+    ua: &str,
+) -> Option<String> {
+    // Try the specific version first; fall back to latest if it 404s.
+    for ver in [version, "latest"] {
+        let url = format!("https://docs.rs/crate/{name}/{ver}/json.gz");
+        if let Some(md) = try_fetch_rustdoc_gz(client, &url, ua, name).await {
+            return Some(md);
+        }
+    }
+    None
+}
+
+async fn try_fetch_rustdoc_gz(
+    client: &reqwest::Client,
+    url: &str,
+    ua: &str,
+    crate_name: &str,
+) -> Option<String> {
+    let resp = client.get(url).header("User-Agent", ua).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let bytes = resp.bytes().await.ok()?;
+    let json = decompress_and_parse_gz(&bytes)?;
+    Some(rustdoc_to_markdown(&json, crate_name))
+}
+
+fn decompress_and_parse_gz(bytes: &[u8]) -> Option<serde_json::Value> {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let mut decoder = GzDecoder::new(bytes);
+    let mut buf = Vec::new();
+    decoder.read_to_end(&mut buf).ok()?;
+    serde_json::from_slice(&buf).ok()
+}
+
+/// Items we skip — they're either containers or sub-items whose parent already
+/// carries the relevant doc text.
+fn should_skip_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "module"
+            | "impl"
+            | "use"
+            | "extern_crate"
+            | "struct_field"
+            | "variant"
+            | "assoc_type"
+            | "assoc_const"
+            | "keyword"
+            | "primitive"
+    )
+}
+
+/// Convert the rustdoc JSON to a markdown section listing every public item
+/// with its doc comment. Capped at 150 000 chars to keep the doc from being
+/// unbounded for very large crates (tokio, etc.).
+fn rustdoc_to_markdown(data: &serde_json::Value, crate_name: &str) -> String {
+    let Some(index) = data["index"].as_object() else {
+        return String::new();
+    };
+    let paths = data["paths"].as_object();
+
+    let mut items: Vec<(String, &str, &str)> = vec![];
+    for (id, item) in index {
+        if item["visibility"].as_str() != Some("public") {
+            continue;
+        }
+        let docs = match item["docs"].as_str().filter(|d| !d.is_empty()) {
+            Some(d) => d,
+            None => continue,
+        };
+        let kind = match item["inner"]
+            .as_object()
+            .and_then(|o| o.keys().next())
+            .map(|s| s.as_str())
+        {
+            Some(k) => k,
+            None => continue,
+        };
+        if should_skip_kind(kind) {
+            continue;
+        }
+        let path = paths
+            .and_then(|p| p.get(id.as_str()))
+            .and_then(|v| v["path"].as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::")
+            })
+            .unwrap_or_else(|| item["name"].as_str().unwrap_or("?").to_string());
+        items.push((path, kind, docs));
+    }
+
+    items.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut md = format!("\n\n---\n\n## {crate_name} API Reference\n\n");
+    let mut total = 0usize;
+    const CAP: usize = 150_000;
+    let count = items.len();
+
+    for (path, kind, docs) in &items {
+        if total >= CAP {
+            break;
+        }
+        let preview: String = docs.chars().take(600).collect();
+        let suffix = if docs.len() > 600 { "..." } else { "" };
+        let entry = format!("### `{path}` ({kind})\n\n{preview}{suffix}\n\n");
+        total += entry.len();
+        md.push_str(&entry);
+    }
+
+    md.push_str(&format!("*{count} public items with documentation.*\n"));
+    md
+}
+
+// ── Markdown assembly ─────────────────────────────────────────────────────────
+
 fn build_markdown(
     data: &serde_json::Value,
     name: &str,
     url: &str,
     readme: Option<&str>,
+    rustdoc: Option<&str>,
 ) -> (String, Option<String>) {
     let krate = &data["crate"];
     let crate_name = krate["name"].as_str().unwrap_or(name);
@@ -164,6 +355,19 @@ fn build_markdown(
     md.push_str("## Crate Metadata\n\n");
     append_metadata(&mut md, krate, ver, max_version, url);
 
+    append_tags(&mut md, data, ver);
+
+    if let Some(r) = readme {
+        md.push_str("\n\n---\n\n## README\n\n");
+        md.push_str(r);
+    }
+    if let Some(r) = rustdoc {
+        md.push_str(r);
+    }
+    (md, title)
+}
+
+fn append_tags(md: &mut String, data: &serde_json::Value, ver: &serde_json::Value) {
     let keywords: Vec<&str> = data["keywords"]
         .as_array()
         .map(|arr| arr.iter().filter_map(|v| v["keyword"].as_str()).collect())
@@ -176,7 +380,6 @@ fn build_markdown(
         .as_object()
         .map(|f| f.keys().map(|k| k.as_str()).collect())
         .unwrap_or_default();
-
     if !keywords.is_empty() {
         md.push_str(&format!("\n**Keywords:** {}\n", keywords.join(", ")));
     }
@@ -186,11 +389,6 @@ fn build_markdown(
     if !features.is_empty() {
         md.push_str(&format!("\n**Features:** {}\n", features.join(", ")));
     }
-    if let Some(r) = readme {
-        md.push_str("\n\n---\n\n## README\n\n");
-        md.push_str(r);
-    }
-    (md, title)
 }
 
 fn append_metadata(
@@ -255,65 +453,6 @@ fn append_metadata(
         md.push_str(&format!("- **Documentation:** {documentation}\n"));
     }
     md.push_str(&format!("- **crates.io:** {url}\n"));
-}
-
-/// Fetch the README for the given crate version. Returns `None` on any error —
-/// a missing or unpublished README should not fail the whole extract.
-async fn fetch_readme(
-    client: &reqwest::Client,
-    name: &str,
-    version: &str,
-    ua: &str,
-) -> Option<String> {
-    let readme_url = format!("https://crates.io/api/v1/crates/{name}/{version}/readme");
-    let resp = client
-        .get(&readme_url)
-        .header("User-Agent", ua)
-        .header("Accept", "text/html, text/plain")
-        .send()
-        .await
-        .ok()?;
-
-    if !resp.status().is_success() {
-        return None;
-    }
-
-    let body = resp.text().await.ok()?;
-    Some(strip_html(&body))
-}
-
-/// Strip HTML tags and collapse whitespace — keeps README readable as plain text.
-fn strip_html(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                out.push('\n'); // treat tag boundaries as line breaks
-            }
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
-    }
-    // Collapse blank lines and trim each line
-    let mut result = String::new();
-    let mut prev_blank = false;
-    for line in out.lines() {
-        let t = line.trim();
-        if t.is_empty() {
-            if !prev_blank {
-                result.push('\n');
-            }
-            prev_blank = true;
-        } else {
-            result.push_str(t);
-            result.push('\n');
-            prev_blank = false;
-        }
-    }
-    result.trim().to_string()
 }
 
 fn fmt_num(n: u64) -> String {
