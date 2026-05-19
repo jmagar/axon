@@ -81,6 +81,7 @@ struct NpmMarkdownData<'a> {
     author: &'a str,
     license: &'a str,
     homepage: &'a str,
+    repo_url: Option<&'a str>,
     keywords: &'a [&'a str],
     engines: &'a serde_json::Value,
     readme: &'a str,
@@ -102,6 +103,9 @@ fn build_npm_markdown(d: &NpmMarkdownData<'_>) -> String {
     }
     if !d.homepage.is_empty() {
         md.push_str(&format!("**Homepage:** {}\n", d.homepage));
+    }
+    if let Some(repo) = d.repo_url {
+        md.push_str(&format!("**Repository:** {repo}\n"));
     }
     if !d.keywords.is_empty() {
         md.push_str(&format!("**Keywords:** {}\n", d.keywords.join(", ")));
@@ -226,6 +230,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
         author: &author,
         license,
         homepage,
+        repo_url: repo_url.as_deref(),
         keywords: &keywords,
         engines,
         readme,

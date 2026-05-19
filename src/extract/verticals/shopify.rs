@@ -113,7 +113,8 @@ fn build_variant_section(variants: &serde_json::Value) -> String {
         } else {
             "out of stock"
         };
-        section.push_str(&format!("- {vtitle}: ${price} ({availability})\n"));
+        // Shopify products.json does not expose currency; omit the symbol
+        section.push_str(&format!("- {vtitle}: {price} ({availability})\n"));
     }
     section
 }

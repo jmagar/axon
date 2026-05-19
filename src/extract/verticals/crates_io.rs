@@ -63,7 +63,10 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
     })?;
 
     let data = fetch_crate_json(client, name, url, ua).await?;
-    let version = resolve_version(&data, name);
+    // If the URL specifies an explicit version (e.g. /crates/serde/1.0.219),
+    // use it for README and rustdoc lookups so we fetch the right release.
+    let url_version = segs.get(2).filter(|v| !v.is_empty()).map(|v| v.to_string());
+    let version = url_version.unwrap_or_else(|| resolve_version(&data, name));
 
     // Fetch README and rustdoc JSON concurrently — both non-fatal.
     let (readme_text, rustdoc_text) = tokio::join!(

@@ -45,8 +45,8 @@ fn extract_arxiv_id(url: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
         .collect();
     if segs.len() >= 2 && matches!(segs[0], "abs" | "pdf") {
-        // Strip .pdf suffix if present
-        let raw = segs[1];
+        // Join remaining segments to handle old-style IDs like cs.LG/0000000
+        let raw = segs[1..].join("/");
         let id = raw.trim_end_matches(".pdf");
         if !id.is_empty() {
             return Some(id.to_string());

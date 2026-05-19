@@ -59,11 +59,10 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
 }
 
 async fn fetch_page_body(url: &str, ctx: &VerticalContext) -> Result<String, VerticalError> {
-    let use_chrome = ctx.cfg.chrome_remote_url.is_some()
-        && matches!(
-            ctx.cfg.render_mode,
-            RenderMode::Chrome | RenderMode::AutoSwitch
-        );
+    // Only use Chrome when explicitly configured — AutoSwitch means "try HTTP
+    // first" which is what the reqwest fallback already does for structured APIs.
+    let use_chrome =
+        ctx.cfg.chrome_remote_url.is_some() && ctx.cfg.render_mode == RenderMode::Chrome;
 
     if use_chrome {
         return fetch_via_chrome(url, ctx).await;
@@ -169,7 +168,18 @@ fn extract_item_id(url: &str) -> Option<String> {
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
-    if segs.first() == Some(&"itm") {
+    // /itm/{id} — the most common form
+    if segs.first() == Some(&"itm")
+        && let Some(id) = segs.get(1)
+    {
+        // Strip any trailing slug suffix (e.g. /itm/12345678/some-title)
+        let numeric: String = id.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !numeric.is_empty() {
+            return Some(numeric);
+        }
+    }
+    // /p/{id} (product page alternate form)
+    if segs.first() == Some(&"p") {
         return segs.get(1).map(|s| s.to_string());
     }
     None
@@ -193,9 +203,13 @@ fn build_scraped_doc(
 
     if let Some(ref j) = jsonld {
         let price = j["offers"]["price"].as_str();
-        let currency = j["offers"]["priceCurrency"].as_str().unwrap_or("USD");
+        let currency = j["offers"]["priceCurrency"].as_str().unwrap_or("");
         if let Some(p) = price {
-            md.push_str(&format!("**Price:** {p} {currency}\n"));
+            if currency.is_empty() {
+                md.push_str(&format!("**Price:** {p}\n"));
+            } else {
+                md.push_str(&format!("**Price:** {p} {currency}\n"));
+            }
         }
         let condition = j["offers"]["itemCondition"].as_str().unwrap_or("");
         if !condition.is_empty() {

@@ -263,6 +263,7 @@ impl fmt::Debug for Config {
             .field("render_mode", &self.render_mode)
             .field("chrome_remote_url", &self.chrome_remote_url)
             .field("chrome_proxy", &self.chrome_proxy)
+            .field("user_agent", &self.user_agent)
             .field("chrome_user_agent", &self.chrome_user_agent)
             .field("chrome_headless", &self.chrome_headless)
             .field("chrome_anti_bot", &self.chrome_anti_bot)

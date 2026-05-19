@@ -234,16 +234,11 @@ fn build_scraped_doc(
 }
 
 fn format_unix_ts(ts: u64) -> String {
-    // Simple YYYY-MM-DD from Unix timestamp using integer arithmetic
-    // This avoids a chrono/time crate dep — accuracy is good enough for display
-    let secs = ts;
-    let days = secs / 86400;
-    // Days since 1970-01-01 → approximate calendar date
-    let year = 1970 + days / 365;
-    let day_of_year = days % 365;
-    let month = (day_of_year / 30).min(11) + 1;
-    let day = (day_of_year % 30) + 1;
-    format!("{year}-{month:02}-{day:02}")
+    use chrono::{TimeZone, Utc};
+    Utc.timestamp_opt(ts as i64, 0)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| ts.to_string())
 }
 
 #[cfg(test)]

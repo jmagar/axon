@@ -56,7 +56,9 @@ pub fn matches(url: &str) -> bool {
 async fn fetch_model_card(model_id: &str) -> Option<String> {
     let client = http_client().ok()?;
     let readme_url = format!("https://huggingface.co/{model_id}/raw/main/README.md");
-    let mut req = client.get(&readme_url);
+    let mut req = client
+        .get(&readme_url)
+        .header("User-Agent", crate::core::http::axon_api_ua());
     if let Ok(token) = std::env::var("HF_TOKEN")
         && !token.is_empty()
     {

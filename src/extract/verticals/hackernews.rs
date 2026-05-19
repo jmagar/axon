@@ -36,7 +36,10 @@ pub fn matches(url: &str) -> bool {
             .split('/')
             .filter(|s| !s.is_empty())
             .collect();
-        return segs.len() == 2 && segs[0] == "items";
+        // Validate that the ID segment is numeric to avoid claiming invalid URLs
+        return segs.len() == 2
+            && segs[0] == "items"
+            && segs[1].chars().all(|c| c.is_ascii_digit());
     }
     false
 }

@@ -74,6 +74,7 @@ async fn fetch_readme(owner: &str, repo: &str) -> Option<String> {
     let readme_url = format!("https://api.github.com/repos/{owner}/{repo}/readme");
     let mut req = client
         .get(&readme_url)
+        .header("User-Agent", crate::core::http::axon_api_ua())
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
     if let Some(auth) = github_auth_header() {

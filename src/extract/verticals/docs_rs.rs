@@ -30,13 +30,35 @@ pub const INFO: ExtractorInfo = ExtractorInfo {
     auto_dispatch: true,
 };
 
-/// Returns `true` for any URL on docs.rs with at least a crate name segment.
+/// Non-crate top-level docs.rs paths that should not be auto-dispatched.
+const RESERVED_PATHS: &[&str] = &[
+    "releases",
+    "about",
+    "help",
+    "crate",
+    "search",
+    "login",
+    "sync",
+    "settings",
+    "queue",
+    "features",
+    "badge",
+    "robots.txt",
+];
+
+/// Returns `true` when the URL is a docs.rs page for a specific crate.
+/// Rejects known non-crate paths (releases, about, etc.) so they fall
+/// through to the generic scraper.
 pub fn matches(url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(url) else {
         return false;
     };
-    parsed.host_str().map(|h| h.eq_ignore_ascii_case("docs.rs")) == Some(true)
-        && !parsed.path().trim_matches('/').is_empty()
+    if parsed.host_str().map(|h| h.eq_ignore_ascii_case("docs.rs")) != Some(true) {
+        return false;
+    }
+    let path = parsed.path().trim_matches('/');
+    let first = path.split('/').next().unwrap_or("");
+    !first.is_empty() && !RESERVED_PATHS.contains(&first)
 }
 
 pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, VerticalError> {
@@ -113,7 +135,13 @@ pub(super) async fn fetch_rustdoc_docs(
     version: &str,
     ua: &str,
 ) -> Option<String> {
-    for ver in [version, "latest"] {
+    // Build the candidate list, deduplicating if version is already "latest"
+    let candidates: Vec<&str> = if version == "latest" {
+        vec!["latest"]
+    } else {
+        vec![version, "latest"]
+    };
+    for ver in candidates {
         let url = format!("https://docs.rs/crate/{name}/{ver}/json.gz");
         if let Some(md) = try_fetch_rustdoc_gz(client, &url, ua, name).await {
             return Some(md);

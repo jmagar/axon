@@ -193,8 +193,16 @@ async fn scrape_one(cfg: &Config, url: &str) -> Result<Option<(String, String)>,
 
     // Enqueue follow-up crawl jobs (e.g. docs.rs crawl after crates.io scrape).
     // Only when embed is on — no point crawling if we're not indexing.
+    // Deduplicate against the scraped URL itself and cap at 5 follow-ups.
     if cfg.embed && !follow_crawl_urls.is_empty() {
-        for follow_url in &follow_crawl_urls {
+        let unique: Vec<&String> = follow_crawl_urls
+            .iter()
+            .filter(|u| u.as_str() != normalized.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .take(5)
+            .collect();
+        for follow_url in unique {
             match crate::jobs::crawl::start_crawl_job(cfg, follow_url).await {
                 Ok(job_id) => log_info(&format!(
                     "queued follow-up crawl: url={follow_url} job={job_id}"

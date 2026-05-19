@@ -100,7 +100,8 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
                 url: url.to_string(),
             });
         }
-        429 => {
+        // 403 = unauthenticated rate limit (60/hr); 429 = explicit rate limit
+        403 | 429 => {
             return Err(VerticalError::VerticalRateLimited {
                 vertical: INFO.name,
                 retry_after: None,

@@ -75,11 +75,10 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
 
 async fn fetch_page_body(url: &str, ctx: &VerticalContext) -> Result<String, VerticalError> {
     // Use Chrome path when Chrome is configured and render mode supports it
-    let use_chrome = ctx.cfg.chrome_remote_url.is_some()
-        && matches!(
-            ctx.cfg.render_mode,
-            RenderMode::Chrome | RenderMode::AutoSwitch
-        );
+    // Only use Chrome when explicitly configured — AutoSwitch means "try HTTP
+    // first" which is what the reqwest fallback already does for structured APIs.
+    let use_chrome =
+        ctx.cfg.chrome_remote_url.is_some() && ctx.cfg.render_mode == RenderMode::Chrome;
 
     if use_chrome {
         return fetch_via_chrome(url, ctx).await;
