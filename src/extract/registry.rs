@@ -21,6 +21,9 @@ use crate::extract::verticals;
 /// `auto_dispatch: false` extractors only fire on `dispatch_by_name()`.
 pub fn list() -> Vec<ExtractorInfo> {
     vec![
+        // GitHub: PR and issue must come before repo (longer path match)
+        verticals::github_pr::INFO,
+        verticals::github_issue::INFO,
         verticals::github_repo::INFO,
         verticals::github_release::INFO,
         verticals::reddit::INFO,
@@ -33,6 +36,10 @@ pub fn list() -> Vec<ExtractorInfo> {
         verticals::dev_to::INFO,
         verticals::shopify::INFO,
         verticals::youtube_video::INFO,
+        verticals::hackernews::INFO,
+        verticals::stackoverflow::INFO,
+        verticals::arxiv::INFO,
+        // auto_dispatch: false — explicit opt-in only
         verticals::amazon::INFO,
         verticals::ebay::INFO,
     ]
@@ -47,6 +54,13 @@ pub async fn dispatch_by_url(
     url: &str,
     ctx: &VerticalContext,
 ) -> Option<Result<ScrapedDoc, VerticalError>> {
+    // github_pr and github_issue before github_repo: they have longer path matches
+    if verticals::github_pr::INFO.auto_dispatch && verticals::github_pr::matches(url) {
+        return Some(verticals::github_pr::extract(url, ctx).await);
+    }
+    if verticals::github_issue::INFO.auto_dispatch && verticals::github_issue::matches(url) {
+        return Some(verticals::github_issue::extract(url, ctx).await);
+    }
     // github_repo before github_release: repo URL is 2-segment; release is 3+
     if verticals::github_repo::INFO.auto_dispatch && verticals::github_repo::matches(url) {
         return Some(verticals::github_repo::extract(url, ctx).await);
@@ -83,9 +97,20 @@ pub async fn dispatch_by_url(
     if verticals::shopify::INFO.auto_dispatch && verticals::shopify::matches(url) {
         return Some(verticals::shopify::extract(url, ctx).await);
     }
-    // youtube_video: auto_dispatch=false — not in auto path
-    // amazon:        auto_dispatch=false — not in auto path
-    // ebay:          auto_dispatch=false — not in auto path
+    if verticals::youtube_video::INFO.auto_dispatch && verticals::youtube_video::matches(url) {
+        return Some(verticals::youtube_video::extract(url, ctx).await);
+    }
+    if verticals::hackernews::INFO.auto_dispatch && verticals::hackernews::matches(url) {
+        return Some(verticals::hackernews::extract(url, ctx).await);
+    }
+    if verticals::stackoverflow::INFO.auto_dispatch && verticals::stackoverflow::matches(url) {
+        return Some(verticals::stackoverflow::extract(url, ctx).await);
+    }
+    if verticals::arxiv::INFO.auto_dispatch && verticals::arxiv::matches(url) {
+        return Some(verticals::arxiv::extract(url, ctx).await);
+    }
+    // amazon:  auto_dispatch=false — not in auto path
+    // ebay:    auto_dispatch=false — not in auto path
     None
 }
 
@@ -128,6 +153,8 @@ pub async fn dispatch_by_name(
         }};
     }
     match name {
+        "github_pr" => dispatch!(github_pr),
+        "github_issue" => dispatch!(github_issue),
         "github_repo" => dispatch!(github_repo),
         "github_release" => dispatch!(github_release),
         "reddit" => dispatch!(reddit),
@@ -140,6 +167,9 @@ pub async fn dispatch_by_name(
         "dev_to" => dispatch!(dev_to),
         "shopify" => dispatch!(shopify),
         "youtube_video" => dispatch!(youtube_video),
+        "hackernews" => dispatch!(hackernews),
+        "stackoverflow" => dispatch!(stackoverflow),
+        "arxiv" => dispatch!(arxiv),
         "amazon" => dispatch!(amazon),
         "ebay" => dispatch!(ebay),
         other => Err(VerticalError::VerticalUnsupportedUrl {
