@@ -6,7 +6,7 @@
 //! re-created per call.
 
 use crate::core::config::Config;
-use crate::core::http::axon_ua;
+use crate::core::http::{axon_api_ua, axon_ua};
 use std::sync::Arc;
 
 /// Narrowed view over `ServiceContext` for vertical extractors.
@@ -25,10 +25,21 @@ impl VerticalContext {
         Self { cfg }
     }
 
-    /// Resolved User-Agent for this extractor's HTTP requests.
-    /// Uses `cfg.user_agent` when set, otherwise falls back to [`axon_ua()`].
+    /// Browser User-Agent for HTML scraping — clean Firefox UA, no bot tokens.
+    /// Use for verticals that scrape public HTML pages (Amazon, eBay, YouTube).
     pub fn ua(&self) -> &str {
         self.cfg.user_agent.as_deref().unwrap_or_else(|| axon_ua())
+    }
+
+    /// Bot-identifying User-Agent for structured API calls.
+    /// Use for verticals that call package registry or structured JSON APIs
+    /// (crates.io, npm, PyPI, GitHub, Docker Hub, HuggingFace, dev.to, Shopify).
+    /// These services are bot-friendly and use the UA for rate-limit attribution.
+    pub fn api_ua(&self) -> &str {
+        self.cfg
+            .user_agent
+            .as_deref()
+            .unwrap_or_else(|| axon_api_ua())
     }
 }
 

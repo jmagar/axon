@@ -77,7 +77,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
 
     let mut req = client
         .get(&api_url)
-        .header("User-Agent", ctx.ua())
+        .header("User-Agent", ctx.api_ua())
         .header("Accept", "application/json");
 
     // Optional HF_TOKEN for higher rate limits

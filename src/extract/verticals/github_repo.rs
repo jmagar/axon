@@ -83,7 +83,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
 
     let mut req = client
         .get(&api_url)
-        .header("User-Agent", ctx.ua())
+        .header("User-Agent", ctx.api_ua())
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
 

@@ -46,7 +46,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
             url: url.to_string(),
         })?;
 
-    let ua = ctx.ua();
+    let ua = ctx.api_ua();
     let client = http_client().map_err(|_| VerticalError::VerticalTargetUnavailable {
         vertical: INFO.name,
         status: 0,
@@ -122,19 +122,40 @@ pub(super) async fn fetch_rustdoc_docs(
     None
 }
 
+/// Fetch one rustdoc JSON gzip URL, retrying on 429 with Retry-After backoff.
+/// docs.rs is CDN-served (429 is rare), but we honour the header for correctness.
 async fn try_fetch_rustdoc_gz(
     client: &reqwest::Client,
     url: &str,
     ua: &str,
     crate_name: &str,
 ) -> Option<String> {
-    let resp = client.get(url).header("User-Agent", ua).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
+    const MAX_ATTEMPTS: u32 = 3;
+    for attempt in 0..MAX_ATTEMPTS {
+        let resp = client.get(url).header("User-Agent", ua).send().await.ok()?;
+        let status = resp.status();
+        if status.as_u16() == 429 {
+            let wait_secs = resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(10)
+                .min(60);
+            if attempt + 1 < MAX_ATTEMPTS {
+                tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+                continue;
+            }
+            return None;
+        }
+        if !status.is_success() {
+            return None;
+        }
+        let bytes = resp.bytes().await.ok()?;
+        let json = decompress_and_parse_gz(&bytes)?;
+        return Some(rustdoc_to_markdown(&json, crate_name));
     }
-    let bytes = resp.bytes().await.ok()?;
-    let json = decompress_and_parse_gz(&bytes)?;
-    Some(rustdoc_to_markdown(&json, crate_name))
+    None
 }
 
 fn decompress_and_parse_gz(bytes: &[u8]) -> Option<serde_json::Value> {

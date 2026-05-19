@@ -56,7 +56,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
     }
 
     let name = segs[1];
-    let ua = ctx.ua();
+    let ua = ctx.api_ua();
     let client = http_client().map_err(|_| VerticalError::VerticalTargetUnavailable {
         vertical: INFO.name,
         status: 0,
@@ -90,6 +90,9 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
     })
 }
 
+/// crates.io policy: ≤1 request/second. We retry on 429 with Retry-After
+/// backoff (up to 3 attempts). The Retry-After header is seconds; we cap at
+/// 60 s and default to 10 s when the header is absent.
 async fn fetch_crate_json(
     client: &reqwest::Client,
     name: &str,
@@ -97,46 +100,66 @@ async fn fetch_crate_json(
     ua: &str,
 ) -> Result<serde_json::Value, VerticalError> {
     let api_url = format!("https://crates.io/api/v1/crates/{name}");
-    let resp = client
-        .get(&api_url)
-        .header("User-Agent", ua)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|_| VerticalError::VerticalTargetUnavailable {
-            vertical: INFO.name,
-            status: 0,
-        })?;
+    const MAX_ATTEMPTS: u32 = 3;
 
-    let status = resp.status().as_u16();
-    match status {
-        404 => {
-            return Err(VerticalError::VerticalTargetNotFound {
+    for attempt in 0..MAX_ATTEMPTS {
+        let resp = client
+            .get(&api_url)
+            .header("User-Agent", ua)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|_| VerticalError::VerticalTargetUnavailable {
                 vertical: INFO.name,
-                url: url.to_string(),
-            });
-        }
-        429 => {
-            return Err(VerticalError::VerticalRateLimited {
-                vertical: INFO.name,
-                retry_after: None,
-            });
-        }
-        200 => {}
-        _ => {
-            return Err(VerticalError::VerticalTargetUnavailable {
-                vertical: INFO.name,
-                status,
-            });
+                status: 0,
+            })?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                return resp
+                    .json()
+                    .await
+                    .map_err(|_| VerticalError::VerticalTargetUnavailable {
+                        vertical: INFO.name,
+                        status,
+                    });
+            }
+            404 => {
+                return Err(VerticalError::VerticalTargetNotFound {
+                    vertical: INFO.name,
+                    url: url.to_string(),
+                });
+            }
+            429 => {
+                let wait_secs = parse_retry_after(&resp).unwrap_or(10).min(60);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+                    continue;
+                }
+                return Err(VerticalError::VerticalRateLimited {
+                    vertical: INFO.name,
+                    retry_after: Some(std::time::Duration::from_secs(wait_secs)),
+                });
+            }
+            _ => {
+                return Err(VerticalError::VerticalTargetUnavailable {
+                    vertical: INFO.name,
+                    status,
+                });
+            }
         }
     }
+    unreachable!()
+}
 
-    resp.json()
-        .await
-        .map_err(|_| VerticalError::VerticalTargetUnavailable {
-            vertical: INFO.name,
-            status,
-        })
+/// Parse the `Retry-After` header as seconds. Returns `None` when absent or
+/// unparseable (caller applies a default).
+fn parse_retry_after(resp: &reqwest::Response) -> Option<u64> {
+    resp.headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
 }
 
 fn resolve_version(data: &serde_json::Value, fallback: &str) -> String {

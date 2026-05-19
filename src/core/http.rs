@@ -33,6 +33,6 @@ pub(crate) use ssrf::validate_resolved_ips;
 pub(crate) use ssrf::{get_allow_loopback, set_allow_loopback};
 pub(crate) use ssrf::{ssrf_blacklist_compact_strings, ssrf_blacklist_patterns};
 pub use ssrf::{validate_url, validate_url_with_dns};
-pub use ua::{DEFAULT_UA, axon_ua};
+pub use ua::{AXON_API_UA, DEFAULT_UA, axon_api_ua, axon_ua};
 
 pub(crate) use cdp::cdp_discovery_url;
