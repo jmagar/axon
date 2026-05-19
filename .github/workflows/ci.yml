@@ -187,6 +187,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
+            src
             scripts
       - name: Restore schema doc for drift comparison
         run: mkdir -p docs && git show HEAD:docs/MCP-TOOL-SCHEMA.md > docs/MCP-TOOL-SCHEMA.md 2>/dev/null || true
