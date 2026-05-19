@@ -139,14 +139,18 @@ pub async fn run_stack_action(action: StackAction) -> io::Result<LocalSetupRepor
     phases.push(env::check_env_file(&env_path));
     phases.push(compose::check_compose_assets(&compose_dir));
 
-    if phase_errors(&phases) {
+    // Also gate on Warn-level missing assets (check_env_file / check_compose_assets
+    // return Warn, not Error, when files are absent on a fresh machine).
+    if phase_errors(&phases) || local_surface_incomplete(&phases) {
         phases.push(skipped_phase(
             action.as_str(),
             "stack command skipped because env or compose assets are missing; run axon setup init",
         ));
     } else {
         phases.extend(match action {
-            StackAction::Up => run_stack_up_phases(&compose_dir, &env_path, true).await,
+            // Pass follow_logs=false so `stack up` returns once containers are
+            // started rather than blocking on `docker compose logs -f` indefinitely.
+            StackAction::Up => run_stack_up_phases(&compose_dir, &env_path, false).await,
             StackAction::Down => {
                 vec![runtime::run_compose(&compose_dir, &env_path, ["down"]).await]
             }
