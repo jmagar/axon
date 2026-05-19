@@ -52,6 +52,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added config parsing coverage for `--skip-embed` mapping to
   `Config::embed = false`.
 
+## [4.2.0] - 2026-05-19
+
+### Added
+- `AXON_USER_AGENT` env var — general-purpose UA for all HTTP requests
+- `AXON_CHROME_USER_AGENT` falls back to `AXON_USER_AGENT`
+- docs.rs vertical extractor fetches rustdoc JSON directly
+- crates.io extractor pulls rustdoc JSON + README concurrently
+- New verticals: hackernews, stackoverflow, arxiv, github_issue, github_pr, docs_rs
+- YouTube extractor using ytInitialPlayerResponse (no yt-dlp needed)
+- Chrome path for Amazon/eBay extraction when configured
+- `cargo xtask check-secrets` pre-commit secret scanner
+- Sparse checkout on all CI jobs (significant checkout time reduction)
+
+### Fixed
+- All vertical extractors use correct UA (browser vs API)
+- crates.io 429 retry with Retry-After backoff
+- Various vertical content gaps (npm readme, PyPI description, etc.)
+
 ## [4.1.0] - 2026-05-18
 
 ### Added
