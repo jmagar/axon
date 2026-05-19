@@ -9,6 +9,7 @@ pub mod amazon;
 pub mod crates_io;
 pub mod dev_to;
 pub mod docker_hub;
+pub mod docs_rs;
 pub mod ebay;
 pub mod github_release;
 pub mod github_repo;

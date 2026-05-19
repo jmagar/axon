@@ -3,12 +3,13 @@
 //! Three network calls (README + rustdoc JSON are parallel):
 //!   1. `crates.io/api/v1/crates/{name}` — metadata (sequential, version needed)
 //!   2. `crates.io/api/v1/crates/{name}/{version}/readme` — README HTML
-//!   3. `docs.rs/crate/{name}/{version}/json.gz` — rustdoc JSON (all public items)
+//!   3. `docs.rs/crate/{name}/{version}/json.gz` — rustdoc JSON via `docs_rs::fetch_rustdoc_docs`
 //!
 //! README and rustdoc fetches are non-fatal and run concurrently via `tokio::join!`.
 //! docs.rs started building rustdoc JSON on 2025-05-23; older releases fall back
 //! gracefully to metadata + README only.
 
+use super::docs_rs::fetch_rustdoc_docs;
 use crate::core::http::http_client;
 use crate::extract::context::VerticalContext;
 use crate::extract::error::VerticalError;
@@ -201,133 +202,6 @@ fn strip_html(html: &str) -> String {
     }
     result.trim().to_string()
 }
-
-// ── Rustdoc JSON ──────────────────────────────────────────────────────────────
-
-/// Fetch and convert the rustdoc JSON for the crate. Returns `None` when docs.rs
-/// has no JSON for this version (pre-2025-05-23 releases) or on any error.
-async fn fetch_rustdoc_docs(
-    client: &reqwest::Client,
-    name: &str,
-    version: &str,
-    ua: &str,
-) -> Option<String> {
-    // Try the specific version first; fall back to latest if it 404s.
-    for ver in [version, "latest"] {
-        let url = format!("https://docs.rs/crate/{name}/{ver}/json.gz");
-        if let Some(md) = try_fetch_rustdoc_gz(client, &url, ua, name).await {
-            return Some(md);
-        }
-    }
-    None
-}
-
-async fn try_fetch_rustdoc_gz(
-    client: &reqwest::Client,
-    url: &str,
-    ua: &str,
-    crate_name: &str,
-) -> Option<String> {
-    let resp = client.get(url).header("User-Agent", ua).send().await.ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let bytes = resp.bytes().await.ok()?;
-    let json = decompress_and_parse_gz(&bytes)?;
-    Some(rustdoc_to_markdown(&json, crate_name))
-}
-
-fn decompress_and_parse_gz(bytes: &[u8]) -> Option<serde_json::Value> {
-    use flate2::read::GzDecoder;
-    use std::io::Read;
-    let mut decoder = GzDecoder::new(bytes);
-    let mut buf = Vec::new();
-    decoder.read_to_end(&mut buf).ok()?;
-    serde_json::from_slice(&buf).ok()
-}
-
-/// Items we skip — they're either containers or sub-items whose parent already
-/// carries the relevant doc text.
-fn should_skip_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "module"
-            | "impl"
-            | "use"
-            | "extern_crate"
-            | "struct_field"
-            | "variant"
-            | "assoc_type"
-            | "assoc_const"
-            | "keyword"
-            | "primitive"
-    )
-}
-
-/// Convert the rustdoc JSON to a markdown section listing every public item
-/// with its doc comment. Capped at 150 000 chars to keep the doc from being
-/// unbounded for very large crates (tokio, etc.).
-fn rustdoc_to_markdown(data: &serde_json::Value, crate_name: &str) -> String {
-    let Some(index) = data["index"].as_object() else {
-        return String::new();
-    };
-    let paths = data["paths"].as_object();
-
-    let mut items: Vec<(String, &str, &str)> = vec![];
-    for (id, item) in index {
-        if item["visibility"].as_str() != Some("public") {
-            continue;
-        }
-        let docs = match item["docs"].as_str().filter(|d| !d.is_empty()) {
-            Some(d) => d,
-            None => continue,
-        };
-        let kind = match item["inner"]
-            .as_object()
-            .and_then(|o| o.keys().next())
-            .map(|s| s.as_str())
-        {
-            Some(k) => k,
-            None => continue,
-        };
-        if should_skip_kind(kind) {
-            continue;
-        }
-        let path = paths
-            .and_then(|p| p.get(id.as_str()))
-            .and_then(|v| v["path"].as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<_>>()
-                    .join("::")
-            })
-            .unwrap_or_else(|| item["name"].as_str().unwrap_or("?").to_string());
-        items.push((path, kind, docs));
-    }
-
-    items.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let mut md = format!("\n\n---\n\n## {crate_name} API Reference\n\n");
-    let mut total = 0usize;
-    const CAP: usize = 150_000;
-    let count = items.len();
-
-    for (path, kind, docs) in &items {
-        if total >= CAP {
-            break;
-        }
-        let preview: String = docs.chars().take(600).collect();
-        let suffix = if docs.len() > 600 { "..." } else { "" };
-        let entry = format!("### `{path}` ({kind})\n\n{preview}{suffix}\n\n");
-        total += entry.len();
-        md.push_str(&entry);
-    }
-
-    md.push_str(&format!("*{count} public items with documentation.*\n"));
-    md
-}
-
 // ── Markdown assembly ─────────────────────────────────────────────────────────
 
 fn build_markdown(

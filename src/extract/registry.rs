@@ -27,6 +27,7 @@ pub fn list() -> Vec<ExtractorInfo> {
         verticals::pypi::INFO,
         verticals::npm::INFO,
         verticals::crates_io::INFO,
+        verticals::docs_rs::INFO,
         verticals::docker_hub::INFO,
         verticals::huggingface_model::INFO,
         verticals::dev_to::INFO,
@@ -65,6 +66,9 @@ pub async fn dispatch_by_url(
     if verticals::crates_io::INFO.auto_dispatch && verticals::crates_io::matches(url) {
         return Some(verticals::crates_io::extract(url, ctx).await);
     }
+    if verticals::docs_rs::INFO.auto_dispatch && verticals::docs_rs::matches(url) {
+        return Some(verticals::docs_rs::extract(url, ctx).await);
+    }
     if verticals::docker_hub::INFO.auto_dispatch && verticals::docker_hub::matches(url) {
         return Some(verticals::docker_hub::extract(url, ctx).await);
     }
@@ -80,8 +84,8 @@ pub async fn dispatch_by_url(
         return Some(verticals::shopify::extract(url, ctx).await);
     }
     // youtube_video: auto_dispatch=false — not in auto path
-    // amazon: auto_dispatch=false — not in auto path
-    // ebay: auto_dispatch=false — not in auto path
+    // amazon:        auto_dispatch=false — not in auto path
+    // ebay:          auto_dispatch=false — not in auto path
     None
 }
 
@@ -130,6 +134,7 @@ pub async fn dispatch_by_name(
         "pypi" => dispatch!(pypi),
         "npm" => dispatch!(npm),
         "crates_io" => dispatch!(crates_io),
+        "docs_rs" => dispatch!(docs_rs),
         "docker_hub" => dispatch!(docker_hub),
         "huggingface_model" => dispatch!(huggingface_model),
         "dev_to" => dispatch!(dev_to),
