@@ -31,6 +31,7 @@ jobs:
             src
             xtask
             benches
+            apps/web
             tests
             scripts
             config
@@ -68,6 +69,7 @@ jobs:
             src
             xtask
             benches
+            apps/web
             tests
             scripts
             config
@@ -108,6 +110,7 @@ jobs:
             src
             xtask
             benches
+            apps/web
             tests
             scripts
             config
@@ -155,6 +158,7 @@ jobs:
             src
             xtask
             benches
+            apps/web
             tests
             scripts
             config
