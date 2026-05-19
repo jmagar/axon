@@ -27,6 +27,16 @@ jobs:
     runs-on: [self-hosted, Linux, axon]
     steps:
       - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            src
+            xtask
+            tests
+            scripts
+            config
+            vendor
+            .cargo
+            apps
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -67,6 +77,16 @@ jobs:
     runs-on: [self-hosted, Windows, axon]
     steps:
       - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            src
+            xtask
+            tests
+            scripts
+            config
+            vendor
+            .cargo
+            apps
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
