@@ -37,8 +37,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -63,8 +62,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -89,8 +87,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -114,8 +111,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -152,8 +148,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -188,8 +183,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -235,8 +229,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -263,8 +256,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -305,8 +297,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -337,8 +328,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -392,8 +382,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -419,8 +408,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -447,8 +435,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -473,8 +460,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -505,8 +491,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -538,8 +523,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -572,8 +556,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -598,8 +581,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config
@@ -639,8 +621,7 @@ jobs:
             benches
             apps/web
             plugins
-            docs/API-PARITY.md
-          sparse-checkout-cone-mode: false
+            docs
             tests
             scripts
             config

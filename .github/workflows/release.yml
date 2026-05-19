@@ -33,6 +33,7 @@ jobs:
             benches
             apps/web
             plugins
+            docs
             docs/API-PARITY.md
           sparse-checkout-cone-mode: false
             tests
@@ -74,6 +75,7 @@ jobs:
             benches
             apps/web
             plugins
+            docs
             docs/API-PARITY.md
           sparse-checkout-cone-mode: false
             tests
@@ -118,6 +120,7 @@ jobs:
             benches
             apps/web
             plugins
+            docs
             docs/API-PARITY.md
           sparse-checkout-cone-mode: false
             tests
@@ -169,6 +172,7 @@ jobs:
             benches
             apps/web
             plugins
+            docs
             docs/API-PARITY.md
           sparse-checkout-cone-mode: false
             tests
