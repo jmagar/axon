@@ -225,19 +225,18 @@ Keep field names snake_case for CLI JSON, REST, and MCP parity.
 - [ ] Enforce page-load timeout, network-idle timeout, max request count, and SSRF/host filtering.
 - [ ] Document that this mode executes page code and can trigger real network calls.
 
-## Task 6: Documentation And Borrowed Pattern Follow-Ups
+## Task 6: Endpoint Discovery Documentation
 
 **Files:**
 - Create: `docs/commands/endpoints.md`
 - Modify: `docs/commands/README.md`
 - Modify: `docs/MCP-TOOL-SCHEMA.md`
 - Modify: `docs/MCP.md`
-- Modify: `WEBCLAW_PATTERNS_TO_BORROW.md` only if implementation changes the borrow list
 
 - [ ] Document layer behavior, defaults, caps, and non-goals.
 - [ ] Include examples for static discovery, verification, and Chrome capture.
 - [ ] Add safety notes: no JS execution in layer 1, no credentials in verification, Chrome capture is opt-in.
-- [ ] Track follow-up candidates separately: decompressed body caps, crawler frontier caps, data island recovery, page diff primitive, and vertical extractor catalog improvements.
+- [ ] Document endpoint-discovery-specific resource controls: script count cap, scan byte cap, endpoint output cap, bundle fetch byte cap, verification probe cap, and Chrome request-event cap.
 
 ---
 
