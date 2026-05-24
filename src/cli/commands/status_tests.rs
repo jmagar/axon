@@ -143,3 +143,33 @@ fn render_status_payload_surfaces_reclaimed_running_crawl_rows() {
         "expected reclaim hint; got:\n{rendered}"
     );
 }
+
+#[test]
+fn render_status_payload_truncates_long_labels_and_errors() {
+    let mut long = job("failed");
+    long.url = Some(format!("https://example.com/{}", "x".repeat(240)));
+    long.error_text = Some("error: ".to_string() + &"y".repeat(240));
+
+    let payload = build_status_payload(
+        &[long],
+        &[],
+        &[],
+        &[],
+        &crate::services::types::StatusTotals::default(),
+    );
+
+    let rendered = render_status_payload(&payload).expect("payload should render");
+
+    assert!(
+        !rendered.contains(&"x".repeat(180)),
+        "long URL label leaked without truncation:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains(&"y".repeat(180)),
+        "long error leaked without truncation:\n{rendered}"
+    );
+    assert!(
+        rendered.contains('…'),
+        "expected truncation marker:\n{rendered}"
+    );
+}

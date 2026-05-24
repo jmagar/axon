@@ -8,9 +8,9 @@ use crate::cli::commands::crawl::subcommands::{
 use crate::core::config::{CommandKind, Config};
 use crate::core::ui::{accent, muted, primary};
 use crate::services::types::{
-    CrawlStartJob, CrawlStartResult, EmbedStartResult, ExtractStartResult, ExtractSyncResult,
-    IngestStartResult, JobListResult, ScrapeResult, ScreenshotResult, ServiceJob, StartDisposition,
-    SummarizeResult,
+    AskResult, CrawlStartJob, CrawlStartResult, EmbedStartResult, ExtractStartResult,
+    ExtractSyncResult, IngestStartResult, JobListResult, ScrapeResult, ScreenshotResult,
+    ServiceJob, StartDisposition, SummarizeResult,
 };
 use std::error::Error;
 use uuid::Uuid;
@@ -35,6 +35,8 @@ pub(super) fn render_server_result(
             print!("{}", server_status_text(result)?);
             Ok(())
         }
+        CommandKind::Stats => render_stats(result),
+        CommandKind::Ask => render_ask(cfg, result),
         CommandKind::Scrape => render_scrape(cfg, result),
         CommandKind::Summarize => render_summarize(cfg, result),
         CommandKind::Screenshot => render_screenshot(cfg, result),
@@ -63,6 +65,27 @@ fn render_scrape(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn
 fn render_summarize(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let summary: SummarizeResult = serde_json::from_value(result.clone())?;
     crate::cli::commands::summarize::emit_summarize_result(cfg, &summary)
+}
+
+fn render_stats(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let payload = result.get("payload").unwrap_or(result);
+    crate::vector::ops::stats::display::print_stats_human(payload);
+    Ok(())
+}
+
+fn render_ask(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let mut ask: AskResult = serde_json::from_value(result.clone())?;
+    let query = crate::cli::commands::resolve_input_text(cfg)
+        .or_else(|| (!ask.query.trim().is_empty()).then(|| ask.query.clone()))
+        .ok_or("ask requires a question")?;
+    ask.query = query.clone();
+    let active_session = cfg
+        .ask_session
+        .as_deref()
+        .or(ask.session.as_deref())
+        .unwrap_or("default");
+    crate::cli::commands::ask::print_ask_human(cfg, &query, active_session, &ask);
+    Ok(())
 }
 
 fn render_screenshot(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {

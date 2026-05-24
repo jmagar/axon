@@ -15,6 +15,7 @@ use std::fmt::Write as _;
 /// Maximum number of rows rendered per section in the human status output.
 /// The truncation note ("showing N of M") is sized against this cap.
 const SECTION_DISPLAY_LIMIT: usize = 10;
+const STATUS_TEXT_DISPLAY_LIMIT: usize = 120;
 
 pub async fn run_status(
     cfg: &Config,
@@ -377,7 +378,7 @@ fn write_status_section(
     }
 
     for job in jobs.iter().take(SECTION_DISPLAY_LIMIT) {
-        let label = label_for(job);
+        let label = truncate_status_text(&label_for(job));
         if let Some(p) = progress_for(job) {
             let _ = writeln!(
                 out,
@@ -403,10 +404,20 @@ fn write_status_section(
             .as_deref()
             .and_then(|err| job_error_hint(&job.status, err))
         {
-            let _ = writeln!(out, "    {}", muted(&err));
+            let _ = writeln!(out, "    {}", muted(&truncate_status_text(&err)));
         }
     }
     let _ = writeln!(out);
+}
+
+fn truncate_status_text(text: &str) -> String {
+    if text.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT {
+        return text.to_string();
+    }
+    format!(
+        "{}…",
+        crate::cli::commands::common::truncate_chars(text, STATUS_TEXT_DISPLAY_LIMIT)
+    )
 }
 
 fn job_error_hint(status: &str, error_text: &str) -> Option<String> {

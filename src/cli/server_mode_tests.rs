@@ -70,7 +70,23 @@ fn scrape_server_mode_uses_rest_contract_body() {
     let plan = plan::server_rest_plan(&cfg).expect("scrape plan");
 
     assert_eq!(plan.path, "/v1/scrape");
-    assert_eq!(plan.body, json!({ "url": "https://example.com" }));
+    assert_eq!(
+        plan.body,
+        json!({ "url": "https://example.com", "embed": true })
+    );
+}
+
+#[test]
+fn scrape_server_mode_forwards_skip_embed() {
+    let mut cfg = cfg(CommandKind::Scrape, &["https://example.com"]);
+    cfg.embed = false;
+
+    let plan = plan::server_rest_plan(&cfg).expect("scrape plan");
+
+    assert_eq!(
+        plan.body,
+        json!({ "url": "https://example.com", "embed": false })
+    );
 }
 
 #[test]
