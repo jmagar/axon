@@ -3,6 +3,9 @@ mod jobs;
 
 pub(super) use jobs::extract_status_json_result;
 
+use crate::cli::commands::common::{
+    HUMAN_LINE_LIMIT, truncate_display_continuation, truncate_display_text,
+};
 use crate::core::config::{CommandKind, Config};
 use crate::core::ui::{accent, muted, primary, status_text};
 use crate::services::types::{
@@ -87,6 +90,14 @@ pub(super) fn server_status_text(result: &serde_json::Value) -> Result<String, B
     crate::cli::commands::status::render_status_payload(result)
 }
 
+pub(super) fn server_line_text(text: &str, prefix_chars: usize) -> String {
+    truncate_display_text(text, HUMAN_LINE_LIMIT.saturating_sub(prefix_chars))
+}
+
+pub(super) fn server_continuation_text(text: &str, indent_chars: usize) -> String {
+    truncate_display_continuation(text, indent_chars)
+}
+
 fn render_scrape(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let scrape: ScrapeResult = serde_json::from_value(result.clone())?;
     crate::cli::commands::scrape::print_scrape_preamble(cfg, &scrape.url);
@@ -111,7 +122,10 @@ fn render_doctor(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
 
 fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     if let Some(domain) = cfg.sources_domain.as_deref() {
-        println!("{}", primary(&format!("Sources for {domain}")));
+        println!(
+            "{}",
+            primary(&server_line_text(&format!("Sources for {domain}"), 0))
+        );
         for url in result
             .get("urls")
             .and_then(|value| value.as_array())
@@ -119,7 +133,7 @@ fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
             .flatten()
             .filter_map(|value| value.as_str())
         {
-            println!("  {}", accent(url));
+            println!("  {}", accent(&server_continuation_text(url, 2)));
         }
         if result
             .get("truncated")
@@ -139,7 +153,7 @@ fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
         .flatten()
         .filter_map(|value| value.as_str())
     {
-        println!("  {}", accent(url));
+        println!("  {}", accent(&server_continuation_text(url, 2)));
     }
     if let Some(count) = result.get("count").and_then(|value| value.as_u64()) {
         println!("{}", muted(&format!("Count: {count}")));
@@ -160,7 +174,7 @@ fn render_domains(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
             .unwrap_or(false);
         println!(
             "  {} {}",
-            accent(domain),
+            accent(&server_line_text(domain, 17)),
             muted(if indexed {
                 "indexed=true"
             } else {
@@ -187,7 +201,7 @@ fn render_domains(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
             .unwrap_or(0);
         println!(
             "  {} {}",
-            accent(domain),
+            accent(&server_line_text(domain, 18)),
             muted(&format!("vectors={vectors}"))
         );
     }
@@ -201,7 +215,13 @@ fn render_map(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Er
         .first()
         .map(String::as_str)
         .unwrap_or(mapped.url.as_str());
-    println!("{}", primary(&format!("Map Results for {start_url}")));
+    println!(
+        "{}",
+        primary(&server_line_text(
+            &format!("Map Results for {start_url}"),
+            0
+        ))
+    );
     println!(
         "{} {} (source: {})",
         muted("Showing"),
@@ -209,11 +229,11 @@ fn render_map(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Er
         mapped.map_source
     );
     if let Some(warning) = mapped.warning.as_deref() {
-        println!("{} {}", muted("Warning:"), warning);
+        println!("{} {}", muted("Warning:"), server_line_text(warning, 9));
     }
     println!();
     for url in &mapped.urls {
-        println!("  • {url}");
+        println!("  • {}", server_continuation_text(url, 4));
     }
     Ok(())
 }
@@ -226,7 +246,13 @@ fn render_query(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn 
             .cloned()
             .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
     )?;
-    println!("{}", primary(&format!("Query Results for \"{query}\"")));
+    println!(
+        "{}",
+        primary(&server_line_text(
+            &format!("Query Results for \"{query}\""),
+            0
+        ))
+    );
     if results.is_empty() {
         println!("  {}", muted("No results found. Try:"));
         println!("    {}", muted("axon sources       # list indexed URLs"));
@@ -244,12 +270,12 @@ fn render_query(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn 
             result.rank,
             status_text("completed"),
             result.rerank_score,
-            accent(&result.source)
+            accent(&server_line_text(&result.source, 32))
         );
-        println!("    {}", result.snippet);
+        println!("    {}", server_continuation_text(&result.snippet, 4));
         if cfg.ask_diagnostics {
             println!("    {} vector_score={:.3}", muted("diag"), result.score);
-            println!("    {} {}", muted("url"), result.url);
+            println!("    {} {}", muted("url"), server_line_text(&result.url, 8));
         }
     }
     Ok(())
@@ -264,19 +290,37 @@ fn render_retrieve(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<d
         )
         .into());
     }
-    println!("{}", primary(&format!("Retrieve Result for {target}")));
+    println!(
+        "{}",
+        primary(&server_line_text(
+            &format!("Retrieve Result for {target}"),
+            0
+        ))
+    );
     println!("{} {}\n", muted("Chunks:"), result.chunk_count);
     if let Some(backend) = result.backend {
         println!("{} {}", muted("Backend:"), backend_text(backend));
     }
     if let Some(refresh_status) = result.refresh_status.as_deref() {
-        println!("{} {}", muted("Refresh:"), refresh_status);
+        println!(
+            "{} {}",
+            muted("Refresh:"),
+            server_line_text(refresh_status, 9)
+        );
     }
     if let Some(next_cursor) = result.next_cursor.as_deref() {
-        println!("{} {}", muted("Next cursor:"), next_cursor);
+        println!(
+            "{} {}",
+            muted("Next cursor:"),
+            server_line_text(next_cursor, 13)
+        );
     }
     if !result.warnings.is_empty() {
-        println!("{} {}", muted("Warnings:"), result.warnings.join(" | "));
+        println!(
+            "{} {}",
+            muted("Warnings:"),
+            server_line_text(&result.warnings.join(" | "), 10)
+        );
     }
     if result.backend.is_some()
         || result.refresh_status.is_some()
@@ -323,7 +367,11 @@ fn render_evaluate(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<d
 fn render_suggest(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let result: SuggestResult = serde_json::from_value(result.clone())?;
     for suggestion in &result.suggestions {
-        println!("{}\t{}", suggestion.url, suggestion.reason);
+        println!(
+            "{}\t{}",
+            server_line_text(&suggestion.url, 0),
+            server_line_text(&suggestion.reason, 0)
+        );
     }
     Ok(())
 }

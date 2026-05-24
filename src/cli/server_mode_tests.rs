@@ -331,6 +331,21 @@ fn server_status_text_matches_local_status_renderer() {
 }
 
 #[test]
+fn server_renderer_metadata_helpers_keep_display_cap() {
+    let long = "x".repeat(500);
+
+    let line = render::server_line_text(&long, 9);
+    let continuation = render::server_continuation_text(&long, 4);
+
+    assert_eq!(line.chars().count(), 111);
+    assert!(line.ends_with('…'));
+    assert_eq!(line.chars().count() + 9, 120);
+    assert_eq!(continuation.chars().count(), 116);
+    assert!(continuation.ends_with('…'));
+    assert_eq!(continuation.chars().count() + 4, 120);
+}
+
+#[test]
 fn extract_status_json_promotes_completed_result_payload() {
     let result = json!({
         "job": {

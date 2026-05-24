@@ -4,6 +4,10 @@ use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
 
+fn strip_ansi(s: &str) -> String {
+    console::strip_ansi_codes(s).into_owned()
+}
+
 fn job(status: &str) -> ServiceJob {
     ServiceJob {
         id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
@@ -172,8 +176,9 @@ fn render_status_payload_truncates_long_labels_and_errors() {
         rendered.contains('…'),
         "expected truncation marker:\n{rendered}"
     );
+    let visible = strip_ansi(&rendered);
     assert!(
-        rendered
+        visible
             .lines()
             .all(|line| line.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT),
         "status output exceeded display cap:\n{rendered}"
