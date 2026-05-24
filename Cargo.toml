@@ -25,6 +25,10 @@ description = "Web crawl, scrape, embed, and query CLI backed by a self-hosted R
 authors = ["jmagar"]
 license = "MIT"
 build = "build.rs"
+exclude = [
+  "apps/desktop/**",
+  "apps/palette-tauri/**",
+]
 
 [[bin]]
 name = "axon"
