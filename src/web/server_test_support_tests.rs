@@ -203,6 +203,7 @@ async fn prepared_sessions_route_accepts_body_larger_than_default_rest_limit() {
     stop(shutdown, handle).await;
     assert_ne!(status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_ne!(status, StatusCode::UNAUTHORIZED);
+    assert_ne!(status, StatusCode::NOT_FOUND);
 }
 
 async fn spawn_app(

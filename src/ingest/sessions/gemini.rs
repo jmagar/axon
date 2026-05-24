@@ -2,6 +2,7 @@ use super::{
     IngestResult, SessionDoc, flatten_session_result, matches_project_filter, resolve_collection,
 };
 use crate::core::config::Config;
+use crate::core::content::url_to_domain;
 use crate::core::logging::log_warn;
 use crate::vector::ops::{PreparedDoc, chunk_text};
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -197,8 +198,8 @@ async fn process_gemini_file(
         "session_date": mtime_chrono.to_rfc3339(),
     });
     let doc = PreparedDoc {
+        domain: url_to_domain(&url),
         url,
-        domain: "local".to_string(),
         chunks,
         source_type: "gemini_session".to_string(),
         content_type: "text",

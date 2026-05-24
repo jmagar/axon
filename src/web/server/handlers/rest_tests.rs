@@ -348,6 +348,40 @@ async fn async_submit_routes_reject_empty_required_fields() {
 
 #[tokio::test]
 #[serial]
+async fn async_ingest_rejects_remote_session_scan() {
+    let _env = EnvGuard::set(None);
+    let (base, shutdown, handle) = spawn(AuthPolicy::LoopbackDev).await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{base}/v1/ingest"))
+        .json(&serde_json::json!({
+            "source_type": "sessions",
+            "sessions_claude": false,
+            "sessions_codex": true,
+            "sessions_gemini": false,
+            "sessions_project": "axon_rust"
+        }))
+        .send()
+        .await
+        .expect("request");
+    let status = response.status();
+    let body: serde_json::Value = response.json().await.expect("json body");
+
+    stop(shutdown, handle).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["kind"], "bad_request");
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("/v1/ingest/sessions/prepared"),
+        "expected prepared sessions endpoint hint, got {body}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn async_submit_routes_reject_private_urls_before_enqueue() {
     let _env = EnvGuard::set(None);
     let (base, shutdown, handle) = spawn(AuthPolicy::LoopbackDev).await;

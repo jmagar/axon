@@ -179,9 +179,11 @@ pub async fn prepare_sessions_request(
         project: cfg.sessions_project.clone(),
         collection,
     };
-    request
-        .validate(cfg)
-        .map_err(|err| -> Box<dyn Error> { err.into() })?;
+    if !request.docs.is_empty() {
+        request
+            .validate(cfg)
+            .map_err(|err| -> Box<dyn Error> { err.into() })?;
+    }
     Ok(request)
 }
 

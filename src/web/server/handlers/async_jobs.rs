@@ -249,6 +249,17 @@ pub(crate) async fn start_ingest(
     accepted_job("/v1/ingest", outcome.result.job_id)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/ingest/sessions/prepared",
+    request_body = crate::ingest::sessions::IngestSessionsPreparedRequest,
+    responses(
+        (status = 202, description = "Prepared sessions ingest job accepted", body = AcceptedJob),
+        (status = 400, description = "Invalid prepared sessions request", body = crate::web::server::error::ErrorBody),
+        (status = 502, description = "Upstream ingest service unavailable", body = crate::web::server::error::ErrorBody)
+    ),
+    tag = "jobs"
+)]
 pub(crate) async fn start_prepared_sessions_ingest(
     State((state, cfg)): State<(AppState, Arc<Config>)>,
     Json(req): Json<crate::ingest::sessions::IngestSessionsPreparedRequest>,

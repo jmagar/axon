@@ -67,6 +67,21 @@ async fn run_server_mode_sessions(
 ) -> Result<(), Box<dyn Error>> {
     let client = cli::client::ServerClient::new(server_url)?;
     let request = crate::ingest::sessions::prepare_sessions_request(cfg).await?;
+    if request.docs.is_empty() {
+        if cfg.json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "status": "skipped",
+                    "reason": "no session documents matched",
+                    "chunks_embedded": 0,
+                }))?
+            );
+        } else {
+            eprintln!("sessions: no session documents matched; nothing to upload");
+        }
+        return Ok(());
+    }
     let result = client
         .post_json(
             "/v1/ingest/sessions/prepared",

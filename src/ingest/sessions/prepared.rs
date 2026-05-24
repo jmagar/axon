@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::core::content::url_to_domain;
 use crate::vector::ops::{PreparedDoc, chunk_text};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +13,7 @@ const RESERVED_EXTRA_KEYS: &[&str] = &[
     "session_file",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedSessionDoc {
     pub url: String,
@@ -27,7 +28,7 @@ pub struct PreparedSessionDoc {
     pub extra: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IngestSessionsPreparedRequest {
     pub docs: Vec<PreparedSessionDoc>,
@@ -165,7 +166,7 @@ impl PreparedSessionDoc {
 
         Ok(PreparedDoc {
             url: self.url.clone(),
-            domain: "local".to_string(),
+            domain: url_to_domain(&self.url),
             chunks: chunk_text(&self.text),
             source_type: source_type.to_string(),
             content_type: "text",

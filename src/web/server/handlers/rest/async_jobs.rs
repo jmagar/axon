@@ -444,6 +444,14 @@ pub(crate) async fn v1_ingest_submit(
     State(state): State<RestState>,
     Json(source): Json<IngestSource>,
 ) -> Response {
+    if matches!(source, IngestSource::Sessions { .. }) {
+        return rest_error(
+            StatusCode::BAD_REQUEST,
+            "bad_request",
+            "remote sessions ingest must use /v1/ingest/sessions/prepared; server-local session scanning is disabled"
+                .to_string(),
+        );
+    }
     if let Err(reason) = ingest_svc::validate_ingest_source(&source) {
         return rest_error(StatusCode::BAD_REQUEST, "bad_request", reason);
     }
