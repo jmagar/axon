@@ -84,6 +84,15 @@ pub async fn list_jobs(pool: &SqlitePool, kind: JobKind) -> Result<Vec<JobSummar
 pub async fn cleanup_jobs(pool: &SqlitePool, kind: JobKind) -> Result<u64, sqlx::Error> {
     let table = kind.table_name();
     let cutoff = now_ms() - 86_400_000;
+    if kind == JobKind::Ingest {
+        sqlx::query(
+            "DELETE FROM axon_ingest_payloads \
+             WHERE job_id IN (SELECT id FROM axon_ingest_jobs WHERE status IN ('completed','failed') AND finished_at < ?)",
+        )
+        .bind(cutoff)
+        .execute(pool)
+        .await?;
+    }
     let result = sqlx::query(&format!(
         "DELETE FROM {} WHERE status IN ('completed','failed') AND finished_at < ?",
         table
@@ -98,6 +107,11 @@ pub async fn cleanup_jobs(pool: &SqlitePool, kind: JobKind) -> Result<u64, sqlx:
 /// Returns count of rows deleted.
 pub async fn clear_jobs(pool: &SqlitePool, kind: JobKind) -> Result<u64, sqlx::Error> {
     let table = kind.table_name();
+    if kind == JobKind::Ingest {
+        sqlx::query("DELETE FROM axon_ingest_payloads")
+            .execute(pool)
+            .await?;
+    }
     let result = sqlx::query(&format!("DELETE FROM {}", table))
         .execute(pool)
         .await?;

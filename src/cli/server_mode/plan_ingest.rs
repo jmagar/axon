@@ -118,6 +118,9 @@ fn ingest_source_action_body(source: IngestSource) -> serde_json::Value {
                 project: sessions_project,
             }),
         },
+        IngestSource::PreparedSessions { .. } => {
+            return serde_json::json!({ "source_type": "prepared_sessions" });
+        }
     };
     serde_json::to_value(req).unwrap_or(serde_json::Value::Null)
 }

@@ -73,6 +73,7 @@ AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --codex --json
 
 ## Notes
 
-- Session ingest uses an incremental state tracker table: `axon_session_ingest_state`.
-- Job records for queued runs are stored in `axon_ingest_jobs` with `source_type='sessions'`.
-- In server mode (`AXON_SERVER_URL`), session ingest and lifecycle subcommands call `axon serve`; `--wait true` polls server job state and does not spawn host-local workers.
+- Local session text is decoded and redacted before embedding.
+- Job records for local queued runs are stored in `axon_ingest_jobs` with `source_type='sessions'`.
+- In server mode (`AXON_SERVER_URL`), `axon sessions` decodes and redacts local files on the client, uploads a bounded prepared-session payload to `POST /v1/ingest/sessions/prepared`, and the server embeds it asynchronously through the ingest worker queue. `--wait true` polls server job state and does not spawn host-local workers.
+- Legacy remote `source_type="sessions"` ingest is rejected so an Axon server cannot scan its own `~/.claude`, `~/.codex`, or `~/.gemini` paths by accident.
