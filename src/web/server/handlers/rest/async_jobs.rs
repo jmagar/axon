@@ -444,7 +444,10 @@ pub(crate) async fn v1_ingest_submit(
     State(state): State<RestState>,
     Json(source): Json<IngestSource>,
 ) -> Response {
-    if matches!(source, IngestSource::Sessions { .. }) {
+    if matches!(
+        source,
+        IngestSource::Sessions { .. } | IngestSource::PreparedSessions { .. }
+    ) {
         return rest_error(
             StatusCode::BAD_REQUEST,
             "bad_request",

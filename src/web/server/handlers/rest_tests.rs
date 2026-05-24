@@ -353,31 +353,39 @@ async fn async_ingest_rejects_remote_session_scan() {
     let (base, shutdown, handle) = spawn(AuthPolicy::LoopbackDev).await;
     let client = reqwest::Client::new();
 
-    let response = client
-        .post(format!("{base}/v1/ingest"))
-        .json(&serde_json::json!({
+    for body in [
+        serde_json::json!({
             "source_type": "sessions",
             "sessions_claude": false,
             "sessions_codex": true,
             "sessions_gemini": false,
             "sessions_project": "axon_rust"
-        }))
-        .send()
-        .await
-        .expect("request");
-    let status = response.status();
-    let body: serde_json::Value = response.json().await.expect("json body");
+        }),
+        serde_json::json!({
+            "source_type": "prepared_sessions"
+        }),
+    ] {
+        let response = client
+            .post(format!("{base}/v1/ingest"))
+            .json(&body)
+            .send()
+            .await
+            .expect("request");
+        let status = response.status();
+        let response_body: serde_json::Value = response.json().await.expect("json body");
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+        assert_eq!(response_body["kind"], "bad_request", "body: {body}");
+        assert!(
+            response_body["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("/v1/ingest/sessions/prepared"),
+            "expected prepared sessions endpoint hint, got {response_body}"
+        );
+    }
 
     stop(shutdown, handle).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["kind"], "bad_request");
-    assert!(
-        body["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("/v1/ingest/sessions/prepared"),
-        "expected prepared sessions endpoint hint, got {body}"
-    );
 }
 
 #[tokio::test]
