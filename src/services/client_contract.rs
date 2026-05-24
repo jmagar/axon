@@ -1,6 +1,10 @@
 use crate::core::config::{RenderMode, ScrapeFormat};
 use serde::{Deserialize, Serialize};
 
+#[path = "client_contract/contracts.rs"]
+mod contracts;
+pub use contracts::{RestRouteContract, rest_route_contracts};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientRoutePreference {

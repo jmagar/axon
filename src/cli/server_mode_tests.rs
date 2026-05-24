@@ -1,10 +1,13 @@
 use super::*;
 use crate::core::config::CommandKind;
 use crate::core::config::RenderMode;
-use crate::services::client_contract::{RestIngestRequest, RestSummarizeRequest};
+use crate::services::client_contract::{
+    RestIngestRequest, RestRouteContract, RestSummarizeRequest, rest_route_contracts,
+};
 use crate::services::types::ServiceJob;
 use chrono::Utc;
 use serde_json::json;
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 fn cfg(command: CommandKind, positional: &[&str]) -> Config {
@@ -112,6 +115,75 @@ fn scrape_server_mode_forwards_skip_embed() {
             "headers": [],
         })
     );
+}
+
+#[test]
+fn server_mode_post_bodies_match_canonical_rest_contract_fields() {
+    for contract in rest_route_contracts() {
+        let actual = server_mode_body_fields(contract);
+        let expected = contract
+            .fields
+            .iter()
+            .map(|field| field.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual, expected,
+            "server-mode planner body drifted from canonical REST contract for {} {}",
+            contract.method, contract.path
+        );
+    }
+}
+
+fn server_mode_body_fields(contract: &RestRouteContract) -> BTreeSet<String> {
+    let plans = match contract.path {
+        "/v1/scrape" => vec![plan_for(CommandKind::Scrape, &["https://example.com"])],
+        "/v1/summarize" => vec![plan_for(CommandKind::Summarize, &["https://example.com"])],
+        "/v1/crawl" => vec![plan_for(CommandKind::Crawl, &["https://example.com"])],
+        "/v1/extract" => vec![plan_for(CommandKind::Extract, &["https://example.com"])],
+        "/v1/embed" => vec![plan_for(CommandKind::Embed, &["plain text"])],
+        "/v1/ingest" => vec![
+            plan_for(
+                CommandKind::Ingest,
+                &["https://github.com/MCPJam/inspector"],
+            ),
+            plan_for(CommandKind::Sessions, &[]),
+        ],
+        "/v1/query" => vec![plan_with_query(CommandKind::Query, "parity query")],
+        "/v1/retrieve" => vec![plan_for(CommandKind::Retrieve, &["https://example.com"])],
+        "/v1/evaluate" => vec![plan_with_query(CommandKind::Evaluate, "is parity intact?")],
+        "/v1/suggest" => vec![plan_with_query(CommandKind::Suggest, "rust docs")],
+        "/v1/map" => vec![plan_for(CommandKind::Map, &["https://example.com"])],
+        "/v1/search" => vec![plan_with_query(CommandKind::Search, "mcp rust")],
+        "/v1/research" => vec![plan_with_query(CommandKind::Research, "mcp rust")],
+        path => panic!("no server-mode sample for REST contract path {path}"),
+    };
+
+    plans
+        .iter()
+        .inspect(|plan| {
+            assert_eq!(plan.method, contract.method);
+            assert_eq!(plan.path, contract.path);
+        })
+        .flat_map(|plan| {
+            plan.body
+                .as_object()
+                .unwrap_or_else(|| panic!("{} {} body is not an object", plan.method, plan.path))
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn plan_for(command: CommandKind, positional: &[&str]) -> plan::ServerRestPlan {
+    let cfg = cfg(command, positional);
+    plan::server_rest_plan(&cfg).unwrap_or_else(|err| panic!("{command:?} plan: {err}"))
+}
+
+fn plan_with_query(command: CommandKind, query: &str) -> plan::ServerRestPlan {
+    let mut cfg = cfg(command, &[]);
+    cfg.query = Some(query.to_string());
+    plan::server_rest_plan(&cfg).unwrap_or_else(|err| panic!("{command:?} plan: {err}"))
 }
 
 #[test]
