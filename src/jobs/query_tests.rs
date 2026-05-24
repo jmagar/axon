@@ -2,6 +2,7 @@ use super::*;
 use crate::core::config::Config;
 use crate::jobs::backend::JobPayload;
 use crate::jobs::ops::enqueue_job;
+use crate::jobs::status::JobStatus;
 use crate::jobs::store::open_sqlite_pool;
 
 #[tokio::test]
@@ -141,4 +142,33 @@ async fn list_ingest_service_jobs_applies_source_filter_before_limit() {
     assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].source_type.as_deref(), Some("sessions"));
     assert_eq!(jobs[0].target.as_deref(), Some("sessions"));
+}
+
+#[tokio::test]
+async fn count_jobs_by_status_returns_histogram_per_kind() {
+    let pool = open_sqlite_pool(":memory:").await.unwrap();
+
+    // Seed two pending, one running, one failed crawl rows.
+    for status in [
+        JobStatus::Pending,
+        JobStatus::Pending,
+        JobStatus::Running,
+        JobStatus::Failed,
+    ] {
+        sqlx::query(
+            "INSERT INTO axon_crawl_jobs (id, url, status, config_json, created_at, updated_at) \
+             VALUES (?, 'https://example.com/', ?, '{}', 0, 0)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(status.as_str())
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let histogram = count_jobs_by_status(&pool, JobKind::Crawl).await.unwrap();
+    assert_eq!(histogram.get(&JobStatus::Pending).copied(), Some(2));
+    assert_eq!(histogram.get(&JobStatus::Running).copied(), Some(1));
+    assert_eq!(histogram.get(&JobStatus::Failed).copied(), Some(1));
+    assert!(!histogram.contains_key(&JobStatus::Completed));
 }
