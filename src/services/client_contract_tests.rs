@@ -1,5 +1,6 @@
 use super::client_contract::{
     ClientCrawlRequest, ClientExtractMode, ClientExtractRequest, ClientRoutePreference,
+    RestExtractRequest,
 };
 use crate::core::config::RenderMode;
 
@@ -17,6 +18,17 @@ fn extract_request_defaults_to_auto_mode() {
     };
 
     assert_eq!(req.effective_mode(), ClientExtractMode::Auto);
+}
+
+#[test]
+fn rest_extract_request_rejects_unimplemented_modes() {
+    let err = serde_json::from_value::<RestExtractRequest>(serde_json::json!({
+        "urls": ["https://example.com"],
+        "mode": "deterministic"
+    }))
+    .expect_err("unsupported REST extract mode should not deserialize");
+
+    assert!(err.to_string().contains("unknown variant"));
 }
 
 #[test]

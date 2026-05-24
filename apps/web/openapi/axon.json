@@ -2405,10 +2405,7 @@
       "RestExtractMode": {
         "type": "string",
         "enum": [
-          "auto",
-          "deterministic",
-          "llm",
-          "both"
+          "auto"
         ]
       },
       "RestExtractRequest": {
@@ -2488,6 +2485,16 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "sessions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RestSessionsIngestOptions"
+              }
             ]
           },
           "source_type": {
@@ -2745,6 +2752,36 @@
         },
         "additionalProperties": false
       },
+      "RestSessionsIngestOptions": {
+        "type": "object",
+        "properties": {
+          "claude": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "codex": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "gemini": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "RestSuggestRequest": {
         "type": "object",
         "properties": {
@@ -2766,6 +2803,34 @@
       "RestSummarizeRequest": {
         "type": "object",
         "properties": {
+          "exclude_selector": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "render_mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RenderMode"
+              }
+            ]
+          },
+          "root_selector": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "url": {
             "type": [
               "string",

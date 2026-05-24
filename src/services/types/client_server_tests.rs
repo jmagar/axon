@@ -48,6 +48,23 @@ fn client_server_response_includes_server_info() {
 }
 
 #[test]
+fn rest_capabilities_omit_legacy_action_contract() {
+    let info = ServerInfo::rest_capabilities();
+
+    assert!(info.required_request_fields.is_empty());
+    assert!(info.supported_actions.is_empty());
+    assert!(
+        info.supported_routes
+            .contains(&"POST /v1/scrape".to_string())
+    );
+
+    let value = serde_json::to_value(&info).expect("serialize server info");
+    assert!(value.get("supported_routes").is_some());
+    assert!(value.get("required_request_fields").is_none());
+    assert!(value.get("supported_actions").is_none());
+}
+
+#[test]
 fn artifact_handle_serializes_root_relative_identifier() {
     let handle = ArtifactHandle::new(
         "json",

@@ -83,6 +83,7 @@ use super::{handlers, openapi_jobs};
         crate::services::client_contract::RestEmbedRequest,
         crate::services::client_contract::RestExtractRequest,
         crate::services::client_contract::RestIngestRequest,
+        crate::services::client_contract::RestSessionsIngestOptions,
         handlers::async_jobs::AcceptedJob,
         handlers::admin::DedupeRequest,
         handlers::admin::WatchCreateRequest

@@ -23,9 +23,6 @@ pub enum ClientExtractMode {
 #[serde(rename_all = "snake_case")]
 pub enum RestExtractMode {
     Auto,
-    Deterministic,
-    Llm,
-    Both,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -40,24 +37,10 @@ pub enum RestIngestSourceType {
     Sessions,
 }
 
-impl From<ClientExtractMode> for RestExtractMode {
-    fn from(value: ClientExtractMode) -> Self {
-        match value {
-            ClientExtractMode::Auto => Self::Auto,
-            ClientExtractMode::Deterministic => Self::Deterministic,
-            ClientExtractMode::Llm => Self::Llm,
-            ClientExtractMode::Both => Self::Both,
-        }
-    }
-}
-
 impl From<RestExtractMode> for ClientExtractMode {
     fn from(value: RestExtractMode) -> Self {
         match value {
             RestExtractMode::Auto => Self::Auto,
-            RestExtractMode::Deterministic => Self::Deterministic,
-            RestExtractMode::Llm => Self::Llm,
-            RestExtractMode::Both => Self::Both,
         }
     }
 }
@@ -182,14 +165,32 @@ pub struct RestResearchRequest {
 pub struct RestSummarizeRequest {
     pub url: Option<String>,
     pub urls: Option<Vec<String>>,
+    pub render_mode: Option<RenderMode>,
+    pub root_selector: Option<String>,
+    pub exclude_selector: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RestIngestRequest {
     pub source_type: RestIngestSourceType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub include_source: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sessions: Option<RestSessionsIngestOptions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RestSessionsIngestOptions {
+    pub claude: Option<bool>,
+    pub codex: Option<bool>,
+    pub gemini: Option<bool>,
+    pub project: Option<String>,
 }
 
 impl From<RestIngestSourceType> for crate::mcp::schema::IngestSourceType {
@@ -212,7 +213,19 @@ impl From<RestIngestRequest> for crate::mcp::schema::IngestRequest {
             source_type: Some(req.source_type.into()),
             target: req.target,
             include_source: req.include_source,
+            sessions: req.sessions.map(Into::into),
             ..Default::default()
+        }
+    }
+}
+
+impl From<RestSessionsIngestOptions> for crate::mcp::schema::SessionsIngestOptions {
+    fn from(value: RestSessionsIngestOptions) -> Self {
+        Self {
+            claude: value.claude,
+            codex: value.codex,
+            gemini: value.gemini,
+            project: value.project,
         }
     }
 }
@@ -315,10 +328,14 @@ impl ClientExtractRequest {
 
 impl From<ClientExtractRequest> for RestExtractRequest {
     fn from(req: ClientExtractRequest) -> Self {
+        let mode = match req.mode {
+            Some(ClientExtractMode::Auto) => Some(RestExtractMode::Auto),
+            _ => None,
+        };
         Self {
             urls: req.urls,
             prompt: req.prompt,
-            mode: req.mode.map(Into::into),
+            mode,
             max_pages: req.max_pages,
             render_mode: req.render_mode,
             embed: req.embed,

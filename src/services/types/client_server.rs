@@ -73,17 +73,34 @@ pub struct ServerInfo {
     pub version: String,
     pub schema_version: String,
     pub minimum_client_schema_version: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub required_request_fields: Vec<String>,
     /// Legacy internal action names retained for the panel command path.
     ///
     /// Public HTTP clients should use `supported_routes`; `/v1/actions` is no
     /// longer mounted after the direct REST cutover.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub supported_actions: Vec<String>,
     pub supported_routes: Vec<String>,
 }
 
 impl ServerInfo {
     pub fn current() -> Self {
+        Self::legacy_action_contract()
+    }
+
+    pub fn rest_capabilities() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            schema_version: CLIENT_SERVER_SCHEMA_VERSION.to_string(),
+            minimum_client_schema_version: CLIENT_SERVER_SCHEMA_VERSION.to_string(),
+            required_request_fields: Vec::new(),
+            supported_actions: Vec::new(),
+            supported_routes: supported_routes(),
+        }
+    }
+
+    pub fn legacy_action_contract() -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             schema_version: CLIENT_SERVER_SCHEMA_VERSION.to_string(),

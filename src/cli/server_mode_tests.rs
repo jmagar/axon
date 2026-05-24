@@ -1,6 +1,7 @@
 use super::*;
 use crate::core::config::CommandKind;
 use crate::core::config::RenderMode;
+use crate::services::client_contract::{RestIngestRequest, RestSummarizeRequest};
 use crate::services::types::ServiceJob;
 use chrono::Utc;
 use serde_json::json;
@@ -111,6 +112,26 @@ fn scrape_server_mode_forwards_skip_embed() {
             "headers": [],
         })
     );
+}
+
+#[test]
+fn summarize_server_mode_forwards_scrape_controls() {
+    let mut cfg = cfg(CommandKind::Summarize, &["https://example.com"]);
+    cfg.render_mode = RenderMode::Chrome;
+    cfg.root_selector = Some("article".to_string());
+    cfg.exclude_selector = Some("nav,.ads".to_string());
+    cfg.custom_headers = vec!["X-Test: 1".to_string()];
+
+    let plan = plan::server_rest_plan(&cfg).expect("summarize plan");
+    let req: RestSummarizeRequest =
+        serde_json::from_value(plan.body.clone()).expect("valid summarize REST request");
+
+    assert_eq!(plan.path, "/v1/summarize");
+    assert_eq!(req.urls, Some(vec!["https://example.com".to_string()]));
+    assert_eq!(req.render_mode, Some(RenderMode::Chrome));
+    assert_eq!(req.root_selector.as_deref(), Some("article"));
+    assert_eq!(req.exclude_selector.as_deref(), Some("nav,.ads"));
+    assert_eq!(req.headers, vec!["X-Test: 1".to_string()]);
 }
 
 #[test]
@@ -239,7 +260,7 @@ fn ingest_server_mode_uses_action_api_ingest_contract() {
 }
 
 #[test]
-fn sessions_server_mode_uses_nested_action_api_sessions_contract() {
+fn sessions_server_mode_body_deserializes_as_rest_contract() {
     let mut cfg = cfg(CommandKind::Sessions, &[]);
     cfg.sessions_claude = true;
     cfg.sessions_codex = true;
@@ -249,6 +270,13 @@ fn sessions_server_mode_uses_nested_action_api_sessions_contract() {
     let plan = plan::server_rest_plan(&cfg).expect("sessions plan");
 
     assert_eq!(plan.path, "/v1/ingest");
+    let req: RestIngestRequest =
+        serde_json::from_value(plan.body.clone()).expect("valid ingest REST request");
+    let sessions = req.sessions.expect("sessions options");
+    assert_eq!(sessions.claude, Some(true));
+    assert_eq!(sessions.codex, Some(true));
+    assert_eq!(sessions.gemini, Some(false));
+    assert_eq!(sessions.project.as_deref(), Some("axon_rust"));
     assert_eq!(
         plan.body,
         json!({

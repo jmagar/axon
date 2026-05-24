@@ -105,7 +105,7 @@ export type components = {
             "collection"?: string | null;
             "question": string;
         };
-        "RestExtractMode": "auto" | "deterministic" | "llm" | "both";
+        "RestExtractMode": "auto";
         "RestExtractRequest": {
             "collection"?: string | null;
             "embed"?: boolean | null;
@@ -118,6 +118,7 @@ export type components = {
         };
         "RestIngestRequest": {
             "include_source"?: boolean | null;
+            "sessions"?: null | components['schemas']['RestSessionsIngestOptions'];
             "source_type": components['schemas']['RestIngestSourceType'];
             "target"?: string | null;
         };
@@ -163,11 +164,21 @@ export type components = {
             "query": string;
             "time_range"?: string | null;
         };
+        "RestSessionsIngestOptions": {
+            "claude"?: boolean | null;
+            "codex"?: boolean | null;
+            "gemini"?: boolean | null;
+            "project"?: string | null;
+        };
         "RestSuggestRequest": {
             "collection"?: string | null;
             "focus"?: string | null;
         };
         "RestSummarizeRequest": {
+            "exclude_selector"?: string | null;
+            "headers"?: string[];
+            "render_mode"?: null | components['schemas']['RenderMode'];
+            "root_selector"?: string | null;
             "url"?: string | null;
             "urls"?: string[] | null;
         };

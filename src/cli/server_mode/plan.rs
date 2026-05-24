@@ -416,7 +416,9 @@ fn search_like_plan(
     }
 }
 
-fn json_body<T: serde::Serialize>(value: T) -> Result<serde_json::Value, ServerPlanError> {
+pub(super) fn json_body<T: serde::Serialize>(
+    value: T,
+) -> Result<serde_json::Value, ServerPlanError> {
     serde_json::to_value(value)
         .map_err(|err| ServerPlanError::new(format!("failed to serialize REST request: {err}")))
 }

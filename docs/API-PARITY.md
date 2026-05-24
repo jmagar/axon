@@ -40,7 +40,7 @@ Status meanings:
 | `domains` | `services::system::{domains,detailed_domains}` | `domains` | `GET /v1/domains` = Implemented | HTTP exposes the domain facets service path. |
 | `embed` | `services::embed::{embed_start_with_context,embed_status,embed_list,embed_cancel,embed_cleanup,embed_clear,embed_recover}` | `embed.start`, `embed.status`, `embed.cancel`, `embed.list`, `embed.cleanup`, `embed.clear`, `embed.recover` | `POST /v1/embed`, `GET /v1/embed`, `GET /v1/embed/{id}`, `POST /v1/embed/{id}/cancel`, `POST /v1/embed/cleanup`, `DELETE /v1/embed`, `POST /v1/embed/recover` = Implemented | REST validates local file inputs with the shared server-side embed guard. CLI-only `embed worker` is local process control. |
 | `evaluate` | `services::query::evaluate` | `evaluate` | `POST /v1/evaluate` = Implemented | Uses typed result and shared HttpError envelope. |
-| `extract` | `services::extract::{extract_start_with_context,extract_status,extract_list,extract_cancel,extract_cleanup,extract_clear,extract_recover}` | `extract.start`, `extract.status`, `extract.cancel`, `extract.list`, `extract.cleanup`, `extract.clear`, `extract.recover` | `POST /v1/extract`, `GET /v1/extract`, `GET /v1/extract/{id}`, `POST /v1/extract/{id}/cancel`, `POST /v1/extract/cleanup`, `DELETE /v1/extract`, `POST /v1/extract/recover` = Implemented | REST accepts canonical DTOs; non-auto `mode` is rejected clearly until the async service has mode parity. |
+| `extract` | `services::extract::{extract_start_with_context,extract_status,extract_list,extract_cancel,extract_cleanup,extract_clear,extract_recover}` | `extract.start`, `extract.status`, `extract.cancel`, `extract.list`, `extract.cleanup`, `extract.clear`, `extract.recover` | `POST /v1/extract`, `GET /v1/extract`, `GET /v1/extract/{id}`, `POST /v1/extract/{id}/cancel`, `POST /v1/extract/cleanup`, `DELETE /v1/extract`, `POST /v1/extract/recover` = Implemented | REST accepts canonical DTOs; the public schema only advertises `auto` until the async service has mode parity. |
 | `ingest` | `services::ingest::{ingest_start_with_context,ingest_status,ingest_list,ingest_cancel,ingest_cleanup,ingest_clear,ingest_recover}` | `ingest.start`, `ingest.status`, `ingest.cancel`, `ingest.list`, `ingest.cleanup`, `ingest.clear`, `ingest.recover` | `POST /v1/ingest`, `GET /v1/ingest`, `GET /v1/ingest/{id}`, `POST /v1/ingest/{id}/cancel`, `POST /v1/ingest/cleanup`, `DELETE /v1/ingest`, `POST /v1/ingest/recover` = Implemented | Uses canonical `target` field for Git, Reddit, YouTube, and sessions. CLI-only `ingest worker` is local process control. |
 | `map` | `services::map::discover` | `map` | `POST /v1/map` = Implemented | Uses typed body with url, limit, and offset. |
 | `migrate` | `services::migrate::migrate` | no dedicated action | Deferred | One-time collection migration is intentionally not exposed remotely; `POST /v1/migrate` returns 404. |
@@ -48,9 +48,10 @@ Status meanings:
 | `research` | `services::search::synthesis::research` | `research` | `POST /v1/research` = Implemented | HTTP applies a 35-second server-side timeout. Streaming remains deferred. |
 | `retrieve` | `services::query::retrieve` | `retrieve` | `POST /v1/retrieve` = Implemented | Supports collection, max_points, cursor, and token_budget. |
 | `scrape` | `services::scrape::{scrape_batch,scrape_batch_with_optional_embed}` | `scrape` | `POST /v1/scrape` = Implemented | Supports render mode, format, selectors, headers, collection, and optional embedding. |
+| `summarize` | `services::summarize::summarize` | `summarize` | `POST /v1/summarize` = Implemented | Supports render mode, selectors, and headers for the underlying scrape step. |
 | `screenshot` | `services::screenshot::screenshot_capture` | `screenshot` | Missing | MCP can capture screenshots; direct REST has no stable screenshot route yet. |
 | `search` | `services::search_crawl::search_and_crawl` for CLI/MCP handler path; `services::search::search` for side-effect-free helpers | `search` | `POST /v1/search` = Implemented | HTTP intentionally follows CLI/MCP auto-crawl behavior. |
-| `sessions` | `services::ingest::ingest_sessions*` via `services::ingest::ingest_start_with_context` | `ingest.start` with `source_type: "sessions"` | `POST /v1/ingest` = Implemented | CLI command maps to ingest with `source_type: "sessions"`. |
+| `sessions` | `services::ingest::ingest_sessions*` via `services::ingest::ingest_start_with_context` | `ingest.start` with `source_type: "sessions"` | `POST /v1/ingest` = Implemented | CLI command maps to ingest with `source_type: "sessions"` and typed session source options. |
 | `sources` | `services::system::sources` | `sources` | `GET /v1/sources` = Implemented | HTTP exposes the same service path. |
 | `stats` | `services::system::stats` | `stats` | `GET /v1/stats` = Implemented | HTTP exposes the same service path. |
 | `status` | `services::system::full_status` | `status` | `GET /v1/status` = Implemented | Also backs client/server `axon status --server-url ...`. |
@@ -64,7 +65,7 @@ Status meanings:
 
 ## Advertised Direct REST Routes
 
-`ServerInfo::current().supported_routes` currently advertises:
+`ServerInfo::rest_capabilities().supported_routes` currently advertises:
 
 ```text
 GET /healthz
@@ -121,9 +122,9 @@ POST /v1/watch/{id}/run
 GET /api-docs/openapi.json
 ```
 
-`supported_actions` remains in `ServerInfo` only for the internal panel command
-path and legacy response structs. It must not be treated as a mounted HTTP
-route list.
+`supported_actions` and action-envelope `required_request_fields` remain in
+`ServerInfo` only for internal legacy response structs. The public
+`GET /v1/capabilities` response omits them and advertises direct REST routes.
 
 ## OpenAPI Contract
 
