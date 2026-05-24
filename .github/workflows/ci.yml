@@ -192,9 +192,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: axon-windows
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
-        shell: bash
       - name: cargo build --release -p axon
         run: cargo build --release --locked -p axon
       - name: Windows AXON_DATA_DIR path regression
@@ -229,8 +226,6 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: Build axon binary
         run: cargo build --locked --bin axon
       - name: Smoke test generated shell completions
@@ -318,8 +313,6 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: Build axon binary
         run: cargo build --locked --bin axon
       - name: OAuth protection smoke test (/mcp requires auth)
@@ -504,8 +497,6 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: cargo check (warnings are errors)
         env:
           RUSTFLAGS: -D warnings
@@ -540,8 +531,6 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: cargo check (MSRV)
         run: cargo check --workspace --all-targets --locked --features test-helpers
 
@@ -569,8 +558,6 @@ jobs:
           toolchain: 1.94.0
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked --features test-helpers -- -D warnings
 
@@ -602,8 +589,6 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: cargo test
         run: cargo test --workspace --locked --features test-helpers -- --skip worker_e2e
 
@@ -777,8 +762,6 @@ jobs:
           docker save ghcr.io/huggingface/text-embeddings-inference:cpu-latest -o /tmp/docker-images/tei.tar
           docker save qdrant/qdrant:v1.13.1 -o /tmp/docker-images/qdrant.tar
 
-      - name: create web assets placeholder
-        run: mkdir -p apps/web/out
       - name: Build axon binary (release)
         run: cargo build --release --locked --bin axon
 
