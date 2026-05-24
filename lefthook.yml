@@ -23,7 +23,11 @@ pre-commit:
       # Single Cargo invocation covers: secrets, env-staged, claude-symlinks,
       # broken-symlinks, mcp-http, no-mod-rs, unwraps. Each sub-check is
       # already staged-file-aware internally, so running them all is cheap
-      # even on commits that only touch a couple of files.
+      # (~0.3s wall when warm) on a commit that touches a couple of files.
+      # `glob: "**/*"` means lefthook skips this entirely on commits with
+      # no staged files (e.g. `git commit --allow-empty`) — keeps the
+      # do-nothing-commit baseline honest.
+      glob: "**/*"
       run: scripts/with_timeout.sh 60 -- cargo xtask check
     skills-ref:
       glob: "skills/**"

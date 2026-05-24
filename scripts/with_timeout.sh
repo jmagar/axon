@@ -30,27 +30,30 @@ if command -v gtimeout >/dev/null 2>&1; then
     exec gtimeout "${secs}" "$@"
 fi
 
-# Manual fallback: spawn the command and a watchdog. Whichever finishes
-# first wins; if the watchdog wins, kill the command and exit 124.
+# Manual fallback: poll once per second. Avoids the subshell-sleep
+# orphan footgun where killing a subshell watchdog leaves its
+# `sleep $secs` child reparented to init for the full budget. With a
+# poll loop we own the timing, so an early-finishing command exits
+# cleanly without leaking long-lived sleeps.
 "$@" &
 cmd_pid=$!
 
-(
-    sleep "${secs}"
-    kill -TERM "${cmd_pid}" 2>/dev/null || true
+deadline=$(( $(date +%s) + secs ))
+while kill -0 "${cmd_pid}" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "${deadline}" ]; then
+        kill -TERM "${cmd_pid}" 2>/dev/null || true
+        sleep 1
+        kill -KILL "${cmd_pid}" 2>/dev/null || true
+        wait "${cmd_pid}" 2>/dev/null || true
+        exit 124
+    fi
     sleep 1
-    kill -KILL "${cmd_pid}" 2>/dev/null || true
-) &
-watchdog_pid=$!
+done
 
 set +e
 wait "${cmd_pid}"
 rc=$?
 set -e
-
-# Stop the watchdog if the command finished first.
-kill -KILL "${watchdog_pid}" 2>/dev/null || true
-wait "${watchdog_pid}" 2>/dev/null || true
 
 # If the command was killed by SIGTERM (143) attribute it to the timeout.
 if [ "${rc}" -eq 143 ]; then
