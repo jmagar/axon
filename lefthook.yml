@@ -20,13 +20,11 @@ pre-commit:
       glob: "{docker-compose,compose}*.{yaml,yml}"
       run: scripts/with_timeout.sh 30 -- python3 scripts/check_compose_port_bindings.py --staged
     xtask-check:
-      # Single Cargo invocation covers: secrets, env-staged, claude-symlinks,
-      # broken-symlinks, mcp-http, no-mod-rs, unwraps. Each sub-check is
-      # already staged-file-aware internally, so running them all is cheap
-      # (~0.3s wall when warm) on a commit that touches a couple of files.
-      # `glob: "**/*"` means lefthook skips this entirely on commits with
-      # no staged files (e.g. `git commit --allow-empty`) — keeps the
-      # do-nothing-commit baseline honest.
+      # Single Cargo invocation runs every check declared in
+      # xtask/src/checks.rs::check(). Each sub-check is already
+      # staged-file-aware internally, so combined wall time is small
+      # (~0.3s warm) even on a commit touching a couple of files.
+      # `glob: "**/*"` makes lefthook skip on empty commits.
       glob: "**/*"
       run: scripts/with_timeout.sh 60 -- cargo xtask check
     skills-ref:

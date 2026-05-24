@@ -43,7 +43,12 @@ cp "${DOC_PATH}" "${backup}"
 # every exit path including SIGINT/SIGTERM and `set -e` aborts.
 restore() {
     local rc=$?
-    cp "${backup}" "${DOC_PATH}" 2>/dev/null || true
+    # Let cp's stderr through. A silent restore failure leaves the
+    # developer's working copy of DOC_PATH as the regenerated version
+    # without any signal — exactly what the trap is here to prevent.
+    if ! cp "${backup}" "${DOC_PATH}"; then
+        echo "WARNING: failed to restore ${DOC_PATH} from backup; working tree may contain regenerated content" >&2
+    fi
     rm -rf "${tmp_dir}"
     exit "${rc}"
 }
@@ -53,6 +58,14 @@ python3 "${GEN_SCRIPT}" >/dev/null
 cp "${DOC_PATH}" "${regen}"
 # DOC_PATH will be restored from ${backup} by the trap.
 
+# Guard against a generator that exits 0 but writes nothing — without
+# this, both sides of the diff become identical empty streams and the
+# script falsely reports "no drift".
+if [ ! -s "${regen}" ]; then
+    echo "ERROR ${GEN_SCRIPT} produced an empty file; treating as drift" >&2
+    exit 1
+fi
+
 # The generator stamps today's date into a `Last Modified:` line; that
 # line bumps on every regeneration and is not real drift. Strip it
 # from both sides before comparing.
@@ -60,7 +73,7 @@ strip_volatile() {
     grep -v '^Last Modified:' "$1"
 }
 
-if diff -q <(strip_volatile "${regen}") <(strip_volatile "${backup}") >/dev/null 2>&1; then
+if diff -q <(strip_volatile "${regen}") <(strip_volatile "${backup}") >/dev/null; then
     exit 0
 fi
 

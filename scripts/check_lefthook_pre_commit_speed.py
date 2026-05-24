@@ -9,19 +9,8 @@ This script is run by lefthook's own pre-commit (gated on lefthook.yml
 changes) and by GitHub Actions on every push, so any regression of the
 pre-commit shape is caught before it lands.
 
-Forbidden patterns (substring match, case-insensitive) in any pre-commit
-command's `run:` block:
-
-  cargo clippy --workspace
-  cargo clippy --all
-  cargo test --workspace
-  cargo nextest run --workspace
-  cargo build --workspace
-  cargo check --workspace
-  cargo nextest run --all
-  pnpm -r test
-  npm run test
-  pytest
+The full list of forbidden substrings lives in `FORBIDDEN_SUBSTRINGS`
+below — keep that as the single source of truth, not this docstring.
 
 If you need to add a new pre-commit check, scope it to staged files only
 (via lefthook's `glob:` + `{staged_files}` substitution) or move the
@@ -74,7 +63,6 @@ def parse_pre_commit_runs(yaml_text: str) -> list[tuple[str, str]]:
         current_run_active = False
 
     for raw in lines:
-        # Strip trailing comments (very simplistic, fine for this file shape).
         line = raw.rstrip()
 
         # New top-level stage block ends pre-commit scanning.
@@ -149,6 +137,29 @@ def main(argv: list[str]) -> int:
         return 1
 
     commands = parse_pre_commit_runs(path.read_text())
+
+    # Sentinel-floor self-check. The parser is hand-rolled (no PyYAML
+    # dependency) and assumes lefthook.yml's current indentation shape.
+    # If the file is restructured (different indent, anchors, extends,
+    # new run-block synonyms) the parser may yield nothing and
+    # find_violations would happily return [] — silently disabling the
+    # speed gate. Require the parser to find at least one well-known
+    # command from this repo; if not, the YAML changed shape and the
+    # parser needs updating, not the check.
+    expected_sentinels = {"rustfmt", "lefthook-speed"}
+    found_names = {name for name, _ in commands}
+    missing = expected_sentinels - found_names
+    if missing:
+        print(
+            f"ERROR: parser found only {len(commands)} pre-commit commands and "
+            f"is missing well-known sentinel(s): {sorted(missing)}\n"
+            f"       {path} likely changed shape — update "
+            f"parse_pre_commit_runs() in this script to match.\n"
+            f"       Found commands: {sorted(found_names)}",
+            file=sys.stderr,
+        )
+        return 1
+
     violations = find_violations(commands)
 
     if violations:

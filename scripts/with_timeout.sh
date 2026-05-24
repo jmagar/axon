@@ -22,12 +22,24 @@ fi
 secs="$1"
 shift 2
 
+run_with_coreutils() {
+    local rc
+    set +e
+    "$1" "${secs}" "${@:2}"
+    rc=$?
+    set -e
+    if [ "${rc}" -eq 124 ]; then
+        echo "with_timeout: '${*:2}' exceeded ${secs}s budget — killed" >&2
+    fi
+    exit "${rc}"
+}
+
 if command -v timeout >/dev/null 2>&1; then
-    exec timeout "${secs}" "$@"
+    run_with_coreutils timeout "$@"
 fi
 
 if command -v gtimeout >/dev/null 2>&1; then
-    exec gtimeout "${secs}" "$@"
+    run_with_coreutils gtimeout "$@"
 fi
 
 # Manual fallback: poll once per second. Avoids the subshell-sleep
@@ -41,6 +53,7 @@ cmd_pid=$!
 deadline=$(( $(date +%s) + secs ))
 while kill -0 "${cmd_pid}" 2>/dev/null; do
     if [ "$(date +%s)" -ge "${deadline}" ]; then
+        echo "with_timeout: '$*' exceeded ${secs}s budget — killed" >&2
         kill -TERM "${cmd_pid}" 2>/dev/null || true
         sleep 1
         kill -KILL "${cmd_pid}" 2>/dev/null || true
