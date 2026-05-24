@@ -99,6 +99,7 @@ fn fallback_policy_for(command: CommandKind, positional: &[String]) -> FallbackP
         | CommandKind::Suggest => FallbackPolicy::AllowDegradedLocal,
         CommandKind::Dedupe
         | CommandKind::Migrate
+        | CommandKind::Monitor
         | CommandKind::Watch
         | CommandKind::Config
         | CommandKind::Sync => FallbackPolicy::Disallow,
