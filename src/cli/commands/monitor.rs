@@ -1,3 +1,4 @@
+use crate::cli::client::ServerClient;
 use crate::core::config::Config;
 use crate::services::context::ServiceContext;
 use crate::services::system::{StatusJobs, load_status_jobs};
@@ -15,6 +16,8 @@ pub struct JobMonitorState {
     #[serde(default)]
     initialized: bool,
     #[serde(default)]
+    monitor_started_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
     statuses: HashMap<String, String>,
 }
 
@@ -26,6 +29,10 @@ impl JobMonitorState {
 
     pub fn status_of(&self, kind: &str, id: Uuid) -> Option<&str> {
         self.statuses.get(&state_key(kind, id)).map(String::as_str)
+    }
+
+    pub fn mark_monitor_started_at(&mut self, timestamp: chrono::DateTime<chrono::Utc>) {
+        self.monitor_started_at.get_or_insert(timestamp);
     }
 }
 
@@ -67,9 +74,10 @@ pub async fn run_monitor(
 ) -> Result<(), Box<dyn Error>> {
     let options = MonitorOptions::from_positional(&cfg.positional)?;
     let mut state = read_state(&options.state_file);
+    state.mark_monitor_started_at(chrono::Utc::now());
 
     loop {
-        let (jobs, _totals, errors) = load_status_jobs(service_context).await?;
+        let (jobs, errors) = load_monitor_status_jobs(cfg, service_context).await?;
         for error in errors {
             eprintln!("monitor status degraded: {error}");
         }
@@ -86,6 +94,54 @@ pub async fn run_monitor(
     }
 
     Ok(())
+}
+
+async fn load_monitor_status_jobs(
+    cfg: &Config,
+    service_context: &ServiceContext,
+) -> Result<(StatusJobs, Vec<String>), Box<dyn Error>> {
+    if !cfg.local_mode
+        && let Some(server_url) = cfg.server_url.as_ref()
+    {
+        let client = ServerClient::new(server_url.clone()).map_err(|e| -> Box<dyn Error> {
+            format!("monitor build server client: {e}").into()
+        })?;
+        let value: Value =
+            client
+                .get_json("/v1/status", "status")
+                .await
+                .map_err(|e| -> Box<dyn Error> {
+                    format!("monitor server status failed: {e}").into()
+                })?;
+        return parse_status_payload_jobs(&value).map(|jobs| (jobs, Vec::new()));
+    }
+
+    let (jobs, _totals, errors) = load_status_jobs(service_context).await?;
+    Ok((jobs, errors))
+}
+
+fn parse_status_payload_jobs(value: &Value) -> Result<StatusJobs, Box<dyn Error>> {
+    let inner = value
+        .get("payload")
+        .filter(|payload| payload.get("local_crawl_jobs").is_some())
+        .unwrap_or(value);
+
+    Ok(StatusJobs {
+        crawl: parse_job_array(inner, "local_crawl_jobs")?,
+        extract: parse_job_array(inner, "local_extract_jobs")?,
+        embed: parse_job_array(inner, "local_embed_jobs")?,
+        ingest: parse_job_array(inner, "local_ingest_jobs")?,
+    })
+}
+
+fn parse_job_array(value: &Value, key: &str) -> Result<Vec<ServiceJob>, Box<dyn Error>> {
+    serde_json::from_value(
+        value
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    )
+    .map_err(|e| format!("monitor status payload field {key}: {e}").into())
 }
 
 pub fn detect_job_events(
@@ -147,8 +203,14 @@ fn detect_one(
         (Some("running"), "completed") | (Some("pending"), "completed") => "completed",
         (Some("running"), "failed") | (Some("pending"), "failed") => "failed",
         (Some("running"), "canceled") | (Some("pending"), "canceled") => "failed",
-        (None, "completed") if state.initialized => "completed",
-        (None, "failed" | "canceled") if state.initialized => "failed",
+        (None, "completed") if state.initialized || job_started_after_monitor(state, job) => {
+            "completed"
+        }
+        (None, "failed" | "canceled")
+            if state.initialized || job_started_after_monitor(state, job) =>
+        {
+            "failed"
+        }
         (prev, "running") if prev != Some("running") => "started",
         _ => return None,
     };
@@ -171,6 +233,12 @@ fn detect_one(
         started_at: job.started_at,
         finished_at: job.finished_at,
     })
+}
+
+fn job_started_after_monitor(state: &JobMonitorState, job: &ServiceJob) -> bool {
+    state
+        .monitor_started_at
+        .is_some_and(|started_at| job.created_at >= started_at)
 }
 
 fn docs_metric_keys(kind: &str) -> [&'static str; 5] {

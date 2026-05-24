@@ -115,3 +115,29 @@ fn emits_terminal_event_for_new_job_after_baseline_even_when_running_was_missed(
     assert_eq!(events[0].kind, "crawl");
     assert_eq!(events[0].docs, Some(1));
 }
+
+#[test]
+fn emits_terminal_event_on_first_poll_when_job_started_after_monitor() {
+    let completed_crawl = Uuid::parse_str("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee").unwrap();
+    let mut state = JobMonitorState::default();
+    state.mark_monitor_started_at(Utc.with_ymd_and_hms(2026, 5, 24, 11, 59, 0).unwrap());
+
+    let events = detect_job_events(
+        &mut state,
+        &[(
+            "crawl",
+            job(
+                completed_crawl,
+                "completed",
+                "https://example.com",
+                json!({"pages_crawled": 1}),
+            ),
+        )],
+        &[],
+        &[],
+    );
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event, "completed");
+    assert_eq!(events[0].id, completed_crawl);
+}
