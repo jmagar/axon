@@ -146,7 +146,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         onClick={() => {
           if (onClear) {
             onClear()
-          } else if (onChange) {
+          } else {
             const input = inputRef.current
             if (!input) return
             const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
@@ -154,7 +154,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
               "value"
             )?.set
             nativeInputValueSetter?.call(input, "")
-            input.dispatchEvent(new Event("input", { bubbles: true }))
+            if (onChange) {
+              input.dispatchEvent(new Event("input", { bubbles: true }))
+            }
           }
           // Always update internal state for uncontrolled
           if (!isControlled) {

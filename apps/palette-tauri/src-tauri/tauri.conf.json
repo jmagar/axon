@@ -4,7 +4,7 @@
   "version": "4.5.0",
   "identifier": "tv.tootie.axon.palette",
   "build": {
-    "beforeDevCommand": "npm run vite:build",
+    "beforeDevCommand": "npm run vite:dev",
     "beforeBuildCommand": "npm run vite:build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* http://100.88.16.79:* https://axon.tootie.tv"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http: https:"
     }
   },
   "bundle": {
