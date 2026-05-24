@@ -196,18 +196,26 @@ async fn count_jobs_by_status_works_for_every_job_kind() {
     let pool = open_sqlite_pool(":memory:").await.unwrap();
 
     let inserts: &[(JobKind, &str)] = &[
-        (JobKind::Crawl,
-         "INSERT INTO axon_crawl_jobs (id, url, status, config_json, created_at, updated_at) \
-          VALUES (?, 'https://example.com/', 'completed', '{}', 0, 0)"),
-        (JobKind::Embed,
-         "INSERT INTO axon_embed_jobs (id, input_text, config_json, status, created_at, updated_at) \
-          VALUES (?, 'some text', '{}', 'completed', 0, 0)"),
-        (JobKind::Extract,
-         "INSERT INTO axon_extract_jobs (id, urls_json, status, created_at, updated_at) \
-          VALUES (?, '[]', 'completed', 0, 0)"),
-        (JobKind::Ingest,
-         "INSERT INTO axon_ingest_jobs (id, source_type, target, config_json, status, created_at, updated_at) \
-          VALUES (?, 'github', 'owner/repo', '{}', 'completed', 0, 0)"),
+        (
+            JobKind::Crawl,
+            "INSERT INTO axon_crawl_jobs (id, url, status, config_json, created_at, updated_at) \
+          VALUES (?, 'https://example.com/', 'completed', '{}', 0, 0)",
+        ),
+        (
+            JobKind::Embed,
+            "INSERT INTO axon_embed_jobs (id, input_text, config_json, status, created_at, updated_at) \
+          VALUES (?, 'some text', '{}', 'completed', 0, 0)",
+        ),
+        (
+            JobKind::Extract,
+            "INSERT INTO axon_extract_jobs (id, urls_json, status, created_at, updated_at) \
+          VALUES (?, '[]', 'completed', 0, 0)",
+        ),
+        (
+            JobKind::Ingest,
+            "INSERT INTO axon_ingest_jobs (id, source_type, target, config_json, status, created_at, updated_at) \
+          VALUES (?, 'github', 'owner/repo', '{}', 'completed', 0, 0)",
+        ),
     ];
     for (_, sql) in inserts {
         sqlx::query(sql)
