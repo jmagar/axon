@@ -346,6 +346,22 @@ fn server_renderer_metadata_helpers_keep_display_cap() {
 }
 
 #[test]
+fn server_sources_renderer_accepts_rest_tuple_rows() {
+    let tuple = json!(["https://example.com/docs", 42]);
+    let bare = json!("https://example.com/bare");
+
+    assert_eq!(
+        render::source_url_from_value(&tuple),
+        Some("https://example.com/docs")
+    );
+    assert_eq!(
+        render::source_url_from_value(&bare),
+        Some("https://example.com/bare")
+    );
+    assert_eq!(render::source_url_from_value(&json!([42])), None);
+}
+
+#[test]
 fn extract_status_json_promotes_completed_result_payload() {
     let result = json!({
         "job": {

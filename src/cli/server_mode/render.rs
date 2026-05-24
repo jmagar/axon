@@ -131,7 +131,7 @@ fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
             .and_then(|value| value.as_array())
             .into_iter()
             .flatten()
-            .filter_map(|value| value.as_str())
+            .filter_map(source_url_from_value)
         {
             println!("  {}", accent(&server_continuation_text(url, 2)));
         }
@@ -151,7 +151,7 @@ fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
         .and_then(|value| value.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|value| value.as_str())
+        .filter_map(source_url_from_value)
     {
         println!("  {}", accent(&server_continuation_text(url, 2)));
     }
@@ -159,6 +159,15 @@ fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dy
         println!("{}", muted(&format!("Count: {count}")));
     }
     Ok(())
+}
+
+pub(super) fn source_url_from_value(value: &serde_json::Value) -> Option<&str> {
+    value.as_str().or_else(|| {
+        value
+            .as_array()
+            .and_then(|row| row.first())
+            .and_then(|url| url.as_str())
+    })
 }
 
 fn render_domains(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
