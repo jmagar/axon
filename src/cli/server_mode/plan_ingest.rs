@@ -45,13 +45,13 @@ pub(super) fn ingest_server_rest_plan(
     Ok(ServerRestPlan {
         method: "POST",
         path: "/v1/ingest".to_string(),
-        body: ingest_source_action_body(source),
+        body: ingest_source_action_body(source)?,
         label: "ingest",
         poll_family: Some(ServerJobFamily::Ingest),
     })
 }
 
-fn ingest_source_action_body(source: IngestSource) -> serde_json::Value {
+fn ingest_source_action_body(source: IngestSource) -> Result<serde_json::Value, ServerPlanError> {
     let req = match source {
         IngestSource::Github {
             repo,
@@ -118,8 +118,9 @@ fn ingest_source_action_body(source: IngestSource) -> serde_json::Value {
             }),
         },
         IngestSource::PreparedSessions { .. } => {
-            return serde_json::json!({ "source_type": "prepared_sessions" });
+            return Ok(serde_json::json!({ "source_type": "prepared_sessions" }));
         }
     };
-    serde_json::to_value(req).unwrap_or(serde_json::Value::Null)
+    serde_json::to_value(req)
+        .map_err(|err| ServerPlanError::new(format!("failed to serialize ingest request: {err}")))
 }

@@ -122,7 +122,12 @@ async fn commit_or_rollback<T>(
 ) -> Result<T, sqlx::Error> {
     match result {
         Ok(value) => {
-            sqlx::query("COMMIT").execute(&mut **conn).await?;
+            if let Err(commit_err) = sqlx::query("COMMIT").execute(&mut **conn).await {
+                if let Err(rollback_err) = sqlx::query("ROLLBACK").execute(&mut **conn).await {
+                    tracing::warn!(error = %rollback_err, "job query transaction rollback failed");
+                }
+                return Err(commit_err);
+            }
             Ok(value)
         }
         Err(err) => {
