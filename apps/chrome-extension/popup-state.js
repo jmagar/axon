@@ -80,8 +80,6 @@ const COMMAND_ALIASES = {
   w: "watch"
 };
 
-init();
-
 async function init() {
   await restoreCommandHistory();
   openSidebarButton?.addEventListener("click", openSidebar);
@@ -404,4 +402,3 @@ function coerceCliValue(value) {
   }
   return value;
 }
-

@@ -1,4 +1,12 @@
 function formatAxonScrape(result, tab, fallbackUrl) {
+  if (Array.isArray(result.results)) {
+    const sections = result.results.map((item, index) => {
+      const url = result.urls?.[index] || item.url || fallbackUrl || tab?.url || "";
+      return formatAxonScrape(item, tab, url);
+    });
+    return sections.join("\n\n---\n\n");
+  }
+
   const markdown = result.markdown || result.payload?.markdown || result.output || "";
   const url = result.url || fallbackUrl || tab?.url || "";
   const words = markdown.trim().split(/\s+/).filter(Boolean).length;
@@ -135,8 +143,8 @@ function formatGenericResult(title, result) {
   if (normalized.includes("domains")) return formatDomains(result);
   if (normalized.includes("stats")) return formatStats(result);
   if (normalized.includes("status")) return formatStatusResult(result);
-  if (normalized.includes("search")) return formatSearchResult(result, "Search");
   if (normalized.includes("research")) return formatResearchResult(result);
+  if (normalized.includes("search")) return formatSearchResult(result, "Search");
   if (normalized.includes("evaluate")) return formatEvaluateResult(result);
   if (normalized.includes("suggest")) return formatSuggestResult(result);
   if (normalized.includes("watch")) return formatWatchResult(result);

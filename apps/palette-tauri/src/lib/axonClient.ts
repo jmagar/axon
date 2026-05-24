@@ -142,14 +142,18 @@ async function getResult<Path extends GetPath>(
   client: Client,
   path: Path,
 ): Promise<PaletteResult> {
-  const { data, error, response } = await (client.GET as AnyGet)(path, {});
-  return {
-    ok: response.ok,
-    status: response.status,
-    path: String(path),
-    method: "GET",
-    payload: data ?? error ?? null,
-  };
+  try {
+    const { data, error, response } = await (client.GET as AnyGet)(path, {});
+    return {
+      ok: response.ok,
+      status: response.status,
+      path: String(path),
+      method: "GET",
+      payload: data ?? error ?? null,
+    };
+  } catch (error) {
+    return failedResult("GET", path, error);
+  }
 }
 
 async function postResult<Path extends PostPath>(
@@ -157,13 +161,29 @@ async function postResult<Path extends PostPath>(
   path: Path,
   body: components["schemas"][keyof components["schemas"]] | Record<string, unknown>,
 ): Promise<PaletteResult> {
-  const { data, error, response } = await (client.POST as AnyPost)(path, { body });
+  try {
+    const { data, error, response } = await (client.POST as AnyPost)(path, { body });
+    return {
+      ok: response.ok,
+      status: response.status,
+      path: String(path),
+      method: "POST",
+      payload: data ?? error ?? null,
+    };
+  } catch (error) {
+    return failedResult("POST", path, error);
+  }
+}
+
+function failedResult(method: PaletteResult["method"], path: GetPath | PostPath, error: unknown): PaletteResult {
   return {
-    ok: response.ok,
-    status: response.status,
+    ok: false,
+    status: 0,
     path: String(path),
-    method: "POST",
-    payload: data ?? error ?? null,
+    method,
+    payload: {
+      error: error instanceof Error ? error.message : String(error),
+    },
   };
 }
 

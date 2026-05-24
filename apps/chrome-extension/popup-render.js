@@ -240,6 +240,8 @@ function extractFirstUrl(text) {
   return String(text || "").match(/https?:\/\/[^\s)]+/i)?.[0] || "";
 }
 
+init();
+
 async function writeClipboard(text) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);

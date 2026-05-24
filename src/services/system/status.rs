@@ -1,6 +1,7 @@
 //! Job-queue status aggregation for the `axon status` command.
 
 use crate::core::config::Config;
+use crate::core::logging::log_warn;
 use crate::jobs::backend::JobKind;
 use crate::services::context::ServiceContext;
 use crate::services::jobs as job_service;
@@ -159,7 +160,9 @@ fn count_or_degraded(
     match result {
         Ok(count) => count,
         Err(error) => {
-            tracing::warn!(kind, error = %error, "status: count_jobs failed, marking status degraded");
+            log_warn(&format!(
+                "status_count_jobs_degraded kind={kind} error={error}"
+            ));
             errors.push(error);
             0
         }

@@ -80,7 +80,7 @@ No bead activity observed. `bd list --all --sort updated --reverse --limit 20 --
 
 | command | result |
 |---|---|
-| `rg -n "ask requires text|ServerPlanError|..." src tests Cargo.toml` | Found relevant ask/server-mode surfaces; one broad search also warned that `crates` did not exist |
+| `rg -n "ask requires text\|ServerPlanError\|..." src tests Cargo.toml` | Found relevant ask/server-mode surfaces; one broad search also warned that `crates` did not exist |
 | `which axon && axon --version` | Confirmed `/home/jmagar/.local/bin/axon`, version `axon 4.4.2` |
 | `AXON_LOG=debug axon ask "...prompts" --json` | Reproduced `Error: ServerPlanError("ask requires text")` |
 | `cargo test ask_server_mode_accepts_positional_text` | Passed |

@@ -49,10 +49,10 @@ export default function App() {
 
   const parsed = useMemo(() => parseCommand(query), [query]);
   const filtered = useMemo(() => {
-    if (parsed.invoked) return ACTIONS;
+    if (parsed.invoked) return [parsed.invoked];
     return ACTIONS.filter((action) => actionMatches(action, parsed.search)).slice(0, 12);
   }, [parsed.invoked, parsed.search]);
-  const active = filtered[Math.min(selected, Math.max(filtered.length - 1, 0))] ?? ACTIONS[0];
+  const active = filtered[Math.min(selected, Math.max(filtered.length - 1, 0))];
 
   useEffect(() => {
     setSelected(0);
@@ -61,7 +61,7 @@ export default function App() {
   const client = useMemo(() => (config ? createAxonClient(config) : null), [config]);
 
   async function submit(action: PaletteAction = active) {
-    if (!client) return;
+    if (!client || !action || run.kind === "running") return;
     const argument = argumentFor(action, parsed);
     const commandLine = `${action.subcommand}${argument ? ` ${argument}` : ""}`;
     setRun({
@@ -92,16 +92,16 @@ export default function App() {
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setSelected((idx) => Math.min(idx + 1, filtered.length - 1));
+      setSelected((idx) => Math.min(idx + 1, Math.max(filtered.length - 1, 0)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setSelected((idx) => Math.max(idx - 1, 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      void submit();
+      if (active) void submit(active);
     } else if (event.key === "Tab") {
       event.preventDefault();
-      setQuery(`${active.subcommand} `);
+      if (active) setQuery(`${active.subcommand} `);
     }
   }
 
@@ -133,11 +133,11 @@ export default function App() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={active.example}
+          placeholder={active?.example ?? "Search commands"}
           className="command-input"
           aria-label="Axon command"
         />
-        <Button size="sm" variant="rose" onClick={() => void submit()} disabled={!client || run.kind === "running"}>
+        <Button size="sm" variant="rose" onClick={() => active && void submit(active)} disabled={!client || !active || run.kind === "running"}>
           {run.kind === "running" ? <Spinner size="sm" tone="rose" /> : <Send size={14} />}
           Send
         </Button>
@@ -157,7 +157,7 @@ export default function App() {
                   className={index === selected ? "action-row action-row-selected" : "action-row"}
                   onClick={() => {
                     setSelected(index);
-                    if (parsed.invoked || acceptsDirectUrl(action)) {
+                    if ((parsed.invoked || acceptsDirectUrl(action)) && run.kind !== "running") {
                       void submit(action);
                     }
                   }}
@@ -221,8 +221,8 @@ function outputTitle(run: RunState): string {
   return run.title;
 }
 
-function outputSubtitle(run: RunState, action: PaletteAction): string {
-  if (run.kind === "idle") return action.description;
+function outputSubtitle(run: RunState, action: PaletteAction | undefined): string {
+  if (run.kind === "idle") return action?.description ?? "No matching action";
   return run.subtitle;
 }
 

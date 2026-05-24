@@ -8,7 +8,12 @@
     "global-shortcut:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "http://**" }, { "url": "https://**" }]
+      "allow": [
+        { "url": "http://127.0.0.1:*" },
+        { "url": "http://localhost:*" },
+        { "url": "http://100.88.16.79:*" },
+        { "url": "https://axon.tootie.tv/*" }
+      ]
     }
   ]
 }

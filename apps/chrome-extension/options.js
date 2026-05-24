@@ -101,12 +101,24 @@ async function requestAuthProbe() {
     body: JSON.stringify({ url: "" })
   });
 
-  if (response.status === 400) {
+  const body = await response.text();
+  if (isExpectedScrapeProbeResponse(response, body)) {
     return;
   }
 
-  const body = await response.text();
   throw new Error(`${response.status} ${response.statusText}${body ? `: ${body}` : ""}`);
+}
+
+function isExpectedScrapeProbeResponse(response, body) {
+  if (response.status !== 400) {
+    return false;
+  }
+  try {
+    const payload = JSON.parse(body);
+    return payload?.kind === "bad_request" && payload?.message === "url or urls is required";
+  } catch {
+    return false;
+  }
 }
 
 function isLoopbackServer(server) {

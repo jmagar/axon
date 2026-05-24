@@ -211,8 +211,9 @@ fn render_status_payload_keeps_normal_rows_with_progress_under_display_cap() {
 
     let rendered = render_status_payload(&payload).expect("payload should render");
 
+    let visible = strip_ansi(&rendered);
     assert!(
-        rendered
+        visible
             .lines()
             .all(|line| line.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT),
         "status output exceeded display cap:\n{rendered}"

@@ -80,7 +80,7 @@ No bead activity observed for this session. `bd list --all --sort updated --reve
 
 | command | result |
 | --- | --- |
-| `ssh steamy-wsl 'curl -fsS --max-time 2 http://127.0.0.1:9222/json/version || true; curl ...:9223...'` | Both Steamy CDP checks failed to connect. |
+| `ssh steamy-wsl 'curl -fsS --max-time 2 http://127.0.0.1:9222/json/version \|\| true; curl ...:9223...'` | Both Steamy CDP checks failed to connect. |
 | `ssh steamy-wsl '/mnt/c/Windows/System32/cmd.exe /c ver'` | Failed with `exec format error`; WSL interop was disabled. |
 | `curl -X POST https://axon.tootie.tv/v1/scrape -H 'Origin: chrome-extension://kllododgecpcdimlgiliginoicbgmeif' ... --data '{}'` | Returned `400 {"kind":"bad_request","message":"url or urls is required"}`, proving auth reached Axon. |
 | `set -a; source ~/.axon/.env; node /tmp/axon-extension-full-smoke.mjs` | Extension settings probe returned `ok`; side panel asked Axon and received a sourced answer. |

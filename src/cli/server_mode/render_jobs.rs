@@ -191,8 +191,8 @@ fn render_generic_list(
     command_name: &str,
 ) -> Result<(), Box<dyn Error>> {
     let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
-    let list = JobListResult::new(jobs, total, 50, 0);
+    let (total, limit, offset) = list_pagination_from_result(result, jobs.len() as i64);
+    let list = JobListResult::new(jobs, total, limit, offset);
     handle_job_list(cfg, &list, command_name)
 }
 
@@ -243,13 +243,13 @@ fn render_crawl_status_view(
 
 fn render_crawl_list_view(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
+    let (total, _, _) = list_pagination_from_result(result, jobs.len() as i64);
     render_crawl_list(cfg, jobs, total)
 }
 
 fn render_embed_list_view(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
+    let (total, _, _) = list_pagination_from_result(result, jobs.len() as i64);
     crate::cli::commands::embed::render_embed_list(cfg, jobs, total)
 }
 
@@ -268,7 +268,7 @@ fn render_ingest_list_view(
     command_name: &str,
 ) -> Result<(), Box<dyn Error>> {
     let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
+    let (total, _, _) = list_pagination_from_result(result, jobs.len() as i64);
     crate::cli::commands::ingest_common::render_ingest_list(cfg, jobs, total, command_name)
 }
 
@@ -342,6 +342,21 @@ fn jobs_from_result(result: &serde_json::Value) -> Result<Vec<ServiceJob>, Box<d
         Some(value) => Ok(serde_json::from_value(value.clone())?),
         None => Ok(Vec::new()),
     }
+}
+
+fn list_pagination_from_result(result: &serde_json::Value, fallback_len: i64) -> (i64, i64, i64) {
+    let total = i64_field(result, "total").unwrap_or(fallback_len);
+    let limit = i64_field(result, "limit").unwrap_or(fallback_len.max(1));
+    let offset = i64_field(result, "offset").unwrap_or(0);
+    (total, limit, offset)
+}
+
+fn i64_field(result: &serde_json::Value, name: &str) -> Option<i64> {
+    result.get(name).and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_u64().and_then(|n| i64::try_from(n).ok()))
+    })
 }
 
 fn crawl_start_result(result: &serde_json::Value) -> Result<CrawlStartResult, Box<dyn Error>> {

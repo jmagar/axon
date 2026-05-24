@@ -69,7 +69,9 @@ function mostRecentWebTab(tabs) {
 }
 
 async function scrapeWithAxon(urls) {
-  return postAxon("/v1/scrape", { urls: Array.isArray(urls) ? urls : [urls] });
+  const targets = Array.isArray(urls) ? urls : [urls];
+  const results = await Promise.all(targets.map((url) => postAxon("/v1/scrape", { url })));
+  return results.length === 1 ? results[0] : { results, urls: targets };
 }
 
 async function startCrawlWithAxon(urls, flags = {}) {
@@ -202,15 +204,27 @@ async function checkApi() {
 }
 
 async function probeAxonAuth() {
-  try {
-    await postAxon("/v1/scrape", { url: "" });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("400") && message.toLowerCase().includes("url or urls is required")) {
-      return;
-    }
-    throw error;
+  const config = await loadConfig();
+  const server = config.axonUrl.trim().replace(/\/+$/, "");
+  const token = config.axonToken.trim();
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
+  if (!token && !isLoopbackServer(server)) {
+    throw new Error("Missing bearer token. Open Settings or run `auth` to check extension config.");
+  }
+
+  const response = await fetch(`${server}/v1/scrape`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ url: "" })
+  });
+  const body = await response.text();
+  if (isExpectedScrapeProbeResponse(response, body)) {
+    return;
+  }
+  throw new Error(`${response.status} ${response.statusText}${body ? `: ${body}` : ""}`);
 }
 
 async function requestAxon(method, path, body) {
@@ -274,6 +288,18 @@ function isLoopbackServer(server) {
   try {
     const hostname = new URL(server).hostname;
     return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function isExpectedScrapeProbeResponse(response, body) {
+  if (response.status !== 400) {
+    return false;
+  }
+  try {
+    const payload = JSON.parse(body);
+    return payload?.kind === "bad_request" && payload?.message === "url or urls is required";
   } catch {
     return false;
   }

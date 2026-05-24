@@ -183,6 +183,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       style,
       children,
       disabled,
+      onClick,
       ...props
     },
     ref
@@ -216,16 +217,23 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         : "cyan"
 
     const isDisabled = disabled || loading
+    const disabledChildProps = asChild && isDisabled
+      ? {
+          "aria-disabled": true,
+          tabIndex: -1,
+        }
+      : {}
 
     return (
       <Comp
         ref={ref}
         aria-busy={loading ? "true" : undefined}
-        disabled={isDisabled}
+        disabled={asChild ? undefined : isDisabled}
         className={cn(
           buttonVariants({ variant, size }),
           config.hoverClass,
           config.activeClass,
+          asChild && isDisabled && "pointer-events-none opacity-45",
           className
         )}
         style={{
@@ -236,6 +244,15 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           ...style,
         }}
         {...props}
+        onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+          if (isDisabled) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+          onClick?.(event)
+        }}
+        {...disabledChildProps}
       >
         {loading ? (
           <Spinner size={spinnerSize} tone={spinnerTone} aria-hidden="true" />

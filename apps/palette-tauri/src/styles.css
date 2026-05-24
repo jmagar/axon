@@ -230,7 +230,8 @@ textarea {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .palette-footer {

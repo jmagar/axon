@@ -4,7 +4,10 @@ export function formatPayload(subcommand: string, payload: unknown): string {
   if (typeof payload === "string") {
     return payload;
   }
-  const value = payload as Record<string, unknown>;
+  if (!isRecord(payload)) {
+    return compact(payload);
+  }
+  const value = payload;
   switch (subcommand) {
     case "ask":
       return stringField(value, "answer") ?? compact(value);
@@ -117,5 +120,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function compact(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, null, 2) ?? String(value);
 }

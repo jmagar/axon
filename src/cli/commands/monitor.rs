@@ -12,6 +12,9 @@ use uuid::Uuid;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct JobMonitorState {
+    #[serde(default)]
+    initialized: bool,
+    #[serde(default)]
     statuses: HashMap<String, String>,
 }
 
@@ -101,6 +104,7 @@ pub fn detect_job_events(
             events.push(event);
         }
     }
+    state.initialized = true;
     events
 }
 
@@ -143,6 +147,8 @@ fn detect_one(
         (Some("running"), "completed") | (Some("pending"), "completed") => "completed",
         (Some("running"), "failed") | (Some("pending"), "failed") => "failed",
         (Some("running"), "canceled") | (Some("pending"), "canceled") => "failed",
+        (None, "completed") if state.initialized => "completed",
+        (None, "failed" | "canceled") if state.initialized => "failed",
         (prev, "running") if prev != Some("running") => "started",
         _ => return None,
     };

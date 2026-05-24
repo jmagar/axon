@@ -256,9 +256,10 @@ fn truncate_status_text(text: &str) -> String {
     if text.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT {
         return text.to_string();
     }
+    let prefix_limit = STATUS_TEXT_DISPLAY_LIMIT.saturating_sub(1);
     format!(
         "{}…",
-        crate::cli::commands::common::truncate_chars(text, STATUS_TEXT_DISPLAY_LIMIT)
+        crate::cli::commands::common::truncate_chars(text, prefix_limit)
     )
 }
 

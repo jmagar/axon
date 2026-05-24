@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "generate:api": "openapi-typescript ${AXON_OPENAPI_URL:-https://axon.tootie.tv/api-docs/openapi.json} -o src/lib/axon-api.d.ts",
+    "generate:api": "node scripts/generate-api.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "vite:build": "vite build"

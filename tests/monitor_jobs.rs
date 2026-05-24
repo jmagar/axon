@@ -86,3 +86,32 @@ fn detects_started_completed_and_failed_job_events() {
     assert_eq!(state.status_of("embed", completed_embed), Some("completed"));
     assert_eq!(state.status_of("ingest", failed_ingest), Some("failed"));
 }
+
+#[test]
+fn emits_terminal_event_for_new_job_after_baseline_even_when_running_was_missed() {
+    let completed_crawl = Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap();
+    let mut state = JobMonitorState::default();
+
+    let baseline = detect_job_events(&mut state, &[], &[], &[]);
+    assert!(baseline.is_empty());
+
+    let events = detect_job_events(
+        &mut state,
+        &[(
+            "crawl",
+            job(
+                completed_crawl,
+                "completed",
+                "https://example.com",
+                json!({"pages_crawled": 1, "embed_job_id": null}),
+            ),
+        )],
+        &[],
+        &[],
+    );
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event, "completed");
+    assert_eq!(events[0].kind, "crawl");
+    assert_eq!(events[0].docs, Some(1));
+}

@@ -206,7 +206,7 @@ export function actionInvokedBy(action: PaletteAction, token: string): boolean {
 }
 
 export function acceptsDirectUrl(action: PaletteAction): boolean {
-  return ["scrape", "crawl", "map", "summarize", "retrieve", "embed", "extract"].includes(
+  return ["scrape", "crawl", "map", "summarize", "retrieve", "embed", "extract", "ingest"].includes(
     action.subcommand,
   );
 }

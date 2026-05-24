@@ -204,7 +204,7 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
         onKeyDown?.(e)
         if (interactive && onClick && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault()
-          onClick(e as unknown as React.MouseEvent<HTMLSpanElement>)
+          e.currentTarget.click()
         }
       },
       [interactive, onClick, onKeyDown]

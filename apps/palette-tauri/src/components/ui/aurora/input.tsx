@@ -32,8 +32,7 @@ export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   size?: InputSize
   /**
    * When true and the input has a value, shows a clear (×) button as the end adornment.
-   * The clear button calls `onClear` if provided, otherwise fires `onChange` with an
-   * empty synthetic-like event.
+   * The clear button calls `onClear` if provided, otherwise clears the rendered input.
    */
   clearable?: boolean
   /** Callback fired when the clear button is clicked. Escape hatch for controlled inputs. */
@@ -107,6 +106,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     },
     ref
   ) => {
+    const inputRef = React.useRef<HTMLInputElement>(null)
+    React.useImperativeHandle(ref, () => inputRef.current as HTMLInputElement)
+
     // Resolve effective state — explicit `state` wins over `error` shorthand
     const effectiveState: InputState | undefined = stateProp ?? (error ? "error" : undefined)
     const tokens = effectiveState ? STATE_TOKENS[effectiveState] : null
@@ -128,7 +130,6 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <button
         type="button"
         aria-label="Clear"
-        tabIndex={-1}
         className={cn(
           "pointer-events-auto",
           "flex h-4 w-4 items-center justify-center rounded-full",
@@ -146,19 +147,14 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           if (onClear) {
             onClear()
           } else if (onChange) {
-            // Fire a synthetic onChange with empty value
+            const input = inputRef.current
+            if (!input) return
             const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
               window.HTMLInputElement.prototype,
               "value"
             )?.set
-            const fakeInput = document.createElement("input")
-            nativeInputValueSetter?.call(fakeInput, "")
-            const syntheticEvent = new Event("input", { bubbles: true })
-            Object.defineProperty(syntheticEvent, "target", {
-              writable: false,
-              value: fakeInput,
-            })
-            onChange(syntheticEvent as unknown as React.ChangeEvent<HTMLInputElement>)
+            nativeInputValueSetter?.call(input, "")
+            input.dispatchEvent(new Event("input", { bubbles: true }))
           }
           // Always update internal state for uncontrolled
           if (!isControlled) {
@@ -203,7 +199,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
 
         <input
-          ref={ref}
+          ref={inputRef}
           type={type}
           value={value}
           defaultValue={defaultValue}
