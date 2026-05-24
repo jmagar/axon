@@ -111,7 +111,17 @@ impl fmt::Display for CommandKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    ValueEnum,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum RenderMode {
     Http,
@@ -130,7 +140,17 @@ impl fmt::Display for RenderMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    ValueEnum,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    utoipa::ToSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum ScrapeFormat {
     Markdown,

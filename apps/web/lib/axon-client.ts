@@ -43,14 +43,16 @@ export type PaginationParams = {
 
 export type QueryRequest = {
   query: string;
+  collection?: string;
   limit?: number;
   offset?: number;
 };
 
 export type RetrieveRequest = {
   url: string;
+  collection?: string;
   max_points?: number;
-  offset?: number;
+  cursor?: string;
   token_budget?: number;
 };
 
@@ -79,15 +81,24 @@ export type AskRequest = {
 
 export type EvaluateRequest = {
   question: string;
+  collection?: string;
 };
 
 export type SuggestRequest = {
   focus?: string;
+  collection?: string;
 };
 
 export type ScrapeRequest = {
   url?: string;
   urls?: string[];
+  render_mode?: 'http' | 'chrome' | 'auto-switch';
+  format?: 'markdown' | 'html' | 'rawHtml' | 'json' | 'llm';
+  embed?: boolean;
+  collection?: string;
+  root_selector?: string;
+  exclude_selector?: string;
+  headers?: string[];
 };
 
 export type MapRequest = {
@@ -99,14 +110,14 @@ export type MapRequest = {
 export type SearchRequest = {
   query: string;
   limit?: number;
-  include_raw?: boolean;
+  offset?: number;
   time_range?: string;
 };
 
 export type ResearchRequest = {
   query: string;
   limit?: number;
-  include_raw?: boolean;
+  offset?: number;
   time_range?: string;
 };
 
@@ -114,23 +125,39 @@ export type CrawlStartRequest = {
   urls: string[];
   max_pages?: number;
   max_depth?: number;
-  render_mode?: string;
+  render_mode?: 'http' | 'chrome' | 'auto-switch';
   include_subdomains?: boolean;
   respect_robots?: boolean;
+  discover_sitemaps?: boolean;
+  max_sitemaps?: number;
+  sitemap_since_days?: number;
   delay_ms?: number;
+  collection?: string;
+  headers?: string[];
 };
 
 export type EmbedStartRequest = {
   input: string;
+  source_type?: string;
+  collection?: string;
 };
 
 export type ExtractStartRequest = {
   urls: string[];
   prompt?: string;
-  schema?: JsonObject;
+  mode?: 'auto' | 'deterministic' | 'llm' | 'both';
+  max_pages?: number;
+  render_mode?: 'http' | 'chrome' | 'auto-switch';
+  embed?: boolean;
+  collection?: string;
+  headers?: string[];
 };
 
-export type IngestStartRequest = JsonObject;
+export type IngestStartRequest = {
+  source_type: 'github' | 'gitlab' | 'gitea' | 'git' | 'reddit' | 'youtube' | 'sessions';
+  target?: string;
+  include_source?: boolean;
+};
 
 export type AcceptedJob = {
   job_id: string;

@@ -97,3 +97,42 @@ async fn embed_start_with_context_enqueues_without_blocking_when_wait_false()
     assert_eq!(runtime.payloads.lock().expect("lock").len(), 1);
     Ok(())
 }
+
+#[test]
+#[cfg(unix)]
+fn validate_server_embed_input_rejects_nested_directory_symlink() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let root = temp.path().join("allowed");
+    let input = root.join("docs");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&input).expect("input dir");
+    std::fs::create_dir_all(&outside).expect("outside dir");
+    std::fs::write(outside.join("secret.md"), "secret").expect("outside file");
+    std::os::unix::fs::symlink(outside.join("secret.md"), input.join("linked.md"))
+        .expect("symlink");
+
+    let err = validate_server_embed_input_with_roots(&input.to_string_lossy(), &[root], 1024)
+        .expect_err("nested symlink should be rejected");
+
+    assert!(err.contains("must not contain symlinks"), "{err}");
+}
+
+#[test]
+fn validate_server_embed_input_canonicalizes_allowed_local_file() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let root = temp.path().join("allowed");
+    let file = root.join("docs").join("page.md");
+    std::fs::create_dir_all(file.parent().expect("parent")).expect("dir");
+    std::fs::write(&file, "content").expect("file");
+
+    let validated = validate_server_embed_input_with_roots(&file.to_string_lossy(), &[root], 1024)
+        .expect("allowed local file");
+
+    assert_eq!(
+        validated,
+        std::fs::canonicalize(file)
+            .expect("canonical")
+            .to_string_lossy()
+            .to_string()
+    );
+}

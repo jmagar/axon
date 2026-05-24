@@ -76,7 +76,17 @@ fn scrape_server_mode_uses_rest_contract_body() {
     assert_eq!(plan.path, "/v1/scrape");
     assert_eq!(
         plan.body,
-        json!({ "url": "https://example.com", "embed": true })
+        json!({
+            "url": "https://example.com",
+            "urls": null,
+            "render_mode": "chrome",
+            "format": "markdown",
+            "embed": true,
+            "collection": "axon",
+            "root_selector": null,
+            "exclude_selector": null,
+            "headers": [],
+        })
     );
 }
 
@@ -89,7 +99,17 @@ fn scrape_server_mode_forwards_skip_embed() {
 
     assert_eq!(
         plan.body,
-        json!({ "url": "https://example.com", "embed": false })
+        json!({
+            "url": "https://example.com",
+            "urls": null,
+            "render_mode": "auto-switch",
+            "format": "markdown",
+            "embed": false,
+            "collection": "axon",
+            "root_selector": null,
+            "exclude_selector": null,
+            "headers": [],
+        })
     );
 }
 
