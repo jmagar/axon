@@ -38,7 +38,7 @@ pub(crate) async fn run_server_mode_command(cfg: &Config) -> Result<(), Box<dyn 
         .server_url
         .clone()
         .ok_or("server mode requires AXON_SERVER_URL")?;
-    if matches!(cfg.command, CommandKind::Sessions) {
+    if matches!(cfg.command, CommandKind::Sessions) && !has_async_job_lifecycle_subcommand(cfg) {
         return run_server_mode_sessions(cfg, server_url).await;
     }
     let plan = plan::server_rest_plan(cfg)?;
@@ -52,6 +52,13 @@ pub(crate) async fn run_server_mode_command(cfg: &Config) -> Result<(), Box<dyn 
         render::render_server_result(cfg, plan.label, &result)?;
     }
     Ok(())
+}
+
+fn has_async_job_lifecycle_subcommand(cfg: &Config) -> bool {
+    matches!(
+        cfg.positional.first().map(String::as_str),
+        Some("status" | "errors" | "list" | "cleanup" | "recover" | "clear" | "cancel" | "worker")
+    )
 }
 
 async fn run_server_mode_sessions(

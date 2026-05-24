@@ -11,8 +11,7 @@ pub(super) fn ingest_server_rest_plan(
     cfg: &Config,
     sessions: bool,
 ) -> Result<ServerRestPlan, ServerPlanError> {
-    if !sessions
-        && let Some(subaction) = cfg.positional.first().map(String::as_str)
+    if let Some(subaction) = cfg.positional.first().map(String::as_str)
         && let Some(plan) =
             async_job_lifecycle_plan("ingest", ServerJobFamily::Ingest, subaction, cfg)?
     {
