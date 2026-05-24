@@ -8,9 +8,21 @@
 // the embed empty (which is what `static_assets.rs` already handles) without
 // requiring every entry point (CI, lefthook, dev shell) to do it manually.
 fn main() {
+    // Emitting any `cargo:rerun-if-changed` directive switches Cargo
+    // from "watch all package files" to "watch ONLY listed paths" for
+    // this build script. Re-list build.rs explicitly so edits to this
+    // file still trigger a rebuild.
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=apps/web/out");
+
     let path = std::path::Path::new("apps/web/out");
     if !path.exists() {
-        let _ = std::fs::create_dir_all(path);
+        if let Err(e) = std::fs::create_dir_all(path) {
+            // Print to stderr so the failure shows up in the build log
+            // with a clear pointer at the real cause instead of the
+            // downstream `#[derive(RustEmbed)]` opaque error.
+            eprintln!("build.rs: failed to create {}: {e}", path.display());
+            std::process::exit(1);
+        }
     }
-    println!("cargo:rerun-if-changed=apps/web/out");
 }

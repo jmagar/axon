@@ -129,9 +129,14 @@ def parse_pre_commit_runs(yaml_text: str) -> list[tuple[str, str]]:
 def find_violations(commands: list[tuple[str, str]]) -> list[tuple[str, str, str]]:
     violations: list[tuple[str, str, str]] = []
     for name, run in commands:
-        lowered = run.lower()
+        # YAML folded scalars (`run: >`) collapse newlines to spaces at
+        # runtime, but our parser stores continuation lines joined with
+        # `\n`. Normalize whitespace BEFORE the substring check so a
+        # multi-line `cargo test\n--workspace` doesn't sneak past a
+        # `"cargo test --workspace"` needle.
+        normalized = re.sub(r"\s+", " ", run.lower()).strip()
         for needle in FORBIDDEN_SUBSTRINGS:
-            if needle in lowered:
+            if needle in normalized:
                 violations.append((name, needle, run))
                 break
     return violations

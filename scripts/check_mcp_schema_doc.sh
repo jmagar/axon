@@ -6,9 +6,15 @@
 # convenient but commonly causes "wait why is that file in my commit"
 # surprises and hides drift from review.
 #
-# Now: regenerate into a temp file, diff against the committed version,
+# Now: regenerate into a temp area, diff against the committed version,
 # fail with a clear instruction if they differ. Developers run the
 # generator themselves and stage the result.
+#
+# The generator (scripts/generate_mcp_schema_doc.py) has no `--check`
+# mode and writes to DOC_PATH unconditionally, so this script backs up
+# DOC_PATH first and restores it on EVERY exit (success, error, signal)
+# via a trap. That keeps the developer's working tree pristine no
+# matter how the generator behaves.
 
 set -euo pipefail
 
@@ -24,31 +30,43 @@ if [ ! -f "${DOC_PATH}" ]; then
     exit 1
 fi
 
-tmp_file="$(mktemp -t mcp-schema-doc.XXXXXX.md)"
-trap 'rm -f "${tmp_file}"' EXIT
+tmp_dir="$(mktemp -d)"
+backup="${tmp_dir}/original.md"
+regen="${tmp_dir}/regenerated.md"
 
-# The generator writes to ${DOC_PATH} directly; we shuffle it through
-# the temp file so the committed doc is unchanged.
-cp "${DOC_PATH}" "${tmp_file}.original"
+cp "${DOC_PATH}" "${backup}"
+
+# Always restore the working tree on exit. The generator writes to
+# DOC_PATH in place, so anything that interrupts us between the
+# generator call and a successful restore would otherwise leak a
+# regenerated file the developer didn't author. The trap covers
+# every exit path including SIGINT/SIGTERM and `set -e` aborts.
+restore() {
+    local rc=$?
+    cp "${backup}" "${DOC_PATH}" 2>/dev/null || true
+    rm -rf "${tmp_dir}"
+    exit "${rc}"
+}
+trap restore EXIT INT TERM
+
 python3 "${GEN_SCRIPT}" >/dev/null
-cp "${DOC_PATH}" "${tmp_file}.regenerated"
-cp "${tmp_file}.original" "${DOC_PATH}"
+cp "${DOC_PATH}" "${regen}"
+# DOC_PATH will be restored from ${backup} by the trap.
 
 # The generator stamps today's date into a `Last Modified:` line; that
-# line bumps on every regeneration and is not real drift. Strip it out
-# of both sides before comparing.
+# line bumps on every regeneration and is not real drift. Strip it
+# from both sides before comparing.
 strip_volatile() {
     grep -v '^Last Modified:' "$1"
 }
 
-if ! diff -q <(strip_volatile "${tmp_file}.regenerated") <(strip_volatile "${DOC_PATH}") >/dev/null 2>&1; then
-    echo "ERROR ${DOC_PATH} is out of sync with src/mcp/schema.rs" >&2
-    echo "       Run: python3 ${GEN_SCRIPT} && git add ${DOC_PATH}" >&2
-    echo "" >&2
-    echo "       Diff (committed vs regenerated, ignoring Last Modified line):" >&2
-    diff -u <(strip_volatile "${DOC_PATH}") <(strip_volatile "${tmp_file}.regenerated") | head -40 >&2 || true
-    rm -f "${tmp_file}.original" "${tmp_file}.regenerated"
-    exit 1
+if diff -q <(strip_volatile "${regen}") <(strip_volatile "${backup}") >/dev/null 2>&1; then
+    exit 0
 fi
 
-rm -f "${tmp_file}.original" "${tmp_file}.regenerated"
+echo "ERROR ${DOC_PATH} is out of sync with src/mcp/schema.rs" >&2
+echo "       Run: python3 ${GEN_SCRIPT} && git add ${DOC_PATH}" >&2
+echo "" >&2
+echo "       Diff (committed vs regenerated, ignoring Last Modified line):" >&2
+diff -u <(strip_volatile "${backup}") <(strip_volatile "${regen}") | head -40 >&2 || true
+exit 1
