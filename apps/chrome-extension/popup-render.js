@@ -1,3 +1,4 @@
+function humanizeKey(key) {
   return String(key).replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase());
 }
 

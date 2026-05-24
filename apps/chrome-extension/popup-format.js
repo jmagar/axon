@@ -1,3 +1,37 @@
+function formatAxonScrape(result, tab, fallbackUrl) {
+  const markdown = result.markdown || result.payload?.markdown || result.output || "";
+  const url = result.url || fallbackUrl || tab?.url || "";
+  const words = markdown.trim().split(/\s+/).filter(Boolean).length;
+
+  return [
+    `# Scrape`,
+    "",
+    `${badge("success", "ready")} ${words.toLocaleString()} words`,
+    `Page: ${tab?.title || result.payload?.title || "Untitled page"}`,
+    `URL: ${url}`,
+    "",
+    markdown || "(Axon returned no markdown.)"
+  ].join("\n");
+}
+
+function formatSummary(result, tab, fallbackUrl) {
+  const summary = result.summary || result.payload?.summary || "";
+  const urls = result.urls || result.payload?.urls || [fallbackUrl || tab?.url || ""];
+  const contextChars = result.context_chars || result.payload?.context_chars;
+
+  return [
+    `# Summary`,
+    "",
+    `${badge(summary ? "success" : "warn", summary ? "ready" : "empty")}`,
+    `Page: ${tab?.title || "Untitled page"}`,
+    `URL: ${urls[0] || fallbackUrl || tab?.url || ""}`,
+    contextChars ? `Context: ${contextChars.toLocaleString()} chars` : "",
+    "",
+    summary || "(Axon returned no summary.)"
+  ].filter(Boolean).join("\n");
+}
+
+function formatMap(result, tab, fallbackUrl) {
   const urls = result.urls || [];
   const total = result.total ?? urls.length;
   const source = result.map_source || "unknown";
@@ -406,5 +440,3 @@ function formatPrimitive(value) {
   if (typeof value === "object") return truncate(formatJson(value), 180);
   return String(value);
 }
-
-function humanizeKey(key) {

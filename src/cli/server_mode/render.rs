@@ -1,19 +1,15 @@
-use crate::cli::commands::common::{
-    handle_job_cancel, handle_job_cleanup, handle_job_clear, handle_job_errors, handle_job_list,
-    handle_job_recover, handle_job_status,
-};
-use crate::cli::commands::crawl::subcommands::{
-    render_list_subcommand as render_crawl_list, render_status_subcommand as render_crawl_status,
-};
+#[path = "render_jobs.rs"]
+mod jobs;
+
+pub(super) use jobs::extract_status_json_result;
+
 use crate::core::config::{CommandKind, Config};
-use crate::core::ui::{accent, muted, primary};
+use crate::core::ui::{accent, muted, primary, status_text};
 use crate::services::types::{
-    AskResult, CrawlStartJob, CrawlStartResult, EmbedStartResult, ExtractStartResult,
-    ExtractSyncResult, IngestStartResult, JobListResult, ScrapeResult, ScreenshotResult,
-    ServiceJob, StartDisposition, SummarizeResult,
+    AskResult, DocumentBackend, MapResult, QueryHit, ResearchPayload, RetrieveResult, ScrapeResult,
+    ScreenshotResult, SuggestResult, SummarizeResult,
 };
 use std::error::Error;
-use uuid::Uuid;
 
 pub(super) fn render_server_result(
     cfg: &Config,
@@ -36,20 +32,55 @@ pub(super) fn render_server_result(
             Ok(())
         }
         CommandKind::Stats => render_stats(result),
+        CommandKind::Doctor => render_doctor(result),
+        CommandKind::Sources => render_sources(cfg, result),
+        CommandKind::Domains => render_domains(cfg, result),
+        CommandKind::Map => render_map(cfg, result),
+        CommandKind::Query => render_query(cfg, result),
+        CommandKind::Retrieve => render_retrieve(cfg, result),
         CommandKind::Ask => render_ask(cfg, result),
+        CommandKind::Evaluate => render_evaluate(cfg, result),
+        CommandKind::Suggest => render_suggest(result),
+        CommandKind::Search => render_search(cfg, result),
+        CommandKind::Research => render_research(result),
         CommandKind::Scrape => render_scrape(cfg, result),
         CommandKind::Summarize => render_summarize(cfg, result),
         CommandKind::Screenshot => render_screenshot(cfg, result),
-        CommandKind::Crawl => render_crawl(cfg, label, result),
-        CommandKind::Extract => render_extract(cfg, label, result),
-        CommandKind::Embed => render_embed(cfg, label, result),
-        CommandKind::Ingest => render_ingest(cfg, label, result, false),
-        CommandKind::Sessions => render_ingest(cfg, label, result, true),
-        _ => {
-            println!("{}", serde_json::to_string_pretty(result)?);
-            Ok(())
-        }
+        CommandKind::Crawl => jobs::render_crawl(cfg, label, result),
+        CommandKind::Extract => jobs::render_extract(cfg, label, result),
+        CommandKind::Embed => jobs::render_embed(cfg, label, result),
+        CommandKind::Ingest => jobs::render_ingest(cfg, label, result, false),
+        CommandKind::Sessions => jobs::render_ingest(cfg, label, result, true),
+        _ => Err(format!("{} has no server-mode human renderer", cfg.command).into()),
     }
+}
+
+#[cfg(test)]
+pub(super) fn server_human_renderer_available(command: CommandKind) -> bool {
+    matches!(
+        command,
+        CommandKind::Status
+            | CommandKind::Stats
+            | CommandKind::Doctor
+            | CommandKind::Sources
+            | CommandKind::Domains
+            | CommandKind::Map
+            | CommandKind::Query
+            | CommandKind::Retrieve
+            | CommandKind::Ask
+            | CommandKind::Evaluate
+            | CommandKind::Suggest
+            | CommandKind::Search
+            | CommandKind::Research
+            | CommandKind::Scrape
+            | CommandKind::Summarize
+            | CommandKind::Screenshot
+            | CommandKind::Crawl
+            | CommandKind::Extract
+            | CommandKind::Embed
+            | CommandKind::Ingest
+            | CommandKind::Sessions
+    )
 }
 
 pub(super) fn server_status_text(result: &serde_json::Value) -> Result<String, Box<dyn Error>> {
@@ -73,6 +104,199 @@ fn render_stats(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn render_doctor(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    crate::cli::commands::doctor::render::render_doctor_report_human(result);
+    Ok(())
+}
+
+fn render_sources(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    if let Some(domain) = cfg.sources_domain.as_deref() {
+        println!("{}", primary(&format!("Sources for {domain}")));
+        for url in result
+            .get("urls")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|value| value.as_str())
+        {
+            println!("  {}", accent(url));
+        }
+        if result
+            .get("truncated")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        {
+            println!("{}", muted("Output truncated. Use --all to fetch more."));
+        }
+        return Ok(());
+    }
+
+    println!("{}", primary("Sources"));
+    for url in result
+        .get("urls")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str())
+    {
+        println!("  {}", accent(url));
+    }
+    if let Some(count) = result.get("count").and_then(|value| value.as_u64()) {
+        println!("{}", muted(&format!("Count: {count}")));
+    }
+    Ok(())
+}
+
+fn render_domains(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    if cfg.domains_domain.is_some() {
+        println!("{}", primary("Domain"));
+        let domain = result
+            .get("domain")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let indexed = result
+            .get("indexed")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        println!(
+            "  {} {}",
+            accent(domain),
+            muted(if indexed {
+                "indexed=true"
+            } else {
+                "indexed=false"
+            })
+        );
+        return Ok(());
+    }
+
+    println!("{}", primary("Domains"));
+    for row in result
+        .get("domains")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let domain = row
+            .get("domain")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let vectors = row
+            .get("vectors")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        println!(
+            "  {} {}",
+            accent(domain),
+            muted(&format!("vectors={vectors}"))
+        );
+    }
+    Ok(())
+}
+
+fn render_map(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let mapped: MapResult = serde_json::from_value(result.clone())?;
+    let start_url = cfg
+        .positional
+        .first()
+        .map(String::as_str)
+        .unwrap_or(mapped.url.as_str());
+    println!("{}", primary(&format!("Map Results for {start_url}")));
+    println!(
+        "{} {} (source: {})",
+        muted("Showing"),
+        mapped.returned_url_count,
+        mapped.map_source
+    );
+    if let Some(warning) = mapped.warning.as_deref() {
+        println!("{} {}", muted("Warning:"), warning);
+    }
+    println!();
+    for url in &mapped.urls {
+        println!("  • {url}");
+    }
+    Ok(())
+}
+
+fn render_query(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let query = crate::cli::commands::resolve_input_text(cfg).ok_or("query requires text")?;
+    let results: Vec<QueryHit> = serde_json::from_value(
+        result
+            .get("results")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
+    )?;
+    println!("{}", primary(&format!("Query Results for \"{query}\"")));
+    if results.is_empty() {
+        println!("  {}", muted("No results found. Try:"));
+        println!("    {}", muted("axon sources       # list indexed URLs"));
+        println!(
+            "    {}",
+            muted("axon stats         # check collection size")
+        );
+        println!("    {}", muted("axon embed <url>   # add content first"));
+        return Ok(());
+    }
+    println!("{} {}\n", muted("Showing"), results.len());
+    for result in &results {
+        println!(
+            "  • {}. {} rerank={:.3} {}",
+            result.rank,
+            status_text("completed"),
+            result.rerank_score,
+            accent(&result.source)
+        );
+        println!("    {}", result.snippet);
+        if cfg.ask_diagnostics {
+            println!("    {} vector_score={:.3}", muted("diag"), result.score);
+            println!("    {} {}", muted("url"), result.url);
+        }
+    }
+    Ok(())
+}
+
+fn render_retrieve(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let target = cfg.positional.first().ok_or("retrieve requires URL")?;
+    let result: RetrieveResult = serde_json::from_value(result.clone())?;
+    if result.chunk_count == 0 {
+        return Err(format!(
+            "no content found for URL: {target} — run 'axon sources' to list indexed URLs"
+        )
+        .into());
+    }
+    println!("{}", primary(&format!("Retrieve Result for {target}")));
+    println!("{} {}\n", muted("Chunks:"), result.chunk_count);
+    if let Some(backend) = result.backend {
+        println!("{} {}", muted("Backend:"), backend_text(backend));
+    }
+    if let Some(refresh_status) = result.refresh_status.as_deref() {
+        println!("{} {}", muted("Refresh:"), refresh_status);
+    }
+    if let Some(next_cursor) = result.next_cursor.as_deref() {
+        println!("{} {}", muted("Next cursor:"), next_cursor);
+    }
+    if !result.warnings.is_empty() {
+        println!("{} {}", muted("Warnings:"), result.warnings.join(" | "));
+    }
+    if result.backend.is_some()
+        || result.refresh_status.is_some()
+        || result.next_cursor.is_some()
+        || !result.warnings.is_empty()
+    {
+        println!();
+    }
+    println!("{}", result.content.trim());
+    Ok(())
+}
+
+fn backend_text(backend: DocumentBackend) -> &'static str {
+    match backend {
+        DocumentBackend::Qdrant => "qdrant",
+        DocumentBackend::StoredSource => "stored_source",
+        DocumentBackend::LiveScrape => "live_scrape",
+    }
+}
+
 fn render_ask(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let mut ask: AskResult = serde_json::from_value(result.clone())?;
     let query = crate::cli::commands::resolve_input_text(cfg)
@@ -84,8 +308,40 @@ fn render_ask(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Er
         .as_deref()
         .or(ask.session.as_deref())
         .unwrap_or("default");
-    crate::cli::commands::ask::print_ask_human(cfg, &query, active_session, &ask);
+    let mut render_cfg = cfg.clone();
+    render_cfg.ask_stream = false;
+    crate::cli::commands::ask::print_ask_human(&render_cfg, &query, active_session, &ask);
     Ok(())
+}
+
+fn render_evaluate(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let question =
+        crate::cli::commands::resolve_input_text(cfg).ok_or("evaluate requires a question")?;
+    crate::cli::commands::evaluate::print_evaluate_output(cfg, result, &question)
+}
+
+fn render_suggest(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let result: SuggestResult = serde_json::from_value(result.clone())?;
+    for suggestion in &result.suggestions {
+        println!("{}\t{}", suggestion.url, suggestion.reason);
+    }
+    Ok(())
+}
+
+fn render_search(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let query = crate::cli::commands::resolve_input_text(cfg).ok_or("search requires a query")?;
+    let results = result
+        .get("results")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    crate::cli::commands::search::print_search_results(&query, &results);
+    Ok(())
+}
+
+fn render_research(result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let payload: ResearchPayload = serde_json::from_value(result.clone())?;
+    crate::cli::commands::research::print_human_research_output(&payload, payload.timing_ms.total)
 }
 
 fn render_screenshot(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
@@ -96,400 +352,4 @@ fn render_screenshot(cfg: &Config, result: &serde_json::Value) -> Result<(), Box
     let shot: ScreenshotResult = serde_json::from_value(payload)?;
     crate::cli::commands::screenshot::print_screenshot_preamble(cfg, &shot.url);
     crate::cli::commands::screenshot::emit_screenshot_result(cfg, &shot.url, &shot)
-}
-
-fn render_crawl(
-    cfg: &Config,
-    label: &'static str,
-    result: &serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
-    if label != "job status" {
-        match cfg.positional.first().map(String::as_str) {
-            Some("status") => return render_crawl_status_view(cfg, result),
-            Some("errors") => return render_generic_errors(cfg, result, "crawl"),
-            Some("cancel") => return render_generic_cancel(cfg, result, "crawl"),
-            Some("list") => return render_crawl_list_view(cfg, result),
-            Some("cleanup") => return render_generic_cleanup(cfg, result, "crawl"),
-            Some("clear") => return render_generic_clear(cfg, result, "crawl"),
-            Some("recover") => return render_generic_recover(cfg, result, "crawl"),
-            _ if cfg.wait => return Ok(()),
-            _ => {}
-        }
-        let start = crawl_start_result(result)?;
-        let display = match start.jobs.as_slice() {
-            [single] => single.url.clone(),
-            [first, rest @ ..] => format!("{} (+{} more)", first.url, rest.len()),
-            [] => "crawl".to_string(),
-        };
-        crate::cli::commands::crawl::print_async_crawl_result(
-            cfg,
-            &display,
-            &start.jobs,
-            StartDisposition::Enqueued,
-            true,
-        );
-        return Ok(());
-    }
-    render_crawl_status_view(cfg, result)
-}
-
-fn render_extract(
-    cfg: &Config,
-    label: &'static str,
-    result: &serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
-    if label != "job status" {
-        match cfg.positional.first().map(String::as_str) {
-            Some("status") => return render_generic_status(cfg, result, "Extract"),
-            Some("errors") => return render_generic_errors(cfg, result, "extract"),
-            Some("cancel") => return render_generic_cancel(cfg, result, "extract"),
-            Some("list") => return render_generic_list(cfg, result, "Extract"),
-            Some("cleanup") => return render_generic_cleanup(cfg, result, "extract"),
-            Some("clear") => return render_generic_clear(cfg, result, "extract"),
-            Some("recover") => return render_generic_recover(cfg, result, "extract"),
-            _ if cfg.wait => return Ok(()),
-            _ => {}
-        }
-        let start: ExtractStartResult = serde_json::from_value(result.clone())?;
-        crate::cli::commands::extract::render_extract_enqueue_result(
-            cfg,
-            &start.job_id,
-            StartDisposition::Enqueued,
-            true,
-        );
-        return Ok(());
-    }
-    if let Some(extract_result) = completed_extract_sync_result(result)? {
-        return crate::cli::commands::extract::emit_extract_output(cfg, &extract_result);
-    }
-    render_generic_status(cfg, result, "Extract")
-}
-
-fn render_embed(
-    cfg: &Config,
-    label: &'static str,
-    result: &serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
-    if label != "job status" {
-        match cfg.positional.first().map(String::as_str) {
-            Some("status") => return render_generic_status(cfg, result, "Embed"),
-            Some("errors") => return render_generic_errors(cfg, result, "embed"),
-            Some("cancel") => return render_generic_cancel(cfg, result, "embed"),
-            Some("list") => return render_embed_list_view(cfg, result),
-            Some("cleanup") => return render_generic_cleanup(cfg, result, "embed"),
-            Some("clear") => return render_generic_clear(cfg, result, "embed"),
-            Some("recover") => return render_generic_recover(cfg, result, "embed"),
-            _ if cfg.wait => return Ok(()),
-            _ => {}
-        }
-        let start: EmbedStartResult = serde_json::from_value(result.clone())?;
-        let input = cfg.positional.first().cloned().unwrap_or_else(|| {
-            cfg.output_dir
-                .join("markdown")
-                .to_string_lossy()
-                .to_string()
-        });
-        crate::cli::commands::embed::render_embed_enqueue_result(
-            cfg,
-            &input,
-            &start.job_id,
-            StartDisposition::Enqueued,
-            true,
-        );
-        return Ok(());
-    }
-    render_generic_status(cfg, result, "Embed")
-}
-
-fn render_ingest(
-    cfg: &Config,
-    label: &'static str,
-    result: &serde_json::Value,
-    sessions: bool,
-) -> Result<(), Box<dyn Error>> {
-    let command_name = if sessions { "sessions" } else { "ingest" };
-    if label != "job status" {
-        match cfg.positional.first().map(String::as_str) {
-            Some("status") => return render_ingest_status_view(cfg, result),
-            Some("errors") => return render_generic_errors(cfg, result, "ingest"),
-            Some("cancel") => return render_generic_cancel(cfg, result, "ingest"),
-            Some("list") => return render_ingest_list_view(cfg, result, command_name),
-            Some("cleanup") => return render_generic_cleanup(cfg, result, "ingest"),
-            Some("clear") => return render_generic_clear(cfg, result, "ingest"),
-            Some("recover") => return render_generic_recover(cfg, result, "ingest"),
-            _ if cfg.wait => return Ok(()),
-            _ => {}
-        }
-        let start: IngestStartResult = serde_json::from_value(result.clone())?;
-        if sessions {
-            println!("  {} {}", primary("Ingest Job"), accent(&start.job_id));
-            println!("  {}", muted("Status: pending"));
-            println!("  {} {}", muted("Collection:"), accent(&cfg.collection));
-            println!("Job ID: {}", start.job_id);
-        } else {
-            crate::cli::commands::ingest::render_ingest_enqueue_result(
-                cfg,
-                &start.job_id,
-                StartDisposition::Enqueued,
-                true,
-            )?;
-        }
-        return Ok(());
-    }
-    render_ingest_status_view(cfg, result)
-}
-
-fn render_generic_status(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    let job = maybe_job(result)?;
-    let id = job_id_from_result_or_cfg(result, cfg)?;
-    handle_job_status(cfg, job, id, command_name)
-}
-
-fn render_generic_errors(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    let job = maybe_job(result)?;
-    let id = job_id_from_result_or_cfg(result, cfg)?;
-    handle_job_errors(cfg, job, id, command_name)
-}
-
-fn render_generic_cancel(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    let id = job_id_from_result_or_cfg(result, cfg)?;
-    let canceled = bool_field(result, "canceled")?;
-    handle_job_cancel(cfg, id, canceled, command_name)
-}
-
-fn render_generic_list(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
-    let list = JobListResult::new(jobs, total, 50, 0);
-    handle_job_list(cfg, &list, command_name)
-}
-
-fn render_generic_cleanup(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    handle_job_cleanup(
-        cfg,
-        numeric_field(result, &["deleted", "removed"])?,
-        command_name,
-    )
-}
-
-fn render_generic_clear(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    handle_job_clear(
-        cfg,
-        numeric_field(result, &["deleted", "removed"])?,
-        command_name,
-    )
-}
-
-fn render_generic_recover(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    handle_job_recover(
-        cfg,
-        numeric_field(result, &["recovered", "reclaimed"])?,
-        command_name,
-    )
-}
-
-fn render_crawl_status_view(
-    cfg: &Config,
-    result: &serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
-    let job = maybe_job(result)?;
-    let id = job_id_from_result_or_cfg(result, cfg)?;
-    render_crawl_status(cfg, job, id)
-}
-
-fn render_crawl_list_view(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
-    let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
-    render_crawl_list(cfg, jobs, total)
-}
-
-fn render_embed_list_view(cfg: &Config, result: &serde_json::Value) -> Result<(), Box<dyn Error>> {
-    let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
-    crate::cli::commands::embed::render_embed_list(cfg, jobs, total)
-}
-
-fn render_ingest_status_view(
-    cfg: &Config,
-    result: &serde_json::Value,
-) -> Result<(), Box<dyn Error>> {
-    let job = maybe_job(result)?;
-    let id = job_id_from_result_or_cfg(result, cfg)?;
-    crate::cli::commands::ingest_common::render_ingest_status(cfg, job, id)
-}
-
-fn render_ingest_list_view(
-    cfg: &Config,
-    result: &serde_json::Value,
-    command_name: &str,
-) -> Result<(), Box<dyn Error>> {
-    let jobs = jobs_from_result(result)?;
-    let total = jobs.len() as i64;
-    crate::cli::commands::ingest_common::render_ingest_list(cfg, jobs, total, command_name)
-}
-
-fn maybe_job(result: &serde_json::Value) -> Result<Option<ServiceJob>, Box<dyn Error>> {
-    match result.get("job") {
-        Some(value) if value.is_null() => Ok(None),
-        Some(value) => Ok(Some(serde_json::from_value(value.clone())?)),
-        None if looks_like_service_job(result) => Ok(Some(serde_json::from_value(result.clone())?)),
-        None => Ok(None),
-    }
-}
-
-fn looks_like_service_job(result: &serde_json::Value) -> bool {
-    result.get("id").is_some() && result.get("status").is_some()
-}
-
-pub(super) fn extract_status_json_result(result: &serde_json::Value) -> serde_json::Value {
-    let mut output = result.clone();
-    if let Some(extract_result) = result
-        .get("job")
-        .and_then(|job| job.get("result_json"))
-        .filter(|value| !value.is_null())
-        && let Some(object) = output.as_object_mut()
-    {
-        object.insert("extract_result".to_string(), extract_result.clone());
-    }
-    output
-}
-
-fn completed_extract_sync_result(
-    result: &serde_json::Value,
-) -> Result<Option<ExtractSyncResult>, Box<dyn Error>> {
-    let Some(job) = maybe_job(result)? else {
-        return Ok(None);
-    };
-    if job.status != "completed" {
-        return Ok(None);
-    }
-    let Some(summary) = job.result_json else {
-        return Ok(None);
-    };
-    let summary_path = summary
-        .get("summary_path")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .to_string();
-    let items_path = summary
-        .get("items_path")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .to_string();
-    let total_items = summary
-        .get("total_items")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(0) as usize;
-    let duration_ms = summary
-        .get("duration_ms")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(0) as u128;
-    Ok(Some(ExtractSyncResult {
-        summary,
-        summary_path,
-        items_path,
-        total_items,
-        duration_ms,
-    }))
-}
-
-fn jobs_from_result(result: &serde_json::Value) -> Result<Vec<ServiceJob>, Box<dyn Error>> {
-    match result.get("jobs") {
-        Some(value) => Ok(serde_json::from_value(value.clone())?),
-        None => Ok(Vec::new()),
-    }
-}
-
-fn crawl_start_result(result: &serde_json::Value) -> Result<CrawlStartResult, Box<dyn Error>> {
-    let jobs = result
-        .get("jobs")
-        .cloned()
-        .unwrap_or_else(|| serde_json::Value::Array(vec![]));
-    let jobs: Vec<CrawlStartJob> = serde_json::from_value(jobs)?;
-    let job_ids = result
-        .get("job_ids")
-        .cloned()
-        .unwrap_or_else(|| serde_json::Value::Array(vec![]));
-    let job_ids: Vec<String> = serde_json::from_value(job_ids)?;
-    Ok(CrawlStartResult {
-        job_ids,
-        output_dir: result
-            .get("output_dir")
-            .and_then(|value| value.as_str().map(ToString::to_string)),
-        predicted_paths: result
-            .get("predicted_paths")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()?
-            .unwrap_or_default(),
-        predicted_artifact_handles: Vec::new(),
-        jobs,
-    })
-}
-
-fn job_id_from_result_or_cfg(
-    result: &serde_json::Value,
-    cfg: &Config,
-) -> Result<Uuid, Box<dyn Error>> {
-    if let Some(id) = result
-        .get("job_id")
-        .and_then(|value| value.as_str())
-        .or_else(|| {
-            result
-                .get("job")
-                .and_then(|job| job.get("id"))
-                .and_then(|value| value.as_str())
-        })
-    {
-        return Ok(Uuid::parse_str(id)?);
-    }
-    let id = cfg
-        .positional
-        .get(1)
-        .ok_or("missing <job-id> in CLI arguments")?;
-    Ok(Uuid::parse_str(id)?)
-}
-
-fn numeric_field(result: &serde_json::Value, names: &[&str]) -> Result<u64, Box<dyn Error>> {
-    for name in names {
-        if let Some(value) = result.get(*name).and_then(|value| value.as_u64()) {
-            return Ok(value);
-        }
-    }
-    Err(format!("missing numeric field: {}", names.join(" or ")).into())
-}
-
-fn bool_field(result: &serde_json::Value, name: &str) -> Result<bool, Box<dyn Error>> {
-    result
-        .get(name)
-        .and_then(|value| value.as_bool())
-        .ok_or_else(|| format!("missing boolean field: {name}").into())
 }

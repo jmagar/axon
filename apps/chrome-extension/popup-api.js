@@ -1,10 +1,3 @@
-  const stored = await chrome.storage.local.get(["autoScrapeEnabled"]);
-  const enabled = stored.autoScrapeEnabled !== true;
-  await chrome.storage.local.set({ autoScrapeEnabled: enabled });
-  await refreshAutomationStatus();
-  setStatus(enabled ? "Auto-scrape enabled." : "Auto-scrape paused.");
-}
-
 async function setWatchFromCommand(arg) {
   const args = splitArgs(arg || "");
   const value = (args[0] || "").toLowerCase();
@@ -356,38 +349,3 @@ async function answerWithAxon(question, tab) {
   setChatStatus("Axon", "success");
   return answer;
 }
-
-function formatAxonScrape(result, tab, fallbackUrl) {
-  const markdown = result.markdown || result.payload?.markdown || result.output || "";
-  const url = result.url || fallbackUrl || tab?.url || "";
-  const words = markdown.trim().split(/\s+/).filter(Boolean).length;
-
-  return [
-    `# Scrape`,
-    "",
-    `${badge("success", "ready")} ${words.toLocaleString()} words`,
-    `Page: ${tab?.title || result.payload?.title || "Untitled page"}`,
-    `URL: ${url}`,
-    "",
-    markdown || "(Axon returned no markdown.)"
-  ].join("\n");
-}
-
-function formatSummary(result, tab, fallbackUrl) {
-  const summary = result.summary || result.payload?.summary || "";
-  const urls = result.urls || result.payload?.urls || [fallbackUrl || tab?.url || ""];
-  const contextChars = result.context_chars || result.payload?.context_chars;
-
-  return [
-    `# Summary`,
-    "",
-    `${badge(summary ? "success" : "warn", summary ? "ready" : "empty")}`,
-    `Page: ${tab?.title || "Untitled page"}`,
-    `URL: ${urls[0] || fallbackUrl || tab?.url || ""}`,
-    contextChars ? `Context: ${contextChars.toLocaleString()} chars` : "",
-    "",
-    summary || "(Axon returned no summary.)"
-  ].filter(Boolean).join("\n");
-}
-
-function formatMap(result, tab, fallbackUrl) {

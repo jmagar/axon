@@ -43,6 +43,10 @@ fn client_server_dispatch_routes_stateful_commands_to_server_client() {
             ClientServerDispatch::Server,
             "{command:?} should use ServerClient"
         );
+        assert!(
+            render::server_human_renderer_available(command),
+            "{command:?} server route needs an explicit human renderer"
+        );
     }
 }
 

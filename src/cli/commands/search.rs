@@ -101,7 +101,7 @@ fn log_crawl_summary(cfg: &Config, jobs: &[SearchCrawlJob], rejected: &[SearchCr
     }
 }
 
-fn print_search_results(query: &str, results: &[Value]) {
+pub(crate) fn print_search_results(query: &str, results: &[Value]) {
     println!("{}", primary(&format!("Search Results for \"{query}\"")));
     println!("{} {}\n", muted("Found"), results.len());
 

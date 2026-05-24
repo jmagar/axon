@@ -1,5 +1,5 @@
 use super::*;
-use crate::services::system::StatusJobs;
+use crate::services::system::{StatusJobs, build_status_payload};
 use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
@@ -171,5 +171,45 @@ fn render_status_payload_truncates_long_labels_and_errors() {
     assert!(
         rendered.contains('…'),
         "expected truncation marker:\n{rendered}"
+    );
+    assert!(
+        rendered
+            .lines()
+            .all(|line| line.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT),
+        "status output exceeded display cap:\n{rendered}"
+    );
+}
+
+#[test]
+fn render_status_payload_keeps_normal_rows_with_progress_under_display_cap() {
+    let mut crawl = job("completed");
+    crawl.url = Some(format!("https://example.com/{}", "long-path/".repeat(30)));
+    crawl.result_json = Some(json!({
+        "md_created": 222347,
+        "elapsed_ms": 375100,
+        "embed_job_id": "11111111-1111-1111-1111-111111111111"
+    }));
+    let mut embed = job("completed");
+    embed.result_json = Some(json!({
+        "docs_embedded": 222347,
+        "docs_total": 222347,
+        "chunks_embedded": 631679
+    }));
+
+    let payload = build_status_payload(
+        &[crawl],
+        &[],
+        &[embed],
+        &[],
+        &crate::services::types::StatusTotals::default(),
+    );
+
+    let rendered = render_status_payload(&payload).expect("payload should render");
+
+    assert!(
+        rendered
+            .lines()
+            .all(|line| line.chars().count() <= STATUS_TEXT_DISPLAY_LIMIT),
+        "status output exceeded display cap:\n{rendered}"
     );
 }

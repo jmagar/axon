@@ -414,3 +414,9 @@ async function refreshTargetScrapeState(url) {
 }
 
 async function toggleWatch() {
+  const stored = await chrome.storage.local.get(["autoScrapeEnabled"]);
+  const enabled = stored.autoScrapeEnabled !== true;
+  await chrome.storage.local.set({ autoScrapeEnabled: enabled });
+  await refreshAutomationStatus();
+  setStatus(enabled ? "Auto-scrape enabled." : "Auto-scrape paused.");
+}
