@@ -112,6 +112,30 @@ fn rest_route_contracts_match_openapi_request_schemas() {
             contract.path,
             contract.method
         );
+        let operation = path_item
+            .get(contract.method.to_ascii_lowercase())
+            .and_then(serde_json::Value::as_object)
+            .unwrap_or_else(|| panic!("OpenAPI operation {} {}", contract.method, contract.path));
+        let request_ref = operation
+            .get("requestBody")
+            .and_then(|value| value.get("content"))
+            .and_then(|value| value.get("application/json"))
+            .and_then(|value| value.get("schema"))
+            .and_then(|value| value.get("$ref"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| {
+                panic!(
+                    "OpenAPI operation {} {} does not reference a JSON request schema",
+                    contract.method, contract.path
+                )
+            });
+        assert_eq!(
+            request_ref,
+            format!("#/components/schemas/{}", contract.schema_name),
+            "OpenAPI operation {} {} is wired to the wrong request schema",
+            contract.method,
+            contract.path
+        );
         let schema = schemas
             .get(contract.schema_name)
             .unwrap_or_else(|| panic!("OpenAPI is missing schema `{}`", contract.schema_name));

@@ -43,7 +43,7 @@ export type PaginationParams = {
 
 export type QueryRequest = Schemas['RestQueryRequest'];
 export type RetrieveRequest = Schemas['RestRetrieveRequest'];
-export type AskRequest = Schemas['AskRequestBody'];
+export type AskRequest = Schemas['RestAskRequest'];
 export type EvaluateRequest = Schemas['RestEvaluateRequest'];
 export type SuggestRequest = Schemas['RestSuggestRequest'];
 export type ScrapeRequest = Schemas['RestScrapeRequest'];

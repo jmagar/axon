@@ -23,7 +23,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AskRequestBody"
+                "$ref": "#/components/schemas/RestAskRequest"
               }
             }
           },
@@ -1869,141 +1869,6 @@
           }
         }
       },
-      "AskRequestBody": {
-        "type": "object",
-        "description": "Per-invocation `Config` overrides accepted by `/v1/ask`.",
-        "required": [
-          "query"
-        ],
-        "properties": {
-          "ask_authoritative_boost": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "ask_authoritative_domains": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "ask_backfill_chunks": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_candidate_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_chunk_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_doc_chunk_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_doc_fetch_concurrency": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_full_docs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_hybrid_candidates": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_max_context_chars": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_min_citations_nontrivial": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "ask_min_relevance_score": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "before": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "collection": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "diagnostics": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "explain": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "hybrid_search": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "query": {
-            "type": "string"
-          },
-          "since": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "additionalProperties": false
-      },
       "DedupeRequest": {
         "type": "object",
         "properties": {
@@ -2266,6 +2131,140 @@
           "chrome",
           "auto-switch"
         ]
+      },
+      "RestAskRequest": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "ask_authoritative_boost": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ask_authoritative_domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "ask_backfill_chunks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_candidate_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_chunk_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_doc_chunk_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_doc_fetch_concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_full_docs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_hybrid_candidates": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_max_context_chars": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_min_citations_nontrivial": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "ask_min_relevance_score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diagnostics": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "explain": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hybrid_search": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "RestCrawlRequest": {
         "type": "object",

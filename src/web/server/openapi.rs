@@ -62,7 +62,7 @@ use super::{handlers, openapi_jobs};
         handlers::admin::run_watch
     ),
     components(schemas(
-        super::types::AskRequestBody,
+        crate::services::client_contract::RestAskRequest,
         super::error::ErrorBody,
         crate::services::client_contract::RestQueryRequest,
         crate::services::client_contract::RestRetrieveRequest,

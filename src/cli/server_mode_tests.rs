@@ -148,6 +148,7 @@ fn server_mode_body_fields(contract: &RestRouteContract) -> BTreeSet<String> {
             ),
             plan_for(CommandKind::Sessions, &[]),
         ],
+        "/v1/ask" => vec![plan_with_query(CommandKind::Ask, "what is parity?")],
         "/v1/query" => vec![plan_with_query(CommandKind::Query, "parity query")],
         "/v1/retrieve" => vec![plan_for(CommandKind::Retrieve, &["https://example.com"])],
         "/v1/evaluate" => vec![plan_with_query(CommandKind::Evaluate, "is parity intact?")],

@@ -10,27 +10,6 @@ export type components = {
             "status": string;
             "status_url": string;
         };
-        "AskRequestBody": {
-            "ask_authoritative_boost"?: number | null;
-            "ask_authoritative_domains"?: string[] | null;
-            "ask_backfill_chunks"?: number | null;
-            "ask_candidate_limit"?: number | null;
-            "ask_chunk_limit"?: number | null;
-            "ask_doc_chunk_limit"?: number | null;
-            "ask_doc_fetch_concurrency"?: number | null;
-            "ask_full_docs"?: number | null;
-            "ask_hybrid_candidates"?: number | null;
-            "ask_max_context_chars"?: number | null;
-            "ask_min_citations_nontrivial"?: number | null;
-            "ask_min_relevance_score"?: number | null;
-            "before"?: string | null;
-            "collection"?: string | null;
-            "diagnostics"?: boolean | null;
-            "explain"?: boolean | null;
-            "hybrid_search"?: boolean | null;
-            "query": string;
-            "since"?: string | null;
-        };
         "DedupeRequest": {
             "collection"?: string | null;
         };
@@ -82,6 +61,27 @@ export type components = {
             "message": string;
         };
         "RenderMode": "http" | "chrome" | "auto-switch";
+        "RestAskRequest": {
+            "ask_authoritative_boost"?: number | null;
+            "ask_authoritative_domains"?: string[] | null;
+            "ask_backfill_chunks"?: number | null;
+            "ask_candidate_limit"?: number | null;
+            "ask_chunk_limit"?: number | null;
+            "ask_doc_chunk_limit"?: number | null;
+            "ask_doc_fetch_concurrency"?: number | null;
+            "ask_full_docs"?: number | null;
+            "ask_hybrid_candidates"?: number | null;
+            "ask_max_context_chars"?: number | null;
+            "ask_min_citations_nontrivial"?: number | null;
+            "ask_min_relevance_score"?: number | null;
+            "before"?: string | null;
+            "collection"?: string | null;
+            "diagnostics"?: boolean | null;
+            "explain"?: boolean | null;
+            "hybrid_search"?: boolean | null;
+            "query": string;
+            "since"?: string | null;
+        };
         "RestCrawlRequest": {
             "collection"?: string | null;
             "delay_ms"?: number | null;

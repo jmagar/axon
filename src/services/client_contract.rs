@@ -164,6 +164,48 @@ pub struct RestResearchRequest {
     pub time_range: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RestAskRequest {
+    pub query: String,
+    #[serde(default)]
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub since: Option<String>,
+    #[serde(default)]
+    pub before: Option<String>,
+    #[serde(default)]
+    pub diagnostics: Option<bool>,
+    #[serde(default)]
+    pub explain: Option<bool>,
+    #[serde(default)]
+    pub hybrid_search: Option<bool>,
+    #[serde(default)]
+    pub ask_chunk_limit: Option<usize>,
+    #[serde(default)]
+    pub ask_full_docs: Option<usize>,
+    #[serde(default)]
+    pub ask_max_context_chars: Option<usize>,
+    #[serde(default)]
+    pub ask_hybrid_candidates: Option<usize>,
+    #[serde(default)]
+    pub ask_min_relevance_score: Option<f64>,
+    #[serde(default)]
+    pub ask_doc_chunk_limit: Option<usize>,
+    #[serde(default)]
+    pub ask_doc_fetch_concurrency: Option<usize>,
+    #[serde(default)]
+    pub ask_backfill_chunks: Option<usize>,
+    #[serde(default)]
+    pub ask_candidate_limit: Option<usize>,
+    #[serde(default)]
+    pub ask_min_citations_nontrivial: Option<usize>,
+    #[serde(default)]
+    pub ask_authoritative_domains: Option<Vec<String>>,
+    #[serde(default)]
+    pub ask_authoritative_boost: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RestSummarizeRequest {
