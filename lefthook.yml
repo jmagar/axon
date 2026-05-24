@@ -54,6 +54,9 @@ pre-commit:
     rustfmt:
       glob: "**/*.rs"
       run: cargo fmt -- --check
+    lefthook-speed:
+      glob: "lefthook.yml"
+      run: python3 scripts/check_lefthook_pre_commit_speed.py
 
 pre-push:
   parallel: true
