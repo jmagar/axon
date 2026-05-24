@@ -16,13 +16,13 @@ fn main() {
     println!("cargo:rerun-if-changed=apps/web/out");
 
     let path = std::path::Path::new("apps/web/out");
-    if !path.exists() {
-        if let Err(e) = std::fs::create_dir_all(path) {
-            // Print to stderr so the failure shows up in the build log
-            // with a clear pointer at the real cause instead of the
-            // downstream `#[derive(RustEmbed)]` opaque error.
-            eprintln!("build.rs: failed to create {}: {e}", path.display());
-            std::process::exit(1);
-        }
+    if !path.exists()
+        && let Err(e) = std::fs::create_dir_all(path)
+    {
+        // Print to stderr so the failure shows up in the build log
+        // with a clear pointer at the real cause instead of the
+        // downstream `#[derive(RustEmbed)]` opaque error.
+        eprintln!("build.rs: failed to create {}: {e}", path.display());
+        std::process::exit(1);
     }
 }
