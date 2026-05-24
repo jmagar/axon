@@ -133,7 +133,7 @@ async fn validate_embed_path(input: &str) -> Result<String, HttpError> {
     tokio::task::spawn_blocking(move || services::embed::validate_server_embed_input(&input))
         .await
         .map_err(|e| HttpError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))?
-        .map_err(HttpError::bad_request)
+        .map_err(|err| HttpError::bad_request(err.to_string()))
 }
 
 #[utoipa::path(

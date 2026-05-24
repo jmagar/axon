@@ -111,10 +111,21 @@ fn validate_server_embed_input_rejects_nested_directory_symlink() {
     std::os::unix::fs::symlink(outside.join("secret.md"), input.join("linked.md"))
         .expect("symlink");
 
-    let err = validate_server_embed_input_with_roots(&input.to_string_lossy(), &[root], 1024)
-        .expect_err("nested symlink should be rejected");
+    let err = validate_server_embed_input_with_roots(
+        &input.to_string_lossy(),
+        &[root],
+        EmbedValidationLimits {
+            max_file_bytes: 1024,
+            max_depth: 16,
+            max_entries: 10_000,
+        },
+    )
+    .expect_err("nested symlink should be rejected");
 
-    assert!(err.contains("must not contain symlinks"), "{err}");
+    assert!(
+        err.to_string().contains("must not contain symlinks"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -125,8 +136,16 @@ fn validate_server_embed_input_canonicalizes_allowed_local_file() {
     std::fs::create_dir_all(file.parent().expect("parent")).expect("dir");
     std::fs::write(&file, "content").expect("file");
 
-    let validated = validate_server_embed_input_with_roots(&file.to_string_lossy(), &[root], 1024)
-        .expect("allowed local file");
+    let validated = validate_server_embed_input_with_roots(
+        &file.to_string_lossy(),
+        &[root],
+        EmbedValidationLimits {
+            max_file_bytes: 1024,
+            max_depth: 16,
+            max_entries: 10_000,
+        },
+    )
+    .expect("allowed local file");
 
     assert_eq!(
         validated,
@@ -135,4 +154,48 @@ fn validate_server_embed_input_canonicalizes_allowed_local_file() {
             .to_string_lossy()
             .to_string()
     );
+}
+
+#[test]
+fn validate_server_embed_input_bounds_directory_depth() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let root = temp.path().join("allowed");
+    let nested = root.join("a").join("b");
+    std::fs::create_dir_all(&nested).expect("nested dir");
+    std::fs::write(nested.join("page.md"), "content").expect("file");
+
+    let err = validate_server_embed_input_with_roots(
+        &root.to_string_lossy(),
+        std::slice::from_ref(&root),
+        EmbedValidationLimits {
+            max_file_bytes: 1024,
+            max_depth: 1,
+            max_entries: 10_000,
+        },
+    )
+    .expect_err("depth should be bounded");
+
+    assert!(err.to_string().contains("exceeded max depth"), "{err}");
+}
+
+#[test]
+fn validate_server_embed_input_bounds_directory_entries() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let root = temp.path().join("allowed");
+    std::fs::create_dir_all(&root).expect("root dir");
+    std::fs::write(root.join("a.md"), "a").expect("file a");
+    std::fs::write(root.join("b.md"), "b").expect("file b");
+
+    let err = validate_server_embed_input_with_roots(
+        &root.to_string_lossy(),
+        std::slice::from_ref(&root),
+        EmbedValidationLimits {
+            max_file_bytes: 1024,
+            max_depth: 16,
+            max_entries: 1,
+        },
+    )
+    .expect_err("entry count should be bounded");
+
+    assert!(err.to_string().contains("exceeded max entries"), "{err}");
 }

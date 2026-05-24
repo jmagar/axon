@@ -19,8 +19,24 @@ export type AxonClientOptions = {
 };
 
 type Schemas = components['schemas'];
+type ErrorBodySchema = Schemas['ErrorBody'];
+type RestQueryRequestSchema = Schemas['RestQueryRequest'];
+type RestRetrieveRequestSchema = Schemas['RestRetrieveRequest'];
+type RestAskRequestSchema = Schemas['RestAskRequest'];
+type RestEvaluateRequestSchema = Schemas['RestEvaluateRequest'];
+type RestSuggestRequestSchema = Schemas['RestSuggestRequest'];
+type RestScrapeRequestSchema = Schemas['RestScrapeRequest'];
+type RestMapRequestSchema = Schemas['RestMapRequest'];
+type RestSearchRequestSchema = Schemas['RestSearchRequest'];
+type RestResearchRequestSchema = Schemas['RestResearchRequest'];
+type RestCrawlRequestSchema = Schemas['RestCrawlRequest'];
+type RestEmbedRequestSchema = Schemas['RestEmbedRequest'];
+type RestExtractRequestSchema = Schemas['RestExtractRequest'];
+type RestIngestRequestSchema = Schemas['RestIngestRequest'];
+type AcceptedJobSchema = Schemas['AcceptedJob'];
+type WatchCreateRequestSchema = Schemas['WatchCreateRequest'];
 
-export type ErrorBody = Schemas['ErrorBody'];
+export interface ErrorBody extends ErrorBodySchema {}
 
 export class AxonApiError extends Error {
   readonly status: number;
@@ -41,21 +57,21 @@ export type PaginationParams = {
   offset?: number;
 };
 
-export type QueryRequest = Schemas['RestQueryRequest'];
-export type RetrieveRequest = Schemas['RestRetrieveRequest'];
-export type AskRequest = Schemas['RestAskRequest'];
-export type EvaluateRequest = Schemas['RestEvaluateRequest'];
-export type SuggestRequest = Schemas['RestSuggestRequest'];
-export type ScrapeRequest = Schemas['RestScrapeRequest'];
-export type MapRequest = Schemas['RestMapRequest'];
-export type SearchRequest = Schemas['RestSearchRequest'];
-export type ResearchRequest = Schemas['RestResearchRequest'];
-export type CrawlStartRequest = Schemas['RestCrawlRequest'];
-export type EmbedStartRequest = Schemas['RestEmbedRequest'];
-export type ExtractStartRequest = Schemas['RestExtractRequest'];
-export type IngestStartRequest = Schemas['RestIngestRequest'];
-export type AcceptedJob = Schemas['AcceptedJob'];
-export type WatchCreateRequest = Schemas['WatchCreateRequest'];
+export interface QueryRequest extends RestQueryRequestSchema {}
+export interface RetrieveRequest extends RestRetrieveRequestSchema {}
+export interface AskRequest extends RestAskRequestSchema {}
+export interface EvaluateRequest extends RestEvaluateRequestSchema {}
+export interface SuggestRequest extends RestSuggestRequestSchema {}
+export interface ScrapeRequest extends RestScrapeRequestSchema {}
+export interface MapRequest extends RestMapRequestSchema {}
+export interface SearchRequest extends RestSearchRequestSchema {}
+export interface ResearchRequest extends RestResearchRequestSchema {}
+export interface CrawlStartRequest extends RestCrawlRequestSchema {}
+export interface EmbedStartRequest extends RestEmbedRequestSchema {}
+export interface ExtractStartRequest extends RestExtractRequestSchema {}
+export interface IngestStartRequest extends RestIngestRequestSchema {}
+export interface AcceptedJob extends AcceptedJobSchema {}
+export interface WatchCreateRequest extends WatchCreateRequestSchema {}
 
 export type JobKind = 'crawl' | 'embed' | 'extract' | 'ingest';
 

@@ -19,7 +19,25 @@ use uuid::Uuid;
 
 const EMBED_ALLOWED_ROOTS_ENV: &str = "AXON_MCP_EMBED_ALLOWED_ROOTS";
 const EMBED_MAX_LOCAL_BYTES_ENV: &str = "AXON_MCP_EMBED_MAX_LOCAL_BYTES";
+const EMBED_MAX_LOCAL_DEPTH_ENV: &str = "AXON_MCP_EMBED_MAX_LOCAL_DEPTH";
+const EMBED_MAX_LOCAL_ENTRIES_ENV: &str = "AXON_MCP_EMBED_MAX_LOCAL_ENTRIES";
 const DEFAULT_EMBED_MAX_LOCAL_BYTES: u64 = 10 * 1024 * 1024;
+const DEFAULT_EMBED_MAX_LOCAL_DEPTH: usize = 16;
+const DEFAULT_EMBED_MAX_LOCAL_ENTRIES: usize = 10_000;
+
+type EmbedValidationError = Box<dyn Error + Send + Sync>;
+
+#[derive(Debug, Clone, Copy)]
+struct EmbedValidationLimits {
+    max_file_bytes: u64,
+    max_depth: usize,
+    max_entries: usize,
+}
+
+#[derive(Debug, Default)]
+struct EmbedDirectoryScan {
+    entries_seen: usize,
+}
 
 // --- Pure mapping helpers (no I/O, testable without live services) ---
 
@@ -159,22 +177,22 @@ pub async fn embed_now_with_source(
 /// live under `AXON_MCP_EMBED_ALLOWED_ROOTS`; paths with dotfiles, secret-like
 /// names, oversized files, or symlinks anywhere below a submitted directory are
 /// rejected before an embed job can enqueue.
-pub fn validate_server_embed_input(input: &str) -> Result<String, String> {
+pub fn validate_server_embed_input(input: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     validate_server_embed_input_with_roots(
         input,
         &embed_allowed_roots_from_env(),
-        embed_max_local_bytes_from_env(),
+        embed_validation_limits_from_env(),
     )
 }
 
 fn validate_server_embed_input_with_roots(
     input: &str,
     allowed_roots: &[PathBuf],
-    max_file_bytes: u64,
-) -> Result<String, String> {
+    limits: EmbedValidationLimits,
+) -> Result<String, EmbedValidationError> {
     let input = input.trim();
     if input.is_empty() {
-        return Err("input is required for embed".to_string());
+        return Err(embed_validation_error("input is required for embed"));
     }
     if input.starts_with("http://") || input.starts_with("https://") {
         crate::core::http::validate_url(input).map_err(|err| err.to_string())?;
@@ -185,9 +203,9 @@ fn validate_server_embed_input_with_roots(
         return Ok(input.to_string());
     }
     if allowed_roots.is_empty() {
-        return Err(format!(
+        return Err(embed_validation_error(format!(
             "local file embedding is disabled; set {EMBED_ALLOWED_ROOTS_ENV} to allow specific roots"
-        ));
+        )));
     }
     let canonical =
         std::fs::canonicalize(path).map_err(|err| format!("invalid embed path: {err}"))?;
@@ -198,7 +216,7 @@ fn validate_server_embed_input_with_roots(
         .ok_or_else(|| {
             format!("local embed path must be under one of {EMBED_ALLOWED_ROOTS_ENV}")
         })?;
-    validate_local_embed_entry(path, &canonical, &root, max_file_bytes)?;
+    validate_local_embed_entry(path, &canonical, &root, limits)?;
     Ok(canonical.to_string_lossy().to_string())
 }
 
@@ -216,69 +234,115 @@ fn embed_allowed_roots_from_env() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-fn embed_max_local_bytes_from_env() -> u64 {
-    std::env::var(EMBED_MAX_LOCAL_BYTES_ENV)
+fn embed_validation_limits_from_env() -> EmbedValidationLimits {
+    EmbedValidationLimits {
+        max_file_bytes: positive_env_u64(EMBED_MAX_LOCAL_BYTES_ENV, DEFAULT_EMBED_MAX_LOCAL_BYTES),
+        max_depth: positive_env_usize(EMBED_MAX_LOCAL_DEPTH_ENV, DEFAULT_EMBED_MAX_LOCAL_DEPTH),
+        max_entries: positive_env_usize(
+            EMBED_MAX_LOCAL_ENTRIES_ENV,
+            DEFAULT_EMBED_MAX_LOCAL_ENTRIES,
+        ),
+    }
+}
+
+fn positive_env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_EMBED_MAX_LOCAL_BYTES)
+        .unwrap_or(default)
+}
+
+fn positive_env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn embed_validation_error(message: impl Into<String>) -> EmbedValidationError {
+    Box::<dyn Error + Send + Sync>::from(message.into())
 }
 
 fn validate_local_embed_entry(
     original: &Path,
     canonical: &Path,
     allowed_root: &Path,
-    max_file_bytes: u64,
-) -> Result<(), String> {
+    limits: EmbedValidationLimits,
+) -> Result<(), EmbedValidationError> {
     let link_meta = std::fs::symlink_metadata(original)
         .map_err(|err| format!("invalid embed path metadata: {err}"))?;
     if link_meta.file_type().is_symlink() {
-        return Err("local embed path must not be a symlink".to_string());
+        return Err(embed_validation_error(
+            "local embed path must not be a symlink",
+        ));
     }
     validate_local_embed_relative_path(canonical, allowed_root)?;
     let meta = std::fs::metadata(canonical)
         .map_err(|err| format!("invalid embed path metadata: {err}"))?;
     if meta.is_file() {
-        return validate_local_embed_file(canonical, allowed_root, meta.len(), max_file_bytes);
+        return validate_local_embed_file(canonical, allowed_root, meta.len(), limits);
     }
     if meta.is_dir() {
-        validate_local_embed_directory(canonical, allowed_root, max_file_bytes)?;
+        let mut scan = EmbedDirectoryScan::default();
+        validate_local_embed_directory(canonical, allowed_root, limits, &mut scan, 0)?;
         return Ok(());
     }
-    Err("local embed path must be a regular file or directory".to_string())
+    Err(embed_validation_error(
+        "local embed path must be a regular file or directory",
+    ))
 }
 
 fn validate_local_embed_directory(
     directory: &Path,
     allowed_root: &Path,
-    max_file_bytes: u64,
-) -> Result<(), String> {
+    limits: EmbedValidationLimits,
+    scan: &mut EmbedDirectoryScan,
+    depth: usize,
+) -> Result<(), EmbedValidationError> {
+    if depth > limits.max_depth {
+        return Err(embed_validation_error(format!(
+            "local embed directory validation exceeded max depth {}",
+            limits.max_depth
+        )));
+    }
     for entry in
         std::fs::read_dir(directory).map_err(|err| format!("invalid embed directory: {err}"))?
     {
+        scan.entries_seen += 1;
+        if scan.entries_seen > limits.max_entries {
+            return Err(embed_validation_error(format!(
+                "local embed directory validation exceeded max entries {}",
+                limits.max_entries
+            )));
+        }
         let entry = entry.map_err(|err| format!("invalid embed entry: {err}"))?;
         let child = entry.path();
         let child_meta = std::fs::symlink_metadata(&child)
             .map_err(|err| format!("invalid embed entry metadata: {err}"))?;
         if child_meta.file_type().is_symlink() {
-            return Err("local embed directory must not contain symlinks".to_string());
+            return Err(embed_validation_error(
+                "local embed directory must not contain symlinks",
+            ));
         }
         let child_canonical =
             std::fs::canonicalize(&child).map_err(|err| format!("invalid embed path: {err}"))?;
         validate_local_embed_relative_path(&child_canonical, allowed_root)?;
         if child_meta.is_file() {
-            validate_local_embed_file(
+            validate_local_embed_file(&child_canonical, allowed_root, child_meta.len(), limits)?;
+        } else if child_meta.is_dir() {
+            validate_local_embed_directory(
                 &child_canonical,
                 allowed_root,
-                child_meta.len(),
-                max_file_bytes,
+                limits,
+                scan,
+                depth + 1,
             )?;
-        } else if child_meta.is_dir() {
-            validate_local_embed_directory(&child_canonical, allowed_root, max_file_bytes)?;
         } else {
-            return Err(
-                "local embed directory must contain only files and directories".to_string(),
-            );
+            return Err(embed_validation_error(
+                "local embed directory must contain only files and directories",
+            ));
         }
     }
     Ok(())
@@ -288,18 +352,22 @@ fn validate_local_embed_file(
     canonical: &Path,
     allowed_root: &Path,
     size: u64,
-    max_file_bytes: u64,
-) -> Result<(), String> {
+    limits: EmbedValidationLimits,
+) -> Result<(), EmbedValidationError> {
     validate_local_embed_relative_path(canonical, allowed_root)?;
-    if size > max_file_bytes {
-        return Err(format!(
-            "local embed file exceeds {max_file_bytes} byte limit"
-        ));
+    if size > limits.max_file_bytes {
+        return Err(embed_validation_error(format!(
+            "local embed file exceeds {} byte limit",
+            limits.max_file_bytes
+        )));
     }
     Ok(())
 }
 
-fn validate_local_embed_relative_path(canonical: &Path, allowed_root: &Path) -> Result<(), String> {
+fn validate_local_embed_relative_path(
+    canonical: &Path,
+    allowed_root: &Path,
+) -> Result<(), EmbedValidationError> {
     let relative = canonical
         .strip_prefix(allowed_root)
         .map_err(|_| "local embed path is outside the allowed root".to_string())?;
@@ -307,7 +375,9 @@ fn validate_local_embed_relative_path(canonical: &Path, allowed_root: &Path) -> 
         let name = component.as_os_str().to_string_lossy();
         let lower = name.to_ascii_lowercase();
         if name.starts_with('.') {
-            return Err("local embed path must not include dotfiles".to_string());
+            return Err(embed_validation_error(
+                "local embed path must not include dotfiles",
+            ));
         }
         if lower == "id_rsa"
             || lower == "id_dsa"
@@ -319,7 +389,9 @@ fn validate_local_embed_relative_path(canonical: &Path, allowed_root: &Path) -> 
             || lower.contains("credential")
             || lower.contains("token")
         {
-            return Err("local embed path appears to contain secret material".to_string());
+            return Err(embed_validation_error(
+                "local embed path appears to contain secret material",
+            ));
         }
     }
     Ok(())

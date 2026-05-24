@@ -127,6 +127,7 @@ pub enum RenderMode {
     Http,
     Chrome,
     #[value(name = "auto-switch")]
+    #[serde(alias = "auto", alias = "autoswitch")]
     AutoSwitch,
 }
 

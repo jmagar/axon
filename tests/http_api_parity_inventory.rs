@@ -157,3 +157,42 @@ fn rest_route_contracts_match_openapi_request_schemas() {
         );
     }
 }
+
+#[test]
+fn openapi_job_list_pagination_uses_query_parameters() {
+    let openapi = axon::web::openapi_document();
+    let openapi_json = serde_json::to_value(&openapi).expect("serialize OpenAPI document");
+    let paths = openapi_json
+        .get("paths")
+        .and_then(serde_json::Value::as_object)
+        .expect("OpenAPI paths");
+
+    for path in ["/v1/crawl", "/v1/embed", "/v1/extract", "/v1/ingest"] {
+        let parameters = paths
+            .get(path)
+            .and_then(|path_item| path_item.get("get"))
+            .and_then(|operation| operation.get("parameters"))
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| panic!("OpenAPI operation GET {path} has no parameters"));
+        for name in ["limit", "offset"] {
+            let parameter = parameters
+                .iter()
+                .find(|parameter| {
+                    parameter.get("name").and_then(serde_json::Value::as_str) == Some(name)
+                })
+                .unwrap_or_else(|| panic!("OpenAPI operation GET {path} is missing `{name}`"));
+            assert_eq!(
+                parameter.get("in").and_then(serde_json::Value::as_str),
+                Some("query"),
+                "OpenAPI operation GET {path} must expose `{name}` as a query parameter"
+            );
+            assert_eq!(
+                parameter
+                    .get("required")
+                    .and_then(serde_json::Value::as_bool),
+                Some(false),
+                "OpenAPI operation GET {path} must not require optional pagination parameter `{name}`"
+            );
+        }
+    }
+}

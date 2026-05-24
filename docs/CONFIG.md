@@ -356,6 +356,8 @@ password under `~/.axon/panel-password`. MCP and protected `/v1` routes use
 | `AXON_INLINE_BYTES_THRESHOLD` | `8192` | Payload size below which auto-inline triggers (0 = disable) |
 | `AXON_MCP_EMBED_ALLOWED_ROOTS` | -- | Comma-separated local filesystem roots for MCP embed (unset = local file embedding disabled) |
 | `AXON_MCP_EMBED_MAX_LOCAL_BYTES` | -- | Max bytes per local file embedding request via MCP |
+| `AXON_MCP_EMBED_MAX_LOCAL_DEPTH` | `8` | Max directory traversal depth for local directory embedding requests |
+| `AXON_MCP_EMBED_MAX_LOCAL_ENTRIES` | `5000` | Max filesystem entries visited for local directory embedding requests |
 
 ### Ask cache
 
