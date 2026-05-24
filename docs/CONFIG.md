@@ -154,7 +154,7 @@ URLs, API keys, secrets, and Gemini headless runtime controls belong in `~/.axon
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AXON_SERVER_URL` | -- | Generic CLI server-mode endpoint. When set, supported stateful CLI commands call `axon serve` through `/v1/actions`. |
+| `AXON_SERVER_URL` | -- | Generic CLI server-mode endpoint. When set, supported stateful CLI commands call `axon serve` through direct `/v1` REST routes. |
 | `AXON_LOCAL_MODE` | `false` | Force local CLI execution even when `AXON_SERVER_URL` is configured. Equivalent to `--local`. |
 | `AXON_SERVER_INSECURE` | -- | Set to `1` to allow bearer-token auth over plaintext HTTP to non-loopback hosts. Not recommended; prefer HTTPS. |
 | `AXON_MCP_HTTP_PUBLISH` | `8001` | Docker Compose host publish address for the `axon` MCP HTTP service. The default `8001` maps to `0.0.0.0:8001` inside Compose — the container is reachable on the host's port 8001 from all interfaces. Set to `127.0.0.1:8001` to restrict to loopback only. |
@@ -326,7 +326,7 @@ Queue caps now live in `~/.axon/config.toml` under `[workers]`.
 ### Web panel
 
 The setup/config panel is served by `axon serve` and uses a file-backed panel
-password under `~/.axon/panel-password`. MCP and `/v1/actions` use
+password under `~/.axon/panel-password`. MCP and protected `/v1` routes use
 `AXON_MCP_HTTP_TOKEN` or OAuth; see the MCP auth section above.
 
 ### Logging

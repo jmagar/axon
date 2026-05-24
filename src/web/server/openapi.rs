@@ -98,11 +98,15 @@ use super::{handlers, openapi_jobs};
 )]
 struct ApiDoc;
 
+pub fn openapi_document() -> utoipa::openapi::OpenApi {
+    ApiDoc::openapi()
+}
+
 pub(super) fn docs_router<S>() -> axum::Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    let (_, openapi) = OpenApiRouter::<S>::with_openapi(ApiDoc::openapi()).split_for_parts();
+    let (_, openapi) = OpenApiRouter::<S>::with_openapi(openapi_document()).split_for_parts();
     SwaggerUi::new("/docs")
         .url("/api-docs/openapi.json", openapi)
         .into()

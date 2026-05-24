@@ -1,4 +1,4 @@
-use axon::services::types::supported_actions;
+use axon::services::types::supported_routes;
 
 const DOC: &str = include_str!("../docs/API-PARITY.md");
 
@@ -50,12 +50,12 @@ fn parity_doc_covers_every_cli_command_kind() {
 }
 
 #[test]
-fn parity_doc_lists_all_advertised_http_actions() {
-    for action in supported_actions() {
-        let needle = format!("`{action}`");
+fn parity_doc_lists_all_advertised_http_routes() {
+    for route in supported_routes() {
+        let needle = format!("`{route}`");
         assert!(
-            DOC.contains(&needle) || DOC.contains(&action),
-            "docs/API-PARITY.md does not mention advertised HTTP capability `{action}`"
+            DOC.contains(&needle) || DOC.contains(&route),
+            "docs/API-PARITY.md does not mention advertised HTTP route `{route}`"
         );
     }
 }
@@ -64,7 +64,7 @@ fn parity_doc_lists_all_advertised_http_actions() {
 fn parity_doc_marks_representative_current_http_statuses() {
     let ask = row_for_cli("ask").expect("ask row");
     assert!(ask.contains("`POST /v1/ask`"), "{ask}");
-    assert!(ask.contains("Missing"), "{ask}");
+    assert!(ask.contains("Implemented"), "{ask}");
 
     let status = row_for_cli("status").expect("status row");
     assert!(status.contains("`GET /v1/status`"), "{status}");
@@ -80,4 +80,9 @@ fn parity_doc_marks_representative_current_http_statuses() {
 
     let completions = row_for_cli("completions").expect("completions row");
     assert!(completions.contains("Deferred"), "{completions}");
+
+    assert!(
+        DOC.contains("`POST /v1/actions` action-envelope endpoint is removed"),
+        "docs/API-PARITY.md should state that /v1/actions is removed"
+    );
 }

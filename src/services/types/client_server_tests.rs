@@ -36,6 +36,12 @@ fn client_server_response_includes_server_info() {
     assert!(
         response
             .server
+            .supported_routes
+            .contains(&"GET /v1/status".to_string())
+    );
+    assert!(
+        response
+            .server
             .supported_actions
             .contains(&"status".to_string())
     );

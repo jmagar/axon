@@ -1,3 +1,5 @@
+import type { components } from './generated/axon-api';
+
 type FetchLike = typeof fetch;
 
 export type JsonObject = Record<string, unknown>;
@@ -16,11 +18,9 @@ export type AxonClientOptions = {
   fetch?: FetchLike;
 };
 
-export type ErrorBody = {
-  kind: string;
-  message: string;
-  diagnostics?: JsonObject;
-};
+type Schemas = components['schemas'];
+
+export type ErrorBody = Schemas['ErrorBody'];
 
 export class AxonApiError extends Error {
   readonly status: number;
@@ -41,138 +41,21 @@ export type PaginationParams = {
   offset?: number;
 };
 
-export type QueryRequest = {
-  query: string;
-  collection?: string;
-  limit?: number;
-  offset?: number;
-};
-
-export type RetrieveRequest = {
-  url: string;
-  collection?: string;
-  max_points?: number;
-  cursor?: string;
-  token_budget?: number;
-};
-
-export type AskRequest = {
-  query: string;
-  collection?: string;
-  since?: string;
-  before?: string;
-  diagnostics?: boolean;
-  explain?: boolean;
-  hybrid_search?: boolean;
-  graph?: boolean;
-  ask_chunk_limit?: number;
-  ask_full_docs?: number;
-  ask_max_context_chars?: number;
-  ask_hybrid_candidates?: number;
-  ask_min_relevance_score?: number;
-  ask_doc_chunk_limit?: number;
-  ask_doc_fetch_concurrency?: number;
-  ask_backfill_chunks?: number;
-  ask_candidate_limit?: number;
-  ask_min_citations_nontrivial?: number;
-  ask_authoritative_domains?: string[];
-  ask_authoritative_boost?: number;
-};
-
-export type EvaluateRequest = {
-  question: string;
-  collection?: string;
-};
-
-export type SuggestRequest = {
-  focus?: string;
-  collection?: string;
-};
-
-export type ScrapeRequest = {
-  url?: string;
-  urls?: string[];
-  render_mode?: 'http' | 'chrome' | 'auto-switch';
-  format?: 'markdown' | 'html' | 'rawHtml' | 'json' | 'llm';
-  embed?: boolean;
-  collection?: string;
-  root_selector?: string;
-  exclude_selector?: string;
-  headers?: string[];
-};
-
-export type MapRequest = {
-  url: string;
-  limit?: number;
-  offset?: number;
-};
-
-export type SearchRequest = {
-  query: string;
-  limit?: number;
-  offset?: number;
-  time_range?: string;
-};
-
-export type ResearchRequest = {
-  query: string;
-  limit?: number;
-  offset?: number;
-  time_range?: string;
-};
-
-export type CrawlStartRequest = {
-  urls: string[];
-  max_pages?: number;
-  max_depth?: number;
-  render_mode?: 'http' | 'chrome' | 'auto-switch';
-  include_subdomains?: boolean;
-  respect_robots?: boolean;
-  discover_sitemaps?: boolean;
-  max_sitemaps?: number;
-  sitemap_since_days?: number;
-  delay_ms?: number;
-  collection?: string;
-  headers?: string[];
-};
-
-export type EmbedStartRequest = {
-  input: string;
-  source_type?: string;
-  collection?: string;
-};
-
-export type ExtractStartRequest = {
-  urls: string[];
-  prompt?: string;
-  mode?: 'auto' | 'deterministic' | 'llm' | 'both';
-  max_pages?: number;
-  render_mode?: 'http' | 'chrome' | 'auto-switch';
-  embed?: boolean;
-  collection?: string;
-  headers?: string[];
-};
-
-export type IngestStartRequest = {
-  source_type: 'github' | 'gitlab' | 'gitea' | 'git' | 'reddit' | 'youtube' | 'sessions';
-  target?: string;
-  include_source?: boolean;
-};
-
-export type AcceptedJob = {
-  job_id: string;
-  status: 'pending';
-  status_url: string;
-};
-
-export type WatchCreateRequest = {
-  name: string;
-  task_type: string;
-  target: string;
-  schedule: string;
-  enabled?: boolean;
-  next_run_at?: string;
-};
+export type QueryRequest = Schemas['RestQueryRequest'];
+export type RetrieveRequest = Schemas['RestRetrieveRequest'];
+export type AskRequest = Schemas['AskRequestBody'];
+export type EvaluateRequest = Schemas['RestEvaluateRequest'];
+export type SuggestRequest = Schemas['RestSuggestRequest'];
+export type ScrapeRequest = Schemas['RestScrapeRequest'];
+export type MapRequest = Schemas['RestMapRequest'];
+export type SearchRequest = Schemas['RestSearchRequest'];
+export type ResearchRequest = Schemas['RestResearchRequest'];
+export type CrawlStartRequest = Schemas['RestCrawlRequest'];
+export type EmbedStartRequest = Schemas['RestEmbedRequest'];
+export type ExtractStartRequest = Schemas['RestExtractRequest'];
+export type IngestStartRequest = Schemas['RestIngestRequest'];
+export type AcceptedJob = Schemas['AcceptedJob'];
+export type WatchCreateRequest = Schemas['WatchCreateRequest'];
 
 export type JobKind = 'crawl' | 'embed' | 'extract' | 'ingest';
 
