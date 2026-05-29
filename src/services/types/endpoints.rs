@@ -33,11 +33,14 @@ impl Default for EndpointOptions {
 #[serde(rename_all = "lowercase")]
 pub enum RpcProtocol {
     /// Generic JSON-RPC 2.0 (detected via `system.listMethods` or a `-32601` error).
+    // Explicit rename pins the backward-compatible wire string independently of
+    // `rename_all` (which would also yield `"jsonrpc2"` today, but is not a contract).
     #[serde(rename = "jsonrpc2")]
     Jsonrpc2,
     /// OpenRPC service (responded to `rpc.discover` with an `openrpc` document).
     Openrpc,
-    /// Model Context Protocol server (responded to `initialize`).
+    /// Model Context Protocol server — detected via a successful `initialize`
+    /// handshake, or inferred from an SSE (`text/event-stream`) transport.
     Mcp,
 }
 
@@ -72,7 +75,12 @@ impl RpcTransport {
     }
 }
 
-/// Result of probing a discovered endpoint for JSON-RPC 2.0 / MCP / ACP protocol support.
+/// Result of probing a discovered endpoint for JSON-RPC 2.0 / OpenRPC / MCP support.
+///
+/// Fields are populated according to the detected `protocol` and are otherwise
+/// left empty: `server_name`/`server_version`/`tools` are MCP-only, `methods` is
+/// JSON-RPC/OpenRPC-only. The flat shape preserves the wire contract; the type
+/// does not statically prevent contradictory combinations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct RpcProbeResult {
     /// Detected protocol, or `null` when no protocol matched.

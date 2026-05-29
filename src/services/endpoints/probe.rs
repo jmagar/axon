@@ -77,6 +77,10 @@ pub(super) async fn probe_rpc_endpoints(cfg: &Config, report: &mut EndpointRepor
             async move {
                 // Acquire per-endpoint (not per-session) so the cap is honored
                 // globally; mirrors the bundle-fetch semaphore pattern.
+                // `acquire()` only errors if the semaphore is closed, which never
+                // happens — it is a process-wide `static` that is never dropped or
+                // `close()`d — so a bare `None` here is unreachable, not a silently
+                // dropped endpoint.
                 let _permit = match PROBE_SEMAPHORE.acquire().await {
                     Ok(p) => p,
                     Err(_) => return (idx, None),
@@ -151,19 +155,39 @@ async fn read_first_sse_json(
             break;
         }
         buf.extend_from_slice(&chunk[..remaining.min(chunk.len())]);
-        let text = String::from_utf8_lossy(&buf);
-        // SSE events are separated by a blank line.
-        if let Some(end) = text.find("\n\n").or_else(|| text.find("\r\n\r\n"))
-            && let Some(value) = parse_sse_event(&text[..end])
-        {
-            return Ok(Some(value));
+        // Consume every complete event block that has fully arrived, returning
+        // the first that yields JSON. Draining consumed blocks is what prevents
+        // a non-data preamble (keepalive `:` comments, empty events) from being
+        // re-scanned forever against a stream the server keeps open.
+        while let Some((content_len, sep_len)) = sse_event_boundary(&buf) {
+            let block = String::from_utf8_lossy(&buf[..content_len]).into_owned();
+            buf.drain(..content_len + sep_len);
+            if let Some(value) = parse_sse_event(&block) {
+                return Ok(Some(value));
+            }
         }
         if buf.len() >= cap {
             break;
         }
     }
-    // Last attempt against whatever we buffered (single event, no trailing blank line).
+    // Trailing event with no final blank line (e.g. stream closed mid-frame).
     Ok(parse_sse_event(&String::from_utf8_lossy(&buf)))
+}
+
+/// Locate the first SSE event boundary (a blank line) in `buf`, scanning raw
+/// bytes so split multibyte chars can't desync the offset. Returns
+/// `(content_len, separator_len)` where `buf[..content_len]` is the event block
+/// and `separator_len` is the blank-line delimiter (`\n\n` or `\r\n\r\n`).
+fn sse_event_boundary(buf: &[u8]) -> Option<(usize, usize)> {
+    for i in 0..buf.len() {
+        if buf[i..].starts_with(b"\r\n\r\n") {
+            return Some((i, 4));
+        }
+        if buf[i..].starts_with(b"\n\n") {
+            return Some((i, 2));
+        }
+    }
+    None
 }
 
 /// Concatenate the `data:` lines of one SSE event block and parse them as JSON.

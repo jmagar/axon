@@ -242,3 +242,216 @@ fn parse_sse_event_concatenates_data_lines() {
     assert_eq!(value.get("a").and_then(Value::as_i64), Some(1));
     assert_eq!(value.get("b").and_then(Value::as_i64), Some(2));
 }
+
+#[test]
+fn protocol_and_transport_as_str_match_serde() {
+    for p in [
+        RpcProtocol::Jsonrpc2,
+        RpcProtocol::Openrpc,
+        RpcProtocol::Mcp,
+    ] {
+        assert_eq!(
+            serde_json::to_value(p).unwrap(),
+            Value::String(p.as_str().to_string())
+        );
+    }
+    for t in [RpcTransport::Http, RpcTransport::Sse] {
+        assert_eq!(
+            serde_json::to_value(t).unwrap(),
+            Value::String(t.as_str().to_string())
+        );
+    }
+}
+
+#[test]
+fn probe_timeout_clamps_to_ceiling_but_can_shorten() {
+    let mut cfg = crate::core::config::Config::test_default();
+    // Unset → fixed 3s ceiling.
+    cfg.request_timeout_ms = None;
+    assert_eq!(probe_timeout_secs(&cfg), PROBE_TIMEOUT_SECS);
+    // A larger configured timeout is clamped down to the ceiling, never up.
+    cfg.request_timeout_ms = Some(20_000);
+    assert_eq!(probe_timeout_secs(&cfg), PROBE_TIMEOUT_SECS);
+    // Sub-second rounds up to a 1s floor.
+    cfg.request_timeout_ms = Some(0);
+    assert_eq!(probe_timeout_secs(&cfg), 1);
+    cfg.request_timeout_ms = Some(500);
+    assert_eq!(probe_timeout_secs(&cfg), 1);
+    // A configured value below the ceiling shortens the probe.
+    cfg.request_timeout_ms = Some(2_000);
+    assert_eq!(probe_timeout_secs(&cfg), 2);
+}
+
+#[tokio::test]
+#[serial]
+async fn read_first_sse_json_skips_keepalive_and_returns_first_frame() {
+    let _loopback = LoopbackGuard::allow();
+    let server = MockServer::start_async().await;
+    // A keepalive comment, then two data frames. The parser must skip the
+    // comment (regression guard: it must not re-scan it forever) and return the
+    // FIRST data frame, not the second.
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/sse");
+            then.status(200)
+                .header("content-type", "text/event-stream")
+                .body(": keepalive\n\ndata: {\"id\":1}\n\ndata: {\"id\":2}\n\n");
+        })
+        .await;
+
+    let resp = probe_client()
+        .get(server.url("/sse"))
+        .send()
+        .await
+        .expect("sse get");
+    let value = read_first_sse_json(resp, MAX_PROBE_BODY_BYTES)
+        .await
+        .expect("read ok")
+        .expect("a parsed frame");
+    assert_eq!(value.get("id").and_then(Value::as_i64), Some(1));
+}
+
+#[tokio::test]
+#[serial]
+async fn read_body_capped_truncates_at_cap() {
+    let _loopback = LoopbackGuard::allow();
+    let server = MockServer::start_async().await;
+    let big = "x".repeat(MAX_PROBE_BODY_BYTES + 4096);
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/big");
+            then.status(200).body(&big);
+        })
+        .await;
+
+    let resp = probe_client()
+        .get(server.url("/big"))
+        .send()
+        .await
+        .expect("get");
+    let text = read_body_capped(resp, MAX_PROBE_BODY_BYTES)
+        .await
+        .expect("read ok");
+    assert_eq!(text.len(), MAX_PROBE_BODY_BYTES);
+}
+
+#[tokio::test]
+#[serial]
+async fn non_json_post_falls_through_ladder_to_sse_get() {
+    let _loopback = LoopbackGuard::allow();
+    let server = MockServer::start_async().await;
+    // Every JSON-RPC POST returns HTML — none of the POST probes match, so the
+    // ladder must fall all the way through to the SSE GET transport probe.
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/x");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body("<!doctype html><html></html>");
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/x");
+            then.status(200)
+                .header("content-type", "text/event-stream")
+                .body("event: ping\ndata: {}\n\n");
+        })
+        .await;
+
+    let result = probe_one(&probe_client(), &server.url("/x"))
+        .await
+        .expect("fall-through sse result");
+    assert_eq!(result.protocol, Some(RpcProtocol::Mcp));
+    assert_eq!(result.transport, Some(RpcTransport::Sse));
+}
+
+#[tokio::test]
+#[serial]
+async fn mcp_takes_precedence_over_openrpc() {
+    let _loopback = LoopbackGuard::allow();
+    let server = MockServer::start_async().await;
+    // Server answers BOTH initialize (MCP) and rpc.discover (OpenRPC). MCP runs
+    // first in the ladder, so the result must be MCP.
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/both").body_includes("initialize");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0", "id": 1,
+                    "result": { "serverInfo": { "name": "both" }, "capabilities": {} }
+                }));
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/both")
+                .body_includes("rpc.discover");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2,
+                    "result": { "openrpc": "1.2.6", "methods": [] }
+                }));
+        })
+        .await;
+
+    let result = probe_one(&probe_client(), &server.url("/both"))
+        .await
+        .expect("precedence result");
+    assert_eq!(result.protocol, Some(RpcProtocol::Mcp));
+    assert_eq!(result.server_name.as_deref(), Some("both"));
+}
+
+#[tokio::test]
+#[serial]
+async fn mcp_sends_initialized_notification_with_session_id() {
+    let _loopback = LoopbackGuard::allow();
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            // Match the quoted method name so this does not also swallow the
+            // `notifications/initialized` POST (whose body contains the substring
+            // "initialized").
+            when.method(POST)
+                .path("/mcp")
+                .body_includes("\"initialize\"");
+            then.status(200)
+                .header("content-type", "application/json")
+                .header("mcp-session-id", "sess-9")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0", "id": 1,
+                    "result": { "serverInfo": { "name": "demo" }, "capabilities": {} }
+                }));
+        })
+        .await;
+    let initialized = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/mcp")
+                .body_includes("notifications/initialized")
+                .header("mcp-session-id", "sess-9");
+            then.status(202);
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/mcp").body_includes("tools/list");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2, "result": { "tools": [] }
+                }));
+        })
+        .await;
+
+    let result = probe_one(&probe_client(), &server.url("/mcp"))
+        .await
+        .expect("mcp result");
+    assert_eq!(result.protocol, Some(RpcProtocol::Mcp));
+    // The handshake notification must have been sent exactly once, carrying the
+    // session id assigned by initialize.
+    initialized.assert_hits_async(1).await;
+}

@@ -10,7 +10,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "4.13.0"
+    "version": "4.13.1"
   },
   "paths": {
     "/v1/ask": {
@@ -3014,7 +3014,7 @@
       },
       "RpcProbeResult": {
         "type": "object",
-        "description": "Result of probing a discovered endpoint for JSON-RPC 2.0 / MCP / ACP protocol support.",
+        "description": "Result of probing a discovered endpoint for JSON-RPC 2.0 / OpenRPC / MCP support.\n\nFields are populated according to the detected `protocol` and are otherwise\nleft empty: `server_name`/`server_version`/`tools` are MCP-only, `methods` is\nJSON-RPC/OpenRPC-only. The flat shape preserves the wire contract; the type\ndoes not statically prevent contradictory combinations.",
         "properties": {
           "methods": {
             "type": "array",
