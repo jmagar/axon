@@ -25,15 +25,62 @@ impl Default for EndpointOptions {
     }
 }
 
+/// Detected RPC protocol family. Wire strings match the historical
+/// stringly-typed values (`"jsonrpc2"`, `"openrpc"`, `"mcp"`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum RpcProtocol {
+    /// Generic JSON-RPC 2.0 (detected via `system.listMethods` or a `-32601` error).
+    #[serde(rename = "jsonrpc2")]
+    Jsonrpc2,
+    /// OpenRPC service (responded to `rpc.discover` with an `openrpc` document).
+    Openrpc,
+    /// Model Context Protocol server (responded to `initialize`).
+    Mcp,
+}
+
+impl RpcProtocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Jsonrpc2 => "jsonrpc2",
+            Self::Openrpc => "openrpc",
+            Self::Mcp => "mcp",
+        }
+    }
+}
+
+/// Transport layer the protocol was observed over.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum RpcTransport {
+    /// Request/response over HTTP POST (JSON or streamed SSE response body).
+    Http,
+    /// Long-lived Server-Sent Events transport (`text/event-stream` on GET).
+    Sse,
+}
+
+impl RpcTransport {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Sse => "sse",
+        }
+    }
+}
+
 /// Result of probing a discovered endpoint for JSON-RPC 2.0 / MCP / ACP protocol support.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct RpcProbeResult {
-    /// Detected protocol: `"jsonrpc2"`, `"openrpc"`, `"mcp"`, or `null`.
+    /// Detected protocol, or `null` when no protocol matched.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol: Option<String>,
-    /// Transport layer: `"http"` (POST) or `"sse"` (Server-Sent Events).
+    pub protocol: Option<RpcProtocol>,
+    /// Transport the protocol was observed over.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transport: Option<String>,
+    pub transport: Option<RpcTransport>,
     /// MCP `serverInfo.name`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
@@ -46,9 +93,6 @@ pub struct RpcProbeResult {
     /// MCP tool names from `tools/list`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
-    /// Error message if probing failed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 #[derive(
