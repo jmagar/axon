@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the dead `error` field from `RpcProbeResult` (documented as "error message if probing failed" but never populated). `protocol` and `transport` are now typed enums (`RpcProtocol`, `RpcTransport`) instead of free-form strings; wire values are unchanged.
 - Bumped the MCP `initialize` `protocolVersion` to `2025-06-18`.
 - Added unit-test coverage for the probe ladder (MCP + session-id replay, MCP-over-SSE, OpenRPC, `system.listMethods`, `-32601` fingerprint, SSE transport, and a non-RPC negative case).
+- **Version sync** — `apps/web/package.json` was left at `4.12.3` (the `version_bearing_files_stay_in_sync` contract test caught the drift against `Cargo.toml`); bumped to `4.13.1`.
+- **Env/config boundary matrix** — classified the previously-unlisted `AXON_ENDPOINT_PROBE_CONCURRENCY`, `AXON_LLM_BACKEND`, and `AXON_OPENAI_{BASE_URL,MODEL,API_KEY}` keys (the `env_config_boundary` checker was failing); the `OPENAI_COMPAT_SECRET` redaction-test fixture is now ignored as a non-env token.
+- **Build determinism** — added a repo-local `.cargo/config.toml` `[build] rustc-wrapper = ""` to disable the global sccache wrapper for this repo; its shared-across-worktrees cache was serving stale sibling-worktree artifacts and producing phantom compile errors on cache miss.
 
 ## [4.13.0] - 2026-05-28
 

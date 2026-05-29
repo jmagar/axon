@@ -239,6 +239,6 @@ async fn non_rpc_endpoint_yields_no_probe() {
 fn parse_sse_event_concatenates_data_lines() {
     let block = "event: message\ndata: {\"a\":1,\ndata: \"b\":2}";
     let value = parse_sse_event(block).expect("parsed sse json");
-    assert_eq!(value.get("a").and_then(serde_json::Value::as_i64), Some(1));
-    assert_eq!(value.get("b").and_then(serde_json::Value::as_i64), Some(2));
+    assert_eq!(value.get("a").and_then(Value::as_i64), Some(1));
+    assert_eq!(value.get("b").and_then(Value::as_i64), Some(2));
 }
