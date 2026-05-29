@@ -265,7 +265,7 @@ fn protocol_and_transport_as_str_match_serde() {
 
 #[test]
 fn probe_timeout_clamps_to_ceiling_but_can_shorten() {
-    let mut cfg = crate::core::config::Config::test_default();
+    let mut cfg = Config::test_default();
     // Unset → fixed 3s ceiling.
     cfg.request_timeout_ms = None;
     assert_eq!(probe_timeout_secs(&cfg), PROBE_TIMEOUT_SECS);
@@ -453,5 +453,5 @@ async fn mcp_sends_initialized_notification_with_session_id() {
     assert_eq!(result.protocol, Some(RpcProtocol::Mcp));
     // The handshake notification must have been sent exactly once, carrying the
     // session id assigned by initialize.
-    initialized.assert_hits_async(1).await;
+    initialized.assert_calls_async(1).await;
 }
