@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.2] - 2026-05-29
+
+### Fixed
+
+- **`palette-tauri` CI job no longer fails at `cargo check`** — the job checked out with `sparse-checkout-cone-mode: false` and a pattern (`apps/palette-tauri`) that excluded the tracked root `.gitignore` from the working tree. Combined with `actions/checkout`'s blobless partial clone, cargo's gix file-walker could not build its excludes stack while fingerprinting the Tauri build script (`failed to determine package fingerprint for build script … Failed to update the excludes stack to see if a path is excluded`), so the job had never passed since it was added. Switched the job to cone-mode sparse checkout (matching the green `check`/`clippy` jobs), which always includes root-level files.
+
 ## [4.13.1] - 2026-05-29
 
 ### Fixed
