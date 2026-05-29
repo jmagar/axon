@@ -197,8 +197,9 @@ observe the page's **runtime** request surface — endpoints assembled by JS tha
 never appear as literals in the source.
 
 - Requires a reachable Chrome management/CDP endpoint (`AXON_CHROME_REMOTE_URL` / `chrome.remote-url`); without it, the stage errors.
-- Creates a fresh `about:blank` target, attaches a flat session, enables `Network`, navigates, and records request URLs until the network goes idle (`CAPTURE_IDLE_MS` = 750 ms) or `network_idle_secs` elapses; CDP command timeout `CAPTURE_CDP_TIMEOUT_SECS` = 5 s; up to `CAPTURE_MAX_REQUESTS` = 500 requests.
-- Captured URLs are SSRF-validated (concurrency `CAPTURE_VALIDATION_CONCURRENCY` = 32), classified (`websocket`/`graphql`/`absolute_url`), de-duplicated against existing endpoints, and merged with `source = network_capture`. Respects `--first-party-only` and `DEFAULT_MAX_ENDPOINTS`.
+- Creates a fresh `about:blank` target, attaches a flat session, enables `Network`, and intercepts **every** request **before dispatch** via `Fetch.enable` with `requestStage: Request`. Each paused request is SSRF-checked and either continued or failed at the network level — a private/loopback/link-local/`.local`/`.internal` target is blocked before Chrome ever connects, not filtered out afterward (bead `w2wf.5`).
+- Records request URLs after `Page.loadEventFired` until the network stays quiet for `CAPTURE_IDLE_MS` = 750 ms, bounded by `network_idle_secs` (clamped 5–60 s) plus the CDP command timeout `CAPTURE_CDP_TIMEOUT_SECS` = 5 s; up to `CAPTURE_MAX_REQUESTS` = 500 requests.
+- Surviving URLs are SSRF-revalidated in the merge layer (`CAPTURE_VALIDATION_CONCURRENCY` = 32), classified (`websocket`/`graphql`/`absolute_url`), de-duplicated against existing endpoints, and merged with `source = network_capture`. Respects `--first-party-only` and `DEFAULT_MAX_ENDPOINTS`.
 - **Executes page JavaScript** — heavier and less safe than static discovery; opt-in only.
 
 ---
@@ -324,7 +325,7 @@ MCP option set; returns the `EndpointReport` as JSON. Schemas registered in
 
 - **SSRF guard everywhere.** The target URL, every bundle URL, every captured URL, every verify probe, and every RPC probe pass `validate_url_with_dns` (loopback/link-local/RFC-1918/IPv6-ULA/`localhost`/`.internal`/`.local` blocked) with a 2 s DNS timeout. Connect-time DNS-rebinding is additionally closed by the reqwest `SsrfBlockingResolver`. See `docs/SECURITY.md` and `src/core/http/ssrf.rs`.
 - **Static discovery is read-only.** It fetches the page and same-origin bundles and never executes JS.
-- **`--capture-network` executes page JavaScript** in Chrome — opt-in, gated behind its own flag and a 1-wide Chrome semaphore.
+- **`--capture-network` executes page JavaScript** in Chrome — opt-in, gated behind its own flag and a 1-wide Chrome semaphore. Capture intercepts requests **pre-dispatch** via CDP `Fetch.enable` and rejects private/loopback/link-local/`.local`/`.internal` targets at the network level before Chrome connects, so a page cannot use JS to reach an internal host even transiently.
 - **`--verify` / `--probe-rpc` send live requests** to discovered (possibly third-party) hosts: `HEAD`/`OPTIONS` for verify, `POST`/`GET` for probe. Both are unauthenticated, capped, and short-timeout. Probing is more active than verifying (it POSTs JSON-RPC payloads); enable deliberately.
 - Verification uses a **non-redirecting** client so a probe cannot be bounced to an internal target post-validation.
 
