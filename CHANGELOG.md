@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.14.1] - 2026-05-29
+
+### Changed
+- **CI: `windows-build` now cross-compiles `axon.exe` from Linux instead of
+  building natively on a GitHub-hosted Windows VM.** The job runs on
+  `ubuntu-latest` using the `mingw-w64` (`x86_64-pc-windows-gnu`) toolchain.
+  A prior `cargo-zigbuild` attempt was blocked because zig does not bundle the
+  Windows platform headers (`sched.h` / `windows.h`) that `aws-lc-sys`'s
+  jitterentropy code needs; `mingw-w64` ships those headers, so `aws-lc-sys`
+  and `ring` cross-build cleanly. The resulting `axon.exe` was smoke-tested on
+  Windows 11 (runs, full CLI, native `C:\` path resolution). The `cfg(windows)`
+  `AXON_DATA_DIR` path-regression test now runs under wine on the same target.
+  Faster than a cold Windows VM and avoids 2x Windows-minute billing.
+
 ## [4.14.0] - 2026-05-29
 
 ### Changed
