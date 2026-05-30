@@ -260,6 +260,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends mingw-w64 wine64
+          # The Ubuntu wine64 package's binary name varies across releases
+          # (wine64 vs wine), so discover whichever exists and pin cargo's
+          # target runner to its absolute path. Fail loudly if neither is found.
+          wine_bin="$(command -v wine64 || command -v wine || true)"
+          if [ -z "$wine_bin" ]; then
+            echo "::error::no wine binary found after installing wine64"
+            exit 1
+          fi
+          echo "using wine runner: $wine_bin"
+          "$wine_bin" --version
+          echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=$wine_bin" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: axon-windows-gnu
@@ -269,8 +280,10 @@ jobs:
         run: cargo build --release --locked -p axon --target x86_64-pc-windows-gnu
       - name: Windows AXON_DATA_DIR path regression (wine)
         env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER: wine
           WINEDEBUG: "-all"
+          # Headless CI: don't let wine prompt to download mono/gecko on first
+          # prefix init for this console test exe.
+          WINEDLLOVERRIDES: "mscoree,mshtml="
         run: cargo test --release --locked -p axon --lib --target x86_64-pc-windows-gnu axon_data_dir_accepts_windows_absolute_path
       - name: Upload axon.exe artifact
         uses: actions/upload-artifact@v5
