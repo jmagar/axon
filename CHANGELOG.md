@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.15.2] - 2026-05-31
+
+### Changed
+
+- Version sync: bumped all version-bearing files to 4.15.2 and brought
+  `apps/web/package.json` (+ lockfile) up from a stale 4.14.1 so the crate,
+  README, and web app agree. Regenerated `apps/web/openapi/axon.json` so its
+  embedded `info.version` matches and `openapi:check` stays green.
+
 ## [4.15.1] - 2026-05-31
 
 ### Changed
