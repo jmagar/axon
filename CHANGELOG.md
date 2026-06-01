@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.1] - 2026-06-01
+
+### Changed
+
+- **Documentation: comprehensive accuracy refresh + aggressive restructure.**
+  - Verified all ~110 living/reference docs against current source. Fixed the default
+    collection (`cortex` → `axon`) across command/config/ingest/MCP docs, corrected MCP
+    action tables and payload schema version (v4), the watch auto-fire scheduler, security
+    port-binding claims, the spider `firewall` flag (NOT enabled), and stale `axon_rust`
+    naming / removed-AMQP/lite-mode references.
+  - Added 6 missing command references: `diff`, `brand`, `config`, `train`, `monitor`, `sync`.
+  - Restructured `docs/` into intent-based sections — `guides/`, `reference/`, `architecture/`,
+    `operations/`, `contributing/` — with filenames normalized to lowercase-kebab. Dated
+    historical records (sessions, reports, plans, archive, superpowers, perf snapshots) left in
+    place. All moves via `git mv` (history preserved); every internal link and code/CI/script
+    reference updated; link-checked clean. Rewrote `docs/README.md` and `docs/CLAUDE.md` as
+    navigation hubs. Audit trail under `docs/reports/2026-06-01-stale-docs-refresh/`.
+
 ## [4.18.0] - 2026-05-31
 
 ### Added
