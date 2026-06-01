@@ -1,6 +1,24 @@
 use super::*;
 use crate::core::config::Config;
 
+/// RAII guard for the global SSRF loopback-bypass flag. Restores the previous value on
+/// drop so a panicking test cannot leak `allow_loopback=true` into later SSRF tests.
+struct LoopbackGuard(bool);
+
+impl LoopbackGuard {
+    fn new(allow: bool) -> Self {
+        let prev = crate::core::http::get_allow_loopback();
+        crate::core::http::set_allow_loopback(allow);
+        Self(prev)
+    }
+}
+
+impl Drop for LoopbackGuard {
+    fn drop(&mut self) {
+        crate::core::http::set_allow_loopback(self.0);
+    }
+}
+
 /// Unit test for `sitemap_loc_in_scope` using real domain names.
 /// The integration test uses a loopback mock server (IP address) where
 /// IP addresses have no subdomain relationship — this test exercises
@@ -114,11 +132,10 @@ async fn fetch_text_rejects_oversized_body() {
         when.method(httpmock::Method::GET).path("/big.txt");
         then.status(200).body(&big);
     });
-    crate::core::http::set_allow_loopback(true);
+    let _loopback = LoopbackGuard::new(true);
     let client = build_client(5, None).unwrap();
     let url = server.url("/big.txt");
     let got = fetch_text_with_retry(&client, &url, 0, 0, Some(DISCOVERY_MAX_BODY_BYTES)).await;
-    crate::core::http::set_allow_loopback(false);
     m.assert();
     assert!(
         got.is_none(),
@@ -141,11 +158,10 @@ async fn fetch_text_rejects_oversized_body_without_content_length() {
             .header("transfer-encoding", "chunked")
             .body(&big);
     });
-    crate::core::http::set_allow_loopback(true);
+    let _loopback = LoopbackGuard::new(true);
     let client = build_client(5, None).unwrap();
     let url = server.url("/chunked.txt");
     let got = fetch_text_with_retry(&client, &url, 0, 0, Some(DISCOVERY_MAX_BODY_BYTES)).await;
-    crate::core::http::set_allow_loopback(false);
     m.assert();
     assert!(
         got.is_none(),
