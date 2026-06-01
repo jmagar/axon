@@ -29,5 +29,5 @@ async fn pending_crawl_is_active_unknown_is_not() {
     .await
     .unwrap();
     assert!(crawl_job_active(&pool, id).await);
-    assert!(!crawl_job_active(&pool, uuid::Uuid::new_v4()).await);
+    assert!(!crawl_job_active(&pool, Uuid::new_v4()).await);
 }
