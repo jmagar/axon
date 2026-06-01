@@ -540,8 +540,9 @@ Tables are auto-created via `ensure_schema()` in each `*_jobs.rs`. Schema lives 
 | `axon_extract_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
 | `axon_embed_jobs` | `id`, `status`, `input_text`, `config_json`, `result_json` |
 | `axon_ingest_jobs` | `id`, `source_type`, `target`, `status`, `config_json`, `result_json` — partial index on pending |
+| `axon_watch_url_state` | `watch_id`, `url`, `etag`, `last_modified`, `content_hash`, `last_markdown`, `last_links_json`, `last_checked_at`, `last_changed_at`, `last_crawl_job_id` — per-URL change-detection snapshot (migration `0007`), PK `(watch_id, url)`, FK → `axon_watch_defs(id)` ON DELETE CASCADE |
 
-All tables share: `created_at`, `updated_at`, `started_at`, `finished_at`, `error_text`.
+The **job** tables (`axon_*_jobs`) share: `created_at`, `updated_at`, `started_at`, `finished_at`, `error_text`. `axon_watch_url_state` is a snapshot table and does not carry those columns.
 
 `axon_ingest_jobs` differs from the others: it uses `source_type` (`github`/`gitlab`/`gitea`/`git`/`reddit`/`youtube`) + `target` instead of `url` or `urls_json` to identify the ingest target.
 

@@ -93,9 +93,14 @@ Per URL, each tick:
    hash means "unchanged" (snapshot refreshed, no diff).
 4. **Diff** the prior snapshot vs the fresh content via the shared `compute_diff`
    (unified text diff + link/word deltas). First-seen URLs are forced "changed"
-   (seed run).
-5. **Threshold**: a change is meaningful if content changed AND (links changed OR
-   `|word_count_delta| >= change_threshold_words`).
+   (seed run). The link set comes from the scrape payload's `links` field
+   (anchor hrefs), so link additions/removals are detected for generic-scrape
+   URLs; vertical-extractor payloads currently omit links (markdown-only diff).
+5. **Threshold**: `meaningful = first_seen || (content changed AND (links changed
+   OR |word_count_delta| >= change_threshold_words))`. A **first-seen URL bypasses
+   the threshold entirely** — its seed run always counts as changed regardless of
+   `change_threshold_words`. After the seed, a text-only change must clear the
+   threshold; link changes always count.
 
 Meaningful changes get an AI summary and a `url-change` run artifact (unified
 diff + summary + deltas). Changed URLs are then **clustered by common path
