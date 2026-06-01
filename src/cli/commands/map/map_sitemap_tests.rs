@@ -758,3 +758,133 @@ async fn test_discover_sitemaps_false_skips_sitemap_fetch() {
         "sitemap URLs must NOT appear when discovery is disabled: {url_strs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// llms.txt union + dedupe into sitemap discovery
+// ---------------------------------------------------------------------------
+
+fn llms_txt_body(urls: &[&str]) -> String {
+    let mut s = String::from("# Docs\n\n> Summary.\n\n## Pages\n\n");
+    for url in urls {
+        s.push_str(&format!("- [link]({url})\n"));
+    }
+    s
+}
+
+#[tokio::test]
+#[serial]
+async fn map_unions_sitemap_and_llms_txt_deduped() {
+    let _guard = LoopbackGuard::new();
+    let server = MockServer::start();
+    let base = server.base_url();
+
+    let a = format!("{base}/a");
+    let b = format!("{base}/b");
+    let c = format!("{base}/c");
+
+    server.mock(|when, then| {
+        when.method(GET).path("/robots.txt");
+        then.status(404);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/sitemap.xml");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(sitemap_xml(&[a.as_str(), b.as_str()]));
+    });
+    for path in &[
+        "/sitemap_index.xml",
+        "/sitemap-index.xml",
+        "/wp-sitemap.xml",
+        "/sitemap/sitemap-index.xml",
+    ] {
+        server.mock(|when, then| {
+            when.method(GET).path(*path);
+            then.status(404);
+        });
+    }
+    // llms.txt links /b (overlaps sitemap) and /c (new).
+    server.mock(|when, then| {
+        when.method(GET).path("/llms.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(llms_txt_body(&[b.as_str(), c.as_str()]));
+    });
+
+    let cfg = base_config();
+    let result = map_payload(&cfg, &base).await.expect("map_payload failed");
+
+    let urls: Vec<String> = result["urls"]
+        .as_array()
+        .expect("urls must be array")
+        .iter()
+        .map(|v| v.as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(urls.len(), 3, "a,b,c with b deduped, got {urls:?}");
+    assert!(urls.iter().any(|u| u.ends_with("/a")));
+    assert!(urls.iter().any(|u| u.ends_with("/b")));
+    assert!(urls.iter().any(|u| u.ends_with("/c")));
+    assert_eq!(
+        result["map_source"].as_str(),
+        Some("sitemap+llms"),
+        "map_source must reflect both sources"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn map_skips_llms_txt_when_disabled() {
+    let _guard = LoopbackGuard::new();
+    let server = MockServer::start();
+    let base = server.base_url();
+
+    let a = format!("{base}/a");
+
+    server.mock(|when, then| {
+        when.method(GET).path("/robots.txt");
+        then.status(404);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/sitemap.xml");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(sitemap_xml(&[a.as_str()]));
+    });
+    for path in &[
+        "/sitemap_index.xml",
+        "/sitemap-index.xml",
+        "/wp-sitemap.xml",
+        "/sitemap/sitemap-index.xml",
+    ] {
+        server.mock(|when, then| {
+            when.method(GET).path(*path);
+            then.status(404);
+        });
+    }
+    // If discover_llms_txt is honored as false, this mock must never be hit.
+    let llms_mock = server.mock(|when, then| {
+        when.method(GET).path("/llms.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(llms_txt_body(&[
+                format!("{base}/should-not-appear").as_str()
+            ]));
+    });
+
+    let cfg = Config {
+        discover_llms_txt: false,
+        ..base_config()
+    };
+    let result = map_payload(&cfg, &base).await.expect("map_payload failed");
+
+    assert_eq!(
+        llms_mock.hits(),
+        0,
+        "/llms.txt must not be fetched when disabled"
+    );
+    assert_eq!(
+        result["map_source"].as_str(),
+        Some("sitemap"),
+        "map_source must be plain sitemap when llms.txt disabled"
+    );
+}

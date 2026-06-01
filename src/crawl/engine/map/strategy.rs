@@ -161,7 +161,7 @@ async fn bounded_structure_fallback(
 pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult, Box<dyn Error>> {
     let start = Instant::now();
 
-    let (seed_result, sitemap_result) = tokio::join!(
+    let (seed_result, sitemap_result, llms_result) = tokio::join!(
         async {
             resolve_map_seed_url(start_url)
                 .await
@@ -175,8 +175,19 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
             } else {
                 Ok(SitemapDiscovery::default())
             }
+        },
+        async {
+            if cfg.discover_llms_txt {
+                // warn-and-continue: never fail the map call on llms.txt errors.
+                crate::crawl::engine::discover_llms_txt_urls(cfg, start_url)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            }
         }
     );
+    let llms_urls: Vec<String> = llms_result;
 
     let crawl_start_url = seed_result.unwrap_or_else(|_| normalize_url(start_url).into_owned());
 
@@ -207,7 +218,9 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
     ));
 
     if sitemap_discovery.parsed_sitemap_documents > 0 {
-        let urls = merge_map_candidate_urls(Vec::new(), sitemap_discovery.urls, &scope, true);
+        let mut combined = sitemap_discovery.urls;
+        combined.extend(llms_urls.iter().cloned());
+        let urls = merge_map_candidate_urls(Vec::new(), combined, &scope, true);
         let scope_prefix_len = scope.path_prefix.as_deref().map_or(0, str::len);
         let urls: Vec<String> = urls
             .into_iter()
@@ -217,13 +230,41 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
             elapsed_ms: start.elapsed().as_millis(),
             ..Default::default()
         };
+        let map_source = if llms_urls.is_empty() {
+            "sitemap"
+        } else {
+            "sitemap+llms"
+        };
         return Ok(MapResult {
             summary,
             sitemap_urls: raw_sitemap_count,
             urls,
-            map_source: "sitemap".to_string(),
+            map_source: map_source.to_string(),
             warning: None,
         });
+    }
+
+    // No sitemap, but a curated llms.txt — don't lose it to the crawl/structure fallback.
+    if !llms_urls.is_empty() {
+        let urls = merge_map_candidate_urls(Vec::new(), llms_urls, &scope, true);
+        let scope_prefix_len = scope.path_prefix.as_deref().map_or(0, str::len);
+        let urls: Vec<String> = urls
+            .into_iter()
+            .filter(|url| !is_excluded_map_url(url, &cfg.exclude_path_prefix, scope_prefix_len))
+            .collect();
+        if !urls.is_empty() {
+            let summary = CrawlSummary {
+                elapsed_ms: start.elapsed().as_millis(),
+                ..Default::default()
+            };
+            return Ok(MapResult {
+                summary,
+                sitemap_urls: raw_sitemap_count,
+                urls,
+                map_source: "llms".to_string(),
+                warning: None,
+            });
+        }
     }
 
     match cfg.map_fallback {
