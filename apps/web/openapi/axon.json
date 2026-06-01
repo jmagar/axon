@@ -2521,6 +2521,12 @@
             "format": "int64",
             "minimum": 0
           },
+          "discover_llms_txt": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "discover_sitemaps": {
             "type": [
               "boolean",
@@ -2540,6 +2546,13 @@
             ]
           },
           "max_depth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "max_llms_txt_urls": {
             "type": [
               "integer",
               "null"
