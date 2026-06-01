@@ -463,3 +463,14 @@ fn extract_anchor_hrefs_ignores_non_anchor_href_attributes() {
 
     assert_eq!(links, vec!["https://real.example.com/page".to_string()]);
 }
+
+#[test]
+fn extract_anchor_hrefs_ignores_data_href_inside_anchor() {
+    // `data-href=` (and other `*href=` attributes) inside an <a> tag must not be
+    // matched as the real href — only the genuine `href=` attribute is captured.
+    let html = r##"<a data-href="https://tracker.example.com/x" href="https://real.example.com/page">Link</a>"##;
+
+    let links = extract_anchor_hrefs("https://example.com/", html, 10);
+
+    assert_eq!(links, vec!["https://real.example.com/page".to_string()]);
+}

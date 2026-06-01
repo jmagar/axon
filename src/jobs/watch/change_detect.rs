@@ -106,10 +106,15 @@ pub async fn detect_url_change(
             // watch's configured custom headers — a header-gated page (401/403)
             // or a transient probe-only failure would otherwise permanently block
             // seeding/detection. Fall through to the scrape path (which DOES use
-            // configured headers via `services::scrape`) with no validators; if
-            // that scrape also fails we return Failed below.
+            // configured headers via `services::scrape`); if that scrape also fails
+            // we return Failed below. Preserve the prior validators rather than
+            // wiping them — a transient probe failure must not discard the stored
+            // ETag/Last-Modified that the next conditional probe will reuse.
             tracing::warn!(%watch_id, url, error = %msg, "watch: conditional probe failed; falling back to scrape");
-            (None, None)
+            (
+                prior.as_ref().and_then(|p| p.etag.clone()),
+                prior.as_ref().and_then(|p| p.last_modified.clone()),
+            )
         }
         Probe::Modified {
             etag,

@@ -138,7 +138,15 @@ pub fn extract_anchor_hrefs(base_url: &str, html: &str, limit: usize) -> Vec<Str
         // Search for href=" or href=' within this tag body only.
         let mut tag_pos = 0usize;
         while let Some(href_rel) = tag_body[tag_pos..].find("href=") {
-            let marker = tag_pos + href_rel + 5;
+            let href_at = tag_pos + href_rel;
+            let marker = href_at + 5;
+            // Require an attribute boundary before `href=` so we don't match
+            // `data-href=`, `xhref=`, etc. The byte after `<a` is whitespace, so
+            // `href_at` is never 0 for a genuine href attribute.
+            if href_at != 0 && !tag_body.as_bytes()[href_at - 1].is_ascii_whitespace() {
+                tag_pos = marker;
+                continue;
+            }
             let Some(quote) = tag_body[marker..].chars().next() else {
                 break;
             };
