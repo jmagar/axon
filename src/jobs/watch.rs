@@ -7,6 +7,8 @@ use sqlx::SqlitePool;
 use std::error::Error;
 use uuid::Uuid;
 
+pub(crate) mod filter;
+
 pub const WATCH_RUN_STATUS_RUNNING: &str = "running";
 pub const WATCH_RUN_STATUS_COMPLETED: &str = "completed";
 pub const WATCH_RUN_STATUS_FAILED: &str = "failed";
