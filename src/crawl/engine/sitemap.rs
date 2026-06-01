@@ -125,8 +125,16 @@ pub(crate) async fn fetch_text_with_retry(
                 if status.is_success() {
                     return read_body_capped(resp, url, max_bytes).await;
                 }
-                if attempt >= retries || !should_retry_status(status) {
-                    // True 404/non-success absence stays low-noise (no warn).
+                if !should_retry_status(status) {
+                    // True 404/non-retryable absence stays low-noise (no warn).
+                    return None;
+                }
+                if attempt >= retries {
+                    // Retryable status (429/5xx) that never recovered — worth a warn.
+                    log_warn(&format!(
+                        "command=fetch status={} retries exhausted url={url}",
+                        status.as_u16()
+                    ));
                     return None;
                 }
             }

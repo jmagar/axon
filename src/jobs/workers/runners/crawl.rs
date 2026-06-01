@@ -205,14 +205,10 @@ async fn discover_llms_for_backfill(cfg: &Config, url: &str) -> Vec<String> {
     }
 }
 
-/// Union the sitemap and llms.txt candidate URLs, canonicalize + dedupe. A URL discovered
-/// by both sources is written once (sitemap wins on collision — it is chained first).
-///
-/// No blanket truncation is applied: sitemap-URL volume is bounded upstream by
-/// `max_sitemaps` (documents parsed) and the llms.txt fan-out is already capped at its
-/// source by `discover_llms_txt_urls` (`max_llms_txt_urls`). Capping the merged set here
-/// would silently truncate sitemap backfill below what `append_sitemap_backfill` produced
-/// on `main` — a behavior regression.
+/// Union sitemap + llms.txt candidates, canonicalize + dedupe (sitemap wins on collision —
+/// chained first). NO blanket truncation: sitemap volume is bounded upstream by
+/// `max_sitemaps` and the llms fan-out is capped at its source (`max_llms_txt_urls`).
+/// Capping here would shrink sitemap backfill below `main`'s — a regression.
 fn merge_candidates(sitemap: Vec<String>, llms: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     sitemap
