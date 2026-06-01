@@ -1,6 +1,6 @@
 # Endpoints — API Endpoint Discovery, Verification & Protocol Probing
 
-Last Modified: 2026-05-29
+Last Modified: 2026-06-01
 
 Canonical reference for the `axon endpoints` subsystem: how Axon discovers API
 endpoints from a web page, optionally verifies they are reachable, captures the
@@ -35,7 +35,7 @@ Five capabilities, layered (each strictly opt-in beyond static discovery):
 | **First-party bundles** | on | `--include-bundles` | Fetch & scan same-origin `<script src>` bundles |
 | **Verification** | off | `--verify` | Unauthenticated `HEAD`/`OPTIONS` probes for reachability |
 | **Network capture** | off | `--capture-network` | Chrome CDP observation of runtime requests (executes page JS) |
-| **RPC probing** | off | `--probe-rpc` | Fingerprint HTTP endpoints for JSON-RPC 2.0 / OpenRPC / MCP |
+| **RPC probing** | off | `--probe-rpc` | Fingerprint HTTP endpoints for JSON-RPC 2.0 / OpenRPC / MCP / ACP (optionally `mcp.<apex>` subdomain candidates via `--probe-rpc-subdomains`) |
 
 ---
 
@@ -267,11 +267,15 @@ Caps & safety:
 | `--verify` | flag | `false` | `endpoints_verify` |
 | `--capture-network` | flag | `false` | `endpoints_capture_network` |
 | `--probe-rpc` | flag | `false` | `endpoints_probe_rpc` |
+| `--probe-rpc-subdomains` | flag | `false` | `endpoints_probe_rpc_subdomains` |
 | `--json` (global) | flag | `false` | `json_output` |
 
 `--include-bundles`, `--first-party-only`, `--unique-only` take an explicit
 `true`/`false` (clap `ArgAction::Set`); `--verify`, `--capture-network`,
-`--probe-rpc` are bare switches (`SetTrue`).
+`--probe-rpc`, `--probe-rpc-subdomains` are bare switches (`SetTrue`).
+`--probe-rpc-subdomains` also probes synthesized `mcp.<apex>` subdomain
+candidates for MCP/JSON-RPC; it is a **no-op without `--probe-rpc`** (the CLI logs
+a warning and ignores it).
 
 ### Environment variables (concurrency caps; all process-wide)
 | var | default | controls |

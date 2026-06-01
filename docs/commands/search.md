@@ -4,7 +4,7 @@ Last Modified: 2026-03-03
 Version: 1.0.0
 Last Updated: 20:29:46 | 03/03/2026 EST
 
-Web search via Tavily. Returns ranked results (title, URL, snippet) and runs synchronously.
+Web search via Tavily. Returns ranked results (title, URL, snippet), then auto-enqueues one bounded crawl job per result URL so the hits are indexed into Qdrant. Runs synchronously.
 
 ## Synopsis
 
@@ -50,15 +50,19 @@ axon search "tokio task cancellation" --limit 5 --search-time-range month
 
 ## Output
 
-`search` prints:
+In human mode, `search` prints:
 - Numbered result position
 - Title
 - URL
 - Snippet (if present)
+- A summary of the auto-queued crawl jobs (and any rejected URLs)
+
+With `--json`, the payload includes: `query`, `limit`, `offset`, `search_time_range`, `results`, `auto_crawl_status`, `crawl_jobs`, and `crawl_jobs_rejected`.
 
 ## Behavior Notes
 
-- `search` is synchronous and does not enqueue a background job.
-- `--wait` has no effect for this command.
+- `search` runs synchronously (the Tavily search and crawl-job enqueue both happen inline).
+- After returning results, `search` enqueues one bounded crawl job per result URL (`search_and_crawl` in `src/services/search_crawl.rs`). The crawl jobs themselves run asynchronously via the in-process worker pool.
+- If results were found but no URLs could be queued for crawl, `search` exits with an error reporting the first rejection reason.
+- `--wait` is not honored by `search` itself; the enqueued crawl jobs follow the normal async lifecycle (inspect them with `axon crawl status`/`list`).
 - With `--json`, output is strict JSON on stdout.
-- `search` does not enqueue crawl jobs.

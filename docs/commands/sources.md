@@ -1,8 +1,5 @@
 # axon sources
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 20:30:18 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 List indexed source URLs in the active Qdrant collection with chunk counts.
 Pass `--domain <host>` to list indexed URLs for one exact indexed domain.
@@ -31,10 +28,11 @@ All global flags apply. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--collection <name>` | `cortex` | Qdrant collection to inspect. |
+| `--collection <name>` | `axon` | Qdrant collection to inspect. Also settable via `AXON_COLLECTION`. |
 | `--json` | `false` | Emits a JSON object with `count`, `limit`, `offset`, and `urls` for unfiltered output. Domain-filtered JSON uses `cursor` / `next_cursor` instead of `offset`. |
 | `--domain <host-or-url>` | — | Filter indexed source URLs by exact domain/host. URL input is accepted and normalized to its host. |
 | `--all` | `false` | With `--domain`, export up to `AXON_SOURCES_DOMAIN_LIMIT` matching URLs instead of the normal `--limit` page. |
+| `--by-schema-version` | `false` | Include a per-payload-schema-version chunk-count breakdown. Triggers a full collection scroll (O(N)); opt-in only. |
 
 ## Examples
 

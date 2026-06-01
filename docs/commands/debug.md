@@ -1,5 +1,5 @@
 # axon debug
-Last Modified: 2026-03-03
+Last Modified: 2026-06-01
 
 Run `doctor`, then ask the configured LLM for prioritized troubleshooting steps.
 

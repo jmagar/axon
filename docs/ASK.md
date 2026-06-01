@@ -45,7 +45,7 @@ Streaming mode:
 
 - `axon ask "<question>"` prints Gemini token deltas as they arrive for interactive use by default.
 - Use `--no-stream` to disable answer streaming and render only the final response.
-- Streaming uses the in-process ask path. If `AXON_SERVER_URL` / `--server-url` is set, the CLI silently ignores it for that request because `/v1/ask` is a buffered JSON endpoint.
+- Streaming uses the in-process ask path. If `AXON_SERVER_URL` is set, the CLI silently ignores it for that request because `/v1/ask` is a buffered JSON endpoint.
 - `--json` and `--explain` remain buffered.
 
 Follow-up mode:

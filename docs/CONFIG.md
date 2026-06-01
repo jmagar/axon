@@ -223,7 +223,7 @@ temporary overrides and legacy scripts.
 
 | TOML key | Env override | Default | Description |
 |----------|--------------|---------|-------------|
-| `search.collection` | `AXON_COLLECTION` | `cortex` | Qdrant collection name |
+| `search.collection` | `AXON_COLLECTION` | `axon` | Qdrant collection name |
 | `workers.ingest-lanes` | `AXON_INGEST_LANES` | `2` | Parallel ingest worker lanes (clamped 1-16) |
 | `workers.embed-lanes` | `AXON_EMBED_LANES` | `2` | Parallel embed worker lanes (clamped 1-32) |
 | `workers.embed-doc-timeout-secs` | `AXON_EMBED_DOC_TIMEOUT_SECS` | `300` | Per-document embed timeout (clamped 30-3600) |
@@ -390,7 +390,7 @@ containing cached source text.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AXON_TEST_QDRANT_URL` | `http://127.0.0.1:53333` | Host-accessible Qdrant URL for integration tests |
+| `AXON_TEST_QDRANT_URL` | `http://127.0.0.1:53335` | Host-accessible Qdrant URL for integration tests (backfilled by `dev-setup.sh`) |
 
 ### Webclaw port (axon_rust-zehr)
 

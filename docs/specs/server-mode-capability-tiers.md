@@ -61,7 +61,7 @@ Target:
 - Direct REST routes remain canonical for client/server mode.
 - REST request bodies gain full feature parity with CLI and MCP request fields.
 - Shared service request/option structs should define the knobs once. CLI, REST, and MCP should map into those structs rather than each surface inventing its own subset.
-- This is a hard cutover project. There is no backwards-compatibility requirement for `/v1/actions`; after REST parity exists and CLI/MCP have moved, remove `/v1/actions` instead of keeping a compatibility phase.
+- This is a hard cutover project. There is no backwards-compatibility requirement for `/v1/actions`. The cutover has happened: `/v1/actions` is now a stub that returns `404` (`v1_actions_removed` in `src/web/server/routing.rs`) — clients must use the direct `/v1/*` REST routes.
 - Parity tests should compare CLI planning, REST request parsing, and MCP request parsing against the same canonical service request structs.
 
 ## REST Route Parity Requirements
@@ -577,9 +577,9 @@ Image-input edit:
 
 - Move CLI server mode from `/v1/actions` to direct REST routes.
 - Add stdio MCP thin-client mode when `AXON_SERVER_URL` is set.
-- Keep local runtime fallback for safe commands.
-- Add `--server-required` to disable fallback.
-- Remove `/v1/actions` after direct REST and MCP thin-client paths cover the current behavior.
+- Keep local runtime fallback for safe commands. `--local` (env `AXON_LOCAL_MODE`) forces local execution today; route planning lives in `src/cli/route.rs` (`plan_command_route`, `FallbackPolicy`).
+- Add `--server-required` to disable fallback. (Not yet implemented — still future.)
+- Remove `/v1/actions` after direct REST and MCP thin-client paths cover the current behavior. **Done:** `/v1/actions` already returns a stub `404`.
 
 ### Phase 4: Local Backlog Sync
 

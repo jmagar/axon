@@ -36,7 +36,7 @@ All global flags apply. Key flags:
 | `--query <text>` | — | Query text (alternative to positional words). |
 | `--limit <n>` | `10` | Maximum Tavily results processed. |
 | `--search-time-range <range>` | — | Filter Tavily results by time range: `day`, `week`, `month`, `year`. |
-| `--research-depth <n>` | — | Crawl depth limit for the research pass. |
+| `--research-depth <n>` | — | Number of sources the LLM synthesizes over. When set, it overrides `--limit`; when unset, falls back to `--limit` (default `10`). Capped with `--offset` at 100 (the Tavily window). |
 
 The Gemini model used for synthesis is controlled by the
 `AXON_HEADLESS_GEMINI_MODEL` env var (see [`docs/CONFIG.md`](../CONFIG.md)).

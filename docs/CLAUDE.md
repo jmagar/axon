@@ -1,5 +1,5 @@
 # docs/ — Documentation Structure
-Last Modified: 2026-05-09
+Last Modified: 2026-06-01
 
 All project documentation lives here. This file defines the layout and the rules for what goes where.
 
@@ -7,18 +7,23 @@ All project documentation lives here. This file defines the layout and the rules
 
 ```
 docs/
+├── auth/                     # Authentication patterns and MCP auth deep-dives
 ├── commands/                 # CLI command reference — one file per command
+├── config/                   # Configuration deep-dives
+├── contracts/                # API/MCP contract specs
 ├── eval/                     # Evaluation datasets, metrics, and judge outputs
 ├── ingest/                   # Ingest pipeline docs and one deep-dive per ingest source
 ├── mcp/                      # MCP connection, transport, deployment, and action docs
+├── palette-demo/             # Desktop palette testing demo assets
 ├── perf/                     # Performance reports and tuning snapshots
 ├── plans/                    # Active implementation plans (move to plans/complete/ when done)
 │   └── complete/             # Archived plans
 ├── repo/                     # Repository structure, rules, recipes, scripts
 ├── reports/                  # Code reviews, audits, analysis
-├── screenshots/              # UI screenshots and visual references
 ├── sessions/                 # Session logs: YYYY-MM-DD-HH-MM-description.md
+├── specs/                    # Feature specifications
 ├── stack/                    # Architecture, technology stack, prerequisites
+├── superpowers/              # Advanced workflows
 ├── archive/                  # Historical removed-runtime docs (do not edit)
 │
 ├── ARCHITECTURE.md           # System architecture diagrams and data-flow

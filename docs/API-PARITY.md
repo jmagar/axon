@@ -1,5 +1,5 @@
 # HTTP API Parity Inventory
-Last Modified: 2026-05-24
+Last Modified: 2026-06-01
 
 This inventory tracks parity across the three Axon control surfaces:
 
@@ -32,12 +32,15 @@ Status meanings:
 
 | CLI command | Service entry point(s) | MCP action/subaction | HTTP endpoint/status | Notes |
 |---|---|---|---|---|
-| `ask` | `services::query::ask` | `ask` | `POST /v1/ask` = Implemented | Streaming/SSE is not exposed as a stable `/v1` route. |
+| `ask` | `services::query::ask` | `ask` | `POST /v1/ask`, `POST /v1/ask/stream` = Implemented | `/v1/ask/stream` is advertised in `supported_routes()` and serves SSE; non-streaming `/v1/ask` remains for existing clients. |
 | `crawl` | `services::crawl::{crawl_start_with_context,crawl_status,crawl_list,crawl_cancel,crawl_cleanup,crawl_clear,crawl_recover}` | `crawl.start`, `crawl.status`, `crawl.cancel`, `crawl.list`, `crawl.cleanup`, `crawl.clear`, `crawl.recover` | `POST /v1/crawl`, `GET /v1/crawl`, `GET /v1/crawl/{id}`, `POST /v1/crawl/{id}/cancel`, `POST /v1/crawl/cleanup`, `DELETE /v1/crawl`, `POST /v1/crawl/recover` = Implemented | CLI-only `crawl worker`, `crawl errors`, `crawl audit`, and `crawl diff` are local process/reporting operations. |
 | `debug` | `services::debug::debug_report` | no dedicated action | Missing | Needs API shape decision for diagnostics payload and LLM troubleshooting artifacts. |
 | `dedupe` | `services::system::dedupe` | no dedicated action | `POST /v1/dedupe` = Implemented | Mutating vector maintenance command; migrate remains CLI-only. |
 | `doctor` | `services::system::doctor` | `doctor` | `GET /v1/doctor` = Implemented | Returns diagnostics to authenticated callers; boolean probes use healthz/readyz. |
 | `domains` | `services::system::{domains,detailed_domains}` | `domains` | `GET /v1/domains` = Implemented | HTTP exposes the domain facets service path. |
+| `brand` | `services::scrape::*` (brand extraction) | no dedicated action | Missing | CLI-only brand-identity extraction; no MCP action or REST route yet. |
+| `diff` | `services::scrape::*` (two-URL compare) | no dedicated action | Missing | CLI-only URL diff; no MCP action or REST route yet. |
+| `endpoints` | `services::endpoints::discover` | `endpoints` | `POST /v1/endpoints` = Implemented | API-endpoint discovery. `--probe-rpc`/`--probe-rpc-subdomains` remain CLI-only (no MCP/REST toggle); see `docs/ENDPOINTS.md`. |
 | `embed` | `services::embed::{embed_start_with_context,embed_status,embed_list,embed_cancel,embed_cleanup,embed_clear,embed_recover}` | `embed.start`, `embed.status`, `embed.cancel`, `embed.list`, `embed.cleanup`, `embed.clear`, `embed.recover` | `POST /v1/embed`, `GET /v1/embed`, `GET /v1/embed/{id}`, `POST /v1/embed/{id}/cancel`, `POST /v1/embed/cleanup`, `DELETE /v1/embed`, `POST /v1/embed/recover` = Implemented | REST validates local file inputs with the shared server-side embed guard. CLI-only `embed worker` is local process control. |
 | `evaluate` | `services::query::evaluate` | `evaluate` | `POST /v1/evaluate` = Implemented | Uses typed result and shared HttpError envelope. |
 | `extract` | `services::extract::{extract_start_with_context,extract_status,extract_list,extract_cancel,extract_cleanup,extract_clear,extract_recover}` | `extract.start`, `extract.status`, `extract.cancel`, `extract.list`, `extract.cleanup`, `extract.clear`, `extract.recover` | `POST /v1/extract`, `GET /v1/extract`, `GET /v1/extract/{id}`, `POST /v1/extract/{id}/cancel`, `POST /v1/extract/cleanup`, `DELETE /v1/extract`, `POST /v1/extract/recover` = Implemented | REST accepts canonical DTOs; the public schema only advertises `auto` until the async service has mode parity. |
@@ -62,6 +65,12 @@ Status meanings:
 | `serve` | HTTP server startup | no action | Deferred | Starts this server; not a route. |
 | `setup` | `services::setup::*` | no action | Deferred | First-run/local/SSH setup mutates host config and should remain panel/local until an admin API is designed. |
 | `train` | `cli::commands::train` | no action | Deferred | Interactive/local feedback command; no services-first API exists. |
+| `config` | `cli::commands::config` | no action | Deferred | Reads/writes `~/.axon/.env` and `~/.axon/config.toml` on the host; local-only by design. |
+| `monitor` | `cli::commands::monitor` | no action | Deferred | Local operational monitoring command; no remote API. |
+| `preflight` | `cli::commands::preflight` | no action | Deferred | Local pre-run environment checks; no remote API. |
+| `smoke` | `cli::commands::smoke` | no action | Deferred | Local smoke-test runner; no remote API. |
+| `compose` | `cli::commands::compose` | no action | Deferred | Local Docker Compose helper; no remote API. |
+| `sync` | `cli::commands::sync` | no action | Deferred | Local container/binary sync helper; no remote API. |
 
 ## Advertised Direct REST Routes
 

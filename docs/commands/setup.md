@@ -1,4 +1,5 @@
 # axon setup / preflight / compose / smoke
+Last Modified: 2026-06-01
 
 Local service-stack bootstrap is split into focused commands.
 
@@ -7,6 +8,7 @@ Local service-stack bootstrap is split into focused commands.
 ```bash
 axon setup [--json]
 axon setup init [options] [--json]
+axon setup check [--json]
 axon preflight [--json]
 axon compose up [--json]
 axon compose down [--json]
@@ -23,6 +25,7 @@ axon setup plugin-hook [--no-setup] [--json]
 |---------|---------|
 | `setup` | Convenience wrapper: initialize local files/assets, start the service stack, then run preflight readiness checks. |
 | `setup init` | Create or refresh `~/.axon`, `config.toml`, `.env`, and compose assets. Does not start services. |
+| `setup check` | Alias for `preflight` — check local prerequisites and service readiness without mutating files or services. |
 | `preflight` | Check local prerequisites, auth config, and running service readiness. Does not mutate files or start services. |
 | `compose up` | Pull images, start the Docker service stack detached, then follow `docker compose logs -f` so startup is visible. Press Ctrl-C to stop watching logs; services keep running. |
 | `compose down` | Stop the Docker service stack. |

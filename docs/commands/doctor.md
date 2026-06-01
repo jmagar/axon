@@ -1,5 +1,5 @@
 # axon doctor
-Last Modified: 2026-03-03
+Last Modified: 2026-06-01
 
 Run connectivity and pipeline diagnostics for the local Axon stack.
 
@@ -7,7 +7,14 @@ Run connectivity and pipeline diagnostics for the local Axon stack.
 
 ```bash
 axon doctor [FLAGS]
+axon doctor diagnose [FLAGS]
 ```
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `diagnose` | Print doctor output plus an LLM-assisted diagnosis when a Gemini headless command is configured. (Equivalent to `axon debug`.) |
 
 ## Flags
 

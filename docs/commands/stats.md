@@ -1,8 +1,5 @@
 # axon stats
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 20:30:18 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 Show vector and pipeline statistics for the active collection. Combines Qdrant collection snapshots with job/command metrics derived from the local SQLite jobs database.
 
@@ -30,7 +27,7 @@ All global flags apply. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--collection <name>` | `cortex` | Qdrant collection to inspect. |
+| `--collection <name>` | `axon` | Qdrant collection to inspect. Also settable via `AXON_COLLECTION`. |
 | `--json` | `false` | Full stats payload as JSON. |
 
 ## Examples

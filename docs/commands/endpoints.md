@@ -11,7 +11,23 @@ axon endpoints https://example.com --first-party-only true
 axon endpoints https://example.com --include-bundles true --max-scripts 40 --max-scan-bytes 8388608
 axon endpoints https://example.com --verify --json
 axon endpoints https://example.com --capture-network --json
+axon endpoints https://example.com --probe-rpc --json
+axon endpoints https://example.com --probe-rpc --probe-rpc-subdomains --json
 ```
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--include-bundles <bool>` | `true` | Fetch and scan first-party JavaScript bundles. |
+| `--first-party-only <bool>` | `false` | Return only endpoints on the target page's host. |
+| `--unique-only <bool>` | `true` | Deduplicate by normalized endpoint URL. |
+| `--max-scripts <n>` | `40` | Maximum script bundle URLs to fetch and scan. |
+| `--max-scan-bytes <n>` | `8388608` (8 MiB) | Maximum HTML plus JavaScript bytes to scan. |
+| `--verify` | `false` | Probe discovered HTTP endpoints without credentials (Layer 2). |
+| `--capture-network` | `false` | Capture browser network requests. Executes page code and requires Chrome (Layer 3). |
+| `--probe-rpc` | `false` | Probe discovered endpoints for JSON-RPC 2.0 / MCP / ACP protocol support. |
+| `--probe-rpc-subdomains` | `false` | Also probe `mcp.<apex>` subdomain candidates for MCP/JSON-RPC. No-op without `--probe-rpc`. |
 
 ## Layers
 
@@ -32,13 +48,21 @@ Layer 3 is optional browser network capture with `--capture-network`. This mode
 executes page code and can trigger real network calls. It requires a configured
 Chrome endpoint and fails clearly when Chrome capture is unavailable.
 
+Layer 4 is optional protocol probing with `--probe-rpc`. Axon probes discovered
+endpoints for JSON-RPC 2.0 / MCP / ACP protocol support and annotates each probed
+endpoint with an `rpc_probe` result. With `--probe-rpc-subdomains` it also probes
+synthesized `mcp.<apex>` subdomain candidates (reported under `mcp_candidates`);
+that flag is a no-op without `--probe-rpc`.
+
 ## Output
 
 JSON output returns:
 
 - `url`
 - `endpoints[]` with `value`, `normalized_url`, `kind`, `first_party`,
-  `source`, `source_url`, and optional `verified`
+  `source`, `source_url`, optional `verified`, and optional `rpc_probe`
+  (present when `--probe-rpc` is set)
+- `mcp_candidates` (present when `--probe-rpc-subdomains` is set)
 - `hosts`
 - `scripts_discovered`
 - `bundles_fetched`

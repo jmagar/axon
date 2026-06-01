@@ -1,8 +1,5 @@
 # axon suggest
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 20:30:18 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 Suggest new documentation URLs to crawl. The command inspects already indexed URLs/domains, prompts an LLM for complementary crawl targets, then filters out already-indexed matches.
 
@@ -37,7 +34,7 @@ All global flags apply. Key flags:
 |------|---------|-------------|
 | `--query <text>` | — | Focus text (alternative to positional argument). |
 | `--limit <n>` | `10` | Desired number of suggested URLs (clamped to 1..100). |
-| `--collection <name>` | `cortex` | Qdrant collection to analyze. |
+| `--collection <name>` | `axon` | Qdrant collection to analyze. Also settable via `AXON_COLLECTION`. |
 | `--json` | `false` | Emits `{"suggestions": [{"url": "...", "reason": "..."}]}` JSON object. |
 
 Note: `suggest` runs synchronously and does not enqueue jobs.
@@ -49,7 +46,7 @@ Note: `suggest` runs synchronously and does not enqueue jobs.
 axon suggest
 
 # Focus on a topic
-axon suggest "refresh scheduler internals"
+axon suggest "watch scheduler internals"
 
 # Ask for more candidates
 axon suggest "MCP server operations" --limit 20

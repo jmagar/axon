@@ -51,7 +51,7 @@ pipx install yt-dlp
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wait <bool>` | `false` | Block until ingestion completes |
-| `--collection <name>` | `cortex` | Target Qdrant collection |
+| `--collection <name>` | `axon` | Target Qdrant collection |
 | `--json` | `false` | Machine-readable output |
 
 ## Job Subcommands

@@ -1,5 +1,5 @@
 # Command Reference
-Last Modified: 2026-03-25
+Last Modified: 2026-06-01
 
 Index of Axon CLI command docs.
 
@@ -42,6 +42,10 @@ Use `--local` to bypass server mode for one command.
 - [summarize](./summarize.md)
 - [watch](./watch.md)
 
+## Setup & Ops
+
+`axon setup`, `preflight`, `compose`, and `smoke` are documented together in [setup](./setup.md).
+
 ## Ingest Source Redirects
 The following are now ingest sub-targets — see [ingest](./ingest.md) for the unified command:
 - [github](./github.md) (auto-detected by `axon ingest`)
@@ -50,3 +54,15 @@ The following are now ingest sub-targets — see [ingest](./ingest.md) for the u
 
 ## Shell
 - [completions](./completions.md)
+
+## Commands without a dedicated doc yet
+
+These subcommands exist in the binary (run `axon <command> --help`) but do not yet have
+their own reference page. See the gap list in the docs-refresh report for what each should cover.
+
+- `brand` — extract a URL's brand identity (colors, fonts, logos, favicon)
+- `diff` — diff two URLs and show what changed
+- `config` — read/write `~/.axon/.env` and `~/.axon/config.toml` (subcommands: `list`, `get`, `set`, `unset`, `path`)
+- `train` — collect human preference votes for retrieved RAG candidates
+- `monitor` — stream job-lifecycle events as a line-oriented feed
+- `sync` — reconcile locally produced server-mode artifacts

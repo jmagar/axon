@@ -1,5 +1,5 @@
 # axon status
-Last Modified: 2026-03-20
+Last Modified: 2026-06-01
 
 Show local job state across crawl, extract, embed, and ingest queues.
 
@@ -19,6 +19,7 @@ All global flags apply. Key flags for this command:
 | `--reclaimed` | `false` | Show only watchdog-reclaimed stale-running failures. |
 | `--active` | `false` | Show only active jobs (pending/running). |
 | `--recent` | `false` | Show active + completed jobs (hide failed/canceled). |
+| `--watch` | `false` | Live-update mode: redraw the status view on an interval (human output only; ignored with `--json`/`--quiet`). |
 
 ## Output
 

@@ -26,8 +26,8 @@ See [stack/PRE-REQS.md](stack/PRE-REQS.md) for detailed installation instruction
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/jmagar/axon.git ~/workspace/axon_rust
-cd ~/workspace/axon_rust
+git clone https://github.com/jmagar/axon.git ~/workspace/axon
+cd ~/workspace/axon
 ```
 
 ## 2. Initialize local Axon state
@@ -141,9 +141,12 @@ See [mcp/DEPLOY.md](mcp/DEPLOY.md) for detailed Docker deployment patterns.
 - Check that `~/.axon/.env` has the expected service URLs and token values
 - For local dev, Qdrant URLs auto-normalize to localhost ports
 
-### Build fails with spider_agent path error
+### Build fails fetching crates
 
-`Cargo.toml` references a local `spider_agent` path for development. In CI or fresh environments, switch to the crates.io version. See the `spider_agent` gotcha in the root `CLAUDE.md`.
+`spider`/`spider_agent` come from crates.io; `lab-auth` is vendored locally via
+`[patch]` → `vendor/lab-auth` (no network needed for it). A fresh checkout builds
+without any local-path setup. If a build fails fetching crates, run `cargo fetch`
+and confirm crates.io connectivity.
 
 ### TEI container exits immediately
 

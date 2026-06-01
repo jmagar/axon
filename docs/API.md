@@ -1,8 +1,10 @@
 # Axon HTTP API
 
-Last Modified: 2026-05-19
+Last Modified: 2026-06-01
 
-Axon exposes direct REST routes under `/v1`. Direct REST is the canonical client/server API; the legacy `POST /v1/actions` action-envelope endpoint has been removed.
+Axon exposes direct REST routes under `/v1`. Direct REST is the canonical client/server API; the legacy `POST /v1/actions` action-envelope endpoint has been removed (it now returns `404`, as does `POST /v1/migrate`).
+
+Process health is served unauthenticated at `GET /healthz` and `GET /readyz`. The admin/setup panel is served under `/api/panel/*` (panel-password session auth) — see `docs/SECURITY.md` §6 and `src/web/CLAUDE.md` for its route tree.
 
 ## Routes
 
@@ -25,12 +27,14 @@ RAG routes:
 - `POST /v1/evaluate` with `{ "question": "..." }`
 - `POST /v1/suggest` with `{ "focus": "..." }`
 - `POST /v1/ask` remains supported for existing ask clients.
+- `POST /v1/ask/stream` streams the ask synthesis (SSE) for clients that want incremental tokens.
 
 Exploration routes:
 
 - `POST /v1/scrape` with `{ "url": "..." }` or `{ "urls": ["..."] }`
 - `POST /v1/summarize` with `{ "url": "..." }` or `{ "urls": ["..."] }`
 - `POST /v1/map` with `{ "url": "...", "limit": 100, "offset": 0 }`
+- `POST /v1/endpoints` with `{ "url": "...", ... }` — API-endpoint discovery (`axon:write`); see `docs/ENDPOINTS.md`.
 - `POST /v1/search` with `{ "query": "...", "limit": 10, "offset": 0, "time_range": "week" }`
 - `POST /v1/research` with the same body as search; HTTP requests time out after 35 seconds.
 

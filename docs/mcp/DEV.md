@@ -6,7 +6,7 @@ Day-to-day development guide for the Axon MCP server.
 
 ```bash
 git clone https://github.com/jmagar/axon.git
-cd axon_rust
+cd axon
 mkdir -m 700 -p ~/.axon
 cp .env.example ~/.axon/.env && chmod 600 ~/.axon/.env
 # Edit ~/.axon/.env with your credentials
@@ -162,7 +162,7 @@ just fix         # auto-fix: fmt + clippy --fix
 Set `RUST_LOG` for MCP-specific filtering:
 
 ```bash
-RUST_LOG=info,axon::axon::mcp=debug axon mcp
+RUST_LOG=info,axon::mcp=debug axon mcp
 ```
 
 ### Response artifacts

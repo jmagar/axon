@@ -26,7 +26,7 @@ Ingest jobs are persisted in the SQLite `axon_ingest_jobs` table. The table is c
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `TEXT` | Job identifier |
-| `source_type` | `TEXT` | One of `github`, `gitlab`, `gitea`, `git`, `reddit`, `youtube` |
+| `source_type` | `TEXT` | One of `github`, `gitlab`, `gitea`, `git`, `reddit`, `youtube`, `sessions` |
 | `target` | `TEXT` | The original target string (slug, URL, handle, etc.) |
 | `status` | `TEXT` | `pending`, `running`, `completed`, `failed`, or `canceled` |
 | `config_json` | `TEXT` | Serialized job configuration (flags at submission time) |

@@ -8,7 +8,7 @@ Axon exposes exactly one MCP tool:
 |------|---------|-------------------|
 | `axon` | Unified action router for all crawl/scrape/embed/query/RAG operations | `action` |
 
-This single-tool pattern routes all operations through `action` + optional `subaction`, keeping the MCP surface minimal while supporting 50+ operations.
+This single-tool pattern routes all operations through `action` + optional `subaction`, keeping the MCP surface minimal while supporting every Axon action and its lifecycle subactions through one schema. The full, machine-generated wire contract lives in [`../MCP-TOOL-SCHEMA.md`](../MCP-TOOL-SCHEMA.md); this page documents the common actions.
 
 ## Tool: `axon`
 
@@ -82,7 +82,7 @@ Scrape one or more URLs to markdown.
 |-----------|------|---------|-------------|
 | `url` | string | -- | URL to scrape |
 | `render_mode` | enum | `auto_switch` | `http`, `chrome`, `auto_switch` |
-| `format` | enum | `markdown` | `markdown`, `html`, `rawHtml`, `json` |
+| `format` | enum | `markdown` | `markdown`, `html`, `raw_html`, `json`, `llm` |
 | `embed` | bool | `true` | Auto-embed content into Qdrant |
 | `root_selector` | string | -- | CSS selector for content root |
 | `exclude_selector` | string | -- | CSS selector for elements to exclude |
@@ -104,7 +104,7 @@ Semantic vector search against the Qdrant collection.
 | `query` | string | -- | Search text |
 | `limit` | usize | 10 | Max results |
 | `offset` | usize | 0 | Skip N results |
-| `collection` | string | server-configured (`[search].collection`, default `cortex`; `AXON_COLLECTION` only as override) | Qdrant collection |
+| `collection` | string | server-configured (`[search].collection`, default `axon`; `AXON_COLLECTION` only as override) | Qdrant collection |
 | `since` | string | -- | Filter: only docs after this date |
 | `before` | string | -- | Filter: only docs before this date |
 | `hybrid_search` | bool | -- | `false` forces dense-only; unset = server config (`[search].hybrid-enabled`, default true; `AXON_HYBRID_SEARCH` only as override) |
@@ -121,7 +121,8 @@ RAG: semantic search + LLM answer synthesis with citations.
 |-----------|------|---------|-------------|
 | `query` | string | -- | Question to answer |
 | `diagnostics` | bool | `false` | Include retrieval diagnostics |
-| `collection` | string | server-configured (`[search].collection`, default `cortex`; `AXON_COLLECTION` only as override) | Qdrant collection |
+| `explain` | bool | `false` | Return a per-candidate explain trace and skip LLM synthesis |
+| `collection` | string | server-configured (`[search].collection`, default `axon`; `AXON_COLLECTION` only as override) | Qdrant collection |
 | `since` | string | -- | Date filter (after) |
 | `before` | string | -- | Date filter (before) |
 | `hybrid_search` | bool | -- | `false` forces dense-only; unset = server config |
@@ -156,7 +157,7 @@ Evaluate RAG quality against a baseline answer.
 | `query` | string | -- | Question to evaluate. `question` is accepted as an alias. |
 | `diagnostics` | bool | `false` | Include retrieval diagnostics |
 | `retrieval_ab` | bool | `false` | Compare hybrid RAG against dense-only RAG instead of RAG against baseline |
-| `collection` | string | server-configured (`[search].collection`, default `cortex`; `AXON_COLLECTION` only as override) | Qdrant collection |
+| `collection` | string | server-configured (`[search].collection`, default `axon`; `AXON_COLLECTION` only as override) | Qdrant collection |
 | `since` | string | -- | Date filter (after) |
 | `before` | string | -- | Date filter (before) |
 | `hybrid_search` | bool | -- | `false` forces dense-only; unset = server config |
@@ -173,7 +174,7 @@ Suggest new crawl targets from the current indexed source coverage.
 |-----------|------|---------|-------------|
 | `focus` | string | -- | Optional suggestion focus. `query` is accepted as an alias. |
 | `limit` | usize | server search limit | Max suggestions to return |
-| `collection` | string | server-configured (`[search].collection`, default `cortex`; `AXON_COLLECTION` only as override) | Qdrant collection |
+| `collection` | string | server-configured (`[search].collection`, default `axon`; `AXON_COLLECTION` only as override) | Qdrant collection |
 
 ### search
 
@@ -247,6 +248,22 @@ Demo elicitation prompt — exercises the MCP elicitation request path end to en
 { "action": "elicit_demo", "message": "Pick a focus topic" }
 ```
 
+### More direct actions
+
+These additional direct actions are exposed by the same `axon` tool. See [`../MCP-TOOL-SCHEMA.md`](../MCP-TOOL-SCHEMA.md) for their full field tables.
+
+| Action | Required | Notable optional fields | Description |
+|--------|----------|-------------------------|-------------|
+| `brand` | `url` | `render_mode` | Extract brand identity (colors, fonts, logos, favicon). `render_mode` is accepted but currently ignored. |
+| `diff` | `url_a`, `url_b` | `render_mode` | Compare two URLs (content/metadata/link changes). |
+| `endpoints` | `url` | `include_bundles`, `first_party_only`, `unique_only`, `max_scripts`, `max_scan_bytes`, `verify`, `capture_network`, `probe_rpc`, `probe_rpc_subdomains` | Static endpoint/API discovery from page scripts. Read-scoped, side-effect-free; `capture_network` opt-in executes page code. |
+| `debug` | -- | `context` | Run doctor plus LLM-assisted troubleshooting. |
+| `dedupe` | -- | `collection` | Deduplicate near-identical chunks in a collection (admin scope). |
+| `migrate` | -- | `from`, `to` | Copy an unnamed-vector collection into a new named-mode (dense + bm42) collection (admin scope). |
+| `watch` | `subaction` | `id`, `name`, `task_type`, `task_payload`, `every_seconds`, `enabled`, `limit` | Recurring task scheduler. Subactions: `create`, `list`, `get`, `run_now`, `history` (`get` parses but is not yet implemented). |
+| `setup` | -- | `mode` (`check`/`first-run`/`repair`/`migrate-env`) | First-run/local setup helper. |
+| `vertical_scrape` | `subaction` | `extractor` | **Discovery only.** `list` returns the extractor catalog; `capabilities` returns per-extractor metadata. `run` is removed — use `scrape` instead (verticals fire automatically). |
+
 ## Lifecycle action families
 
 These actions require a `subaction`. All support: `start`, `status`, `cancel`, `list`, `cleanup`, `clear`, `recover`.
@@ -288,7 +305,7 @@ Start parameters:
 { "action": "ingest", "subaction": "start", "source_type": "github", "target": "owner/repo" }
 ```
 
-Source types: `github`, `reddit`, `youtube`, `sessions`.
+Source types: `github`, `gitlab`, `gitea`, `git`, `reddit`, `youtube`, `sessions`.
 
 ### artifacts
 

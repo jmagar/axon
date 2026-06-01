@@ -259,22 +259,29 @@ Schema is created by sqlx migrations under `src/jobs/migrations/`:
 - `0001_create_tables.sql` — creates the four active job tables.
 - `0002_create_watch_tables.sql` — `axon_watch_defs`, `axon_watch_runs`, `axon_watch_run_artifacts` (used by `watch.rs`).
 - `0003_add_status_checks.sql` — adds the `status IN (...)` CHECK constraint to every job table.
+- `0004_status_created_at_index.sql` — adds an `idx_<kind>_status_created` composite index `(status, created_at DESC)` to all four job tables, keeping the `list_service_jobs` status-filter + `created_at DESC` sort index-friendly as tables grow.
+- `0005_add_attempt_metadata.sql` — adds the attempt-tracking columns (`attempt_count`, `active_attempt_id`, `last_reclaimed_at`, `last_reclaimed_reason`) to every job table.
+- `0006_create_ingest_payloads.sql` — adds `axon_ingest_payloads` (`job_id` PK, `payload_kind`, `payload_json`, `created_at`), an out-of-band store for large ingest payloads keyed to `axon_ingest_jobs` via `ON DELETE CASCADE`.
 
 Common columns on every active job table:
 
 ```
-id          TEXT PRIMARY KEY            -- UUIDv4
-status      TEXT NOT NULL DEFAULT 'pending'
-config_json TEXT NOT NULL DEFAULT '{}'
-result_json TEXT                          -- live progress + final summary
-error_text  TEXT                          -- failure reason / reclaim marker
-created_at  INTEGER NOT NULL              -- unix millis
-updated_at  INTEGER NOT NULL              -- bumped on every mutation
-started_at  INTEGER                       -- set on claim
-finished_at INTEGER                       -- set on terminal mark
+id                    TEXT PRIMARY KEY  -- UUIDv4
+status                TEXT NOT NULL DEFAULT 'pending'
+config_json           TEXT NOT NULL DEFAULT '{}'
+result_json           TEXT              -- live progress + final summary
+error_text            TEXT              -- failure reason / reclaim marker
+created_at            INTEGER NOT NULL  -- unix millis
+updated_at            INTEGER NOT NULL  -- bumped on every mutation
+started_at            INTEGER           -- set on claim
+finished_at           INTEGER           -- set on terminal mark
+attempt_count         INTEGER NOT NULL DEFAULT 0  -- incremented on each claim (0005)
+active_attempt_id     TEXT              -- per-claim UUID; gates late writes from reclaimed attempts (0005)
+last_reclaimed_at     INTEGER           -- set when a stale running row is reclaimed (0005)
+last_reclaimed_reason TEXT              -- reclaim marker text (0005)
 ```
 
-Plus an `idx_<kind>_status` index on `status` (used by `claim_next_pending` and the cap query).
+Plus an `idx_<kind>_status` index on `status` (used by `claim_next_pending` and the cap query) and the `idx_<kind>_status_created` composite `(status, created_at DESC)` index from `0004` (used by the `list_service_jobs` sort).
 
 Per-kind columns:
 

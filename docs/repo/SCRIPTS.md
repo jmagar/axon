@@ -29,7 +29,7 @@ Usage:
 | `enforce_no_legacy_symbols.py` | Block deprecated function/type names |
 | `check_shell_completions.sh` | Verify shell completion generation |
 
-The five enforcement checks below were ported from shell scripts to the `xtask` crate (see `axon_rust-pp5`). Run via `cargo xtask <name>` or in lefthook:
+The enforcement checks below live in the `xtask` crate (see `axon_rust-pp5`). Run them all at once with `cargo xtask check`, individually via `cargo xtask <name>`, or through lefthook (`xtask-check` runs `cargo xtask check`):
 
 | xtask command | Purpose |
 |---------------|---------|
@@ -38,6 +38,8 @@ The five enforcement checks below were ported from shell scripts to the `xtask` 
 | `check-mcp-http` | Verify MCP transport configuration |
 | `check-unwraps` | Warn about new `.unwrap()`/`.expect(` calls in staged code (warn-only) |
 | `check-claude-symlinks` | Verify AGENTS.md / GEMINI.md symlinks next to every CLAUDE.md |
+| `check-broken-symlinks` | Fail on broken symlinks |
+| `check-secrets` | Scan staged changes for secret material |
 
 ## Docker and deployment
 

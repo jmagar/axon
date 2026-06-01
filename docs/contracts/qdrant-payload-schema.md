@@ -82,7 +82,7 @@ in addition to their source-type-specific fields. See `src/ingest/git_payload.rs
 | `git_merged_at` | raw string | no | ISO8601 merge timestamp. |
 | `git_created_at` | raw string | no | ISO8601 creation timestamp. |
 | `git_updated_at` | raw string | no | ISO8601 update timestamp. |
-| `git_file_path` | keyword | no | Relative file path for `git_content_kind = "file"`. Not currently indexed — use `git_file_language` for filterable file queries. |
+| `git_file_path` | keyword | yes | Relative file path for `git_content_kind = "file"`. Indexed in `payload_indexes.rs`; `git_file_language` is also indexed for language-scoped file queries. |
 | `git_file_language` | keyword | yes | File language/extension for file chunks. |
 | `git_meta` | raw JSON | no | Provider-specific extras (stars, visibility, clone_url, …). Not indexed. |
 

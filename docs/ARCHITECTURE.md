@@ -1,8 +1,5 @@
 # Axon Architecture
-Last Modified: 2026-05-06
-
-Version: 1.0.0
-Last Updated: 01:26:53 | 02/25/2026 EST
+Last Modified: 2026-06-01
 
 ## Table of Contents
 
@@ -24,7 +21,7 @@ Last Updated: 01:26:53 | 02/25/2026 EST
 
 ## Purpose and Scope
 
-This document defines the current architecture of `axon_rust` across:
+This document defines the current architecture of `axon` across:
 
 - CLI command execution and dispatch
 - Crawl/extract/embed/ingest asynchronous pipelines
@@ -44,7 +41,7 @@ flowchart LR
 
   QD[(Qdrant)]
   TEI[TEI embeddings]
-  LLM[OpenAI-compatible API]
+  LLM[LLM completion backend: Gemini headless default, OpenAI-compatible optional]
   CHR[Chrome/CDP]
   SQ[(SQLite jobs)]
 

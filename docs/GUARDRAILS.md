@@ -91,10 +91,14 @@ docker compose --env-file ~/.axon/.env -f docker-compose.prod.yaml ps
 
 ### URL validation
 
-`validate_url()` in `src/core/http.rs` enforces:
+`validate_url()` in `src/core/http/ssrf.rs` enforces:
 - No private/loopback IPs (SSRF protection)
 - No file:// or other non-HTTP schemes
-- Blocked malware/phishing domains (via Spider `firewall` feature)
+- Connect-time DNS-rebinding is closed by `SsrfBlockingResolver` (re-checks every resolved IP)
+
+> The Spider `firewall` feature (which would block known malware/phishing domains)
+> is **not** enabled — `spider_firewall`'s build.rs fails under CI rate-limiting.
+> `validate_url()` is the primary SSRF guard. See `docs/SPIDER-FEATURE-FLAGS.md`.
 
 ## Input handling
 

@@ -34,7 +34,7 @@ Replace `axon reddit` with `axon ingest` — flags and behavior are identical.
 | `--depth <n>` | `2` | Comment traversal depth |
 | `--scrape-links` | off | Scrape content of linked URLs in link posts. Presence flag — include to enable. |
 | `--wait <bool>` | `false` | Block until ingestion completes |
-| `--collection <name>` | `cortex` | Target Qdrant collection |
+| `--collection <name>` | `axon` | Target Qdrant collection |
 | `--json` | `false` | Machine-readable output |
 
 ## Job Subcommands

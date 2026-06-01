@@ -24,7 +24,7 @@ Run `just --list` to see all available recipes.
 
 | Recipe | Purpose |
 |--------|---------|
-| `just verify` | Full CI gate: dockerignore check + fmt + clippy + check + test |
+| `just verify` | Full CI gate: legacy-runtime-check + validate-plugin + web-check + fmt-check + clippy + check + test |
 | `just ci` | Alias for verify |
 | `just precommit` | Full pre-commit: monolith check + verify |
 | `just lint-all` | Rust fmt-check + clippy + web lint |

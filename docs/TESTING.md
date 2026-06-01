@@ -1,5 +1,5 @@
 # Testing Guide
-Last Modified: 2026-03-09
+Last Modified: 2026-06-01
 
 This document defines how to run tests locally and in CI for `axon`.
 
@@ -63,8 +63,8 @@ Expected behavior:
 ### Integration suite lane (infra-backed, skip-on-missing)
 
 A separate set of integration tests targets live Qdrant instances and other external services.
-These tests do **not** use `#[ignore]` — instead each test calls a resolver (`resolve_test_amqp_url()`, etc.)
-that returns `None` and exits cleanly when the corresponding env var is unset.
+These tests do **not** use `#[ignore]` — instead each test calls a resolver (e.g. `resolve_test_qdrant_url()`)
+that returns `None` and exits cleanly when the corresponding env var (e.g. `AXON_TEST_QDRANT_URL`) is unset.
 This means they run in `just test` without error, but only exercise real I/O when infra is available.
 
 Start the required services explicitly, then run the full suite normally:
@@ -158,10 +158,10 @@ Use `cd apps/web && npm run build` when changing panel assets.
 
 ### Desktop palette screenshots
 
-Use [`docs/DESKTOP-PALETTE-TESTING.md`](/home/jmagar/workspace/axon_rust/docs/DESKTOP-PALETTE-TESTING.md)
+Use [`docs/DESKTOP-PALETTE-TESTING.md`](./DESKTOP-PALETTE-TESTING.md)
 when validating the Windows `axon-palette.exe` operation output. It documents
 the PowerShell capture harness in
-[`scripts/capture-palette-operations.ps1`](/home/jmagar/workspace/axon_rust/scripts/capture-palette-operations.ps1)
+[`scripts/capture-palette-operations.ps1`](../scripts/capture-palette-operations.ps1)
 and the current screenshot review checklist.
 
 ## Test-Only Security Escape Hatches
@@ -196,6 +196,9 @@ just verify
 ```
 
 `just verify` runs:
+- `legacy-runtime-check`
+- `validate-plugin`
+- `web-check`
 - `fmt-check`
 - `clippy`
 - `check`
@@ -226,7 +229,7 @@ Prerequisites:
 - `mcporter` installed (`npm install -g mcporter@0.7.3`).
 - `jq` installed.
 - Debug binary built: `cargo build --bin axon`.
-- MCP config available at [`config/mcporter.json`](/home/jmagar/workspace/axon_rust/config/mcporter.json).
+- MCP config available at [`config/mcporter.json`](../config/mcporter.json).
 
 Useful direct checks:
 

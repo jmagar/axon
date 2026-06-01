@@ -5,7 +5,7 @@
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
 | Core binary | Rust | 1.94+ (edition 2024) | CLI, MCP server, workers, HTTP server |
-| Web panel assets | TypeScript | Node 22+ | Embedded setup/config panel assets |
+| Web panel assets | TypeScript | Node 24+ | Embedded setup/config panel assets |
 | Scripts | Bash + Python | -- | Maintenance, testing, analysis |
 
 ## Key dependencies
@@ -17,14 +17,14 @@
 | `spider` | 2.x | Web crawling engine (HTTP + Chrome rendering) |
 | `spider_agent` | 2.47+ | Tavily search integration |
 | `spider_transformations` | 2.x | Content transformation (markdown, readability) |
-| `rmcp` | 1.1+ | MCP server framework (stdio + streamable-http) |
+| `rmcp` | 1.5+ | MCP server framework (stdio + streamable-http) |
 | `axum` | 0.8 | HTTP server for web panel, MCP, and first-party action routes |
 | `tokio` | 1.x | Async runtime (multi-threaded) |
 | `sqlx` | 0.8 | SQLite async driver |
 | `reqwest` | 0.13 | HTTP client (rustls, streaming) |
 | `clap` | 4.x | CLI argument parsing |
 | `serde` / `serde_json` | 1.x | Serialization |
-| `text-splitter` | 0.29 | Semantic text chunking (code + markdown) |
+| `text-splitter` | 0.30 | Semantic text chunking (code + markdown) |
 | `tree-sitter-*` | various | AST-based code chunking (Rust, Python, JS, TS, Go, Bash) |
 | `octocrab` | 0.49 | GitHub API client |
 | `bollard` | 0.20 | Docker API client |
@@ -35,7 +35,7 @@
 |---------|--------------|---------|
 | SQLite | (embedded) | Job persistence, metadata storage |
 | Qdrant | v1.13.1 | Vector database (dense + sparse search) |
-| TEI | HuggingFace latest | Text embedding generation |
+| TEI | ghcr.io/huggingface/text-embeddings-inference:89-1.9 | Text embedding generation |
 | Chrome | Custom Dockerfile | Headless browser for JavaScript rendering |
 
 ### Web panel assets
@@ -96,9 +96,10 @@ Spider-based crawling with three render modes:
 | `chrome` | Headless Chrome rendering (JS-heavy sites) |
 | `auto-switch` (default) | HTTP first; if >60% thin pages, retry with Chrome |
 
-Key Spider features enabled: `basic`, `chrome`, `regex`, `sitemap`, `adblock`, `chrome_stealth`, `firewall`, `ua_generator`.
+Key Spider features enabled (see `Cargo.toml` for the full list): `basic`, `chrome`, `regex`, `sitemap`, `adblock`, `chrome_stealth`, `chrome_screenshot`, `chrome_store_page`, `chrome_headless_new`, `chrome_simd`, `simd`, `cache_mem`, `ua_generator`, `headers`, `control`, `hedge`.
 
-Features explicitly NOT enabled:
+Features explicitly NOT enabled (see `docs/SPIDER-FEATURE-FLAGS.md`):
+- `firewall`: `spider_firewall`'s build.rs fetches blocklists from `api.github.com` unauthenticated and panics under CI rate limits; SSRF is guarded by `validate_url()` in `src/core/http/ssrf.rs` instead
 - `balance`: silently throttles with zero logging
 - `glob`: causes budget-aware `is_allowed()` to reject first URL with `with_limit(1)`
 

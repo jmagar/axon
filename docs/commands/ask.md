@@ -1,8 +1,5 @@
 # axon ask
-Last Modified: 2026-05-17
-
-Version: 1.1.0
-Last Updated: 2026-05-17
+Last Modified: 2026-06-01
 
 RAG-powered Q&A. Retrieves relevant chunks from the local Qdrant knowledge base, reranks them by relevance, builds a context window, and calls the configured LLM to generate a grounded answer.
 
@@ -38,7 +35,10 @@ All global flags apply. Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--query <text>` | — | Question text (alternative to positional argument). |
-| `--collection <name>` | `cortex` | Qdrant collection to search. |
+| `--collection <name>` | `axon` | Qdrant collection to search. Also settable via `AXON_COLLECTION`. |
+| `--no-hybrid-search` | `false` | Disable hybrid (dense + BM42 sparse + RRF) retrieval; force dense-only. Overrides `AXON_HYBRID_SEARCH=true`. |
+| `--since <date>` | — | Filter retrieved context to content indexed on or after this date. Accepts `7d`, `30d`, `1w`, `YYYY-MM-DD`, or RFC3339. |
+| `--before <date>` | — | Filter retrieved context to content indexed on or before this date. Same formats as `--since`. |
 | `--diagnostics` | `false` | Print retrieval diagnostics (candidate pool, reranked pool, chunks selected, full docs, supplemental, context chars, authority ratio, dropped by allowlist, top domains). |
 | `--explain` | `false` | Emit a per-candidate ranking/context trace. Implies diagnostics and skips LLM synthesis; use with `--json` for the full payload. |
 | `--stream` | `true` | Stream answer tokens as they arrive for interactive use. Uses the in-process ask path; JSON and explain output remain buffered. |

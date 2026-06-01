@@ -1,8 +1,5 @@
 # axon query
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 20:30:18 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 Semantic vector search against the local Qdrant collection. The command embeds the query with TEI, searches Qdrant, reranks candidates, and returns diversified results with snippets.
 
@@ -36,10 +33,11 @@ All global flags apply. Key flags:
 |------|---------|-------------|
 | `--query <text>` | — | Query text (alternative to positional argument). |
 | `--limit <n>` | `10` | Number of query results to return. |
-| `--collection <name>` | `cortex` | Qdrant collection to search. |
+| `--collection <name>` | `axon` | Qdrant collection to search. Also settable via `AXON_COLLECTION`. |
 | `--diagnostics` | `false` | Adds per-result debug fields in human output (`vector_score`, full URL). |
 | `--since <date>` | — | Filter results to content indexed on or after this date. Accepts `7d`, `30d`, `1w`, `YYYY-MM-DD`, or RFC3339. |
 | `--before <date>` | — | Filter results to content indexed on or before this date. Same formats as `--since`. |
+| `--no-hybrid-search` | `false` | Disable hybrid (dense + BM42 sparse + RRF) retrieval; force dense-only. Overrides `AXON_HYBRID_SEARCH=true`. |
 | `--json` | `false` | Machine-readable output (one JSON object per result line). |
 
 Note: `query` runs synchronously and does not enqueue jobs.

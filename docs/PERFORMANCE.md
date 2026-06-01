@@ -77,7 +77,7 @@ Guidance:
 - Start with `http` when sites are static; use `auto-switch` for mixed sites.
 - Use `delay-ms` to reduce target pressure and avoid defensive throttling.
 - Keep `drop-thin-markdown=true` for higher-quality embedding corpus.
-- Sitemap backfill cap is currently fixed at `512` (not a user-exposed CLI flag).
+- Sitemap backfill cap defaults to `512` and is configurable via `scrape.max-sitemaps` in `~/.axon/config.toml` (no CLI flag). Restrict backfill by recency with `--sitemap-since-days <n>`.
 
 ## Worker and Queue Tuning
 
@@ -198,5 +198,5 @@ Track:
 - `src/crawl/engine.rs`
 - `src/vector/ops/tei/tei_client.rs`
 - `src/vector/ops/commands/*`
-- `src/web/actions.rs`
+- `src/web/server/handlers/rest/*` (server-mode REST + ask routes)
 - `src/web/server.rs`

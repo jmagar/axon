@@ -41,12 +41,14 @@ Standards and conventions enforced across the Axon codebase.
 
 ### Version-bearing files
 
-All must have the same version:
+All must have the same version (see the root `CLAUDE.md` "Version Bumping" section):
 
 | File | Field |
 |------|-------|
 | `Cargo.toml` | `version = "X.Y.Z"` in `[package]` |
+| `.claude-plugin/plugin.json` | `"version": "X.Y.Z"` |
 | `apps/web/package.json` | `"version": "X.Y.Z"` |
+| `README.md` | Version header / badge |
 | `CHANGELOG.md` | New entry under `## X.Y.Z` |
 
 ## Monolith policy (enforced)
@@ -106,11 +108,14 @@ Enforcement: `cargo xtask check-no-mod-rs`.
 |------|---------|
 | `enforce_monoliths.py` | File and function size limits |
 | `enforce_no_legacy_symbols.py` | Block deprecated names |
+| `cargo xtask check` | Runs all xtask sub-checks below in one invocation (lefthook `xtask-check`) |
 | `cargo xtask check-env-staged` | Block .env commits |
 | `cargo xtask check-no-mod-rs` | No mod.rs files |
-| `cargo xtask check-unwraps` | Flag new .unwrap() calls (warn-only) |
+| `cargo xtask check-unwraps` | Flag new .unwrap()/.expect() calls (warn-only) |
 | `cargo xtask check-mcp-http` | MCP transport configuration parity |
 | `cargo xtask check-claude-symlinks` | AGENTS.md/GEMINI.md symlinks present |
+| `cargo xtask check-broken-symlinks` | No broken symlinks committed |
+| `cargo xtask check-secrets` | Scan staged changes for secret material |
 
 Install hooks:
 

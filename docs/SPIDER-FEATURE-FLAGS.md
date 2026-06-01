@@ -4,7 +4,7 @@
 > [`docs/FEATURES.md`](FEATURES.md) — that file also covers runtime env-var gates.
 
 **Total feature entries tracked in this inventory: 79 (includes `basic` meta-feature)**
-**Flags enabled in axon_rust: 21 (spider) + 2 (spider_agent) + spider_transformations (no flags)**
+**Flags enabled in axon_rust: 18 (spider) + 2 (spider_agent) + spider_transformations (no flags)**
 
 ---
 
@@ -18,7 +18,7 @@ spider = { version = "2", default-features = false, features = [
     "chrome_headless_new", "chrome_simd",
     "simd", "inline-more", "cache_mem",
     "ua_generator", "headers", "time", "control",
-    "firewall", "hedge",
+    "hedge",
 ] }
 
 spider_agent       = { version = "2.47.89", default-features = false, features = ["search_tavily", "openai"] }
@@ -26,13 +26,20 @@ spider_agent       = { version = "2.47.89", default-features = false, features =
 spider_transformations = "2"  # no feature flags — full crate used as-is
 ```
 
+> **`firewall` is intentionally NOT enabled.** `spider_firewall`'s build.rs fetches
+> blocklists from `api.github.com` unauthenticated and panics when GitHub
+> rate-limits the CI runner; it does not read `GITHUB_TOKEN`, so external auth is
+> impossible. `validate_url()` in `src/core/http/ssrf.rs` remains the primary SSRF
+> guard. See the Cargo.toml comment block and the root `CLAUDE.md` "Spider feature
+> flags" section.
+
 **No `#[cfg(feature = "...")]` gates exist anywhere in the local source tree.** All conditional compilation is internal to the spider crates. Feature selection happens entirely at the Cargo.toml level.
 
 ---
 
 ## Flags In Use
 
-### spider crate — 21 flags enabled
+### spider crate — 18 flags enabled
 
 | Flag | Category | Where Used in Source |
 |------|----------|----------------------|
@@ -40,13 +47,20 @@ spider_transformations = "2"  # no feature flags — full crate used as-is
 | `regex` | Core | URL blacklist/whitelist pattern matching. Powers `--exclude-path-prefix` and `--url-whitelist` flags in crawl config |
 | `sitemap` | Core | `append_sitemap_backfill()` in `src/crawl/engine/`. Drives `--discover-sitemaps` and `--sitemap-since-days` flags before sync inline embed or async dependent embed handoff |
 | `simd` | Core | SIMD-accelerated JSON/text parsing. Performance optimization — no direct call site; implicit via spider internals |
+| `inline-more` | Core | Aggressive function inlining in spider internals for runtime perf |
+| `ua_generator` | Core | Random realistic User-Agent generation per request |
+| `headers` | Core | Custom HTTP header injection for crawl requests |
+| `time` | Core | Timing/duration tracking for crawl operations |
+| `control` | Core | Runtime crawl control — pause/resume/shutdown; crawl cancellation sends Spider shutdown for the active target |
+| `hedge` | Core | Hedged duplicate HTTP request for resilience — races a second request after the default 3s delay. Doubles HTTP traffic for pages that take >3s. Used in `src/crawl/engine/runtime.rs` via `HedgeConfig::default()`. |
 | `chrome` | Chrome / Browser | `RenderMode::Chrome` and `RenderMode::AutoSwitch` paths in `src/crawl/engine/runtime.rs`. Imports `spider::features::chrome_common::{RequestInterceptConfiguration, ScreenShotConfig, ScreenshotParams, WaitForSelector}` |
 | `chrome_stealth` | Chrome / Browser | Passed to `spider::website::Website` in `configure_website()` in `src/crawl/engine/`. Enables headless detection evasion |
 | `chrome_screenshot` | Chrome / Browser | `ScreenshotParams` usage in `src/crawl/engine/runtime.rs`. Powers screenshot capture during crawls |
+| `chrome_store_page` | Chrome / Browser | Retains page object for conditional post-render actions (screenshots, metadata) |
+| `chrome_headless_new` | Chrome / Browser | `--headless=new` mode — better DOM fidelity, fewer detection fingerprints |
+| `chrome_simd` | Chrome / Browser | SIMD-optimized CDP message parsing for Chrome communication |
 | `adblock` | Chrome / Browser | Implicit ad/tracker request filtering during crawl. No local toggle — always active when chrome features are in use |
 | `cache_mem` | Caching | In-memory page/request deduplication during crawls. No local call site; spider uses it internally for request memoization |
-
-| `hedge` | Core | Hedged duplicate HTTP request for resilience — races a second request after the default 3s delay. Doubles HTTP traffic for pages that take >3s. Used in `src/crawl/engine/runtime.rs` via `HedgeConfig::default()`. |
 
 
 ### spider_agent crate — 2 flags enabled
@@ -75,9 +89,7 @@ Used in two files for HTML→Markdown content transformation:
 | `ua_generator` | ✅ | Random realistic User-Agent generation per request |
 | `regex` | ✅ | URL blacklist/whitelist filtering |
 
-| `glob` | — | NOT enabled — glob URL patterns change `crawl_establish` to use a budget-aware `is_allowed()` check that immediately returns `BudgetExceeded` for the first URL with `with_limit(1)`, producing 0 pages from Chrome crawls. axon does not use URL glob patterns. Do NOT add this flag. |
-
-| `glob` | — | Removed — caused BudgetExceeded on first URL when using `with_limit(1)`. Do NOT re-enable. See CLAUDE.md gotchas. |
+| `glob` | — | NOT enabled — glob URL patterns change `crawl_establish` to use a budget-aware `is_allowed()` check that immediately returns `BudgetExceeded` for the first URL with `with_limit(1)`, producing 0 pages from Chrome crawls. axon does not use URL glob patterns. Do NOT add this flag. See CLAUDE.md gotchas. |
 
 | `fs` | — | Project uses SQLite jobs plus Qdrant vector storage, not spider disk FS |
 | `sitemap` | ✅ | Sitemap discovery + backfill |
@@ -192,7 +204,7 @@ Used in two files for HTML→Markdown content transformation:
 
 | Flag | Status | Notes |
 |------|--------|-------|
-| `firewall` | ✅ | Blocks known-bad domains (malware, phishing, spam) before fetch — defense-in-depth with `validate_url()` |
+| `firewall` | — | NOT enabled — `spider_firewall`'s build.rs fetches blocklists from `api.github.com` unauthenticated and panics under CI rate-limiting; it doesn't read `GITHUB_TOKEN`. `validate_url()` in `src/core/http/ssrf.rs` is the primary SSRF guard. Re-enable when upstream supports an auth knob. |
 
 ### Search (5)
 
@@ -211,17 +223,17 @@ Used in two files for HTML→Markdown content transformation:
 | Category | Total | Enabled |
 |----------|-------|---------|
 
-| Core | 25 | 11 (`basic`, `regex`, `sitemap`, `simd`, `inline-more`, `ua_generator`, `headers`, `hedge`, `time`, `control`) — `glob` is NOT enabled |
+| Core | 25 | 10 (`basic`, `regex`, `sitemap`, `simd`, `inline-more`, `ua_generator`, `headers`, `hedge`, `time`, `control`) — `glob` is NOT enabled |
 
 | Storage | 3 | 0 |
 | Caching | 6 | 1 (`cache_mem`) |
 | Chrome / Browser | 17 | 7 (`chrome`, `chrome_stealth`, `chrome_screenshot`, `chrome_store_page`, `chrome_headless_new`, `chrome_simd`, `adblock`) |
-| Firewall | 1 | 1 (`firewall`) |
+| Firewall | 1 | 0 — `firewall` is NOT enabled |
 | WebDriver | 7 | 0 |
 | AI / LLM | 2 | 1 via spider_agent (`openai`) |
 | Spider Cloud | 1 | 0 |
 | Agent | 12 | 1 via spider_agent (`search_tavily`) |
 | Search | 5 | 0 |
-| **Total** | **79** | **21 spider + 2 spider_agent = 23** |
+| **Total** | **79** | **18 spider + 2 spider_agent = 20** |
 
 > `basic` is a meta-feature enabled on the `spider` crate that bundles core crawl behavior. The project uses `default-features = false` on all spider crates, so only explicitly listed features are compiled in.

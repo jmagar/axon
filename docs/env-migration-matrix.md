@@ -82,9 +82,9 @@ Generated: 2026-05-15 from source-derived inventory.
 | `AXON_OPENAI_BASE_URL` | keep-env | both | — | no | runtime.rs |
 | `AXON_OPENAI_MODEL` | keep-env | both | — | no | runtime.rs |
 | `AXON_OPENAI_API_KEY` | keep-env | both | — | **yes** | runtime.rs |
-| `OPENAI_MODEL` | delete | not-runtime | — | no | migration.rs (DeleteOnMigration, removed in 3.0.0) |
-| `OPENAI_BASE_URL` | delete | not-runtime | — | no | migration.rs (DeleteOnMigration, removed in 3.0.0) |
-| `OPENAI_API_KEY` | delete | not-runtime | — | **yes** | migration.rs (DeleteOnMigration, removed in 3.0.0) |
+| `OPENAI_MODEL` | external/test-only | not-runtime | — | no | not in runtime; referenced only by scripts/tests asserting OpenAI env is ignored (removed in 3.0.0) |
+| `OPENAI_BASE_URL` | external/test-only | not-runtime | — | no | not in runtime; referenced only by scripts/tests asserting OpenAI env is ignored (removed in 3.0.0) |
+| `OPENAI_API_KEY` | external/test-only | not-runtime | — | **yes** | not in runtime; referenced only by scripts/tests asserting OpenAI env is ignored (removed in 3.0.0) |
 
 ### Trusted Operator Bootstrap
 
@@ -177,20 +177,26 @@ These env vars are being migrated to `config.toml`. Env override is retained tem
 | `AXON_JOB_WAIT_TIMEOUT_SECS` | move-toml | not-runtime | `workers.job-wait-timeout-secs` | migration.rs |
 | `AXON_LOG_MAX_BYTES` | move-toml | not-runtime | `logging.max-bytes` | migration.rs |
 
-### Delete (migration.rs — legacy removed paths)
+### Delete (legacy removed paths)
 
-| Key | Reason | Source |
-|-----|--------|--------|
-| `AXON_BATCH_QUEUE` | Legacy AMQP queue name | migration.rs |
-| `AXON_CRAWL_QUEUE` | Legacy AMQP queue name | migration.rs |
-| `AXON_EMBED_QUEUE` | Legacy AMQP queue name | migration.rs |
-| `AXON_EXTRACT_QUEUE` | Legacy AMQP queue name | migration.rs |
-| `AXON_INGEST_QUEUE` | Legacy AMQP queue name | migration.rs |
-| `AXON_AMQP_URL` | RabbitMQ/AMQP path removed | migration.rs |
-| `AXON_LITE` | Compatibility-only; accepted but no behavior change | migration.rs |
-| `AXON_PG_MCP_URL` | Postgres path removed | migration.rs |
-| `AXON_PG_URL` | Postgres path removed | migration.rs |
-| `AXON_REDIS_URL` | Redis path removed | migration.rs |
+These keys belong to runtimes that were fully removed (RabbitMQ/AMQP queues,
+Postgres, Redis, lite-mode). They are no longer registered in `migration.rs` or
+any other registry module and have no runtime reads anywhere in `src/` (only
+`#[cfg(test)]` fixtures assert they are ignored). Setting them has no effect;
+remove them from any existing `~/.axon/.env` manually.
+
+| Key | Reason |
+|-----|--------|
+| `AXON_BATCH_QUEUE` | Legacy AMQP queue name |
+| `AXON_CRAWL_QUEUE` | Legacy AMQP queue name |
+| `AXON_EMBED_QUEUE` | Legacy AMQP queue name |
+| `AXON_EXTRACT_QUEUE` | Legacy AMQP queue name |
+| `AXON_INGEST_QUEUE` | Legacy AMQP queue name |
+| `AXON_AMQP_URL` | RabbitMQ/AMQP path removed |
+| `AXON_LITE` | Lite-mode removed; accepted but no behavior change |
+| `AXON_PG_MCP_URL` | Postgres path removed |
+| `AXON_PG_URL` | Postgres path removed |
+| `AXON_REDIS_URL` | Redis path removed |
 
 ---
 
@@ -253,11 +259,11 @@ Current status: parse-warn-ignore is already implemented (`#[allow(dead_code)]` 
 
 ---
 
-## ACP Variables (pending axon_rust-387)
+## ACP Variables (removed — axon_rust-387 done)
 
-The following are documented in `docs/` but no longer have source reads in `src/`.
-They should be deleted from `.env.example`, docs, and live `~/.axon/.env` as part of
-`axon_rust-387` (remove ACP / standardize Gemini headless):
+These were documented in older `docs/` and have **no source reads in `src/`** (the
+ACP path was removed and Gemini headless standardized). They are absent from
+`.env.example`. Remove any stragglers from a live `~/.axon/.env` manually:
 
 - `AXON_ACP_*` (all variants)
 - `AXON_ASK_AGENT`
@@ -274,7 +280,7 @@ Keys in live env but not in .env.example (stale or operator-specific):
 - `AXON_WEB_ALLOWED_ORIGINS` — in advanced.rs registry; add to .env.example
 - `AXON_WEB_API_TOKEN` — secret; registered in runtime.rs; add to .env.example if the sample should advertise web API auth
 - `CHROME_URL` — stale alias; delete from live .env
-- `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — removed in 3.0.0; registered as `Delete`/`DeleteOnMigration` in migration.rs so `axon setup repair --migrate-env` strips them
+- `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` — removed in 3.0.0; no longer registered in migration.rs (classified `external/test-only`, read only by scripts/tests). Remove them from any existing `~/.axon/.env` manually. (Note: the new `AXON_OPENAI_*` keys are the live OpenAI-compatible backend vars — distinct from these.)
 - `TEI_MAX_BATCH_REQUESTS`, `TEI_MAX_BATCH_TOKENS`, `TEI_MAX_CONCURRENT_REQUESTS` — compose-env server args; already in registry
 - `TEI_TOKENIZATION_WORKERS` — observed live compose-env server arg; not yet registered
 
@@ -306,14 +312,14 @@ Keys in .env.example but not in live env (user hasn't set them):
 
 ### Scope Note (ztqd.4)
 
-`OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` were removed in 3.0.0 and are now in `migration.rs` as `Delete`/`DeleteOnMigration`. `axon setup repair --migrate-env` strips them from existing `~/.axon/.env` files. No active runtime path reads them anymore.
+`OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` were removed in 3.0.0. They are no longer registered in `migration.rs`; the registry classifies them `external/test-only` (referenced only by scripts/tests that assert the removed OpenAI env is ignored). No active runtime path reads them anymore — remove them from existing `~/.axon/.env` files manually. There is no `axon setup repair` command; `axon setup init` adds missing keys but does not prune unknown ones.
 
 ### Keys Intentionally Dropped from .env.example (ztqd.4)
 
 The following keys were in the old `.env.example` but are omitted from the new minimal target. They fall into two groups:
 
 - **`keep-env` / `compose-env` / `trusted-bootstrap`** — still valid and honored at runtime when set; just not shown in the example template to keep the default minimal.
-- **`delete`** — removed from the runtime entirely. Setting them has no effect; `axon setup repair --migrate-env` scrubs them from existing `~/.axon/.env`. The rows are listed here only to document that they were intentionally dropped (not accidentally forgotten).
+- **`delete`** — removed from the runtime entirely. Setting them has no effect; remove them from existing `~/.axon/.env` manually (there is no automated scrub command). The rows are listed here only to document that they were intentionally dropped (not accidentally forgotten).
 
 | Key | Class | Reason omitted |
 |-----|-------|---------------|
@@ -325,6 +331,6 @@ The following keys were in the old `.env.example` but are omitted from the new m
 | `GOOGLE_API_KEY` | keep-env | Optional alternate Google credential path |
 | `GOOGLE_APPLICATION_CREDENTIALS` | trusted-bootstrap | Service account path; not typical setup |
 | `TEI_SERVER_MAX_CLIENT_BATCH_SIZE` | compose-env | TEI tuning; advanced use only |
-| `OPENAI_MODEL` | delete | Removed in 3.0.0; `axon setup repair --migrate-env` scrubs it |
-| `OPENAI_BASE_URL` | delete | Removed in 3.0.0; `axon setup repair --migrate-env` scrubs it |
-| `OPENAI_API_KEY` | delete | Removed in 3.0.0; `axon setup repair --migrate-env` scrubs it |
+| `OPENAI_MODEL` | external/test-only | Removed in 3.0.0; no runtime read. Remove manually from `~/.axon/.env` |
+| `OPENAI_BASE_URL` | external/test-only | Removed in 3.0.0; no runtime read. Remove manually from `~/.axon/.env` |
+| `OPENAI_API_KEY` | external/test-only | Removed in 3.0.0; no runtime read. Remove manually from `~/.axon/.env` |

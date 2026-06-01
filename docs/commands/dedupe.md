@@ -1,5 +1,5 @@
 # axon dedupe
-Last Modified: 2026-03-03
+Last Modified: 2026-06-01
 
 Remove duplicate vectors in Qdrant by `(url, chunk_index)` key.
 
@@ -15,7 +15,7 @@ All global flags apply. Key flags for this command:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--collection <name>` | `cortex` | Qdrant collection to deduplicate. |
+| `--collection <name>` | `axon` | Qdrant collection to deduplicate. Also settable via `AXON_COLLECTION`. |
 | `--json` | `false` | Machine-readable summary. |
 
 ## Behavior
@@ -48,7 +48,7 @@ JSON mode returns:
 {
   "duplicate_groups": 0,
   "deleted": 0,
-  "collection": "cortex"
+  "collection": "axon"
 }
 ```
 

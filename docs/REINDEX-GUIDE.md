@@ -1,14 +1,19 @@
-# Re-index Guide: Schema v3 Payload Upgrade
+# Re-index Guide: Schema v3 / v4 Payload Upgrade
 
-This guide explains what changed in Qdrant payload schema version 3, who needs to
+This guide explains what changed in Qdrant payload schema versions 3 and 4, who needs to
 re-index existing points, and how to do it efficiently and safely.
+
+The current schema version is **4** (`PAYLOAD_SCHEMA_VERSION = 4` in
+`src/vector/ops/qdrant/utils.rs`). Every point written by `axon` today carries
+`payload_schema_version = 4`. Versions 3 and 4 were both introduced on 2026-05-21, so in
+practice most freshly-indexed data is already v4; the distinction below matters only when
+deciding what older points need re-indexing to gain.
 
 ---
 
 ## What Changed in Schema v3
 
-Schema v3 was introduced on 2026-05-21. Every point written by `axon` since that date
-carries `payload_schema_version = 3`. Points written before that date are version 1 or 2
+Schema v3 was introduced on 2026-05-21. Points written before that date are version 1 or 2
 and do not have the new fields.
 
 ### New: canonical `git_*` provider fields
@@ -63,6 +68,35 @@ These fields are absent on points written before schema v3.
 
 ---
 
+## What Changed in Schema v4
+
+Schema v4 (also 2026-05-21) **promoted** a set of GitHub repo fields out of the
+non-indexed `git_meta` blob and into indexed top-level payload keys, and removed those keys
+from `git_meta`. The promoted, now-indexed fields are:
+
+| Field | Qdrant type | Notes |
+|-------|-------------|-------|
+| `gh_stars` | integer | Stargazer count at ingest time |
+| `gh_forks` | integer | Fork count at ingest time |
+| `gh_language` | keyword | Primary repo language |
+| `gh_topics` | keyword[] | GitHub topics array |
+| `gh_is_fork` | bool | Whether the repo is a fork |
+| `gh_is_archived` | bool | Whether the repo is archived |
+| `gh_file_type` | keyword | `"source"` \| `"test"` \| `"config"` \| `"doc"` |
+| `gh_line_start` | integer | First line of a code chunk (1-indexed) |
+| `gh_line_end` | integer | Last line of a code chunk (1-indexed) |
+
+On v1–v3 GitHub points these values were either absent or buried inside the unindexed
+`git_meta` blob, so you could not filter or facet on them. v4 makes them queryable. See the
+full contract in [`docs/contracts/qdrant-payload-schema.md`](contracts/qdrant-payload-schema.md)
+— GitHub-specific fields.
+
+These fields are written only by the GitHub ingest path, so only GitHub points benefit from
+a v4 re-index; GitLab/Gitea/generic-git/vertical/crawl points gain nothing new at v4 beyond
+the version stamp.
+
+---
+
 ## Who Needs to Re-index
 
 Re-indexing is **optional but recommended** for anyone who wants to filter or facet on
@@ -94,24 +128,29 @@ This scrolls the entire collection and counts points per `payload_schema_version
 example:
 
 ```
-Schema version breakdown:
-  v1 (pre-lu6a, no version field): 2,841,200 points
-  v2 (lu6a – extractor_name, structured_*): 612,400 points
-  v3 (2026-05-21 – git_*, vertical extras): 340,000 points
-  Total: 3,793,600 points
+Payload schema version breakdown
+  v1 (chunks: 2841200)
+  v2 (chunks: 612400)
+  v3 (chunks: 200000)
+  v4 (chunks: 140000)
 ```
 
-This is an O(N) full scroll — on a 3.79M-point collection it takes a few minutes. Run
-it once to get your bearings, not on every startup.
+The breakdown is a `BTreeMap<u32, usize>` keyed by version (points lacking the field are
+tallied under `v1`); `--json` emits the same counts under `schema_version_breakdown`. This is
+an O(N) full scroll — on a 3.79M-point collection it takes a few minutes. Run it once to get
+your bearings, not on every startup.
 
 ### Check a specific source type
 
 ```bash
-# Count GitHub ingest points without git_content_kind
-axon query "repo" --filter 'source_type = "github"' --limit 5
+# Inspect stored chunks for a known GitHub source URL
+axon retrieve https://github.com/org/repo --json | head
 ```
 
-If you see results lacking `git_content_kind` in their payload, those points are pre-v3.
+If the returned payloads lack `git_content_kind` (or, for the v4 fields, `gh_stars` /
+`gh_file_type`), those points predate the corresponding schema version and would benefit from
+re-ingest. (`axon query` does not take a payload `--filter`; use `retrieve` by URL to inspect a
+specific source, or `sources --by-schema-version` for the collection-wide breakdown.)
 
 ---
 
@@ -207,7 +246,7 @@ background operation. Focus on the highest-value sources first.
 
 | Priority | Source | Reason |
 |----------|--------|--------|
-| **Highest** | GitHub / GitLab repos you actively query by content kind, file language, or author | `git_content_kind`, `git_file_language`, `git_state` filters require v3 |
+| **Highest** | GitHub / GitLab repos you actively query by content kind, file language, or author | `git_content_kind`, `git_file_language`, `git_state` filters require v3; GitHub repo facets (`gh_stars`, `gh_forks`, `gh_language`, `gh_topics`, `gh_is_fork`, `gh_is_archived`, `gh_file_type`) require v4 |
 | **High** | npm / PyPI / Crates.io / HuggingFace verticals | Package metadata filters (`pkg_name`, `pkg_language`, `hf_task`) require v3 |
 | **Medium** | Reddit / Hacker News ingest | Per-community faceting; fields unchanged but version stamp is wrong |
 | **Low** | Generic crawl/embed points | No new filterable fields; re-crawl only if content has changed |

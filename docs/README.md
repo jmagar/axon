@@ -82,8 +82,10 @@ All three modes share the same Rust binary, the same services layer, and the sam
 - [commands/](./commands/) -- CLI command deep-dives
 - [ingest/](./ingest/) -- ingest pipeline docs
 - [auth/](./auth/) -- authentication patterns
-- [services/](./services/) -- service layer docs
+- [config/](./config/) -- configuration deep-dives
+- [contracts/](./contracts/) -- API/MCP contract specs
 - [sessions/](./sessions/) -- session ingestion
+- [specs/](./specs/) -- feature specifications
 - [superpowers/](./superpowers/) -- advanced workflows
 
 ### Working directories

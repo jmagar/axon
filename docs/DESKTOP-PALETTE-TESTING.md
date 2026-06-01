@@ -6,7 +6,7 @@ the current UX review checklist for operation output rendering.
 
 ## Capture Harness
 
-Use [`scripts/capture-palette-operations.ps1`](/home/jmagar/workspace/axon_rust/scripts/capture-palette-operations.ps1)
+Use [`scripts/capture-palette-operations.ps1`](../scripts/capture-palette-operations.ps1)
 to launch the Windows palette, submit operations, capture PNGs, and write a
 `manifest.json` beside the captures.
 

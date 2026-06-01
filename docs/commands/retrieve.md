@@ -1,8 +1,5 @@
 # axon retrieve
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 20:30:18 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 Retrieve stored document content from Qdrant by URL. The command resolves URL variants, fetches matching chunks, orders by `chunk_index`, and prints reconstructed text.
 
@@ -32,7 +29,7 @@ All global flags apply. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--collection <name>` | `cortex` | Qdrant collection to read from. |
+| `--collection <name>` | `axon` | Qdrant collection to read from. Also settable via `AXON_COLLECTION`. |
 | `--since <time>` | none | Restrict retrieved chunks to content indexed on or after this time. Supports `7d`, `30d`, `YYYY-MM-DD`, and RFC3339. |
 | `--before <time>` | none | Restrict retrieved chunks to content indexed on or before this time. Supports the same formats as `--since`. |
 | `--max-points <n>` | service ceiling | Maximum chunks to fetch before reconstructing the document. Values above the service ceiling are capped at 500 chunks. |

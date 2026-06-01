@@ -2,7 +2,7 @@
 title: "Rust Build Setup"
 doc_type: "guide"
 status: "active"
-owner: "axon_rust"
+owner: "axon"
 audience:
   - "contributors"
   - "agents"
@@ -50,7 +50,7 @@ not have the standard global `~/.cargo/config.toml`. All other settings
 
 ## Windows cross-compilation
 
-axon_rust publishes Windows binaries via the release CI workflow. To
+axon publishes Windows binaries via the release CI workflow. To
 cross-compile locally:
 
 ```bash

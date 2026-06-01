@@ -1,5 +1,5 @@
 # Security Model
-Last Modified: 2026-05-09
+Last Modified: 2026-06-01
 
 ## Table of Contents
 
@@ -197,7 +197,8 @@ Source: `src/web/auth.rs`, `src/web/server.rs`.
 - On first start, `init_panel_password()` (`auth.rs:33`) generates a 32-byte URL-safe password, writes it to `~/.axon/panel-password` with mode `0600` and `O_NOFOLLOW`, and prints it once to stderr. Existing files are reused.
 - `/api/panel/login` accepts the password and returns it back to the caller as a session token. `/api/panel/state` is unauthenticated (returns only `setup_required` + the config path).
 - All other `/api/panel/*` routes require `Authorization: Bearer <token>` or `x-axon-panel-token: <token>`, verified in constant time via `PanelPassword::verify` (`auth.rs:21-26`).
-- Routes exposed: `state` (GET), `login` (POST), `config` (GET/PUT), `ops` (GET), `setup/targets` (GET). There is no shell endpoint, no WebSocket, no download route, no `/output/*` route in the current code.
+- Routes exposed (see `src/web/server/routing.rs` and `src/web/CLAUDE.md`): `state` (GET), `login` (POST), `config` (GET/PUT), `env` (GET/PUT), `status` (GET), `doctor` (GET), `command` (POST), `ops` (GET), `stack` (GET), `first-run/crawl` (POST), `first-run/ask` (POST), `setup/targets` (GET).
+- `/api/panel/command` is a **command runner**, not a raw shell: `panel_command` (`handlers/config.rs:179`) parses only a fixed `ask`-or-action grammar (`parse_panel_command`) and dispatches through the same `services`/action layer the CLI uses. It is authenticated like every other write route. There is no arbitrary-shell endpoint, no WebSocket, no download route, and no `/output/*` route in the current code.
 
 Recommendations:
 
@@ -248,16 +249,30 @@ path.
 
 ## 8. Network Exposure
 
-| Service | Default bind | Notes |
-|---------|--------------|-------|
-| `axon mcp` / `axon serve` / Compose `axon` (HTTP) | `127.0.0.1:8001` | Non-loopback bind requires bearer or OAuth auth. Compose defaults to loopback publish via `AXON_MCP_HTTP_PUBLISH=127.0.0.1:8001`; set `0.0.0.0:8001` only intentionally. |
-| `axon-qdrant` (compose) | `127.0.0.1:53333`, `:53334` | Loopback in `docker-compose.yaml`. |
-| `axon-tei` (compose) | `127.0.0.1:52000` | Loopback. |
-| `axon-chrome` (compose) | `127.0.0.1:6000`, `:9222`, `:9223` | Loopback. Ports: 6000 = `headless_browser` management API, 9222 = CDP proxy, 9223 = raw Chrome DevTools. **All three are unauthenticated control planes** and rely on the loopback bind for access control. |
+| Service | Compose publish (`docker-compose.prod.yaml`) | Notes |
+|---------|----------------------------------------------|-------|
+| `axon mcp` / `axon serve` / Compose `axon` (HTTP) | `${AXON_MCP_HTTP_PUBLISH:-8001}:8001` | Host mapping publishes on all interfaces by default, but the in-container axon process binds `AXON_MCP_HTTP_HOST` (default `127.0.0.1`), so the port is not actually reachable until you set `AXON_MCP_HTTP_HOST=0.0.0.0`. A non-loopback process bind requires bearer or OAuth auth — the startup policy refuses to start a tokenless non-loopback bind. |
+| `axon-qdrant` (compose) | `53333:6333`, `53334:6334` | **Published on all interfaces.** No `127.0.0.1:` prefix. |
+| `axon-tei` (compose) | `${TEI_HTTP_PORT:-52000}:80` | **Published on all interfaces.** |
+| `axon-chrome` (compose) | `6000:6000`, `9222:9222`, `9223:9223` | **Published on all interfaces.** Ports: 6000 = `headless_browser` management API, 9222 = CDP proxy, 9223 = raw Chrome DevTools. **All three are unauthenticated control planes** with no built-in access control. |
+
+> **Caution: the compose files publish these ports on all interfaces.** Every
+> port mapping in `docker-compose.prod.yaml` (and the `docker-compose.yaml` dev
+> stack, which `extends` it) uses a **bare** `host:container` mapping with no
+> `127.0.0.1:` prefix — and the pre-commit check `scripts/check_compose_port_bindings.py`
+> **forbids** adding such a prefix. The host-port mapping is therefore NOT the
+> access boundary. The remaining protections are (a) the in-container process
+> bind — `axon` binds `AXON_MCP_HTTP_HOST` (default `127.0.0.1`), so its port is
+> unreachable unless opened deliberately — and (b) whatever host firewall /
+> private network you place around the stack. Qdrant, TEI (`axon-tei:80`), and the
+> unauthenticated Chrome control planes listen on
+> `0.0.0.0` inside their containers, so on a host reachable from an untrusted
+> network their published ports ARE exposed. Restrict them with a host firewall or
+> a private Docker network — do not rely on the compose file to loopback-bind them.
 
 Hardening guidance:
 
-- Keep infra services loopback-bound. The compose file already does this; the `127.0.0.1:` prefix on every Chrome port mapping is intentional security posture, not a bug.
+- Do not run this stack as-is on a host with untrusted network reachability. Front the infra ports with a host firewall or a private/internal Docker network before exposing the host. (Do **not** add `127.0.0.1:` prefixes to the compose mappings — the repo lint rejects them.)
 - For the MCP server on a non-loopback host, set a long random `AXON_MCP_HTTP_TOKEN` (`openssl rand -hex 32`) or configure `AXON_MCP_AUTH_MODE=oauth`.
 - Never expose Qdrant or Chrome's CDP / management ports to a network. The upstream `headless_browser` and Chrome DevTools Protocol have **no built-in authentication** — anyone who can reach 6000/9222/9223 can run arbitrary JS, navigate to internal URLs, exfiltrate cookies from any origin Chrome has visited, and (via `Page.navigate` on `file://` URLs) read local files inside the container.
 

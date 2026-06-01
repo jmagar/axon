@@ -3,7 +3,7 @@
 ## Directory tree
 
 ```
-axon_rust/
+axon/
 ├── apps/
 │   └── web/                         # Static setup/config panel source
 │       ├── app/                     # Next static app files
@@ -45,8 +45,9 @@ axon_rust/
 │   └── web/                         # Static panel, /v1/ask, direct /v1 REST routes
 │
 ├── docs/                            # Documentation (this directory)
-├── migrations/                      # SQL migrations
+├── migrations/                      # SQL migrations (root; per-family schema also under src/jobs/migrations/)
 ├── scripts/                         # Maintenance, hooks, testing scripts
+├── xtask/                           # Cargo xtask crate — enforcement checks (cargo xtask check)
 ├── tests/                           # Integration tests
 ├── config/                          # Compose, Chrome, Qdrant, and MCP config files
 ├── specs/                           # Specifications

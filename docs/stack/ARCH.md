@@ -111,7 +111,7 @@ Key behaviors:
 3. axon ask "How does X work?"
    ├── Hybrid search: dense + BM42 with RRF fusion
    ├── Candidate selection and re-ranking
-   ├── Context assembly (120K char limit)
+   ├── Context assembly (300K char limit, default)
    └── Gemini headless generates answer with citations
 ```
 

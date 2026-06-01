@@ -297,10 +297,10 @@ Two options:
 
 ```bash
 # Create a named snapshot (runs while Qdrant is up)
-curl -s -X POST "${QDRANT_URL}/collections/${AXON_COLLECTION:-cortex}/snapshots"
+curl -s -X POST "${QDRANT_URL}/collections/${AXON_COLLECTION:-axon}/snapshots"
 
 # List
-curl -s "${QDRANT_URL}/collections/${AXON_COLLECTION:-cortex}/snapshots"
+curl -s "${QDRANT_URL}/collections/${AXON_COLLECTION:-axon}/snapshots"
 
 # Download (path returned by the create call lives under /qdrant/snapshots)
 docker compose --env-file ~/.axon/.env -f docker-compose.prod.yaml \
@@ -513,7 +513,7 @@ Volumes (`${AXON_HOME:-$HOME/.axon}/{qdrant,tei,...}`) are bind-mounted on the h
 | `scripts/axon` | Wrapper that auto-sources `~/.axon/.env` and runs `cargo run --bin axon` |
 | `scripts/dev-setup.sh` | First-run bootstrap |
 | `src/cli/commands/doctor.rs` | `axon doctor` entry point |
-| `src/core/health/doctor/runtime.rs` | SQLite-runtime doctor probe |
+| `src/core/health/doctor/sqlite.rs` | SQLite-runtime doctor probe |
 | `src/cli/commands/status.rs` | `axon status` entry point |
 | `src/cli/commands/crawl/subcommands.rs` | `crawl status/cancel/errors/list/cleanup/clear/recover` |
 | `src/cli/commands/migrate.rs` | `axon migrate` |

@@ -1,8 +1,5 @@
 # axon evaluate
-Last Modified: 2026-03-03
-
-Version: 1.0.0
-Last Updated: 23:05:00 | 03/03/2026 EST
+Last Modified: 2026-06-01
 
 Evaluate RAG quality versus a baseline. The command generates:
 1) RAG answer (with retrieved context)
@@ -43,7 +40,9 @@ All global flags apply. Key flags:
 | `--diagnostics` | `false` | Print retrieval diagnostics alongside the evaluation. |
 | `--responses-mode <mode>` | `side-by-side` | Human-output rendering for `rag_answer` vs `baseline_answer`: `inline`, `side-by-side`, or `events`. |
 | `--retrieval-ab` | `false` | Replace the no-context baseline with a second RAG run that has hybrid retrieval disabled. The judge then compares hybrid-RAG vs dense-only-RAG. |
-| `--collection <name>` | `cortex` | Qdrant collection to retrieve from. |
+| `--collection <name>` | `axon` | Qdrant collection to retrieve from. Also settable via `AXON_COLLECTION`. |
+| `--since <date>` | — | Filter retrieved context to content indexed on or after this date. Accepts `7d`, `30d`, `1w`, `YYYY-MM-DD`, or RFC3339. |
+| `--before <date>` | — | Filter retrieved context to content indexed on or before this date. Same formats as `--since`. |
 | `--json` | `false` | Machine-readable JSON output (overrides `--responses-mode`). |
 
 Note: `evaluate` runs synchronously and does not enqueue jobs.

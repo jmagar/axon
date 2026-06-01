@@ -65,7 +65,7 @@ All global flags apply. Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wait <bool>` | `false` | Block until ingestion completes; otherwise enqueue async job. |
-| `--collection <name>` | `cortex` | Target Qdrant collection. |
+| `--collection <name>` | `axon` | Target Qdrant collection. |
 | `--json` | `false` | Machine-readable output. |
 
 With `--wait false`, `ingest` writes a SQLite job row and exits without draining
@@ -76,8 +76,8 @@ until it finishes.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--no-source` | `false` | Skip source-code file indexing. Source code is included by default. |
-| `--include-source` | `false` | Explicitly include source code files (redundant when source is already on by default; useful to make intent explicit). |
+| `--no-source` | `false` | Skip source-code file indexing. Source code is included by default. Applies to all Git providers (GitHub, GitLab, Gitea/Forgejo, generic Git). |
+| `--include-source` | `false` | **No-op.** Source code is already included by default; this flag is accepted for backward compatibility but changes nothing. Use `--no-source` to opt out. |
 | `--max-issues <n>` | `100` | Maximum issues to fetch per repository/project (0 = unlimited). |
 | `--max-prs <n>` | `100` | Maximum pull requests or merge requests to fetch per repository/project (0 = unlimited). Applies to GitHub pull requests, GitLab merge requests, and Gitea/Forgejo pull requests. |
 

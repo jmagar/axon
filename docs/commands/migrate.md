@@ -1,5 +1,5 @@
 # migrate
-Last Modified: 2026-03-25
+Last Modified: 2026-06-01
 
 Migrate an unnamed-vector Qdrant collection to named-mode, enabling hybrid RRF search (dense + BM42 sparse vectors).
 

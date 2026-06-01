@@ -22,8 +22,8 @@ axon extract <SUBCOMMAND> [ARGS]
 
 ## Required Inputs
 
-- At least one URL via positional args, `--urls`, or `--url-glob`.
-- `--query <prompt>` is required for both async and sync extraction.
+- At least one URL via positional args, `--urls`, or `--url-glob`. Extract errors out if no URL is supplied.
+- `--query <prompt>` is strongly recommended. It is not enforced by the parser — an empty prompt falls back to deterministic parsers only and skips the LLM extraction pass — but most useful extractions need a prompt.
 
 ## Job Subcommands
 
@@ -44,7 +44,7 @@ All global flags apply. Key flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--query <text>` | — | Extraction prompt (required). |
+| `--query <text>` | — | Extraction prompt (recommended; empty prompt skips the LLM pass). |
 | `--wait <bool>` | `false` | `false`: enqueue extract job. `true`: run extraction inline and block. |
 | `--max-pages <n>` | `0` | Passed to extract web runner as crawl/page limit. |
 | `--output-dir <dir>` | `.cache/axon-rust/output` | Base path for extract artifacts. |

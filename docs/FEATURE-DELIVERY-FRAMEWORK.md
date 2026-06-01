@@ -1,8 +1,5 @@
 # Feature Delivery Framework
-Last Modified: 2026-02-26
-
-Version: 1.0.0
-Last Updated: 02:26:00 | 02/26/2026 EST
+Last Modified: 2026-06-01
 
 ## Purpose
 
@@ -151,7 +148,7 @@ Also wire the module graph:
 - `lib.rs` (`run_once` match arm)
 
 4. Add command kind + parser wiring:
-- `src/core/config/types/config.rs` (`CommandKind`)
+- `src/core/config/types/enums.rs` (`CommandKind`)
 - `src/core/config/cli.rs` (clap spec)
 - `src/core/config/parse.rs` (arg -> `Config` mapping)
 
@@ -181,7 +178,7 @@ Also wire the module graph:
 ### Web Integration (if selected)
 
 1. Route to service from web runtime:
-- Axum runtime: `src/web.rs`, `src/web/server.rs`, `src/web/actions.rs`
+- Axum runtime: `src/web.rs`, `src/web/server.rs`, `src/web/server/routing.rs`, and the REST handlers under `src/web/server/handlers/`
 - Static panel assets: `apps/web/app/**` when the browser-facing setup/config UI changes
 
 2. Keep long-running operations server-owned. Browser and CLI clients should

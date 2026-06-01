@@ -1,5 +1,5 @@
 # axon embed
-Last Modified: 2026-03-25
+Last Modified: 2026-06-01
 
 Embed local content into Qdrant. Input can be a file path, directory path, or URL. In `--json` mode, stdout is a single machine-readable JSON object with no progress chatter mixed in.
 
@@ -14,7 +14,7 @@ axon embed <SUBCOMMAND> [ARGS] [FLAGS]
 
 | Argument | Description |
 |----------|-------------|
-| `[INPUT]` | File, directory, or URL to embed. If omitted, defaults to `.cache/axon-rust/output/markdown`. |
+| `[INPUT]` | File, directory, URL, or raw text to embed. If omitted, defaults to `<output-dir>/markdown` (i.e. `.cache/axon-rust/output/markdown`). |
 
 ## Required Environment Variables
 
@@ -32,7 +32,7 @@ All global flags apply. Key flags for this command:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wait <bool>` | `false` | `false`: enqueue job and return immediately. `true`: run inline and block until embedding completes. |
-| `--collection <name>` | `cortex` | Qdrant collection to write to. |
+| `--collection <name>` | `axon` | Qdrant collection to write to. Also settable via `AXON_COLLECTION`. |
 | `--json` | `false` | Machine-readable JSON output. |
 | `--yes` | `false` | Skip destructive confirmation prompts (used by `embed clear`). |
 

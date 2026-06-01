@@ -1,5 +1,5 @@
 # axon completions
-Last Modified: 2026-03-10
+Last Modified: 2026-06-01
 
 Generate shell completion scripts for `axon`.
 

@@ -1,5 +1,5 @@
 # MCP Auth — Axon
-Last Modified: 2026-05-09
+Last Modified: 2026-06-01
 
 ## Table of Contents
 
@@ -113,8 +113,11 @@ AXON_MCP_AUTH_ALLOWED_REDIRECT_URIS=https://callback.example.com/callback/*
 OAuth mode also accepts `AXON_MCP_HTTP_TOKEN` when set, so existing bearer
 clients can continue working while OAuth clients use dynamic registration and
 JWT bearer tokens. OAuth/JWT callers are scope-checked by MCP action: write
-actions require `axon:write`, read actions require `axon:read`, and
-`axon:write` satisfies read. The Google account matching
+actions require an Axon write scope and read actions require an Axon read
+scope, but `scope_satisfies` in `src/authz.rs` treats either Axon scope
+(`axon:read` or `axon:write`) as satisfying any Axon-scoped action, so a token
+holding either scope reaches all Axon read and write routes (`migrate`/`dedupe`
+require an Axon scope as well; unknown actions fail closed). The Google account matching
 `AXON_MCP_AUTH_ADMIN_EMAIL` always receives the full configured Axon OAuth
 scope set (`axon:read axon:write`) even if a client asks for a narrower scope.
 Other allowlisted users keep the scope they requested.

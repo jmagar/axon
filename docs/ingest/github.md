@@ -56,7 +56,7 @@ A running Qdrant + TEI stack. `GITHUB_TOKEN` is optional for public repositories
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GITHUB_TOKEN` | Optional | Personal access token (classic) with `repo` scope, or fine-grained token with repository contents access. Required for private repos. For public repos it is used for metadata/issues/PR API calls and authenticated clone first; if that clone fails and the repo is public, axon retries clone without the token. |
-| `AXON_COLLECTION` | Optional | Qdrant collection name (default: `cortex`) |
+| `AXON_COLLECTION` | Optional | Qdrant collection name (default: `axon`) |
 | `TEI_URL` | Required | TEI embedding service URL |
 
 ```bash

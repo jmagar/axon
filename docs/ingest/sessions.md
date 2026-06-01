@@ -74,7 +74,7 @@ Because the Claude CLI encodes path separators and literal hyphens identically (
 1. Create `src/ingest/sessions/<provider>.rs` (or add provider parser logic under `src/ingest/sessions.rs` if keeping a single module)
 2. Implement `ingest_<provider>_sessions(cfg, state, multi)` following the pattern in `claude.rs`
 3. Register it in sessions dispatch (`src/ingest/sessions.rs`) with a `cfg.sessions_<provider>` flag check
-4. Add the `--sessions-<provider>` flag in `src/core/config/cli.rs` and wire it in `src/core/config/parse/build_config.rs`
+4. Add the `--<provider>` flag (e.g. `--claude`, `--codex`, `--gemini`) to `SessionsArgs` in `src/core/config/cli.rs` and wire it through `src/core/config/parse/build_config/`
 5. Add a unit test with a minimal sample file in `#[cfg(test)]`
 
 ## Troubleshooting

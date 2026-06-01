@@ -4,7 +4,7 @@ Pre-release quality checklist. Complete all items before tagging a release.
 
 ## Version and metadata
 
-- [ ] All version-bearing files in sync: `Cargo.toml`, `apps/web/package.json`, `CHANGELOG.md`
+- [ ] All version-bearing files in sync: `Cargo.toml`, `.claude-plugin/plugin.json`, `README.md`, `CHANGELOG.md`
 - [ ] `CHANGELOG.md` has an entry for the new version
 - [ ] README version badge is correct (if present)
 

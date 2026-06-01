@@ -122,7 +122,7 @@ This is backfilled automatically by `dev-setup.sh` and points to the current tes
 `AXON_BIN` overrides which binary `scripts/axon` invokes. Useful in CI or when the binary is built from a workspace mount:
 
 ```bash
-AXON_BIN=/workspace/axon_rust/target/release/axon
+AXON_BIN=/workspace/axon/target/release/axon
 ```
 
 ### Optional tuning
@@ -160,9 +160,12 @@ To run the `axon` service through Compose, start the full stack:
 docker compose --env-file ~/.axon/.env -f docker-compose.prod.yaml up -d
 ```
 
-The Compose `axon` service publishes MCP HTTP on `127.0.0.1:8001` by default.
-Set `AXON_MCP_HTTP_PUBLISH=0.0.0.0:8001` in `~/.axon/.env` only when
-intentionally exposing it beyond the host and `AXON_MCP_HTTP_TOKEN` is set.
+The Compose `axon` service publishes MCP HTTP via `${AXON_MCP_HTTP_PUBLISH:-8001}:8001`.
+The default value `8001` is a bare port, which Docker binds on **all interfaces**
+(`0.0.0.0:8001`) — reachable from the host's network. Set
+`AXON_MCP_HTTP_PUBLISH=127.0.0.1:8001` in `~/.axon/.env` to restrict it to
+loopback, and ensure `AXON_MCP_HTTP_TOKEN` is set (or OAuth mode enabled)
+whenever the port is exposed beyond loopback.
 
 **Local dev mode** (infra in Docker, Axon server run locally):
 
