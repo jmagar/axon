@@ -54,8 +54,9 @@ pub(crate) fn request_timeout_secs(cfg: &Config) -> u64 {
 
 /// Read a successful response body, optionally capped at `max_bytes`.
 ///
-/// - `Some(cap)` → streamed read with a hard byte cap and strict UTF-8 decode (fine for
-///   llms.txt/sitemap, which are UTF-8 by spec). Oversized bodies return `None`.
+/// - `Some(cap)` → streamed read with a hard byte cap and lossy UTF-8 decode (fine for
+///   llms.txt/sitemap, which are UTF-8 by spec; lossy is strictly safer than dropping the
+///   whole doc on a stray byte). Oversized bodies return `None`.
 /// - `None` → charset-aware, lossy, uncapped `resp.text()` — matches `main`'s behavior for
 ///   HTML page backfill and any caller that must not silently drop large or non-UTF8 bodies.
 async fn read_body_capped(
@@ -98,13 +99,9 @@ async fn read_body_capped(
             }
         }
     }
-    match String::from_utf8(collected) {
-        Ok(text) => Some(text),
-        Err(_) => {
-            log_warn(&format!("command=fetch non-utf8 body dropped url={url}"));
-            None
-        }
-    }
+    // Lossy decode: replace malformed bytes rather than dropping the entire document
+    // (a regression vs reqwest::Response::text(), which decodes charset-aware/lossily).
+    Some(String::from_utf8_lossy(&collected).into_owned())
 }
 
 pub(crate) async fn fetch_text_with_retry(
