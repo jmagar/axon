@@ -54,8 +54,9 @@ axon watch artifacts <run_id> [--limit <n>]
 | `--task-payload <json>` | No | JSON payload for the task. Defaults to `{}` if omitted |
 
 The payload is validated at create time: `urls` must be a non-empty array of
-strings and every `ignore_patterns` entry must compile as a regex (invalid
-patterns are rejected immediately rather than failing every scheduled run).
+strings (at most 256), `max_depth` (if set) is capped at 10, and every
+`ignore_patterns` entry must compile as a regex (invalid patterns are rejected
+immediately rather than failing every scheduled run).
 
 ## Task Payloads
 
