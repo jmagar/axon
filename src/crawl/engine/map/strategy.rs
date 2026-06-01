@@ -298,13 +298,34 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
         }
     }
 
+    map_fallback_result(
+        cfg,
+        &crawl_start_url,
+        &scope_start_url,
+        &scope,
+        raw_sitemap_count,
+        start,
+    )
+    .await
+}
+
+/// Run the configured map fallback (crawl or bounded-structure) when neither a
+/// sitemap nor an llms.txt yielded URLs, and build the final `MapResult`.
+async fn map_fallback_result(
+    cfg: &Config,
+    crawl_start_url: &str,
+    scope_start_url: &str,
+    scope: &MapScope,
+    raw_sitemap_count: usize,
+    start: Instant,
+) -> Result<MapResult, Box<dyn Error>> {
     match cfg.map_fallback {
         MapFallback::Crawl => {
             let (mut summary, urls) = match cfg.render_mode {
                 RenderMode::AutoSwitch => {
-                    Box::pin(crawl_with_auto_switch(cfg, &crawl_start_url, &scope)).await?
+                    Box::pin(crawl_with_auto_switch(cfg, crawl_start_url, scope)).await?
                 }
-                m => Box::pin(crawl_and_collect_map(cfg, &crawl_start_url, m, &scope)).await?,
+                m => Box::pin(crawl_and_collect_map(cfg, crawl_start_url, m, scope)).await?,
             };
             summary.elapsed_ms = start.elapsed().as_millis();
             Ok(MapResult {
@@ -316,7 +337,7 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
             })
         }
         MapFallback::Structure => {
-            let (urls, warning) = bounded_structure_fallback(cfg, &scope_start_url, &scope).await;
+            let (urls, warning) = bounded_structure_fallback(cfg, scope_start_url, scope).await;
             let summary = CrawlSummary {
                 elapsed_ms: start.elapsed().as_millis(),
                 ..Default::default()
