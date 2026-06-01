@@ -55,6 +55,49 @@ fn validate_every_seconds_enforces_shared_bounds() {
     assert!(validate_every_seconds(MAX_WATCH_INTERVAL_SECS + 1).is_err());
 }
 
+#[test]
+fn validate_task_payload_accepts_valid() {
+    let p = serde_json::json!({
+        "urls": ["https://example.com/a", "https://example.com/b"],
+        "ignore_patterns": ["^Last updated:"],
+        "max_depth": 3
+    });
+    assert!(validate_task_payload(&p).is_ok());
+}
+
+#[test]
+fn validate_task_payload_rejects_empty_urls() {
+    let p = serde_json::json!({ "urls": [] });
+    assert!(validate_task_payload(&p).is_err());
+}
+
+#[test]
+fn validate_task_payload_rejects_non_string_url() {
+    let p = serde_json::json!({ "urls": ["https://example.com", 42] });
+    assert!(validate_task_payload(&p).is_err());
+}
+
+#[test]
+fn validate_task_payload_rejects_too_many_urls() {
+    let urls: Vec<String> = (0..=MAX_WATCH_URLS)
+        .map(|i| format!("https://example.com/{i}"))
+        .collect();
+    let p = serde_json::json!({ "urls": urls });
+    assert!(validate_task_payload(&p).is_err());
+}
+
+#[test]
+fn validate_task_payload_rejects_bad_ignore_regex() {
+    let p = serde_json::json!({ "urls": ["https://example.com"], "ignore_patterns": ["("] });
+    assert!(validate_task_payload(&p).is_err());
+}
+
+#[test]
+fn validate_task_payload_rejects_over_limit_max_depth() {
+    let p = serde_json::json!({ "urls": ["https://example.com"], "max_depth": MAX_WATCH_DEPTH + 1 });
+    assert!(validate_task_payload(&p).is_err());
+}
+
 #[tokio::test]
 async fn lease_advances_next_run_at_for_single_flight() -> Result<(), Box<dyn Error>> {
     // A run that outlives its lease TTL must not be re-leased: leasing advances

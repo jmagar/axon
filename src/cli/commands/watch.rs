@@ -188,6 +188,17 @@ async fn handle_watch_create(
     let task_payload = task_payload.unwrap_or_else(|| serde_json::json!({}));
     crate::jobs::watch::validate_task_payload(&task_payload)
         .map_err(|msg| format!("watch create: {msg}"))?;
+    // SSRF-guard every watched URL at create time, mirroring the HTTP create
+    // paths — a CLI-created internal seed would otherwise reach internal hosts
+    // through the crawl worker (which does not use the reqwest SSRF resolver).
+    if let Some(urls) = task_payload.get("urls").and_then(|v| v.as_array()) {
+        for url_val in urls {
+            if let Some(url) = url_val.as_str() {
+                crate::core::http::validate_url(url)
+                    .map_err(|e| format!("watch create: invalid url '{url}': {e}"))?;
+            }
+        }
+    }
     let input = watch_svc::WatchDefCreate {
         name,
         task_type,

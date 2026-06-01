@@ -19,6 +19,11 @@ pub async fn enqueue_change_crawl(
     seed_url: &str,
     max_depth: usize,
 ) -> Result<Uuid, Box<dyn Error>> {
+    // Defense-in-depth: the crawl worker / Spider path does not run the reqwest
+    // SSRF resolver, so re-validate the seed here before enqueuing. Create-time
+    // validation already covers watched URLs, but cluster seeds are derived
+    // (common-prefix) and may not be one of the originally-validated URLs.
+    crate::core::http::validate_url(seed_url)?;
     let mut crawl_cfg = cfg.clone();
     crawl_cfg.max_depth = max_depth;
     let config_json = config_snapshot_json(&crawl_cfg)?;

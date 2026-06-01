@@ -41,8 +41,16 @@ pub fn validate_task_type(task_type: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate a watch's `task_payload` at create time: `urls` non-empty and every
-/// `ignore_patterns` entry compiles as a regex. Shared by CLI + HTTP create.
+/// Maximum number of URLs a single watch may track. Bounds per-tick work and
+/// the persisted payload.
+pub const MAX_WATCH_URLS: usize = 256;
+/// Maximum crawl depth a watch payload may request for change-triggered crawls.
+pub const MAX_WATCH_DEPTH: u64 = 10;
+
+/// Validate a watch's `task_payload` at create time: `urls` non-empty (and
+/// within [`MAX_WATCH_URLS`]), every `ignore_patterns` entry compiles as a
+/// regex, and any `max_depth` is within [`MAX_WATCH_DEPTH`]. Shared by CLI +
+/// HTTP create.
 pub fn validate_task_payload(payload: &serde_json::Value) -> Result<(), String> {
     let urls = payload
         .get("urls")
@@ -50,6 +58,22 @@ pub fn validate_task_payload(payload: &serde_json::Value) -> Result<(), String> 
         .ok_or("task_payload.urls must be a non-empty array")?;
     if urls.is_empty() || !urls.iter().all(|u| u.is_string()) {
         return Err("task_payload.urls must be a non-empty array of strings".to_string());
+    }
+    if urls.len() > MAX_WATCH_URLS {
+        return Err(format!(
+            "task_payload.urls has {} entries; maximum is {MAX_WATCH_URLS}",
+            urls.len()
+        ));
+    }
+    if let Some(depth) = payload.get("max_depth") {
+        let n = depth
+            .as_u64()
+            .ok_or("task_payload.max_depth must be a non-negative integer")?;
+        if n > MAX_WATCH_DEPTH {
+            return Err(format!(
+                "task_payload.max_depth is {n}; maximum is {MAX_WATCH_DEPTH}"
+            ));
+        }
     }
     if let Some(pats) = payload.get("ignore_patterns") {
         let arr = pats
