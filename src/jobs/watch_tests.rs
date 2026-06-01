@@ -94,7 +94,8 @@ fn validate_task_payload_rejects_bad_ignore_regex() {
 
 #[test]
 fn validate_task_payload_rejects_over_limit_max_depth() {
-    let p = serde_json::json!({ "urls": ["https://example.com"], "max_depth": MAX_WATCH_DEPTH + 1 });
+    let p =
+        serde_json::json!({ "urls": ["https://example.com"], "max_depth": MAX_WATCH_DEPTH + 1 });
     assert!(validate_task_payload(&p).is_err());
 }
 

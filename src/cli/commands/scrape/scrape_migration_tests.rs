@@ -286,14 +286,22 @@ fn test_select_output_json_includes_description() {
 
 #[test]
 fn test_select_output_json_has_all_five_fields() {
-    // Contract: JSON output must contain exactly url, status_code, markdown, title, description.
+    // Contract: JSON output must contain exactly url, status_code, markdown,
+    // title, description, links.
     let html = r#"<html><head><title>T</title><meta name="description" content="D"></head><body><p>B</p></body></html>"#;
     let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
         .expect("select_output should succeed");
     let parsed: serde_json::Value =
         serde_json::from_str(&result).expect("output should be valid JSON");
     let obj = parsed.as_object().expect("JSON output must be an object");
-    for field in &["url", "status_code", "markdown", "title", "description"] {
+    for field in &[
+        "url",
+        "status_code",
+        "markdown",
+        "title",
+        "description",
+        "links",
+    ] {
         assert!(
             obj.contains_key(*field),
             "JSON output missing required field: {field}"
@@ -301,8 +309,8 @@ fn test_select_output_json_has_all_five_fields() {
     }
     assert_eq!(
         obj.len(),
-        5,
-        "JSON output must contain exactly 5 fields, got: {:?}",
+        6,
+        "JSON output must contain exactly 6 fields, got: {:?}",
         obj.keys().collect::<Vec<_>>()
     );
 }
@@ -616,14 +624,21 @@ fn test_select_output_json_handles_missing_description() {
 #[test]
 fn test_select_output_json_has_all_required_fields() {
     // Contract: JSON output must contain exactly: url, status_code, title,
-    // description, markdown — no more, no fewer.
+    // description, markdown, links — no more, no fewer.
     let html = r#"<html><head><title>T</title><meta name="description" content="D"></head><body><p>B</p></body></html>"#;
     let result = select_output(ScrapeFormat::Json, "https://example.com", html, 200, None)
         .expect("select_output should succeed");
     let parsed: serde_json::Value =
         serde_json::from_str(&result).expect("output should be valid JSON");
     let obj = parsed.as_object().expect("JSON output must be an object");
-    let required = ["url", "status_code", "title", "description", "markdown"];
+    let required = [
+        "url",
+        "status_code",
+        "title",
+        "description",
+        "markdown",
+        "links",
+    ];
     for field in &required {
         assert!(
             obj.contains_key(*field),

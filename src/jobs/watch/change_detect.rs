@@ -180,7 +180,11 @@ pub async fn detect_url_change(
         last_markdown: Some(filtered),
         last_links_json: Some(fresh_links_json),
         last_checked_at: Some(now),
-        last_changed_at: if meaningful { Some(now) } else { prior_changed_at },
+        last_changed_at: if meaningful {
+            Some(now)
+        } else {
+            prior_changed_at
+        },
         last_crawl_job_id: prior.as_ref().and_then(|p| p.last_crawl_job_id),
     };
     if let Err(e) = upsert_url_state(pool, watch_id, url, &s).await {

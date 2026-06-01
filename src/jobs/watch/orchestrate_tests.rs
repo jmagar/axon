@@ -83,7 +83,10 @@ async fn in_flight_cluster_is_skipped_no_new_crawl() {
         .await
         .unwrap();
 
-    assert_eq!(after, before, "in-flight cluster must not enqueue a new crawl");
+    assert_eq!(
+        after, before,
+        "in-flight cluster must not enqueue a new crawl"
+    );
     assert!(dispatched.is_empty(), "nothing dispatched: {dispatched:?}");
     assert!(errors.is_empty(), "no errors expected: {errors:?}");
     assert_eq!(clusters.len(), 1);

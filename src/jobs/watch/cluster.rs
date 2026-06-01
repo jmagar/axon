@@ -17,11 +17,7 @@ fn parts(url: &str) -> Option<(String, Vec<String>)> {
     }
     // Strip the query string and fragment so `?` / `#` don't leak into the last
     // path segment and skew prefix grouping (e.g. `/docs/a?v=2` vs `/docs/a`).
-    let path = path
-        .split(['?', '#'])
-        .next()
-        .unwrap_or(&path)
-        .to_string();
+    let path = path.split(['?', '#']).next().unwrap_or(&path).to_string();
     let host_key = format!("{scheme}://{host}");
     let mut segs: Vec<String> = path
         .trim_start_matches('/')
