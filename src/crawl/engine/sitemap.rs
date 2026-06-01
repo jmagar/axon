@@ -32,6 +32,11 @@ pub struct SitemapDiscovery {
     pub failed_fetches: usize,
 }
 
+/// Max bytes read from a discovery document (/llms.txt, /sitemap.xml). Guards against
+/// OOM from a malicious/misconfigured host. 512 KB comfortably exceeds real llms.txt
+/// (≤~100 KB in practice) and typical sitemaps.
+const DISCOVERY_MAX_BODY_BYTES: u64 = 512 * 1024;
+
 fn should_retry_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
@@ -58,7 +63,29 @@ pub(crate) async fn fetch_text_with_retry(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    return resp.text().await.ok();
+                    if resp
+                        .content_length()
+                        .is_some_and(|len| len > DISCOVERY_MAX_BODY_BYTES)
+                    {
+                        return None;
+                    }
+                    let mut collected: Vec<u8> = Vec::new();
+                    let mut stream = resp;
+                    loop {
+                        match stream.chunk().await {
+                            Ok(Some(chunk)) => {
+                                if collected.len() as u64 + chunk.len() as u64
+                                    > DISCOVERY_MAX_BODY_BYTES
+                                {
+                                    return None; // exceeded cap mid-stream
+                                }
+                                collected.extend_from_slice(&chunk);
+                            }
+                            Ok(None) => break,
+                            Err(_) => return None,
+                        }
+                    }
+                    return String::from_utf8(collected).ok();
                 }
                 if attempt >= retries || !should_retry_status(status) {
                     return None;

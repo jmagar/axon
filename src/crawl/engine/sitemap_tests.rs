@@ -98,3 +98,24 @@ fn markdown_url_uses_passthrough() {
     assert!(!is_already_markdown("https://x.com/docs/page"));
     assert!(!is_already_markdown("https://x.com/index.html"));
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_text_rejects_oversized_body() {
+    let server = httpmock::MockServer::start();
+    let big = "x".repeat(600 * 1024); // 600 KB > 512 KB cap
+    let m = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/big.txt");
+        then.status(200).body(&big);
+    });
+    crate::core::http::set_allow_loopback(true);
+    let client = crate::core::http::build_client(5, None).unwrap();
+    let url = server.url("/big.txt");
+    let got = fetch_text_with_retry(&client, &url, 0, 0).await;
+    crate::core::http::set_allow_loopback(false);
+    m.assert();
+    assert!(
+        got.is_none(),
+        "oversized body must be rejected, not buffered"
+    );
+}
