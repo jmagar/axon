@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/MCP-TOOL-SCHEMA.md from src/mcp/schema.rs.
+"""Generate docs/reference/mcp/tool-schema.md from src/mcp/schema.rs.
 
 Parses the Rust source for struct/enum definitions across the schema module and
 produces a markdown document that stays in sync with the actual wire contract.
@@ -47,7 +47,7 @@ def find_repo_root(start: Path | None = None) -> Path | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate docs/MCP-TOOL-SCHEMA.md from src/mcp/schema.rs",
+        description="Generate docs/reference/mcp/tool-schema.md from src/mcp/schema.rs",
     )
     parser.add_argument(
         "--check",
