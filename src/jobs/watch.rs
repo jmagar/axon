@@ -8,6 +8,7 @@ use std::error::Error;
 use uuid::Uuid;
 
 pub(crate) mod filter;
+pub(crate) mod url_state;
 
 pub const WATCH_RUN_STATUS_RUNNING: &str = "running";
 pub const WATCH_RUN_STATUS_COMPLETED: &str = "completed";
