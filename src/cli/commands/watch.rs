@@ -185,10 +185,13 @@ async fn handle_watch_create(
         })?),
         None => None,
     };
+    let task_payload = task_payload.unwrap_or_else(|| serde_json::json!({}));
+    crate::jobs::watch::validate_task_payload(&task_payload)
+        .map_err(|msg| format!("watch create: {msg}"))?;
     let input = watch_svc::WatchDefCreate {
         name,
         task_type,
-        task_payload: task_payload.unwrap_or_else(|| serde_json::json!({})),
+        task_payload,
         every_seconds,
         enabled: true,
         next_run_at: Utc::now() + Duration::seconds(every_seconds),

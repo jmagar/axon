@@ -17,11 +17,9 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct UrlOutcome {
-    pub url: String,
     pub meaningful: bool,
     pub diff: Option<DiffResult>,
     pub error: Option<String>,
-    pub prior_crawl_job_id: Option<Uuid>,
 }
 
 /// A change is meaningful if content changed AND (links changed OR the word-count
@@ -52,12 +50,10 @@ pub async fn detect_url_change(
         .unwrap_or_default();
     let now = now_ms();
 
-    let unchanged = |err: Option<String>, state: UrlState| UrlOutcome {
-        url: url.to_string(),
+    let unchanged = |err: Option<String>| UrlOutcome {
         meaningful: false,
         diff: None,
         error: err,
-        prior_crawl_job_id: state.last_crawl_job_id,
     };
 
     // 1) Conditional probe.
@@ -67,13 +63,13 @@ pub async fn detect_url_change(
                 let mut s = prior.clone();
                 s.last_checked_at = Some(now);
                 let _ = upsert_url_state(pool, watch_id, url, &s).await;
-                return unchanged(None, prior);
+                return unchanged(None);
             }
             Probe::Failed(msg) => {
                 let mut s = prior.clone();
                 s.last_checked_at = Some(now);
                 let _ = upsert_url_state(pool, watch_id, url, &s).await;
-                return unchanged(Some(msg), prior);
+                return unchanged(Some(msg));
             }
             Probe::Modified {
                 etag,
@@ -82,13 +78,19 @@ pub async fn detect_url_change(
         };
 
     // 2) Scrape + 3) filter.
-    let scraped = match crate::services::scrape::scrape(cfg, url, None).await {
+    // Map the (non-Send) boxed scrape error to a String at the await boundary so
+    // the resulting non-Send type never enters this future's state machine — it
+    // must stay Send for the scheduler's tokio::spawn.
+    let scraped = match crate::services::scrape::scrape(cfg, url, None)
+        .await
+        .map_err(|e| format!("scrape failed: {e}"))
+    {
         Ok(r) => r,
-        Err(e) => {
+        Err(msg) => {
             let mut s = prior.clone();
             s.last_checked_at = Some(now);
             let _ = upsert_url_state(pool, watch_id, url, &s).await;
-            return unchanged(Some(format!("scrape failed: {e}")), prior);
+            return unchanged(Some(msg));
         }
     };
     let filtered = apply_ignore(&normalize_markdown(&scraped.markdown), ignore);
@@ -109,7 +111,7 @@ pub async fn detect_url_change(
             last_crawl_job_id: prior.last_crawl_job_id,
         };
         let _ = upsert_url_state(pool, watch_id, url, &s).await;
-        return unchanged(None, prior);
+        return unchanged(None);
     }
 
     // 5) Diff: prior snapshot vs fresh. First-seen → force Changed (seed).
@@ -156,11 +158,9 @@ pub async fn detect_url_change(
     let _ = upsert_url_state(pool, watch_id, url, &s).await;
 
     UrlOutcome {
-        url: url.to_string(),
         meaningful,
         diff: Some(diff),
         error: None,
-        prior_crawl_job_id: prior.last_crawl_job_id,
     }
 }
 

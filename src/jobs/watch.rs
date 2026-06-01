@@ -11,6 +11,7 @@ pub(crate) mod change_detect;
 pub(crate) mod cluster;
 pub(crate) mod dispatch;
 pub(crate) mod filter;
+pub(crate) mod orchestrate;
 pub(crate) mod report;
 pub(crate) mod url_state;
 
@@ -20,7 +21,7 @@ pub const WATCH_RUN_STATUS_FAILED: &str = "failed";
 
 /// Task types a watch may carry. A `task_type` outside this set can never run,
 /// so every create path (CLI, HTTP) must validate against this single list.
-pub const SUPPORTED_TASK_TYPES: &[&str] = &["refresh"];
+pub const SUPPORTED_TASK_TYPES: &[&str] = &["watch"];
 
 /// Validate a `task_type` at create time so callers never persist a watch that
 /// can never execute. Rejects surrounding whitespace (the stored value would
@@ -36,6 +37,30 @@ pub fn validate_task_type(task_type: &str) -> Result<(), String> {
             task_type,
             SUPPORTED_TASK_TYPES.join(", ")
         ));
+    }
+    Ok(())
+}
+
+/// Validate a watch's `task_payload` at create time: `urls` non-empty and every
+/// `ignore_patterns` entry compiles as a regex. Shared by CLI + HTTP create.
+pub fn validate_task_payload(payload: &serde_json::Value) -> Result<(), String> {
+    let urls = payload
+        .get("urls")
+        .and_then(|v| v.as_array())
+        .ok_or("task_payload.urls must be a non-empty array")?;
+    if urls.is_empty() || !urls.iter().all(|u| u.is_string()) {
+        return Err("task_payload.urls must be a non-empty array of strings".to_string());
+    }
+    if let Some(pats) = payload.get("ignore_patterns") {
+        let arr = pats
+            .as_array()
+            .ok_or("ignore_patterns must be an array of strings")?;
+        for p in arr {
+            let s = p
+                .as_str()
+                .ok_or("ignore_patterns entries must be strings")?;
+            regex::Regex::new(s).map_err(|e| format!("invalid ignore_pattern '{s}': {e}"))?;
+        }
     }
     Ok(())
 }
@@ -508,38 +533,7 @@ async fn finalize_completed(
 /// Pure compute + scrape; the caller owns the single finalize write.
 async fn run_watch_task(cfg: &Config, watch: &WatchDef) -> Result<serde_json::Value, String> {
     match watch.task_type.as_str() {
-        "refresh" => {
-            let urls = watch
-                .task_payload
-                .get("urls")
-                .and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok())
-                .unwrap_or_default();
-            if urls.is_empty() {
-                return Err("watch refresh task requires task_payload.urls".to_string());
-            }
-            let mut checked = 0usize;
-            let mut failed = 0usize;
-            let mut refreshed = Vec::new();
-            for url in &urls {
-                checked += 1;
-                match crate::services::scrape::scrape(cfg, url, None).await {
-                    Ok(result) => refreshed.push(serde_json::json!({
-                        "url": result.url,
-                        "markdown_chars": result.markdown.chars().count(),
-                    })),
-                    Err(_) => failed += 1,
-                }
-            }
-            Ok(serde_json::json!({
-                "mode": "stateless-refresh",
-                "checked": checked,
-                "changed": 0,
-                "unchanged": checked.saturating_sub(failed),
-                "failed": failed,
-                "urls": urls,
-                "refreshed": refreshed,
-            }))
-        }
+        "watch" => orchestrate::run_url_watch(cfg, watch).await,
         other => Err(format!("unsupported watch task_type: {other}")),
     }
 }
