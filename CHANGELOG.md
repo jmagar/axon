@@ -5,7 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.18.0] - 2026-05-31
+
+### Added
+
+- URL change-detection watch: the `watch` task type (replacing the stateless `refresh` task) now detects content changes per URL each scheduler tick and crawls only the changed subtrees. Per URL: a cheap conditional ETag/Last-Modified probe (304 short-circuits), then scrape → normalize + `ignore_patterns` noise filter → SHA-256 fast-equal skip → reuse `services::diff::compute_diff` against the stored snapshot → a meaningfulness threshold (`change_threshold_words`, link changes always count). Meaningful changes get a best-effort Gemini AI summary and a `url-change` artifact (unified diff + summary + link/word deltas), are clustered by common path prefix, and one depth-bounded crawl is enqueued per cluster (skipping clusters whose prior crawl is still in flight). New `axon_watch_url_state` table (migration `0007`) holds the latest snapshot + validators. `task_payload` gains `max_depth`, `ignore_patterns`, `change_threshold_words`, and `summarize`; payloads are validated at create time (non-empty `urls`, compilable `ignore_patterns`) across CLI and both HTTP create paths.
+
+### Changed
+
+- `SUPPORTED_TASK_TYPES` is now `["watch"]`; the `refresh` task type is removed.
+
+## [4.18.0] - 2026-06-01
+
+### Added
+
+- **Conditional re-crawl (ETag / If-Modified-Since)** — opt-in via `--etag-conditional` (bead axon_rust-hiyf). Re-crawls seed spider 2.51's per-`Website` ETag cache from a persisted `etag.json` sidecar so unchanged pages return `304 Not Modified`. Because spider drops 304 responses from its broadcast stream entirely, the crawl engine **reconciles** those silent skips back into the manifest: every URL that was seeded with validators and did not arrive this run is re-emitted as a reused (`changed=false`) entry, relinked from the `markdown.old` recycling bin. The reconciliation set is `{seeded ∩ previous_manifest − arrived ∩ visited}`, gated on spider's visited set (`Website::get_links()`): a genuine 304 skip is recorded in `links_visited` because spider's 304 short-circuit runs inside the per-URL fetch task, whereas a page that is no longer discovered is never scheduled and is therefore excluded — so the feature cannot resurrect deleted pages as zombie content. Validators are carried forward across runs (spider's 304 path returns before re-storing, so the previous sidecar is overlaid with freshly-stored validators). Independent of `--cache`. Wired on the crawl path only; single-page `scrape` is intentionally excluded (a 304 there would drop the page the user asked for, with no reconciliation seam).
+- **Per-path crawl budgets** — repeatable `--budget PATH=N` flag (bead axon_rust-37zv) wired to spider's `Website::with_budget`, capping pages crawled under each path prefix (`*` = all paths). Unset = current behavior.
+
+### Changed
+
+- **Dead-host retry classification** (bead axon_rust-6i30) — sitemap fetch retries now exclude spider 2.51's permanent synthetic status codes `525` (DNS/NXDOMAIN) and `526` (host/TLS unreachable) so the retry budget is not burned re-resolving hosts that will never resolve. Transient `52x` (connection refused / timeout) and genuine upstream `5xx` remain retryable.
+- **Media-asset link filtering** (bead axon_rust-mk95) — discovered links are now dropped via spider's `is_media_asset_url` classifier in the `set_on_link_find` guard chain, so images, fonts, audio, video, archives, and PDFs are never queued, fetched, or embedded. HTML/extensionless doc routes pass through unaffected.
+- Enabled the `etag_cache` spider feature.
+
+### Security
+
+- **SSRF redirect guard — confirmed, no change** (bead axon_rust-4rdf). spider 2.51 adds an always-on `is_ssrf_redirect` guard that refuses redirect hops to loopback/private/link-local addresses under the default redirect policy. This complements — and does **not** replace — axon's existing three-layer SSRF defense (`validate_url` parse-time check + `SsrfBlockingResolver` connect-time DNS guard + the spider blacklist patterns). No axon security code was removed; demonstrated equivalence was not established, so both layers are kept.
+
+### Notes
+
+- **Adaptive concurrency (AIMD)** (bead axon_rust-6y3c) was investigated and **deferred**: spider 2.51 ships an `AIMDController` type but exposes **no public `Website`/`configuration` method to attach it** (the type is referenced nowhere else in the crate). The only wireable adaptive primitive is `auto_throttle`, which is latency-based per-domain *delay* — not the 429/403 status-driven concurrency backoff the bead specified, and enabling it by default would throttle the high-concurrency performance profiles. Documented as not-wireable per the bead's own fallback clause; bead left open with a deferral note.
+
+## [4.17.0] - 2026-06-01
+
+### Added
+
+- `llms.txt` probing: crawl and `map` now fetch `/llms.txt` at the site root, parse its markdown links, and union them (dedup, no blanket truncation) into the sitemap-backfill candidate set (config: `scrape.discover-llms-txt`, default on; `scrape.max-llms-txt-urls`, default 512 — bounds the llms.txt fan-out only; sitemap-URL backfill stays uncapped as on prior releases). Raw `.md`/`.markdown`/`.txt` targets pass through without the HTML transform. `fetch_text_with_retry` caps the `/llms.txt` discovery document at 512 KB and `sitemap.xml` at 50 MB (the sitemap-spec ceiling); HTML page backfill stays uncapped and charset-aware. Request surfaces (MCP `crawl`, REST `/v1/crawl`, server-mode plan, action API) accept `discover_llms_txt` / `max_llms_txt_urls` overrides.
 
 ## [4.16.0] - 2026-05-31
 

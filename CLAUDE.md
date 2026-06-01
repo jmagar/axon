@@ -71,7 +71,7 @@ MCP docs:
 | `screenshot <url>` | Capture a full-page screenshot via headless Chrome | No |
 | `dedupe` | Deduplicate near-identical chunks within a Qdrant collection | No |
 | `completions <shell>` | Emit shell completion scripts | No |
-| `watch <sub>` | Scheduled task management. SQLite-backed implementations: `create`, `list`, `run-now`, `history`. Schema-defined but not yet implemented: `get`, `update`, `pause`, `resume`, `delete`, `artifacts`. | Depends |
+| `watch <sub>` | URL change-detection scheduler. A `watch` (task_type `watch`, the only supported type) diffs each URL against a stored snapshot every tick (conditional probe + `compute_diff` + `ignore_patterns` + threshold), summarizes meaningful changes via the LLM, records `url-change` artifacts, and enqueues clustered depth-bounded crawls (skipping in-flight clusters). SQLite-backed implementations: `create`, `list`, `run-now`, `history`. Schema-defined but not yet implemented: `get`, `update`, `pause`, `resume`, `delete`, `artifacts`. | Depends |
 | `migrate --from <src> --to <dst>` | Copy all points from an unnamed-vector collection to a new named-mode collection (dense + bm42 sparse), enabling RRF hybrid search. No re-embedding needed. | No |
 | `config <sub>` | Read/write entries in `~/.axon/.env` and `~/.axon/config.toml`. Subcommands: `list`, `get`, `set`, `unset`, `path`. Auto-routes by key shape (UPPER_SNAKE → .env, dotted lowercase → config.toml) with `--env`/`--toml` overrides. Secrets are redacted by default; pass `--reveal` to show them. | No |
 
@@ -106,6 +106,8 @@ All flags are `--global` (usable with any subcommand).
 |------|------|---------|-------------|
 | `--max-pages <n>` | u32 | `0` | Page cap for crawl (0 = uncapped, default). |
 | `--max-depth <n>` | usize | `5` | Maximum crawl depth from start URL. |
+| `--budget <PATH=N>` | string | — | Per-path page cap (repeatable), e.g. `--budget /blog=100 --budget '*=1000'`. `*` applies to all paths. Unset = no budget. Wired to spider's `with_budget`. |
+| `--etag-conditional` | flag | `false` | Conditional re-crawl: seed spider's ETag cache from a persisted `etag.json` sidecar so unchanged pages return 304 and are reused from the previous run instead of re-fetched. Independent of `--cache`. 304 skips are reconciled back into the manifest as `changed=false` entries, gated on spider's visited set so deleted/undiscovered pages are not resurrected. |
 | `--render-mode <mode>` | enum | `auto-switch` | `http`, `chrome`, or `auto-switch`. Auto-switch tries HTTP first, falls back to Chrome if >60% thin pages. |
 | `--format <fmt>` | enum | `markdown` | Output format: `markdown`, `html`, `rawHtml`, `json`. |
 | `--include-subdomains <bool>` | bool | `false` | Crawl all subdomains of the start URL's parent domain. Disabled by default — enable with `--include-subdomains true`. |
@@ -358,7 +360,7 @@ axon scrape https://example.com           # SQLite/in-process runtime (only mode
 
 **Supported commands:** scrape, summarize, diff, brand, crawl (sync + async), map, embed, query, ask, evaluate, suggest, retrieve, extract, ingest, sessions, search, research, sources, domains, stats, status, doctor, debug, dedupe, screenshot, migrate, MCP server, serve.
 
-**Watch scheduler:** `watch list`, `watch create`, `watch run-now`, and `watch history` are wired through `src/services/watch.rs` → `src/jobs/watch.rs` and work today. Enabled watches also **fire automatically**: the in-process scheduler loop in `src/jobs/workers/watch_scheduler.rs` (spawned by `spawn_workers`, so active under `axon serve`/`axon mcp`) leases due watches (`next_run_at <= now`) each `AXON_WATCH_TICK_SECS` and runs them, advancing `next_run_at` by `every_seconds`. `watch get`, `watch update`, `watch pause`, `watch resume`, `watch delete`, and `watch artifacts` parse but are not yet implemented.
+**Watch scheduler:** `watch list`, `watch create`, `watch run-now`, and `watch history` are wired through `src/services/watch.rs` → `src/jobs/watch.rs` and work today. A `watch` task (the only supported `task_type`) is a **URL change detector**: each run probes/scrapes every URL, filters noise (`ignore_patterns`), reuses `services::diff::compute_diff` against the stored `axon_watch_url_state` snapshot, applies a meaningfulness threshold, summarizes real changes via the Gemini `llm_backend`, writes `url-change` artifacts, and enqueues one crawl per common-prefix cluster (in-flight-guarded). The change-detection logic lives in `src/jobs/watch/{change_detect,cluster,dispatch,filter,report,url_state,orchestrate}.rs` with the conditional probe in `src/core/http/conditional.rs`. Enabled watches also **fire automatically**: the in-process scheduler loop in `src/jobs/workers/watch_scheduler.rs` (spawned by `spawn_workers`, so active under `axon serve`/`axon mcp`) leases due watches (`next_run_at <= now`) each `AXON_WATCH_TICK_SECS` and runs them, advancing `next_run_at` by `every_seconds`. `watch get`, `watch update`, `watch pause`, `watch resume`, `watch delete`, and `watch artifacts` parse but are not yet implemented.
 
 ```bash
 # Env vars for runtime tuning
@@ -419,6 +421,10 @@ Pages with fewer than `--min-markdown-chars` (default: 200) are flagged as thin.
 
 ### Sitemap backfill
 After a crawl, `append_sitemap_backfill()` discovers URLs via sitemap.xml that the crawler missed and fetches them individually. Respects `--max-sitemaps` (default: 512) and `--include-subdomains`. Use `--sitemap-since-days N` to restrict backfill to URLs whose `<lastmod>` falls within the last N days; URLs without `<lastmod>` are always included.
+
+### llms.txt probe
+
+After a crawl (and during `map`), if `cfg.discover_llms_txt` (default true; first-run panel default false), axon fetches `/llms.txt` at the site root, parses its markdown links, scopes them like sitemap URLs, and caps them to `max_llms_txt_urls` (512). The scoped links are unioned (deduped, no blanket truncation) with sitemap discovery into one `append_candidate_backfill` pass, both sources discovered concurrently in the crawl runner. The cap bounds only the llms.txt fan-out — sitemap-URL backfill stays uncapped. Raw `.md`/`.markdown`/`.txt` targets skip the HTML→markdown transform (else they'd be dropped as thin). `fetch_text_with_retry` caps the `/llms.txt` document at 512 KB and `sitemap.xml` at 50 MB; HTML page backfill is uncapped and charset-aware. `llms-full.txt` is intentionally NOT parsed — it is a content dump, not a link index.
 
 
 The compose file sets `context: .` — run `docker compose build` from this directory, not from a parent workspace.
@@ -540,8 +546,9 @@ Tables are auto-created via `ensure_schema()` in each `*_jobs.rs`. Schema lives 
 | `axon_extract_jobs` | `id`, `status`, `urls_json`, `config_json`, `result_json` |
 | `axon_embed_jobs` | `id`, `status`, `input_text`, `config_json`, `result_json` |
 | `axon_ingest_jobs` | `id`, `source_type`, `target`, `status`, `config_json`, `result_json` — partial index on pending |
+| `axon_watch_url_state` | `watch_id`, `url`, `etag`, `last_modified`, `content_hash`, `last_markdown`, `last_links_json`, `last_checked_at`, `last_changed_at`, `last_crawl_job_id` — per-URL change-detection snapshot (migration `0007`), PK `(watch_id, url)`, FK → `axon_watch_defs(id)` ON DELETE CASCADE |
 
-All tables share: `created_at`, `updated_at`, `started_at`, `finished_at`, `error_text`.
+The **job** tables (`axon_*_jobs`) share: `created_at`, `updated_at`, `started_at`, `finished_at`, `error_text`. `axon_watch_url_state` is a snapshot table and does not carry those columns.
 
 `axon_ingest_jobs` differs from the others: it uses `source_type` (`github`/`gitlab`/`gitea`/`git`/`reddit`/`youtube`) + `target` instead of `url` or `urls_json` to identify the ingest target.
 

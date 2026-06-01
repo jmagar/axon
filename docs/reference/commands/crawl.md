@@ -48,6 +48,8 @@ All global flags apply. Key flags:
 | `--max-depth <n>` | `10` | Maximum crawl depth. |
 | `--render-mode <mode>` | `auto-switch` | `http`, `chrome`, `auto-switch`. |
 | `--include-subdomains <bool>` | `false` | Include subdomains under the same parent domain. |
+| `--budget <PATH=N>` | — | Per-path page cap, repeatable (e.g. `--budget /blog=100 --budget '*=1000'`). `*` = all paths. Unset = no budget. |
+| `--etag-conditional` | `false` | Conditional re-crawl: seed spider's ETag cache from `etag.json` so unchanged pages return `304` and are reused (relinked, `changed=false`) instead of re-fetched. Independent of `--cache`. |
 | `--sitemap-only` | `false` | Sync-only path: run sitemap backfill without full crawl. |
 | `--skip-embed` | `false` | Do not queue an embed job from crawl output. |
 | `--json` | `false` | JSON output for job metadata/status responses. |
@@ -91,6 +93,7 @@ AXON_SERVER_URL=http://127.0.0.1:8001 axon crawl https://example.com --json
 - Async JSON output now includes the predicted `output_dir` plus `predicted_paths` for each enqueued job.
 - Sync mode writes crawl artifacts under `<output-dir>/domains/<domain>/sync/`.
 - With `scrape.discover-sitemaps = true` in `config.toml`, both async worker mode and sync `--wait true` mode run Axon's sitemap backfill before the embed handoff. Sync mode performs the embed inline; async mode queues a dependent embed job after backfill completes.
+- With `scrape.discover-llms-txt = true` (default), the backfill pass also probes `/llms.txt` at the site root, parses its markdown links, host-scopes them, and **merges** them (deduped) into the same backfill candidate set as sitemap discovery. The cap `scrape.max-llms-txt-urls` (default 512) bounds the llms.txt fan-out only — sitemap-URL backfill stays uncapped. Raw `.md`/`.markdown`/`.txt` targets are stored verbatim (no HTML→markdown transform).
 - Completed crawl status JSON may include `output_files` when the worker has a manifest-backed file list available.
 - `axon crawl errors <job_id>` reports `error_text`, page-error aggregates, WAF-blocked counts, sitemap backfill errors, and bounded diagnostic samples from `result_json.diagnostics`. Samples are capped so a large crawl cannot grow the SQLite row without bound.
 - `--render-mode auto-switch` now treats one- and two-page HTTP crawls as too little signal and may retry in Chrome even when the pages are not technically thin.

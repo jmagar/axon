@@ -130,11 +130,35 @@ pub struct Config {
     /// (0 = unlimited). TOML: `scrape.max-sitemaps`.
     pub max_sitemaps: usize,
 
+    /// Probe `/llms.txt` at the site root and backfill its listed URLs after the main crawl,
+    /// and merge them into `map` discovery. TOML: `scrape.discover-llms-txt`.
+    pub discover_llms_txt: bool,
+
+    /// Maximum number of URLs to take from a single `/llms.txt` after scope filtering
+    /// (0 = unlimited). A flat llms.txt has no document-count bound, so this caps fan-out.
+    /// TOML: `scrape.max-llms-txt-urls`.
+    pub max_llms_txt_urls: usize,
+
     /// Enable Spider's built-in crawl-result caching. Flag: `--cache`.
     pub cache: bool,
 
     /// Keep cached crawl flow on the HTTP path and suppress Chrome runtime/bootstrap. Flag: `--cache-http-only`.
     pub cache_http_only: bool,
+
+    /// Enable conditional re-crawl (ETag / If-Modified-Since). When set, the crawl
+    /// engine seeds spider's per-`Website` ETag cache from a persisted sidecar and
+    /// reconciles pages that 304 (and are therefore silently skipped by spider) back
+    /// into the manifest as reused entries. Requires `cache` for the markdown.old
+    /// archive used to relink reused pages. Flag: `--etag-conditional`. Bead
+    /// axon_rust-hiyf.
+    pub etag_conditional: bool,
+
+    /// Per-path crawl budgets parsed from `--budget PATH=N`. Each entry caps the
+    /// pages crawled under a path prefix; the key `*` applies to all paths. Empty
+    /// = no budget (current behavior). Owned `String` keys so they can outlive the
+    /// borrowed `HashMap<&str, u32>` passed to spider's `with_budget`. Bead
+    /// axon_rust-37zv.
+    pub path_budgets: Vec<(String, u32)>,
 
     /// Output format for scraped pages: `markdown`, `html`, `rawHtml`, or `json`. Flag: `--format`.
     pub format: ScrapeFormat,
