@@ -2,7 +2,9 @@
 //!
 //! Flow: conditional probe (304 = unchanged) → scrape → normalize + ignore
 //! filter → fast-equal hash skip → reuse `services::diff::compute_diff` →
-//! threshold. First-seen is forced Changed (seed). Errors preserve prior state.
+//! threshold. First-seen is forced Changed (seed). DB read errors preserve the
+//! existing row (no phantom upsert); transient probe/scrape errors stamp
+//! `last_checked_at` only.
 
 use crate::core::config::Config;
 use crate::core::http::{Probe, conditional_probe};
@@ -15,11 +17,16 @@ use regex::Regex;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+/// Outcome of detecting a change for one URL. Enum so illegal states (e.g.
+/// "meaningful but no diff") are unrepresentable.
 #[derive(Debug, Clone)]
-pub struct UrlOutcome {
-    pub meaningful: bool,
-    pub diff: Option<DiffResult>,
-    pub error: Option<String>,
+pub enum UrlOutcome {
+    /// No meaningful change (304, sub-threshold, or hash-equal).
+    Unchanged,
+    /// A meaningful change was detected; carries the diff for summary/artifact.
+    Changed { diff: DiffResult },
+    /// The probe/scrape/persist failed; carries the error message.
+    Failed { error: String },
 }
 
 /// A change is meaningful if content changed AND (links changed OR the word-count
@@ -34,7 +41,24 @@ pub fn is_meaningful(diff: &DiffResult, threshold_words: i64) -> bool {
     diff.word_count_delta.abs() >= threshold_words.max(0)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Persist a "checked but unchanged" snapshot: clone the prior state (or a fresh
+/// default when first-seen with no prior row), stamp `last_checked_at`, and
+/// upsert. Best-effort — a write failure is logged but does not change the
+/// returned outcome. Folds the repeated NotModified/Failed/scrape-fail paths.
+async fn persist_unchanged(
+    pool: &SqlitePool,
+    watch_id: Uuid,
+    url: &str,
+    prior: Option<&UrlState>,
+    now: i64,
+) {
+    let mut s = prior.cloned().unwrap_or_default();
+    s.last_checked_at = Some(now);
+    if let Err(e) = upsert_url_state(pool, watch_id, url, &s).await {
+        tracing::warn!(%watch_id, url, error = %e, "watch: upsert_url_state (unchanged) failed");
+    }
+}
+
 pub async fn detect_url_change(
     cfg: &Config,
     pool: &SqlitePool,
@@ -43,39 +67,41 @@ pub async fn detect_url_change(
     ignore: &[Regex],
     threshold_words: i64,
 ) -> UrlOutcome {
-    let prior = get_url_state(pool, watch_id, url)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
+    // A DB read error must NOT be collapsed into a blank prior: doing so would
+    // upsert a full blank row over a just-saved snapshot and re-trigger crawls.
+    // Skip persistence entirely and surface the error.
+    let prior = match get_url_state(pool, watch_id, url).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(%watch_id, url, error = %e, "watch: get_url_state failed; skipping URL");
+            return UrlOutcome::Failed {
+                error: format!("read prior state failed: {e}"),
+            };
+        }
+    };
     let now = now_ms();
 
-    let unchanged = |err: Option<String>| UrlOutcome {
-        meaningful: false,
-        diff: None,
-        error: err,
-    };
-
     // 1) Conditional probe.
-    let (etag, last_modified) =
-        match conditional_probe(url, prior.etag.as_deref(), prior.last_modified.as_deref()).await {
-            Probe::NotModified => {
-                let mut s = prior.clone();
-                s.last_checked_at = Some(now);
-                let _ = upsert_url_state(pool, watch_id, url, &s).await;
-                return unchanged(None);
-            }
-            Probe::Failed(msg) => {
-                let mut s = prior.clone();
-                s.last_checked_at = Some(now);
-                let _ = upsert_url_state(pool, watch_id, url, &s).await;
-                return unchanged(Some(msg));
-            }
-            Probe::Modified {
-                etag,
-                last_modified,
-            } => (etag, last_modified),
-        };
+    let (etag, last_modified) = match conditional_probe(
+        url,
+        prior.as_ref().and_then(|p| p.etag.as_deref()),
+        prior.as_ref().and_then(|p| p.last_modified.as_deref()),
+    )
+    .await
+    {
+        Probe::NotModified => {
+            persist_unchanged(pool, watch_id, url, prior.as_ref(), now).await;
+            return UrlOutcome::Unchanged;
+        }
+        Probe::Failed(msg) => {
+            persist_unchanged(pool, watch_id, url, prior.as_ref(), now).await;
+            return UrlOutcome::Failed { error: msg };
+        }
+        Probe::Modified {
+            etag,
+            last_modified,
+        } => (etag, last_modified),
+    };
 
     // 2) Scrape + 3) filter.
     // Map the (non-Send) boxed scrape error to a String at the await boundary so
@@ -87,10 +113,8 @@ pub async fn detect_url_change(
     {
         Ok(r) => r,
         Err(msg) => {
-            let mut s = prior.clone();
-            s.last_checked_at = Some(now);
-            let _ = upsert_url_state(pool, watch_id, url, &s).await;
-            return unchanged(Some(msg));
+            persist_unchanged(pool, watch_id, url, prior.as_ref(), now).await;
+            return UrlOutcome::Failed { error: msg };
         }
     };
     let filtered = apply_ignore(&normalize_markdown(&scraped.markdown), ignore);
@@ -98,8 +122,11 @@ pub async fn detect_url_change(
     let fresh_links = extract_links_from_payload(&scraped.payload);
     let fresh_links_json = serde_json::to_string(&fresh_links).unwrap_or_else(|_| "[]".into());
 
+    let prior_hash = prior.as_ref().and_then(|p| p.content_hash.clone());
+    let prior_changed_at = prior.as_ref().and_then(|p| p.last_changed_at);
+
     // 4) Fast-equal skip.
-    if prior.content_hash.as_deref() == Some(fresh_hash.as_str()) {
+    if prior_hash.as_deref() == Some(fresh_hash.as_str()) {
         let s = UrlState {
             etag,
             last_modified,
@@ -107,18 +134,23 @@ pub async fn detect_url_change(
             last_markdown: Some(filtered),
             last_links_json: Some(fresh_links_json),
             last_checked_at: Some(now),
-            last_changed_at: prior.last_changed_at,
-            last_crawl_job_id: prior.last_crawl_job_id,
+            last_changed_at: prior_changed_at,
+            last_crawl_job_id: prior.as_ref().and_then(|p| p.last_crawl_job_id),
         };
-        let _ = upsert_url_state(pool, watch_id, url, &s).await;
-        return unchanged(None);
+        if let Err(e) = upsert_url_state(pool, watch_id, url, &s).await {
+            tracing::warn!(%watch_id, url, error = %e, "watch: upsert_url_state (hash-equal) failed");
+        }
+        return UrlOutcome::Unchanged;
     }
 
     // 5) Diff: prior snapshot vs fresh. First-seen → force Changed (seed).
-    let prior_md = prior.last_markdown.clone().unwrap_or_default();
+    let prior_md = prior
+        .as_ref()
+        .and_then(|p| p.last_markdown.clone())
+        .unwrap_or_default();
     let prior_links: Vec<LinkEntry> = prior
-        .last_links_json
-        .as_deref()
+        .as_ref()
+        .and_then(|p| p.last_links_json.as_deref())
         .and_then(|j| serde_json::from_str(j).ok())
         .unwrap_or_default();
     let empty = serde_json::json!({});
@@ -132,7 +164,7 @@ pub async fn detect_url_change(
         &fresh_links,
         &empty,
     );
-    let first_seen = prior.content_hash.is_none();
+    let first_seen = prior_hash.is_none();
     if first_seen {
         diff.status = DiffStatus::Changed;
     }
@@ -148,19 +180,17 @@ pub async fn detect_url_change(
         last_markdown: Some(filtered),
         last_links_json: Some(fresh_links_json),
         last_checked_at: Some(now),
-        last_changed_at: if meaningful {
-            Some(now)
-        } else {
-            prior.last_changed_at
-        },
-        last_crawl_job_id: prior.last_crawl_job_id,
+        last_changed_at: if meaningful { Some(now) } else { prior_changed_at },
+        last_crawl_job_id: prior.as_ref().and_then(|p| p.last_crawl_job_id),
     };
-    let _ = upsert_url_state(pool, watch_id, url, &s).await;
+    if let Err(e) = upsert_url_state(pool, watch_id, url, &s).await {
+        tracing::warn!(%watch_id, url, error = %e, "watch: upsert_url_state (changed) failed");
+    }
 
-    UrlOutcome {
-        meaningful,
-        diff: Some(diff),
-        error: None,
+    if meaningful {
+        UrlOutcome::Changed { diff }
+    } else {
+        UrlOutcome::Unchanged
     }
 }
 

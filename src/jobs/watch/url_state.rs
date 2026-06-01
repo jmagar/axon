@@ -3,6 +3,22 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+/// Cap on the stored snapshot markdown so an adversarially large watched page
+/// cannot grow the row unbounded. Truncated on a UTF-8 char boundary.
+pub const MAX_SNAPSHOT_MARKDOWN_BYTES: usize = 512 * 1024;
+
+/// Truncate `s` to at most `MAX_SNAPSHOT_MARKDOWN_BYTES` on a char boundary.
+pub fn truncate_snapshot_markdown(s: &str) -> String {
+    if s.len() <= MAX_SNAPSHOT_MARKDOWN_BYTES {
+        return s.to_string();
+    }
+    let mut end = MAX_SNAPSHOT_MARKDOWN_BYTES.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct UrlState {
     pub etag: Option<String>,
@@ -81,9 +97,31 @@ pub async fn upsert_url_state(
     )
     .bind(watch_id.to_string()).bind(url)
     .bind(&s.etag).bind(&s.last_modified).bind(&s.content_hash)
-    .bind(&s.last_markdown).bind(&s.last_links_json)
+    .bind(s.last_markdown.as_deref().map(truncate_snapshot_markdown))
+    .bind(&s.last_links_json)
     .bind(s.last_checked_at).bind(s.last_changed_at)
     .bind(s.last_crawl_job_id.map(|i| i.to_string()))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Targeted update of just `last_crawl_job_id` for an existing row. Used after
+/// dispatching a change-triggered crawl so the in-flight guard can find the
+/// referencing crawl on the next tick — without a full-row upsert that could
+/// clobber a freshly-written snapshot.
+pub async fn set_crawl_job_id(
+    pool: &SqlitePool,
+    watch_id: Uuid,
+    url: &str,
+    job_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE axon_watch_url_state SET last_crawl_job_id = ? WHERE watch_id = ? AND url = ?",
+    )
+    .bind(job_id.to_string())
+    .bind(watch_id.to_string())
+    .bind(url)
     .execute(pool)
     .await?;
     Ok(())

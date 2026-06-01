@@ -44,7 +44,7 @@ pub fn apply_ignore(md: &str, patterns: &[Regex]) -> String {
 pub fn content_hash(text: &str) -> String {
     let mut h = Sha256::new();
     h.update(text.as_bytes());
-    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hex::encode(h.finalize())
 }
 
 #[cfg(test)]

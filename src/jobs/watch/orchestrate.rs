@@ -4,12 +4,12 @@
 use crate::core::config::Config;
 use crate::jobs::store::open_config_pool;
 use crate::jobs::watch::WatchDef;
-use crate::jobs::watch::change_detect::detect_url_change;
+use crate::jobs::watch::change_detect::{UrlOutcome, detect_url_change};
 use crate::jobs::watch::cluster::group_by_common_prefix;
 use crate::jobs::watch::dispatch::{crawl_job_active, enqueue_change_crawl};
 use crate::jobs::watch::filter::compile_patterns;
 use crate::jobs::watch::report::{summarize_diff, write_change_artifact};
-use crate::jobs::watch::url_state::{UrlState, get_url_state, upsert_url_state};
+use crate::jobs::watch::url_state::{get_url_state, set_crawl_job_id};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -68,14 +68,13 @@ async fn dispatch_clusters(
             .map_err(|e| e.to_string());
         match enqueued {
             Ok(job_id) => {
+                // Targeted update of just last_crawl_job_id — never a full-row
+                // upsert, which could clobber the snapshot detect_url_change
+                // just wrote earlier this tick.
                 for member in &cluster.members {
-                    let mut s = get_url_state(pool, watch_id, member)
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_else(UrlState::default);
-                    s.last_crawl_job_id = Some(job_id);
-                    let _ = upsert_url_state(pool, watch_id, member, &s).await;
+                    if let Err(e) = set_crawl_job_id(pool, watch_id, member, job_id).await {
+                        tracing::warn!(%watch_id, url = member, %job_id, error = %e, "watch: set_crawl_job_id failed");
+                    }
                 }
                 dispatched.push(job_id.to_string());
                 clusters_out.push(serde_json::json!({
@@ -127,25 +126,39 @@ pub(crate) async fn run_url_watch(
     let mut summaries: Vec<serde_json::Value> = Vec::new();
 
     for url in &urls {
-        let outcome = detect_url_change(cfg, &pool, watch.id, url, &ignore, threshold).await;
-        if let Some(err) = &outcome.error {
-            errors.push(serde_json::json!({ "url": url, "error": err }));
-        }
-        if outcome.meaningful {
-            changed.push(url.clone());
-            if let (Some(diff), Some(run_id)) = (&outcome.diff, run_id) {
-                let summary = if do_summary {
-                    summarize_diff(cfg, url, diff).await
-                } else {
-                    None
-                };
-                if let Some(s) = &summary {
-                    summaries.push(serde_json::json!({ "url": url, "summary": s }));
-                }
-                let _ = write_change_artifact(&pool, run_id, url, diff, summary).await;
+        match detect_url_change(cfg, &pool, watch.id, url, &ignore, threshold).await {
+            UrlOutcome::Failed { error } => {
+                errors.push(serde_json::json!({ "url": url, "error": error }));
             }
-        } else if outcome.error.is_none() {
-            unchanged += 1;
+            UrlOutcome::Unchanged => {
+                unchanged += 1;
+            }
+            UrlOutcome::Changed { diff } => {
+                changed.push(url.clone());
+                match run_id {
+                    Some(run_id) => {
+                        let summary = if do_summary {
+                            summarize_diff(cfg, url, &diff).await
+                        } else {
+                            None
+                        };
+                        if let Some(s) = &summary {
+                            summaries.push(serde_json::json!({ "url": url, "summary": s }));
+                        }
+                        if let Err(e) =
+                            write_change_artifact(&pool, run_id, url, &diff, summary).await
+                        {
+                            tracing::warn!(watch_id = %watch.id, url, error = %e, "watch: write_change_artifact failed");
+                        }
+                    }
+                    None => {
+                        // No running run row found — the change is real but its
+                        // artifact can't be attached. Surface it instead of
+                        // silently dropping.
+                        tracing::warn!(watch_id = %watch.id, url, "watch: change detected but no running run found; artifact skipped");
+                    }
+                }
+            }
         }
     }
 
