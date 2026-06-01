@@ -33,7 +33,7 @@ async fn current_run_id(pool: &SqlitePool, watch_id: Uuid) -> Option<Uuid> {
 /// whose prior crawl is still in flight. Records the new crawl id on members.
 /// Returns `(clusters_out, dispatched, cluster_errors)`.
 #[allow(clippy::type_complexity)]
-async fn dispatch_clusters(
+pub(crate) async fn dispatch_clusters(
     pool: &SqlitePool,
     cfg: &Config,
     watch_id: Uuid,
@@ -177,3 +177,7 @@ pub(crate) async fn run_url_watch(
         "errors": errors,
     }))
 }
+
+#[cfg(test)]
+#[path = "orchestrate_tests.rs"]
+mod tests;
