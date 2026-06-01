@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.17.0] - 2026-06-01
+
+### Added
+- `llms.txt` probing: crawl and `map` now fetch `/llms.txt` at the site root, parse its markdown links, and merge them into the sitemap-backfill candidate set (config: `scrape.discover-llms-txt`, default on; `scrape.max-llms-txt-urls`, default 512). Raw `.md`/`.txt` targets pass through without the HTML transform. `fetch_text_with_retry` now caps discovery-document body size (512 KB) for both sitemap and llms.txt. Request surfaces (MCP `crawl`, REST `/v1/crawl`, server-mode plan, action API) accept `discover_llms_txt` / `max_llms_txt_urls` overrides.
+
 ## [4.16.0] - 2026-05-31
 
 ### Added

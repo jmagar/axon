@@ -98,6 +98,8 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 | `respect_robots` | bool | false | Honour robots.txt |
 | `discover_sitemaps` | bool | true | Run sitemap backfill after crawl |
 | `sitemap_since_days` | u32 | 0 | Only backfill sitemap URLs with `<lastmod>` within last N days (0 = no filter) |
+| `discover_llms_txt` | bool | true | Probe `/llms.txt` at the site root and merge its links into the backfill candidate set |
+| `max_llms_txt_urls` | usize | 512 | Max URLs taken from a single `/llms.txt` after scope filtering (0 = unlimited) |
 | `render_mode` | McpRenderMode | `auto_switch` | `http`, `chrome`, `auto_switch` |
 | `delay_ms` | u64 | 0 | Per-request delay ms |
 
