@@ -22,6 +22,28 @@ impl Drop for LoopbackGuard {
     }
 }
 
+/// Run an async test body on a current-thread runtime hosted on a 16 MB-stack
+/// thread. A live `crawl_raw()` recurses deep enough through spider's pipeline to
+/// overflow the default ~2 MB test-thread stack under parallel test pressure
+/// (intermittent SIGABRT). Used by the two tests below that drive a real crawl.
+fn block_on_big_stack<F>(fut: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build current-thread runtime")
+                .block_on(fut);
+        })
+        .expect("spawn big-stack test thread")
+        .join()
+        .expect("big-stack test thread panicked");
+}
+
 fn entry(url: &str, hash: &str) -> ManifestEntry {
     ManifestEntry {
         url: url.to_string(),
@@ -363,78 +385,80 @@ fn build_next_sidecar_carries_forward_unrefreshed_validators() {
 // URL goes through `crawl_establish`, which does not. So the test seeds the
 // *linked* page, not the start page, and asserts the conditional request fires
 // for the discovered link.
-#[tokio::test]
+#[test]
 #[serial_test::serial]
-async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
-    use httpmock::prelude::*;
+fn seeded_validators_drive_conditional_request_and_304_drops_page() {
+    block_on_big_stack(async {
+        use httpmock::prelude::*;
 
-    let _loopback = LoopbackGuard::enable();
+        let _loopback = LoopbackGuard::enable();
 
-    let server = MockServer::start();
-    let stable_path = "/stable";
-    let stable_url = format!("{}{}", server.base_url(), stable_path);
+        let server = MockServer::start();
+        let stable_path = "/stable";
+        let stable_url = format!("{}{}", server.base_url(), stable_path);
 
-    // Start page links to the stable page so spider discovers + dispatches it
-    // through the concurrent fetch loop (the only path that consults the cache).
-    server.mock(|when, then| {
-        when.method(GET).path("/");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(format!(
-                "<html><body><a href=\"{stable_url}\">stable</a></body></html>"
-            ));
+        // Start page links to the stable page so spider discovers + dispatches it
+        // through the concurrent fetch loop (the only path that consults the cache).
+        server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(format!(
+                    "<html><body><a href=\"{stable_url}\">stable</a></body></html>"
+                ));
+        });
+
+        // The stable page mock only matches when If-None-Match is present and returns
+        // a bodyless 304. If spider did not send the validator, this never matches and
+        // `hits()` stays 0.
+        let conditional = server.mock(|when, then| {
+            when.method(GET)
+                .path(stable_path)
+                .header_exists("if-none-match");
+            then.status(304);
+        });
+
+        let mut website = Website::new(&server.base_url());
+        website.with_depth(2);
+        website.configuration.with_etag_cache(true);
+
+        let mut sidecar = HashMap::new();
+        sidecar.insert(
+            stable_url.clone(),
+            EtagEntry {
+                etag: Some("\"v1\"".to_string()),
+                last_modified: None,
+            },
+        );
+        let seeded = seed_website_etag_cache(&mut website, &sidecar);
+        assert_eq!(seeded.len(), 1, "validator must seed before crawl");
+
+        let mut rx = website.subscribe(16);
+        website.crawl_raw().await;
+        website.unsubscribe();
+
+        // The conditional request was actually sent (seed survived setup + header on
+        // the wire) and matched the 304 mock.
+        assert!(
+            conditional.calls() >= 1,
+            "spider must send If-None-Match for the seeded discovered link (hits={})",
+            conditional.calls()
+        );
+
+        // The 304'd stable page yields no content page in the broadcast — spider drops
+        // it. This is exactly the silent skip the reconciliation path recovers.
+        let mut pages = Vec::new();
+        while let Ok(p) = rx.try_recv() {
+            pages.push(p);
+        }
+        let delivered_stable = pages
+            .iter()
+            .any(|p| p.get_url().contains(stable_path) && !p.get_html_bytes_u8().is_empty());
+        assert!(
+            !delivered_stable,
+            "304 page must NOT be delivered with content to the collector"
+        );
     });
-
-    // The stable page mock only matches when If-None-Match is present and returns
-    // a bodyless 304. If spider did not send the validator, this never matches and
-    // `hits()` stays 0.
-    let conditional = server.mock(|when, then| {
-        when.method(GET)
-            .path(stable_path)
-            .header_exists("if-none-match");
-        then.status(304);
-    });
-
-    let mut website = Website::new(&server.base_url());
-    website.with_depth(2);
-    website.configuration.with_etag_cache(true);
-
-    let mut sidecar = HashMap::new();
-    sidecar.insert(
-        stable_url.clone(),
-        EtagEntry {
-            etag: Some("\"v1\"".to_string()),
-            last_modified: None,
-        },
-    );
-    let seeded = seed_website_etag_cache(&mut website, &sidecar);
-    assert_eq!(seeded.len(), 1, "validator must seed before crawl");
-
-    let mut rx = website.subscribe(16);
-    website.crawl_raw().await;
-    website.unsubscribe();
-
-    // The conditional request was actually sent (seed survived setup + header on
-    // the wire) and matched the 304 mock.
-    assert!(
-        conditional.calls() >= 1,
-        "spider must send If-None-Match for the seeded discovered link (hits={})",
-        conditional.calls()
-    );
-
-    // The 304'd stable page yields no content page in the broadcast — spider drops
-    // it. This is exactly the silent skip the reconciliation path recovers.
-    let mut pages = Vec::new();
-    while let Ok(p) = rx.try_recv() {
-        pages.push(p);
-    }
-    let delivered_stable = pages
-        .iter()
-        .any(|p| p.get_url().contains(stable_path) && !p.get_html_bytes_u8().is_empty());
-    assert!(
-        !delivered_stable,
-        "304 page must NOT be delivered with content to the collector"
-    );
 }
 
 // ── cross-run populate: run-1 must actually persist a non-empty sidecar
@@ -446,59 +470,61 @@ async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
 // the sidecar persists empty and cross-run benefit is inert. We drive a real
 // crawl where a discovered link returns 200 + ETag and assert the persisted
 // sidecar is non-empty AND its key round-trips through a fresh seed.
-#[tokio::test]
+#[test]
 #[serial_test::serial]
-async fn run1_populates_sidecar_with_seedable_key() {
-    use httpmock::prelude::*;
+fn run1_populates_sidecar_with_seedable_key() {
+    block_on_big_stack(async {
+        use httpmock::prelude::*;
 
-    let _loopback = LoopbackGuard::enable();
+        let _loopback = LoopbackGuard::enable();
 
-    let server = MockServer::start();
-    let leaf_path = "/leaf";
-    let leaf_url = format!("{}{}", server.base_url(), leaf_path);
+        let server = MockServer::start();
+        let leaf_path = "/leaf";
+        let leaf_url = format!("{}{}", server.base_url(), leaf_path);
 
-    server.mock(|when, then| {
-        when.method(GET).path("/");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(format!(
-                "<html><body><a href=\"{leaf_url}\">leaf</a></body></html>"
-            ));
-    });
-    // Discovered link returns a real ETag — spider should store it.
-    server.mock(|when, then| {
-        when.method(GET).path(leaf_path);
-        then.status(200)
-            .header("content-type", "text/html")
-            .header("etag", "\"leaf-v1\"")
-            .body("<html><body>leaf body with enough text to not be empty</body></html>");
-    });
+        server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(format!(
+                    "<html><body><a href=\"{leaf_url}\">leaf</a></body></html>"
+                ));
+        });
+        // Discovered link returns a real ETag — spider should store it.
+        server.mock(|when, then| {
+            when.method(GET).path(leaf_path);
+            then.status(200)
+                .header("content-type", "text/html")
+                .header("etag", "\"leaf-v1\"")
+                .body("<html><body>leaf body with enough text to not be empty</body></html>");
+        });
 
-    let mut website = Website::new(&server.base_url());
-    website.with_depth(2);
-    website.configuration.with_etag_cache(true);
-    website.configure_setup_norobots(); // materialize cache for this bare-Website test
+        let mut website = Website::new(&server.base_url());
+        website.with_depth(2);
+        website.configuration.with_etag_cache(true);
+        website.configure_setup_norobots(); // materialize cache for this bare-Website test
 
-    let mut rx = website.subscribe(16);
-    website.crawl_raw().await;
-    website.unsubscribe();
+        let mut rx = website.subscribe(16);
+        website.crawl_raw().await;
+        website.unsubscribe();
 
-    // Collect the canonicalized arrival keys exactly as the collector would.
-    let mut arrived: HashSet<String> = HashSet::new();
-    while let Ok(p) = rx.try_recv() {
-        if let Some(c) = canonicalize_url_for_dedupe(p.get_url()) {
-            arrived.insert(c);
+        // Collect the canonicalized arrival keys exactly as the collector would.
+        let mut arrived: HashSet<String> = HashSet::new();
+        while let Ok(p) = rx.try_recv() {
+            if let Some(c) = canonicalize_url_for_dedupe(p.get_url()) {
+                arrived.insert(c);
+            }
         }
-    }
 
-    // Build the next sidecar from the live cache using canonical arrival keys —
-    // the exact production path. This is the assertion that catches a key mismatch.
-    let next = build_next_sidecar(&website, &HashMap::new(), &arrived);
-    assert!(
-        next.values()
-            .any(|e| e.etag.as_deref() == Some("\"leaf-v1\"")),
-        "run-1 must persist the leaf ETag under a key reachable via the canonical \
+        // Build the next sidecar from the live cache using canonical arrival keys —
+        // the exact production path. This is the assertion that catches a key mismatch.
+        let next = build_next_sidecar(&website, &HashMap::new(), &arrived);
+        assert!(
+            next.values()
+                .any(|e| e.etag.as_deref() == Some("\"leaf-v1\"")),
+            "run-1 must persist the leaf ETag under a key reachable via the canonical \
          arrival set (got keys: {:?})",
-        next.keys().collect::<Vec<_>>()
-    );
+            next.keys().collect::<Vec<_>>()
+        );
+    });
 }
