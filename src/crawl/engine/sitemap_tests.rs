@@ -94,7 +94,7 @@ fn request_timeout_secs_rounds_up_with_minimum_one_second() {
 fn should_retry_status_permanent_dead_hosts_not_retried() {
     use reqwest::StatusCode;
     // 525 (DNS/NXDOMAIN) and 526 (host/TLS unreachable) are permanent —
-    // retrying re-resolves a host that will never resolve (bead axon_rust-6i30).
+    // retrying re-resolves a host that will never resolve (dead-host bead axon_rust-6i30).
     assert!(!should_retry_status(StatusCode::from_u16(525).unwrap()));
     assert!(!should_retry_status(StatusCode::from_u16(526).unwrap()));
 }

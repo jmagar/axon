@@ -3,6 +3,25 @@ use crate::crawl::engine::canonicalize_url_for_dedupe;
 use crate::crawl::manifest::ManifestEntry;
 use std::collections::{HashMap, HashSet};
 
+/// RAII guard for the thread-local loopback bypass. Enables it for the lifetime
+/// of the guard and restores the prior value on drop — panic-safe, so a failing
+/// test cannot leak `allow_loopback = true` into other tests on the same thread.
+struct LoopbackGuard(bool);
+
+impl LoopbackGuard {
+    fn enable() -> Self {
+        let prev = crate::core::http::get_allow_loopback();
+        crate::core::http::set_allow_loopback(true);
+        LoopbackGuard(prev)
+    }
+}
+
+impl Drop for LoopbackGuard {
+    fn drop(&mut self) {
+        crate::core::http::set_allow_loopback(self.0);
+    }
+}
+
 fn entry(url: &str, hash: &str) -> ManifestEntry {
     ManifestEntry {
         url: url.to_string(),
@@ -29,7 +48,7 @@ fn reconcile_targets_selects_only_seeded_and_absent() {
     prev.insert("https://x/b".to_string(), entry("https://x/b", "h2"));
     prev.insert("https://x/c".to_string(), entry("https://x/c", "h3"));
 
-    // a: seeded + absent → reconcile (a 304 skip)
+    // a: seeded + absent + visited → reconcile (a genuine 304 skip)
     // b: seeded but arrived (e.g. changed, re-fetched) → NOT reconciled
     // c: arrived, never seeded → NOT reconciled
     let seeded: HashSet<String> = ["https://x/a", "https://x/b"]
@@ -40,8 +59,13 @@ fn reconcile_targets_selects_only_seeded_and_absent() {
         .iter()
         .map(|s| s.to_string())
         .collect();
+    // All three were scheduled/visited this run.
+    let visited: HashSet<String> = ["https://x/a", "https://x/b", "https://x/c"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
 
-    let targets = reconcile_targets(&prev, &seeded, &arrived);
+    let targets = reconcile_targets(&prev, &seeded, &arrived, &visited);
     assert_eq!(targets, vec!["https://x/a".to_string()]);
 }
 
@@ -53,14 +77,17 @@ fn reconcile_targets_empty_seed_yields_no_zombies() {
     prev.insert("https://x/gone".to_string(), entry("https://x/gone", "h1"));
     let seeded = HashSet::new();
     let arrived = HashSet::new();
-    assert!(reconcile_targets(&prev, &seeded, &arrived).is_empty());
+    let visited = HashSet::new();
+    assert!(reconcile_targets(&prev, &seeded, &arrived, &visited).is_empty());
 }
 
 #[test]
-fn reconcile_targets_orphan_with_validator_is_the_irreducible_residual() {
-    // A genuinely-removed page that still carried a validator is indistinguishable
-    // from a 304 at this layer; it IS reconciled (kept one more run). This test
-    // pins that documented behavior so a future change is a conscious decision.
+fn reconcile_targets_orphan_not_visited_is_excluded() {
+    // A page that previously had a validator but is no longer discovered this run
+    // is absent from the visited set — spider never scheduled it, so it cannot
+    // have 304'd. It must NOT be reconciled (no zombie resurrection). This is the
+    // PR #153 review fix: the visited-set gate distinguishes a real 304 skip from
+    // a deleted/undiscovered page.
     let mut prev = HashMap::new();
     prev.insert(
         "https://x/removed".to_string(),
@@ -71,9 +98,11 @@ fn reconcile_targets_orphan_with_validator_is_the_irreducible_residual() {
         .map(|s| s.to_string())
         .collect();
     let arrived = HashSet::new();
-    assert_eq!(
-        reconcile_targets(&prev, &seeded, &arrived),
-        vec!["https://x/removed".to_string()]
+    // Not in visited → not a 304 skip → excluded.
+    let visited = HashSet::new();
+    assert!(
+        reconcile_targets(&prev, &seeded, &arrived, &visited).is_empty(),
+        "an undiscovered (not-visited) page must never be reconciled"
     );
 }
 
@@ -104,8 +133,11 @@ async fn reconcile_unmodified_relinks_archived_markdown_and_appends_entry() {
     previous_manifest.insert(prev_entry.url.clone(), prev_entry.clone());
     let seeded: HashSet<String> = [prev_entry.url.clone()].into_iter().collect();
     let arrived: HashSet<String> = HashSet::new(); // 304-skipped this run.
+    // Visited this run (spider scheduled it and got a 304).
+    let visited: HashSet<String> = [prev_entry.url.clone()].into_iter().collect();
 
-    let reconciled = reconcile_unmodified(output_dir, &previous_manifest, &seeded, &arrived).await;
+    let reconciled =
+        reconcile_unmodified(output_dir, &previous_manifest, &seeded, &arrived, &visited).await;
     assert_eq!(reconciled, 1);
 
     // Markdown was relinked into the live dir.
@@ -149,13 +181,76 @@ async fn reconcile_unmodified_skips_when_archive_missing() {
     previous_manifest.insert(prev_entry.url.clone(), prev_entry.clone());
     let seeded: HashSet<String> = [prev_entry.url.clone()].into_iter().collect();
     let arrived = HashSet::new();
+    let visited: HashSet<String> = [prev_entry.url.clone()].into_iter().collect();
 
-    let reconciled = reconcile_unmodified(output_dir, &previous_manifest, &seeded, &arrived).await;
+    let reconciled =
+        reconcile_unmodified(output_dir, &previous_manifest, &seeded, &arrived, &visited).await;
     assert_eq!(reconciled, 0);
     let manifest = tokio::fs::read_to_string(output_dir.join("manifest.jsonl"))
         .await
         .unwrap();
     assert!(manifest.trim().is_empty());
+}
+
+#[tokio::test]
+async fn reconcile_unmodified_excludes_undiscovered_pages() {
+    // End-to-end guard for the PR #153 review fix: a seeded page that is no longer
+    // discovered (absent from the visited set) must NOT be resurrected, even
+    // though its archived markdown still exists — while a genuine 304 skip
+    // (seeded + visited + not arrived) IS reused.
+    let tmp = tempfile::tempdir().unwrap();
+    let output_dir = tmp.path();
+    let markdown_dir = output_dir.join("markdown");
+    let recycling_bin = output_dir.join("markdown.old");
+    tokio::fs::create_dir_all(&markdown_dir).await.unwrap();
+    tokio::fs::create_dir_all(&recycling_bin).await.unwrap();
+    tokio::fs::write(output_dir.join("manifest.jsonl"), b"")
+        .await
+        .unwrap();
+
+    let gone = entry("https://x/deleted", "h-gone");
+    let gone_file = Path::new(&gone.relative_path).file_name().unwrap();
+    tokio::fs::write(recycling_bin.join(gone_file), b"# old deleted content")
+        .await
+        .unwrap();
+
+    let kept = entry("https://x/kept", "h-kept");
+    let kept_file = Path::new(&kept.relative_path).file_name().unwrap();
+    tokio::fs::write(recycling_bin.join(kept_file), b"# kept content")
+        .await
+        .unwrap();
+
+    let mut previous_manifest = HashMap::new();
+    previous_manifest.insert(gone.url.clone(), gone.clone());
+    previous_manifest.insert(kept.url.clone(), kept.clone());
+
+    let seeded: HashSet<String> = [gone.url.clone(), kept.url.clone()].into_iter().collect();
+    let arrived: HashSet<String> = HashSet::new();
+    // Only the kept URL was visited this run (a real 304); the deleted URL was
+    // never scheduled.
+    let visited: HashSet<String> = [kept.url.clone()].into_iter().collect();
+
+    let reconciled =
+        reconcile_unmodified(output_dir, &previous_manifest, &seeded, &arrived, &visited).await;
+    assert_eq!(reconciled, 1, "only the visited 304 skip is reconciled");
+
+    let manifest = tokio::fs::read_to_string(output_dir.join("manifest.jsonl"))
+        .await
+        .unwrap();
+    assert!(
+        manifest.contains("https://x/kept"),
+        "visited 304 page must be reused"
+    );
+    assert!(
+        !manifest.contains("https://x/deleted"),
+        "undiscovered page must not be resurrected"
+    );
+    assert!(
+        !tokio::fs::try_exists(markdown_dir.join(gone_file))
+            .await
+            .unwrap(),
+        "deleted page's markdown must not be relinked"
+    );
 }
 
 // ── sidecar round-trip + carry-forward ──────────────────────────────────────
@@ -273,7 +368,7 @@ fn build_next_sidecar_carries_forward_unrefreshed_validators() {
 async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
     use httpmock::prelude::*;
 
-    crate::core::http::set_allow_loopback(true);
+    let _loopback = LoopbackGuard::enable();
 
     let server = MockServer::start();
     let stable_path = "/stable";
@@ -340,8 +435,6 @@ async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
         !delivered_stable,
         "304 page must NOT be delivered with content to the collector"
     );
-
-    crate::core::http::set_allow_loopback(false);
 }
 
 // ── cross-run populate: run-1 must actually persist a non-empty sidecar
@@ -358,7 +451,7 @@ async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
 async fn run1_populates_sidecar_with_seedable_key() {
     use httpmock::prelude::*;
 
-    crate::core::http::set_allow_loopback(true);
+    let _loopback = LoopbackGuard::enable();
 
     let server = MockServer::start();
     let leaf_path = "/leaf";
@@ -408,6 +501,4 @@ async fn run1_populates_sidecar_with_seedable_key() {
          arrival set (got keys: {:?})",
         next.keys().collect::<Vec<_>>()
     );
-
-    crate::core::http::set_allow_loopback(false);
 }
