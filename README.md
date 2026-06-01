@@ -361,7 +361,7 @@ Common failures:
 - `config.example.toml` — non-secret tuning template.
 - `.claude-plugin/plugin.json` — Claude plugin manifest.
 - `scripts/plugin-setup.sh` — plugin hook delegating to shared setup.
-- `docs/MCP-TOOL-SCHEMA.md` — generated MCP wire contract.
+- `docs/reference/mcp/tool-schema.md` — generated MCP wire contract.
 
 ## License
 

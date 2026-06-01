@@ -157,7 +157,7 @@ rust-embed = "8"
 [features]
 # Feature gates for optional heavy dependencies from the webclaw port.
 # All default OFF — enabling them is a build-time choice.
-# See docs/FEATURES.md for full rationale and CI impact.
+# See docs/reference/cargo-features.md for full rationale and CI impact.
 default = []
 test-helpers = []
 live-qdrant = []
