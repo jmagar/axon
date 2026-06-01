@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.17.0] - 2026-06-01
+## [4.18.0] - 2026-06-01
 
 ### Added
 
@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 
 - **Adaptive concurrency (AIMD)** (bead axon_rust-6y3c) was investigated and **deferred**: spider 2.51 ships an `AIMDController` type but exposes **no public `Website`/`configuration` method to attach it** (the type is referenced nowhere else in the crate). The only wireable adaptive primitive is `auto_throttle`, which is latency-based per-domain *delay* — not the 429/403 status-driven concurrency backoff the bead specified, and enabling it by default would throttle the high-concurrency performance profiles. Documented as not-wireable per the bead's own fallback clause; bead left open with a deferral note.
+
+## [4.17.0] - 2026-06-01
+
+### Added
+
+- `llms.txt` probing: crawl and `map` now fetch `/llms.txt` at the site root, parse its markdown links, and union them (dedup, no blanket truncation) into the sitemap-backfill candidate set (config: `scrape.discover-llms-txt`, default on; `scrape.max-llms-txt-urls`, default 512 — bounds the llms.txt fan-out only; sitemap-URL backfill stays uncapped as on prior releases). Raw `.md`/`.markdown`/`.txt` targets pass through without the HTML transform. `fetch_text_with_retry` caps the `/llms.txt` discovery document at 512 KB and `sitemap.xml` at 50 MB (the sitemap-spec ceiling); HTML page backfill stays uncapped and charset-aware. Request surfaces (MCP `crawl`, REST `/v1/crawl`, server-mode plan, action API) accept `discover_llms_txt` / `max_llms_txt_urls` overrides.
 
 ## [4.16.0] - 2026-05-31
 
