@@ -447,3 +447,19 @@ fn extract_anchor_hrefs_resolves_relative_links_against_base_url() {
         ]
     );
 }
+
+#[test]
+fn extract_anchor_hrefs_ignores_non_anchor_href_attributes() {
+    // href= on non-anchor elements (<link>, <base>, <area>) must NOT be captured;
+    // only true <a> navigational links are.
+    let html = r##"
+        <link rel="stylesheet" href="https://cdn.example.com/style.css">
+        <base href="https://base.example.com/">
+        <area href="https://map.example.com/region">
+        <a href="https://real.example.com/page">Real link</a>
+    "##;
+
+    let links = extract_anchor_hrefs("https://example.com/", html, 10);
+
+    assert_eq!(links, vec!["https://real.example.com/page".to_string()]);
+}
