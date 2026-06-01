@@ -310,6 +310,16 @@ pub(super) async fn configure_website_with_crawl_id(
         }
     }
 
+    // Conditional re-crawl: enable spider's ETag cache so seeded validators drive
+    // If-None-Match / If-Modified-Since requests. On a 304 spider drops the page
+    // silently; the engine reconciles those drops back into the manifest after the
+    // crawl (see src/crawl/engine/etag.rs). Crawl path only — single-page scrape
+    // would lose content on a 304 and has no reconciliation seam. Bead
+    // axon_rust-hiyf.
+    if cfg.etag_conditional {
+        website.configuration.with_etag_cache(true);
+    }
+
     website = apply_browser_settings(cfg, website, mode).await?;
 
     // P3 — spider builder fields previously parsed but never applied.
