@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use std::error::Error;
 use uuid::Uuid;
 
+pub(crate) mod cluster;
 pub(crate) mod filter;
 pub(crate) mod url_state;
 
