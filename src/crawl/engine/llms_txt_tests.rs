@@ -1,17 +1,24 @@
 use super::*;
 
-const FIXTURE: &str = "\u{feff}# Example Docs\n\n> A short summary.\n\nSome intro prose with an inline [ignored-in-prose-too](https://example.com/intro.md) link.\n\n## Docs\n\n- [Getting Started](/docs/start.md): the basics\n- [Guide](guide.md)\n- [External](https://other.com/x.md)\n- [Email](mailto:hi@example.com)\n- [Anchor](#section)\n\n## Optional\n\n- [Extra](/docs/extra.md)\n";
+const FIXTURE: &str = "\u{feff}# Example Docs\n\n> A short summary.\n\nSome intro prose with an inline [ignored-in-prose-too](https://example.com/intro.md) link.\n\n## Docs\n\n- [Getting Started](/docs/start.md#h): the basics\n- [Guide](guide.md)\n- [External](https://other.com/x.md)\n- [Email](mailto:hi@example.com)\n- [Anchor](#section)\n\n## Optional\n\n- [Extra](/docs/extra.md)\n";
 
 #[test]
 fn extracts_and_resolves_links() {
     let links = extract_llms_txt_links(FIXTURE, "https://example.com/llms.txt");
     // Relative resolved against base; mailto/anchor dropped; external kept (scope happens later).
+    // `/docs/start.md#h` proves `set_fragment(None)` strips a fragment from a real link
+    // (distinct from the leading-`#` anchor guard).
     assert!(links.contains(&"https://example.com/docs/start.md".to_string()));
+    assert!(
+        !links.iter().any(|u| u.contains("start.md#h")),
+        "fragment must be stripped from /docs/start.md#h via set_fragment(None)"
+    );
     assert!(links.contains(&"https://example.com/guide.md".to_string()));
     assert!(links.contains(&"https://other.com/x.md".to_string()));
     assert!(links.contains(&"https://example.com/docs/extra.md".to_string()));
     assert!(!links.iter().any(|u| u.starts_with("mailto:")));
     assert!(!links.iter().any(|u| u.contains("#section")));
+    assert!(!links.iter().any(|u| u.contains('#')));
 }
 
 #[test]
@@ -46,4 +53,39 @@ fn scope_drops_offhost_and_caps() {
         .collect();
     assert!(scoped.iter().all(|u| u.contains("example.com")));
     assert_eq!(scoped.len(), 2, "off-host dropped, two same-host kept");
+}
+
+/// `discover_llms_txt_urls` must cap its output at `max_llms_txt_urls` (the per-source
+/// fan-out bound) even when the `/llms.txt` lists far more same-host links. This exercises
+/// the truncate at llms_txt.rs which is otherwise unexercised end-to-end.
+#[tokio::test]
+#[serial_test::serial]
+async fn discover_llms_txt_urls_caps_at_max() {
+    let server = httpmock::MockServer::start();
+    let base = server.base_url();
+    // 20 same-host links; cap will be 5.
+    let mut body = String::from("# Docs\n\n> summary\n\n## Pages\n\n");
+    for i in 0..20 {
+        body.push_str(&format!("- [p{i}]({base}/page-{i}.md)\n"));
+    }
+    let m = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/llms.txt");
+        then.status(200).body(&body);
+    });
+    let cfg = Config {
+        max_llms_txt_urls: 5,
+        fetch_retries: 0,
+        retry_backoff_ms: 0,
+        request_timeout_ms: Some(5_000),
+        ..Config::default()
+    };
+    crate::core::http::set_allow_loopback(true);
+    let urls = discover_llms_txt_urls(&cfg, &base).await.expect("discover");
+    crate::core::http::set_allow_loopback(false);
+    m.assert();
+    assert_eq!(
+        urls.len(),
+        5,
+        "output must be capped at max_llms_txt_urls=5"
+    );
 }

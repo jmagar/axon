@@ -88,6 +88,22 @@ fn mock_all_sitemaps_404(server: &MockServer) {
     });
 }
 
+/// Register the 4 non-`/sitemap.xml` default seed paths as 404. Used by tests that mock
+/// `/sitemap.xml` (and `/robots.txt`) themselves but need the remaining index seeds absent.
+fn mock_index_seeds_404(server: &MockServer) {
+    for path in &[
+        "/sitemap_index.xml",
+        "/sitemap-index.xml",
+        "/wp-sitemap.xml",
+        "/sitemap/sitemap-index.xml",
+    ] {
+        server.mock(|when, then| {
+            when.method(GET).path(*path);
+            then.status(404);
+        });
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: Sitemap-first behavior — robots.txt → sitemap.xml → 10 URLs
 // ---------------------------------------------------------------------------
@@ -116,17 +132,7 @@ async fn test_sitemap_first_uses_sitemap_urls() {
             .header("content-type", "application/xml")
             .body(sitemap_xml(&page_url_refs));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
 
     let cfg = base_config();
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
@@ -178,17 +184,7 @@ async fn test_out_of_scope_sitemap_no_anchor_fallback() {
                 "https://other.example.com/page2",
             ]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
 
     let cfg = base_config();
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
@@ -356,17 +352,7 @@ async fn test_sitemap_index_recursion() {
             .header("content-type", "application/xml")
             .body(sitemap_xml(&[&format!("{base}/c"), &format!("{base}/d")]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
 
     let cfg = base_config();
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
@@ -410,17 +396,7 @@ async fn test_sitemap_out_of_host_urls_filtered() {
                 "https://evil.example.com/also-out",
             ]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
 
     let cfg = base_config();
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
@@ -574,17 +550,7 @@ async fn test_pages_seen_zero_in_sitemap_mode() {
                 &format!("{base}/c"),
             ]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
 
     let cfg = base_config();
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
@@ -792,17 +758,7 @@ async fn map_unions_sitemap_and_llms_txt_deduped() {
             .header("content-type", "application/xml")
             .body(sitemap_xml(&[a.as_str(), b.as_str()]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
     // llms.txt links /b (overlaps sitemap) and /c (new).
     server.mock(|when, then| {
         when.method(GET).path("/llms.txt");
@@ -850,17 +806,7 @@ async fn map_skips_llms_txt_when_disabled() {
             .header("content-type", "application/xml")
             .body(sitemap_xml(&[a.as_str()]));
     });
-    for path in &[
-        "/sitemap_index.xml",
-        "/sitemap-index.xml",
-        "/wp-sitemap.xml",
-        "/sitemap/sitemap-index.xml",
-    ] {
-        server.mock(|when, then| {
-            when.method(GET).path(*path);
-            then.status(404);
-        });
-    }
+    mock_index_seeds_404(&server);
     // If discover_llms_txt is honored as false, this mock must never be hit.
     let llms_mock = server.mock(|when, then| {
         when.method(GET).path("/llms.txt");
@@ -886,5 +832,53 @@ async fn map_skips_llms_txt_when_disabled() {
         result["map_source"].as_str(),
         Some("sitemap"),
         "map_source must be plain sitemap when llms.txt disabled"
+    );
+}
+
+/// llms-only branch: every sitemap path 404s (no sitemap parsed) but `/llms.txt` is valid.
+/// The curated llms.txt links must survive — `map_source` is "llms" and they appear in the
+/// result. Guards the early-return-drop regression where no-sitemap collapsed to the
+/// crawl/structure fallback and lost the llms.txt links. `map_source:"llms"` had no test.
+#[tokio::test]
+#[serial]
+async fn map_llms_only_when_no_sitemap() {
+    let _guard = LoopbackGuard::new();
+    let server = MockServer::start();
+    let base = server.base_url();
+
+    let x = format!("{base}/x");
+    let y = format!("{base}/y");
+
+    // No sitemap anywhere (all seeds + robots 404).
+    mock_all_sitemaps_404(&server);
+    // Valid llms.txt with two same-host links.
+    server.mock(|when, then| {
+        when.method(GET).path("/llms.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(llms_txt_body(&[x.as_str(), y.as_str()]));
+    });
+
+    let cfg = base_config();
+    let result = map_payload(&cfg, &base).await.expect("map_payload failed");
+
+    assert_eq!(
+        result["map_source"].as_str(),
+        Some("llms"),
+        "map_source must be 'llms' when only llms.txt yields URLs"
+    );
+    let urls: Vec<String> = result["urls"]
+        .as_array()
+        .expect("urls must be array")
+        .iter()
+        .map(|v| v.as_str().unwrap_or_default().to_string())
+        .collect();
+    assert!(
+        urls.iter().any(|u| u.ends_with("/x")),
+        "llms.txt URL /x must be present: {urls:?}"
+    );
+    assert!(
+        urls.iter().any(|u| u.ends_with("/y")),
+        "llms.txt URL /y must be present: {urls:?}"
     );
 }

@@ -97,6 +97,12 @@ fn markdown_url_uses_passthrough() {
     assert!(is_already_markdown("https://x.com/a/b.MD")); // case-insensitive
     assert!(!is_already_markdown("https://x.com/docs/page"));
     assert!(!is_already_markdown("https://x.com/index.html"));
+    // Query string is stripped before the extension check.
+    assert!(is_already_markdown("https://x.com/a.md?v=1"));
+    // .markdown extension is recognized alongside .md.
+    assert!(is_already_markdown("https://x.com/a.markdown"));
+    // Fragment is stripped before the (case-insensitive) extension check.
+    assert!(is_already_markdown("https://x.com/a.MD#h"));
 }
 
 #[tokio::test]
@@ -111,11 +117,38 @@ async fn fetch_text_rejects_oversized_body() {
     crate::core::http::set_allow_loopback(true);
     let client = build_client(5, None).unwrap();
     let url = server.url("/big.txt");
-    let got = fetch_text_with_retry(&client, &url, 0, 0).await;
+    let got = fetch_text_with_retry(&client, &url, 0, 0, Some(DISCOVERY_MAX_BODY_BYTES)).await;
     crate::core::http::set_allow_loopback(false);
     m.assert();
     assert!(
         got.is_none(),
-        "oversized body must be rejected, not buffered"
+        "oversized body (content-length fast-reject) must be rejected, not buffered"
+    );
+}
+
+/// Mid-stream streamed-abort path: the body exceeds the cap but the server omits
+/// Content-Length (chunked), so the fast-reject can't fire — the abort must happen
+/// mid-stream during chunk accumulation. Distinct from the content-length fast-reject.
+#[tokio::test]
+#[serial_test::serial]
+async fn fetch_text_rejects_oversized_body_without_content_length() {
+    let server = httpmock::MockServer::start();
+    let big = "x".repeat(600 * 1024); // 600 KB > 512 KB cap
+    let m = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/chunked.txt");
+        // No explicit content-length header; chunked transfer forces the streamed path.
+        then.status(200)
+            .header("transfer-encoding", "chunked")
+            .body(&big);
+    });
+    crate::core::http::set_allow_loopback(true);
+    let client = build_client(5, None).unwrap();
+    let url = server.url("/chunked.txt");
+    let got = fetch_text_with_retry(&client, &url, 0, 0, Some(DISCOVERY_MAX_BODY_BYTES)).await;
+    crate::core::http::set_allow_loopback(false);
+    m.assert();
+    assert!(
+        got.is_none(),
+        "oversized chunked body must be rejected mid-stream, not buffered"
     );
 }
