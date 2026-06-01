@@ -99,7 +99,10 @@ fn lastmod_is_recent(lastmod: &str, since_days: u32) -> bool {
     }
 }
 
-fn sitemap_loc_in_scope(
+/// Returns the canonicalized URL if `loc` is in scope for a crawl/discovery rooted at
+/// `start_host`/`start_path`, else `None`. Shared by sitemap and llms.txt discovery.
+/// Same-host by default; honors `cfg.include_subdomains` and `cfg.exclude_path_prefix`.
+pub(crate) fn loc_in_scope(
     cfg: &Config,
     loc: &str,
     start_host: &str,
@@ -179,7 +182,7 @@ async fn process_sitemap_batch(
                 {
                     continue;
                 }
-                if let Some(canonical_loc) = sitemap_loc_in_scope(
+                if let Some(canonical_loc) = loc_in_scope(
                     cfg,
                     &loc,
                     scope.start_host,
@@ -191,7 +194,7 @@ async fn process_sitemap_batch(
             }
         } else {
             for loc in extract_loc_values(&xml) {
-                if let Some(canonical_loc) = sitemap_loc_in_scope(
+                if let Some(canonical_loc) = loc_in_scope(
                     cfg,
                     &loc,
                     scope.start_host,

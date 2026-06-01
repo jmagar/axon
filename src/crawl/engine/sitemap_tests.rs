@@ -18,7 +18,7 @@ fn sitemap_loc_in_scope_subdomain_branching() {
 
     // Same host: included regardless of include_subdomains setting.
     assert!(
-        sitemap_loc_in_scope(
+        loc_in_scope(
             &cfg_no_sub,
             "https://docs.example.com/page",
             "docs.example.com",
@@ -31,7 +31,7 @@ fn sitemap_loc_in_scope_subdomain_branching() {
 
     // Subdomain with include_subdomains=false: excluded.
     assert!(
-        sitemap_loc_in_scope(
+        loc_in_scope(
             &cfg_no_sub,
             "https://api.example.com/page",
             "example.com",
@@ -44,7 +44,7 @@ fn sitemap_loc_in_scope_subdomain_branching() {
 
     // Subdomain with include_subdomains=true: included.
     assert!(
-        sitemap_loc_in_scope(
+        loc_in_scope(
             &cfg_with_sub,
             "https://api.example.com/page",
             "example.com",
@@ -57,7 +57,7 @@ fn sitemap_loc_in_scope_subdomain_branching() {
 
     // Completely different domain: excluded with both settings.
     assert!(
-        sitemap_loc_in_scope(
+        loc_in_scope(
             &cfg_with_sub,
             "https://other.com/page",
             "example.com",
