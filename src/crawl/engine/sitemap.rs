@@ -41,6 +41,16 @@ pub(crate) const DISCOVERY_MAX_BODY_BYTES: u64 = 512 * 1024;
 /// cap must be generous enough not to drop large-but-valid sitemaps.
 pub(crate) const SITEMAP_MAX_BODY_BYTES: u64 = 50 * 1024 * 1024;
 
+/// Join `path` onto the origin of `parsed`, producing a correctly-formatted absolute URL.
+///
+/// `Url::join` with a leading-slash path replaces the path while preserving scheme, host,
+/// and port — and crucially brackets IPv6 literals in the authority (`[::1]:8080`), which
+/// `format!("{host}:{port}")` does NOT (`host_str()` returns the address without brackets,
+/// yielding an invalid authority for IPv6 hosts).
+pub(crate) fn join_origin_path(parsed: &Url, path: &str) -> Result<String, Box<dyn Error>> {
+    Ok(parsed.join(path)?.to_string())
+}
+
 fn should_retry_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
@@ -152,14 +162,19 @@ pub(crate) async fn fetch_text_with_retry(
     }
 }
 
-fn sitemap_seed_queue(scheme: &str, host: &str) -> VecDeque<String> {
-    VecDeque::from([
-        format!("{scheme}://{host}/sitemap.xml"),
-        format!("{scheme}://{host}/sitemap_index.xml"),
-        format!("{scheme}://{host}/sitemap-index.xml"),
-        format!("{scheme}://{host}/wp-sitemap.xml"),
-        format!("{scheme}://{host}/sitemap/sitemap-index.xml"),
-    ])
+/// Seed the queue with default sitemap paths. Uses `join_origin_path` so IPv6 authorities
+/// are bracketed correctly (and non-standard ports preserved).
+fn sitemap_seed_queue(parsed: &Url) -> VecDeque<String> {
+    [
+        "/sitemap.xml",
+        "/sitemap_index.xml",
+        "/sitemap-index.xml",
+        "/wp-sitemap.xml",
+        "/sitemap/sitemap-index.xml",
+    ]
+    .into_iter()
+    .filter_map(|path| join_origin_path(parsed, path).ok())
+    .collect()
 }
 
 /// Returns `true` if `lastmod` (ISO 8601 date or datetime string) falls within the last
@@ -306,12 +321,13 @@ async fn process_sitemap_batch(
 /// into `queue`. Returns the count of declared sitemaps found.
 async fn enqueue_robots_sitemaps(
     client: &reqwest::Client,
-    scheme: &str,
-    host: &str,
+    parsed: &Url,
     cfg: &Config,
     queue: &mut VecDeque<String>,
 ) -> usize {
-    let robots_url = format!("{scheme}://{host}/robots.txt");
+    let Ok(robots_url) = join_origin_path(parsed, "/robots.txt") else {
+        return 0;
+    };
     let Some(robots_txt) = fetch_text_with_retry(
         client,
         &robots_url,
@@ -335,26 +351,20 @@ pub async fn discover_sitemap_urls(
 ) -> Result<SitemapDiscovery, Box<dyn Error>> {
     let parsed = Url::parse(start_url)
         .map_err(|e| format!("invalid start URL for sitemap discovery {start_url}: {e}"))?;
-    let scheme = parsed.scheme().to_string();
+    // Scheme/host/port (incl. correct IPv6 bracketing and non-standard ports) are derived
+    // by joining paths onto `parsed` directly, so no manual authority string is built here.
     let bare_host = parsed
         .host_str()
         .ok_or_else(|| format!("missing host in sitemap start URL {start_url}"))?
         .to_string();
-    // Include port when non-standard — without this, sitemap URLs targeting
-    // hosts on custom ports (e.g. dev servers, test mocks) silently hit 80/443.
-    let host = match parsed.port() {
-        Some(port) => format!("{bare_host}:{port}"),
-        None => bare_host.clone(),
-    };
 
-    let mut queue = sitemap_seed_queue(&scheme, &host);
+    let mut queue = sitemap_seed_queue(&parsed);
     let seeded_default_sitemaps = queue.len();
 
     let client = build_client(request_timeout_secs(cfg), None).map_err(|e| {
         format!("failed to build HTTP client for sitemap discovery of {start_url}: {e}")
     })?;
-    let robots_declared_sitemaps =
-        enqueue_robots_sitemaps(&client, &scheme, &host, cfg, &mut queue).await;
+    let robots_declared_sitemaps = enqueue_robots_sitemaps(&client, &parsed, cfg, &mut queue).await;
 
     let mut seen_sitemaps = HashSet::new();
     let mut out = HashSet::new();

@@ -22,6 +22,25 @@ fn extracts_and_resolves_links() {
 }
 
 #[test]
+fn llms_url_brackets_ipv6_authority_with_port() {
+    // IPv6 host: host_str() returns the address WITHOUT brackets, so a naive
+    // format!("{host}:{port}") produces an invalid authority. join_origin_path must
+    // bracket the literal and preserve the port.
+    let parsed = Url::parse("https://[::1]:8080/docs").unwrap();
+    assert_eq!(
+        join_origin_path(&parsed, "/llms.txt").unwrap(),
+        "https://[::1]:8080/llms.txt"
+    );
+
+    // Sanity: ordinary host with a non-standard port still round-trips.
+    let parsed = Url::parse("http://example.com:9000/docs/guide").unwrap();
+    assert_eq!(
+        join_origin_path(&parsed, "/llms.txt").unwrap(),
+        "http://example.com:9000/llms.txt"
+    );
+}
+
+#[test]
 fn rejects_soft_404_html() {
     // text without a leading '# ' H1 is not a valid llms.txt
     assert!(!looks_like_llms_txt(

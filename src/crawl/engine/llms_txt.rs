@@ -1,5 +1,6 @@
 use super::sitemap::{
-    DISCOVERY_MAX_BODY_BYTES, fetch_text_with_retry, loc_in_scope, request_timeout_secs,
+    DISCOVERY_MAX_BODY_BYTES, fetch_text_with_retry, join_origin_path, loc_in_scope,
+    request_timeout_secs,
 };
 use crate::core::config::Config;
 use crate::core::http::build_client;
@@ -59,16 +60,13 @@ pub async fn discover_llms_txt_urls(
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let parsed = Url::parse(start_url)
         .map_err(|e| format!("invalid start URL for llms.txt discovery {start_url}: {e}"))?;
-    let scheme = parsed.scheme();
     let bare_host = parsed
         .host_str()
         .ok_or_else(|| format!("missing host in llms.txt start URL {start_url}"))?
         .to_string();
-    let host = match parsed.port() {
-        Some(port) => format!("{bare_host}:{port}"),
-        None => bare_host.clone(),
-    };
-    let llms_url = format!("{scheme}://{host}/llms.txt");
+    // `join_origin_path` preserves scheme/port and brackets IPv6 literals correctly —
+    // `format!("{host}:{port}")` would produce an invalid authority for IPv6 hosts.
+    let llms_url = join_origin_path(&parsed, "/llms.txt")?;
 
     // SSRF-guarded client (redirect revalidation + DNS-rebind guard live here).
     let client = build_client(request_timeout_secs(cfg), None)
