@@ -1,5 +1,23 @@
 use super::*;
 
+/// RAII guard for the global SSRF loopback-bypass flag. Restores the previous value on
+/// drop so a panicking test cannot leak `allow_loopback=true` into later SSRF tests.
+struct LoopbackGuard(bool);
+
+impl LoopbackGuard {
+    fn new(allow: bool) -> Self {
+        let prev = crate::core::http::get_allow_loopback();
+        crate::core::http::set_allow_loopback(allow);
+        Self(prev)
+    }
+}
+
+impl Drop for LoopbackGuard {
+    fn drop(&mut self) {
+        crate::core::http::set_allow_loopback(self.0);
+    }
+}
+
 const FIXTURE: &str = "\u{feff}# Example Docs\n\n> A short summary.\n\nSome intro prose with an inline [ignored-in-prose-too](https://example.com/intro.md) link.\n\n## Docs\n\n- [Getting Started](/docs/start.md#h): the basics\n- [Guide](guide.md)\n- [External](https://other.com/x.md)\n- [Email](mailto:hi@example.com)\n- [Anchor](#section)\n\n## Optional\n\n- [Extra](/docs/extra.md)\n";
 
 #[test]
@@ -98,9 +116,8 @@ async fn discover_llms_txt_urls_caps_at_max() {
         request_timeout_ms: Some(5_000),
         ..Config::default()
     };
-    crate::core::http::set_allow_loopback(true);
+    let _loopback = LoopbackGuard::new(true);
     let urls = discover_llms_txt_urls(&cfg, &base).await.expect("discover");
-    crate::core::http::set_allow_loopback(false);
     m.assert();
     assert_eq!(
         urls.len(),
