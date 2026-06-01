@@ -18,7 +18,7 @@ paths=(
   docs/operations/security.md
   docs/guides/getting-started.md
   docs/reference/commands
-  docs/reference
+  docs/reference/env-matrix.toml
 )
 
 if rg -n "$pattern" "${paths[@]}" \
