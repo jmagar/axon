@@ -263,9 +263,23 @@ pub async fn run_crawl_once(
     // arrived in the broadcast (inserted before the status check), so seeded URLs
     // absent from it are exactly spider's silent 304 skips.
     if cfg.etag_conditional {
-        let reused =
-            etag::reconcile_unmodified(output_dir, &previous_manifest, &etag_seeded_urls, &urls)
-                .await;
+        // Gate reconciliation on spider's visited set so only genuine 304 skips
+        // (URLs spider actually scheduled + fetched this run) are reused — never
+        // pages that are no longer discovered (PR #153 review; bead axon_rust-hiyf).
+        // Canonicalize into the same key space as `urls`/`previous_manifest`.
+        let etag_visited: HashSet<String> = website
+            .get_links()
+            .iter()
+            .filter_map(|u| canonicalize_url_for_dedupe(u.as_ref()))
+            .collect();
+        let reused = etag::reconcile_unmodified(
+            output_dir,
+            &previous_manifest,
+            &etag_seeded_urls,
+            &urls,
+            &etag_visited,
+        )
+        .await;
         summary.reused_pages += reused as u32;
         etag::persist_next_sidecar(output_dir, &website, &etag_previous_sidecar, &urls).await;
     }

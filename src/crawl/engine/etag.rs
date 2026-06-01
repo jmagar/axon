@@ -16,15 +16,26 @@
 //! skips (a URL with no validators yields empty conditional headers, is fetched
 //! normally, and therefore *arrives*).
 //!
-//! ## Why the reconciliation set is keyed off the *loaded* sidecar
+//! ## Why the reconciliation set is gated on spider's *visited* set
 //!
-//! A genuinely-removed page that previously had an ETag is indistinguishable from
-//! a 304 at this layer (spider gives no signal either way), so keeping its old
-//! content for one run is the irreducible residual. To bound it, the set is
-//! `{ url ∈ previous_manifest : url ∈ seeded_sidecar AND url ∉ arrived_urls }`.
-//! With no working seed the set is empty → no reconciliation → no zombie content.
-//! A periodic `--etag-conditional`-off full crawl is the operator-side reset; see
-//! the follow-up bead for automatic age-out.
+//! A page that is no longer discovered (deleted, or unlinked from the crawl
+//! graph) must NOT be reconciled — re-emitting its old manifest entry would
+//! resurrect stale content as `changed=false`. Spider's 304 short-circuit runs
+//! *inside* the per-URL page-fetch task, so a 304-skipped URL is recorded in
+//! spider's `links_visited` set, whereas a URL that was never scheduled this run
+//! is absent from it. The reconciliation set is therefore
+//! `{ url ∈ previous_manifest : url ∈ seeded_sidecar
+//!      AND url ∉ arrived_urls AND url ∈ visited_urls }`,
+//! where `visited_urls` is `Website::get_links()` canonicalized into the manifest
+//! key space. That is exactly spider's set of silent 304 skips, and it excludes
+//! no-longer-discovered pages.
+//!
+//! Only the *safe* residual remains: a URL spider actually visited and got a 304
+//! for is genuinely unchanged, so reuse is correct. Spider caps `links_visited`
+//! at `LINKS_VISITED_MEMORY_LIMIT`; on an enormous crawl an overflowed 304 URL
+//! falls out of `visited_urls` and is simply re-fetched next run (lost bandwidth
+//! benefit, never zombie content). With no working seed the set is empty → no
+//! reconciliation.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -77,6 +88,14 @@ async fn write_sidecar(
     let tmp = path.with_extension("json.tmp");
     let payload = serde_json::to_vec(data).map_err(std::io::Error::other)?;
     tokio::fs::write(&tmp, payload).await?;
+    // On Windows, `rename` over an existing destination fails — remove it first.
+    // On Unix, `rename` replaces atomically and this block is compiled out.
+    #[cfg(windows)]
+    match tokio::fs::remove_file(&path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
     tokio::fs::rename(&tmp, &path).await
 }
 
@@ -191,16 +210,24 @@ pub async fn persist_next_sidecar(
     }
 }
 
-/// The set of URLs to reconcile: previously-indexed, seeded with validators, and
-/// absent from this crawl's arrivals (spider's silent 304 skips).
+/// The set of URLs to reconcile: previously-indexed, seeded with validators,
+/// absent from this crawl's arrivals, **and** present in spider's visited set.
+/// The visited-set gate is what distinguishes a genuine 304 skip (spider fetched
+/// it and got Not-Modified) from a page that is no longer discovered at all
+/// (never scheduled this run) — only the former is reused.
 pub fn reconcile_targets(
     previous_manifest: &HashMap<String, ManifestEntry>,
     seeded_urls: &HashSet<String>,
     arrived_urls: &HashSet<String>,
+    visited_urls: &HashSet<String>,
 ) -> Vec<String> {
     let mut targets: Vec<String> = previous_manifest
         .keys()
-        .filter(|url| seeded_urls.contains(*url) && !arrived_urls.contains(*url))
+        .filter(|url| {
+            seeded_urls.contains(*url)
+                && !arrived_urls.contains(*url)
+                && visited_urls.contains(*url)
+        })
         .cloned()
         .collect();
     targets.sort();
@@ -218,8 +245,9 @@ pub async fn reconcile_unmodified(
     previous_manifest: &HashMap<String, ManifestEntry>,
     seeded_urls: &HashSet<String>,
     arrived_urls: &HashSet<String>,
+    visited_urls: &HashSet<String>,
 ) -> usize {
-    let targets = reconcile_targets(previous_manifest, seeded_urls, arrived_urls);
+    let targets = reconcile_targets(previous_manifest, seeded_urls, arrived_urls, visited_urls);
     if targets.is_empty() {
         return 0;
     }
@@ -286,6 +314,17 @@ async fn relink_reused_page(
 
     if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
         return true; // Already present (e.g. arrived via another path).
+    }
+    // Refuse a symlinked archive entry: a symlink planted in `markdown.old` could
+    // otherwise make the reflink/copy below read content from outside the bin.
+    if let Ok(meta) = tokio::fs::symlink_metadata(&archived).await
+        && meta.file_type().is_symlink()
+    {
+        crate::core::logging::log_warn(&format!(
+            "etag: archived markdown for {} is a symlink; refusing to relink",
+            prev.url
+        ));
+        return false;
     }
     if !tokio::fs::try_exists(&archived).await.unwrap_or(false) {
         crate::core::logging::log_warn(&format!(
