@@ -1,4 +1,5 @@
 use super::*;
+use crate::crawl::engine::canonicalize_url_for_dedupe;
 use crate::crawl::manifest::ManifestEntry;
 use std::collections::{HashMap, HashSet};
 
@@ -338,6 +339,74 @@ async fn seeded_validators_drive_conditional_request_and_304_drops_page() {
     assert!(
         !delivered_stable,
         "304 page must NOT be delivered with content to the collector"
+    );
+
+    crate::core::http::set_allow_loopback(false);
+}
+
+// ── cross-run populate: run-1 must actually persist a non-empty sidecar
+//    keyed so run-2's seed lookup hits (bead axon_rust-hiyf). ─────────────────
+//
+// This closes the run-1 link the hand-seeded wire test cannot: spider stores
+// validators under ITS target_url string, but build_next_sidecar reads them back
+// under axon's canonicalized `urls` keys. If those disagree (e.g. trailing slash)
+// the sidecar persists empty and cross-run benefit is inert. We drive a real
+// crawl where a discovered link returns 200 + ETag and assert the persisted
+// sidecar is non-empty AND its key round-trips through a fresh seed.
+#[tokio::test]
+#[serial_test::serial]
+async fn run1_populates_sidecar_with_seedable_key() {
+    use httpmock::prelude::*;
+
+    crate::core::http::set_allow_loopback(true);
+
+    let server = MockServer::start();
+    let leaf_path = "/leaf";
+    let leaf_url = format!("{}{}", server.base_url(), leaf_path);
+
+    server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(format!(
+                "<html><body><a href=\"{leaf_url}\">leaf</a></body></html>"
+            ));
+    });
+    // Discovered link returns a real ETag — spider should store it.
+    server.mock(|when, then| {
+        when.method(GET).path(leaf_path);
+        then.status(200)
+            .header("content-type", "text/html")
+            .header("etag", "\"leaf-v1\"")
+            .body("<html><body>leaf body with enough text to not be empty</body></html>");
+    });
+
+    let mut website = Website::new(&server.base_url());
+    website.with_depth(2);
+    website.configuration.with_etag_cache(true);
+    website.configure_setup_norobots(); // materialize cache for this bare-Website test
+
+    let mut rx = website.subscribe(16);
+    website.crawl_raw().await;
+    website.unsubscribe();
+
+    // Collect the canonicalized arrival keys exactly as the collector would.
+    let mut arrived: HashSet<String> = HashSet::new();
+    while let Ok(p) = rx.try_recv() {
+        if let Some(c) = canonicalize_url_for_dedupe(p.get_url()) {
+            arrived.insert(c);
+        }
+    }
+
+    // Build the next sidecar from the live cache using canonical arrival keys —
+    // the exact production path. This is the assertion that catches a key mismatch.
+    let next = build_next_sidecar(&website, &HashMap::new(), &arrived);
+    assert!(
+        next.values()
+            .any(|e| e.etag.as_deref() == Some("\"leaf-v1\"")),
+        "run-1 must persist the leaf ETag under a key reachable via the canonical \
+         arrival set (got keys: {:?})",
+        next.keys().collect::<Vec<_>>()
     );
 
     crate::core::http::set_allow_loopback(false);
