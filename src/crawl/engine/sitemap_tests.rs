@@ -109,7 +109,7 @@ async fn fetch_text_rejects_oversized_body() {
         then.status(200).body(&big);
     });
     crate::core::http::set_allow_loopback(true);
-    let client = crate::core::http::build_client(5, None).unwrap();
+    let client = build_client(5, None).unwrap();
     let url = server.url("/big.txt");
     let got = fetch_text_with_retry(&client, &url, 0, 0).await;
     crate::core::http::set_allow_loopback(false);

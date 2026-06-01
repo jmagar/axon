@@ -25,11 +25,11 @@ fn rejects_soft_404_html() {
     assert!(looks_like_llms_txt("\u{feff}# Title"));
 }
 
-fn cfg_for(host_include_subdomains: bool, max: usize) -> crate::core::config::Config {
-    crate::core::config::Config {
+fn cfg_for(host_include_subdomains: bool, max: usize) -> Config {
+    Config {
         include_subdomains: host_include_subdomains,
         max_llms_txt_urls: max,
-        ..crate::core::config::Config::default()
+        ..Config::default()
     }
 }
 

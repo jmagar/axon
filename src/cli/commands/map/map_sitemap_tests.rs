@@ -878,7 +878,7 @@ async fn map_skips_llms_txt_when_disabled() {
     let result = map_payload(&cfg, &base).await.expect("map_payload failed");
 
     assert_eq!(
-        llms_mock.hits(),
+        llms_mock.calls(),
         0,
         "/llms.txt must not be fetched when disabled"
     );
