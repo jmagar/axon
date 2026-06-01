@@ -74,7 +74,7 @@ def main() -> int:
         return 2
 
     schema_path = repo_root / "src" / "mcp" / "schema.rs"
-    doc_path = repo_root / "docs" / "MCP-TOOL-SCHEMA.md"
+    doc_path = repo_root / "docs" / "reference" / "mcp" / "tool-schema.md"
 
     if not schema_path.is_file():
         print(f"ERROR: Schema file not found: {schema_path}", file=sys.stderr)
