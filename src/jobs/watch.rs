@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 pub(crate) mod change_detect;
 pub(crate) mod cluster;
+pub(crate) mod dispatch;
 pub(crate) mod filter;
 pub(crate) mod url_state;
 
