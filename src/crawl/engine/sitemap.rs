@@ -32,7 +32,22 @@ pub struct SitemapDiscovery {
     pub failed_fetches: usize,
 }
 
+/// spider 2.51 synthesises precise transport failures into the 52x range:
+/// 521 connection refused, 522/523/524 timeouts, 525 DNS/NXDOMAIN, and
+/// 526 host/TLS unreachable. `is_server_error()` is `true` for all of them,
+/// so the naive "retry every 5xx" rule burns the retry budget re-resolving
+/// dead hosts. 525 (NXDOMAIN) and 526 (host/TLS unreachable) are permanent
+/// failures — retrying cannot help — so they are excluded. The remaining
+/// 52x codes (refused/timeout) and genuine upstream 5xx stay retryable.
+/// Bead axon_rust-6i30.
+fn is_permanent_dead_host_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 525 | 526)
+}
+
 fn should_retry_status(status: reqwest::StatusCode) -> bool {
+    if is_permanent_dead_host_status(status) {
+        return false;
+    }
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 

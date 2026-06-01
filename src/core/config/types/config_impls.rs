@@ -51,6 +51,8 @@ impl Default for Config {
             max_sitemaps: 512,
             cache: true,
             cache_http_only: false,
+            etag_conditional: false,
+            path_budgets: Vec::new(),
             format: ScrapeFormat::Markdown,
             collection: "axon".to_string(),
             embed: true,
@@ -309,6 +311,8 @@ impl fmt::Debug for Config {
             .field("max_sitemaps", &self.max_sitemaps)
             .field("cache", &self.cache)
             .field("cache_http_only", &self.cache_http_only)
+            .field("etag_conditional", &self.etag_conditional)
+            .field("path_budgets", &self.path_budgets)
             .field("format", &self.format)
             .field("collection", &self.collection)
             .field("embed", &self.embed)
