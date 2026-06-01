@@ -81,32 +81,15 @@ The only supported `task_type` is `watch`.
 | `change_threshold_words` | `0` | Minimum absolute word-count delta for a text-only change to count as meaningful. Link changes always count. |
 | `summarize` | `true` | Produce an AI summary of each change (requires the Gemini CLI, `AXON_HEADLESS_GEMINI_CMD`). Best-effort — the raw diff is retained if the LLM is unavailable. |
 
-### How change detection works
+### Behavior summary
 
-Per URL, each tick:
-
-1. **Conditional probe** with the stored `ETag`/`Last-Modified` validators — an
-   HTTP `304` short-circuits to "unchanged" without scraping.
-2. **Scrape** the URL to markdown, then **normalize** (line endings, trailing
-   whitespace, blank-line runs) and **strip** lines matching `ignore_patterns`.
-3. **Fast-equal skip**: a SHA-256 of the filtered markdown equal to the stored
-   hash means "unchanged" (snapshot refreshed, no diff).
-4. **Diff** the prior snapshot vs the fresh content via the shared `compute_diff`
-   (unified text diff + link/word deltas). First-seen URLs are forced "changed"
-   (seed run). The link set comes from the scrape payload's `links` field
-   (anchor hrefs), so link additions/removals are detected for generic-scrape
-   URLs; vertical-extractor payloads currently omit links (markdown-only diff).
-5. **Threshold**: `meaningful = first_seen || (content changed AND (links changed
-   OR |word_count_delta| >= change_threshold_words))`. A **first-seen URL bypasses
-   the threshold entirely** — its seed run always counts as changed regardless of
-   `change_threshold_words`. After the seed, a text-only change must clear the
-   threshold; link changes always count.
-
-Meaningful changes get an AI summary and a `url-change` run artifact (unified
-diff + summary + deltas). Changed URLs are then **clustered by common path
-prefix** and one depth-bounded crawl is enqueued per cluster — unless that
-cluster's prior crawl is still pending/running (in-flight guard). The latest
-snapshot and validators live in the `axon_watch_url_state` table.
+Each tick, every watched URL is compared against its stored snapshot. A change
+counts as meaningful when content changed AND (links changed OR the absolute
+word-count delta reaches `change_threshold_words`); a first-seen URL always
+counts (seed run). Meaningful changes get an optional AI summary and a
+`url-change` run artifact. Changed URLs are then clustered by common path prefix
+and one depth-bounded crawl is enqueued per cluster, skipping any cluster whose
+prior crawl is still in flight.
 
 ## Examples
 
