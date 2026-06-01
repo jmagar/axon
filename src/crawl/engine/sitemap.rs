@@ -5,7 +5,7 @@ use crate::core::content::{
     to_markdown, url_to_stable_filename,
 };
 use crate::core::http::{build_client, validate_url};
-use crate::core::logging::log_info;
+use crate::core::logging::{log_info, log_warn};
 use crate::crawl::manifest::ManifestEntry;
 use sha2::{Digest, Sha256};
 use spider::url::Url;
@@ -32,20 +32,79 @@ pub struct SitemapDiscovery {
     pub failed_fetches: usize,
 }
 
-/// Max bytes read from a discovery document (/llms.txt, /sitemap.xml). Guards against
-/// OOM from a malicious/misconfigured host. 512 KB comfortably exceeds real llms.txt
-/// (≤~100 KB in practice) and typical sitemaps.
-const DISCOVERY_MAX_BODY_BYTES: u64 = 512 * 1024;
+/// Default body cap for the `/llms.txt` discovery document (and small docs like robots.txt).
+/// Guards the discovery path — NOT general HTML/sitemap fetches — against OOM from a
+/// malicious/misconfigured host. 512 KB comfortably exceeds a real llms.txt link index.
+pub(crate) const DISCOVERY_MAX_BODY_BYTES: u64 = 512 * 1024;
+
+/// Body cap for `sitemap.xml`. The sitemap protocol ceiling is 50 MB uncompressed, so the
+/// cap must be generous enough not to drop large-but-valid sitemaps.
+pub(crate) const SITEMAP_MAX_BODY_BYTES: u64 = 50 * 1024 * 1024;
 
 fn should_retry_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
-fn request_timeout_secs(cfg: &Config) -> u64 {
+pub(crate) fn request_timeout_secs(cfg: &Config) -> u64 {
     cfg.request_timeout_ms
         .unwrap_or(30_000)
         .div_ceil(1000)
         .max(1)
+}
+
+/// Read a successful response body, optionally capped at `max_bytes`.
+///
+/// - `Some(cap)` → streamed read with a hard byte cap and strict UTF-8 decode (fine for
+///   llms.txt/sitemap, which are UTF-8 by spec). Oversized bodies return `None`.
+/// - `None` → charset-aware, lossy, uncapped `resp.text()` — matches `main`'s behavior for
+///   HTML page backfill and any caller that must not silently drop large or non-UTF8 bodies.
+async fn read_body_capped(
+    resp: reqwest::Response,
+    url: &str,
+    max_bytes: Option<u64>,
+) -> Option<String> {
+    let Some(cap) = max_bytes else {
+        return match resp.text().await {
+            Ok(text) => Some(text),
+            Err(e) => {
+                log_warn(&format!("command=fetch body read failed url={url}: {e}"));
+                None
+            }
+        };
+    };
+    if resp.content_length().is_some_and(|len| len > cap) {
+        log_warn(&format!(
+            "command=fetch oversized body rejected (content-length) cap_bytes={cap} url={url}"
+        ));
+        return None;
+    }
+    let mut collected: Vec<u8> = Vec::new();
+    let mut stream = resp;
+    loop {
+        match stream.chunk().await {
+            Ok(Some(chunk)) => {
+                if collected.len() as u64 + chunk.len() as u64 > cap {
+                    log_warn(&format!(
+                        "command=fetch oversized body rejected (mid-stream) cap_bytes={cap} url={url}"
+                    ));
+                    return None;
+                }
+                collected.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(e) => {
+                log_warn(&format!("command=fetch stream error url={url}: {e}"));
+                return None;
+            }
+        }
+    }
+    match String::from_utf8(collected) {
+        Ok(text) => Some(text),
+        Err(_) => {
+            log_warn(&format!("command=fetch non-utf8 body dropped url={url}"));
+            None
+        }
+    }
 }
 
 pub(crate) async fn fetch_text_with_retry(
@@ -53,6 +112,7 @@ pub(crate) async fn fetch_text_with_retry(
     url: &str,
     retries: usize,
     backoff_ms: u64,
+    max_bytes: Option<u64>,
 ) -> Option<String> {
     if validate_url(url).is_err() {
         return None;
@@ -63,35 +123,19 @@ pub(crate) async fn fetch_text_with_retry(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    if resp
-                        .content_length()
-                        .is_some_and(|len| len > DISCOVERY_MAX_BODY_BYTES)
-                    {
-                        return None;
-                    }
-                    let mut collected: Vec<u8> = Vec::new();
-                    let mut stream = resp;
-                    loop {
-                        match stream.chunk().await {
-                            Ok(Some(chunk)) => {
-                                if collected.len() as u64 + chunk.len() as u64
-                                    > DISCOVERY_MAX_BODY_BYTES
-                                {
-                                    return None; // exceeded cap mid-stream
-                                }
-                                collected.extend_from_slice(&chunk);
-                            }
-                            Ok(None) => break,
-                            Err(_) => return None,
-                        }
-                    }
-                    return String::from_utf8(collected).ok();
+                    return read_body_capped(resp, url, max_bytes).await;
                 }
                 if attempt >= retries || !should_retry_status(status) {
+                    // True 404/non-success absence stays low-noise (no warn).
                     return None;
                 }
             }
-            Err(_) if attempt >= retries => return None,
+            Err(_) if attempt >= retries => {
+                log_warn(&format!(
+                    "command=fetch transport error, retries exhausted url={url}"
+                ));
+                return None;
+            }
             Err(_) => {}
         }
 
@@ -181,9 +225,15 @@ async fn process_sitemap_batch(
             #[cfg(test)]
             crate::core::http::set_allow_loopback(loopback_flag);
 
-            fetch_text_with_retry(&http, &sitemap_url, retries, backoff)
-                .await
-                .map(|xml| (sitemap_url, xml))
+            fetch_text_with_retry(
+                &http,
+                &sitemap_url,
+                retries,
+                backoff,
+                Some(SITEMAP_MAX_BODY_BYTES),
+            )
+            .await
+            .map(|xml| (sitemap_url, xml))
         });
     }
 
@@ -257,8 +307,14 @@ async fn enqueue_robots_sitemaps(
     queue: &mut VecDeque<String>,
 ) -> usize {
     let robots_url = format!("{scheme}://{host}/robots.txt");
-    let Some(robots_txt) =
-        fetch_text_with_retry(client, &robots_url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+    let Some(robots_txt) = fetch_text_with_retry(
+        client,
+        &robots_url,
+        cfg.fetch_retries,
+        cfg.retry_backoff_ms,
+        Some(DISCOVERY_MAX_BODY_BYTES),
+    )
+    .await
     else {
         return 0;
     };
@@ -416,7 +472,9 @@ async fn fetch_and_convert_backfill_url(
     drop_thin: bool,
     selector_config: Option<spider_transformations::transformation::content::SelectorConfiguration>,
 ) -> (String, Option<(String, usize, bool, bool)>) {
-    let Some(html) = fetch_text_with_retry(&http, &url, retries, backoff).await else {
+    // HTML page backfill: pass `None` to preserve `main`'s uncapped, charset-aware decode.
+    // Real HTML pages can exceed the discovery cap and may not be strict UTF-8.
+    let Some(html) = fetch_text_with_retry(&http, &url, retries, backoff, None).await else {
         return (url, None);
     };
     let trimmed = if is_already_markdown(&url) {

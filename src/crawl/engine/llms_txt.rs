@@ -1,6 +1,5 @@
-use super::CrawlSummary;
 use super::sitemap::{
-    BackfillStats, append_candidate_backfill, fetch_text_with_retry, loc_in_scope,
+    DISCOVERY_MAX_BODY_BYTES, fetch_text_with_retry, loc_in_scope, request_timeout_secs,
 };
 use crate::core::config::Config;
 use crate::core::http::build_client;
@@ -9,14 +8,6 @@ use pulldown_cmark::{Event, Parser, Tag};
 use spider::url::Url;
 use std::collections::HashSet;
 use std::error::Error;
-use std::path::Path;
-
-fn request_timeout_secs(cfg: &Config) -> u64 {
-    cfg.request_timeout_ms
-        .unwrap_or(30_000)
-        .div_ceil(1000)
-        .max(1)
-}
 
 /// Strip a leading UTF-8 BOM and check for a markdown H1 — a cheap soft-404 guard.
 /// Many CMS hosts serve an HTML "not found" page at /llms.txt with HTTP 200.
@@ -83,8 +74,14 @@ pub async fn discover_llms_txt_urls(
     let client = build_client(request_timeout_secs(cfg), None)
         .map_err(|e| format!("failed to build HTTP client for llms.txt discovery: {e}"))?;
 
-    let Some(body) =
-        fetch_text_with_retry(&client, &llms_url, cfg.fetch_retries, cfg.retry_backoff_ms).await
+    let Some(body) = fetch_text_with_retry(
+        &client,
+        &llms_url,
+        cfg.fetch_retries,
+        cfg.retry_backoff_ms,
+        Some(DISCOVERY_MAX_BODY_BYTES),
+    )
+    .await
     else {
         return Ok(Vec::new());
     };
@@ -115,30 +112,6 @@ pub async fn discover_llms_txt_urls(
         urls.len()
     ));
     Ok(urls)
-}
-
-/// Discover llms.txt URLs, fetch new ones, convert to markdown, and append to the manifest.
-/// Mirrors `append_sitemap_backfill`. Updates `summary.markdown_files`/`thin_pages`.
-pub async fn append_llms_txt_backfill(
-    cfg: &Config,
-    start_url: &str,
-    output_dir: &Path,
-    seen_urls: &HashSet<String>,
-    summary: &mut CrawlSummary,
-) -> Result<BackfillStats, Box<dyn Error>> {
-    let urls = discover_llms_txt_urls(cfg, start_url).await?;
-    if urls.is_empty() {
-        return Ok(BackfillStats::default());
-    }
-    let discovered = urls.len();
-    let (mut stats, _) =
-        append_candidate_backfill(cfg, output_dir, seen_urls, urls, summary).await?;
-    stats.discovered_urls = discovered;
-    log_info(&format!(
-        "llms_txt backfill_complete urls_added={}",
-        stats.written
-    ));
-    Ok(stats)
 }
 
 #[cfg(test)]

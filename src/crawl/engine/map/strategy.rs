@@ -8,7 +8,7 @@ use spider::url::Url;
 use crate::core::config::{Config, MapFallback, RenderMode};
 use crate::core::content::extract_anchor_hrefs;
 use crate::core::http::{fetch_html, http_client, normalize_url};
-use crate::core::logging::log_info;
+use crate::core::logging::{log_info, log_warn};
 
 use super::super::sitemap::{SitemapDiscovery, discover_sitemap_urls};
 use super::super::url_utils::{MapScope, normalize_map_candidate_url};
@@ -157,11 +157,43 @@ async fn bounded_structure_fallback(
     (urls, warning)
 }
 
+/// Merge `candidates` into the map scope, then drop scope/locale-excluded URLs.
+fn scope_and_filter_map_urls(
+    cfg: &Config,
+    candidates: Vec<String>,
+    scope: &MapScope,
+) -> Vec<String> {
+    let urls = merge_map_candidate_urls(Vec::new(), candidates, scope, true);
+    let scope_prefix_len = scope.path_prefix.as_deref().map_or(0, str::len);
+    urls.into_iter()
+        .filter(|url| !is_excluded_map_url(url, &cfg.exclude_path_prefix, scope_prefix_len))
+        .collect()
+}
+
+/// Build a `MapResult` for a discovery-sourced map (sitemap / sitemap+llms / llms).
+fn build_discovery_map_result(
+    urls: Vec<String>,
+    raw_sitemap_count: usize,
+    map_source: &str,
+    elapsed_ms: u128,
+) -> MapResult {
+    MapResult {
+        summary: CrawlSummary {
+            elapsed_ms,
+            ..Default::default()
+        },
+        sitemap_urls: raw_sitemap_count,
+        urls,
+        map_source: map_source.to_string(),
+        warning: None,
+    }
+}
+
 /// Discover all URLs reachable from `start_url` using a sitemap-first strategy.
 pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult, Box<dyn Error>> {
     let start = Instant::now();
 
-    let (seed_result, sitemap_result, llms_result) = tokio::join!(
+    let (seed_result, sitemap_result, llms_urls) = tokio::join!(
         async {
             resolve_map_seed_url(start_url)
                 .await
@@ -179,15 +211,20 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
         async {
             if cfg.discover_llms_txt {
                 // warn-and-continue: never fail the map call on llms.txt errors.
-                crate::crawl::engine::discover_llms_txt_urls(cfg, start_url)
-                    .await
-                    .unwrap_or_default()
+                match crate::crawl::engine::discover_llms_txt_urls(cfg, start_url).await {
+                    Ok(urls) => urls,
+                    Err(e) => {
+                        log_warn(&format!(
+                            "command=llms_txt map discovery failed url={start_url}: {e}"
+                        ));
+                        Vec::new()
+                    }
+                }
             } else {
                 Vec::new()
             }
         }
     );
-    let llms_urls: Vec<String> = llms_result;
 
     let crawl_start_url = seed_result.unwrap_or_else(|_| normalize_url(start_url).into_owned());
 
@@ -209,7 +246,21 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
     let scope_start_url =
         derive_map_scope_url(start_url, &scope_base).unwrap_or_else(|| crawl_start_url.clone());
 
-    let sitemap_discovery: SitemapDiscovery = sitemap_result.unwrap_or_default();
+    let sitemap_discovery: SitemapDiscovery = match sitemap_result {
+        Ok(d) => d,
+        Err(e) => {
+            log_warn(&format!(
+                "command=sitemap map discovery failed url={start_url}: {e}"
+            ));
+            SitemapDiscovery::default()
+        }
+    };
+    if sitemap_discovery.failed_fetches > 0 {
+        log_warn(&format!(
+            "command=sitemap map discovery failed_fetches={} discovered_urls={} url={start_url}",
+            sitemap_discovery.failed_fetches, sitemap_discovery.discovered_urls
+        ));
+    }
     let raw_sitemap_count = sitemap_discovery.discovered_urls;
 
     log_info(&format!(
@@ -220,50 +271,30 @@ pub async fn map_with_sitemap(cfg: &Config, start_url: &str) -> Result<MapResult
     if sitemap_discovery.parsed_sitemap_documents > 0 {
         let mut combined = sitemap_discovery.urls;
         combined.extend(llms_urls.iter().cloned());
-        let urls = merge_map_candidate_urls(Vec::new(), combined, &scope, true);
-        let scope_prefix_len = scope.path_prefix.as_deref().map_or(0, str::len);
-        let urls: Vec<String> = urls
-            .into_iter()
-            .filter(|url| !is_excluded_map_url(url, &cfg.exclude_path_prefix, scope_prefix_len))
-            .collect();
-        let summary = CrawlSummary {
-            elapsed_ms: start.elapsed().as_millis(),
-            ..Default::default()
-        };
+        let urls = scope_and_filter_map_urls(cfg, combined, &scope);
         let map_source = if llms_urls.is_empty() {
             "sitemap"
         } else {
             "sitemap+llms"
         };
-        return Ok(MapResult {
-            summary,
-            sitemap_urls: raw_sitemap_count,
+        return Ok(build_discovery_map_result(
             urls,
-            map_source: map_source.to_string(),
-            warning: None,
-        });
+            raw_sitemap_count,
+            map_source,
+            start.elapsed().as_millis(),
+        ));
     }
 
     // No sitemap, but a curated llms.txt — don't lose it to the crawl/structure fallback.
     if !llms_urls.is_empty() {
-        let urls = merge_map_candidate_urls(Vec::new(), llms_urls, &scope, true);
-        let scope_prefix_len = scope.path_prefix.as_deref().map_or(0, str::len);
-        let urls: Vec<String> = urls
-            .into_iter()
-            .filter(|url| !is_excluded_map_url(url, &cfg.exclude_path_prefix, scope_prefix_len))
-            .collect();
+        let urls = scope_and_filter_map_urls(cfg, llms_urls, &scope);
         if !urls.is_empty() {
-            let summary = CrawlSummary {
-                elapsed_ms: start.elapsed().as_millis(),
-                ..Default::default()
-            };
-            return Ok(MapResult {
-                summary,
-                sitemap_urls: raw_sitemap_count,
+            return Ok(build_discovery_map_result(
                 urls,
-                map_source: "llms".to_string(),
-                warning: None,
-            });
+                raw_sitemap_count,
+                "llms",
+                start.elapsed().as_millis(),
+            ));
         }
     }
 
