@@ -369,6 +369,15 @@ pub struct BackfillStats {
     pub failed: usize,
 }
 
+/// Raw markdown/text targets (e.g. llms.txt-listed `.md` docs) must skip the HTML→markdown
+/// transform — `to_markdown(main_content:true)` would strip them to nothing and drop them as thin.
+pub(crate) fn is_already_markdown(url: &str) -> bool {
+    // Compare only the path, ignoring query/fragment.
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt")
+}
+
 /// Fetch `url`, convert to markdown, and classify as thin/dropped.
 /// Returns `(url, None)` on fetch failure, `(url, Some(...))` otherwise.
 async fn fetch_and_convert_backfill_url(
@@ -383,7 +392,12 @@ async fn fetch_and_convert_backfill_url(
     let Some(html) = fetch_text_with_retry(&http, &url, retries, backoff).await else {
         return (url, None);
     };
-    let trimmed = to_markdown(&html, selector_config.as_ref());
+    let trimmed = if is_already_markdown(&url) {
+        // Already markdown/plaintext — pass through verbatim, do not run the HTML transform.
+        html.trim().to_string()
+    } else {
+        to_markdown(&html, selector_config.as_ref())
+    };
     let markdown_chars = trimmed.len();
     let is_thin = markdown_chars < min_chars;
     let dropped = is_thin && drop_thin;

@@ -89,3 +89,12 @@ fn request_timeout_secs_rounds_up_with_minimum_one_second() {
     };
     assert_eq!(request_timeout_secs(&cfg), 2);
 }
+
+#[test]
+fn markdown_url_uses_passthrough() {
+    assert!(is_already_markdown("https://x.com/docs/api.md"));
+    assert!(is_already_markdown("https://x.com/llms.txt"));
+    assert!(is_already_markdown("https://x.com/a/b.MD")); // case-insensitive
+    assert!(!is_already_markdown("https://x.com/docs/page"));
+    assert!(!is_already_markdown("https://x.com/index.html"));
+}
