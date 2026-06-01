@@ -11,6 +11,7 @@ pub(crate) mod change_detect;
 pub(crate) mod cluster;
 pub(crate) mod dispatch;
 pub(crate) mod filter;
+pub(crate) mod report;
 pub(crate) mod url_state;
 
 pub const WATCH_RUN_STATUS_RUNNING: &str = "running";
