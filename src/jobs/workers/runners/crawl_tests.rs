@@ -1,4 +1,4 @@
-use super::{build_crawl_result_json, run_crawl_job};
+use super::{build_crawl_result_json, merge_candidates, run_crawl_job};
 use crate::core::config::Config;
 use crate::crawl::engine::{CrawlDiagnostic, CrawlSummary};
 use crate::jobs::backend::JobPayload;
@@ -213,4 +213,18 @@ fn crawl_result_json_preserves_caller_path_and_worker_path() {
         obj.get("sitemap_backfill_error").and_then(|v| v.as_str()),
         Some("sitemap fetch failed")
     );
+}
+
+#[test]
+fn merge_candidates_unions_dedupes_and_caps() {
+    let s = vec!["https://x.com/a".to_string(), "https://x.com/b".to_string()];
+    let l = vec!["https://x.com/b".to_string(), "https://x.com/c".to_string()];
+    let out = merge_candidates(s, l, 0);
+    assert_eq!(out.len(), 3, "b deduped");
+    let capped = merge_candidates(
+        vec!["https://x.com/a".into()],
+        vec!["https://x.com/b".into(), "https://x.com/c".into()],
+        2,
+    );
+    assert_eq!(capped.len(), 2);
 }

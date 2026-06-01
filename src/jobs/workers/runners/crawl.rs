@@ -159,6 +159,22 @@ async fn validate_crawl_job_url(
     }
 }
 
+/// Union the sitemap and llms.txt candidate URLs, canonicalize + dedupe, and cap to `cap`
+/// (0 = unlimited). A URL discovered by both sources is written once.
+fn merge_candidates(sitemap: Vec<String>, llms: Vec<String>, cap: usize) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<String> = sitemap
+        .into_iter()
+        .chain(llms)
+        .filter_map(|u| crate::crawl::engine::canonicalize_url_for_dedupe(&u))
+        .filter(|u| seen.insert(u.clone()))
+        .collect();
+    if cap != 0 && merged.len() > cap {
+        merged.truncate(cap);
+    }
+    merged
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "keeps cancellation context explicit"
@@ -174,19 +190,52 @@ async fn maybe_append_sitemap_backfill(
     summary: &mut crate::crawl::engine::CrawlSummary,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
-    if !effective_cfg.discover_sitemaps {
+    if !effective_cfg.discover_sitemaps && !effective_cfg.discover_llms_txt {
         return Ok(None);
     }
 
     let backfill_fut = async {
-        crate::crawl::engine::append_sitemap_backfill(
+        // Discover both sources concurrently (each gated on its flag), union + dedupe,
+        // then run a single fetch/convert/manifest pass over the merged candidate set.
+        let (sitemap_res, llms_res) = tokio::join!(
+            async {
+                if effective_cfg.discover_sitemaps {
+                    crate::crawl::engine::discover_sitemap_urls(effective_cfg, url)
+                        .await
+                        .map(|d| d.urls)
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            },
+            async {
+                if effective_cfg.discover_llms_txt {
+                    crate::crawl::engine::discover_llms_txt_urls(effective_cfg, url)
+                        .await
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            },
+        );
+
+        // Combined fan-out cap: bound total backfill volume regardless of per-source caps.
+        let combined_cap = effective_cfg
+            .max_sitemaps
+            .max(effective_cfg.max_llms_txt_urls);
+        let merged = merge_candidates(sitemap_res, llms_res, combined_cap);
+        if merged.is_empty() {
+            return Ok(());
+        }
+        crate::crawl::engine::append_candidate_backfill(
             effective_cfg,
-            url,
             job_output_dir,
             seen_urls,
+            merged,
             summary,
         )
         .await
+        .map(|_| ())
         .map_err(|e| e.to_string())
     };
     let backfill_result = match cancel_token {
