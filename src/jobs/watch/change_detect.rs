@@ -29,6 +29,14 @@ pub enum UrlOutcome {
     Failed { error: String },
 }
 
+/// Hash the fast-equal snapshot input: filtered markdown joined with the
+/// serialized links snapshot. Including links means a link-only change (identical
+/// visible markdown) still changes the hash and is not short-circuited as
+/// Unchanged before `compute_diff` runs.
+fn snapshot_hash(filtered: &str, links_json: &str) -> String {
+    content_hash(&format!("{filtered}\n{links_json}"))
+}
+
 /// A change is meaningful if content changed AND (links changed OR the word-count
 /// delta clears the threshold). Links always count.
 pub fn is_meaningful(diff: &DiffResult, threshold_words: i64) -> bool {
@@ -94,8 +102,14 @@ pub async fn detect_url_change(
             return UrlOutcome::Unchanged;
         }
         Probe::Failed(msg) => {
-            persist_unchanged(pool, watch_id, url, prior.as_ref(), now).await;
-            return UrlOutcome::Failed { error: msg };
+            // The probe uses the shared `http_client()`, which does NOT carry the
+            // watch's configured custom headers — a header-gated page (401/403)
+            // or a transient probe-only failure would otherwise permanently block
+            // seeding/detection. Fall through to the scrape path (which DOES use
+            // configured headers via `services::scrape`) with no validators; if
+            // that scrape also fails we return Failed below.
+            tracing::warn!(%watch_id, url, error = %msg, "watch: conditional probe failed; falling back to scrape");
+            (None, None)
         }
         Probe::Modified {
             etag,
@@ -118,9 +132,14 @@ pub async fn detect_url_change(
         }
     };
     let filtered = apply_ignore(&normalize_markdown(&scraped.markdown), ignore);
-    let fresh_hash = content_hash(&filtered);
     let fresh_links = extract_links_from_payload(&scraped.payload);
     let fresh_links_json = serde_json::to_string(&fresh_links).unwrap_or_else(|_| "[]".into());
+    // Hash filtered markdown AND the serialized links so a link-only change (same
+    // visible markdown, different anchors) changes the hash and proceeds to
+    // `compute_diff` — where the "links always count" rule applies. Hashing the
+    // markdown alone would short-circuit such changes as Unchanged. Prior
+    // snapshots stored a markdown-only hash, so they re-seed once (acceptable).
+    let fresh_hash = snapshot_hash(&filtered, &fresh_links_json);
 
     let prior_hash = prior.as_ref().and_then(|p| p.content_hash.clone());
     let prior_changed_at = prior.as_ref().and_then(|p| p.last_changed_at);
@@ -143,13 +162,58 @@ pub async fn detect_url_change(
         return UrlOutcome::Unchanged;
     }
 
+    // 5–7) Diff vs prior snapshot, apply threshold, persist, and classify.
+    let fresh = FreshSnapshot {
+        etag,
+        last_modified,
+        filtered,
+        fresh_links,
+        fresh_links_json,
+        fresh_hash,
+    };
+    finalize_changed(
+        pool,
+        watch_id,
+        url,
+        prior.as_ref(),
+        now,
+        threshold_words,
+        fresh,
+    )
+    .await
+}
+
+/// Freshly-scraped snapshot inputs threaded from [`detect_url_change`] into
+/// [`finalize_changed`]. Bundling keeps the helper signature small.
+struct FreshSnapshot {
+    etag: Option<String>,
+    last_modified: Option<String>,
+    filtered: String,
+    fresh_links: Vec<LinkEntry>,
+    fresh_links_json: String,
+    fresh_hash: String,
+}
+
+/// Steps 5–7: diff the fresh snapshot against the prior one (first-seen forces
+/// Changed to seed), apply the meaningfulness threshold, persist the new
+/// snapshot, and return the classified outcome.
+async fn finalize_changed(
+    pool: &SqlitePool,
+    watch_id: Uuid,
+    url: &str,
+    prior: Option<&UrlState>,
+    now: i64,
+    threshold_words: i64,
+    fresh: FreshSnapshot,
+) -> UrlOutcome {
+    let prior_hash = prior.and_then(|p| p.content_hash.clone());
+    let prior_changed_at = prior.and_then(|p| p.last_changed_at);
+
     // 5) Diff: prior snapshot vs fresh. First-seen → force Changed (seed).
     let prior_md = prior
-        .as_ref()
         .and_then(|p| p.last_markdown.clone())
         .unwrap_or_default();
     let prior_links: Vec<LinkEntry> = prior
-        .as_ref()
         .and_then(|p| p.last_links_json.as_deref())
         .and_then(|j| serde_json::from_str(j).ok())
         .unwrap_or_default();
@@ -160,8 +224,8 @@ pub async fn detect_url_change(
         &prior_links,
         &empty,
         url,
-        &filtered,
-        &fresh_links,
+        &fresh.filtered,
+        &fresh.fresh_links,
         &empty,
     );
     let first_seen = prior_hash.is_none();
@@ -174,18 +238,18 @@ pub async fn detect_url_change(
 
     // 7) Persist snapshot.
     let s = UrlState {
-        etag,
-        last_modified,
-        content_hash: Some(fresh_hash),
-        last_markdown: Some(filtered),
-        last_links_json: Some(fresh_links_json),
+        etag: fresh.etag,
+        last_modified: fresh.last_modified,
+        content_hash: Some(fresh.fresh_hash),
+        last_markdown: Some(fresh.filtered),
+        last_links_json: Some(fresh.fresh_links_json),
         last_checked_at: Some(now),
         last_changed_at: if meaningful {
             Some(now)
         } else {
             prior_changed_at
         },
-        last_crawl_job_id: prior.as_ref().and_then(|p| p.last_crawl_job_id),
+        last_crawl_job_id: prior.and_then(|p| p.last_crawl_job_id),
     };
     if let Err(e) = upsert_url_state(pool, watch_id, url, &s).await {
         tracing::warn!(%watch_id, url, error = %e, "watch: upsert_url_state (changed) failed");

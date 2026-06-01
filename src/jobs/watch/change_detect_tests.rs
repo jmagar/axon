@@ -40,3 +40,16 @@ fn sub_threshold_text_change_not_meaningful() {
 fn link_change_always_meaningful() {
     assert!(is_meaningful(&diff(DiffStatus::Changed, 1, 0), 100));
 }
+
+#[test]
+fn snapshot_hash_detects_link_only_change() {
+    // Identical visible markdown but a different links snapshot must produce a
+    // different hash, so the fast-equal shortcut does not skip a link-only
+    // change before compute_diff can apply the "links always count" rule.
+    let md = "same visible markdown";
+    let links_a = r#"[{"href":"https://a.example/x","text":""}]"#;
+    let links_b = r#"[{"href":"https://a.example/y","text":""}]"#;
+    assert_ne!(snapshot_hash(md, links_a), snapshot_hash(md, links_b));
+    // Sanity: stable under identical inputs.
+    assert_eq!(snapshot_hash(md, links_a), snapshot_hash(md, links_a));
+}

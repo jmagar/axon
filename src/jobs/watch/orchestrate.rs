@@ -2,7 +2,6 @@
 //! cluster changed URLs, and dispatch one crawl per cluster (in-flight-guarded).
 
 use crate::core::config::Config;
-use crate::jobs::store::open_config_pool;
 use crate::jobs::watch::WatchDef;
 use crate::jobs::watch::change_detect::{UrlOutcome, detect_url_change};
 use crate::jobs::watch::cluster::group_by_common_prefix;
@@ -12,22 +11,6 @@ use crate::jobs::watch::report::{summarize_diff, write_change_artifact};
 use crate::jobs::watch::url_state::{get_url_state, set_crawl_job_id};
 use sqlx::SqlitePool;
 use uuid::Uuid;
-
-/// Look up the current `running` run row for this watch. `run_watch_now_with_pool`
-/// creates the run row, then calls `run_watch_task` → here; the newest running
-/// run for the watch is the one we are executing. This pragmatic bridge keeps the
-/// existing `run_watch_task` signature unchanged.
-async fn current_run_id(pool: &SqlitePool, watch_id: Uuid) -> Option<Uuid> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT id FROM axon_watch_runs WHERE watch_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(watch_id.to_string())
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|s| Uuid::parse_str(&s).ok())
-}
 
 /// Cluster changed URLs and dispatch one crawl per cluster, skipping clusters
 /// whose prior crawl is still in flight. Records the new crawl id on members.
@@ -89,6 +72,8 @@ pub(crate) async fn dispatch_clusters(
 
 pub(crate) async fn run_url_watch(
     cfg: &Config,
+    pool: &SqlitePool,
+    run_id: Uuid,
     watch: &WatchDef,
 ) -> Result<serde_json::Value, String> {
     let p = &watch.task_payload;
@@ -115,18 +100,13 @@ pub(crate) async fn run_url_watch(
         .unwrap_or_default();
     let ignore = compile_patterns(&ignore_src).map_err(|e| format!("watch: {e}"))?;
 
-    let pool = open_config_pool(cfg)
-        .await
-        .map_err(|e| format!("watch: open pool: {e}"))?;
-    let run_id = current_run_id(&pool, watch.id).await;
-
     let mut changed: Vec<String> = Vec::new();
     let mut unchanged = 0usize;
     let mut errors: Vec<serde_json::Value> = Vec::new();
     let mut summaries: Vec<serde_json::Value> = Vec::new();
 
     for url in &urls {
-        match detect_url_change(cfg, &pool, watch.id, url, &ignore, threshold).await {
+        match detect_url_change(cfg, pool, watch.id, url, &ignore, threshold).await {
             UrlOutcome::Failed { error } => {
                 errors.push(serde_json::json!({ "url": url, "error": error }));
             }
@@ -135,35 +115,23 @@ pub(crate) async fn run_url_watch(
             }
             UrlOutcome::Changed { diff } => {
                 changed.push(url.clone());
-                match run_id {
-                    Some(run_id) => {
-                        let summary = if do_summary {
-                            summarize_diff(cfg, url, &diff).await
-                        } else {
-                            None
-                        };
-                        if let Some(s) = &summary {
-                            summaries.push(serde_json::json!({ "url": url, "summary": s }));
-                        }
-                        if let Err(e) =
-                            write_change_artifact(&pool, run_id, url, &diff, summary).await
-                        {
-                            tracing::warn!(watch_id = %watch.id, url, error = %e, "watch: write_change_artifact failed");
-                        }
-                    }
-                    None => {
-                        // No running run row found — the change is real but its
-                        // artifact can't be attached. Surface it instead of
-                        // silently dropping.
-                        tracing::warn!(watch_id = %watch.id, url, "watch: change detected but no running run found; artifact skipped");
-                    }
+                let summary = if do_summary {
+                    summarize_diff(cfg, url, &diff).await
+                } else {
+                    None
+                };
+                if let Some(s) = &summary {
+                    summaries.push(serde_json::json!({ "url": url, "summary": s }));
+                }
+                if let Err(e) = write_change_artifact(pool, run_id, url, &diff, summary).await {
+                    tracing::warn!(watch_id = %watch.id, url, error = %e, "watch: write_change_artifact failed");
                 }
             }
         }
     }
 
     let (clusters_out, dispatched, cluster_errors) =
-        dispatch_clusters(&pool, cfg, watch.id, &changed, max_depth).await;
+        dispatch_clusters(pool, cfg, watch.id, &changed, max_depth).await;
     errors.extend(cluster_errors);
 
     Ok(serde_json::json!({

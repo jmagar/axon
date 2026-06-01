@@ -501,7 +501,7 @@ pub async fn run_watch_now_with_pool(
     // the future stays `Send` for the axum runtime behind `/v1/watch/{id}/run`.
     // A COMPLETED write that fails falls through to the FAILED finalize below so
     // the run is never wedged in `running` — nothing reclaims stale runs.
-    let outcome: Result<serde_json::Value, String> = run_watch_task(cfg, watch).await;
+    let outcome: Result<serde_json::Value, String> = run_watch_task(cfg, pool, run.id, watch).await;
     let err_text = match outcome {
         Ok(payload) => match finalize_completed(pool, watch, run.id, &payload).await {
             Ok(()) => return Ok(get_watch_run_with_pool(pool, run.id).await?.unwrap_or(run)),
@@ -554,10 +554,21 @@ async fn finalize_completed(
 }
 
 /// Execute a watch's task → result payload, or a human-readable failure message.
-/// Pure compute + scrape; the caller owns the single finalize write.
-async fn run_watch_task(cfg: &Config, watch: &WatchDef) -> Result<serde_json::Value, String> {
+/// Pure compute + scrape; the caller owns the single finalize write. Receives
+/// the caller's `pool` and the real `run_id` so the orchestrator never has to
+/// re-derive the current run (which was racy when a `run-now` overlapped a
+/// scheduled run) or open a fresh per-run pool.
+async fn run_watch_task(
+    cfg: &Config,
+    pool: &SqlitePool,
+    run_id: Uuid,
+    watch: &WatchDef,
+) -> Result<serde_json::Value, String> {
     match watch.task_type.as_str() {
-        "watch" => orchestrate::run_url_watch(cfg, watch).await,
+        // "refresh" is the prior release's task_type for this same handler.
+        // Accepted here (EXECUTION only) for back-compat so persisted rows keep
+        // running; new creates still require "watch" (see SUPPORTED_TASK_TYPES).
+        "watch" | "refresh" => orchestrate::run_url_watch(cfg, pool, run_id, watch).await,
         other => Err(format!("unsupported watch task_type: {other}")),
     }
 }

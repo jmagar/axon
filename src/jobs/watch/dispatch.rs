@@ -9,8 +9,23 @@ use sqlx::SqlitePool;
 use std::error::Error;
 use uuid::Uuid;
 
+/// Whether a previously-dispatched crawl is still active. Used by the in-flight
+/// guard to skip re-enqueuing a crawl for a cluster whose prior crawl hasn't
+/// finished.
+///
+/// A query error is treated as ACTIVE (returns `true`), not inactive: a
+/// transient DB error must not bypass the guard and let a duplicate crawl
+/// through. Only a successful query that finds a terminal or absent status
+/// returns `false`.
 pub async fn crawl_job_active(pool: &SqlitePool, job_id: Uuid) -> bool {
-    matches!(job_status_row(pool, JobKind::Crawl, job_id).await, Ok(Some(r)) if r.status.is_active())
+    match job_status_row(pool, JobKind::Crawl, job_id).await {
+        Ok(Some(r)) => r.status.is_active(),
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(%job_id, error = %e, "watch: crawl_job_active query failed; treating as active to avoid duplicate crawl");
+            true
+        }
+    }
 }
 
 pub async fn enqueue_change_crawl(

@@ -106,10 +106,17 @@ pub async fn upsert_url_state(
     Ok(())
 }
 
-/// Targeted update of just `last_crawl_job_id` for an existing row. Used after
+/// Set just `last_crawl_job_id` for a `(watch_id, url)` row. Used after
 /// dispatching a change-triggered crawl so the in-flight guard can find the
-/// referencing crawl on the next tick — without a full-row upsert that could
-/// clobber a freshly-written snapshot.
+/// referencing crawl on the next tick — without clobbering the freshly-written
+/// snapshot columns (only `last_crawl_job_id` is touched on conflict).
+///
+/// Implemented as an upsert rather than a bare `UPDATE`: a plain update silently
+/// affects 0 rows if the snapshot row is missing, leaving the in-flight guard
+/// blind and allowing duplicate crawls. Changed URLs are normally upserted
+/// before dispatch so the row exists, but the upsert keeps the guard reliable
+/// even when it doesn't. A minimal row (all snapshot columns NULL) is inserted
+/// in that case; the next `detect_url_change` tick fills it in.
 pub async fn set_crawl_job_id(
     pool: &SqlitePool,
     watch_id: Uuid,
@@ -117,11 +124,13 @@ pub async fn set_crawl_job_id(
     job_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE axon_watch_url_state SET last_crawl_job_id = ? WHERE watch_id = ? AND url = ?",
+        "INSERT INTO axon_watch_url_state (watch_id, url, last_crawl_job_id) \
+         VALUES (?, ?, ?) \
+         ON CONFLICT(watch_id, url) DO UPDATE SET last_crawl_job_id = excluded.last_crawl_job_id",
     )
-    .bind(job_id.to_string())
     .bind(watch_id.to_string())
     .bind(url)
+    .bind(job_id.to_string())
     .execute(pool)
     .await?;
     Ok(())

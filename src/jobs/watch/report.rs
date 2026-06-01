@@ -18,8 +18,27 @@ fn summary_system_prompt() -> String {
         .to_string()
 }
 
+/// Maximum bytes of unified diff embedded in the LLM prompt. A large page change
+/// can yield a huge diff; embedding it unbounded produces an oversized, expensive
+/// completion. Truncated on a char boundary with a marker.
+const MAX_DIFF_PROMPT_BYTES: usize = 8 * 1024;
+
+/// Truncate `s` to at most `MAX_DIFF_PROMPT_BYTES` on a UTF-8 char boundary,
+/// appending a marker when truncation occurred.
+fn truncate_diff_for_prompt(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.len() <= MAX_DIFF_PROMPT_BYTES {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut end = MAX_DIFF_PROMPT_BYTES;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    std::borrow::Cow::Owned(format!("{}\n… (truncated)", &s[..end]))
+}
+
 pub fn summary_user_prompt(url: &str, diff: &DiffResult) -> String {
     let unified = diff.text_diff.as_deref().unwrap_or("(no text diff)");
+    let unified = truncate_diff_for_prompt(unified);
     format!(
         "URL: {url}\nLinks added: {}\nLinks removed: {}\nWord count delta: {}\n\nUnified diff:\n{unified}",
         diff.links_added.len(),
