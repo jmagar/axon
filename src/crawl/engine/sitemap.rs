@@ -48,7 +48,13 @@ pub(crate) const SITEMAP_MAX_BODY_BYTES: u64 = 50 * 1024 * 1024;
 /// `format!("{host}:{port}")` does NOT (`host_str()` returns the address without brackets,
 /// yielding an invalid authority for IPv6 hosts).
 pub(crate) fn join_origin_path(parsed: &Url, path: &str) -> Result<String, Box<dyn Error>> {
-    Ok(parsed.join(path)?.to_string())
+    // Strip any userinfo (`user:pass@`) so credentials never propagate into discovery
+    // requests or logs — join only the origin (scheme://host:port) with `path`. The
+    // setters only fail on cannot-be-a-base URLs, which http(s) origins never are.
+    let mut origin = parsed.clone();
+    let _ = origin.set_username("");
+    let _ = origin.set_password(None);
+    Ok(origin.join(path)?.to_string())
 }
 
 fn should_retry_status(status: reqwest::StatusCode) -> bool {

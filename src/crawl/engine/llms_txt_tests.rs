@@ -56,6 +56,14 @@ fn llms_url_brackets_ipv6_authority_with_port() {
         join_origin_path(&parsed, "/llms.txt").unwrap(),
         "http://example.com:9000/llms.txt"
     );
+
+    // Userinfo (user:pass@) must be stripped so credentials never reach discovery
+    // requests or logs.
+    let parsed = Url::parse("https://user:secret@example.com/docs").unwrap();
+    assert_eq!(
+        join_origin_path(&parsed, "/llms.txt").unwrap(),
+        "https://example.com/llms.txt"
+    );
 }
 
 #[test]
