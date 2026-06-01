@@ -26,10 +26,11 @@ fn rejects_soft_404_html() {
 }
 
 fn cfg_for(host_include_subdomains: bool, max: usize) -> crate::core::config::Config {
-    let mut c = crate::core::config::Config::default();
-    c.include_subdomains = host_include_subdomains;
-    c.max_llms_txt_urls = max;
-    c
+    crate::core::config::Config {
+        include_subdomains: host_include_subdomains,
+        max_llms_txt_urls: max,
+        ..crate::core::config::Config::default()
+    }
 }
 
 #[test]
