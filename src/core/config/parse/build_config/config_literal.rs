@@ -73,6 +73,8 @@ fn populate_identity_and_crawl(cfg: &mut Config, inputs: &LiteralInputs<'_>) {
     cfg.train_best_rank = inputs.dispatched.train_best_rank;
     cfg.train_notes = inputs.dispatched.train_notes.clone();
     cfg.doctor_diagnose = inputs.dispatched.doctor_diagnose;
+    // `extract` defaults to the exact single-page path when omitted, while
+    // explicit `--max-pages 0` keeps the shared uncapped crawl semantics.
     cfg.max_pages = match (inputs.dispatched.command, g.max_pages) {
         (CommandKind::Extract, None) => 1,
         (_, max_pages) => max_pages.unwrap_or(0),

@@ -1,22 +1,6 @@
 use super::*;
-use crate::core::http::{get_allow_loopback, set_allow_loopback};
+use crate::core::http::LoopbackGuard;
 use httpmock::prelude::*;
-
-struct LoopbackGuard(bool);
-
-impl LoopbackGuard {
-    fn enable() -> Self {
-        let previous = get_allow_loopback();
-        set_allow_loopback(true);
-        Self(previous)
-    }
-}
-
-impl Drop for LoopbackGuard {
-    fn drop(&mut self) {
-        set_allow_loopback(self.0);
-    }
-}
 
 /// When Chrome mode is requested but no chrome_remote_url is configured,
 /// the extract engine must fall back to the HTTP path gracefully rather
@@ -57,7 +41,7 @@ async fn extract_chrome_mode_without_remote_url_falls_back_to_http() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn extract_limit_one_uses_exact_single_url_path() {
-    let _loopback = LoopbackGuard::enable();
+    let _loopback = LoopbackGuard::allow();
     let server = MockServer::start();
     let root = server.mock(|when, then| {
         when.method(GET).path("/");
