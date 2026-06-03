@@ -25,7 +25,7 @@ pub struct McpInput {
 
 Rules:
 - `action` is required and must match canonical enum names
-- `subaction` is required for lifecycle families (crawl, extract, embed, ingest, artifacts)
+- `subaction` is required for lifecycle families (crawl, extract, embed, ingest)
 - No fallback fields, no token normalization, no case folding
 - Invalid input returns MCP `invalid_params` error
 

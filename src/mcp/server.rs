@@ -31,7 +31,6 @@ mod tool_schema_tests;
 
 use super::auth::AuthPolicy;
 use super::schema::{AxonRequest, parse_axon_request};
-use super::thin_client;
 use crate::core::config::Config;
 use crate::services::context::ServiceContext;
 use crate::services::system;
@@ -157,13 +156,6 @@ impl AxonMcpServer {
             tracing::warn!(action = %action, subaction = %subaction, error = %e, "mcp error");
             invalid_params(format!("invalid request: {e}"))
         })?;
-        if let Some(response) = thin_client::route_request(self.cfg.as_ref(), &request)
-            .await
-            .map_err(map_thin_client_error)?
-        {
-            return serde_json::to_string(&response)
-                .map_err(|e| internal_error(format!("serialize {action} response: {e}")));
-        }
         let response = match request {
             AxonRequest::Status(req) => self.handle_status(req).await?,
             AxonRequest::Crawl(req) => self.handle_crawl(req).await?,
@@ -183,7 +175,6 @@ impl AxonMcpServer {
             AxonRequest::Stats(req) => self.handle_stats(req).await?,
             AxonRequest::Help(req) => self.handle_help(req).await?,
             AxonRequest::ElicitDemo(req) => handlers_elicit::handle_elicit_demo(&peer, req).await?,
-            AxonRequest::Artifacts(req) => self.handle_artifacts(req).await?,
             AxonRequest::Scrape(req) => self.handle_scrape(req).await?,
             AxonRequest::VerticalScrape(req) => self.handle_vertical_scrape(req).await?,
             AxonRequest::Research(req) => self.handle_research(req).await?,
@@ -225,13 +216,6 @@ impl AxonMcpServer {
         let structured = serde_json::to_value(&status.payload)
             .map_err(|e| internal_error(format!("serialize status dashboard payload: {e}")))?;
         Ok(CallToolResult::structured(structured))
-    }
-}
-
-fn map_thin_client_error(err: thin_client::ThinClientError) -> ErrorData {
-    match err {
-        thin_client::ThinClientError::InvalidRequest(message) => invalid_params(message),
-        other => internal_error(format!("MCP thin client route failed: {other}")),
     }
 }
 
@@ -396,7 +380,6 @@ impl ServerHandler for AxonMcpServer {
             "- `research` — Tavily AI search with LLM synthesis\n",
             "- `extract` — structured data extraction via LLM\n",
             "- `status` / `doctor` — job queue health and service diagnostics\n",
-            "- `artifacts` — read/grep/inspect large output files\n",
             "- MCP Apps enabled — exposes `ui://axon/status-dashboard` for live queue status widgets\n",
             "\n",
             "Async operations (crawl, embed, ingest, extract) return a job_id. Poll the same action with `subaction:status` and the returned `job_id`."

@@ -19,6 +19,7 @@ mod codex;
 mod gemini;
 mod prepared;
 
+#[cfg(test)]
 pub(crate) use prepared::MAX_PREPARED_SESSION_DOCS;
 pub use prepared::{IngestSessionsPreparedRequest, PreparedSessionDoc};
 

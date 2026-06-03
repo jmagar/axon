@@ -35,18 +35,6 @@ compatibility = "canonical"
 reason = "Chrome/CDP endpoint URL. URLs stay in env/CLI, not TOML."
 
 [[env]]
-key = "AXON_SERVER_URL"
-classification = "keep-env"
-runtime_placement = "host-only"
-surfaces = ["src", "env-template", "docs"]
-secret = false
-url_or_path = true
-container_allowed = false
-toml_destination = ""
-compatibility = "canonical"
-reason = "Client/server endpoint URL. URLs stay in env/CLI, not TOML."
-
-[[env]]
 key = "AXON_MCP_HTTP_TOKEN"
 classification = "keep-env"
 runtime_placement = "container-required"
