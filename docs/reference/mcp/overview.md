@@ -201,7 +201,7 @@ code and can trigger real network calls.
 ## Parser Rules
 The server uses strict deserialization:
 - `action` is required and must match canonical schema names exactly
-- `subaction` is required for lifecycle families (`crawl|extract|embed|ingest`)
+- `subaction` is optional for lifecycle families (`crawl|extract|embed|ingest`); when omitted, handlers default to `start`
 - No fallback fields (`command|op|operation`)
 - No action alias remapping
 - No token normalization (`-`/spaces/case are not rewritten)
@@ -262,7 +262,10 @@ What the smoke harness enforces:
 
 Artifact responses written in path mode are pretty-printed JSON. Path-mode responses also include a `shape` field summarising key/value types, and a `preview`, so you can often understand a result without opening the file.
 
-The MCP server runs **in-process and local**, so the `path` field in artifact metadata is a real filesystem path — open it directly with your normal file tooling. There is no `artifacts` MCP action (removed in 5.0.0); to get a payload back in-band, request `response_mode=inline` (or rely on `auto_inline` for small payloads).
+There is no `artifacts` MCP action (removed in 5.0.0). How to access the `path` field in artifact metadata depends on transport:
+
+- **stdio / local MCP** (the default for the bundled CLI and local clients): the server runs in your process/host, so `path` is a real local filesystem path — open it directly with your normal file tooling.
+- **`axon serve` (MCP-over-HTTP)**: `path` is **server-side** and generally not reachable from a remote client. Request `response_mode=inline` (or rely on `auto_inline` for small payloads) to get the payload back in-band instead.
 
 ### `response_mode` on All Actions
 

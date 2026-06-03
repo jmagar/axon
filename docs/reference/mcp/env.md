@@ -23,15 +23,12 @@ Environment variables specific to the Axon MCP server. The MCP server inherits a
 | `AXON_MCP_EMBED_MAX_LOCAL_DEPTH` | no | `8` | Max directory traversal depth for local directory embedding requests | no |
 | `AXON_MCP_EMBED_MAX_LOCAL_ENTRIES` | no | `5000` | Max filesystem entries visited for local directory embedding requests | no |
 
-## CLI server mode
+## Local execution (no CLI server mode)
 
-These are not MCP transport variables, but they point the host CLI at the same
-`axon serve` HTTP process.
-
-| Variable | Required | Default | Description | Sensitive |
-|----------|----------|---------|-------------|-----------|
-
-> CLI and MCP commands always run in-process (local execution against Qdrant and TEI). There is no client-to-server forwarding, so `AXON_SERVER_URL`, `AXON_LOCAL_MODE` / `--local`, and `AXON_SERVER_INSECURE` were removed in 5.0.0. To expose Axon over HTTP for API clients, run `axon serve`.
+CLI and MCP commands always run in-process — locally against Qdrant and TEI.
+There is no client-to-server forwarding, so `AXON_SERVER_URL`, `AXON_LOCAL_MODE` /
+`--local`, and `AXON_SERVER_INSECURE` were removed in 5.0.0. To expose Axon over
+HTTP for API clients, run `axon serve` (see [SERVE.md](../commands/serve.md)).
 
 ## Transport selection
 

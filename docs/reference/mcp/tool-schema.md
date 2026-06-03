@@ -29,7 +29,7 @@ Code references:
 Incoming request map is parsed strictly with serde:
 
 - `action` is required and must match canonical schema names
-- `subaction` is required for lifecycle families (`crawl|extract|embed|ingest`)
+- `subaction` is optional for lifecycle families (`crawl|extract|embed|ingest`); when omitted, handlers default to `start`
 - No fallback fields (`command`, `op`, `operation`)
 - No token normalization or case folding
 - No action alias remapping
