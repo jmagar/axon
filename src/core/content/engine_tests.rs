@@ -1,6 +1,22 @@
 use super::*;
-use crate::core::http::set_allow_loopback;
+use crate::core::http::{get_allow_loopback, set_allow_loopback};
 use httpmock::prelude::*;
+
+struct LoopbackGuard(bool);
+
+impl LoopbackGuard {
+    fn enable() -> Self {
+        let previous = get_allow_loopback();
+        set_allow_loopback(true);
+        Self(previous)
+    }
+}
+
+impl Drop for LoopbackGuard {
+    fn drop(&mut self) {
+        set_allow_loopback(self.0);
+    }
+}
 
 /// When Chrome mode is requested but no chrome_remote_url is configured,
 /// the extract engine must fall back to the HTTP path gracefully rather
@@ -40,8 +56,8 @@ async fn extract_chrome_mode_without_remote_url_falls_back_to_http() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn extract_limit_zero_uses_exact_single_url_path() {
-    set_allow_loopback(true);
+async fn extract_limit_one_uses_exact_single_url_path() {
+    let _loopback = LoopbackGuard::enable();
     let server = MockServer::start();
     let root = server.mock(|when, then| {
         when.method(GET).path("/");
@@ -58,7 +74,7 @@ async fn extract_limit_zero_uses_exact_single_url_path() {
     let wcfg = ExtractWebConfig {
         start_url: format!("{}/docs/page", server.base_url()),
         prompt: String::new(),
-        limit: 0,
+        limit: 1,
         llm_backend: crate::services::llm_backend::LlmBackendConfig::default(),
         custom_headers: vec![],
         render_mode: RenderMode::Http,
@@ -82,7 +98,7 @@ async fn extract_limit_zero_uses_exact_single_url_path() {
 
 #[test]
 fn extract_single_page_gate_preserves_explicit_multi_page_limits() {
-    assert!(uses_single_page_extract_path(0));
+    assert!(!uses_single_page_extract_path(0));
     assert!(uses_single_page_extract_path(1));
     assert!(!uses_single_page_extract_path(2));
     assert!(!uses_single_page_extract_path(25));

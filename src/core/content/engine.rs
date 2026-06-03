@@ -224,7 +224,7 @@ fn all_fallback_attempts_failed(
 }
 
 fn uses_single_page_extract_path(limit: u32) -> bool {
-    limit <= 1
+    limit == 1
 }
 
 /// Fetch a single URL directly with reqwest and extract structured data from it.
