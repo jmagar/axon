@@ -195,9 +195,9 @@ pub(super) const MCP_ACTION_SPECS: &[McpActionSpec] = &[
     },
     McpActionSpec {
         name: "vertical_scrape",
-        scope: ActionScope::Write,
+        scope: ActionScope::Read,
         description: "Discover vertical extractor capabilities; scraping routes through action=scrape",
-        cost: "write",
+        cost: "cheap",
     },
     McpActionSpec {
         name: "elicit_demo",

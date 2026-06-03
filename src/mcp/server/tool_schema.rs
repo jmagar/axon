@@ -19,7 +19,7 @@ pub(super) fn mcp_tool_schema_markdown() -> String {
         serde_json::to_string_pretty(&Value::Object(axon_tool_input_schema().as_ref().clone()))
             .unwrap_or_else(|_| "{}".to_string());
     format!(
-        "# Axon MCP Tool Schema\n\nURI: `{}`\n\nSingle tool name: `axon`\n\nRouting contract:\n- `action` is required\n- `subaction` is required for subaction families\n- `response_mode` supports `path|inline|both|auto_inline`; most actions default to `path`, while `scrape` and `retrieve` default to inline paged document reads\n\n## JSON Schema\n\n```json\n{}\n```\n",
+        "# Axon MCP Tool Schema\n\nURI: `{}`\n\nSingle tool name: `axon`\n\nRouting contract:\n- `action` is required\n- `subaction` selects an operation within subaction families; many families default it when omitted\n- `response_mode` supports `path|inline|both|auto_inline`; most actions default to `path`, while `scrape` and `retrieve` default to inline paged document reads\n\n## JSON Schema\n\n```json\n{}\n```\n",
         MCP_TOOL_SCHEMA_URI, schema_json
     )
 }
@@ -37,7 +37,7 @@ fn build_axon_tool_input_schema() -> rmcp::model::JsonObject {
     let supported_set: HashSet<&str> = supported_actions.iter().copied().collect();
     let typed_actions = action_names_from_schema(&schema);
     for action in &supported_actions {
-        assert!(
+        debug_assert!(
             typed_actions.contains(*action),
             "MCP action spec `{action}` has no matching AxonRequest schema variant"
         );
@@ -60,9 +60,9 @@ fn enrich_tool_input_schema(schema: &mut Value, supported_actions: &[&'static st
     let properties = object
         .entry("properties".to_string())
         .or_insert_with(|| json!({}));
-    let properties = properties
-        .as_object_mut()
-        .expect("schema properties should be an object");
+    let Some(properties) = properties.as_object_mut() else {
+        return;
+    };
     properties.insert(
         "action".to_string(),
         json!({
