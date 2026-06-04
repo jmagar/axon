@@ -105,8 +105,9 @@ mod tests {
     #[test]
     fn task_objects_discourage_hot_polling() {
         let task = task_from_job(JobKind::Crawl, &job("running"));
-        assert_eq!(task.poll_interval, Some(TASK_POLL_INTERVAL_MS));
-        assert!(TASK_POLL_INTERVAL_MS >= 5_000);
+        let poll_interval = task.poll_interval.expect("task should set poll interval");
+        assert_eq!(poll_interval, TASK_POLL_INTERVAL_MS);
+        assert!(poll_interval >= 5_000);
     }
 
     #[test]
