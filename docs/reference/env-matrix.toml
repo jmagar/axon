@@ -1147,8 +1147,8 @@ secret = false
 url_or_path = true
 container_allowed = false
 toml_destination = ""
-compatibility = "canonical"
-reason = "Removed in 5.0.0 (CLI/MCP client-server forwarding deleted); retained for migration tracking and still referenced in legacy compose/getting-started docs."
+compatibility = "removed"
+reason = "Removed in 5.0.0 (CLI/MCP client-server forwarding deleted); no longer read at runtime. Retained here only for migration tracking because legacy compose/getting-started docs still mention it."
 
 [[env]]
 key = "AXON_SUPPRESS_STALE_BINARY_WARNING"
