@@ -43,7 +43,7 @@ use rmcp::{
         AnnotateAble, CallToolRequestParams, CallToolResult, ExtensionCapabilities,
         InitializeRequestParams, InitializeResult, ListResourcesResult, Meta,
         PaginatedRequestParams, RawResource, ReadResourceRequestParams, ReadResourceResult,
-        Resource, ResourceContents, ServerCapabilities, ServerInfo,
+        Resource, ResourceContents, ServerCapabilities, ServerInfo, TasksCapability,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -131,7 +131,8 @@ impl AxonMcpServer {
     #[tool(
         name = "axon",
         description = "Unified Axon MCP tool. Use action/subaction routing. Valid actions and subactions are published in this tool inputSchema and mirrored in the enriched schema resource at axon://schema/mcp-tool. Actions: status, help, crawl, extract, embed, ingest, query, retrieve, search, map, endpoints, evaluate, suggest, doctor, domains, sources, stats, scrape, research, ask, summarize, screenshot, elicit_demo, brand, diff.",
-        input_schema = tool_schema::axon_tool_input_schema()
+        input_schema = tool_schema::axon_tool_input_schema(),
+        execution(task_support = "optional")
     )]
     async fn axon<'a>(
         &'a self,
@@ -272,6 +273,7 @@ fn mcp_apps_server_capabilities() -> ServerCapabilities {
     ServerCapabilities::builder()
         .enable_tools()
         .enable_resources()
+        .enable_tasks_with(TasksCapability::server_default())
         .enable_extensions_with(extensions)
         .build()
 }
