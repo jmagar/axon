@@ -5,6 +5,7 @@ use super::common::{
 };
 use super::server_authz;
 use super::task_id::{parse_task_id, task_id_for};
+use super::task_progress;
 use super::task_status::{task_from_job, task_result_payload};
 use crate::core::config::ConfigOverrides;
 use crate::jobs::backend::JobKind;
@@ -42,12 +43,24 @@ pub(super) async fn enqueue_task(
     }
 
     authorize_task_tool_call(server, &request, &context)?;
+    let progress_token = request
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get_progress_token());
     let raw = request
         .arguments
         .ok_or_else(|| invalid_params("arguments are required for task execution"))?;
     let axon_request =
         parse_axon_request(raw).map_err(|e| invalid_params(format!("invalid request: {e}")))?;
     let (kind, job_id) = enqueue_supported_start(server, axon_request).await?;
+    task_progress::start_progress_notifier(
+        server,
+        kind,
+        job_id,
+        progress_token,
+        context.peer.clone(),
+    )
+    .await;
     let job = load_job(server, kind, job_id).await?;
     Ok(CreateTaskResult::new(task_from_job(kind, &job)))
 }

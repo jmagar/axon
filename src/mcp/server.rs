@@ -25,6 +25,8 @@ mod services_migration_tests;
 mod stdio_runner;
 #[path = "server/task_id.rs"]
 mod task_id;
+#[path = "server/task_progress.rs"]
+mod task_progress;
 #[path = "server/task_status.rs"]
 mod task_status;
 #[path = "server/tasks.rs"]
@@ -59,9 +61,15 @@ use rmcp::{
 use serde_json::Value;
 pub use server_authz::required_scope_for;
 use server_authz::required_scope_for_tool;
-use std::sync::{Arc, LazyLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 pub use stdio_runner::run_stdio_server;
-use tokio::sync::OnceCell;
+use tokio::{
+    sync::{Mutex, OnceCell},
+    task::JoinHandle,
+};
 
 const STATUS_DASHBOARD_URI: &str = "ui://axon/status-dashboard";
 const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
@@ -73,6 +81,7 @@ static MCP_TOOL_SCHEMA_MD: LazyLock<String> = LazyLock::new(tool_schema::mcp_too
 pub struct AxonMcpServer {
     cfg: Arc<Config>,
     service_context: Arc<OnceCell<Arc<ServiceContext>>>,
+    progress_notifiers: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     /// Authentication policy for this server instance.
     ///
     /// Set to `LoopbackDev` for stdio mode (process isolation is the trust
@@ -89,6 +98,7 @@ impl AxonMcpServer {
         Self {
             cfg: Arc::new(cfg),
             service_context: Arc::new(OnceCell::new()),
+            progress_notifiers: Arc::new(Mutex::new(HashMap::new())),
             auth_policy: AuthPolicy::LoopbackDev,
         }
     }
@@ -100,6 +110,7 @@ impl AxonMcpServer {
         Self {
             cfg: Arc::new(cfg),
             service_context,
+            progress_notifiers: Arc::new(Mutex::new(HashMap::new())),
             auth_policy: AuthPolicy::LoopbackDev,
         }
     }
