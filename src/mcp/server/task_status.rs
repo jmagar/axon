@@ -103,6 +103,13 @@ mod tests {
     }
 
     #[test]
+    fn task_objects_discourage_hot_polling() {
+        let task = task_from_job(JobKind::Crawl, &job("running"));
+        assert_eq!(task.poll_interval, Some(TASK_POLL_INTERVAL_MS));
+        assert!(TASK_POLL_INTERVAL_MS >= 5_000);
+    }
+
+    #[test]
     fn task_result_payload_is_minimal_and_sanitized() {
         let payload = task_result_payload(JobKind::Ingest, &job("completed"));
         let value = serde_json::to_value(payload).unwrap();
