@@ -42,16 +42,17 @@ pub(super) async fn enqueue_task(
         )));
     }
 
-    authorize_task_tool_call(server, &request, &context)?;
     let progress_token = request
         .meta
         .as_ref()
         .and_then(|meta| meta.get_progress_token());
     let raw = request
         .arguments
+        .clone()
         .ok_or_else(|| invalid_params("arguments are required for task execution"))?;
     let axon_request =
         parse_axon_request(raw).map_err(|e| invalid_params(format!("invalid request: {e}")))?;
+    authorize_task_tool_call(server, &request, &context)?;
     let (kind, job_id) = enqueue_supported_start(server, axon_request).await?;
     task_progress::start_progress_notifier(
         server,
@@ -72,7 +73,7 @@ pub(super) async fn list_tasks(
 ) -> Result<ListTasksResult, ErrorData> {
     authorize_task_lifecycle(server, &context, "tasks/list")?;
     let offset = parse_cursor_offset(request.and_then(|params| params.cursor))?;
-    let fetch_limit = (offset + TASK_LIST_LIMIT + 1).min(TASK_LIST_MAX_OFFSET + TASK_LIST_LIMIT);
+    let fetch_limit = offset + TASK_LIST_LIMIT + 1;
     let ctx = server
         .base_service_context()
         .await
@@ -94,8 +95,9 @@ pub(super) async fn list_tasks(
             .then_with(|| right.id.cmp(&left.id))
     });
 
-    let next_cursor =
-        (tasks.len() > offset + TASK_LIST_LIMIT).then(|| (offset + TASK_LIST_LIMIT).to_string());
+    let next_offset = offset + TASK_LIST_LIMIT;
+    let next_cursor = (tasks.len() > next_offset && next_offset <= TASK_LIST_MAX_OFFSET)
+        .then(|| next_offset.to_string());
     let page = tasks
         .into_iter()
         .skip(offset)
@@ -128,7 +130,7 @@ pub(super) async fn get_task_result(
 ) -> Result<GetTaskPayloadResult, ErrorData> {
     authorize_task_lifecycle(server, &context, "tasks/result")?;
     let (kind, job_id) = parse_task_id(&request.task_id)?;
-    let job = load_job(server, kind, job_id).await?;
+    let job = wait_for_terminal_job(server, kind, job_id).await?;
     Ok(task_result_payload(kind, &job))
 }
 
@@ -143,11 +145,17 @@ pub(super) async fn cancel_task(
         .base_service_context()
         .await
         .map_err(|e| logged_internal_error("tasks.cancel.context", e.as_ref()))?;
-    let _ = ctx
+    let canceled = ctx
         .jobs
         .cancel_job(kind, job_id)
         .await
         .map_err(|e| logged_internal_error("tasks.cancel", e.as_ref()))?;
+    if !canceled {
+        return Err(invalid_params(format!(
+            "task is not active and cannot be cancelled: {}",
+            task_id_for(kind, job_id)
+        )));
+    }
     let job = load_job(server, kind, job_id).await?;
     Ok(CancelTaskResult {
         meta: None,
@@ -327,6 +335,23 @@ async fn load_job(
         .ok_or_else(|| invalid_params(format!("task not found: {}", task_id_for(kind, job_id))))
 }
 
+async fn wait_for_terminal_job(
+    server: &AxonMcpServer,
+    kind: JobKind,
+    job_id: Uuid,
+) -> Result<ServiceJob, ErrorData> {
+    loop {
+        let job = load_job(server, kind, job_id).await?;
+        if !job.status_enum().is_active() {
+            return Ok(job);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(
+            super::task_status::TASK_POLL_INTERVAL_MS,
+        ))
+        .await;
+    }
+}
+
 fn parse_uuid(raw: &str) -> Result<Uuid, ErrorData> {
     Uuid::parse_str(raw)
         .map_err(|e| ErrorData::internal_error(format!("invalid queued job id: {e}"), None))
@@ -339,7 +364,12 @@ fn parse_cursor_offset(cursor: Option<String>) -> Result<usize, ErrorData> {
     let offset = cursor
         .parse::<usize>()
         .map_err(|_| invalid_params("tasks/list cursor must be a numeric offset"))?;
-    Ok(offset.min(TASK_LIST_MAX_OFFSET))
+    if offset > TASK_LIST_MAX_OFFSET {
+        return Err(invalid_params(format!(
+            "tasks/list cursor must be <= {TASK_LIST_MAX_OFFSET}"
+        )));
+    }
+    Ok(offset)
 }
 
 fn unsupported_task_request(request: &AxonRequest) -> ErrorData {
@@ -382,46 +412,5 @@ fn unsupported_task_request(request: &AxonRequest) -> ErrorData {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::config::Config;
-    use crate::mcp::schema::{CrawlRequest, HelpRequest};
-
-    #[tokio::test]
-    async fn task_mode_crawl_start_rejects_multiple_urls_before_enqueue() {
-        let server = AxonMcpServer::new(Config::default());
-        let request = AxonRequest::Crawl(CrawlRequest {
-            subaction: Some(CrawlSubaction::Start),
-            urls: Some(vec![
-                "https://example.com/one".to_string(),
-                "https://example.com/two".to_string(),
-            ]),
-            ..CrawlRequest::default()
-        });
-
-        let err = enqueue_supported_start(&server, request).await.unwrap_err();
-        assert!(
-            err.message.contains("exactly one URL"),
-            "unexpected error: {}",
-            err.message
-        );
-    }
-
-    #[test]
-    fn unsupported_task_request_names_immediate_actions() {
-        let err = unsupported_task_request(&AxonRequest::Help(HelpRequest {
-            subaction: None,
-            response_mode: None,
-        }));
-        assert!(
-            err.message.contains("help"),
-            "unexpected error: {}",
-            err.message
-        );
-        assert!(
-            err.message.contains("crawl.start"),
-            "error should name supported task starts: {}",
-            err.message
-        );
-    }
-}
+#[path = "tasks_tests.rs"]
+mod tests;

@@ -2,12 +2,15 @@ use super::AxonMcpServer;
 use super::task_id::{kind_name, task_id_for};
 use crate::jobs::backend::JobKind;
 use crate::jobs::status::JobStatus;
+use crate::services::runtime::ServiceJobRuntime;
 use rmcp::model::{ProgressNotificationParam, ProgressToken};
 use rmcp::{Peer, RoleServer};
 use serde_json::Value;
+use std::sync::Arc;
 use uuid::Uuid;
 
-pub(super) const NOTIFIER_READ_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+pub(super) const NOTIFIER_READ_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(super::task_status::TASK_POLL_INTERVAL_MS);
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct MappedProgress {
@@ -45,20 +48,6 @@ pub(super) async fn start_progress_notifier(
     };
     let task_id = task_id_for(kind, job_id);
     let notifier_key = format!("{task_id}:{progress_token:?}");
-    let mut notifiers = server.progress_notifiers.lock().await;
-    if notifiers
-        .get(&notifier_key)
-        .is_some_and(|handle| !handle.is_finished())
-    {
-        return;
-    }
-    if notifiers
-        .get(&notifier_key)
-        .is_some_and(tokio::task::JoinHandle::is_finished)
-    {
-        notifiers.remove(&notifier_key);
-    }
-
     let ctx = match server.base_service_context().await {
         Ok(ctx) => ctx,
         Err(e) => {
@@ -71,75 +60,114 @@ pub(super) async fn start_progress_notifier(
             return;
         }
     };
+
+    {
+        let mut notifiers = server.progress_notifiers.lock().await;
+        if notifiers
+            .get(&notifier_key)
+            .is_some_and(|handle| !handle.is_finished())
+        {
+            return;
+        }
+        if notifiers
+            .get(&notifier_key)
+            .is_some_and(tokio::task::JoinHandle::is_finished)
+        {
+            notifiers.remove(&notifier_key);
+        }
+    }
+
     let jobs = ctx.jobs.clone();
+    let progress_notifiers = server.progress_notifiers.clone();
+    let cleanup_key = notifier_key.clone();
     let handle = tokio::spawn(async move {
-        tracing::info!(
-            task_id = %task_id,
-            kind = kind_name(kind),
-            has_progress_token = true,
-            "mcp.task.progress.start"
-        );
-        let mut last_fingerprint = String::new();
-        loop {
-            tokio::time::sleep(NOTIFIER_READ_INTERVAL).await;
-            let job = match jobs.job_status(kind, job_id).await {
-                Ok(Some(job)) => job,
-                Ok(None) => {
-                    tracing::debug!(
-                        task_id = %task_id,
-                        kind = kind_name(kind),
-                        reason = "not_found",
-                        "mcp.task.progress.stop"
-                    );
-                    return;
-                }
-                Err(e) => {
-                    tracing::error!(
-                        task_id = %task_id,
-                        kind = kind_name(kind),
-                        error = %e,
-                        "mcp.task.progress.stop"
-                    );
-                    return;
-                }
-            };
-            let status = job.status_enum();
-            let mapped = map_job_progress(kind, status, job.result_json.as_ref());
-            let fingerprint = progress_fingerprint(status, job.updated_at, &mapped);
-            if fingerprint != last_fingerprint {
-                last_fingerprint = fingerprint;
-                let has_total = mapped.total.is_some();
-                let notification = mapped.into_notification(progress_token.clone());
+        run_progress_notifier(kind, job_id, task_id, progress_token, peer, jobs).await;
+        progress_notifiers.lock().await.remove(&cleanup_key);
+    });
+    let mut notifiers = server.progress_notifiers.lock().await;
+    if notifiers
+        .get(&notifier_key)
+        .is_some_and(|existing| !existing.is_finished())
+    {
+        handle.abort();
+        return;
+    }
+    notifiers.insert(notifier_key, handle);
+}
+
+async fn run_progress_notifier(
+    kind: JobKind,
+    job_id: Uuid,
+    task_id: String,
+    progress_token: ProgressToken,
+    peer: Peer<RoleServer>,
+    jobs: Arc<dyn ServiceJobRuntime>,
+) {
+    tracing::info!(
+        task_id = %task_id,
+        kind = kind_name(kind),
+        has_progress_token = true,
+        "mcp.task.progress.start"
+    );
+    let mut last_fingerprint = String::new();
+    loop {
+        tokio::time::sleep(NOTIFIER_READ_INTERVAL).await;
+        let job = match jobs.job_status(kind, job_id).await {
+            Ok(Some(job)) => job,
+            Ok(None) => {
                 tracing::debug!(
                     task_id = %task_id,
                     kind = kind_name(kind),
-                    progress = notification.progress,
-                    has_total,
-                    status = %status.as_str(),
-                    "mcp.task.progress.emit"
+                    reason = "not_found",
+                    "mcp.task.progress.stop"
                 );
-                if peer.notify_progress(notification).await.is_err() {
-                    tracing::debug!(
-                        task_id = %task_id,
-                        kind = kind_name(kind),
-                        reason = "send_failed",
-                        "mcp.task.progress.stop"
-                    );
-                    return;
-                }
+                return;
             }
-            if !status.is_active() {
+            Err(e) => {
+                tracing::error!(
+                    task_id = %task_id,
+                    kind = kind_name(kind),
+                    error = %e,
+                    "mcp.task.progress.stop"
+                );
+                return;
+            }
+        };
+        let status = job.status_enum();
+        let mapped = map_job_progress(kind, status, job.result_json.as_ref());
+        let fingerprint = progress_fingerprint(status, job.updated_at, &mapped);
+        if fingerprint != last_fingerprint {
+            last_fingerprint = fingerprint;
+            let has_total = mapped.total.is_some();
+            let notification = mapped.into_notification(progress_token.clone());
+            tracing::debug!(
+                task_id = %task_id,
+                kind = kind_name(kind),
+                progress = notification.progress,
+                has_total,
+                status = %status.as_str(),
+                "mcp.task.progress.emit"
+            );
+            if peer.notify_progress(notification).await.is_err() {
                 tracing::debug!(
                     task_id = %task_id,
                     kind = kind_name(kind),
-                    reason = "terminal",
+                    reason = "send_failed",
                     "mcp.task.progress.stop"
                 );
                 return;
             }
         }
-    });
-    notifiers.insert(notifier_key, handle);
+        if !status.is_active() {
+            tracing::debug!(
+                task_id = %task_id,
+                kind = kind_name(kind),
+                reason = "terminal",
+                "mcp.task.progress.stop"
+            );
+            return;
+        }
+    }
 }
 
 pub(super) fn map_job_progress(
@@ -265,53 +293,5 @@ fn allowlisted_phase(phase: Option<&str>) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn maps_crawl_progress_without_leaking_paths() {
-        let value = json!({
-            "output_dir": "/secret/path",
-            "output_path": "/secret/path/markdown",
-            "pages_crawled": 4,
-            "pages_discovered": 10,
-            "message": "raw worker message"
-        });
-        let progress = map_job_progress(JobKind::Crawl, JobStatus::Running, Some(&value));
-        assert_eq!(progress.progress, 4.0);
-        assert_eq!(progress.total, Some(10.0));
-        assert_eq!(progress.message, "crawling");
-    }
-
-    #[test]
-    fn maps_embed_progress_with_real_total() {
-        let value = json!({"docs_embedded": 2, "docs_total": 5, "chunks_embedded": 50});
-        let progress = map_job_progress(JobKind::Embed, JobStatus::Running, Some(&value));
-        assert_eq!(progress.progress, 2.0);
-        assert_eq!(progress.total, Some(5.0));
-        assert_eq!(progress.message, "embedding");
-    }
-
-    #[test]
-    fn maps_ingest_progress_with_allowlisted_message() {
-        let value = json!({
-            "phase": "cloning",
-            "repo": "https://token@example.com/private/repo",
-            "files_done": 7,
-            "files_total": 9
-        });
-        let progress = map_job_progress(JobKind::Ingest, JobStatus::Running, Some(&value));
-        assert_eq!(progress.progress, 7.0);
-        assert_eq!(progress.total, Some(9.0));
-        assert_eq!(progress.message, "ingesting");
-    }
-
-    #[test]
-    fn extract_running_progress_uses_unknown_total() {
-        let progress = map_job_progress(JobKind::Extract, JobStatus::Running, None);
-        assert_eq!(progress.progress, 0.0);
-        assert_eq!(progress.total, None);
-        assert_eq!(progress.message, "running");
-    }
-}
+#[path = "task_progress_tests.rs"]
+mod tests;

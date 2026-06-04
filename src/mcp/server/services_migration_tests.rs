@@ -139,7 +139,7 @@ fn mcp_apps_ui_metadata_is_on_dedicated_dashboard_tool_only() {
         meta.get("ui")
             .and_then(|ui| ui.get("resourceUri"))
             .and_then(serde_json::Value::as_str),
-        Some(super::STATUS_DASHBOARD_URI)
+        Some(super::handler_meta::STATUS_DASHBOARD_URI)
     );
 }
 
@@ -193,7 +193,7 @@ fn status_dashboard_tool_does_not_advertise_task_support() {
 
 #[test]
 fn mcp_apps_resource_meta_declares_locked_down_policy() {
-    let meta = super::status_dashboard_resource_meta();
+    let meta = super::handler_meta::status_dashboard_resource_meta();
     let ui = meta
         .get("ui")
         .expect("resource metadata must include a ui object");
@@ -207,18 +207,18 @@ fn mcp_apps_resource_meta_declares_locked_down_policy() {
 
 #[test]
 fn mcp_apps_capabilities_advertise_html_app_mime_type() {
-    let capabilities =
-        serde_json::to_value(super::mcp_apps_server_capabilities()).expect("serialize caps");
+    let capabilities = serde_json::to_value(super::handler_meta::mcp_apps_server_capabilities())
+        .expect("serialize caps");
     assert_eq!(
         capabilities["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"],
-        serde_json::json!([super::MCP_APP_MIME_TYPE])
+        serde_json::json!([super::handler_meta::MCP_APP_MIME_TYPE])
     );
 }
 
 #[test]
 fn mcp_capabilities_advertise_task_augmented_tool_calls() {
-    let capabilities =
-        serde_json::to_value(super::mcp_apps_server_capabilities()).expect("serialize caps");
+    let capabilities = serde_json::to_value(super::handler_meta::mcp_apps_server_capabilities())
+        .expect("serialize caps");
     assert_eq!(
         capabilities["tasks"]["requests"]["tools"]["call"],
         serde_json::json!({})

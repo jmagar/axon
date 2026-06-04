@@ -1,5 +1,5 @@
 # Axon MCP Server Guide
-Last Modified: 2026-05-19
+Last Modified: 2026-06-04
 
 ## Purpose
 `axon mcp` exposes Axon through one MCP tool named `axon`.
@@ -239,6 +239,7 @@ Success responses are normalized:
 ```
 
 ## Task-Augmented Calls
+
 Axon supports RMCP task-augmented `tools/call` for durable async jobs while preserving the normal Axon response envelope for ordinary calls.
 
 Normal calls:
@@ -251,8 +252,8 @@ Task-augmented calls:
 - Use protocol-level RMCP task metadata, not extra fields inside the Axon argument map.
 - Are supported for `crawl.start`, `extract.start`, `embed.start`, and `ingest.start`.
 - Return `CreateTaskResult` with a Task whose ID is `axon:<kind>:<job_uuid>`.
-- Use `tasks/get`, `tasks/result`, and `tasks/cancel` against the same SQLite job rows.
-- Return compact sanitized task results, not raw `ServiceJob`, raw `result_json`, raw `config_json`, targets, paths, or worker errors.
+- Use `tasks/get` for non-blocking status, `tasks/result` to wait for terminal completion, and `tasks/cancel` against the same SQLite job rows.
+- Return compact sanitized terminal task results, not raw `ServiceJob`, raw `result_json`, raw `config_json`, targets, paths, or worker errors.
 - Include `pollInterval >= 5000` ms; clients should not hot-poll.
 
 `execution.taskSupport` is `optional` on the routed `axon` tool because the same tool handles both immediate actions and long-running job starts. `axon_status_dashboard` does not advertise task support because it is an MCP Apps widget tool.

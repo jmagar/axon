@@ -91,6 +91,7 @@ def _emit_contract(emit) -> None:
 
 def _emit_task_augmented_calls(emit) -> None:
     emit("## Task-Augmented Calls")
+    emit()
     emit("- Server capabilities advertise RMCP task support for `tools/call`.")
     emit(
         "- The routed `axon` tool advertises `execution.taskSupport: \"optional\"`; clients may use normal calls or task-augmented calls."
@@ -117,7 +118,7 @@ def _emit_task_augmented_calls(emit) -> None:
         "- Task-mode `crawl.start` accepts exactly one URL because one RMCP task maps to one Axon crawl job. Use normal non-task `crawl.start` for multi-URL crawl submissions."
     )
     emit(
-        "- `tasks/get` and `tasks/cancel` return Task fields at top level; `tasks/result` returns a compact sanitized payload instead of a raw `ServiceJob` row."
+        "- `tasks/get` and `tasks/cancel` return Task fields at top level; `tasks/result` waits until the job is terminal, then returns a compact sanitized payload instead of a raw `ServiceJob` row."
     )
     emit(
         "- Task objects include `pollInterval` of at least 5000 ms. Clients should not hot-poll SQLite-backed task status."
@@ -130,6 +131,24 @@ def _emit_task_augmented_calls(emit) -> None:
     )
     emit(
         "- Authorization is server-scoped: valid Axon OAuth/static credentials grant Axon server access. Job and task IDs are server-bound references, not per-user ACL objects."
+    )
+    emit()
+    emit("See also:")
+    emit()
+    emit(
+        "- [MCP overview](overview.md#task-augmented-calls) for normal versus task-augmented workflow guidance."
+    )
+    emit(
+        "- [Configuration guide](../../guides/configuration.md) for server auth and async job runtime settings."
+    )
+    emit(
+        "- [Architecture overview](../../architecture/stack/arch.md) for MCP, service, and job-runtime boundaries."
+    )
+    emit(
+        "- [Repository guide](../../contributing/repo/repo.md) for source layout and testing policy."
+    )
+    emit(
+        "- [This tool-schema reference](tool-schema.md#task-augmented-calls) for `tasks/get`, `tasks/cancel`, `tasks/result`, `_meta.progressToken`, and `axon:<kind>:<job_uuid>` wire details."
     )
     emit()
 
