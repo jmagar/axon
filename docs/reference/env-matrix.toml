@@ -1139,6 +1139,30 @@ compatibility = "canonical"
 reason = "Non-secret tuning knob; migrate to config.toml. Kept in env until a typed config.toml field is wired."
 
 [[env]]
+key = "AXON_SERVER_URL"
+classification = "keep-env"
+runtime_placement = "host-only"
+surfaces = ["docs"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "canonical"
+reason = "Removed in 5.0.0 (CLI/MCP client-server forwarding deleted); retained for migration tracking and still referenced in legacy compose/getting-started docs."
+
+[[env]]
+key = "AXON_SUPPRESS_STALE_BINARY_WARNING"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "When set, suppresses the stale-binary startup warning emitted by src/core/binary_status.rs. Read directly via env; non-secret runtime toggle."
+
+[[env]]
 key = "AXON_LOG_DIR"
 classification = "trusted-operator-bootstrap"
 runtime_placement = "host-only"

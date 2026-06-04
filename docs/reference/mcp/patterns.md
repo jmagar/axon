@@ -189,4 +189,4 @@ Operations requiring LLM synthesis (`ask`, `evaluate`, `suggest`, `research`, `e
 
 - [TOOLS.md](tools.md) -- action/subaction reference
 - [DEV.md](dev.md) -- development workflow
-- [../stack/ARCH.md](../../architecture/stack/arch.md) -- architecture overview
+- [../../architecture/stack/arch.md](../../architecture/stack/arch.md) -- architecture overview
