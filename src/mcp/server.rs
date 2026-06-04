@@ -30,7 +30,7 @@ mod tool_schema;
 mod tool_schema_tests;
 
 use super::auth::AuthPolicy;
-use super::schema::{AxonRequest, parse_axon_request};
+use super::schema::{AxonRequest, AxonToolResponse, parse_axon_request};
 use crate::core::config::Config;
 use crate::services::context::ServiceContext;
 use crate::services::system;
@@ -193,6 +193,7 @@ impl AxonMcpServer {
                 ));
             }
         };
+        let response = append_stale_binary_warning(response);
         serde_json::to_string(&response)
             .map_err(|e| internal_error(format!("serialize {action} response: {e}")))
     }
@@ -216,6 +217,13 @@ impl AxonMcpServer {
         let structured = serde_json::to_value(&status.payload)
             .map_err(|e| internal_error(format!("serialize status dashboard payload: {e}")))?;
         Ok(CallToolResult::structured(structured))
+    }
+}
+
+fn append_stale_binary_warning(response: AxonToolResponse) -> AxonToolResponse {
+    match crate::core::binary_status::stale_binary_warning() {
+        Some(warning) => response.with_warning(warning),
+        None => response,
     }
 }
 
@@ -377,7 +385,7 @@ impl ServerHandler for AxonMcpServer {
             "- `summarize` — scrape URL context + configured LLM summary\n",
             "- `evaluate` — compare RAG quality against a baseline with judge diagnostics\n",
             "- `suggest` — propose new crawl targets from indexed source coverage\n",
-            "- `research` — Tavily AI search with LLM synthesis\n",
+            "- `research` — SearXNG/Tavily web research with LLM synthesis\n",
             "- `extract` — structured data extraction via LLM\n",
             "- `status` / `doctor` — job queue health and service diagnostics\n",
             "- MCP Apps enabled — exposes `ui://axon/status-dashboard` for live queue status widgets\n",
