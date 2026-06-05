@@ -10,9 +10,45 @@ export type components = {
             "status": string;
             "status_url": string;
         };
+        "ArtifactHandle": {
+            "bytes": number;
+            "display_path": string;
+            "job_id"?: string | null;
+            "kind": string;
+            "line_count"?: number | null;
+            "relative_path": string;
+            "url"?: string | null;
+        };
+        "BrandColor": {
+            "count": number;
+            "hex": string;
+            "usage": components['schemas']['ColorUsage'];
+        };
+        "BrandResult": {
+            "colors": components['schemas']['BrandColor'][];
+            "favicon_url"?: string | null;
+            "fonts": string[];
+            "logo_url"?: string | null;
+            "logos": components['schemas']['LogoVariant'][];
+            "name"?: string | null;
+            "og_image"?: string | null;
+            "url": string;
+        };
+        "ColorUsage": "primary" | "secondary" | "background" | "text" | "accent" | "unknown";
         "DedupeRequest": {
             "collection"?: string | null;
         };
+        "DiffResult": {
+            "links_added": components['schemas']['LinkEntry'][];
+            "links_removed": components['schemas']['LinkEntry'][];
+            "metadata_changes": components['schemas']['MetadataChange'][];
+            "status": components['schemas']['DiffStatus'];
+            "text_diff"?: string | null;
+            "url_a": string;
+            "url_b": string;
+            "word_count_delta": number;
+        };
+        "DiffStatus": "same" | "changed";
         "DiscoveredEndpoint": {
             "first_party": boolean;
             "kind": components['schemas']['EndpointKind'];
@@ -69,6 +105,14 @@ export type components = {
             "docs": components['schemas']['PreparedSessionDoc'][];
             "project"?: string | null;
         };
+        "LinkEntry": {
+            "href": string;
+            "text": string;
+        };
+        "LogoVariant": {
+            "kind": string;
+            "url": string;
+        };
         "McpCandidateAttempt": {
             "host_kind": components['schemas']['McpHostKind'];
             "outcome": components['schemas']['McpProbeOutcome'];
@@ -78,6 +122,11 @@ export type components = {
         };
         "McpHostKind": "same_host" | "apex_subdomain";
         "McpProbeOutcome": "confirmed" | "unconfirmed" | "blocked";
+        "MetadataChange": {
+            "field": string;
+            "new"?: string | null;
+            "old"?: string | null;
+        };
         "PreparedSessionDoc": {
             "extra"?: unknown;
             "session_date"?: string | null;
@@ -111,6 +160,9 @@ export type components = {
             "query": string;
             "since"?: string | null;
         };
+        "RestBrandRequest": {
+            "url": string;
+        };
         "RestCrawlRequest": {
             "collection"?: string | null;
             "delay_ms"?: number | null;
@@ -126,6 +178,11 @@ export type components = {
             "respect_robots"?: boolean | null;
             "sitemap_since_days"?: number | null;
             "urls": string[];
+        };
+        "RestDiffRequest": {
+            "render_mode"?: null | components['schemas']['RenderMode'];
+            "url_a": string;
+            "url_b": string;
         };
         "RestEmbedRequest": {
             "collection"?: string | null;
@@ -189,6 +246,11 @@ export type components = {
             "url"?: string | null;
             "urls"?: string[] | null;
         };
+        "RestScreenshotRequest": {
+            "full_page"?: boolean | null;
+            "url": string;
+            "viewport"?: string | null;
+        };
         "RestSearchRequest": {
             "limit"?: number | null;
             "offset"?: number | null;
@@ -224,6 +286,12 @@ export type components = {
         "RpcProtocol": "jsonrpc2" | "openrpc" | "mcp";
         "RpcTransport": "http" | "sse";
         "ScrapeFormat": "markdown" | "html" | "rawHtml" | "json" | "llm";
+        "ScreenshotResult": {
+            "artifact_handle"?: null | components['schemas']['ArtifactHandle'];
+            "path": string;
+            "size_bytes": number;
+            "url": string;
+        };
         "WatchCreateRequest": {
             "enabled"?: boolean | null;
             "every_seconds": number;
