@@ -34,4 +34,14 @@ describe("formatPayload", () => {
       "Use AXON_LLM_BACKEND=openai-compat.",
     );
   });
+
+  it("truncates large diff text payloads", () => {
+    const output = formatPayload("diff", {
+      status: "changed",
+      text_diff: "x".repeat(12_050),
+    });
+
+    expect(output.length).toBeLessThan(12_200);
+    expect(output).toContain("[truncated 50 chars from text_diff]");
+  });
 });

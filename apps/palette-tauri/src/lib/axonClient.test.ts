@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACTIONS, type PaletteAction } from "./actions";
-import { createAxonClient, executeAction, type PaletteConfig } from "./axonClient";
+import { buildActionRequest, createAxonClient, executeAction, type PaletteConfig } from "./axonClient";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -126,5 +126,27 @@ describe("executeAction", () => {
       url: "https://example.com",
       full_page: true,
     });
+  });
+
+  it("has REST request mappings for every palette action example", () => {
+    const client = createAxonClient(config);
+
+    for (const candidate of ACTIONS) {
+      const arg = candidate.example.startsWith(candidate.subcommand)
+        ? candidate.example.slice(candidate.subcommand.length).trim()
+        : "";
+      expect(() => buildActionRequest(client, candidate, arg, config), candidate.subcommand).not.toThrow();
+    }
+  });
+
+  it("uses valid UUID examples for id-based actions", () => {
+    const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+
+    for (const candidate of ACTIONS) {
+      if (!candidate.subcommand.endsWith("-status") && !candidate.subcommand.endsWith("-cancel") && candidate.subcommand !== "watch-run") {
+        continue;
+      }
+      expect(candidate.example, candidate.subcommand).toMatch(uuidPattern);
+    }
   });
 });

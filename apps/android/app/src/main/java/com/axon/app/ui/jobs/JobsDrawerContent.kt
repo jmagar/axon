@@ -91,14 +91,6 @@ fun JobsDrawerContent(vm: JobsOverviewViewModel = viewModel()) {
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             )
-            jobs.isEmpty() -> EmptyContent(
-                title = "No active jobs",
-                description = "Crawl, ingest, and embed jobs will appear here",
-                icon = Icons.Rounded.Work,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            )
             selectedLevel == null -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -136,22 +128,32 @@ fun JobsDrawerContent(vm: JobsOverviewViewModel = viewModel()) {
                     onClick = { selectedLevel = JobsDrawerLevel.Watches },
                 )
             }
-            selectedLevel == JobsDrawerLevel.Watches -> LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                items(watches, key = { it.id }) { watch ->
-                    DrawerSubItem(
+            selectedLevel == JobsDrawerLevel.Watches -> {
+                if (watches.isEmpty()) {
+                    EmptyContent(
+                        title = "No watches",
+                        description = "Scheduled watches will appear here",
                         icon = Icons.Rounded.Schedule,
-                        label = watch.name,
-                        detail = if (watch.enabled) "Every ${watch.everySeconds}s" else "Paused",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
                     )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        items(watches, key = { it.id }) { watch ->
+                            DrawerSubItem(
+                                icon = Icons.Rounded.Schedule,
+                                label = watch.name,
+                                detail = if (watch.enabled) "Every ${watch.everySeconds}s" else "Paused",
+                            )
+                        }
+                    }
                 }
             }
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
+            else -> {
                 val kind = when (selectedLevel) {
                     JobsDrawerLevel.Crawl -> AxonClient.JobKind.Crawl
                     JobsDrawerLevel.Embed -> AxonClient.JobKind.Embed
@@ -159,8 +161,25 @@ fun JobsDrawerContent(vm: JobsOverviewViewModel = viewModel()) {
                     JobsDrawerLevel.Extract -> AxonClient.JobKind.Extract
                     else -> null
                 }
-                items(jobs.filter { it.kind == kind }, key = { it.id }) { job ->
-                    JobsOverviewItem(job = job)
+                val filteredJobs = jobs.filter { it.kind == kind }
+                if (filteredJobs.isEmpty()) {
+                    EmptyContent(
+                        title = "No active jobs",
+                        description = "Active ${selectedLevel?.label?.lowercase()} will appear here",
+                        icon = Icons.Rounded.Work,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        items(filteredJobs, key = { it.id }) { job ->
+                            JobsOverviewItem(job = job)
+                        }
+                    }
                 }
             }
         }

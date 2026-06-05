@@ -9,10 +9,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/aurora/badge";
+import { ActionPanel } from "@/components/palette/ActionPanel";
 import { OutputPanel } from "@/components/palette/OutputPanel";
 import { SettingsPanel } from "@/components/palette/SettingsPanel";
 import { Input } from "@/components/ui/aurora/input";
-import { ScrollArea } from "@/components/ui/aurora/scroll-area";
 import { Spinner } from "@/components/ui/aurora/spinner";
 import { StatusIndicator } from "@/components/ui/aurora/status-indicator";
 import {
@@ -30,7 +30,6 @@ import {
 import { formatPayload, outputKindFor } from "@/lib/format";
 import {
   argumentFor,
-  actionArgumentLabel,
   actionHint,
   actionKindLabel,
   actionKindTone,
@@ -41,15 +40,9 @@ import {
   parseCommand,
   validationMessage,
 } from "@/lib/paletteView";
+import { newRequestId, shortcutOptions, type PaletteStreamEvent } from "@/lib/paletteRuntime";
 import type { RunState } from "@/lib/runState";
 
-type PaletteStreamEvent =
-  | { type: "started"; requestId: string; path: string }
-  | { type: "delta"; requestId: string; text: string }
-  | { type: "done"; requestId: string; answer?: string | null }
-  | { type: "error"; requestId: string; message: string };
-
-const shortcutOptions = ["Ctrl+Shift+Space", "Alt+Space", "Ctrl+Space", "Cmd+Shift+Space"] as const;
 const appWindow = getCurrentWindow();
 
 export default function App() {
@@ -439,47 +432,22 @@ export default function App() {
       {showContent && (
       <main className={showResultsLayout ? (showActionPanel ? "palette-grid" : "palette-grid palette-grid-output-only") : "palette-suggestions"}>
         {showActionPanel && (
-        <section className="action-panel">
-          <div className="panel-heading">
-            <span>Actions</span>
-            <span>{validation || `${filtered.length} matches`}</span>
-          </div>
-          <ScrollArea className="action-scroll" viewportClassName="action-scroll-viewport">
-            <div className="action-list">
-              {filtered.map((action, index) => (
-                <button
-                  key={action.subcommand}
-                  className={index === selected ? "action-row action-row-selected" : "action-row"}
-                  onClick={() => {
-                    setSelected(index);
-                    if (parsed.invoked && run.kind !== "running" && run.kind !== "streaming") {
-                      void submit(action);
-                    } else if (acceptsDirectUrl(action) && looksLikeUrl(parsed.search) && run.kind !== "running" && run.kind !== "streaming") {
-                      void submit(action);
-                    } else {
-                      enterActionMode(action);
-                    }
-                  }}
-                >
-                  <span className="action-main">
-                    <span className="action-title-line">
-                      <span className="action-label">{action.label}</span>
-                      <span className="action-kind">{actionKindLabel(action)}</span>
-                    </span>
-                    <span className="action-description">{action.description}</span>
-                  </span>
-                  <span className="action-meta">
-                    <span className="action-input-mode">{actionArgumentLabel(action)}</span>
-                    <kbd>{actionHint(action, parsed.search)}</kbd>
-                    <Badge tone={action.tone} shape="tag">
-                      {action.subcommand}
-                    </Badge>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
-        </section>
+          <ActionPanel
+            actions={filtered}
+            selected={selected}
+            validation={validation}
+            search={parsed.search}
+            onSelect={(action, index) => {
+              setSelected(index);
+              if (parsed.invoked && run.kind !== "running" && run.kind !== "streaming") {
+                void submit(action);
+              } else if (acceptsDirectUrl(action) && looksLikeUrl(parsed.search) && run.kind !== "running" && run.kind !== "streaming") {
+                void submit(action);
+              } else {
+                enterActionMode(action);
+              }
+            }}
+          />
         )}
 
         {showResultsLayout && (
@@ -525,8 +493,4 @@ export default function App() {
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
-}
-
-function newRequestId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
