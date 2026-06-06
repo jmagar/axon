@@ -31,3 +31,30 @@ fn configured_model_uses_openai_model_for_openai_compat_backend() {
     let req = CompletionRequest::new("hello").backend_from_config(&cfg);
     assert_eq!(req.model.as_deref(), Some("gemma-4-e4b"));
 }
+
+#[test]
+fn chat_model_uses_chat_override_for_openai_compat_backend() {
+    let cfg = Config {
+        llm_backend: LlmBackendKind::OpenAiCompat,
+        openai_model: "synthesis-model".to_string(),
+        openai_chat_model: "chat-model".to_string(),
+        ..Config::default()
+    };
+
+    let req = CompletionRequest::new("hello").backend_from_config_for(&cfg, LlmModelPurpose::Chat);
+
+    assert_eq!(req.model.as_deref(), Some("chat-model"));
+}
+
+#[test]
+fn chat_model_falls_back_to_synthesis_model_when_unset() {
+    let cfg = Config {
+        llm_backend: LlmBackendKind::GeminiHeadless,
+        headless_gemini_model: "gemini-synthesis".to_string(),
+        ..Config::default()
+    };
+
+    let req = CompletionRequest::new("hello").backend_from_config_for(&cfg, LlmModelPurpose::Chat);
+
+    assert_eq!(req.model.as_deref(), Some("gemini-synthesis"));
+}

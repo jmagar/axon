@@ -272,8 +272,12 @@ pub struct Config {
     pub qdrant_url: String,
 
     /// Gemini-specific model override for headless LLM synthesis.
-    /// Env: `AXON_HEADLESS_GEMINI_MODEL`.
+    /// Env: `AXON_SYNTHESIS_HEADLESS_GEMINI_MODEL` or legacy `AXON_HEADLESS_GEMINI_MODEL`.
     pub headless_gemini_model: String,
+
+    /// Gemini-specific model override for direct chat.
+    /// Env: `AXON_CHAT_HEADLESS_GEMINI_MODEL`.
+    pub headless_gemini_chat_model: String,
 
     /// LLM completion backend. Env: `AXON_LLM_BACKEND`.
     pub llm_backend: LlmBackendKind,
@@ -299,6 +303,9 @@ pub struct Config {
 
     /// Model name for OpenAI-compatible chat completions. Env: `AXON_OPENAI_MODEL`.
     pub openai_model: String,
+
+    /// Model name for OpenAI-compatible direct chat. Env: `AXON_CHAT_OPENAI_MODEL`.
+    pub openai_chat_model: String,
 
     /// Tavily search API key. Env: `TAVILY_API_KEY`. **Secret.**
     pub tavily_api_key: String,

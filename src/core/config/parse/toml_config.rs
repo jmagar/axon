@@ -15,6 +15,8 @@ pub(super) struct TomlConfig {
     #[serde(default)]
     pub services: TomlServicesSection,
     #[serde(default)]
+    pub llm: TomlLlmSection,
+    #[serde(default)]
     pub search: TomlSearchSection,
     #[serde(default)]
     pub ask: TomlAskSection,
@@ -32,6 +34,19 @@ pub(super) struct TomlConfig {
     pub antibot: TomlAntibotSection,
     #[serde(default)]
     pub payload: TomlPayloadSection,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub(super) struct TomlLlmSection {
+    /// Synthesis model for Gemini headless. Env wins.
+    pub synthesis_gemini_model: Option<String>,
+    /// Direct chat model for Gemini headless. Env wins.
+    pub chat_gemini_model: Option<String>,
+    /// Synthesis model for OpenAI-compatible completions. Env wins.
+    pub synthesis_openai_model: Option<String>,
+    /// Direct chat model for OpenAI-compatible completions. Env wins.
+    pub chat_openai_model: Option<String>,
 }
 
 #[derive(Deserialize, Default)]

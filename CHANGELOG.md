@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-06-06
+
+### Added
+
+- **Android direct Chat mode and shared desktop palette support.** Added direct LLM chat endpoints (`POST /v1/chat`, `POST /v1/chat/stream`) that bypass RAG retrieval and synthesis prompts, wired Android Ask/Chat mode switching, and exposed the same direct chat command in the Rust desktop palette and Tauri palette.
+- **Split synthesis and chat model configuration.** Added `AXON_SYNTHESIS_OPENAI_MODEL`, `AXON_CHAT_OPENAI_MODEL`, `AXON_SYNTHESIS_HEADLESS_GEMINI_MODEL`, and `AXON_CHAT_HEADLESS_GEMINI_MODEL`, plus `[llm]` `config.toml` model fields. Legacy `AXON_OPENAI_MODEL` and `AXON_HEADLESS_GEMINI_MODEL` remain synthesis aliases.
+
+### Changed
+
+- **Android mock-alignment and operation surfaces continue moving to live production data.** The Android app now parses action and job output into human-readable UI surfaces, exposes expanded settings for `.env` and `config.toml`, and moves rail/sidebar data into dedicated app screens.
+
 ## [5.0.1] - 2026-06-04
 
 ### Fixed

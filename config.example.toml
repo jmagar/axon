@@ -25,6 +25,23 @@
 # Put QDRANT_URL, TEI_URL, and AXON_CHROME_REMOTE_URL
 # in ~/.axon/.env. QDRANT_URL and TEI_URL also have temporary CLI overrides.
 
+[llm]
+# Non-secret model names can be set here. Env vars still win.
+# Existing AXON_OPENAI_MODEL and AXON_HEADLESS_GEMINI_MODEL are treated as
+# synthesis-model aliases for backwards compatibility.
+#
+# Env: AXON_SYNTHESIS_OPENAI_MODEL or AXON_OPENAI_MODEL
+# synthesis-openai-model = ""
+#
+# Env: AXON_CHAT_OPENAI_MODEL
+# chat-openai-model = ""
+#
+# Env: AXON_SYNTHESIS_HEADLESS_GEMINI_MODEL or AXON_HEADLESS_GEMINI_MODEL
+# synthesis-gemini-model = ""
+#
+# Env: AXON_CHAT_HEADLESS_GEMINI_MODEL
+# chat-gemini-model = ""
+
 [search]
 # Enable RRF hybrid search (requires a named-mode Qdrant collection).
 # Disable if your collection is legacy unnamed-mode.

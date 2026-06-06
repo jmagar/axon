@@ -7,7 +7,8 @@ pub mod types;
 
 pub use types::{
     CompletionRequest, CompletionResponse, CompletionRunner, CompletionTurnResult,
-    LlmBackendConfig, LlmBackendKind, UsageSnapshot, configured_model_from_config,
+    LlmBackendConfig, LlmBackendKind, LlmModelPurpose, UsageSnapshot,
+    configured_chat_model_from_config, configured_model_for_config, configured_model_from_config,
     extract_completion_result, normalize_stream_flag,
 };
 

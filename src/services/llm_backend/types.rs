@@ -4,6 +4,12 @@ use std::path::PathBuf;
 use crate::core::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmModelPurpose {
+    Synthesis,
+    Chat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmBackendKind {
     GeminiHeadless,
     OpenAiCompat,
@@ -75,9 +81,27 @@ impl LlmBackendConfig {
 
 #[must_use]
 pub fn configured_model_from_config(cfg: &Config) -> Option<String> {
+    configured_model_for_config(cfg, LlmModelPurpose::Synthesis)
+}
+
+#[must_use]
+pub fn configured_chat_model_from_config(cfg: &Config) -> Option<String> {
+    configured_model_for_config(cfg, LlmModelPurpose::Chat)
+}
+
+#[must_use]
+pub fn configured_model_for_config(cfg: &Config, purpose: LlmModelPurpose) -> Option<String> {
     match cfg.llm_backend {
-        LlmBackendKind::GeminiHeadless => non_empty(cfg.headless_gemini_model.clone()),
-        LlmBackendKind::OpenAiCompat => non_empty(cfg.openai_model.clone()),
+        LlmBackendKind::GeminiHeadless => match purpose {
+            LlmModelPurpose::Synthesis => non_empty(cfg.headless_gemini_model.clone()),
+            LlmModelPurpose::Chat => non_empty(cfg.headless_gemini_chat_model.clone())
+                .or_else(|| non_empty(cfg.headless_gemini_model.clone())),
+        },
+        LlmBackendKind::OpenAiCompat => match purpose {
+            LlmModelPurpose::Synthesis => non_empty(cfg.openai_model.clone()),
+            LlmModelPurpose::Chat => non_empty(cfg.openai_chat_model.clone())
+                .or_else(|| non_empty(cfg.openai_model.clone())),
+        },
     }
 }
 
@@ -125,6 +149,15 @@ impl CompletionRequest {
         self.backend = LlmBackendConfig::from_config(cfg);
         if self.model.is_none() {
             self.model = configured_model_from_config(cfg);
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn backend_from_config_for(mut self, cfg: &Config, purpose: LlmModelPurpose) -> Self {
+        self.backend = LlmBackendConfig::from_config(cfg);
+        if self.model.is_none() {
+            self.model = configured_model_for_config(cfg, purpose);
         }
         self
     }
