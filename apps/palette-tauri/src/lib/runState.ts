@@ -3,7 +3,7 @@ import type { OutputKind } from "@/lib/format";
 
 export type RunState =
   | { kind: "idle" }
-  | { kind: "running"; title: string; subtitle: string }
+  | { kind: "running"; title: string; subtitle: string; prompt?: string }
   | {
       kind: "streaming";
       title: string;
@@ -11,6 +11,7 @@ export type RunState =
       text: string;
       outputKind: OutputKind;
       requestId: string;
+      prompt?: string;
     }
   | {
       kind: "success" | "error";
@@ -19,4 +20,5 @@ export type RunState =
       text: string;
       outputKind: OutputKind;
       result: PaletteResult;
+      prompt?: string;
     };
