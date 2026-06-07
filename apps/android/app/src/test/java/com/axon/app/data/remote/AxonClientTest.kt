@@ -195,6 +195,40 @@ class AxonClientTest {
         assertEquals(0, server.requestCount)
     }
 
+    @Test
+    fun `savePanelEnv fails locally when panel token is unset`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"ok":true,"message":"saved","restart_required":true}""")
+                .addHeader("Content-Type", "application/json"),
+        )
+
+        val result = client.savePanelEnv("GITHUB_TOKEN=secret\n")
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Panel unlock required"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `savePanelEnv sends stored panel token header`() = runBlocking {
+        client.updatePanelToken("panel-token")
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"ok":true,"message":"saved","restart_required":true}""")
+                .addHeader("Content-Type", "application/json"),
+        )
+
+        val result = client.savePanelEnv("GITHUB_TOKEN=secret\n")
+
+        assertTrue(result.isSuccess)
+        val req = server.takeRequest()
+        assertEquals("/api/panel/env", req.path)
+        assertEquals("PUT", req.method)
+        assertEquals("Bearer panel-token", req.getHeader("Authorization"))
+        assertEquals("panel-token", req.getHeader("x-axon-panel-token"))
+    }
+
     // ── Non-2xx HTTP status ───────────────────────────────────────────────────
 
     @Test

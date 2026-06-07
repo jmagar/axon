@@ -126,6 +126,33 @@ class SettingsSecurityHelpersTest {
         assertTrue(redacted.contains("QDRANT_URL=http://qdrant:6333"))
         assertFalse(redacted.contains("should_not_be_in_raw_state"))
     }
+
+    @Test fun `redacted secret placeholders are not dirty save candidates`() {
+        val values = mapOf(
+            "GITHUB_TOKEN" to REDACTED_SECRET_VALUE,
+            "QDRANT_URL" to "http://qdrant:6333",
+        )
+
+        val dirty = dirtyKeysForSecretSafeSave(
+            values = values,
+            dirtyKeys = setOf("GITHUB_TOKEN", "QDRANT_URL"),
+            secretKeys = AxonSettingsCatalog.envSecretKeys,
+        )
+
+        assertEquals(setOf("QDRANT_URL"), dirty)
+    }
+
+    @Test fun `changed secret values remain dirty save candidates`() {
+        val values = mapOf("GITHUB_TOKEN" to "ghp_replacement")
+
+        val dirty = dirtyKeysForSecretSafeSave(
+            values = values,
+            dirtyKeys = setOf("GITHUB_TOKEN"),
+            secretKeys = AxonSettingsCatalog.envSecretKeys,
+        )
+
+        assertEquals(setOf("GITHUB_TOKEN"), dirty)
+    }
 }
 
 private class TestSettingsViewModel(

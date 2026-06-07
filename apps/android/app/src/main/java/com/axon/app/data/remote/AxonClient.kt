@@ -425,10 +425,14 @@ class AxonClient(
 
     private inline fun <reified B, reified R> postWith(client: OkHttpClient, path: String, body: B): Result<R> {
         val bodyBytes = json.encodeToString(body).toRequestBody(JSON_MEDIA_TYPE)
-        val builder = if (path.startsWith("/api/panel/login")) {
-            Request.Builder().url("${baseUrl()}$path").post(bodyBytes)
-        } else {
-            authRequest(Request.Builder().url("${baseUrl()}$path").post(bodyBytes))
+        val request = Request.Builder().url("${baseUrl()}$path").post(bodyBytes)
+        val builder = when {
+            path == "/api/panel/login" -> request
+            path.startsWith("/api/panel/") -> {
+                val token = requirePanelToken(panelToken.get()).getOrElse { return Result.failure(it) }
+                panelAuthRequest(request, token)
+            }
+            else -> authRequest(request)
         }
         return execute(client, builder)
     }

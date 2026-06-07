@@ -52,6 +52,8 @@ requests are blocked locally until a non-blank panel token has been stored from
 `/api/panel/login`; the normal API bearer token is not reused for panel routes.
 Settings file values are redacted before they enter UI state. Private raw file
 text is retained only inside `SettingsViewModel` for patching unchanged saves.
+Dirty redacted placeholders are filtered out before saves, so an unchanged
+masked secret is not written back over the real server value.
 
 ## FAB And Jobs Behavior
 

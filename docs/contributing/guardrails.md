@@ -50,6 +50,9 @@ Rules:
 - Mobile clients must require an explicit panel-token unlock for `/api/panel/*`.
   Do not fall back to `AXON_MCP_HTTP_TOKEN` or OAuth tokens for panel config
   routes on the client.
+- Mobile settings UIs must not write a masked placeholder back to disk as a
+  secret value. Preserve the raw server text privately and patch only genuinely
+  changed secret fields.
 
 ## MCP OAuth
 

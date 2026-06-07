@@ -43,6 +43,15 @@ internal fun redactConfigValuesForUi(
         if (key in secretKeys && value.isNotBlank()) REDACTED_SECRET_VALUE else value
     }
 
+internal fun dirtyKeysForSecretSafeSave(
+    values: Map<String, String>,
+    dirtyKeys: Set<String>,
+    secretKeys: Set<String>,
+): Set<String> =
+    dirtyKeys.filterNot { key ->
+        key in secretKeys && values[key] == REDACTED_SECRET_VALUE
+    }.toSet()
+
 data class ConfigFileUiState(
     val envValues: Map<String, String> = AxonSettingsCatalog.envDefaults,
     val configValues: Map<String, String> = AxonSettingsCatalog.configDefaults,
@@ -217,7 +226,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             _saveState.value = SaveState.Saving
             runCatching {
                 val current = configFilesReadyForSave()
-                val rawEnv = patchEnvText(serverRawEnv.ifBlank { current.rawEnv }, current.envValues, current.envDirty)
+                val dirtyKeys = dirtyKeysForSecretSafeSave(
+                    current.envValues,
+                    current.envDirty,
+                    AxonSettingsCatalog.envSecretKeys,
+                )
+                val rawEnv = patchEnvText(serverRawEnv.ifBlank { current.rawEnv }, current.envValues, dirtyKeys)
                 val envSave = container.axonClient.savePanelEnv(rawEnv)
                 if (!envSave.isSuccess) {
                     throw envSave.exceptionOrNull()
@@ -247,7 +261,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             _saveState.value = SaveState.Saving
             runCatching {
                 val current = configFilesReadyForSave()
-                val rawToml = patchConfigTomlText(serverRawConfig.ifBlank { current.rawConfig }, current.configValues, current.configDirty)
+                val dirtyKeys = dirtyKeysForSecretSafeSave(
+                    current.configValues,
+                    current.configDirty,
+                    AxonSettingsCatalog.configSecretKeys,
+                )
+                val rawToml = patchConfigTomlText(serverRawConfig.ifBlank { current.rawConfig }, current.configValues, dirtyKeys)
                 val configSave = container.axonClient.savePanelConfig(rawToml)
                 if (!configSave.isSuccess) {
                     throw configSave.exceptionOrNull()
