@@ -74,6 +74,55 @@ async fn openai_compat_streams_sse_deltas() {
     assert_eq!(response.text, "hello");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn openai_compat_streams_sse_with_finish_reason_terminal() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .json_body_includes(r#"{"model":"gemma-4-e4b","stream":true}"#);
+        then.status(200)
+            .header("content-type", "text/event-stream")
+            .body("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
+    });
+
+    let mut req = CompletionRequest::new("hello");
+    req.backend = backend(&server, None);
+    req.stream = true;
+
+    let response = complete_streaming(req, |_| Ok(()))
+        .await
+        .expect("finish_reason should terminate stream");
+
+    mock.assert();
+    assert_eq!(response.text, "hello");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn openai_compat_rejects_partial_sse_without_terminal_marker() {
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/chat/completions")
+            .json_body_includes(r#"{"model":"gemma-4-e4b","stream":true}"#);
+        then.status(200)
+            .header("content-type", "text/event-stream")
+            .body("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n");
+    });
+
+    let mut req = CompletionRequest::new("hello");
+    req.backend = backend(&server, None);
+    req.stream = true;
+
+    let err = complete_streaming(req, |_| Ok(()))
+        .await
+        .expect_err("partial stream should be rejected")
+        .to_string();
+
+    mock.assert();
+    assert!(err.contains("ended before terminal marker"));
+}
+
 #[test]
 fn openai_compat_rejects_chat_completions_suffix() {
     let config = LlmBackendConfig {
@@ -151,4 +200,32 @@ fn openai_compat_json_error_truncates_on_utf8_boundary() {
 
     assert!(sanitized.ends_with("...[truncated]"));
     assert!(sanitized.is_char_boundary(512));
+}
+
+#[test]
+fn openai_compat_json_error_preserves_provider_message_but_redacts_request_echoes() {
+    let body = serde_json::json!({
+        "error": {
+            "message": "model not found",
+            "type": "invalid_request_error"
+        },
+        "messages": [
+            {"role": "user", "content": "private prompt"}
+        ],
+        "authorization": "Bearer sk-live-secret",
+        "detail": "upstream mentioned token=abc123 and sk-live-abcdefghijklmnopqrstuvwxyz"
+    })
+    .to_string();
+
+    let sanitized = sanitize_openai_error_body(&body);
+
+    assert!(
+        sanitized.contains("model not found"),
+        "provider diagnostic should be preserved: {sanitized}"
+    );
+    assert!(!sanitized.contains("private prompt"));
+    assert!(!sanitized.contains("sk-live-secret"));
+    assert!(!sanitized.contains("token=abc123"));
+    assert!(!sanitized.contains("sk-live-abcdefghijklmnopqrstuvwxyz"));
+    assert!(sanitized.contains("[redacted]"));
 }

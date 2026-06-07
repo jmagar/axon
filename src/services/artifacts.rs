@@ -12,6 +12,7 @@ pub enum ArtifactWriteError {
     RootNotDirectory(PathBuf),
     MissingParent(PathBuf),
     EscapedRoot(PathBuf),
+    SymlinkComponent(PathBuf),
     Io {
         operation: &'static str,
         path: PathBuf,
@@ -41,6 +42,9 @@ impl fmt::Display for ArtifactWriteError {
             }
             Self::EscapedRoot(path) => {
                 write!(f, "artifact path escaped output root: {}", path.display())
+            }
+            Self::SymlinkComponent(path) => {
+                write!(f, "artifact path contains symlink: {}", path.display())
             }
             Self::Io {
                 operation,
@@ -160,9 +164,7 @@ pub async fn atomic_write_under(
     let parent = final_path
         .parent()
         .ok_or_else(|| ArtifactWriteError::MissingParent(final_path.clone()))?;
-    tokio::fs::create_dir_all(parent)
-        .await
-        .map_err(|err| ArtifactWriteError::io("create parent directory", parent, err))?;
+    create_parent_dirs_under_root(root, relative).await?;
     let canonical_parent = tokio::fs::canonicalize(parent)
         .await
         .map_err(|err| ArtifactWriteError::io("canonicalize parent", parent, err))?;
@@ -189,9 +191,13 @@ pub async fn atomic_write_under(
         tokio::fs::rename(&tmp_path, &final_path)
             .await
             .map_err(|err| ArtifactWriteError::io("rename temp file", &final_path, err))?;
-        if let Ok(parent_dir) = tokio::fs::File::open(parent).await {
-            let _ = parent_dir.sync_all().await;
-        }
+        let parent_dir = tokio::fs::File::open(parent)
+            .await
+            .map_err(|err| ArtifactWriteError::io("open parent directory", parent, err))?;
+        parent_dir
+            .sync_all()
+            .await
+            .map_err(|err| ArtifactWriteError::io("sync parent directory", parent, err))?;
         Ok::<(), ArtifactWriteError>(())
     }
     .await;
@@ -202,6 +208,125 @@ pub async fn atomic_write_under(
     }
 
     Ok(final_path)
+}
+
+pub async fn atomic_write_explicit(
+    path: impl AsRef<Path>,
+    bytes: &[u8],
+) -> Result<PathBuf, ArtifactWriteError> {
+    let path = path.as_ref();
+    let parent = path
+        .parent()
+        .ok_or_else(|| ArtifactWriteError::MissingParent(path.to_path_buf()))?;
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|err| ArtifactWriteError::io("create parent directory", parent, err))?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("artifact");
+    let tmp_path = parent.join(format!(
+        ".{file_name}.tmp-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ));
+    let write_result = async {
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .map_err(|err| ArtifactWriteError::io("create temp file", &tmp_path, err))?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, bytes)
+            .await
+            .map_err(|err| ArtifactWriteError::io("write temp file", &tmp_path, err))?;
+        file.sync_all()
+            .await
+            .map_err(|err| ArtifactWriteError::io("sync temp file", &tmp_path, err))?;
+        tokio::fs::rename(&tmp_path, path)
+            .await
+            .map_err(|err| ArtifactWriteError::io("rename temp file", path, err))?;
+        let parent_dir = tokio::fs::File::open(parent)
+            .await
+            .map_err(|err| ArtifactWriteError::io("open parent directory", parent, err))?;
+        parent_dir
+            .sync_all()
+            .await
+            .map_err(|err| ArtifactWriteError::io("sync parent directory", parent, err))?;
+        Ok::<(), ArtifactWriteError>(())
+    }
+    .await;
+
+    if let Err(err) = write_result {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(err);
+    }
+
+    Ok(path.to_path_buf())
+}
+
+pub async fn write_configured_output(
+    output_dir: impl AsRef<Path>,
+    output_path: Option<&Path>,
+    default_relative_path: impl AsRef<Path>,
+    bytes: &[u8],
+) -> Result<PathBuf, ArtifactWriteError> {
+    match output_path {
+        Some(path) => atomic_write_explicit(path, bytes).await,
+        None => atomic_write_under(output_dir, default_relative_path, bytes).await,
+    }
+}
+
+pub async fn write_managed_output(
+    output_dir: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    bytes: &[u8],
+) -> Result<PathBuf, ArtifactWriteError> {
+    let output_dir = output_dir.as_ref();
+    let output_path = output_path.as_ref();
+    let relative_path = output_path
+        .strip_prefix(output_dir)
+        .map_err(|_| ArtifactWriteError::EscapedRoot(output_path.to_path_buf()))?;
+    atomic_write_under(output_dir, relative_path, bytes).await
+}
+
+async fn create_parent_dirs_under_root(
+    root: &Path,
+    relative_path: &Path,
+) -> Result<(), ArtifactWriteError> {
+    let Some(parent_relative) = relative_path.parent() else {
+        return Ok(());
+    };
+    let mut current = root.to_path_buf();
+    for component in parent_relative.components() {
+        let Component::Normal(segment) = component else {
+            return Err(ArtifactWriteError::Validation(format!(
+                "unsafe artifact relative_path: {}",
+                relative_path.display()
+            )));
+        };
+        current.push(segment);
+        match tokio::fs::symlink_metadata(&current).await {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(ArtifactWriteError::SymlinkComponent(current));
+                }
+                if !meta.is_dir() {
+                    return Err(ArtifactWriteError::RootNotDirectory(current));
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                tokio::fs::create_dir(&current).await.map_err(|err| {
+                    ArtifactWriteError::io("create parent directory", &current, err)
+                })?;
+            }
+            Err(err) => {
+                return Err(ArtifactWriteError::io(
+                    "read parent directory metadata",
+                    &current,
+                    err,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn artifact_id(kind: ArtifactKind, relative_path: &str, content_hash: &str) -> String {

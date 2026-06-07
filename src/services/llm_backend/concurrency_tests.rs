@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn completion_concurrency_defaults_to_four() {
@@ -20,36 +21,27 @@ fn completion_concurrency_clamps_to_semaphore_max() {
 }
 
 #[tokio::test]
-async fn completion_limiter_is_keyed_by_backend_and_limit() {
+async fn completion_limiter_is_keyed_by_backend_identity_only() {
+    reset_completion_limiters_for_tests();
+
     let first = acquire_completion_permit_for_key("openai:http://one", 1)
         .await
         .expect("first permit");
 
-    let second_same_key = tokio::time::timeout(
-        std::time::Duration::from_millis(250),
-        acquire_completion_permit_for_key("openai:http://one", 1),
-    )
-    .await;
-    assert!(
-        second_same_key.is_err(),
-        "same key and limit should share the saturated one-permit limiter"
+    assert_eq!(
+        available_permits_for_key("openai:http://one"),
+        Some(0),
+        "first permit should saturate the one-permit limiter"
     );
 
-    let second_different_limit = tokio::time::timeout(
-        std::time::Duration::from_millis(250),
-        acquire_completion_permit_for_key("openai:http://one", 2),
-    )
-    .await;
+    let same_key_limit_one = completion_semaphore_for_key_for_tests("openai:http://one", 1);
+    let same_key_limit_two = completion_semaphore_for_key_for_tests("openai:http://one", 2);
     assert!(
-        second_different_limit.is_ok(),
-        "different limit should use a different limiter instead of first request winning"
+        Arc::ptr_eq(&same_key_limit_one, &same_key_limit_two),
+        "changing the limit must not create a bypass bucket for the same backend",
     );
 
-    let second_different_backend = tokio::time::timeout(
-        std::time::Duration::from_millis(250),
-        acquire_completion_permit_for_key("gemini:default", 1),
-    )
-    .await;
+    let second_different_backend = acquire_completion_permit_for_key("gemini:default", 1).await;
     assert!(
         second_different_backend.is_ok(),
         "different backend key should use an independent limiter"

@@ -9,6 +9,7 @@ use crate::core::logging::log_done;
 use crate::jobs::backend::{JobKind, JobPayload};
 use crate::jobs::config_snapshot::extract_config_json;
 use crate::jobs::extract::start_extract_job;
+use crate::services::artifacts::write_configured_output;
 use crate::services::context::ServiceContext;
 use crate::services::events::{LogLevel, ServiceEvent, emit};
 use crate::services::jobs as job_service;
@@ -346,22 +347,17 @@ async fn write_extract_summary(
         .output_path
         .clone()
         .unwrap_or_else(|| cfg.output_dir.join("extract-summary.json"));
-    let relative_path =
-        summary_path
-            .strip_prefix(&cfg.output_dir)
-            .map_err(|_| -> Box<dyn Error> {
-                format!(
-                    "extract summary path escaped output root: {}",
-                    summary_path.display()
-                )
-                .into()
-            })?;
-    crate::services::artifacts::atomic_write_under(
+    write_configured_output(
         &cfg.output_dir,
-        relative_path,
+        cfg.output_path.as_deref(),
+        "extract-summary.json",
         serde_json::to_string_pretty(summary)?.as_bytes(),
     )
     .await
     .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
     Ok(summary_path)
 }
+
+#[cfg(test)]
+#[path = "extract_tests.rs"]
+mod tests;

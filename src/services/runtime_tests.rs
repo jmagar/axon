@@ -1,5 +1,5 @@
 use super::*;
-use crate::jobs::backend::JobPayload;
+use crate::jobs::backend::{JobBackend, JobKind, JobPayload};
 use crate::jobs::ops::{enqueue_job, mark_completed, mark_failed};
 use crate::jobs::store::open_sqlite_pool;
 use sqlx::SqlitePool;
@@ -231,6 +231,35 @@ async fn sqlite_runtime_exposes_backend_pool_for_shared_watch_callers() {
     assert!(
         Arc::ptr_eq(&shared_pool, &expected_pool),
         "runtime must expose the backend pool instead of opening a second pool"
+    );
+}
+
+#[tokio::test]
+async fn sqlite_runtime_rejects_negative_job_pagination() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut cfg = Config::test_default();
+    cfg.sqlite_path = tmp.path().join("jobs.db");
+    let cfg = Arc::new(cfg);
+    let backend = SqliteJobBackend::new(Arc::clone(&cfg))
+        .await
+        .expect("backend");
+    let runtime = SqliteServiceRuntime {
+        cfg,
+        backend: Arc::new(backend),
+    };
+
+    let limit_err = ServiceJobRuntime::list_jobs(&runtime, JobKind::Crawl, -1, 0)
+        .await
+        .expect_err("negative limit should be rejected");
+    assert!(limit_err.to_string().contains("limit must be non-negative"));
+
+    let offset_err = ServiceJobRuntime::list_jobs(&runtime, JobKind::Crawl, 10, -1)
+        .await
+        .expect_err("negative offset should be rejected");
+    assert!(
+        offset_err
+            .to_string()
+            .contains("offset must be non-negative")
     );
 }
 

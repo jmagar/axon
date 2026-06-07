@@ -49,25 +49,16 @@ where
 }
 
 fn completion_limiter_key(req: &CompletionRequest) -> String {
-    let request_model = req
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
     match req.backend.kind {
         LlmBackendKind::GeminiHeadless => format!(
             "gemini:{}:{}",
             req.backend.gemini_cmd,
-            request_model
-                .or(req.backend.gemini_model.as_deref())
-                .unwrap_or_default()
+            req.backend.gemini_model.as_deref().unwrap_or_default()
         ),
         LlmBackendKind::OpenAiCompat => format!(
             "openai:{}:{}",
             req.backend.openai_base_url.as_deref().unwrap_or_default(),
-            request_model
-                .or(req.backend.openai_model.as_deref())
-                .unwrap_or_default()
+            req.backend.openai_model.as_deref().unwrap_or_default()
         ),
     }
 }
@@ -112,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn limiter_key_uses_request_model_override() {
+    fn limiter_key_uses_configured_backend_model_not_request_override() {
         let backend = LlmBackendConfig {
             kind: LlmBackendKind::OpenAiCompat,
             openai_base_url: Some("http://127.0.0.1:8080/v1".to_string()),
@@ -125,7 +116,7 @@ mod tests {
 
         assert_eq!(
             completion_limiter_key(&req),
-            "openai:http://127.0.0.1:8080/v1:override-model"
+            "openai:http://127.0.0.1:8080/v1:default-model"
         );
     }
 

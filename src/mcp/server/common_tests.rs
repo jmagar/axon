@@ -1,6 +1,4 @@
-use super::{
-    validate_mcp_collection, validate_mcp_embed_input, validate_mcp_embed_input_with_config,
-};
+use super::{validate_mcp_collection, validate_mcp_embed_input_with_config};
 use crate::core::config::Config;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -34,12 +32,13 @@ fn mcp_collection_validation_rejects_path_and_query_chars() {
 
 #[test]
 fn mcp_embed_accepts_url_and_text_without_local_roots() {
+    let cfg = embed_cfg(vec![], 10 * 1024 * 1024);
     assert_eq!(
-        validate_mcp_embed_input("https://example.com/docs").unwrap(),
+        validate_mcp_embed_input_with_config(&cfg, "https://example.com/docs").unwrap(),
         "https://example.com/docs"
     );
     assert_eq!(
-        validate_mcp_embed_input("plain text to embed").unwrap(),
+        validate_mcp_embed_input_with_config(&cfg, "plain text to embed").unwrap(),
         "plain text to embed"
     );
 }

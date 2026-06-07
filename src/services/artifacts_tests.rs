@@ -1,4 +1,7 @@
-use super::artifacts::{ArtifactHandle, ArtifactKind, atomic_write_under};
+use super::artifacts::{
+    ArtifactHandle, ArtifactKind, atomic_write_explicit, atomic_write_under,
+    write_configured_output, write_managed_output,
+};
 use uuid::Uuid;
 
 #[test]
@@ -103,6 +106,84 @@ async fn atomic_write_under_rejects_symlinked_parent_escape() {
         .await
         .expect_err("symlinked parent must not escape root");
 
-    assert!(err.to_string().contains("escaped output root"));
+    assert!(err.to_string().contains("symlink"));
     assert!(!outside.path().join("escape.txt").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn atomic_write_under_rejects_symlinked_parent_before_creating_missing_children() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempfile::TempDir::new().expect("root");
+    let outside = tempfile::TempDir::new().expect("outside");
+    symlink(outside.path(), root.path().join("redirect")).expect("symlink");
+
+    let err = atomic_write_under(root.path(), "redirect/newdir/escape.txt", b"secret")
+        .await
+        .expect_err("symlinked parent must be rejected before create_dir");
+
+    assert!(err.to_string().contains("symlink"));
+    assert!(
+        !outside.path().join("newdir").exists(),
+        "writer must not create directories through a symlink before rejection"
+    );
+}
+
+#[tokio::test]
+async fn write_configured_output_preserves_explicit_path_outside_output_dir() {
+    let output_root = tempfile::TempDir::new().expect("output root");
+    let explicit_root = tempfile::TempDir::new().expect("explicit root");
+    let explicit = explicit_root.path().join("shot.png");
+
+    let path = write_configured_output(
+        output_root.path(),
+        Some(&explicit),
+        "screenshots/shot.png",
+        b"png",
+    )
+    .await
+    .expect("explicit write");
+
+    assert_eq!(path, explicit);
+    assert_eq!(std::fs::read(explicit).expect("read explicit"), b"png");
+    assert!(!output_root.path().join("screenshots/shot.png").exists());
+}
+
+#[tokio::test]
+async fn write_managed_output_keeps_path_under_output_root() {
+    let output_root = tempfile::TempDir::new().expect("output root");
+    let managed = output_root.path().join("screenshots/shot.png");
+
+    let path = write_managed_output(output_root.path(), &managed, b"png")
+        .await
+        .expect("managed write");
+
+    assert_eq!(path, managed);
+    assert_eq!(std::fs::read(managed).expect("read managed"), b"png");
+}
+
+#[tokio::test]
+async fn write_managed_output_rejects_path_outside_output_root() {
+    let output_root = tempfile::TempDir::new().expect("output root");
+    let outside = tempfile::TempDir::new().expect("outside");
+
+    let err = write_managed_output(output_root.path(), outside.path().join("shot.png"), b"png")
+        .await
+        .expect_err("outside managed path must be rejected");
+
+    assert!(err.to_string().contains("escaped output root"));
+}
+
+#[tokio::test]
+async fn atomic_write_explicit_writes_outside_managed_root() {
+    let temp = tempfile::TempDir::new().expect("tempdir");
+    let path = temp.path().join("explicit.txt");
+
+    let written = atomic_write_explicit(&path, b"content")
+        .await
+        .expect("explicit write");
+
+    assert_eq!(written, path);
+    assert_eq!(std::fs::read(path).expect("read explicit"), b"content");
 }

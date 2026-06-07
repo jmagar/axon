@@ -111,23 +111,29 @@ async fn send_chat_completion(
 
 async fn format_openai_error(response: reqwest::Response) -> String {
     let status = response.status();
-    let text = read_bounded_error_body(response).await;
-    let safe_text = sanitize_openai_error_body(&text);
-    if safe_text.trim().is_empty() {
-        format!("OpenAI-compatible completion failed with HTTP {status}")
-    } else {
-        format!("OpenAI-compatible completion failed with HTTP {status}: {safe_text}")
+    match read_bounded_error_body(response).await {
+        Ok(text) => {
+            let safe_text = sanitize_openai_error_body(&text);
+            if safe_text.trim().is_empty() {
+                format!("OpenAI-compatible completion failed with HTTP {status}")
+            } else {
+                format!("OpenAI-compatible completion failed with HTTP {status}: {safe_text}")
+            }
+        }
+        Err(err) => format!(
+            "OpenAI-compatible completion failed with HTTP {status}; failed reading error body: {err}"
+        ),
     }
 }
 
-async fn read_bounded_error_body(response: reqwest::Response) -> String {
+async fn read_bounded_error_body(
+    response: reqwest::Response,
+) -> Result<String, Box<dyn StdError + Send + Sync>> {
     const READ_LIMIT: usize = 4096;
     let mut collected = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let Ok(chunk) = chunk else {
-            break;
-        };
+        let chunk = chunk?;
         let remaining = READ_LIMIT.saturating_sub(collected.len());
         if remaining == 0 {
             break;
@@ -138,7 +144,7 @@ async fn read_bounded_error_body(response: reqwest::Response) -> String {
             break;
         }
     }
-    String::from_utf8_lossy(&collected).into_owned()
+    Ok(String::from_utf8_lossy(&collected).into_owned())
 }
 
 fn sanitize_openai_error_body(text: &str) -> String {
@@ -178,13 +184,7 @@ fn sanitize_error_json(value: &serde_json::Value) -> serde_json::Value {
             map.iter()
                 .map(|(key, value)| {
                     let lower = key.to_ascii_lowercase();
-                    if lower.contains("key")
-                        || lower.contains("token")
-                        || lower.contains("secret")
-                        || lower.contains("prompt")
-                        || lower.contains("message")
-                        || lower.contains("input")
-                    {
+                    if is_sensitive_error_key(&lower) || is_request_echo_key(&lower) {
                         (
                             key.clone(),
                             serde_json::Value::String("[redacted]".to_string()),
@@ -203,6 +203,29 @@ fn sanitize_error_json(value: &serde_json::Value) -> serde_json::Value {
         }
         value => value.clone(),
     }
+}
+
+fn is_sensitive_error_key(lower_key: &str) -> bool {
+    lower_key == "api_key"
+        || lower_key == "apikey"
+        || lower_key == "authorization"
+        || lower_key == "proxy_authorization"
+        || lower_key == "access_token"
+        || lower_key == "refresh_token"
+        || lower_key == "id_token"
+        || lower_key == "token"
+        || lower_key.ends_with("_token")
+        || lower_key.contains("secret")
+        || lower_key == "password"
+}
+
+fn is_request_echo_key(lower_key: &str) -> bool {
+    lower_key == "prompt"
+        || lower_key == "input"
+        || lower_key == "inputs"
+        || lower_key == "messages"
+        || lower_key == "request"
+        || lower_key == "request_body"
 }
 
 fn redact_secret_like_tokens(text: &str) -> String {
@@ -276,6 +299,7 @@ struct StreamChunk {
 #[derive(Deserialize)]
 struct StreamChoice {
     delta: Option<StreamDelta>,
+    finish_reason: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -295,6 +319,7 @@ where
     }
     let mut text = String::new();
     let mut pending = String::new();
+    let mut terminal = false;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
@@ -302,14 +327,17 @@ where
         while let Some(pos) = pending.find('\n') {
             let line = pending[..pos].trim_end_matches('\r').to_string();
             pending.drain(..=pos);
-            handle_sse_line(&line, &mut text, on_delta)?;
+            terminal |= handle_sse_line(&line, &mut text, on_delta)?;
         }
     }
     if !pending.trim().is_empty() {
-        handle_sse_line(pending.trim_end_matches('\r'), &mut text, on_delta)?;
+        terminal |= handle_sse_line(pending.trim_end_matches('\r'), &mut text, on_delta)?;
     }
     if text.trim().is_empty() {
         return Err("OpenAI-compatible streaming completion returned no token payload".into());
+    }
+    if !terminal {
+        return Err("OpenAI-compatible streaming completion ended before terminal marker".into());
     }
     Ok(CompletionResponse { text, usage: None })
 }
@@ -318,18 +346,29 @@ fn handle_sse_line<F>(
     line: &str,
     text: &mut String,
     on_delta: &mut F,
-) -> Result<(), Box<dyn StdError + Send + Sync>>
+) -> Result<bool, Box<dyn StdError + Send + Sync>>
 where
     F: FnMut(&str) -> Result<(), Box<dyn StdError + Send + Sync>> + Send,
 {
     let Some(data) = line.strip_prefix("data:").map(str::trim) else {
-        return Ok(());
+        return Ok(false);
     };
-    if data.is_empty() || data == "[DONE]" {
-        return Ok(());
+    if data.is_empty() {
+        return Ok(false);
+    }
+    if data == "[DONE]" {
+        return Ok(true);
     }
     let parsed: StreamChunk = serde_json::from_str(data)?;
+    let mut terminal = false;
     for choice in parsed.choices {
+        if choice
+            .finish_reason
+            .as_ref()
+            .is_some_and(|reason| !reason.is_null())
+        {
+            terminal = true;
+        }
         if let Some(delta) = choice.delta.and_then(|delta| delta.content)
             && !delta.is_empty()
         {
@@ -337,5 +376,5 @@ where
             on_delta(&delta)?;
         }
     }
-    Ok(())
+    Ok(terminal)
 }

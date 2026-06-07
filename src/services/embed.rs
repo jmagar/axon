@@ -170,10 +170,6 @@ pub async fn embed_now_with_source(
 /// live under `AXON_MCP_EMBED_ALLOWED_ROOTS`; paths with dotfiles, secret-like
 /// names, oversized files, or symlinks anywhere below a submitted directory are
 /// rejected before an embed job can enqueue.
-pub fn validate_server_embed_input(input: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
-    validate_server_embed_input_with_config(&Config::default(), input)
-}
-
 pub fn validate_server_embed_input_with_config(
     cfg: &Config,
     input: &str,

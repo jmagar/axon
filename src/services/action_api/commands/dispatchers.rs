@@ -382,17 +382,9 @@ pub async fn dispatch_scrape(
         .await
         .map_err(internal_error)?;
     if let Some(path) = cfg.output_path.as_ref() {
-        let relative = path.strip_prefix(&cfg.output_dir).map_err(|_| {
-            ClientActionError::new(
-                "internal",
-                "server scrape artifact path escaped output root",
-                true,
-                None,
-            )
-        })?;
-        crate::services::artifacts::atomic_write_under(
+        crate::services::artifacts::write_managed_output(
             &cfg.output_dir,
-            relative,
+            path,
             result.output.as_bytes(),
         )
         .await
