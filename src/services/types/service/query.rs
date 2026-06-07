@@ -70,11 +70,24 @@ impl PagedDocument {
         token_budget: Option<usize>,
         backend: DocumentBackend,
     ) -> Self {
-        let budget = token_budget.unwrap_or(Self::DEFAULT_TOKEN_BUDGET);
-        let char_budget = budget * Self::CHARS_PER_TOKEN;
+        let budget = token_budget.unwrap_or(Self::DEFAULT_TOKEN_BUDGET).max(1);
+        let char_budget = budget.saturating_mul(Self::CHARS_PER_TOKEN);
 
-        let start_offset = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
+        let mut start_offset = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
 
+        if start_offset >= full_content.len() {
+            return Self {
+                content: String::new(),
+                truncated: false,
+                token_estimate: Some(0),
+                next_cursor: None,
+                remaining_tokens_estimate: Some(0),
+                backend,
+            };
+        }
+        while start_offset < full_content.len() && !full_content.is_char_boundary(start_offset) {
+            start_offset += 1;
+        }
         if start_offset >= full_content.len() {
             return Self {
                 content: String::new(),
@@ -88,7 +101,9 @@ impl PagedDocument {
 
         // Slice at char boundaries to avoid panics.
         // find_at_char_boundary(full_content, start_offset + char_budget)
-        let end_limit = (start_offset + char_budget).min(full_content.len());
+        let end_limit = start_offset
+            .saturating_add(char_budget)
+            .min(full_content.len());
         let actual_end = if full_content.is_char_boundary(end_limit) {
             end_limit
         } else {

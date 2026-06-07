@@ -1,10 +1,68 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::error::Error;
+use std::fmt;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 
-type ArtifactWriteError = Box<dyn Error + Send + Sync>;
+#[derive(Debug)]
+pub enum ArtifactWriteError {
+    Validation(String),
+    RootNotDirectory(PathBuf),
+    MissingParent(PathBuf),
+    EscapedRoot(PathBuf),
+    Io {
+        operation: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+impl ArtifactWriteError {
+    fn io(operation: &'static str, path: impl Into<PathBuf>, source: io::Error) -> Self {
+        Self::Io {
+            operation,
+            path: path.into(),
+            source,
+        }
+    }
+}
+
+impl fmt::Display for ArtifactWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Validation(message) => f.write_str(message),
+            Self::RootNotDirectory(path) => {
+                write!(f, "artifact root is not a directory: {}", path.display())
+            }
+            Self::MissingParent(path) => {
+                write!(f, "artifact path has no parent: {}", path.display())
+            }
+            Self::EscapedRoot(path) => {
+                write!(f, "artifact path escaped output root: {}", path.display())
+            }
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => write!(
+                f,
+                "artifact write failed during {operation} for {}: {source}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl Error for ArtifactWriteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -86,27 +144,30 @@ pub async fn atomic_write_under(
     let root = root.as_ref();
     let relative = relative_path.as_ref();
     let relative_string = relative.to_string_lossy().replace('\\', "/");
-    reject_unsafe_relative_path(&relative_string)
-        .map_err(|err| -> ArtifactWriteError { err.into() })?;
+    reject_unsafe_relative_path(&relative_string).map_err(ArtifactWriteError::Validation)?;
 
     if root.exists() && !root.is_dir() {
-        return Err(format!("artifact root is not a directory: {}", root.display()).into());
+        return Err(ArtifactWriteError::RootNotDirectory(root.to_path_buf()));
     }
-    tokio::fs::create_dir_all(root).await?;
-    let canonical_root = tokio::fs::canonicalize(root).await?;
+    tokio::fs::create_dir_all(root)
+        .await
+        .map_err(|err| ArtifactWriteError::io("create root directory", root, err))?;
+    let canonical_root = tokio::fs::canonicalize(root)
+        .await
+        .map_err(|err| ArtifactWriteError::io("canonicalize root", root, err))?;
 
     let final_path = root.join(relative);
     let parent = final_path
         .parent()
-        .ok_or_else(|| -> ArtifactWriteError { "artifact path has no parent".into() })?;
-    tokio::fs::create_dir_all(parent).await?;
-    let canonical_parent = tokio::fs::canonicalize(parent).await?;
+        .ok_or_else(|| ArtifactWriteError::MissingParent(final_path.clone()))?;
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|err| ArtifactWriteError::io("create parent directory", parent, err))?;
+    let canonical_parent = tokio::fs::canonicalize(parent)
+        .await
+        .map_err(|err| ArtifactWriteError::io("canonicalize parent", parent, err))?;
     if !canonical_parent.starts_with(&canonical_root) {
-        return Err(format!(
-            "artifact path escaped output root: {}",
-            final_path.display()
-        )
-        .into());
+        return Err(ArtifactWriteError::EscapedRoot(final_path));
     }
 
     let file_name = final_path
@@ -116,20 +177,28 @@ pub async fn atomic_write_under(
     let tmp_name = format!(".{file_name}.tmp-{}-{}", std::process::id(), Uuid::new_v4());
     let tmp_path = parent.join(tmp_name);
     let write_result = async {
-        let mut file = tokio::fs::File::create(&tmp_path).await?;
-        tokio::io::AsyncWriteExt::write_all(&mut file, bytes).await?;
-        file.sync_all().await?;
-        tokio::fs::rename(&tmp_path, &final_path).await?;
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .map_err(|err| ArtifactWriteError::io("create temp file", &tmp_path, err))?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, bytes)
+            .await
+            .map_err(|err| ArtifactWriteError::io("write temp file", &tmp_path, err))?;
+        file.sync_all()
+            .await
+            .map_err(|err| ArtifactWriteError::io("sync temp file", &tmp_path, err))?;
+        tokio::fs::rename(&tmp_path, &final_path)
+            .await
+            .map_err(|err| ArtifactWriteError::io("rename temp file", &final_path, err))?;
         if let Ok(parent_dir) = tokio::fs::File::open(parent).await {
             let _ = parent_dir.sync_all().await;
         }
-        Ok::<(), std::io::Error>(())
+        Ok::<(), ArtifactWriteError>(())
     }
     .await;
 
     if let Err(err) = write_result {
         let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err(err.into());
+        return Err(err);
     }
 
     Ok(final_path)

@@ -61,16 +61,17 @@ async fn atomic_write_under_rejects_parent_traversal() {
 #[tokio::test]
 async fn atomic_write_under_cleans_temp_file_on_create_failure() {
     let temp = tempfile::TempDir::new().expect("tempdir");
-    let root_file = temp.path().join("not-a-dir");
-    std::fs::write(&root_file, "occupied").expect("root file");
+    let nested = temp.path().join("nested");
+    std::fs::create_dir_all(&nested).expect("nested dir");
+    std::fs::create_dir(nested.join("output.md")).expect("rename blocker");
 
-    let err = atomic_write_under(&root_file, "nested/output.md", b"content")
+    let err = atomic_write_under(temp.path(), "nested/output.md", b"content")
         .await
-        .expect_err("root file cannot contain nested artifact");
+        .expect_err("rename into existing directory must fail");
 
-    assert!(err.to_string().contains("not a directory") || err.to_string().contains("os error"));
-    let temp_files = std::fs::read_dir(temp.path())
-        .expect("read tempdir")
+    assert!(err.to_string().contains("rename temp file"));
+    let temp_files = std::fs::read_dir(&nested)
+        .expect("read nested dir")
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
         .count();

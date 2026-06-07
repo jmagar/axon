@@ -10,11 +10,28 @@ use crate::vector::ops::tei::{PreparedDoc, embed_prepared_docs};
 use futures_util::stream::{self, StreamExt};
 use spider::url::Url as SpiderUrl;
 use std::error::Error;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub const MAX_SCRAPE_BATCH_URLS: usize = 50;
+
+#[derive(Debug)]
+enum ScrapeBatchError {
+    Validation(String),
+    Scrape(String),
+}
+
+impl fmt::Display for ScrapeBatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Validation(message) | Self::Scrape(message) => f.write_str(message),
+        }
+    }
+}
+
+impl Error for ScrapeBatchError {}
 
 /// Map a raw JSON payload into a [`ScrapeResult`].
 ///
@@ -203,22 +220,24 @@ pub async fn scrape_batch(
         );
     }
     let deadline = Duration::from_secs(cfg.scrape_batch_timeout_secs.max(1));
-    tokio::time::timeout(deadline, scrape_batch_inner(cfg, urls, tx))
-        .await
-        .map_err(|_| -> Box<dyn Error> {
-            format!(
-                "scrape batch timed out after {}s",
-                cfg.scrape_batch_timeout_secs.max(1)
-            )
-            .into()
-        })?
+    Ok(
+        tokio::time::timeout(deadline, scrape_batch_inner(cfg, urls, tx))
+            .await
+            .map_err(|_| -> Box<dyn Error> {
+                format!(
+                    "scrape batch timed out after {}s",
+                    cfg.scrape_batch_timeout_secs.max(1)
+                )
+                .into()
+            })??,
+    )
 }
 
 async fn scrape_batch_inner(
     cfg: &Config,
     urls: &[String],
     tx: Option<mpsc::Sender<ServiceEvent>>,
-) -> Result<Vec<ScrapeResult>, Box<dyn Error>> {
+) -> Result<Vec<ScrapeResult>, ScrapeBatchError> {
     let normalized: Vec<(usize, String)> = urls
         .iter()
         .enumerate()
@@ -241,7 +260,7 @@ async fn scrape_batch_inner(
 
     let mut ready = Vec::with_capacity(validated.len());
     for item in validated {
-        ready.push(item.map_err(|message| -> Box<dyn Error> { message.into() })?);
+        ready.push(item.map_err(ScrapeBatchError::Validation)?);
     }
     ready.sort_by_key(|(idx, _)| *idx);
 
@@ -261,7 +280,7 @@ async fn scrape_batch_inner(
 
     let mut indexed_results = Vec::with_capacity(scraped.len());
     for item in scraped {
-        indexed_results.push(item.map_err(|message| -> Box<dyn Error> { message.into() })?);
+        indexed_results.push(item.map_err(ScrapeBatchError::Scrape)?);
     }
     indexed_results.sort_by_key(|(idx, _)| *idx);
     let results = indexed_results

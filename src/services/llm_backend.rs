@@ -16,7 +16,7 @@ pub async fn complete_text(
     req: CompletionRequest,
 ) -> Result<CompletionResponse, Box<dyn StdError + Send + Sync>> {
     ensure_configured(&req)?;
-    let limiter_key = completion_limiter_key(&req.backend);
+    let limiter_key = completion_limiter_key(&req);
     let _permit = concurrency::acquire_completion_permit_for_key(
         limiter_key,
         req.backend.completion_concurrency,
@@ -36,7 +36,7 @@ where
     F: FnMut(&str) -> Result<(), Box<dyn StdError + Send + Sync>> + Send,
 {
     ensure_configured(&req)?;
-    let limiter_key = completion_limiter_key(&req.backend);
+    let limiter_key = completion_limiter_key(&req);
     let _permit = concurrency::acquire_completion_permit_for_key(
         limiter_key,
         req.backend.completion_concurrency,
@@ -48,17 +48,26 @@ where
     }
 }
 
-fn completion_limiter_key(config: &LlmBackendConfig) -> String {
-    match config.kind {
+fn completion_limiter_key(req: &CompletionRequest) -> String {
+    let request_model = req
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match req.backend.kind {
         LlmBackendKind::GeminiHeadless => format!(
             "gemini:{}:{}",
-            config.gemini_cmd,
-            config.gemini_model.as_deref().unwrap_or_default()
+            req.backend.gemini_cmd,
+            request_model
+                .or(req.backend.gemini_model.as_deref())
+                .unwrap_or_default()
         ),
         LlmBackendKind::OpenAiCompat => format!(
             "openai:{}:{}",
-            config.openai_base_url.as_deref().unwrap_or_default(),
-            config.openai_model.as_deref().unwrap_or_default()
+            req.backend.openai_base_url.as_deref().unwrap_or_default(),
+            request_model
+                .or(req.backend.openai_model.as_deref())
+                .unwrap_or_default()
         ),
     }
 }
@@ -96,4 +105,45 @@ where
         .complete_streaming(normalize_stream_flag(req, true), &mut on_delta)
         .await?;
     Ok(extract_completion_result(turn_result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limiter_key_uses_request_model_override() {
+        let backend = LlmBackendConfig {
+            kind: LlmBackendKind::OpenAiCompat,
+            openai_base_url: Some("http://127.0.0.1:8080/v1".to_string()),
+            openai_model: Some("default-model".to_string()),
+            configured: true,
+            ..LlmBackendConfig::default()
+        };
+        let mut req = CompletionRequest::new("hello").model("override-model");
+        req.backend = backend;
+
+        assert_eq!(
+            completion_limiter_key(&req),
+            "openai:http://127.0.0.1:8080/v1:override-model"
+        );
+    }
+
+    #[test]
+    fn limiter_key_falls_back_to_backend_model() {
+        let backend = LlmBackendConfig {
+            kind: LlmBackendKind::GeminiHeadless,
+            gemini_cmd: "gemini".to_string(),
+            gemini_model: Some("configured-model".to_string()),
+            configured: true,
+            ..LlmBackendConfig::default()
+        };
+        let mut req = CompletionRequest::new("hello");
+        req.backend = backend;
+
+        assert_eq!(
+            completion_limiter_key(&req),
+            "gemini:gemini:configured-model"
+        );
+    }
 }

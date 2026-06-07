@@ -26,7 +26,7 @@ async fn completion_limiter_is_keyed_by_backend_and_limit() {
         .expect("first permit");
 
     let second_same_key = tokio::time::timeout(
-        std::time::Duration::from_millis(25),
+        std::time::Duration::from_millis(250),
         acquire_completion_permit_for_key("openai:http://one", 1),
     )
     .await;
@@ -36,7 +36,7 @@ async fn completion_limiter_is_keyed_by_backend_and_limit() {
     );
 
     let second_different_limit = tokio::time::timeout(
-        std::time::Duration::from_millis(25),
+        std::time::Duration::from_millis(250),
         acquire_completion_permit_for_key("openai:http://one", 2),
     )
     .await;
@@ -46,7 +46,7 @@ async fn completion_limiter_is_keyed_by_backend_and_limit() {
     );
 
     let second_different_backend = tokio::time::timeout(
-        std::time::Duration::from_millis(25),
+        std::time::Duration::from_millis(250),
         acquire_completion_permit_for_key("gemini:default", 1),
     )
     .await;

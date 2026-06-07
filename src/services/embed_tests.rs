@@ -242,3 +242,19 @@ fn validate_server_embed_input_rejects_missing_path_like_input() {
 
     assert!(err.to_string().contains("does not exist"), "{err}");
 }
+
+#[test]
+fn validate_server_embed_input_allows_free_text_with_slashes() {
+    let validated = validate_server_embed_input_with_roots(
+        "a/b testing plan",
+        &[],
+        EmbedValidationLimits {
+            max_file_bytes: 1024,
+            max_depth: 16,
+            max_entries: 10_000,
+        },
+    )
+    .expect("slash-containing prose should remain valid free text");
+
+    assert_eq!(validated, "a/b testing plan");
+}

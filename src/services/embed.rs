@@ -234,11 +234,19 @@ fn embed_validation_error(message: impl Into<String>) -> EmbedValidationError {
 }
 
 fn looks_path_like_input(input: &str) -> bool {
+    let input = input.trim();
+    let bytes = input.as_bytes();
+    let windows_drive = input.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'/' | b'\\');
+
     input.starts_with('/')
         || input.starts_with("./")
         || input.starts_with("../")
-        || input.contains(std::path::MAIN_SEPARATOR)
-        || input.contains('\\')
+        || input.starts_with("~/")
+        || input.starts_with("\\\\")
+        || windows_drive
 }
 
 fn validate_local_embed_entry(

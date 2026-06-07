@@ -132,6 +132,18 @@ impl<T> JobListResult<T> {
 
     /// True if the displayed slice is a subset of all available jobs.
     pub fn is_truncated(&self) -> bool {
-        self.offset + self.limit < self.total
+        self.offset.saturating_add(self.limit) < self.total
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn job_list_truncation_uses_saturating_add() {
+        let result = JobListResult::<()>::new(vec![], i64::MAX, 1, i64::MAX);
+
+        assert!(!result.is_truncated());
     }
 }

@@ -396,7 +396,7 @@ pub async fn dispatch_scrape(
             result.output.as_bytes(),
         )
         .await
-        .map_err(|err| internal_error(err as Box<dyn std::error::Error>))?;
+        .map_err(|err| internal_error(Box::<dyn std::error::Error>::from(err)))?;
     }
     Ok(serde_json::json!({
         "url": result.url,

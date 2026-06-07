@@ -111,13 +111,34 @@ async fn send_chat_completion(
 
 async fn format_openai_error(response: reqwest::Response) -> String {
     let status = response.status();
-    let text = response.text().await.unwrap_or_default();
+    let text = read_bounded_error_body(response).await;
     let safe_text = sanitize_openai_error_body(&text);
     if safe_text.trim().is_empty() {
         format!("OpenAI-compatible completion failed with HTTP {status}")
     } else {
         format!("OpenAI-compatible completion failed with HTTP {status}: {safe_text}")
     }
+}
+
+async fn read_bounded_error_body(response: reqwest::Response) -> String {
+    const READ_LIMIT: usize = 4096;
+    let mut collected = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            break;
+        };
+        let remaining = READ_LIMIT.saturating_sub(collected.len());
+        if remaining == 0 {
+            break;
+        }
+        let take = chunk.len().min(remaining);
+        collected.extend_from_slice(&chunk[..take]);
+        if take < chunk.len() || collected.len() >= READ_LIMIT {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 fn sanitize_openai_error_body(text: &str) -> String {
