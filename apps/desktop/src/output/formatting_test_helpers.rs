@@ -1,5 +1,5 @@
 #[cfg(test)]
-pub(super) fn actionable_error_text(text: &str) -> String {
+pub(in crate::output) fn actionable_error_text(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     if let Some(index) = lines
         .iter()
@@ -30,7 +30,7 @@ pub(super) fn actionable_error_text(text: &str) -> String {
 /// Strip ANSI / VT escape sequences. CSI, OSC, DCS, APC, PM, and SOS are
 /// covered; malformed sequences are silently dropped.
 #[cfg(test)]
-pub(super) fn strip_ansi(text: &str) -> String {
+pub(in crate::output) fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -86,7 +86,7 @@ fn consume_until_string_terminator(
 }
 
 #[cfg(test)]
-pub(super) fn format_exit_status(status: &std::process::ExitStatus) -> String {
+pub(in crate::output) fn format_exit_status(status: &std::process::ExitStatus) -> String {
     if status.success() {
         return "ok".to_string();
     }

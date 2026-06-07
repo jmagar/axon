@@ -98,7 +98,7 @@ import kotlinx.serialization.json.intOrNull
 )
 
 /** Mobile-safe first-page cap for `/v1/retrieve` calls. */
-private const val DEFAULT_RETRIEVE_TOKEN_BUDGET = 16_000
+private const val DEFAULT_RETRIEVE_TOKEN_BUDGET = 64_000
 private const val DEFAULT_RETRIEVE_MAX_POINTS = 48
 
 class AxonRepository(

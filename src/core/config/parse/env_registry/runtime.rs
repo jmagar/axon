@@ -79,6 +79,7 @@ pub(crate) const RUNTIME_ENV_KEY_SPECS: &[EnvKeySpec] = &[
         true,
     ),
     spec("AXON_LLM_BACKEND", KeepEnv, Both, None, Canonical, false),
+    spec("AXON_PROVIDER", KeepEnv, Both, None, Canonical, false),
     spec(
         "AXON_HEADLESS_GEMINI_CMD",
         KeepEnv,
