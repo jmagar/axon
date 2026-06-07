@@ -130,7 +130,7 @@ Optional fields accepted on `{ "action": "crawl", "subaction": "start", ... }`:
 
 ## Lifecycle Action Families
 - `crawl`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
-- `embed`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `input` (string)
+- `embed`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `input` (string); local paths must pass the shared server-side embed validator (`AXON_MCP_EMBED_ALLOWED_ROOTS` plus size/depth/entry limits)
 - `extract`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `urls` (array)
 - `ingest`: `start|status|cancel|list|cleanup|clear|recover` -- start requires `source_type` + `target`
 

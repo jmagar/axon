@@ -197,6 +197,11 @@ TEI container runtime and Compose interpolation values stay in `~/.axon/.env`:
 | `AXON_LLM_COMPLETION_CONCURRENCY` | `4` | Runtime-only max concurrent LLM completion requests. |
 | `AXON_LLM_COMPLETION_TIMEOUT_SECS` | `300` | Runtime-only timeout for each LLM completion request. |
 
+LLM completion concurrency is enforced per backend/limit bucket so a first
+request cannot pin a different backend or later limit until process restart.
+OpenAI-compatible upstream error bodies are size-bounded and redacted before
+they are returned to callers or logs.
+
 ### Collections and worker lanes
 
 These are normal `~/.axon/config.toml` settings. Env vars remain accepted for
@@ -346,6 +351,12 @@ password under `~/.axon/panel-password`. MCP and protected `/v1` routes use
 | `AXON_MCP_EMBED_MAX_LOCAL_BYTES` | `10485760` | Max bytes per local file embedding request via MCP |
 | `AXON_MCP_EMBED_MAX_LOCAL_DEPTH` | `16` | Max directory traversal depth for local directory embedding requests |
 | `AXON_MCP_EMBED_MAX_LOCAL_ENTRIES` | `10000` | Max filesystem entries visited for local directory embedding requests |
+
+The MCP and REST embed routes use the same server-side validator. URL and raw
+text inputs are accepted, but host-local file and directory inputs must resolve
+under `AXON_MCP_EMBED_ALLOWED_ROOTS` and satisfy the byte/depth/entry limits.
+Missing path-like inputs such as `/data/missing.md` or `./missing.md` are
+rejected instead of being silently treated as raw text.
 
 ### Ask cache
 

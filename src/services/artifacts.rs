@@ -92,12 +92,22 @@ pub async fn atomic_write_under(
     if root.exists() && !root.is_dir() {
         return Err(format!("artifact root is not a directory: {}", root.display()).into());
     }
+    tokio::fs::create_dir_all(root).await?;
+    let canonical_root = tokio::fs::canonicalize(root).await?;
 
     let final_path = root.join(relative);
     let parent = final_path
         .parent()
         .ok_or_else(|| -> ArtifactWriteError { "artifact path has no parent".into() })?;
     tokio::fs::create_dir_all(parent).await?;
+    let canonical_parent = tokio::fs::canonicalize(parent).await?;
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err(format!(
+            "artifact path escaped output root: {}",
+            final_path.display()
+        )
+        .into());
+    }
 
     let file_name = final_path
         .file_name()
@@ -106,8 +116,13 @@ pub async fn atomic_write_under(
     let tmp_name = format!(".{file_name}.tmp-{}-{}", std::process::id(), Uuid::new_v4());
     let tmp_path = parent.join(tmp_name);
     let write_result = async {
-        tokio::fs::write(&tmp_path, bytes).await?;
+        let mut file = tokio::fs::File::create(&tmp_path).await?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, bytes).await?;
+        file.sync_all().await?;
         tokio::fs::rename(&tmp_path, &final_path).await?;
+        if let Ok(parent_dir) = tokio::fs::File::open(parent).await {
+            let _ = parent_dir.sync_all().await;
+        }
         Ok::<(), std::io::Error>(())
     }
     .await;

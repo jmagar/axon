@@ -88,3 +88,20 @@ async fn atomic_write_under_writes_relative_path_inside_root() {
     assert_eq!(path, temp.path().join("screenshots/shot.png"));
     assert_eq!(std::fs::read(path).expect("read artifact"), b"png");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn atomic_write_under_rejects_symlinked_parent_escape() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempfile::TempDir::new().expect("root");
+    let outside = tempfile::TempDir::new().expect("outside");
+    symlink(outside.path(), root.path().join("redirect")).expect("symlink");
+
+    let err = atomic_write_under(root.path(), "redirect/escape.txt", b"secret")
+        .await
+        .expect_err("symlinked parent must not escape root");
+
+    assert!(err.to_string().contains("escaped output root"));
+    assert!(!outside.path().join("escape.txt").exists());
+}

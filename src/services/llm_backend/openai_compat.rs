@@ -129,18 +129,26 @@ fn sanitize_openai_error_body(text: &str) -> String {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
         let sanitized = sanitize_error_json(&value);
         let mut rendered = serde_json::to_string(&sanitized).unwrap_or_default();
-        if rendered.len() > LIMIT {
-            rendered.truncate(LIMIT);
-            rendered.push_str("...[truncated]");
-        }
+        truncate_utf8_boundary(&mut rendered, LIMIT);
         return rendered;
     }
     let mut rendered = redact_secret_like_tokens(trimmed);
-    if rendered.len() > LIMIT {
-        rendered.truncate(LIMIT);
-        rendered.push_str("...[truncated]");
-    }
+    truncate_utf8_boundary(&mut rendered, LIMIT);
     rendered
+}
+
+fn truncate_utf8_boundary(value: &mut String, max_bytes: usize) {
+    if value.len() <= max_bytes {
+        return;
+    }
+    let end = value
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .take_while(|idx| *idx <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    value.truncate(end);
+    value.push_str("...[truncated]");
 }
 
 fn sanitize_error_json(value: &serde_json::Value) -> serde_json::Value {

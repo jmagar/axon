@@ -128,3 +128,27 @@ async fn openai_compat_error_body_is_bounded_and_redacted() {
         err.len()
     );
 }
+
+#[test]
+fn openai_compat_plain_error_truncates_on_utf8_boundary() {
+    let body = format!("{}{}", "x".repeat(511), "é".repeat(20));
+
+    let sanitized = sanitize_openai_error_body(&body);
+
+    assert!(sanitized.ends_with("...[truncated]"));
+    assert!(sanitized.is_char_boundary(512));
+}
+
+#[test]
+fn openai_compat_json_error_truncates_on_utf8_boundary() {
+    let body = serde_json::json!({
+        "error": "backend failed",
+        "detail": format!("{}{}", "x".repeat(480), "é".repeat(40)),
+    })
+    .to_string();
+
+    let sanitized = sanitize_openai_error_body(&body);
+
+    assert!(sanitized.ends_with("...[truncated]"));
+    assert!(sanitized.is_char_boundary(512));
+}
