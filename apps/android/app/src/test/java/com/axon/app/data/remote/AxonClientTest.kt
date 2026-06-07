@@ -181,7 +181,7 @@ class AxonClientTest {
     }
 
     @Test
-    fun `panelEnv falls back to api token when panel token is unset`() = runBlocking {
+    fun `panelEnv fails locally when panel token is unset`() = runBlocking {
         server.enqueue(
             MockResponse()
                 .setBody("""{"path":"~/.axon/.env","raw_env":"QDRANT_URL=http://qdrant","restart_required":false}""")
@@ -190,11 +190,9 @@ class AxonClientTest {
 
         val result = client.panelEnv()
 
-        assertTrue(result.isSuccess)
-        val req = server.takeRequest()
-        assertEquals("/api/panel/env", req.path)
-        assertEquals("Bearer test-token", req.getHeader("Authorization"))
-        assertEquals("test-token", req.getHeader("x-axon-panel-token"))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Panel unlock required"))
+        assertEquals(0, server.requestCount)
     }
 
     // ── Non-2xx HTTP status ───────────────────────────────────────────────────
