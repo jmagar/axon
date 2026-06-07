@@ -3,7 +3,7 @@ use crate::core::content::build_selector_config;
 use crate::core::http::normalize_url;
 use crate::crawl::scrape::{build_scrape_website, fetch_single_page, select_output};
 use crate::extract::{VerticalContext, dispatch_by_url};
-use crate::services::events::ServiceEvent;
+use crate::services::events::{LogLevel, ServiceEvent, emit};
 use crate::services::types::{ArtifactHandle, DocumentBackend, ScrapeResult};
 use crate::vector::ops::input::{chunk_markdown, chunk_text};
 use crate::vector::ops::tei::{PreparedDoc, embed_prepared_docs};
@@ -64,9 +64,17 @@ pub fn map_scrape_payload(payload: serde_json::Value) -> Result<ScrapeResult, Bo
 pub async fn scrape(
     cfg: &Config,
     url: &str,
-    _tx: Option<mpsc::Sender<ServiceEvent>>,
+    tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> Result<ScrapeResult, Box<dyn Error>> {
     let normalized = normalize_url(url);
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!("scrape starting: {normalized}"),
+        },
+    )
+    .await;
     tokio::time::timeout(
         Duration::from_millis(2000),
         crate::core::http::validate_url_with_dns(&normalized),
@@ -108,6 +116,14 @@ pub async fn scrape(
                 );
                 // v1: LLM format is only applied on the generic HTTP scrape path.
                 // Vertical extractors return structured markdown that should not be post-processed.
+                emit(
+                    &tx,
+                    ServiceEvent::Log {
+                        level: LogLevel::Info,
+                        message: format!("scrape complete: {normalized}"),
+                    },
+                )
+                .await;
                 return Ok(scrape_result);
             }
             Ok(None) => {} // no extractor claimed the URL — fall through to generic scrape
@@ -159,6 +175,14 @@ pub async fn scrape(
             Some(normalized.to_string()),
         )
     });
+    emit(
+        &tx,
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message: format!("scrape complete: {normalized}"),
+        },
+    )
+    .await;
     Ok(result)
 }
 
@@ -178,7 +202,23 @@ pub async fn scrape_batch(
             format!("scrape accepts at most {MAX_SCRAPE_BATCH_URLS} urls per request").into(),
         );
     }
+    let deadline = Duration::from_secs(cfg.scrape_batch_timeout_secs.max(1));
+    tokio::time::timeout(deadline, scrape_batch_inner(cfg, urls, tx))
+        .await
+        .map_err(|_| -> Box<dyn Error> {
+            format!(
+                "scrape batch timed out after {}s",
+                cfg.scrape_batch_timeout_secs.max(1)
+            )
+            .into()
+        })?
+}
 
+async fn scrape_batch_inner(
+    cfg: &Config,
+    urls: &[String],
+    tx: Option<mpsc::Sender<ServiceEvent>>,
+) -> Result<Vec<ScrapeResult>, Box<dyn Error>> {
     let normalized: Vec<(usize, String)> = urls
         .iter()
         .enumerate()

@@ -162,16 +162,51 @@ async fn start_worker_requires_in_process_workers() {
         .await
         .expect("backend");
     let runtime = SqliteServiceRuntime {
-        _cfg: cfg,
+        cfg,
         backend: Arc::new(backend),
     };
 
-    let err = runtime
-        .start_worker(JobKind::Crawl)
+    let err = ServiceJobRuntime::start_worker(&runtime, JobKind::Crawl)
         .await
         .expect_err("enqueue-only runtime cannot start worker drain");
     assert!(
         err.to_string().contains("no in-process workers running"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn drain_jobs_times_out_when_queue_stays_active() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mut cfg = Config::test_default();
+    cfg.sqlite_path = tmp.path().join("jobs.db");
+    cfg.job_wait_timeout_secs = 1;
+    let cfg = Arc::new(cfg);
+    let backend = SqliteJobBackend::new(Arc::clone(&cfg))
+        .await
+        .expect("backend");
+    backend
+        .enqueue(JobPayload::Crawl {
+            url: "https://example.com".into(),
+            config_json: "{}".into(),
+        })
+        .await
+        .expect("enqueue active job");
+    let runtime = SqliteServiceRuntime {
+        cfg: Arc::clone(&cfg),
+        backend: Arc::new(backend),
+    };
+
+    let err = tokio::time::timeout(
+        Duration::from_secs(3),
+        ServiceJobRuntime::drain_jobs(&runtime, JobKind::Crawl),
+    )
+    .await
+    .expect("drain should return before outer timeout")
+    .expect_err("active queue should hit configured drain timeout");
+
+    assert!(
+        err.to_string().contains("timed out"),
         "unexpected error: {err}"
     );
 }
@@ -187,13 +222,12 @@ async fn sqlite_runtime_exposes_backend_pool_for_shared_watch_callers() {
         .expect("backend");
     let expected_pool = Arc::clone(backend.pool());
     let runtime = SqliteServiceRuntime {
-        _cfg: cfg,
+        cfg,
         backend: Arc::new(backend),
     };
 
-    let shared_pool = runtime
-        .sqlite_pool()
-        .expect("sqlite runtime should expose shared pool");
+    let shared_pool =
+        ServiceJobRuntime::sqlite_pool(&runtime).expect("sqlite runtime should expose shared pool");
     assert!(
         Arc::ptr_eq(&shared_pool, &expected_pool),
         "runtime must expose the backend pool instead of opening a second pool"

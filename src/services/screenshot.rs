@@ -75,10 +75,18 @@ pub async fn screenshot_capture(
         dir.join(url_to_screenshot_filename(&normalized, 1))
     };
 
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    tokio::fs::write(&path, &bytes).await?;
+    let relative_path = path
+        .strip_prefix(&cfg.output_dir)
+        .map_err(|_| -> Box<dyn Error> {
+            format!(
+                "screenshot output path escaped output root: {}",
+                path.display()
+            )
+            .into()
+        })?;
+    crate::services::artifacts::atomic_write_under(&cfg.output_dir, relative_path, &bytes)
+        .await
+        .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
 
     let artifact_handle = ArtifactHandle::try_from_path(
         "screenshot",

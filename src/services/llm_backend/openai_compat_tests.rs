@@ -95,3 +95,36 @@ fn openai_compat_rejects_chat_completions_suffix() {
             .contains("must not include /chat/completions")
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn openai_compat_error_body_is_bounded_and_redacted() {
+    let server = MockServer::start();
+    let secret = "sk-live-abcdefghijklmnopqrstuvwxyz123456";
+    let prompt = "user prompt: include private customer identifier";
+    let body = format!(
+        "{{\"error\":\"bad auth\",\"api_key\":\"{secret}\",\"prompt\":\"{prompt}\",\"padding\":\"{}\"}}",
+        "x".repeat(1200)
+    );
+    let _mock = server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(500)
+            .header("content-type", "application/json")
+            .body(body);
+    });
+    let mut req = CompletionRequest::new("hello");
+    req.backend = backend(&server, Some(secret));
+
+    let err = complete_text(req)
+        .await
+        .expect_err("non-2xx response should be an error")
+        .to_string();
+
+    assert!(err.contains("HTTP 500"));
+    assert!(!err.contains(secret), "error leaked API key: {err}");
+    assert!(!err.contains(prompt), "error leaked prompt: {err}");
+    assert!(
+        err.len() < 700,
+        "error body should be bounded: {}",
+        err.len()
+    );
+}

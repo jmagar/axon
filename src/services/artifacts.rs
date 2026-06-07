@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::path::{Component, Path};
+use std::error::Error;
+use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
+
+type ArtifactWriteError = Box<dyn Error + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -73,6 +76,48 @@ fn reject_unsafe_relative_path(path: &str) -> Result<(), String> {
         return Err(format!("unsafe artifact relative_path: {path}"));
     }
     Ok(())
+}
+
+pub async fn atomic_write_under(
+    root: impl AsRef<Path>,
+    relative_path: impl AsRef<Path>,
+    bytes: &[u8],
+) -> Result<PathBuf, ArtifactWriteError> {
+    let root = root.as_ref();
+    let relative = relative_path.as_ref();
+    let relative_string = relative.to_string_lossy().replace('\\', "/");
+    reject_unsafe_relative_path(&relative_string)
+        .map_err(|err| -> ArtifactWriteError { err.into() })?;
+
+    if root.exists() && !root.is_dir() {
+        return Err(format!("artifact root is not a directory: {}", root.display()).into());
+    }
+
+    let final_path = root.join(relative);
+    let parent = final_path
+        .parent()
+        .ok_or_else(|| -> ArtifactWriteError { "artifact path has no parent".into() })?;
+    tokio::fs::create_dir_all(parent).await?;
+
+    let file_name = final_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("artifact");
+    let tmp_name = format!(".{file_name}.tmp-{}-{}", std::process::id(), Uuid::new_v4());
+    let tmp_path = parent.join(tmp_name);
+    let write_result = async {
+        tokio::fs::write(&tmp_path, bytes).await?;
+        tokio::fs::rename(&tmp_path, &final_path).await?;
+        Ok::<(), std::io::Error>(())
+    }
+    .await;
+
+    if let Err(err) = write_result {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(err.into());
+    }
+
+    Ok(final_path)
 }
 
 fn artifact_id(kind: ArtifactKind, relative_path: &str, content_hash: &str) -> String {

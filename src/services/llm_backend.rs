@@ -16,8 +16,12 @@ pub async fn complete_text(
     req: CompletionRequest,
 ) -> Result<CompletionResponse, Box<dyn StdError + Send + Sync>> {
     ensure_configured(&req)?;
-    let _permit =
-        concurrency::acquire_completion_permit(req.backend.completion_concurrency).await?;
+    let limiter_key = completion_limiter_key(&req.backend);
+    let _permit = concurrency::acquire_completion_permit_for_key(
+        limiter_key,
+        req.backend.completion_concurrency,
+    )
+    .await?;
     match req.backend.kind {
         LlmBackendKind::GeminiHeadless => headless::gemini::complete_text(req).await,
         LlmBackendKind::OpenAiCompat => openai_compat::complete_text(req).await,
@@ -32,11 +36,30 @@ where
     F: FnMut(&str) -> Result<(), Box<dyn StdError + Send + Sync>> + Send,
 {
     ensure_configured(&req)?;
-    let _permit =
-        concurrency::acquire_completion_permit(req.backend.completion_concurrency).await?;
+    let limiter_key = completion_limiter_key(&req.backend);
+    let _permit = concurrency::acquire_completion_permit_for_key(
+        limiter_key,
+        req.backend.completion_concurrency,
+    )
+    .await?;
     match req.backend.kind {
         LlmBackendKind::GeminiHeadless => headless::gemini::complete_streaming(req, on_delta).await,
         LlmBackendKind::OpenAiCompat => openai_compat::complete_streaming(req, on_delta).await,
+    }
+}
+
+fn completion_limiter_key(config: &LlmBackendConfig) -> String {
+    match config.kind {
+        LlmBackendKind::GeminiHeadless => format!(
+            "gemini:{}:{}",
+            config.gemini_cmd,
+            config.gemini_model.as_deref().unwrap_or_default()
+        ),
+        LlmBackendKind::OpenAiCompat => format!(
+            "openai:{}:{}",
+            config.openai_base_url.as_deref().unwrap_or_default(),
+            config.openai_model.as_deref().unwrap_or_default()
+        ),
     }
 }
 

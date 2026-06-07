@@ -39,7 +39,8 @@ services/
 ├── types.rs                # types/ module root
 ├── types/
 │   ├── contracts.rs        # External-facing service contract types
-│   └── service.rs          # All typed result structs (QueryResult, AskResult, ...)
+│   ├── service.rs          # Re-export glue for domain-specific service result modules
+│   └── service/            # Result contracts by domain (query, content, system, lifecycle, ...)
 └── watch.rs                # CRUD shim — actual scheduler runtime lives in src/jobs/watch.rs
 ```
 
@@ -114,7 +115,8 @@ pub async fn query(cfg: &Config, text: &str, opts: Pagination) -> Result<QueryRe
 println!("{}", serde_json::to_string(&results)?);
 ```
 
-Key result types in `types/service.rs`:
+Key result types live in domain-specific modules under `types/service/` and are
+re-exported through `types/service.rs` for compatibility:
 
 | Result Type | Service function(s) |
 |-------------|---------------------|

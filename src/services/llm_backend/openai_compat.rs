@@ -6,11 +6,16 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::json;
 use std::error::Error as StdError;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 #[cfg(test)]
 #[path = "openai_compat_tests.rs"]
 mod tests;
+
+#[allow(non_upper_case_globals)]
+static OpenAiCompatClients: LazyLock<dashmap::DashMap<u64, reqwest::Client>> =
+    LazyLock::new(dashmap::DashMap::new);
 
 pub fn openai_chat_completions_url(
     config: &LlmBackendConfig,
@@ -78,11 +83,15 @@ async fn send_chat_completion(
         "messages": messages,
         "stream": stream,
     });
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(
-            req.backend.completion_timeout_secs.max(1),
-        ))
-        .build()?;
+    let timeout_secs = req.backend.completion_timeout_secs.max(1);
+    let client = OpenAiCompatClients
+        .entry(timeout_secs)
+        .or_try_insert_with(|| {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(timeout_secs))
+                .build()
+        })?
+        .clone();
     let mut request = client.post(url).json(&body);
     if let Some(key) = req
         .backend
@@ -103,11 +112,86 @@ async fn send_chat_completion(
 async fn format_openai_error(response: reqwest::Response) -> String {
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
-    if text.trim().is_empty() {
+    let safe_text = sanitize_openai_error_body(&text);
+    if safe_text.trim().is_empty() {
         format!("OpenAI-compatible completion failed with HTTP {status}")
     } else {
-        format!("OpenAI-compatible completion failed with HTTP {status}: {text}")
+        format!("OpenAI-compatible completion failed with HTTP {status}: {safe_text}")
     }
+}
+
+fn sanitize_openai_error_body(text: &str) -> String {
+    const LIMIT: usize = 512;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let sanitized = sanitize_error_json(&value);
+        let mut rendered = serde_json::to_string(&sanitized).unwrap_or_default();
+        if rendered.len() > LIMIT {
+            rendered.truncate(LIMIT);
+            rendered.push_str("...[truncated]");
+        }
+        return rendered;
+    }
+    let mut rendered = redact_secret_like_tokens(trimmed);
+    if rendered.len() > LIMIT {
+        rendered.truncate(LIMIT);
+        rendered.push_str("...[truncated]");
+    }
+    rendered
+}
+
+fn sanitize_error_json(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    let lower = key.to_ascii_lowercase();
+                    if lower.contains("key")
+                        || lower.contains("token")
+                        || lower.contains("secret")
+                        || lower.contains("prompt")
+                        || lower.contains("message")
+                        || lower.contains("input")
+                    {
+                        (
+                            key.clone(),
+                            serde_json::Value::String("[redacted]".to_string()),
+                        )
+                    } else {
+                        (key.clone(), sanitize_error_json(value))
+                    }
+                })
+                .collect(),
+        ),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.iter().map(sanitize_error_json).collect())
+        }
+        serde_json::Value::String(value) => {
+            serde_json::Value::String(redact_secret_like_tokens(value))
+        }
+        value => value.clone(),
+    }
+}
+
+fn redact_secret_like_tokens(text: &str) -> String {
+    text.split_whitespace()
+        .map(|token| {
+            let lower = token.to_ascii_lowercase();
+            if lower.starts_with("sk-")
+                || lower.contains("api_key")
+                || lower.contains("token=")
+                || lower.contains("secret")
+            {
+                "[redacted]"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[derive(Deserialize)]

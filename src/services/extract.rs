@@ -346,9 +346,22 @@ async fn write_extract_summary(
         .output_path
         .clone()
         .unwrap_or_else(|| cfg.output_dir.join("extract-summary.json"));
-    if let Some(parent) = summary_path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    tokio::fs::write(&summary_path, serde_json::to_string_pretty(summary)?).await?;
+    let relative_path =
+        summary_path
+            .strip_prefix(&cfg.output_dir)
+            .map_err(|_| -> Box<dyn Error> {
+                format!(
+                    "extract summary path escaped output root: {}",
+                    summary_path.display()
+                )
+                .into()
+            })?;
+    crate::services::artifacts::atomic_write_under(
+        &cfg.output_dir,
+        relative_path,
+        serde_json::to_string_pretty(summary)?.as_bytes(),
+    )
+    .await
+    .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
     Ok(summary_path)
 }

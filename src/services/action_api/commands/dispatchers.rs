@@ -382,14 +382,21 @@ pub async fn dispatch_scrape(
         .await
         .map_err(internal_error)?;
     if let Some(path) = cfg.output_path.as_ref() {
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|err| internal_error(Box::new(err)))?;
-        }
-        tokio::fs::write(path, &result.output)
-            .await
-            .map_err(|err| internal_error(Box::new(err)))?;
+        let relative = path.strip_prefix(&cfg.output_dir).map_err(|_| {
+            ClientActionError::new(
+                "internal",
+                "server scrape artifact path escaped output root",
+                true,
+                None,
+            )
+        })?;
+        crate::services::artifacts::atomic_write_under(
+            &cfg.output_dir,
+            relative,
+            result.output.as_bytes(),
+        )
+        .await
+        .map_err(|err| internal_error(err as Box<dyn std::error::Error>))?;
     }
     Ok(serde_json::json!({
         "url": result.url,
