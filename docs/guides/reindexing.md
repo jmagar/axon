@@ -1,13 +1,12 @@
-# Re-index Guide: Schema v3 / v4 Payload Upgrade
+# Re-index Guide: Schema v3-v6 Payload Upgrade
 
-This guide explains what changed in Qdrant payload schema versions 3 and 4, who needs to
+This guide explains what changed in Qdrant payload schema versions 3 through 6, who needs to
 re-index existing points, and how to do it efficiently and safely.
 
-The current schema version is **4** (`PAYLOAD_SCHEMA_VERSION = 4` in
+The current schema version is **6** (`PAYLOAD_SCHEMA_VERSION = 6` in
 `src/vector/ops/qdrant/utils.rs`). Every point written by `axon` today carries
-`payload_schema_version = 4`. Versions 3 and 4 were both introduced on 2026-05-21, so in
-practice most freshly-indexed data is already v4; the distinction below matters only when
-deciding what older points need re-indexing to gain.
+`payload_schema_version = 6`. Versions 3 and 4 were introduced on 2026-05-21, v5 added
+origin tracking, and v6 adds code-symbol metadata for GitHub file chunks.
 
 ---
 
@@ -95,6 +94,34 @@ These fields are written only by the GitHub ingest path, so only GitHub points b
 a v4 re-index; GitLab/Gitea/generic-git/vertical/crawl points gain nothing new at v4 beyond
 the version stamp.
 
+## What Changed in Schema v5
+
+Schema v5 added the indexed top-level `seed_url` field. This is the origin that started
+the chunk's acquisition: the crawl start URL for crawls, the ingest target for ingest jobs,
+or the document URL for direct embed/scrape paths. `axon refresh` facets on this field to
+re-enqueue previously indexed origins.
+
+Points indexed before v5 do not participate in refresh origin discovery until they are
+re-indexed.
+
+## What Changed in Schema v6
+
+Schema v6 adds code declaration metadata for GitHub file chunks:
+
+| Field | Indexed | Notes |
+|-------|---------|-------|
+| `chunking_method` | yes | Restored write of `"tree_sitter"` or `"prose"` for GitHub file chunks. |
+| `symbol_name` | no | Declaration name when known, e.g. `"Response::parse"`. Stored for retrieval, not indexed. |
+| `symbol_kind` | yes | Low-cardinality declaration kind such as `"function"`, `"method"`, `"struct"`, `"const"`, or `"type"`. |
+| `symbol_extraction_status` | no | File-level status that explains missing symbol fields: `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. |
+
+GitHub code chunks also changed boundaries because doc comments, duplicate capture cleanup,
+qualified names, tiny declaration merging, and oversized-declaration header injection all
+operate before embedding. A successful full GitHub re-ingest now embeds the current file set
+first, then removes stale repo file URLs that were not recreated. Partial `--no-source` ingests
+skip repo-level stale cleanup so an intentionally partial refresh does not delete existing
+source-code chunks.
+
 ---
 
 ## Who Needs to Re-index
@@ -106,6 +133,9 @@ You specifically benefit from re-indexing if you:
 
 - Query GitHub, GitLab, Gitea, or generic git ingest points and want to filter by
   `git_content_kind`, `git_file_language`, `git_author`, `git_state`, or `git_owner`.
+- Use `axon refresh` and want older sources to be discoverable via `seed_url`.
+- Query GitHub code and want to filter by `symbol_kind` or inspect `symbol_name` /
+  `chunking_method` in retrieved chunks.
 - Query vertical extractor points (npm, PyPI, Crates.io, HuggingFace, etc.) and want to
   filter by package or model metadata fields.
 - Run any query that would return mixed results and you want to scope to a specific
@@ -156,11 +186,18 @@ specific source, or `sources --by-schema-version` for the collection-wide breakd
 
 ## Re-indexing by Source Type
 
-Re-ingesting a source overwrites existing points via Qdrant's upsert semantics — point
-IDs are deterministic UUID v5 hashes of `(url, chunk_index)`, so the same content
-always produces the same ID. **No manual cleanup is needed**: new points replace old ones
-in place, and any chunks that no longer exist are pruned automatically via stale-tail
-cleanup.
+Re-ingesting a source overwrites existing points via Qdrant's upsert semantics when the
+source URL and chunk index are stable. For GitHub file chunks, line ranges are part of the
+stored URL (`#Lstart-Lend`), so boundary-shifting chunker changes require special cleanup.
+Axon now deletes existing GitHub `file` points for the target repo up front, scoped by
+`provider=github`, `git_owner`, `git_repo`, and `git_content_kind=file`, with `wait=true`
+before embedding the current file set.
+
+That up-front delete prevents orphaned old code chunks when line ranges move. The tradeoff:
+if a GitHub file ingest is interrupted after the delete but before successful re-embedding
+(for example, TEI is unavailable), that repo temporarily has zero file/code points until
+the job is retried or recovered. Re-run the ingest, or use the job recovery flow, to restore
+the repo's file corpus.
 
 ### Crawl and embed points
 
@@ -187,6 +224,14 @@ axon ingest https://github.com/org/repo --wait true
 
 This re-ingests source files, issues, PRs, releases, and wiki pages. Each re-embedded
 point carries the full v3 `git_*` field set and replaces the corresponding v1/v2 point.
+For file chunks, Axon first removes the repo's prior GitHub file points with the scoped
+wait-true delete described above, then writes the current file set with v6 symbol metadata.
+Issues, PRs, releases, wiki pages, and repo metadata are not deleted by that file-point
+cleanup.
+
+`axon migrate` does not backfill v6 symbol metadata because it only transforms existing
+Qdrant points and computes sparse vectors; it does not re-read source code or run the
+chunker. Use `axon ingest https://github.com/org/repo --wait true` for symbol backfill.
 
 ### GitLab projects
 
