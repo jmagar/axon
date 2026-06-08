@@ -55,6 +55,23 @@ fn payload_file_fields_populated() {
 }
 
 #[test]
+fn payload_code_chunk_metadata_populated_when_present() {
+    let params = GitHubPayloadParams {
+        repo: "axon_rust".into(),
+        owner: "jmagar".into(),
+        content_kind: "file".into(),
+        chunking_method: Some("tree_sitter".into()),
+        symbol_name: Some("Response::parse".into()),
+        symbol_kind: Some("method".into()),
+        ..Default::default()
+    };
+    let payload = build_github_payload(&params);
+    assert_eq!(payload["chunking_method"], "tree_sitter");
+    assert_eq!(payload["symbol_name"], "Response::parse");
+    assert_eq!(payload["symbol_kind"], "method");
+}
+
+#[test]
 fn payload_issue_fields_null_for_file_chunks() {
     let params = make_common_params();
     let payload = build_github_payload(&params);

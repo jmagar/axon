@@ -53,13 +53,14 @@ pub struct GitHubPayloadParams {
     pub is_draft: Option<bool>,
 
     // File
-    // NOTE: gh_chunking_method is intentionally absent — chunking_method is set universally
-    // by the TEI embed layer (pipeline.rs); no GitHub-specific field needed.
     pub file_path: Option<String>,
     pub file_language: Option<String>,
     pub file_type: Option<String>,
     pub is_test: Option<bool>,
     pub file_size_bytes: Option<usize>,
+    pub chunking_method: Option<String>,
+    pub symbol_name: Option<String>,
+    pub symbol_kind: Option<String>,
 
     // Chunk line range (1-indexed, inclusive)
     pub gh_line_start: Option<u32>,
@@ -150,6 +151,15 @@ pub fn build_github_payload(params: &GitHubPayloadParams) -> Value {
     obj.insert("gh_file_size_bytes".into(), json!(params.file_size_bytes));
     obj.insert("gh_line_start".into(), json!(params.gh_line_start));
     obj.insert("gh_line_end".into(), json!(params.gh_line_end));
+    if let Some(method) = &params.chunking_method {
+        obj.insert("chunking_method".into(), json!(method));
+    }
+    if let Some(name) = &params.symbol_name {
+        obj.insert("symbol_name".into(), json!(name));
+    }
+    if let Some(kind) = &params.symbol_kind {
+        obj.insert("symbol_kind".into(), json!(kind));
+    }
     payload
 }
 

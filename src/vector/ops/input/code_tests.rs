@@ -198,6 +198,54 @@ func main() {
 }
 
 #[test]
+fn chunk_typed_rust_function_has_symbol_metadata() {
+    let src = "fn hello() {\n    println!(\"hello\");\n}\n";
+    let chunks = chunk_code_chunks(src, "rs").unwrap();
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].symbol_name.as_deref(), Some("hello"));
+    assert_eq!(chunks[0].symbol_kind, Some(SymbolKind::Function));
+    assert_eq!(chunks[0].declaration_start_line, 1);
+    assert_eq!(chunks[0].declaration_end_line, 3);
+}
+
+#[test]
+fn chunk_typed_go_function_has_symbol_metadata() {
+    let src = "package main\n\nfunc Hello() {\n}\n";
+    let chunks = chunk_code_chunks(src, "go").unwrap();
+    assert!(chunks.iter().any(|chunk| {
+        chunk.symbol_name.as_deref() == Some("Hello")
+            && chunk.symbol_kind == Some(SymbolKind::Function)
+    }));
+}
+
+#[test]
+fn chunk_typed_python_uses_code_splitter_without_symbol_metadata() {
+    let mut src = String::new();
+    for i in 0..40 {
+        src.push_str(&format!(
+            "def func_{i}(x):\n    result = x * {i} + 1\n    return result\n\n"
+        ));
+    }
+    let chunks = chunk_code_chunks(&src, "py").unwrap();
+    assert!(chunks.len() > 1, "Python should stay code-split");
+    assert!(chunks.iter().all(|chunk| chunk.symbol_name.is_none()));
+    assert!(chunks.iter().all(|chunk| chunk.symbol_kind.is_none()));
+}
+
+#[test]
+fn oversized_rust_function_continuations_include_header() {
+    let mut src = String::from("fn big() {\n");
+    for i in 0..150 {
+        src.push_str(&format!("    let var_{i} = {i} * 2 + 1;\n"));
+    }
+    src.push_str("}\n");
+
+    let chunks = chunk_code_chunks(&src, "rs").unwrap();
+    assert!(chunks.len() > 2);
+    assert!(chunks[2].text.trim_start().starts_with("fn big()"));
+}
+
+#[test]
 fn chunk_bash_script() {
     let src = r#"
 #!/bin/bash

@@ -13,6 +13,7 @@ pub mod retrieve;
 pub mod scroll;
 
 // Re-exports for convenience (public API)
+pub(crate) use delete::qdrant_delete_repo_code_points;
 pub use delete::{qdrant_delete_points, qdrant_delete_stale_domain_urls, qdrant_delete_stale_tail};
 pub use facets::{qdrant_domain_facets, qdrant_facet, qdrant_facet_filtered, qdrant_url_facets};
 pub use retrieve::{

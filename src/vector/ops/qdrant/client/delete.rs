@@ -55,10 +55,11 @@ async fn qdrant_delete_with_retry(
             }
         }
     }
-    Err(anyhow!(
-        "{}",
-        last_error.unwrap_or_else(|| format!("{context}: unknown qdrant delete failure"))
-    ))
+    let message = match last_error {
+        Some(error) => error,
+        None => format!("{context}: unknown qdrant delete failure"),
+    };
+    Err(anyhow!("{}", message))
 }
 
 /// Delete all Qdrant points matching `url` via payload filter.
@@ -165,6 +166,36 @@ pub async fn qdrant_delete_stale_domain_urls(
     Ok(stale.len())
 }
 
+pub(crate) async fn qdrant_delete_repo_code_points(
+    cfg: &Config,
+    provider: &str,
+    owner: &str,
+    repo: &str,
+) -> Result<()> {
+    let client = internal_service_http_client()?;
+    let endpoint = qdrant_collection_endpoint(cfg, "points/delete?wait=true")?;
+    qdrant_delete_with_retry(
+        client,
+        &endpoint,
+        repo_code_points_delete_body(provider, owner, repo),
+        "qdrant_delete_repo_code_points",
+    )
+    .await
+}
+
+fn repo_code_points_delete_body(provider: &str, owner: &str, repo: &str) -> serde_json::Value {
+    serde_json::json!({
+        "filter": {
+            "must": [
+                {"key": "provider", "match": {"value": provider}},
+                {"key": "git_owner", "match": {"value": owner}},
+                {"key": "git_repo", "match": {"value": repo}},
+                {"key": "git_content_kind", "match": {"value": "file"}}
+            ]
+        }
+    })
+}
+
 pub async fn qdrant_delete_points(cfg: &Config, ids: &[String]) -> Result<usize> {
     if ids.is_empty() {
         return Ok(0);
@@ -181,4 +212,32 @@ pub async fn qdrant_delete_points(cfg: &Config, ids: &[String]) -> Result<usize>
         .await?;
     }
     Ok(ids.len())
+}
+
+#[cfg(test)]
+mod repo_code_delete_tests {
+    use super::*;
+
+    #[test]
+    fn repo_code_delete_body_is_scoped_to_one_repo_file_points() {
+        let body = repo_code_points_delete_body("github", "owner-a", "repo-a");
+        let must = body["filter"]["must"].as_array().expect("must array");
+        assert_eq!(must.len(), 4);
+        assert!(must.contains(&serde_json::json!({
+            "key": "provider",
+            "match": {"value": "github"}
+        })));
+        assert!(must.contains(&serde_json::json!({
+            "key": "git_owner",
+            "match": {"value": "owner-a"}
+        })));
+        assert!(must.contains(&serde_json::json!({
+            "key": "git_repo",
+            "match": {"value": "repo-a"}
+        })));
+        assert!(must.contains(&serde_json::json!({
+            "key": "git_content_kind",
+            "match": {"value": "file"}
+        })));
+    }
 }

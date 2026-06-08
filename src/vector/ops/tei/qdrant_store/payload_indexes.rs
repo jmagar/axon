@@ -21,6 +21,7 @@ const KEYWORD_INDEX_FIELDS: &[&str] = &[
     "gh_file_type",
     "gh_topics",
     "chunking_method",
+    "symbol_kind",
     "extractor_name",
     // Shared git provider schema (all git-backed ingest sources).
     "provider",

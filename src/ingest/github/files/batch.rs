@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::core::logging::{log_info, log_warn};
 use crate::ingest::progress::PhaseReporter;
+use crate::vector::ops::qdrant::qdrant_delete_repo_code_points;
 use crate::vector::ops::{PreparedDoc, embed_prepared_docs};
 use anyhow::Result;
 use futures_util::stream::{self, StreamExt};
@@ -55,6 +56,17 @@ pub(super) async fn collect_and_embed_batched(
     reporter: &PhaseReporter,
 ) -> Result<GitHubFileEmbedStats> {
     let concurrency = std::cmp::min(ctx.cfg.batch_concurrency, 16);
+    if !file_items.is_empty() {
+        log_info(&format!(
+            "github repo_code_delete_start owner={} repo={}",
+            ctx.owner, ctx.name
+        ));
+        qdrant_delete_repo_code_points(&ctx.cfg, "github", &ctx.owner, &ctx.name).await?;
+        log_info(&format!(
+            "github repo_code_delete_done owner={} repo={}",
+            ctx.owner, ctx.name
+        ));
+    }
     let mut file_stream = stream::iter(file_items)
         .map(|path| {
             let ctx = Arc::clone(ctx);

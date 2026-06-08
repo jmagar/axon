@@ -1,7 +1,7 @@
 # Qdrant Payload Schema Contract
 
 Status: active
-Last updated: 2026-05-21
+Last updated: 2026-06-08
 
 This document is the authoritative reference for fields stored in Qdrant point payloads.
 Code must conform to this contract; if the code diverges, update the code and this document
@@ -23,7 +23,7 @@ Every point in every collection carries these fields, regardless of source.
 | `chunk_index` | integer | yes | 0-based position within the document. |
 | `chunk_text` | raw string | no | The stored text chunk. Never truncated. |
 | `scraped_at` | datetime | yes | RFC3339 timestamp at embed time. |
-| `payload_schema_version` | integer | yes | Schema version at embed time. Pre-lu6a points lack this field (implicit v1). Current: `5`. |
+| `payload_schema_version` | integer | yes | Schema version at embed time. Pre-lu6a points lack this field (implicit v1). Current: `6`. |
 
 ### Conditional Universal Fields
 
@@ -34,6 +34,8 @@ Present only when the condition is met. Absence is intentional — do not write 
 | `title` | raw string | no | Source has a title (ingest paths, most verticals). Absent for generic crawl/embed. |
 | `extractor_name` | keyword | yes | Vertical extractor produced this point (`"github_repo"`, `"crates_io"`, etc.). Absent for crawl/embed. |
 | `chunking_method` | keyword | yes | Code chunk strategy: `"tree_sitter"` or `"prose"`. Absent when not a code chunk. |
+| `symbol_name` | raw string | no | Code declaration name for code chunks when known, e.g. `"parse"` or `"Response::parse"`. Stored but intentionally not indexed. Added in schema v6. |
+| `symbol_kind` | keyword | yes | Low-cardinality code declaration kind when known: `"function"`, `"method"`, `"struct"`, `"enum"`, `"trait"`, `"impl"`, `"const"`, `"static"`, `"type"`, `"mod"`, or `"other"`. Added in schema v6. |
 | `structured_kind` | keyword | no | Structured-data pass found JSON-LD/Next.js/SvelteKit: `"jsonld"`, `"next_data"`, `"sveltekit"`. |
 | `structured_type` | raw string | no | Schema.org type when `structured_kind` is present (`"Article"`, `"Product"`, …). |
 | `structured_id` | raw string | no | Schema.org `@id` when present. |
@@ -221,6 +223,8 @@ flat fields. The full per-extractor schema is defined in
 | 2 | axon_rust-lu6a | Added `payload_schema_version`, `extractor_name`, `structured_*` fields. |
 | 3 | 2026-05-21 | Added canonical git_* provider fields (git_host, git_owner, git_repo, git_content_kind, etc.) and vertical extractor extra payload fields. |
 | 4 | 2026-05-21 | Promoted gh_stars, gh_forks, gh_language, gh_topics, gh_is_fork, gh_is_archived, gh_file_type, gh_line_start, gh_line_end from git_meta blob to indexed top-level fields. Removed these keys from git_meta. |
+| 5 | 2026-05-16 | Added indexed top-level `seed_url` origin tracking for `axon refresh`. |
+| 6 | 2026-06-08 | Added code chunk `symbol_name`/`symbol_kind` metadata and restored `chunking_method` writes for GitHub file chunks. |
 
 Points without `payload_schema_version` are treated as version 1. Retrieval applies no version
 filter by default — all points are queryable. Use

@@ -241,6 +241,7 @@ async fn create_payload_indexes(
         "source_type",
         "gh_file_language",
         "chunking_method",
+        "symbol_kind",
     ] {
         client
             .put(&index_url)

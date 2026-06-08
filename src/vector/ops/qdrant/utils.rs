@@ -27,7 +27,9 @@ pub fn qdrant_base(cfg: &Config) -> &str {
 ///     blob to indexed top-level fields.
 /// v5: Added indexed top-level `seed_url` — the crawl start URL or ingest target
 ///     that originated each chunk (origin tracking; consumed by `axon refresh`).
-pub const PAYLOAD_SCHEMA_VERSION: u32 = 5;
+/// v6: Added code chunk `symbol_name`/`symbol_kind` metadata and restored
+///     `chunking_method` writes for GitHub file chunks.
+pub const PAYLOAD_SCHEMA_VERSION: u32 = 6;
 
 pub(crate) fn validate_collection_name(name: &str) -> Result<(), CollectionNameError> {
     crate::core::config::validate_collection_name(name)

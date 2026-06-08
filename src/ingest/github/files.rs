@@ -1,6 +1,5 @@
 mod batch;
 mod clone;
-mod line_range;
 mod prepare;
 
 use batch::collect_and_embed_batched;
