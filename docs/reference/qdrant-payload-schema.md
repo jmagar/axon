@@ -33,9 +33,10 @@ Present only when the condition is met. Absence is intentional — do not write 
 |-------|-------------|---------|--------------|
 | `title` | raw string | no | Source has a title (ingest paths, most verticals). Absent for generic crawl/embed. |
 | `extractor_name` | keyword | yes | Vertical extractor produced this point (`"github_repo"`, `"crates_io"`, etc.). Absent for crawl/embed. |
-| `chunking_method` | keyword | yes | Code chunk strategy: `"tree_sitter"` or `"prose"`. Absent when not a code chunk. |
+| `chunking_method` | keyword | yes | File chunk strategy for GitHub file chunks: `"tree_sitter"` for supported tree-sitter grammars or `"prose"` for text fallback chunks. Absent for non-file/non-code paths that do not emit chunking metadata. |
 | `symbol_name` | raw string | no | Code declaration name for code chunks when known, e.g. `"parse"` or `"Response::parse"`. Stored but intentionally not indexed. Added in schema v6. |
 | `symbol_kind` | keyword | yes | Low-cardinality code declaration kind when known: `"function"`, `"method"`, `"struct"`, `"enum"`, `"trait"`, `"impl"`, `"const"`, `"static"`, `"type"`, `"mod"`, or `"other"`. Added in schema v6. |
+| `symbol_extraction_status` | raw string | no | File-level symbol extraction status for GitHub file chunks: `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. Added in schema v6. |
 | `structured_kind` | keyword | no | Structured-data pass found JSON-LD/Next.js/SvelteKit: `"jsonld"`, `"next_data"`, `"sveltekit"`. |
 | `structured_type` | raw string | no | Schema.org type when `structured_kind` is present (`"Article"`, `"Product"`, …). |
 | `structured_id` | raw string | no | Schema.org `@id` when present. |
@@ -224,7 +225,7 @@ flat fields. The full per-extractor schema is defined in
 | 3 | 2026-05-21 | Added canonical git_* provider fields (git_host, git_owner, git_repo, git_content_kind, etc.) and vertical extractor extra payload fields. |
 | 4 | 2026-05-21 | Promoted gh_stars, gh_forks, gh_language, gh_topics, gh_is_fork, gh_is_archived, gh_file_type, gh_line_start, gh_line_end from git_meta blob to indexed top-level fields. Removed these keys from git_meta. |
 | 5 | 2026-05-16 | Added indexed top-level `seed_url` origin tracking for `axon refresh`. |
-| 6 | 2026-06-08 | Added code chunk `symbol_name`/`symbol_kind` metadata and restored `chunking_method` writes for GitHub file chunks. |
+| 6 | 2026-06-08 | Added code chunk `symbol_name`/`symbol_kind` metadata, `symbol_extraction_status`, and restored `chunking_method` writes for GitHub file chunks. |
 
 Points without `payload_schema_version` are treated as version 1. Retrieval applies no version
 filter by default — all points are queryable. Use

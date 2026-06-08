@@ -138,7 +138,10 @@ All GitHub chunks carry a **unified** set of 31 `gh_*` payload fields built by `
 | `gh_file_type` | `string` | `"test"`, `"config"`, `"doc"`, or `"source"` (from `classify_file_type()`) |
 | `gh_is_test` | `boolean` | Whether the file is a test file |
 | `gh_file_size_bytes` | `integer` | File size in bytes |
-| `gh_chunking_method` | `string` | `"tree-sitter"` or `"prose"` — how the file was chunked |
+| `chunking_method` | `string` | `"tree_sitter"` or `"prose"` — how the file was chunked |
+| `symbol_name` | `string` | Declaration name for code chunks when known, e.g. `"Response::parse"` |
+| `symbol_kind` | `string` | Declaration kind for code chunks when known, e.g. `"function"` or `"method"` |
+| `symbol_extraction_status` | `string` | File-level symbol extraction status: `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"` |
 
 ### Issue/PR fields
 

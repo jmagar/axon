@@ -8,7 +8,7 @@ mod extract;
 mod postprocess;
 
 pub use chunk::{CodeChunk, SymbolKind};
-use extract::{extract_symbols, find_symbol_for_chunk, language_for_extension};
+use extract::{Extractor, extract_symbols, find_symbol_for_chunk, language_for_extension};
 use postprocess::{
     attach_leading_comments, dedupe_exact_ranges, inject_declaration_headers,
     merge_tiny_declarations,
@@ -66,6 +66,31 @@ pub fn chunk_code_chunks(content: &str, file_extension: &str) -> Option<Vec<Code
     let out = merge_tiny_declarations(out);
     let out = inject_declaration_headers(out);
     Some(out)
+}
+
+pub fn supports_tree_sitter_chunking(file_extension: &str) -> bool {
+    language_for_extension(file_extension).is_some()
+}
+
+pub fn code_symbol_extraction_status(
+    content: &str,
+    file_extension: &str,
+    chunks: &[CodeChunk],
+) -> &'static str {
+    let Some(spec) = language_for_extension(file_extension) else {
+        return "prose";
+    };
+    if spec.extractor == Extractor::None {
+        return "unsupported";
+    }
+    if content.len() > max_tree_sitter_file_bytes() {
+        return "skipped_large";
+    }
+    if chunks.iter().any(|chunk| chunk.symbol_kind.is_some()) {
+        "ok"
+    } else {
+        "none_found"
+    }
 }
 
 fn split_code_indices(

@@ -166,33 +166,66 @@ pub async fn qdrant_delete_stale_domain_urls(
     Ok(stale.len())
 }
 
-pub(crate) async fn qdrant_delete_repo_code_points(
+pub async fn qdrant_delete_stale_repo_file_urls(
     cfg: &Config,
     provider: &str,
     owner: &str,
     repo: &str,
-) -> Result<()> {
+    current_urls: &HashSet<String>,
+) -> Result<usize> {
+    let indexed = scroll_url_set(cfg, repo_file_points_filter(provider, owner, repo), None).await?;
+    let stale: Vec<String> = indexed
+        .into_iter()
+        .filter(|url| !current_urls.contains(url))
+        .collect();
+    if stale.is_empty() {
+        return Ok(0);
+    }
+
+    let url_conditions: Vec<serde_json::Value> = stale
+        .iter()
+        .map(|url| serde_json::json!({"key": "url", "match": {"value": url}}))
+        .collect();
     let client = internal_service_http_client()?;
-    let endpoint = qdrant_collection_endpoint(cfg, "points/delete?wait=true")?;
-    qdrant_delete_with_retry(
-        client,
-        &endpoint,
-        repo_code_points_delete_body(provider, owner, repo),
-        "qdrant_delete_repo_code_points",
-    )
-    .await
+    let endpoint = qdrant_collection_endpoint(cfg, "points/delete?wait=false")?;
+    for batch in url_conditions.chunks(500) {
+        qdrant_delete_with_retry(
+            client,
+            &endpoint,
+            serde_json::json!({"filter": {"should": batch}}),
+            "qdrant_delete_stale_repo_file_urls",
+        )
+        .await?;
+    }
+    Ok(stale.len())
 }
 
+#[cfg(test)]
 fn repo_code_points_delete_body(provider: &str, owner: &str, repo: &str) -> serde_json::Value {
     serde_json::json!({
-        "filter": {
-            "must": [
-                {"key": "provider", "match": {"value": provider}},
-                {"key": "git_owner", "match": {"value": owner}},
-                {"key": "git_repo", "match": {"value": repo}},
-                {"key": "git_content_kind", "match": {"value": "file"}}
-            ]
-        }
+        "filter": repo_file_points_filter(provider, owner, repo)
+    })
+}
+
+fn repo_file_points_filter(provider: &str, owner: &str, repo: &str) -> serde_json::Value {
+    serde_json::json!({
+        "should": [
+            {
+                "must": [
+                    {"key": "provider", "match": {"value": provider}},
+                    {"key": "git_owner", "match": {"value": owner}},
+                    {"key": "git_repo", "match": {"value": repo}},
+                    {"key": "git_content_kind", "match": {"value": "file"}}
+                ]
+            },
+            {
+                "must": [
+                    {"key": "gh_owner", "match": {"value": owner}},
+                    {"key": "gh_repo", "match": {"value": repo}},
+                    {"key": "gh_content_kind", "match": {"value": "file"}}
+                ]
+            }
+        ]
     })
 }
 
@@ -221,7 +254,8 @@ mod repo_code_delete_tests {
     #[test]
     fn repo_code_delete_body_is_scoped_to_one_repo_file_points() {
         let body = repo_code_points_delete_body("github", "owner-a", "repo-a");
-        let must = body["filter"]["must"].as_array().expect("must array");
+        let should = body["filter"]["should"].as_array().expect("should array");
+        let must = should[0]["must"].as_array().expect("canonical must array");
         assert_eq!(must.len(), 4);
         assert!(must.contains(&serde_json::json!({
             "key": "provider",
@@ -237,6 +271,19 @@ mod repo_code_delete_tests {
         })));
         assert!(must.contains(&serde_json::json!({
             "key": "git_content_kind",
+            "match": {"value": "file"}
+        })));
+        let legacy = should[1]["must"].as_array().expect("legacy must array");
+        assert!(legacy.contains(&serde_json::json!({
+            "key": "gh_owner",
+            "match": {"value": "owner-a"}
+        })));
+        assert!(legacy.contains(&serde_json::json!({
+            "key": "gh_repo",
+            "match": {"value": "repo-a"}
+        })));
+        assert!(legacy.contains(&serde_json::json!({
+            "key": "gh_content_kind",
             "match": {"value": "file"}
         })));
     }

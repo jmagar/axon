@@ -219,6 +219,39 @@ fn chunk_typed_go_function_has_symbol_metadata() {
 }
 
 #[test]
+fn symbol_extraction_status_is_observable() {
+    let rust = "fn hello() {}\n";
+    let rust_chunks = chunk_code_chunks(rust, "rs").unwrap();
+    assert_eq!(
+        code_symbol_extraction_status(rust, "rs", &rust_chunks),
+        "ok"
+    );
+
+    let py = "def hello():\n    pass\n";
+    let py_chunks = chunk_code_chunks(py, "py").unwrap();
+    assert_eq!(
+        code_symbol_extraction_status(py, "py", &py_chunks),
+        "unsupported"
+    );
+
+    let text_chunks = vec![CodeChunk {
+        text: "hello".into(),
+        byte_start: 0,
+        byte_end: 5,
+        start_line: 1,
+        end_line: 1,
+        declaration_start_line: 1,
+        declaration_end_line: 1,
+        symbol_name: None,
+        symbol_kind: None,
+    }];
+    assert_eq!(
+        code_symbol_extraction_status("hello", "txt", &text_chunks),
+        "prose"
+    );
+}
+
+#[test]
 fn chunk_typed_python_uses_code_splitter_without_symbol_metadata() {
     let mut src = String::new();
     for i in 0..40 {

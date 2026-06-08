@@ -12,7 +12,9 @@ use crate::vector::ops::input::classify::{
 };
 use crate::vector::ops::input::{
     CHUNK_OVERLAP, chunk_text,
-    code::{CodeChunk, chunk_code_chunks},
+    code::{
+        CodeChunk, chunk_code_chunks, code_symbol_extraction_status, supports_tree_sitter_chunking,
+    },
 };
 
 use super::super::meta::{GitHubPayloadParams, build_github_payload};
@@ -104,7 +106,7 @@ pub(super) async fn read_file_embed_docs(
             log_warn(&format!(
                 "command=ingest_github stat_failed path={path} err={e}"
             ));
-            return Ok(Vec::new());
+            return Err(format!("stat failed for {path}: {e}"));
         }
         _ => {}
     }
@@ -115,7 +117,7 @@ pub(super) async fn read_file_embed_docs(
             log_warn(&format!(
                 "command=ingest_github read_failed path={path} err={e}"
             ));
-            return Ok(Vec::new());
+            return Err(format!("read failed for {path}: {e}"));
         }
     };
     if text.trim().is_empty() {
@@ -143,6 +145,12 @@ pub(super) async fn read_file_embed_docs(
     let ftype = classify_file_type(path).to_string();
     let is_test = is_test_path(path);
     let file_size = text.len();
+    let symbol_status = code_symbol_extraction_status(&text, &ext, &chunks);
+    if matches!(symbol_status, "skipped_large" | "none_found") {
+        log_warn(&format!(
+            "command=ingest_github symbol_extraction_status path={path} ext={ext} status={symbol_status}"
+        ));
+    }
 
     let attrs = FileDocAttrs {
         base_url,
@@ -152,6 +160,7 @@ pub(super) async fn read_file_embed_docs(
         ftype: &ftype,
         is_test,
         file_size,
+        symbol_status,
     };
     let docs = chunks
         .into_iter()
@@ -200,6 +209,7 @@ struct FileDocAttrs<'a> {
     ftype: &'a str,
     is_test: bool,
     file_size: usize,
+    symbol_status: &'static str,
 }
 
 fn prepared_doc_for_chunk(
@@ -228,6 +238,7 @@ fn prepared_doc_for_chunk(
         chunking_method: Some(chunking_method(attrs.ext, &chunk).to_string()),
         symbol_name: chunk.symbol_name.clone(),
         symbol_kind: chunk.symbol_kind_str().map(str::to_string),
+        symbol_extraction_status: Some(attrs.symbol_status.to_string()),
         ..Default::default()
     });
 
@@ -245,12 +256,7 @@ fn prepared_doc_for_chunk(
 }
 
 fn chunking_method(ext: &str, chunk: &CodeChunk) -> &'static str {
-    if chunk.symbol_kind.is_some()
-        || matches!(
-            ext,
-            "rs" | "py" | "js" | "jsx" | "ts" | "tsx" | "go" | "sh" | "bash"
-        )
-    {
+    if chunk.symbol_kind.is_some() || supports_tree_sitter_chunking(ext) {
         "tree_sitter"
     } else {
         "prose"
@@ -278,3 +284,7 @@ pub(super) fn build_file_embed_ctx(
         is_private: common.is_private,
     })
 }
+
+#[cfg(test)]
+#[path = "prepare_tests.rs"]
+mod tests;

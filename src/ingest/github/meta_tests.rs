@@ -63,12 +63,14 @@ fn payload_code_chunk_metadata_populated_when_present() {
         chunking_method: Some("tree_sitter".into()),
         symbol_name: Some("Response::parse".into()),
         symbol_kind: Some("method".into()),
+        symbol_extraction_status: Some("ok".into()),
         ..Default::default()
     };
     let payload = build_github_payload(&params);
     assert_eq!(payload["chunking_method"], "tree_sitter");
     assert_eq!(payload["symbol_name"], "Response::parse");
     assert_eq!(payload["symbol_kind"], "method");
+    assert_eq!(payload["symbol_extraction_status"], "ok");
 }
 
 #[test]
@@ -130,10 +132,19 @@ fn payload_keys_use_known_prefixes() {
     let payload = build_github_payload(&params);
     let obj = payload.as_object().unwrap();
     for key in obj.keys() {
-        let valid = key.starts_with("gh_") || key.starts_with("git_") || key == "provider";
+        let valid = key.starts_with("gh_")
+            || key.starts_with("git_")
+            || matches!(
+                key.as_str(),
+                "provider"
+                    | "chunking_method"
+                    | "symbol_name"
+                    | "symbol_kind"
+                    | "symbol_extraction_status"
+            );
         assert!(
             valid,
-            "unexpected key '{key}' — expected gh_*, git_*, or provider"
+            "unexpected key '{key}' — expected gh_*, git_*, provider, or code chunk metadata"
         );
     }
 }

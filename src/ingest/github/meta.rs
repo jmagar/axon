@@ -61,6 +61,7 @@ pub struct GitHubPayloadParams {
     pub chunking_method: Option<String>,
     pub symbol_name: Option<String>,
     pub symbol_kind: Option<String>,
+    pub symbol_extraction_status: Option<String>,
 
     // Chunk line range (1-indexed, inclusive)
     pub gh_line_start: Option<u32>,
@@ -159,6 +160,9 @@ pub fn build_github_payload(params: &GitHubPayloadParams) -> Value {
     }
     if let Some(kind) = &params.symbol_kind {
         obj.insert("symbol_kind".into(), json!(kind));
+    }
+    if let Some(status) = &params.symbol_extraction_status {
+        obj.insert("symbol_extraction_status".into(), json!(status));
     }
     payload
 }

@@ -37,6 +37,11 @@ impl SymbolKind {
 
 /// Owned code chunk metadata. Never store tree-sitter nodes here; they borrow
 /// the parse tree and cannot safely cross this pure chunking boundary.
+///
+/// `text` is the rendered chunk to embed. Post-processing may prepend leading
+/// comments or synthesized declaration headers, so byte spans identify the
+/// original source region used to produce the chunk rather than promising
+/// `text == source[byte_start..byte_end]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeChunk {
     pub text: String,

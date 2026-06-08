@@ -113,11 +113,14 @@ Schema v6 adds code declaration metadata for GitHub file chunks:
 | `chunking_method` | yes | Restored write of `"tree_sitter"` or `"prose"` for GitHub file chunks. |
 | `symbol_name` | no | Declaration name when known, e.g. `"Response::parse"`. Stored for retrieval, not indexed. |
 | `symbol_kind` | yes | Low-cardinality declaration kind such as `"function"`, `"method"`, `"struct"`, `"const"`, or `"type"`. |
+| `symbol_extraction_status` | no | File-level status that explains missing symbol fields: `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. |
 
 GitHub code chunks also changed boundaries because doc comments, duplicate capture cleanup,
 qualified names, tiny declaration merging, and oversized-declaration header injection all
-operate before embedding. This means a full GitHub re-ingest is required to backfill symbol
-metadata on existing code points.
+operate before embedding. A successful full GitHub re-ingest now embeds the current file set
+first, then removes stale repo file URLs that were not recreated. Partial `--no-source` ingests
+skip repo-level stale cleanup so an intentionally partial refresh does not delete existing
+source-code chunks.
 
 ---
 
