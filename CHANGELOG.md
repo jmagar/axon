@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.1] - 2026-06-08
+
+### Changed
+
+- **Chrome extension launcher internals cleanup.** Derive the per-action input
+  mode from the action catalog instead of hardcoded id-lists, unify the result
+  status-badge construction behind one helper, cache the extension config (read
+  once, refresh on `storage.onChanged`) instead of a `chrome.storage` read per
+  request, repaint the server-status dot in place rather than rebuilding the
+  browse panel, and guard tab-change re-renders on the resolved URL. No
+  behavior change.
+
 ## [5.3.0] - 2026-06-08
 
 ### Added

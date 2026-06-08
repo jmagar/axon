@@ -14,19 +14,22 @@
   const COLOR_CODE = true; // color-code actions by family (design default on)
 
   const state = { view: "browse", tab: null, online: null, host: "", op: null, lastStatus: 200, bodyEl: null };
+  // config is read once from storage and refreshed on change (see storage.onChanged),
+  // so requestAxon reads it synchronously instead of an IPC round-trip per request.
+  let config = { axonUrl: DEFAULT_AXON_URL, axonToken: "" };
 
   /* ── config + request layer ── */
-  async function loadConfig() {
+  async function refreshConfig() {
     const stored = (chrome.storage && chrome.storage.local) ? await chrome.storage.local.get(["axonUrl", "axonToken"]) : {};
-    return { axonUrl: stored.axonUrl || DEFAULT_AXON_URL, axonToken: stored.axonToken || "" };
+    config = { axonUrl: stored.axonUrl || DEFAULT_AXON_URL, axonToken: stored.axonToken || "" };
+    return config;
   }
   function isLoopback(server) {
     try { const h = new URL(server).hostname; return h === "127.0.0.1" || h === "localhost" || h === "::1"; } catch { return false; }
   }
   async function requestAxon(method, path, body) {
-    const cfg = await loadConfig();
-    const server = cfg.axonUrl.trim().replace(/\/+$/, "");
-    const token = cfg.axonToken.trim();
+    const server = config.axonUrl.trim().replace(/\/+$/, "");
+    const token = config.axonToken.trim();
     if (!server) throw new Error("Axon server URL is required. Open Settings.");
     const headers = {};
     if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -64,12 +67,15 @@
     } catch { return null; }
   }
 
-  /* ── arg model ── */
+  /* ── arg model (derived from the catalog: arg / noArg / optionalArg) ──
+   *   optional → run now, optional filter/focus input (sources, domains, suggest)
+   *   none     → run now, no input (doctor, status, stats)
+   *   url      → prefill the active tab + run (url/input/target args)
+   *   query    → wait for a typed query (search, query, ask, …) */
   function argMode(op) {
-    if (["doctor", "status", "stats"].includes(op.id)) return "none";
-    if (["suggest", "sources", "domains"].includes(op.id)) return "optional";
-    if (["search", "research", "query", "ask", "evaluate"].includes(op.id)) return "query";
-    return "url"; // scrape, map, retrieve, screenshot, diff, brand, endpoints, crawl, extract, embed, ingest, summarize
+    if (op.optionalArg) return "optional";
+    if (op.noArg) return "none";
+    return op.arg === "url" || op.arg === "input" || op.arg === "target" ? "url" : "query";
   }
   function splitUrls(arg) {
     return String(arg || "").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
@@ -129,10 +135,16 @@
       gear,
     ]);
   }
+  function applyStatusBadge(badge, code) {
+    const ok = code >= 200 && code < 300;
+    badge.className = `ext-statusbadge ${code === 202 ? "is-accepted" : !ok ? "is-error" : ""}`;
+    badge.textContent = "";
+    badge.appendChild(Icon(ok ? "check" : "alert", 11));
+    badge.appendChild(document.createTextNode(code >= 100 ? String(code) : "ERR"));
+  }
   function resultHeader(title, back) {
-    const ok = state.lastStatus >= 200 && state.lastStatus < 300;
-    const badgeClass = state.view === "result" && state.op && state.lastStatus === 202 ? "is-accepted" : !ok ? "is-error" : "";
-    const badge = el("span", { class: `ext-statusbadge ${badgeClass}` }, [Icon(ok ? "check" : "alert", 11), String(state.lastStatus)]);
+    const badge = el("span", { class: "ext-statusbadge" });
+    applyStatusBadge(badge, state.lastStatus);
     return el("header", { class: "ext-result-head" }, [
       el("button", { class: "ext-icon", title: "Back", "aria-label": "Back", onclick: back }, iconSvg("arrowLeft", { size: 17 })),
       el("span", { class: "ext-result-title" }, title),
@@ -195,7 +207,7 @@
     let argInput = null;
     if (mode !== "none") {
       const placeholder = mode === "url" ? "URL…" : op.argLabel || "input…";
-      argInput = el("input", { class: "ext-arginput", type: "text", spellcheck: "false", autocomplete: "off", placeholder, value: state.pendingArg || "" });
+      argInput = el("input", { class: "ext-arginput", type: "text", spellcheck: "false", autocomplete: "off", placeholder });
       const run = () => runWithArg(op, argInput.value.trim());
       argInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); run(); } });
       panel.appendChild(el("div", { class: "ext-argbar" }, [
@@ -210,12 +222,17 @@
     panel.appendChild(body);
     panel.appendChild(footer());
 
-    // decide initial run
-    state.pendingArg = null;
-    if (mode === "url") { const initial = state.initialArg != null ? state.initialArg : ((state.tab && state.tab.url) || ""); if (argInput) argInput.value = initial; runWithArg(op, initial); }
-    else if (mode === "optional" || mode === "none") { if (state.initialArg) { if (argInput) argInput.value = state.initialArg; runWithArg(op, state.initialArg); } else runWithArg(op, ""); }
-    else if (mode === "query") { if (state.initialArg) { if (argInput) argInput.value = state.initialArg; runWithArg(op, state.initialArg); } else { body.appendChild(promptHint(op)); if (argInput) setTimeout(() => argInput.focus(), 40); } }
+    // decide initial run: url/optional/none auto-run; query waits for a typed
+    // query unless an override (context-menu intent) was supplied.
+    const initial = state.initialArg != null ? state.initialArg : (mode === "url" ? ((state.tab && state.tab.url) || "") : "");
     state.initialArg = null;
+    if (argInput) argInput.value = initial;
+    if (mode === "query" && !initial) {
+      body.appendChild(promptHint(op));
+      if (argInput) setTimeout(() => argInput.focus(), 40);
+    } else {
+      runWithArg(op, initial);
+    }
   }
   function promptHint(op) {
     return el("div", { class: "ext-loading" }, [Icon("arrowUp", 14, "var(--aurora-text-muted)"), `Enter a ${op.argLabel || "query"} above to run ${op.name}.`]);
@@ -243,18 +260,9 @@
     }
   }
   function refreshResultBadge() {
-    // rebuild only the header to reflect the latest HTTP status
-    const head = panel.querySelector(".ext-result-head");
-    if (!head) return;
-    const code = state.lastStatus;
-    const ok = code >= 200 && code < 300;
-    const label = code >= 100 ? String(code) : "ERR";
-    const badge = head.querySelector(".ext-statusbadge");
-    if (!badge) return;
-    badge.className = `ext-statusbadge ${code === 202 ? "is-accepted" : !ok ? "is-error" : ""}`;
-    badge.textContent = "";
-    badge.appendChild(Icon(ok ? "check" : "alert", 11));
-    badge.appendChild(document.createTextNode(label));
+    // update just the header badge in place to reflect the latest HTTP status
+    const badge = panel.querySelector(".ext-result-head .ext-statusbadge");
+    if (badge) applyStatusBadge(badge, state.lastStatus);
   }
   function errorCard(op, error) {
     const status = error && error.status ? error.status : "ERR";
@@ -296,25 +304,32 @@
   }
 
   /* ── server status dot ── */
+  function paintStatus() {
+    if (state.view !== "browse" || !panel) return; // browse rebuilds from state on its own
+    const dot = panel.querySelector(".ext-head .ext-dot");
+    if (dot) {
+      dot.className = `ext-dot ${state.online === false ? "is-off" : state.online == null ? "is-wait" : ""}`;
+      dot.title = state.online === false ? "Axon offline" : state.online == null ? "Checking…" : "Axon online";
+    }
+    const host = panel.querySelector(".ext-head .ext-host");
+    if (host) { host.textContent = state.host || "not configured"; host.title = state.host; }
+  }
   async function checkHealth() {
-    const cfg = await loadConfig();
-    try { state.host = new URL(cfg.axonUrl).host; } catch { state.host = cfg.axonUrl; }
+    try { state.host = new URL(config.axonUrl).host; } catch { state.host = config.axonUrl; }
     state.online = null;
-    if (state.view === "browse") render();
+    paintStatus();
     try {
       await requestAxon("GET", "/healthz");
       state.online = true;
     } catch { state.online = false; }
-    if (state.view === "browse") render();
+    paintStatus();
   }
 
   /* ── context-menu intents ── */
-  const INTENT_OPS = { scrape: "scrape", ingest: "ingest", ask: "ask" };
+  const INTENT_OPS = new Set(["scrape", "ingest", "ask"]); // ops the context menu may trigger
   function applyIntent(intent) {
-    if (!intent || !intent.op) return;
-    const opId = INTENT_OPS[intent.op];
-    if (!opId) return;
-    openAction(OP_BY_ID[opId], intent.arg || undefined);
+    if (!intent || !INTENT_OPS.has(intent.op)) return;
+    openAction(OP_BY_ID[intent.op], intent.arg || undefined);
   }
   async function consumePendingIntent() {
     if (!(chrome.storage && chrome.storage.local)) return;
@@ -325,8 +340,18 @@
     }
   }
 
+  // Re-resolve the active tab; only rebuild browse when the URL actually changed
+  // (onUpdated fires repeatedly during a single page load).
+  async function refreshTab() {
+    const next = await getActiveTab();
+    const changed = (next && next.url) !== (state.tab && state.tab.url);
+    state.tab = next;
+    if (changed && state.view === "browse") render();
+  }
+
   /* ── boot ── */
   async function init() {
+    await refreshConfig();
     state.tab = await getActiveTab();
     mount();
     checkHealth();
@@ -335,9 +360,9 @@
     chrome.runtime && chrome.runtime.onMessage && chrome.runtime.onMessage.addListener((msg) => {
       if (msg && msg.type === "axon-intent") applyIntent(msg);
     });
-    chrome.tabs && chrome.tabs.onActivated && chrome.tabs.onActivated.addListener(async () => { state.tab = await getActiveTab(); if (state.view === "browse") render(); });
-    chrome.tabs && chrome.tabs.onUpdated && chrome.tabs.onUpdated.addListener(async (_id, info) => { if (info.status === "complete" || info.url) { state.tab = await getActiveTab(); if (state.view === "browse") render(); } });
-    chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener((changes, area) => { if (area === "local" && (changes.axonUrl || changes.axonToken)) checkHealth(); });
+    chrome.tabs && chrome.tabs.onActivated && chrome.tabs.onActivated.addListener(() => refreshTab());
+    chrome.tabs && chrome.tabs.onUpdated && chrome.tabs.onUpdated.addListener((_id, info) => { if (info.status === "complete" || info.url) refreshTab(); });
+    chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener((changes, area) => { if (area === "local" && (changes.axonUrl || changes.axonToken)) refreshConfig().then(checkHealth); });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
