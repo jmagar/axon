@@ -81,6 +81,7 @@ pub(crate) fn payload(
             "private": repo.private,
             "gitea": kind_extra,
         })),
+        ..GitPayload::default()
     })
 }
 

@@ -209,22 +209,11 @@ fn repo_code_points_delete_body(provider: &str, owner: &str, repo: &str) -> serd
 
 fn repo_file_points_filter(provider: &str, owner: &str, repo: &str) -> serde_json::Value {
     serde_json::json!({
-        "should": [
-            {
-                "must": [
-                    {"key": "provider", "match": {"value": provider}},
-                    {"key": "git_owner", "match": {"value": owner}},
-                    {"key": "git_repo", "match": {"value": repo}},
-                    {"key": "git_content_kind", "match": {"value": "file"}}
-                ]
-            },
-            {
-                "must": [
-                    {"key": "gh_owner", "match": {"value": owner}},
-                    {"key": "gh_repo", "match": {"value": repo}},
-                    {"key": "gh_content_kind", "match": {"value": "file"}}
-                ]
-            }
+        "must": [
+            {"key": "provider", "match": {"value": provider}},
+            {"key": "git_owner", "match": {"value": owner}},
+            {"key": "git_repo", "match": {"value": repo}},
+            {"key": "git_content_kind", "match": {"value": "file"}}
         ]
     })
 }
@@ -254,8 +243,9 @@ mod repo_code_delete_tests {
     #[test]
     fn repo_code_delete_body_is_scoped_to_one_repo_file_points() {
         let body = repo_code_points_delete_body("github", "owner-a", "repo-a");
-        let should = body["filter"]["should"].as_array().expect("should array");
-        let must = should[0]["must"].as_array().expect("canonical must array");
+        let must = body["filter"]["must"]
+            .as_array()
+            .expect("canonical must array");
         assert_eq!(must.len(), 4);
         assert!(must.contains(&serde_json::json!({
             "key": "provider",
@@ -271,19 +261,6 @@ mod repo_code_delete_tests {
         })));
         assert!(must.contains(&serde_json::json!({
             "key": "git_content_kind",
-            "match": {"value": "file"}
-        })));
-        let legacy = should[1]["must"].as_array().expect("legacy must array");
-        assert!(legacy.contains(&serde_json::json!({
-            "key": "gh_owner",
-            "match": {"value": "owner-a"}
-        })));
-        assert!(legacy.contains(&serde_json::json!({
-            "key": "gh_repo",
-            "match": {"value": "repo-a"}
-        })));
-        assert!(legacy.contains(&serde_json::json!({
-            "key": "gh_content_kind",
             "match": {"value": "file"}
         })));
     }

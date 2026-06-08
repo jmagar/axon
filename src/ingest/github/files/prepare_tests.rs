@@ -50,7 +50,7 @@ async fn read_file_embed_docs_writes_symbol_payload_contract() {
     let extra = method_doc.extra.as_ref().expect("github payload");
     assert_eq!(extra["provider"], "github");
     assert_eq!(extra["git_content_kind"], "file");
-    assert_eq!(extra["chunking_method"], "tree_sitter");
+    assert_eq!(extra["code_chunking_method"], "tree_sitter");
     assert_eq!(extra["symbol_name"], "Response::parse");
     assert_eq!(extra["symbol_kind"], "method");
     assert_eq!(extra["symbol_extraction_status"], "ok");

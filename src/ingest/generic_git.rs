@@ -10,6 +10,9 @@ use crate::ingest::git_payload::{GitPayload, build_git_payload};
 use crate::ingest::github::{is_indexable_doc_path, is_indexable_source_path};
 use crate::ingest::progress::PhaseReporter;
 use crate::ingest::subprocess::{SUBPROCESS_TIMEOUT, run_command_with_timeout};
+use crate::vector::ops::input::classify::{
+    classify_file_type, is_test_path, language_name, path_extension,
+};
 use crate::vector::ops::{PreparedDoc, chunk_text, embed_prepared_docs};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,6 +210,9 @@ async fn file_doc(
         content_kind: "file",
         branch: Some(branch.to_string()),
         file_path: Some(rel.clone()),
+        file_language: Some(language_name(path_extension(&rel)).to_string()),
+        file_type: Some(classify_file_type(&rel).to_string()),
+        file_is_test: Some(is_test_path(&rel)),
         meta: Some(serde_json::json!({ "clone_url": target.clone_url })),
         ..GitPayload::default()
     });

@@ -4,6 +4,9 @@ use reqwest::StatusCode;
 
 use crate::core::config::Config;
 use crate::ingest::git_payload::{GitPayload, build_git_payload};
+use crate::vector::ops::input::classify::{
+    classify_file_type, is_test_path, language_name, path_extension,
+};
 use crate::vector::ops::{PreparedDoc, chunk_text, embed_prepared_docs};
 
 use super::client::fetch_paginated;
@@ -41,6 +44,17 @@ pub(crate) fn gitlab_payload(
         .get("path")
         .and_then(|v| v.as_str())
         .map(str::to_string);
+    let (file_language, file_type, file_is_test) = if git_content_kind == "file" {
+        file_path.as_deref().map_or((None, None, None), |path| {
+            (
+                Some(language_name(path_extension(path)).to_string()),
+                Some(classify_file_type(path).to_string()),
+                Some(is_test_path(path)),
+            )
+        })
+    } else {
+        (None, None, None)
+    };
     let branch = kind_extra
         .get("branch")
         .and_then(|v| v.as_str())
@@ -63,7 +77,9 @@ pub(crate) fn gitlab_payload(
         created_at,
         updated_at,
         file_path,
-        file_language: None,
+        file_language,
+        file_type,
+        file_is_test,
         meta: Some(serde_json::json!({
             "namespace_path": target.namespace_path,
             "visibility": project.visibility,
@@ -71,6 +87,7 @@ pub(crate) fn gitlab_payload(
             "default_branch": project.default_branch,
             "gitlab": kind_extra,
         })),
+        ..GitPayload::default()
     })
 }
 

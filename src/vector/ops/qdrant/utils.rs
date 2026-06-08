@@ -29,7 +29,9 @@ pub fn qdrant_base(cfg: &Config) -> &str {
 ///     that originated each chunk (origin tracking; consumed by `axon refresh`).
 /// v6: Added code chunk `symbol_name`/`symbol_kind` metadata and restored
 ///     `chunking_method` writes for GitHub file chunks.
-pub const PAYLOAD_SCHEMA_VERSION: u32 = 6;
+/// v7: Clean-break git/code payload schema. New git-backed file chunks write
+///     provider-neutral `git_*` and `code_*` fields instead of `gh_*` duplicates.
+pub const PAYLOAD_SCHEMA_VERSION: u32 = 7;
 
 pub(crate) fn validate_collection_name(name: &str) -> Result<(), CollectionNameError> {
     crate::core::config::validate_collection_name(name)
