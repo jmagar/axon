@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Admin panel build.** `apps/web/lib/axon-client.ts` referenced the removed
   `WatchCreateRequest` OpenAPI schema; corrected to `WatchDefCreateRequest` (the
   `POST /v1/watch` request body), unblocking `next build` / `just web-build`.
+- **Release pipeline repaired.** `release.yml` never produced 5.x binary assets
+  because every build job failed: the non-cone `sparse-checkout` omitted root
+  `Cargo.toml`/`Cargo.lock` (axon jobs) and `apps/desktop` (palette jobs), and
+  the axon jobs never created the `apps/web/out` folder the binary RustEmbeds.
+  All four jobs now do a full checkout, and the axon jobs add the empty
+  `apps/web/out` placeholder (mirroring `ci.yml`). The Windows axon build also
+  disables the bash `rustc-wrapper` (which can't run as a Windows rustc wrapper —
+  os error 193), matching the palette-windows job.
+- **`install.sh` asset contract aligned.** The installer fetched a bare
+  `axon-<rust-triple>` asset, but `release.yml` publishes a
+  `axon-linux-x86_64.tar.gz` tarball, so installs 404'd against real releases.
+  `install.sh` now downloads, checksum-verifies, and extracts the tarball.
 
 ## [5.4.1] - 2026-06-08
 
