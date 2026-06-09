@@ -38,14 +38,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required to create releases
+  contents: read
 
 jobs:
   build:
     name: build android apk
     runs-on: ubuntu-latest
+    # Only this job publishes a release; scope contents: write here rather than
+    # granting it workflow-wide to every step (build/sign included).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       # Optional Aurora composite checkout (see header). Lands a sibling
       # checkout alongside the repo and exports its android/ path for Gradle.
@@ -53,6 +59,7 @@ jobs:
         if: vars.AURORA_REPO != ''
         uses: actions/checkout@v5
         with:
+          persist-credentials: false
           repository: ${{ vars.AURORA_REPO }}
           ref: ${{ vars.AURORA_REF }}
           path: .aurora-design-system
@@ -60,7 +67,9 @@ jobs:
 
       - name: Export Aurora path
         if: vars.AURORA_REPO != ''
-        run: echo "AXON_AURORA_ANDROID_PATH=${{ github.workspace }}/.aurora-design-system/android" >> "$GITHUB_ENV"
+        # Use the built-in $GITHUB_WORKSPACE env var rather than a ${{ }} template
+        # expansion inside the run script (avoids the template-injection lint).
+        run: echo "AXON_AURORA_ANDROID_PATH=$GITHUB_WORKSPACE/.aurora-design-system/android" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

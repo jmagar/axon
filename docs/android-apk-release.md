@@ -56,6 +56,7 @@ If `AURORA_REPO` is unset, the build proceeds and Aurora resolves from Maven
    Android SDK build-tools availability on `ubuntu-latest`.
 4. Bump `versionName` (and `versionCode`) in `apps/android/app/build.gradle.kts`.
 5. Tag and push:
+
    ```bash
    git tag android-v<versionName>
    git push origin android-v<versionName>
