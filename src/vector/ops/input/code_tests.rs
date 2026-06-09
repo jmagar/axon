@@ -202,7 +202,7 @@ fn chunk_typed_rust_function_has_symbol_metadata() {
     let src = "fn hello() {\n    println!(\"hello\");\n}\n";
     let chunks = chunk_code_chunks(src, "rs").unwrap();
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].symbol_name().as_deref(), Some("hello"));
+    assert_eq!(chunks[0].symbol_name(), Some("hello"));
     assert_eq!(chunks[0].symbol_kind(), Some(SymbolKind::Function));
     assert_eq!(chunks[0].declaration_start_line, 1);
     assert_eq!(chunks[0].declaration_end_line, 3);
@@ -213,8 +213,7 @@ fn chunk_typed_go_function_has_symbol_metadata() {
     let src = "package main\n\nfunc Hello() {\n}\n";
     let chunks = chunk_code_chunks(src, "go").unwrap();
     assert!(chunks.iter().any(|chunk| {
-        chunk.symbol_name().as_deref() == Some("Hello")
-            && chunk.symbol_kind() == Some(SymbolKind::Function)
+        chunk.symbol_name() == Some("Hello") && chunk.symbol_kind() == Some(SymbolKind::Function)
     }));
 }
 
