@@ -312,7 +312,7 @@ pub(super) async fn ensure_collection(
             "qdrant collection_exists collection={} mode={:?}",
             cfg.collection, mode
         ));
-        ensure_payload_indexes(cfg).await?;
+        ensure_payload_indexes(cfg, Some(&body)).await?;
         return Ok(mode);
     } else if get_status != StatusCode::NOT_FOUND {
         // 500, 401, 403, etc. -- do not silently fall through to collection creation.
@@ -364,7 +364,7 @@ pub(super) async fn ensure_collection(
         "qdrant collection_created collection={} mode=Named",
         cfg.collection
     ));
-    ensure_payload_indexes(cfg).await?;
+    ensure_payload_indexes(cfg, None).await?;
     Ok(VectorMode::Named)
 }
 

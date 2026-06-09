@@ -60,6 +60,14 @@ Remediation of the 10 surviving findings from the four-PR code review of
   to hours (debug) and would have flooded the collection with junk chunks.
   Directory walks skip oversized files with a `skip_oversized_file` warning;
   an explicitly named oversized file is a hard error naming the cap.
+- **Payload-index assertion no longer fails embeds or re-PUTs every index** —
+  `ensure_payload_indexes` previously fired ~46 concurrent index PUTs on every
+  embed and treated a single timeout as fatal, so a slow/overloaded Qdrant
+  failed the whole embed during collection init. It now reads the collection's
+  `payload_schema` (from the GET ensure_collection already performs) and only
+  asserts missing indexes — zero PUTs on a warm collection — and index
+  failures log a warning instead of aborting (missing indexes retry on the
+  next embed).
 
 ### Changed
 
