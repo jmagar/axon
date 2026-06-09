@@ -56,7 +56,14 @@ pub fn chunk_code_chunks(content: &str, file_extension: &str) -> Option<Vec<Code
     for (byte_start, chunk) in chunks {
         let byte_end = byte_start + chunk.len();
         let start_line = line_for_byte(content, byte_start);
-        let end_line = line_for_byte(content, byte_end);
+        // Inclusive end: a chunk that ends on a newline must not be attributed to
+        // the following line, so derive from the last byte rather than the
+        // exclusive end.
+        let end_line = if byte_end > byte_start {
+            line_for_byte(content, byte_end - 1)
+        } else {
+            line_for_byte(content, byte_end)
+        };
         let symbol = find_symbol_for_chunk(&symbols, byte_start, byte_end);
         out.push(CodeChunk {
             text: chunk.to_string(),
@@ -174,7 +181,12 @@ fn max_tree_sitter_file_bytes() -> usize {
 }
 
 fn line_for_byte(content: &str, byte: usize) -> u32 {
-    let capped = byte.min(content.len());
+    // Snap to a char boundary: callers may pass an inclusive end that lands
+    // inside a multibyte character, and slicing on a non-boundary panics.
+    let mut capped = byte.min(content.len());
+    while capped > 0 && !content.is_char_boundary(capped) {
+        capped -= 1;
+    }
     content[..capped].bytes().filter(|b| *b == b'\n').count() as u32 + 1
 }
 

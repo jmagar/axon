@@ -197,10 +197,22 @@ pub async fn qdrant_delete_stale_repo_file_urls(
     let client = internal_service_http_client()?;
     let endpoint = qdrant_collection_endpoint(cfg, "points/delete?wait=false")?;
     for batch in url_conditions.chunks(500) {
+        // Scope the delete to this repo's file points (must) AND a stale URL
+        // (should), so a URL collision can never delete another repo's points.
         qdrant_delete_with_retry(
             client,
             &endpoint,
-            serde_json::json!({"filter": {"should": batch}}),
+            serde_json::json!({
+                "filter": {
+                    "must": [
+                        {"key": "provider", "match": {"value": provider}},
+                        {"key": "git_owner", "match": {"value": owner}},
+                        {"key": "git_repo", "match": {"value": repo}},
+                        {"key": "git_content_kind", "match": {"value": "file"}}
+                    ],
+                    "should": batch
+                }
+            }),
             "qdrant_delete_stale_repo_file_urls",
         )
         .await?;

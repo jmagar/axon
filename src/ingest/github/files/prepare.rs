@@ -204,7 +204,13 @@ fn text_chunks(text: &str) -> Vec<CodeChunk> {
             let chunk_len = chunk.len();
             *search_start = next_search_start(text, byte_offset, chunk_len);
             let line_start = line_for_byte(text, byte_offset);
-            let line_end = line_for_byte(text, byte_offset + chunk_len);
+            // Inclusive end so a chunk ending on a newline maps to its own last
+            // line, not the next one.
+            let line_end = if chunk_len > 0 {
+                line_for_byte(text, byte_offset + chunk_len - 1)
+            } else {
+                line_for_byte(text, byte_offset)
+            };
             Some(CodeChunk {
                 text: chunk,
                 byte_start: byte_offset,
@@ -282,7 +288,12 @@ fn chunking_method(ext: &str, chunk: &CodeChunk) -> &'static str {
 }
 
 fn line_for_byte(content: &str, byte: usize) -> u32 {
-    let capped = byte.min(content.len());
+    // Snap to a char boundary: an inclusive end may land inside a multibyte
+    // character, and slicing on a non-boundary panics.
+    let mut capped = byte.min(content.len());
+    while capped > 0 && !content.is_char_boundary(capped) {
+        capped -= 1;
+    }
     content[..capped].bytes().filter(|b| *b == b'\n').count() as u32 + 1
 }
 

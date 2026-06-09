@@ -113,13 +113,14 @@ fn score_and_filter_candidates_inner(
             query_tokens,
             policy.product_authority_boost,
         );
+        let base_rerank_score = breakdown.rerank_score + product_boost;
         let code_adjustment = if policy.apply_code_search_adjustment {
-            code_search_adjustment(&candidates[idx], query_tokens)
+            code_search_adjustment(&candidates[idx], query_tokens, base_rerank_score)
         } else {
             0.0
         };
         let mut candidate = candidates[idx].clone();
-        candidate.candidate.rerank_score = breakdown.rerank_score + product_boost + code_adjustment;
+        candidate.candidate.rerank_score = base_rerank_score + code_adjustment;
         let mut filter_decisions = Vec::new();
         if let Some(min_score) = policy.min_relevance_score
             && breakdown.rerank_score < min_score
@@ -231,7 +232,11 @@ fn dense_score_components(
     ]
 }
 
-fn code_search_adjustment(candidate: &RetrievedCandidate, query_tokens: &[String]) -> f64 {
+fn code_search_adjustment(
+    candidate: &RetrievedCandidate,
+    query_tokens: &[String],
+    base_rerank_score: f64,
+) -> f64 {
     if query_tokens.is_empty() || !query_has_code_intent(candidate, query_tokens) {
         return 0.0;
     }
@@ -250,7 +255,7 @@ fn code_search_adjustment(candidate: &RetrievedCandidate, query_tokens: &[String
         adjustment += CODE_AUXILIARY_PATH_DEMOTION;
     }
     if candidate.code.is_test == Some(true) {
-        adjustment -= candidate.candidate.rerank_score * (1.0 - TEST_FILE_DEMOTION_FACTOR);
+        adjustment -= base_rerank_score * (1.0 - TEST_FILE_DEMOTION_FACTOR);
     }
     adjustment
 }
