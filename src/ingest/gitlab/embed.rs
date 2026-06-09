@@ -3,7 +3,7 @@ use reqwest::Client;
 use reqwest::StatusCode;
 
 use crate::core::config::Config;
-use crate::ingest::git_payload::{GitPayload, build_git_payload};
+use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
 use crate::vector::ops::input::classify::{
     classify_file_type, is_test_path, language_name, path_extension,
 };
@@ -30,12 +30,8 @@ pub(crate) fn gitlab_payload(
         let path = &target.namespace_path;
         path.rfind('/').map(|i| path[..i].to_string())
     };
-    // Canonical content_kind: GitLab uses "merge_request", normalise to "pr".
-    let git_content_kind: &'static str = if content_kind == "merge_request" {
-        "pr"
-    } else {
-        content_kind
-    };
+    // Canonical content_kind: GitLab uses "merge_request"; from_wire normalises.
+    let kind = ContentKind::from_wire(content_kind);
 
     let (state, number, author, labels, is_draft, merged_at, created_at, updated_at) =
         extract_kind_fields(&kind_extra, content_kind);
@@ -44,7 +40,7 @@ pub(crate) fn gitlab_payload(
         .get("path")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let (file_language, file_type, file_is_test) = if git_content_kind == "file" {
+    let (file_language, file_type, file_is_test) = if kind == ContentKind::File {
         file_path.as_deref().map_or((None, None, None), |path| {
             (
                 Some(language_name(path_extension(path)).to_string()),
@@ -66,7 +62,7 @@ pub(crate) fn gitlab_payload(
         host: target.host.clone(),
         owner,
         repo: target.project.clone(),
-        content_kind: git_content_kind,
+        content_kind: kind,
         branch,
         state,
         number,

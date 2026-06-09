@@ -17,6 +17,56 @@
 
 use serde_json::{Value, json};
 
+use crate::core::logging::log_warn;
+
+/// Canonical value for the `git_content_kind` payload field. One variant per
+/// kind so a typo can't silently degrade to `"file"` (the previous behavior of
+/// the GitHub builder's stringly-typed match).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContentKind {
+    #[default]
+    File,
+    Issue,
+    Pr,
+    Release,
+    Wiki,
+    RepoMetadata,
+}
+
+impl ContentKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Issue => "issue",
+            Self::Pr => "pr",
+            Self::Release => "release",
+            Self::Wiki => "wiki",
+            Self::RepoMetadata => "repo_metadata",
+        }
+    }
+
+    /// Normalize a provider's wire string into a canonical kind. Accepts the
+    /// provider-specific aliases GitHub/GitLab use (`pull_request`,
+    /// `merge_request`). An unrecognized value is logged and falls back to
+    /// `File` so it is observable rather than silently mislabeled.
+    pub fn from_wire(value: &str) -> Self {
+        match value {
+            "file" => Self::File,
+            "issue" => Self::Issue,
+            "pr" | "pull_request" | "merge_request" => Self::Pr,
+            "release" => Self::Release,
+            "wiki" => Self::Wiki,
+            "repo_metadata" => Self::RepoMetadata,
+            other => {
+                log_warn(&format!(
+                    "git_payload: unknown content_kind {other:?}; defaulting to file"
+                ));
+                Self::File
+            }
+        }
+    }
+}
+
 /// Parameters for the shared git provider payload.
 ///
 /// Required fields: `provider`, `host`, `repo`, `content_kind`.
@@ -33,7 +83,7 @@ pub struct GitPayload {
     pub host: String,
     pub owner: Option<String>,
     pub repo: String,
-    pub content_kind: &'static str,
+    pub content_kind: ContentKind,
     pub branch: Option<String>,
     pub default_branch: Option<String>,
     pub repo_description: Option<String>,
@@ -83,7 +133,7 @@ pub fn build_git_payload(p: &GitPayload) -> Value {
         "git_host":          p.host,
         "git_owner":         p.owner,
         "git_repo":          p.repo,
-        "git_content_kind":  p.content_kind,
+        "git_content_kind":  p.content_kind.as_str(),
         "git_branch":        p.branch,
         "git_default_branch": p.default_branch,
         "git_repo_description": p.repo_description,

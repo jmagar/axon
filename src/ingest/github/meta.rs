@@ -1,7 +1,7 @@
 use octocrab::models;
 use serde_json::Value;
 
-use crate::ingest::git_payload::{GitPayload, build_git_payload};
+use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
 
 pub(crate) fn issue_state_str(state: &models::IssueState) -> &'static str {
     match state {
@@ -22,7 +22,7 @@ pub struct GitHubPayloadParams {
     // Common (required)
     pub repo: String,
     pub owner: String,
-    pub content_kind: String,
+    pub content_kind: ContentKind,
 
     // Common (optional)
     pub branch: Option<String>,
@@ -74,19 +74,12 @@ pub struct GitHubPayloadParams {
 /// Null `Option` fields become JSON `null`, ensuring every chunk has the same
 /// schema regardless of content kind.
 pub fn build_github_payload(params: &GitHubPayloadParams) -> Value {
-    let content_kind: &'static str = match params.content_kind.as_str() {
-        "issue" => "issue",
-        "pr" => "pr",
-        "wiki" => "wiki",
-        "repo_metadata" => "repo_metadata",
-        _ => "file",
-    };
     build_git_payload(&GitPayload {
         provider: "github".to_string(),
         host: "github.com".to_string(),
         owner: Some(params.owner.clone()),
         repo: params.repo.clone(),
-        content_kind,
+        content_kind: params.content_kind,
         branch: params.branch.clone(),
         default_branch: params.default_branch.clone(),
         repo_description: params.repo_description.clone(),

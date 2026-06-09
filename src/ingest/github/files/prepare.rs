@@ -19,6 +19,7 @@ use crate::vector::ops::input::{
 
 use super::super::meta::{GitHubPayloadParams, build_github_payload};
 use super::super::{GitHubCommonFields, is_indexable_doc_path, is_indexable_source_path};
+use crate::ingest::git_payload::ContentKind;
 const MAX_FILE_BYTES: u64 = MAX_INGEST_FILE_BYTES;
 
 pub(super) fn file_extension(path: &str) -> String {
@@ -240,7 +241,7 @@ fn prepared_doc_for_chunk(
     let extra = build_github_payload(&GitHubPayloadParams {
         repo: ctx.name.clone(),
         owner: ctx.owner.clone(),
-        content_kind: "file".into(),
+        content_kind: ContentKind::File,
         branch: Some(ctx.default_branch.clone()),
         default_branch: Some(ctx.default_branch.clone()),
         repo_description: ctx.repo_description.clone(),

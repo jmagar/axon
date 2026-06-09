@@ -5,7 +5,7 @@ fn make_common_params() -> GitHubPayloadParams {
     GitHubPayloadParams {
         repo: "axon_rust".into(),
         owner: "jmagar".into(),
-        content_kind: "file".into(),
+        content_kind: ContentKind::File,
         default_branch: Some("main".into()),
         ..Default::default()
     }
@@ -40,7 +40,7 @@ fn payload_file_fields_populated() {
     let params = GitHubPayloadParams {
         repo: "axon_rust".into(),
         owner: "jmagar".into(),
-        content_kind: "file".into(),
+        content_kind: ContentKind::File,
         file_path: Some("src/main.rs".into()),
         file_language: Some("rust".into()),
         file_type: Some("source".into()),
@@ -63,7 +63,7 @@ fn payload_code_chunk_metadata_populated_when_present() {
     let params = GitHubPayloadParams {
         repo: "axon_rust".into(),
         owner: "jmagar".into(),
-        content_kind: "file".into(),
+        content_kind: ContentKind::File,
         chunking_method: Some("tree_sitter".into()),
         symbol_name: Some("Response::parse".into()),
         symbol_kind: Some("method".into()),
@@ -107,7 +107,7 @@ fn payload_issue_params_produce_correct_values() {
     let params = GitHubPayloadParams {
         repo: "axon_rust".into(),
         owner: "jmagar".into(),
-        content_kind: "issue".into(),
+        content_kind: ContentKind::Issue,
         issue_number: Some(42),
         state: Some("open".into()),
         author: Some("contributor".into()),
@@ -155,7 +155,7 @@ fn promoted_fields_are_canonical_top_level_fields() {
     let params = GitHubPayloadParams {
         repo: "axon_rust".into(),
         owner: "jmagar".into(),
-        content_kind: "file".into(),
+        content_kind: ContentKind::File,
         stars: Some(42),
         forks: Some(7),
         language: Some("Rust".into()),
