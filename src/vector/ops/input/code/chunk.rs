@@ -78,6 +78,17 @@ impl SymbolKind {
     }
 }
 
+/// A code symbol a chunk belongs to. A symbol always has a `kind`; the `name`
+/// is optional (anonymous `impl` blocks, or a merged tiny-declaration group
+/// whose individual names were dropped). Pairing them in one type makes the
+/// "a name always has a kind" invariant unrepresentable to violate — there is
+/// no way to express a name without a kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Symbol {
+    pub kind: SymbolKind,
+    pub name: Option<String>,
+}
+
 /// Owned code chunk metadata. Never store tree-sitter nodes here; they borrow
 /// the parse tree and cannot safely cross this pure chunking boundary.
 ///
@@ -94,12 +105,19 @@ pub struct CodeChunk {
     pub end_line: u32,
     pub declaration_start_line: u32,
     pub declaration_end_line: u32,
-    pub symbol_name: Option<String>,
-    pub symbol_kind: Option<SymbolKind>,
+    pub symbol: Option<Symbol>,
 }
 
 impl CodeChunk {
+    pub fn symbol_kind(&self) -> Option<SymbolKind> {
+        self.symbol.as_ref().map(|s| s.kind)
+    }
+
+    pub fn symbol_name(&self) -> Option<&str> {
+        self.symbol.as_ref().and_then(|s| s.name.as_deref())
+    }
+
     pub fn symbol_kind_str(&self) -> Option<&'static str> {
-        self.symbol_kind.map(SymbolKind::as_str)
+        self.symbol_kind().map(SymbolKind::as_str)
     }
 }

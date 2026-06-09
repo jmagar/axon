@@ -7,7 +7,7 @@ pub mod chunk;
 mod extract;
 mod postprocess;
 
-pub use chunk::{CodeChunk, SymbolKind};
+pub use chunk::{CodeChunk, Symbol, SymbolKind};
 use extract::{Extractor, extract_symbols, find_symbol_for_chunk, language_for_extension};
 use postprocess::{
     attach_leading_comments, dedupe_exact_ranges, inject_declaration_headers,
@@ -56,8 +56,10 @@ pub fn chunk_code_chunks(content: &str, file_extension: &str) -> Option<Vec<Code
             end_line,
             declaration_start_line: symbol.map_or(start_line, |sym| sym.start_line),
             declaration_end_line: symbol.map_or(end_line, |sym| sym.end_line),
-            symbol_name: symbol.and_then(|sym| sym.name.clone()),
-            symbol_kind: symbol.map(|sym| sym.kind),
+            symbol: symbol.map(|sym| Symbol {
+                kind: sym.kind,
+                name: sym.name.clone(),
+            }),
         });
     }
 
@@ -86,7 +88,7 @@ pub fn code_symbol_extraction_status(
     if content.len() > max_tree_sitter_file_bytes() {
         return "skipped_large";
     }
-    if chunks.iter().any(|chunk| chunk.symbol_kind.is_some()) {
+    if chunks.iter().any(|chunk| chunk.symbol.is_some()) {
         "ok"
     } else {
         "none_found"

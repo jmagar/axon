@@ -202,8 +202,8 @@ fn chunk_typed_rust_function_has_symbol_metadata() {
     let src = "fn hello() {\n    println!(\"hello\");\n}\n";
     let chunks = chunk_code_chunks(src, "rs").unwrap();
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].symbol_name.as_deref(), Some("hello"));
-    assert_eq!(chunks[0].symbol_kind, Some(SymbolKind::Function));
+    assert_eq!(chunks[0].symbol_name().as_deref(), Some("hello"));
+    assert_eq!(chunks[0].symbol_kind(), Some(SymbolKind::Function));
     assert_eq!(chunks[0].declaration_start_line, 1);
     assert_eq!(chunks[0].declaration_end_line, 3);
 }
@@ -213,8 +213,8 @@ fn chunk_typed_go_function_has_symbol_metadata() {
     let src = "package main\n\nfunc Hello() {\n}\n";
     let chunks = chunk_code_chunks(src, "go").unwrap();
     assert!(chunks.iter().any(|chunk| {
-        chunk.symbol_name.as_deref() == Some("Hello")
-            && chunk.symbol_kind == Some(SymbolKind::Function)
+        chunk.symbol_name().as_deref() == Some("Hello")
+            && chunk.symbol_kind() == Some(SymbolKind::Function)
     }));
 }
 
@@ -242,8 +242,7 @@ fn symbol_extraction_status_is_observable() {
         end_line: 1,
         declaration_start_line: 1,
         declaration_end_line: 1,
-        symbol_name: None,
-        symbol_kind: None,
+        symbol: None,
     }];
     assert_eq!(
         code_symbol_extraction_status("hello", "txt", &text_chunks),
@@ -261,8 +260,8 @@ fn chunk_typed_python_uses_code_splitter_without_symbol_metadata() {
     }
     let chunks = chunk_code_chunks(&src, "py").unwrap();
     assert!(chunks.len() > 1, "Python should stay code-split");
-    assert!(chunks.iter().all(|chunk| chunk.symbol_name.is_none()));
-    assert!(chunks.iter().all(|chunk| chunk.symbol_kind.is_none()));
+    assert!(chunks.iter().all(|chunk| chunk.symbol_name().is_none()));
+    assert!(chunks.iter().all(|chunk| chunk.symbol_kind().is_none()));
 }
 
 #[test]

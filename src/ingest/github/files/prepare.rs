@@ -213,8 +213,7 @@ fn text_chunks(text: &str) -> Vec<CodeChunk> {
                 end_line: line_end,
                 declaration_start_line: line_start,
                 declaration_end_line: line_end,
-                symbol_name: None,
-                symbol_kind: None,
+                symbol: None,
             })
         })
         .collect()
@@ -255,7 +254,7 @@ fn prepared_doc_for_chunk(
         line_start: Some(line_start),
         line_end: Some(line_end),
         chunking_method: Some(chunking_method(attrs.ext, &chunk).to_string()),
-        symbol_name: chunk.symbol_name.clone(),
+        symbol_name: chunk.symbol_name().map(str::to_string),
         symbol_kind: chunk.symbol_kind_str().map(str::to_string),
         symbol_extraction_status: Some(attrs.symbol_status.to_string()),
         ..Default::default()
@@ -275,7 +274,7 @@ fn prepared_doc_for_chunk(
 }
 
 fn chunking_method(ext: &str, chunk: &CodeChunk) -> &'static str {
-    if chunk.symbol_kind.is_some() || supports_tree_sitter_chunking(ext) {
+    if chunk.symbol.is_some() || supports_tree_sitter_chunking(ext) {
         "tree_sitter"
     } else {
         "prose"

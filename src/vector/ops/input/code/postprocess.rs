@@ -38,7 +38,7 @@ pub(super) fn dedupe_exact_ranges(chunks: Vec<CodeChunk>) -> Vec<CodeChunk> {
                 chunk.declaration_end_line,
                 chunk.start_line,
                 chunk.end_line,
-                chunk.symbol_kind,
+                chunk.symbol_kind(),
             ),
             idx,
         );
@@ -52,7 +52,7 @@ pub(super) fn dedupe_exact_ranges(chunks: Vec<CodeChunk>) -> Vec<CodeChunk> {
                 chunk.declaration_end_line,
                 chunk.start_line,
                 chunk.end_line,
-                chunk.symbol_kind,
+                chunk.symbol_kind(),
             )) == Some(idx)
         })
         .map(|(_, chunk)| chunk)
@@ -63,7 +63,7 @@ pub(super) fn merge_tiny_declarations(chunks: Vec<CodeChunk>) -> Vec<CodeChunk> 
     let mut out = Vec::with_capacity(chunks.len());
     let mut idx = 0usize;
     while idx < chunks.len() {
-        let Some(kind) = chunks[idx].symbol_kind else {
+        let Some(kind) = chunks[idx].symbol_kind() else {
             out.push(chunks[idx].clone());
             idx += 1;
             continue;
@@ -78,7 +78,7 @@ pub(super) fn merge_tiny_declarations(chunks: Vec<CodeChunk>) -> Vec<CodeChunk> 
         let mut end = idx + 1;
         let mut total_len = chunks[idx].text.len();
         while end < chunks.len()
-            && chunks[end].symbol_kind == Some(kind)
+            && chunks[end].symbol_kind() == Some(kind)
             && chunks[end].text.len() <= TINY_CHARS
             && !has_blank_line_between(&chunks[end - 1], &chunks[end])
             && total_len + chunks[end].text.len() + 2 <= MAX_CODE_CHUNK_CHARS
@@ -102,7 +102,11 @@ pub(super) fn merge_tiny_declarations(chunks: Vec<CodeChunk>) -> Vec<CodeChunk> 
         merged.byte_end = chunks[end - 1].byte_end;
         merged.end_line = chunks[end - 1].end_line;
         merged.declaration_end_line = chunks[end - 1].declaration_end_line;
-        merged.symbol_name = None;
+        // The merged group spans several declarations; drop the single name but
+        // keep the kind (the merge-eligibility predicate guaranteed one).
+        if let Some(symbol) = merged.symbol.as_mut() {
+            symbol.name = None;
+        }
         out.push(merged);
         idx = end;
     }
@@ -159,8 +163,8 @@ fn ensure_symbol_headers(mut chunks: Vec<CodeChunk>) -> Vec<CodeChunk> {
         let key = (
             chunk.declaration_start_line,
             chunk.declaration_end_line,
-            chunk.symbol_kind,
-            chunk.symbol_name.clone(),
+            chunk.symbol_kind(),
+            chunk.symbol_name().map(str::to_string),
         );
         let count = seen.entry(key).or_default();
         *count += 1;
@@ -182,13 +186,13 @@ fn ensure_symbol_headers(mut chunks: Vec<CodeChunk>) -> Vec<CodeChunk> {
 }
 
 fn synthesized_header(chunk: &CodeChunk) -> Option<String> {
-    let name = chunk.symbol_name.as_deref()?;
+    let name = chunk.symbol_name()?;
     let short = name
         .rsplit_once("::")
         .map(|(_, rhs)| rhs)
         .or_else(|| name.rsplit_once('.').map(|(_, rhs)| rhs))
         .unwrap_or(name);
-    match chunk.symbol_kind {
+    match chunk.symbol_kind() {
         Some(SymbolKind::Function | SymbolKind::Method) => Some(format!("fn {short}()\n")),
         Some(SymbolKind::Struct) => Some(format!("struct {short}\n")),
         Some(SymbolKind::Enum) => Some(format!("enum {short}\n")),

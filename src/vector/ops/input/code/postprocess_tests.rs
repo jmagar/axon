@@ -1,4 +1,5 @@
 use super::*;
+use crate::vector::ops::input::code::Symbol;
 use crate::vector::ops::input::code::chunk::CodeChunk;
 
 fn chunk(text: &str, start: u32, end: u32, kind: SymbolKind) -> CodeChunk {
@@ -10,8 +11,10 @@ fn chunk(text: &str, start: u32, end: u32, kind: SymbolKind) -> CodeChunk {
         end_line: end,
         declaration_start_line: start,
         declaration_end_line: end,
-        symbol_name: Some("x".to_string()),
-        symbol_kind: Some(kind),
+        symbol: Some(Symbol {
+            kind,
+            name: Some("x".to_string()),
+        }),
     }
 }
 
@@ -56,6 +59,6 @@ fn tiny_consts_merge_and_clear_symbol_name() {
     assert_eq!(out.len(), 1);
     assert!(out[0].text.contains("const A"));
     assert!(out[0].text.contains("const B"));
-    assert_eq!(out[0].symbol_kind, Some(SymbolKind::Const));
-    assert!(out[0].symbol_name.is_none());
+    assert_eq!(out[0].symbol_kind(), Some(SymbolKind::Const));
+    assert!(out[0].symbol_name().is_none());
 }
