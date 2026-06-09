@@ -46,6 +46,20 @@ Remediation of the 10 surviving findings from the four-PR code review of
 - **Local embed no longer drops empty docs silently** — docs that are empty or
   chunk to nothing are counted and reported via a single
   `skipped_empty_docs count=N` warning (per-file detail at debug level).
+- **`axon embed <host path>` no longer embeds the literal path string** — a
+  fire-and-forget local-path embed landed on the axon container's worker
+  (shared jobs DB), where the host path doesn't exist; the reader's free-text
+  fallback then "successfully" embedded `/home/<user>/docs` as a one-chunk
+  document. Two fixes: path-shaped inputs that don't resolve are now a hard
+  error in the reader (both claim directions fail loudly instead of corrupting
+  the index), and the CLI runs local-path embeds in-process even without
+  `--wait` — a local path can only be embedded by a process that shares its
+  filesystem, so queueing it was never serviceable.
+- **Local embed file-size cap (10 MB, matching the server validator)** — a
+  31 MB machine-generated JSON ground the prose chunker for minutes (release)
+  to hours (debug) and would have flooded the collection with junk chunks.
+  Directory walks skip oversized files with a `skip_oversized_file` warning;
+  an explicitly named oversized file is a hard error naming the cap.
 
 ### Changed
 
