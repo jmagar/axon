@@ -29,6 +29,16 @@ pub fn chunk_code(content: &str, file_extension: &str) -> Option<Vec<String>> {
         .map(|chunks| chunks.into_iter().map(|chunk| chunk.text).collect())
 }
 
+/// Split source code into AST-aware [`CodeChunk`]s carrying per-chunk symbol
+/// metadata (name, kind, declaration line range).
+///
+/// Returns `None` for unsupported extensions (callers fall back to prose
+/// chunking) and `Some(vec![])` for a supported file that splits into no
+/// non-empty chunks. After the tree-sitter split, the chunks pass through the
+/// post-processing pipeline: leading comments are attached, exact-range
+/// duplicates dropped, tiny adjacent declarations merged, and declaration
+/// headers injected for split bodies. `chunk_code` is a thin text-only wrapper
+/// over this function.
 pub fn chunk_code_chunks(content: &str, file_extension: &str) -> Option<Vec<CodeChunk>> {
     let spec = language_for_extension(file_extension)?;
     let chunks = split_code_indices(content, spec.grammar)?;
@@ -74,6 +84,14 @@ pub fn supports_tree_sitter_chunking(file_extension: &str) -> bool {
     language_for_extension(file_extension).is_some()
 }
 
+/// Classify how symbol extraction went for a file, for the
+/// `symbol_extraction_status` payload field and ingest logging. Returns one of a
+/// closed set of values that callers branch on:
+/// - `"prose"`         — extension has no tree-sitter grammar
+/// - `"unsupported"`   — grammar exists but no symbol extractor for the language
+/// - `"skipped_large"` — file exceeded `AXON_MAX_TREE_SITTER_FILE_BYTES`
+/// - `"ok"`            — at least one chunk carries a symbol
+/// - `"none_found"`    — extractor ran but found no symbols
 pub fn code_symbol_extraction_status(
     content: &str,
     file_extension: &str,

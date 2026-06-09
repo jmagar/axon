@@ -33,10 +33,6 @@ Present only when the condition is met. Absence is intentional — do not write 
 |-------|-------------|---------|--------------|
 | `title` | raw string | no | Source has a title (ingest paths, most verticals). Absent for generic crawl/embed. |
 | `extractor_name` | keyword | yes | Vertical extractor produced this point (`"github_repo"`, `"crates_io"`, etc.). Absent for crawl/embed. |
-| `code_chunking_method` | keyword | yes | File chunk strategy for git-backed file chunks: `"tree_sitter"` for supported tree-sitter grammars or `"prose"` for text fallback chunks. Absent for non-file/non-code paths that do not emit chunking metadata. |
-| `symbol_name` | raw string | no | Code declaration name for code chunks when known, e.g. `"parse"` or `"Response::parse"`. Stored but intentionally not indexed. Added in schema v6. |
-| `symbol_kind` | keyword | yes | Low-cardinality code declaration kind when known: `"function"`, `"method"`, `"struct"`, `"enum"`, `"trait"`, `"impl"`, `"const"`, `"static"`, `"type"`, `"mod"`, or `"other"`. Added in schema v6. |
-| `symbol_extraction_status` | raw string | no | File-level symbol extraction status for GitHub file chunks: `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. Added in schema v6. |
 | `structured_kind` | keyword | no | Structured-data pass found JSON-LD/Next.js/SvelteKit: `"jsonld"`, `"next_data"`, `"sveltekit"`. |
 | `structured_type` | raw string | no | Schema.org type when `structured_kind` is present (`"Article"`, `"Product"`, …). |
 | `structured_id` | raw string | no | Schema.org `@id` when present. |
@@ -118,9 +114,9 @@ Lumen-like code-search shape used by query ranking and result output.
 | `code_line_start` | integer | yes | First line of the chunk (1-indexed, inclusive). |
 | `code_line_end` | integer | yes | Last line of the chunk (1-indexed, inclusive). |
 | `code_chunking_method` | keyword | yes | `"tree_sitter"` for symbol-aware chunks or `"prose"` for fallback chunks. |
-| `symbol_name` | keyword | no | Extracted declaration/symbol name when available. |
-| `symbol_kind` | keyword | yes | `"function"`, `"method"`, `"struct"`, `"enum"`, `"trait"`, `"impl"`, `"const"`, `"static"`, `"type"`, `"mod"`, `"other"`. |
-| `symbol_extraction_status` | keyword | no | `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. |
+| `symbol_name` | keyword | no | Extracted declaration/symbol name when available. Added in schema v6. |
+| `symbol_kind` | keyword | yes | `"function"`, `"method"`, `"struct"`, `"enum"`, `"trait"`, `"impl"`, `"const"`, `"static"`, `"type"`, `"mod"`, `"other"`. Added in schema v6. |
+| `symbol_extraction_status` | keyword | no | `"ok"`, `"unsupported"`, `"skipped_large"`, `"none_found"`, or `"prose"`. Added in schema v6. |
 
 GitHub no longer emits `gh_*` duplicate fields in payload schema v7. Re-index cleanly after
 upgrading if a collection still contains old `gh_*` points.
