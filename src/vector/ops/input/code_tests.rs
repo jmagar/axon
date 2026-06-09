@@ -347,3 +347,61 @@ function App(): JSX.Element {
     assert!(!chunks.is_empty());
     assert!(chunks[0].contains("function App"));
 }
+
+// ── SymbolKind round-trip + source-symbol classification ──────────────
+
+#[test]
+fn symbol_kind_str_roundtrips_for_every_variant() {
+    use SymbolKind::*;
+    for kind in [
+        Function, Method, Struct, Enum, Trait, Impl, Const, Static, Type, Mod, Other,
+    ] {
+        assert_eq!(
+            SymbolKind::from_str(kind.as_str()),
+            Some(kind),
+            "as_str/from_str must round-trip for {kind:?}"
+        );
+    }
+    // Strings the ranking match used to accept but no extractor ever emits.
+    assert_eq!(SymbolKind::from_str("interface"), None);
+    assert_eq!(SymbolKind::from_str("var"), None);
+    assert_eq!(SymbolKind::from_str("nonsense"), None);
+}
+
+#[test]
+fn source_symbol_classification_excludes_mod_and_other() {
+    use SymbolKind::*;
+    for kind in [
+        Function, Method, Struct, Enum, Trait, Impl, Const, Static, Type,
+    ] {
+        assert!(
+            kind.is_source_symbol(),
+            "{kind:?} should be a source symbol"
+        );
+    }
+    assert!(!Mod.is_source_symbol());
+    assert!(!Other.is_source_symbol());
+}
+
+#[test]
+fn symbol_extraction_status_none_found_for_symbolless_rust() {
+    // A supported language whose parse yields no extractable symbols.
+    let src = "// just a comment\nuse std::fmt;\n";
+    let chunks = chunk_code_chunks(src, "rs").unwrap();
+    assert!(chunks.iter().all(|chunk| chunk.symbol.is_none()));
+    assert_eq!(
+        code_symbol_extraction_status(src, "rs", &chunks),
+        "none_found"
+    );
+}
+
+#[test]
+fn oversized_multibyte_chunk_splits_without_panic() {
+    // A >2000-byte chunk full of multibyte characters exercises the char-boundary
+    // walk-back in push_bounded_chunks; a non-boundary slice would panic.
+    let body = "café ".repeat(800); // ~4 KB, multibyte
+    let src = format!("fn big() {{\n    let _s = \"{body}\";\n}}\n");
+    let chunks = chunk_code_chunks(&src, "rs").unwrap();
+    assert!(!chunks.is_empty());
+    assert!(chunks.iter().all(|chunk| !chunk.text.is_empty()));
+}

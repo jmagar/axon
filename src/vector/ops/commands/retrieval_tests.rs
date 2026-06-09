@@ -245,6 +245,59 @@ fn code_intent_query_prefers_symbol_match_over_benchmark_usage() {
 }
 
 #[test]
+fn code_intent_query_demotes_test_file_below_equivalent_source() {
+    let chunk =
+        "pub struct Buffer { len: usize } impl Buffer { pub fn format(&self) -> &str { \"\" } }";
+    let mut source = make_candidate(
+        "https://github.com/x/y/blob/main/src/lib.rs#L1-L10",
+        chunk,
+        0.6,
+    );
+    source.code = CodeSearchMetadata {
+        content_kind: Some("file".to_string()),
+        file_path: Some("src/lib.rs".to_string()),
+        file_type: Some("source".to_string()),
+        symbol_name: Some("Buffer".to_string()),
+        symbol_kind: Some("struct".to_string()),
+        is_test: Some(false),
+        ..CodeSearchMetadata::default()
+    };
+    let mut test_file = make_candidate(
+        "https://github.com/x/y/blob/main/tests/buffer_test.rs#L1-L10",
+        chunk,
+        0.6,
+    );
+    test_file.code = CodeSearchMetadata {
+        content_kind: Some("file".to_string()),
+        file_path: Some("tests/buffer_test.rs".to_string()),
+        file_type: Some("source".to_string()),
+        symbol_name: Some("Buffer".to_string()),
+        symbol_kind: Some("struct".to_string()),
+        is_test: Some(true),
+        ..CodeSearchMetadata::default()
+    };
+    let query_tokens = ranking::tokenize_query("Buffer format struct");
+    let policy = CandidateScorePolicy {
+        authoritative_domains: &[],
+        authoritative_boost: 0.0,
+        product_authority_boost: 0.0,
+        apply_code_search_adjustment: true,
+        min_relevance_score: None,
+        require_topical_overlap: true,
+    };
+
+    // Pass the test file first; the test-file demotion must still sort it below
+    // the otherwise-identical non-test source.
+    let selected = score_and_filter_candidates(&[test_file, source], &query_tokens, &policy);
+
+    assert_eq!(
+        selected[0].code.is_test,
+        Some(false),
+        "non-test source must outrank an equivalent test file under a code-intent query"
+    );
+}
+
+#[test]
 fn candidate_has_topical_overlap_chunk_tokens_count_toward_overlap() {
     let candidate = ranking::AskCandidate {
         score: 0.5,
