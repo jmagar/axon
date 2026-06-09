@@ -51,19 +51,32 @@ async fn claim_next_pending_for_attempt_inner(
     // concurrent workers.
     sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
-    let row: Option<(String, Option<String>, i64)> = match sqlx::query_as(&format!(
-        "SELECT id, error_text, attempt_count FROM {} WHERE status='pending' ORDER BY created_at LIMIT 1",
-        table
-    ))
-    .fetch_optional(&mut *conn)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-            return Err(e);
-        }
+    // Ingest claims serialize per (source_type, target): two jobs for the same
+    // repo running on parallel lanes race — the first job's repo-scoped stale
+    // cleanup can delete points the second job just upserted. A pending job
+    // whose target has a running sibling stays queued (later targets are
+    // claimed past it) until the sibling reaches a terminal state; the
+    // watchdog reclaims crashed `running` rows so a dead job cannot block its
+    // target forever.
+    let select_sql = match kind {
+        JobKind::Ingest => format!(
+            "SELECT id, error_text, attempt_count FROM {table} AS p WHERE p.status='pending' \
+             AND NOT EXISTS (SELECT 1 FROM {table} AS r WHERE r.status='running' \
+                 AND r.source_type = p.source_type AND r.target = p.target) \
+             ORDER BY p.created_at LIMIT 1"
+        ),
+        _ => format!(
+            "SELECT id, error_text, attempt_count FROM {table} WHERE status='pending' ORDER BY created_at LIMIT 1"
+        ),
     };
+    let row: Option<(String, Option<String>, i64)> =
+        match sqlx::query_as(&select_sql).fetch_optional(&mut *conn).await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                return Err(e);
+            }
+        };
 
     match row {
         None => {

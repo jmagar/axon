@@ -11,7 +11,7 @@ use crate::vector::ops::input::classify::{
     classify_file_type, is_test_path, language_name, path_extension,
 };
 use crate::vector::ops::input::{
-    CHUNK_OVERLAP, chunk_text,
+    chunk_text_with_offsets,
     code::{
         CodeChunk, chunk_code_chunks, code_symbol_extraction_status, supports_tree_sitter_chunking,
     },
@@ -24,23 +24,6 @@ const MAX_FILE_BYTES: u64 = MAX_INGEST_FILE_BYTES;
 
 pub(super) fn file_extension(path: &str) -> String {
     path_extension(path).to_ascii_lowercase()
-}
-
-/// Advance the chunk search cursor past the current chunk, walking back one
-/// character at a time so the next search begins inside the overlap window.
-pub fn next_search_start(text: &str, byte_offset: usize, chunk_len: usize) -> usize {
-    let chunk_end = (byte_offset + chunk_len).min(text.len());
-    let mut pos = chunk_end;
-    for _ in 0..CHUNK_OVERLAP {
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
-        while pos > 0 && !text.is_char_boundary(pos) {
-            pos -= 1;
-        }
-    }
-    pos
 }
 
 pub(super) struct FileEmbedCtx {
@@ -194,24 +177,22 @@ fn code_or_text_chunks(text: &str, ext: &str) -> Vec<CodeChunk> {
 }
 
 fn text_chunks(text: &str) -> Vec<CodeChunk> {
-    chunk_text(text)
+    // The chunker reports each chunk's true byte offset — never re-discover the
+    // position by substring search, which matches the first duplicate
+    // occurrence and mislabels line ranges on files with repeated content.
+    chunk_text_with_offsets(text)
         .into_iter()
-        .scan(0usize, |search_start, chunk| {
-            let byte_offset = text[*search_start..]
-                .find(chunk.as_str())
-                .map(|pos| *search_start + pos)
-                .unwrap_or(*search_start);
+        .map(|(byte_offset, chunk)| {
             let chunk_len = chunk.len();
-            *search_start = next_search_start(text, byte_offset, chunk_len);
             let line_start = line_for_byte(text, byte_offset);
             // Inclusive end so a chunk ending on a newline maps to its own last
             // line, not the next one.
             let line_end = if chunk_len > 0 {
                 line_for_byte(text, byte_offset + chunk_len - 1)
             } else {
-                line_for_byte(text, byte_offset)
+                line_start
             };
-            Some(CodeChunk {
+            CodeChunk {
                 text: chunk,
                 byte_start: byte_offset,
                 byte_end: byte_offset + chunk_len,
@@ -220,7 +201,7 @@ fn text_chunks(text: &str) -> Vec<CodeChunk> {
                 declaration_start_line: line_start,
                 declaration_end_line: line_end,
                 symbol: None,
-            })
+            }
         })
         .collect()
 }

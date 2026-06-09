@@ -86,9 +86,8 @@ async fn non_utf8_file_is_skipped_not_failed() {
 
 #[test]
 fn text_chunks_line_ranges_are_monotonic_with_duplicate_lines() {
-    // Repeated identical lines make chunk text ambiguous; the moving-cursor offset
-    // resolution must still assign non-regressing, correct line ranges (the
-    // behaviour the deleted line_range tests guarded).
+    // Repeated identical lines make chunk text ambiguous; offsets must come
+    // from the chunker itself so line ranges stay non-regressing and correct.
     let line = "the quick brown fox jumps over the lazy dog\n";
     let text = line.repeat(200);
     let chunks = text_chunks(&text);
@@ -109,6 +108,35 @@ fn text_chunks_line_ranges_are_monotonic_with_duplicate_lines() {
         "a later chunk must cover later lines"
     );
     assert!(last.end_line <= 201);
+}
+
+#[test]
+fn text_chunks_byte_ranges_point_at_true_positions_with_repeated_content() {
+    // A repeated block bigger than the overlap window: substring re-discovery
+    // would lock the second chunk onto the first occurrence and emit wrong
+    // byte ranges + line numbers. Offsets must point at each chunk's true slice
+    // and advance strictly forward.
+    let block = "fn dup() { body(); }\n".repeat(150);
+    let text = format!("{block}// divider\n{block}");
+    let chunks = text_chunks(&text);
+    assert!(chunks.len() >= 2, "expected multiple prose chunks");
+    let mut prev_start = 0usize;
+    for (i, chunk) in chunks.iter().enumerate() {
+        assert_eq!(
+            &text[chunk.byte_start..chunk.byte_end],
+            chunk.text,
+            "chunk {i} byte range must slice its own text"
+        );
+        if i > 0 {
+            assert!(
+                chunk.byte_start > prev_start,
+                "chunk {i} byte_start must advance past the previous chunk's"
+            );
+        }
+        prev_start = chunk.byte_start;
+    }
+    let last = chunks.last().expect("at least one chunk");
+    assert_eq!(last.byte_end, text.len(), "final chunk must reach EOF");
 }
 
 #[test]

@@ -116,28 +116,52 @@ fn fit_full_doc_entry_to_budget(
     separator: &str,
     max_context_chars: usize,
 ) -> Option<String> {
-    let mut smallest_text = String::new();
+    let available = remaining_entry_chars(context_char_count, separator, max_context_chars)?;
+    let header = format!("## Source Document [S{}]: {}\n\n", source_idx, source);
+
+    // Rank the chunks once, then walk the top-k ladder on length arithmetic —
+    // the previous loop cloned the points and re-scored + re-rendered the
+    // whole document on every rung (up to 7 full renders per doc on the hot
+    // ask path). Only the rung that fits is actually rendered.
+    let order = qdrant::rank_points_by_query_overlap(points, query_tokens);
+    let mut prev_k = usize::MAX;
     for top_k in [FULL_DOC_RENDER_TOP_K, 16, 12, 8, 4, 2, 1] {
-        let text =
-            qdrant::render_full_doc_filtered(points.to_vec(), Some(query_tokens), Some(top_k));
-        if top_k == 1 {
-            smallest_text = text.clone();
-        }
-        if text.is_empty() {
+        let k = top_k.min(order.len());
+        if k == 0 || k == prev_k {
             continue;
         }
-        let entry = source_document_entry(source_idx, source, &text, false);
-        if entry_fits_context(&entry, context_char_count, separator, max_context_chars) {
-            return Some(entry);
+        prev_k = k;
+        // Conservative upper bound on the rendered size (chunk + '\n' per
+        // non-empty chunk, before edge trims) — an estimate that fits
+        // guarantees the real render fits.
+        let estimate: usize = order[..k]
+            .iter()
+            .map(|&i| {
+                let text = qdrant::payload_text_typed(&points[i].payload);
+                if text.is_empty() { 0 } else { text.len() + 1 }
+            })
+            .sum();
+        if estimate == 0 {
+            break;
+        }
+        if header.len() + estimate <= available {
+            let text = qdrant::render_points_in_doc_order(points, &order[..k]);
+            if text.is_empty() {
+                break;
+            }
+            return Some(source_document_entry(source_idx, source, &text, false));
         }
     }
 
-    let header = format!("## Source Document [S{}]: {}\n\n", source_idx, source);
     let marker = "\n\n[Excerpt truncated to fit the context budget.]";
-    let available = remaining_entry_chars(context_char_count, separator, max_context_chars)?;
     if available <= header.len() + marker.len() {
         return None;
     }
+    let smallest_text = if order.is_empty() {
+        String::new()
+    } else {
+        qdrant::render_points_in_doc_order(points, &order[..1])
+    };
     let body_budget = available - header.len() - marker.len();
     let body = truncate_to_char_boundary(smallest_text.trim(), body_budget);
     if body.trim().is_empty() {
@@ -156,16 +180,6 @@ fn source_document_entry(source_idx: usize, source: &str, text: &str, truncated:
         "## Source Document [S{}]: {}\n\n{}{}",
         source_idx, source, text, marker
     )
-}
-
-fn entry_fits_context(
-    entry: &str,
-    context_char_count: usize,
-    separator: &str,
-    max_context_chars: usize,
-) -> bool {
-    remaining_entry_chars(context_char_count, separator, max_context_chars)
-        .is_some_and(|remaining| entry.len() <= remaining)
 }
 
 fn remaining_entry_chars(

@@ -23,6 +23,11 @@ type InputRecord = (String, String, Option<serde_json::Value>);
 
 async fn read_inputs(input: &str) -> Result<Vec<InputRecord>, Box<dyn Error>> {
     let path = PathBuf::from(input);
+    // POSIX-style symlink policy (like `du` / `find -H` / `chown -H`): a
+    // symlink named explicitly on the command line is followed —
+    // `tokio::fs::metadata` resolves it — while symlinks *encountered during
+    // traversal* are skipped (see collect_embed_files). The server path is
+    // stricter and rejects a symlinked root outright (services/embed.rs).
     match tokio::fs::metadata(&path).await {
         Ok(meta) if meta.is_file() => Ok(vec![(
             path.to_string_lossy().to_string(),
@@ -170,8 +175,14 @@ pub(super) async fn prepare_embed_docs(
     }
     let input_is_dir = Path::new(input).is_dir();
     let mut prepared = Vec::new();
+    // Count docs dropped for having no embeddable content so the skip is
+    // attributable — without a trace, a directory of empty/whitespace files
+    // "succeeds" with an unexplained lower doc count.
+    let mut skipped_empty = 0usize;
     for (url, raw, manifest_structured) in docs {
         if raw.trim().is_empty() {
+            tracing::debug!(url = %url, "embed: skipping empty doc");
+            skipped_empty += 1;
             continue;
         }
         if input_is_dir && url.starts_with("http") && is_excluded_url_path(&url, exclude_prefixes) {
@@ -179,6 +190,8 @@ pub(super) async fn prepare_embed_docs(
         }
         let (chunks, content_type) = select_chunks(&url, raw).await;
         if chunks.is_empty() {
+            tracing::debug!(url = %url, "embed: skipping doc that chunked to nothing");
+            skipped_empty += 1;
             continue;
         }
         let domain = Url::parse(&url)
@@ -204,6 +217,11 @@ pub(super) async fn prepare_embed_docs(
             extractor_name: None,
             structured,
         });
+    }
+    if skipped_empty > 0 {
+        log_warn(&format!(
+            "command=embed skipped_empty_docs count={skipped_empty} (empty or chunked to nothing)"
+        ));
     }
     Ok(prepared)
 }

@@ -4,7 +4,7 @@ pub mod types;
 #[path = "ingest_tests.rs"]
 mod tests;
 
-pub use self::types::{IngestJob, IngestJobConfig, IngestSource};
+pub use self::types::{IngestJob, IngestJobConfig, IngestSource, RE_INGESTABLE_SOURCE_TYPES};
 
 use crate::core::config::Config;
 use crate::jobs::backend::{JobKind, JobPayload};

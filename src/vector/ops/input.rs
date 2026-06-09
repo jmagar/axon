@@ -12,9 +12,22 @@ pub const CHUNK_OVERLAP: usize = 200;
 const MARKDOWN_CHUNK_MAX: usize = 2000;
 
 pub fn chunk_text(text: &str) -> Vec<String> {
+    chunk_text_with_offsets(text)
+        .into_iter()
+        .map(|(_, chunk)| chunk)
+        .collect()
+}
+
+/// Like [`chunk_text`], but each chunk carries its byte offset into `text`.
+///
+/// Callers that need source positions (line numbers, `#L` fragments) must use
+/// the offsets returned here — re-discovering a chunk's position by substring
+/// search locks onto the first occurrence and mislabels files with repeated
+/// content.
+pub fn chunk_text_with_offsets(text: &str) -> Vec<(usize, String)> {
     // Fast-path: avoid the 800 KB Vec<usize> allocation for short documents.
     if text.chars().count() <= MARKDOWN_CHUNK_MAX {
-        return vec![text.to_string()];
+        return vec![(0, text.to_string())];
     }
 
     let offsets: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
@@ -29,7 +42,7 @@ pub fn chunk_text(text: &str) -> Vec<String> {
         } else {
             text.len()
         };
-        out.push(text[byte_start..byte_end].to_string());
+        out.push((byte_start, text[byte_start..byte_end].to_string()));
         if end == char_count {
             break;
         }

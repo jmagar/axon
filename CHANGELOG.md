@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.1] - 2026-06-09
+
+Remediation of the 10 surviving findings from the four-PR code review of
+#185 / #186 / #188 / #192.
+
+### Fixed
+
+- **Server-side embed no longer fails on `node_modules` symlinks** — the
+  MCP/REST embed validator (`src/services/embed.rs`) now prunes
+  VCS/dependency/build directories **before** its symlink check.
+  `node_modules/.bin/*` is symlinks by design and the reader never visits
+  pruned subtrees, so validation no longer rejects JS projects over files that
+  are never read. Symlinks outside pruned dirs are still rejected.
+- **Concurrent same-repo ingest race eliminated** — ingest job claims
+  (`src/jobs/ops/lifecycle.rs`) now serialize per `(source_type, target)`: a
+  pending job whose target has a running sibling stays queued (other targets
+  are claimed past it). Previously two jobs for the same repo on parallel
+  lanes could race, letting one job's repo-scoped stale cleanup delete points
+  the other had just upserted.
+- **`axon refresh` replays the original job's config** — each re-enqueued
+  origin now applies the most recent stored config snapshot for that crawl URL
+  / ingest target (max-depth, page caps, subdomain scoping, headers,
+  include-source, …) instead of current process defaults, which silently
+  widened or narrowed previously scoped crawls. Collection and service
+  endpoints always follow the current process config.
+- **`axon refresh` exits nonzero on partial failure** — when origins fail to
+  enqueue (e.g. the pending-job cap is hit mid-loop), the per-origin failures
+  were printed but the command still exited 0; scripted `--yes` runs could not
+  detect that most origins were never enqueued.
+- **Prose-fallback chunk line numbers are exact on files with repeated
+  content** — GitHub ingest's fallback chunker re-discovered each chunk's byte
+  offset by substring search, which locks onto the first duplicate occurrence
+  and emits wrong `code_line_start`/`code_line_end` + `#L` fragments. The
+  chunker (`chunk_text_with_offsets`) now reports true byte offsets.
+- **CLI embed root-symlink policy made explicit** — POSIX-style (like `du` /
+  `find -H`): a symlink named explicitly as the embed target is followed,
+  symlinks encountered during traversal are skipped; now documented and
+  regression-tested (the server path still rejects symlinked roots).
+- **Local embed no longer drops empty docs silently** — docs that are empty or
+  chunk to nothing are counted and reported via a single
+  `skipped_empty_docs count=N` warning (per-file detail at debug level).
+
+### Changed
+
+- **Ask full-doc budget fitting renders once, not up to 7×** — the top-k
+  ladder in `fit_full_doc_entry_to_budget` now ranks chunks once and walks the
+  ladder on length arithmetic, rendering only the rung that fits (previously
+  each rung cloned all points and re-scored + re-rendered the document).
+- **Single source of truth for re-ingestable source types** —
+  `RE_INGESTABLE_SOURCE_TYPES` now lives in `src/jobs/ingest/types.rs` next to
+  `source_type_label`; `axon refresh` imports it instead of duplicating the
+  provider list (adding a provider previously required touching both).
+
+### Documentation
+
+- New CLAUDE.md gotcha: **GitHub stale cleanup only sees schema-v7+ points** —
+  file chunks indexed before payload schema v7 (5.5.0) lack the `git_*` filter
+  fields and are invisible to `qdrant_delete_stale_repo_file_urls` until their
+  repo is re-ingested at v7+.
+
 ## [5.6.0] - 2026-06-09
 
 ### Added

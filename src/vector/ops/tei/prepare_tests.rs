@@ -220,6 +220,34 @@ async fn dir_embed_skips_symlinks() {
     assert!(!urls.iter().any(|u| u.ends_with("link.md")), "{urls:?}");
 }
 
+/// POSIX-style symlink policy: a symlink named explicitly as the embed target
+/// IS followed (like `du`/`find -H` follow command-line symlinks), while
+/// symlinks encountered during traversal are skipped (covered above). Guards
+/// the intent so the root-follow isn't "fixed" into a skip — or vice versa —
+/// without revisiting the policy.
+#[tokio::test]
+#[cfg(unix)]
+async fn dir_embed_follows_explicit_root_symlink() {
+    let cfg = Config::default_minimal();
+    let temp_dir = TempDir::new().expect("tempdir");
+    let real_root = temp_dir.path().join("real");
+    tokio::fs::create_dir_all(&real_root)
+        .await
+        .expect("real dir");
+    tokio::fs::write(real_root.join("doc.md"), "# Doc\n\nlinked-root content")
+        .await
+        .expect("write doc.md");
+    let link_root = temp_dir.path().join("link");
+    std::os::unix::fs::symlink(&real_root, &link_root).expect("root symlink");
+
+    let prepared = prepare_embed_docs(&cfg, &link_root.to_string_lossy(), &[], None)
+        .await
+        .expect("prepare docs");
+
+    assert_eq!(prepared.len(), 1, "explicit root symlink must be followed");
+    assert!(prepared[0].url.ends_with("doc.md"));
+}
+
 /// An empty/whitespace-only code file chunks to zero chunks and is skipped — it
 /// must not produce a zero-chunk PreparedDoc.
 #[tokio::test]
