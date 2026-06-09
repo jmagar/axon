@@ -6,6 +6,7 @@ use crate::services::types::{
     AskExplainFilterDecision, AskExplainFilterDecisionKind, AskExplainScoreComponent,
     AskExplainScoreComponentStatus, AskExplainScoreKind,
 };
+use crate::vector::ops::input::code::SymbolKind;
 use crate::vector::ops::ranking;
 
 const CODE_SYMBOL_BOOST: f64 = 0.35;
@@ -291,22 +292,12 @@ fn is_source_symbol_candidate(candidate: &RetrievedCandidate) -> bool {
     if candidate.code.content_kind.as_deref() != Some("file") {
         return false;
     }
-    matches!(
-        candidate.code.symbol_kind.as_deref(),
-        Some(
-            "function"
-                | "method"
-                | "struct"
-                | "enum"
-                | "trait"
-                | "impl"
-                | "const"
-                | "static"
-                | "type"
-                | "interface"
-                | "var"
-        )
-    )
+    candidate
+        .code
+        .symbol_kind
+        .as_deref()
+        .and_then(SymbolKind::from_str)
+        .is_some_and(SymbolKind::is_source_symbol)
 }
 
 fn symbol_name_overlaps_query(candidate: &RetrievedCandidate, query_tokens: &[String]) -> bool {

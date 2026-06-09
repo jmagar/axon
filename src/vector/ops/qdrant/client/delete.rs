@@ -166,6 +166,14 @@ pub async fn qdrant_delete_stale_domain_urls(
     Ok(stale.len())
 }
 
+/// Delete a repo's previously-indexed `git_content_kind="file"` points whose
+/// `url` is not in `current_urls`. Returns the count of stale URLs deleted.
+///
+/// Must be called only after the current file set has been embedded — the
+/// surviving set is defined by `current_urls`, so running it before embedding
+/// would delete live chunks. Uses `wait=false` (async delete): the preceding
+/// embed already guaranteed consistency, so this maintenance delete need not
+/// block on HNSW index rebuild.
 pub async fn qdrant_delete_stale_repo_file_urls(
     cfg: &Config,
     provider: &str,
@@ -237,31 +245,5 @@ pub async fn qdrant_delete_points(cfg: &Config, ids: &[String]) -> Result<usize>
 }
 
 #[cfg(test)]
-mod repo_code_delete_tests {
-    use super::*;
-
-    #[test]
-    fn repo_code_delete_body_is_scoped_to_one_repo_file_points() {
-        let body = repo_code_points_delete_body("github", "owner-a", "repo-a");
-        let must = body["filter"]["must"]
-            .as_array()
-            .expect("canonical must array");
-        assert_eq!(must.len(), 4);
-        assert!(must.contains(&serde_json::json!({
-            "key": "provider",
-            "match": {"value": "github"}
-        })));
-        assert!(must.contains(&serde_json::json!({
-            "key": "git_owner",
-            "match": {"value": "owner-a"}
-        })));
-        assert!(must.contains(&serde_json::json!({
-            "key": "git_repo",
-            "match": {"value": "repo-a"}
-        })));
-        assert!(must.contains(&serde_json::json!({
-            "key": "git_content_kind",
-            "match": {"value": "file"}
-        })));
-    }
-}
+#[path = "delete_tests.rs"]
+mod repo_code_delete_tests;

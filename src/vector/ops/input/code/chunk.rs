@@ -33,6 +33,49 @@ impl SymbolKind {
     pub const fn is_tiny_merge_eligible(self) -> bool {
         matches!(self, Self::Const | Self::Static | Self::Type)
     }
+
+    /// Parse the canonical string form (the inverse of [`as_str`]). Keeps the
+    /// stored-payload → ranking round-trip honest: a renamed variant breaks this
+    /// at compile time rather than silently mismatching a hand-typed literal.
+    ///
+    /// [`as_str`]: SymbolKind::as_str
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(value: &str) -> Option<Self> {
+        let kind = match value {
+            "function" => Self::Function,
+            "method" => Self::Method,
+            "struct" => Self::Struct,
+            "enum" => Self::Enum,
+            "trait" => Self::Trait,
+            "impl" => Self::Impl,
+            "const" => Self::Const,
+            "static" => Self::Static,
+            "type" => Self::Type,
+            "mod" => Self::Mod,
+            "other" => Self::Other,
+            _ => return None,
+        };
+        Some(kind)
+    }
+
+    /// Whether a chunk carrying this symbol kind should be treated as a primary
+    /// code-search target (and receive the symbol boost). Declaration-only kinds
+    /// (`Mod`) and the catch-all (`Other`) are deliberately excluded. Exhaustive
+    /// so adding a variant forces this decision rather than defaulting silently.
+    pub const fn is_source_symbol(self) -> bool {
+        match self {
+            Self::Function
+            | Self::Method
+            | Self::Struct
+            | Self::Enum
+            | Self::Trait
+            | Self::Impl
+            | Self::Const
+            | Self::Static
+            | Self::Type => true,
+            Self::Mod | Self::Other => false,
+        }
+    }
 }
 
 /// Owned code chunk metadata. Never store tree-sitter nodes here; they borrow

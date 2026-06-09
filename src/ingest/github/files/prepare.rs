@@ -111,13 +111,25 @@ pub(super) async fn read_file_embed_docs(
         _ => {}
     }
 
-    let text = match tokio::fs::read_to_string(&full_path).await {
-        Ok(t) => t,
+    // Split the read from UTF-8 decoding: a genuine I/O error is a failure that
+    // blocks stale cleanup, but a non-UTF-8 file is benign data we simply skip
+    // (matching the oversized-file skip above). Conflating the two via
+    // `read_to_string` would let a single Latin-1/binary file abort the entire
+    // repo ingest.
+    let bytes = match tokio::fs::read(&full_path).await {
+        Ok(b) => b,
         Err(e) => {
             log_warn(&format!(
                 "command=ingest_github read_failed path={path} err={e}"
             ));
             return Err(format!("read failed for {path}: {e}"));
+        }
+    };
+    let text = match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => {
+            log_warn(&format!("command=ingest_github skip_non_utf8 path={path}"));
+            return Ok(Vec::new());
         }
     };
     if text.trim().is_empty() {
@@ -171,7 +183,13 @@ pub(super) async fn read_file_embed_docs(
 }
 
 fn code_or_text_chunks(text: &str, ext: &str) -> Vec<CodeChunk> {
-    chunk_code_chunks(text, ext).unwrap_or_else(|| text_chunks(text))
+    // Fall back to prose chunking both for unsupported extensions (`None`) and
+    // for supported-language files that tree-sitter splits into zero non-empty
+    // chunks (`Some([])`) — otherwise such a file would be silently dropped.
+    match chunk_code_chunks(text, ext) {
+        Some(chunks) if !chunks.is_empty() => chunks,
+        _ => text_chunks(text),
+    }
 }
 
 fn text_chunks(text: &str) -> Vec<CodeChunk> {

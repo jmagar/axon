@@ -82,9 +82,9 @@ pub async fn embed_files(
         stats.failed_chunks,
         stats.chunks_embedded
     ));
-    if stats.has_failures() {
+    if stats.has_failed_batches() {
         bail!(
-            "github file embedding had failures: read_failed={} batches_failed={} files_failed={} docs_failed={} chunks_failed={} chunks_embedded={}",
+            "github file embedding had embed-batch failures: read_failed={} batches_failed={} files_failed={} docs_failed={} chunks_failed={} chunks_embedded={}",
             stats.failed_file_reads,
             stats.failed_batches,
             stats.failed_files,

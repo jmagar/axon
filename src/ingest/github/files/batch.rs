@@ -42,8 +42,18 @@ impl GitHubFileEmbedStats {
         self.failed_chunks += chunks;
     }
 
+    /// Any condition that must skip stale cleanup: a skipped file's chunks are
+    /// not in `embedded_urls`, so cleaning up would wrongly delete its prior
+    /// chunks. Read skips and embed-batch failures both qualify.
     pub(super) fn has_failures(&self) -> bool {
         self.failed_file_reads > 0 || self.failed_batches > 0
+    }
+
+    /// Only genuine embed-pipeline failures should abort the whole ingest. A
+    /// single unreadable file is logged and skipped (it still blocks cleanup via
+    /// [`has_failures`]) rather than failing the run.
+    pub(super) fn has_failed_batches(&self) -> bool {
+        self.failed_batches > 0
     }
 }
 
