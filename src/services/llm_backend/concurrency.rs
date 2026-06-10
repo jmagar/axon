@@ -36,7 +36,7 @@ pub async fn acquire_completion_permit(
     acquire_completion_permit_for_key(CompletionKey::Default, limit).await
 }
 
-pub async fn acquire_completion_permit_for_key(
+pub(crate) async fn acquire_completion_permit_for_key(
     key: CompletionKey,
     limit: usize,
 ) -> Result<OwnedSemaphorePermit, Box<dyn StdError + Send + Sync>> {

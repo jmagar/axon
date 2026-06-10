@@ -44,7 +44,11 @@ pub(super) fn router(
         .route("/v1/doctor", get(handlers::discovery::doctor))
         .route("/v1/query", post(handlers::rag::query))
         .route("/v1/retrieve", post(handlers::rag::retrieve))
-        .route("/v1/map", post(handlers::exploration::map));
+        .route("/v1/map", post(handlers::exploration::map))
+        .route(
+            "/v1/artifacts/{*path}",
+            get(handlers::artifacts::serve_artifact),
+        );
     let write_routes = Router::new()
         // Active-network operations require axon:write. Endpoint discovery
         // fetches pages, bundles, probes endpoints, and may execute Chrome
@@ -114,6 +118,18 @@ pub(super) fn router(
         .route("/v1/actions", post(v1_actions_removed))
         .route("/v1/migrate", post(v1_migrate_not_exposed))
         .merge(super::openapi::docs_router())
+        .merge(panel_routes())
+        .merge(rest_routes)
+        .fallback(super::super::static_assets::serve_static)
+        .with_state((state, Arc::clone(&cfg)))
+}
+
+/// Panel UI and first-run API routes (`/api/panel/*`).
+fn panel_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
         .route("/api/panel/state", get(handlers::panel_state))
         .route("/api/panel/login", post(handlers::login))
         .route(
@@ -141,9 +157,6 @@ pub(super) fn router(
             post(super::super::panel_first_run::first_run_ask),
         )
         .route("/api/panel/setup/targets", get(handlers::setup_targets))
-        .merge(rest_routes)
-        .fallback(super::super::static_assets::serve_static)
-        .with_state((state, Arc::clone(&cfg)))
 }
 
 async fn v1_capabilities() -> Json<ServerInfo> {

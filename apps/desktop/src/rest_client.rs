@@ -55,6 +55,19 @@ impl RestClient {
         })
     }
 
+    /// Lightweight connectivity probe: GET `/healthz` (no auth, no Qdrant/TEI probes).
+    ///
+    /// Used for the connection-state dot. Returns `true` on any HTTP 2xx response.
+    pub(crate) fn health_check(&self) -> Result<bool, String> {
+        let url = format!("{}/healthz", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .map_err(|err| format!("connect to {url}: {err}"))?;
+        Ok(response.status().is_success())
+    }
+
     pub(crate) fn execute(&self, request: &RestRequest) -> Result<RestOutput, String> {
         let url = format!("{}{}", self.base_url, request.path);
         let mut builder = match request.method {

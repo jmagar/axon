@@ -27,22 +27,10 @@ impl Palette {
         cx.notify();
 
         let task = cx.background_spawn(async move {
+            // Use /healthz — unauthenticated, lightweight, no Qdrant/TEI probes.
+            // Cheaper and more reliable than /v1/doctor for a connection dot.
             let ok = RestClient::from_env()
-                .and_then(|client| {
-                    let request = build_rest_request(
-                        crate::actions::CommandAction {
-                            label: "Doctor",
-                            subcommand: "doctor",
-                            arg_mode: ArgMode::None,
-                            aliases: &[],
-                            description: "",
-                            example: "",
-                        },
-                        "",
-                    )?;
-                    client.execute(&request)
-                })
-                .map(|output| output.ok)
+                .and_then(|client| client.health_check())
                 .unwrap_or(false);
             HealthResult { ok }
         });
@@ -117,6 +105,16 @@ impl Palette {
                 OutputKind::Warning,
                 "Command already running",
                 "Wait for the current axon command to finish.",
+            ));
+            cx.notify();
+            return;
+        }
+
+        if matches!(self.connection, ConnectionState::Disconnected) {
+            self.command_output = Some(CommandOutput::notice(
+                OutputKind::Warning,
+                "Axon server not reachable",
+                "Start `axon serve` to enable commands, then click the status dot to reconnect.",
             ));
             cx.notify();
             return;

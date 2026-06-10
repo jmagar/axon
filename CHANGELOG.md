@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.3] - 2026-06-09
+
+Fix desktop palette health check endpoint and add offline test coverage for
+watch change-detection branches.
+
+### Fixed
+
+- **Desktop palette** — health-check dot now probes `/healthz` (unauthenticated,
+  lightweight) instead of `/v1/doctor`; adds disconnected-server UX warning before
+  submitting commands.
+
+### Tests
+
+- **`src/jobs/watch/change_detect`** — added `WatchFetcher` injection seam
+  (`LiveFetcher` production path + `StubFetcher` for tests); four offline
+  `#[tokio::test]` cases now cover the 304 short-circuit, probe-failure fallback,
+  hash-equal skip, and first-seen (seed) branches deterministically without any
+  live HTTP.
+
+### Internal
+
+- **`src/services/llm_backend/concurrency`** — tighten `acquire_completion_permit_for_key`
+  visibility to `pub(crate)`.
+
 ## [5.7.2] - 2026-06-09
 
 Documentation accuracy: remove stale `CHROME_URL` workaround instructions.
