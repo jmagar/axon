@@ -19,7 +19,7 @@ mod axon_bridge;
 mod persistence;
 mod stream;
 
-use axon_bridge::BridgeClient;
+use axon_bridge::{BridgeClient, StreamClient};
 use persistence::*;
 use stream::axon_http_stream_request;
 
@@ -184,7 +184,6 @@ fn merge_settings(persisted: PartialPaletteSettings, defaults: PaletteSettings) 
         token: persisted.token.unwrap_or(defaults.token),
         shortcut: persisted
             .shortcut
-            .or(Some(DEFAULT_SHORTCUT.to_string()))
             .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string()),
         collection: persisted.collection.unwrap_or(defaults.collection),
         result_limit: persisted.result_limit.unwrap_or(10),
@@ -277,6 +276,26 @@ fn normalize_shortcut_label(shortcut: &str) -> String {
         }
         _ => DEFAULT_SHORTCUT.to_string(),
     }
+}
+
+/// Validate and normalise a saved Axon server URL.
+///
+/// Shared by `axon_bridge` and `stream` so they can't diverge silently.
+pub(crate) fn validate_saved_server_url(server_url: &str) -> Result<String, String> {
+    let server_url = normalize_server_url(server_url);
+    let parsed =
+        reqwest::Url::parse(&server_url).map_err(|_| "saved Axon server URL is invalid")?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("saved Axon server URL must use http or https".to_string());
+    }
+    if parsed.host_str().is_none()
+        || !matches!(parsed.path(), "" | "/")
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err("saved Axon server URL must be an origin URL".to_string());
+    }
+    Ok(server_url.trim_end_matches('/').to_string())
 }
 
 fn shortcut_for_label(label: &str) -> Shortcut {
@@ -441,6 +460,7 @@ pub fn run() {
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
         .manage(BridgeClient::new().expect("failed to build shared HTTP client for Axon bridge"))
+        .manage(StreamClient::new().expect("failed to build shared HTTP client for streaming"))
         .setup(|app| {
             if let Err(err) = install_tray(app) {
                 log_palette_warning("failed to install tray icon", err);

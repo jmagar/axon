@@ -1,10 +1,9 @@
-use std::time::Duration;
-
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-use crate::{merged_settings, normalize_server_url};
+use crate::axon_bridge::StreamClient;
+use crate::{merged_settings, validate_saved_server_url};
 
 /// Maximum allowed size (in bytes) for a single SSE line.
 ///
@@ -54,6 +53,7 @@ enum PaletteStreamEvent {
 pub(crate) async fn axon_http_stream_request(
     app: AppHandle,
     window: tauri::Window,
+    stream_client: tauri::State<'_, StreamClient>,
     request: PaletteStreamRequest,
 ) -> Result<(), String> {
     if !matches!(request.path.as_str(), "/v1/ask/stream" | "/v1/chat/stream") {
@@ -72,14 +72,8 @@ pub(crate) async fn axon_http_stream_request(
         )
         .map_err(|err| err.to_string())?;
 
-    // Use connect_timeout rather than a total-stream timeout so long RAG
-    // responses are not cut off at an arbitrary wall-clock limit.
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .user_agent(concat!("Axon Palette/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let mut builder = client
+    let mut builder = stream_client
+        .0
         .post(url)
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .json(&request.body);
@@ -126,23 +120,6 @@ pub(crate) async fn axon_http_stream_request(
         return Err(message);
     }
     Ok(())
-}
-
-fn validate_saved_server_url(server_url: &str) -> Result<String, String> {
-    let server_url = normalize_server_url(server_url);
-    let parsed =
-        reqwest::Url::parse(&server_url).map_err(|_| "saved Axon server URL is invalid")?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err("saved Axon server URL must use http or https".to_string());
-    }
-    if parsed.host_str().is_none()
-        || !matches!(parsed.path(), "" | "/")
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err("saved Axon server URL must be an origin URL".to_string());
-    }
-    Ok(server_url.trim_end_matches('/').to_string())
 }
 
 fn drain_sse_lines(pending: &mut Vec<u8>, chunk: &[u8]) -> Result<Vec<String>, String> {

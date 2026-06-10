@@ -280,7 +280,7 @@ pub(crate) fn write_axon_env_values(
     }
     let mut remaining: Vec<_> = pending.into_iter().collect();
     remaining.sort_by(|(left, _), (right, _)| left.cmp(right));
-    if !remaining.is_empty() && !lines.last().is_none_or(|line| line.is_empty()) {
+    if !remaining.is_empty() && lines.last().map_or(false, |line| !line.is_empty()) {
         lines.push(String::new());
     }
     for (key, value) in remaining {
