@@ -293,6 +293,36 @@ fn no_tmp_file_after_successful_atomic_write() {
     }
 }
 
+// ── normalize_shortcut_label ──────────────────────────────────────────────
+
+#[test]
+fn normalize_shortcut_label_canonicalizes_known_aliases() {
+    assert_eq!(normalize_shortcut_label("option+space"), "Alt+Space");
+    assert_eq!(normalize_shortcut_label("Alt+Space"), "Alt+Space");
+    assert_eq!(normalize_shortcut_label("ctrl+space"), "Ctrl+Space");
+    assert_eq!(normalize_shortcut_label("Ctrl+Space"), "Ctrl+Space");
+    assert_eq!(normalize_shortcut_label("control+space"), "Ctrl+Space");
+    assert_eq!(
+        normalize_shortcut_label("cmd+shift+space"),
+        "Cmd+Shift+Space"
+    );
+    assert_eq!(
+        normalize_shortcut_label("super+shift+space"),
+        "Cmd+Shift+Space"
+    );
+    assert_eq!(
+        normalize_shortcut_label("command+shift+space"),
+        "Cmd+Shift+Space"
+    );
+}
+
+#[test]
+fn normalize_shortcut_label_falls_back_to_default_for_unknown() {
+    assert_eq!(normalize_shortcut_label("Win+Q"), DEFAULT_SHORTCUT);
+    assert_eq!(normalize_shortcut_label(""), DEFAULT_SHORTCUT);
+    assert_eq!(normalize_shortcut_label("not-a-shortcut"), DEFAULT_SHORTCUT);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 fn env_lock() -> &'static Mutex<()> {

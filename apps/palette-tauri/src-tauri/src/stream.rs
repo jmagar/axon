@@ -15,8 +15,10 @@ const MAX_SSE_LINE_BYTES: usize = 1024 * 1024; // 1 MiB
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PaletteStreamRequest {
+    // Intentionally ignored — the real value is loaded from app settings
     #[serde(default, rename = "baseUrl")]
     _base_url: Option<String>,
+    // Intentionally ignored — the real value is loaded from app settings
     #[serde(default, rename = "token")]
     _token: Option<String>,
     request_id: String,
@@ -72,8 +74,8 @@ pub(crate) async fn axon_http_stream_request(
         )
         .map_err(|err| err.to_string())?;
 
-    let mut builder = stream_client
-        .0
+    let mut builder = (*stream_client)
+        .client()
         .post(url)
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .json(&request.body);
@@ -174,10 +176,13 @@ fn handle_palette_sse_line(
     let value: serde_json::Value = serde_json::from_str(&data).map_err(|err| err.to_string())?;
     match value.get("type").and_then(|kind| kind.as_str()) {
         Some("delta") => {
-            let text = value
-                .get("text")
-                .and_then(|text| text.as_str())
-                .unwrap_or_default();
+            let text = match value.get("text").and_then(|t| t.as_str()) {
+                Some(t) => t,
+                None => {
+                    eprintln!("palette: delta SSE event missing 'text' field — data: {data}");
+                    ""
+                }
+            };
             window
                 .emit(
                     "palette://stream",

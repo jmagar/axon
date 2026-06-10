@@ -73,3 +73,21 @@ fn rejects_oversized_sse_line_with_trailing_newline() {
         "error message should describe the size violation: {msg}"
     );
 }
+
+#[test]
+fn crlf_sse_lines_are_decoded_correctly() {
+    let mut pending = Vec::new();
+    let line = "data: {\"type\":\"done\",\"answer\":\"ok\"}\r\n";
+    let lines = drain_sse_lines(&mut pending, line.as_bytes()).unwrap();
+    assert_eq!(lines, vec!["data: {\"type\":\"done\",\"answer\":\"ok\"}"]);
+    assert!(pending.is_empty());
+}
+
+#[test]
+fn parse_sse_data_line_handles_no_space_after_colon() {
+    // strip_prefix("data:") then .trim() — so "data:{...}" is valid
+    assert_eq!(
+        parse_data_line("data:{\"type\":\"delta\"}"),
+        Some("{\"type\":\"delta\"}".to_string())
+    );
+}

@@ -3,21 +3,27 @@ use tauri::AppHandle;
 
 use crate::{merged_settings, validate_saved_server_url};
 
+const PALETTE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// A shared `reqwest::Client` held in Tauri `AppState`.
 ///
 /// Creating a new client per-request is wasteful: it allocates a new
 /// connection pool and TLS context each time.  Storing one client in state
 /// lets all bridge calls share a single connection pool.
-pub(crate) struct BridgeClient(pub(crate) reqwest::Client);
+pub(crate) struct BridgeClient(reqwest::Client);
 
 impl BridgeClient {
     pub(crate) fn new() -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(300))
-            .connect_timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(PALETTE_CONNECT_TIMEOUT)
             .user_agent(concat!("Axon Palette/", env!("CARGO_PKG_VERSION")))
             .build()?;
         Ok(Self(client))
+    }
+
+    pub(crate) fn client(&self) -> &reqwest::Client {
+        &self.0
     }
 }
 
@@ -26,23 +32,32 @@ impl BridgeClient {
 /// Unlike `BridgeClient`, this client has no total-request timeout so long
 /// RAG streams are not cut off at an arbitrary wall-clock limit.  A connect
 /// timeout is still applied to reject unreachable servers quickly.
-pub(crate) struct StreamClient(pub(crate) reqwest::Client);
+/// No read-idle timeout is set; a server that stalls mid-stream will hold the
+/// connection indefinitely — add a per-request timeout override at the call
+/// site if needed for a specific endpoint.
+pub(crate) struct StreamClient(reqwest::Client);
 
 impl StreamClient {
     pub(crate) fn new() -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(PALETTE_CONNECT_TIMEOUT)
             .user_agent(concat!("Axon Palette/", env!("CARGO_PKG_VERSION")))
             .build()?;
         Ok(Self(client))
+    }
+
+    pub(crate) fn client(&self) -> &reqwest::Client {
+        &self.0
     }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AxonHttpRequest {
+    // Intentionally ignored — the real value is loaded from app settings
     #[serde(default, rename = "baseUrl")]
     _base_url: Option<String>,
+    // Intentionally ignored — the real value is loaded from app settings
     #[serde(default, rename = "token")]
     _token: Option<String>,
     method: HttpMethod,
@@ -79,7 +94,7 @@ pub(crate) async fn axon_http_request(
     let settings = merged_settings(&app)?;
     let base_url = validate_saved_server_url(&settings.server_url)?;
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
-    let client = &bridge.0;
+    let client = (*bridge).client();
 
     let mut builder = match method {
         HttpMethod::Get => client.get(&url),

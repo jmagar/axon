@@ -108,8 +108,12 @@ const ALLOWED_TOML_SECTION_PREFIXES: &[&str] = &[
 ];
 
 pub(crate) fn read_settings_result(app: &AppHandle) -> Result<PartialPaletteSettings, String> {
-    let Some(path) = settings_path(app) else {
-        return Ok(PartialPaletteSettings::default());
+    let path = match settings_path(app) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("palette: {err}");
+            return Ok(PartialPaletteSettings::default());
+        }
     };
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -142,7 +146,7 @@ pub(crate) fn write_settings(
     app: &AppHandle,
     settings: &PaletteSettings,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let path = settings_path(app).ok_or("settings path unavailable")?;
+    let path = settings_path(app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -165,11 +169,11 @@ pub(crate) fn settings_with_file_values(mut settings: PaletteSettings) -> Palett
     settings
 }
 
-fn settings_path(app: &AppHandle) -> Option<PathBuf> {
+fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
-        .ok()
         .map(|dir| dir.join(SETTINGS_FILE))
+        .map_err(|err| format!("failed to resolve app config directory: {err}"))
 }
 
 pub(crate) fn value_for(key: &str, file_entries: &[(String, String)]) -> Option<String> {
@@ -397,9 +401,17 @@ pub(crate) fn write_axon_config_values(
             .into());
         }
     };
-    let mut doc = contents
-        .parse::<DocumentMut>()
-        .unwrap_or_else(|_| DocumentMut::new());
+    let mut doc = match contents.parse::<DocumentMut>() {
+        Ok(d) => d,
+        Err(err) => {
+            return Err(format!(
+                "failed to parse existing config file at {} — \
+                 refusing to continue to avoid data loss: {err}",
+                path.display()
+            )
+            .into());
+        }
+    };
     let mut entries: Vec<_> = values.iter().collect();
     entries.sort_by_key(|(key, _)| *key);
     for (path, value) in entries {
@@ -411,10 +423,11 @@ pub(crate) fn write_axon_config_values(
 
 /// Write `data` to `path` atomically: write to `<path>.tmp`, then rename.
 ///
-/// On Unix the `.tmp` file is created with mode `0o600` (owner read/write
-/// only) before any data is written, so a partial failure never leaves a
-/// world-readable file at the destination.  On Windows no explicit permission
-/// change is applied; rely on the directory ACL to restrict access.
+/// On Unix, permissions are set to `0o600` immediately after the file is
+/// created but before any data is written.  Note: a brief window exists
+/// between `open` and `set_permissions` where the file inherits the process
+/// umask.  On Windows no explicit permission change is applied; rely on the
+/// directory ACL to restrict access.
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let tmp = path.with_extension("tmp");
     {

@@ -53,6 +53,8 @@ const SETTINGS_FILE: &str = "settings.json";
 // Runtime gate for hide-on-blur, toggled by the frontend. The launcher hides on
 // blur (click-away dismiss), but while a result/settings view is open we keep it
 // up so resizing or copying from another window doesn't make it vanish.
+// Checked together with the `hide_on_blur` user preference in the
+// `WindowEvent::Focused(false)` handler.
 struct BlurDismiss(AtomicBool);
 
 /// Tracks the shortcut label currently registered so we can unregister only
@@ -91,22 +93,18 @@ fn save_palette_settings(
     Ok(settings_with_file_values(settings))
 }
 
-/// Write only the env-layer values from palette settings to `~/.axon/.env`.
 fn save_axon_env(settings: &PaletteSettings) -> Result<(), String> {
     write_axon_env_values(&settings.env_values).map_err(|err| err.to_string())
 }
 
-/// Write only the config.toml-layer values from palette settings.
 fn save_axon_config(settings: &PaletteSettings) -> Result<(), String> {
     write_axon_config_values(&settings.config_values).map_err(|err| err.to_string())
 }
 
-/// Persist palette-only UI preferences (no env/config keys) to `settings.json`.
 fn save_palette_prefs(app: &AppHandle, settings: &PaletteSettings) -> Result<(), String> {
     write_settings(app, settings).map_err(|err| err.to_string())
 }
 
-/// Update the global shortcut registration.
 fn update_shortcut(app: &AppHandle, settings: &PaletteSettings) -> Result<(), String> {
     register_configured_shortcut(app, settings)
 }
@@ -283,8 +281,8 @@ fn normalize_shortcut_label(shortcut: &str) -> String {
 /// Shared by `axon_bridge` and `stream` so they can't diverge silently.
 pub(crate) fn validate_saved_server_url(server_url: &str) -> Result<String, String> {
     let server_url = normalize_server_url(server_url);
-    let parsed =
-        reqwest::Url::parse(&server_url).map_err(|_| "saved Axon server URL is invalid")?;
+    let parsed = reqwest::Url::parse(&server_url)
+        .map_err(|err| format!("saved Axon server URL is invalid: {err}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("saved Axon server URL must use http or https".to_string());
     }
@@ -317,7 +315,9 @@ fn register_configured_shortcut(app: &AppHandle, settings: &PaletteSettings) -> 
     if let Ok(mut guard) = app.state::<ActiveShortcut>().0.lock() {
         if let Some(old_label) = guard.take().filter(|l| l != &new_label) {
             let old_shortcut = shortcut_for_label(&old_label);
-            let _ = app.global_shortcut().unregister(old_shortcut);
+            if let Err(err) = app.global_shortcut().unregister(old_shortcut) {
+                eprintln!("palette: failed to unregister old shortcut '{old_label}': {err}");
+            }
         }
         app.global_shortcut()
             .register(new_shortcut)
@@ -434,7 +434,12 @@ fn install_tray(app: &tauri::App) -> tauri::Result<()> {
 #[path = "lib_tests.rs"]
 mod tests;
 
-pub fn run() {
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let bridge_client = BridgeClient::new()
+        .map_err(|err| format!("failed to build HTTP client for Axon bridge: {err}"))?;
+    let stream_client = StreamClient::new()
+        .map_err(|err| format!("failed to build HTTP client for streaming: {err}"))?;
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -459,8 +464,8 @@ pub fn run() {
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
-        .manage(BridgeClient::new().expect("failed to build shared HTTP client for Axon bridge"))
-        .manage(StreamClient::new().expect("failed to build shared HTTP client for streaming"))
+        .manage(bridge_client)
+        .manage(stream_client)
         .setup(|app| {
             if let Err(err) = install_tray(app) {
                 log_palette_warning("failed to install tray icon", err);
@@ -501,5 +506,5 @@ pub fn run() {
             _ => {}
         })
         .run(tauri::generate_context!())
-        .expect("error while running Axon Palette");
+        .map_err(|err| format!("error while running Axon Palette: {err}").into())
 }
