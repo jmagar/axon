@@ -26,7 +26,7 @@ pre-commit:
       # (~0.3s warm) even on a commit touching a couple of files.
       # `glob: "**/*"` makes lefthook skip on empty commits.
       glob: "**/*"
-      run: scripts/with_timeout.sh 60 -- cargo xtask check
+      run: scripts/with_timeout.sh 60 -- ./target/debug/xtask check
     skills-ref:
       glob: "skills/**"
       run: scripts/with_timeout.sh 30 -- ./scripts/validate_skills_ref.sh
