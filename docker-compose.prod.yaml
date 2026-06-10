@@ -63,6 +63,13 @@ services:
       AXON_ENV_FILE: ""
       AXON_CONFIG_PATH: ""
       TZ: ${TZ:-America/New_York}
+      # Filesystem-namespace claim affinity (axon_rust-p2oc). Embed jobs whose
+      # input is a local path are stamped with the enqueueing process's namespace
+      # at insert time, then only claimed by workers in the same namespace. The
+      # container uses "axon-container"; host CLI workers leave this unset (or
+      # set it explicitly) so they only claim namespace-NULL (URL/text) jobs and
+      # their own local-path jobs — never container-path jobs.
+      AXON_FS_NAMESPACE: axon-container
     volumes:
       # Persist config + secrets + jobs.db + output + logs + artifacts on the host.
       - ${AXON_HOME:-${HOME}/.axon}:/home/axon/.axon

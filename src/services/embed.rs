@@ -4,7 +4,7 @@ use crate::core::config::Config;
 use crate::jobs::backend::{JobKind, JobPayload};
 use crate::jobs::config_snapshot::config_snapshot_json;
 use crate::services::context::ServiceContext;
-use crate::services::events::ServiceEvent;
+use crate::services::events::{ServiceEvent, is_secret_like};
 use crate::services::jobs as job_service;
 use crate::services::runtime::ServiceJobRuntime;
 use crate::services::runtime::WorkerMode;
@@ -367,16 +367,7 @@ fn validate_local_embed_relative_path(
                 "local embed path must not include dotfiles",
             ));
         }
-        if lower == "id_rsa"
-            || lower == "id_dsa"
-            || lower == "id_ecdsa"
-            || lower == "id_ed25519"
-            || lower.ends_with(".pem")
-            || lower.ends_with(".key")
-            || lower.contains("secret")
-            || lower.contains("credential")
-            || lower.contains("token")
-        {
+        if is_secret_like(&lower) {
             return Err(embed_validation_error(
                 "local embed path appears to contain secret material",
             ));

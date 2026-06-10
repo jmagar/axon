@@ -71,7 +71,15 @@ pub(super) async fn collect_indexable_files(
     Ok(files)
 }
 
-/// Read a single file from the cloned repo and build one `PreparedDoc` per chunk.
+/// Read a single file from the cloned repo and build **one** `PreparedDoc` for the
+/// entire file (all chunks as `chunks: Vec<String>`).
+///
+/// P-H1: Previously this emitted one `PreparedDoc` per chunk, which caused:
+/// - TEI to receive a single-chunk batch per doc (batching never engaged).
+/// - A guaranteed no-op stale-tail delete per chunk (filter `chunk_index >= 1`
+///   on a 1-chunk doc is always empty).
+/// Now each file produces exactly one `PreparedDoc`; TEI can batch all chunks
+/// together and the stale-tail delete fires once per file with the true count.
 pub(super) async fn read_file_embed_docs(
     ctx: &FileEmbedCtx,
     path: &str,
@@ -148,22 +156,47 @@ pub(super) async fn read_file_embed_docs(
         ));
     }
 
-    let attrs = FileDocAttrs {
-        base_url,
-        path,
-        ext: &ext,
-        lang: &lang,
-        ftype: &ftype,
-        is_test,
-        file_size,
-        symbol_status,
-    };
-    let docs = chunks
-        .into_iter()
-        .map(|chunk| prepared_doc_for_chunk(ctx, &attrs, chunk))
-        .collect();
+    // Use the overall file line range (first chunk start → last chunk end).
+    let file_line_start = chunks.first().map(|c| c.start_line);
+    let file_line_end = chunks.last().map(|c| c.end_line);
+    let chunk_method = chunking_method(&ext, chunks.first().expect("non-empty"));
 
-    Ok(docs)
+    let chunk_texts: Vec<String> = chunks.into_iter().map(|c| c.text).collect();
+
+    let extra = build_github_payload(&GitHubPayloadParams {
+        repo: ctx.name.clone(),
+        owner: ctx.owner.clone(),
+        content_kind: ContentKind::File,
+        branch: Some(ctx.default_branch.clone()),
+        default_branch: Some(ctx.default_branch.clone()),
+        repo_description: ctx.repo_description.clone(),
+        pushed_at: ctx.pushed_at.clone(),
+        is_private: ctx.is_private,
+        file_path: Some(path.to_string()),
+        file_language: Some(lang.clone()),
+        file_type: Some(ftype.clone()),
+        is_test: Some(is_test),
+        file_size_bytes: Some(file_size),
+        line_start: file_line_start,
+        line_end: file_line_end,
+        chunking_method: Some(chunk_method.to_string()),
+        symbol_name: None, // file-level doc; per-chunk symbols not tracked at this level
+        symbol_kind: None,
+        symbol_extraction_status: Some(symbol_status.to_string()),
+        ..Default::default()
+    });
+
+    Ok(vec![PreparedDoc {
+        url: base_url,
+        domain: "github.com".to_string(),
+        chunks: chunk_texts,
+        source_type: "github".to_string(),
+        content_type: "text",
+        title: Some(path.to_string()),
+        extra: Some(extra),
+        extractor_name: None,
+        structured: None,
+    }])
 }
 
 fn code_or_text_chunks(text: &str, ext: &str) -> Vec<CodeChunk> {

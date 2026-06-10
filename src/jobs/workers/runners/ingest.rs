@@ -14,6 +14,9 @@ use crate::services::types::IngestResult;
 
 use super::JobResult;
 
+mod merge;
+use merge::*;
+
 pub async fn run_ingest_job(
     pool: &SqlitePool,
     cfg: &Config,
@@ -148,15 +151,59 @@ async fn execute_ingest_source(
         IngestSource::Gitlab {
             target,
             include_source,
-        } => run_gitlab_ingest(cfg, target, include_source, progress_tx, cancel_token).await,
+        } => {
+            run_git_provider_ingest(
+                cfg,
+                target,
+                include_source,
+                progress_tx,
+                cancel_token,
+                |c, t, tx| async move {
+                    crate::services::ingest::ingest_gitlab_with_progress(&c, &t, None, Some(tx))
+                        .await
+                },
+            )
+            .await
+        }
         IngestSource::Gitea {
             target,
             include_source,
-        } => run_gitea_ingest(cfg, target, include_source, progress_tx, cancel_token).await,
+        } => {
+            run_git_provider_ingest(
+                cfg,
+                target,
+                include_source,
+                progress_tx,
+                cancel_token,
+                |c, t, tx| async move {
+                    crate::services::ingest::ingest_gitea_with_progress(&c, &t, None, Some(tx))
+                        .await
+                },
+            )
+            .await
+        }
         IngestSource::GenericGit {
             target,
             include_source,
-        } => run_generic_git_ingest(cfg, target, include_source, progress_tx, cancel_token).await,
+        } => {
+            run_git_provider_ingest(
+                cfg,
+                target,
+                include_source,
+                progress_tx,
+                cancel_token,
+                |c, t, tx| async move {
+                    crate::services::ingest::ingest_generic_git_with_progress(
+                        &c,
+                        &t,
+                        None,
+                        Some(tx),
+                    )
+                    .await
+                },
+            )
+            .await
+        }
         IngestSource::Reddit { target } => {
             let options = cancel_token
                 .map(crate::ingest::reddit::RedditIngestOptions::with_cancel_token)
@@ -228,57 +275,26 @@ async fn run_github_ingest(
     cancelable(fut, cancel_token.as_ref()).await
 }
 
-async fn run_gitlab_ingest(
+/// Shared runner for GitLab, Gitea, and generic-git providers (A-M5).
+///
+/// All three follow an identical pattern: clone config, set `github_include_source`,
+/// call the provider service function, wrap with cancellation. The only variation
+/// is the service function, which the caller supplies as a closure.
+async fn run_git_provider_ingest<F, Fut>(
     cfg: &Config,
     target: String,
     include_source: bool,
     progress_tx: mpsc::Sender<serde_json::Value>,
     cancel_token: Option<CancellationToken>,
-) -> Result<IngestResult, Box<dyn std::error::Error + Send + Sync>> {
-    let mut gitlab_cfg = cfg.clone();
-    gitlab_cfg.github_include_source = include_source;
-    let fut = crate::services::ingest::ingest_gitlab_with_progress(
-        &gitlab_cfg,
-        &target,
-        None,
-        Some(progress_tx),
-    );
-    cancelable(fut, cancel_token.as_ref()).await
-}
-
-async fn run_gitea_ingest(
-    cfg: &Config,
-    target: String,
-    include_source: bool,
-    progress_tx: mpsc::Sender<serde_json::Value>,
-    cancel_token: Option<CancellationToken>,
-) -> Result<IngestResult, Box<dyn std::error::Error + Send + Sync>> {
-    let mut gitea_cfg = cfg.clone();
-    gitea_cfg.github_include_source = include_source;
-    let fut = crate::services::ingest::ingest_gitea_with_progress(
-        &gitea_cfg,
-        &target,
-        None,
-        Some(progress_tx),
-    );
-    cancelable(fut, cancel_token.as_ref()).await
-}
-
-async fn run_generic_git_ingest(
-    cfg: &Config,
-    target: String,
-    include_source: bool,
-    progress_tx: mpsc::Sender<serde_json::Value>,
-    cancel_token: Option<CancellationToken>,
-) -> Result<IngestResult, Box<dyn std::error::Error + Send + Sync>> {
-    let mut git_cfg = cfg.clone();
-    git_cfg.github_include_source = include_source;
-    let fut = crate::services::ingest::ingest_generic_git_with_progress(
-        &git_cfg,
-        &target,
-        None,
-        Some(progress_tx),
-    );
+    make_fut: F,
+) -> Result<IngestResult, Box<dyn std::error::Error + Send + Sync>>
+where
+    F: FnOnce(Config, String, mpsc::Sender<serde_json::Value>) -> Fut,
+    Fut: Future<Output = Result<IngestResult, Box<dyn std::error::Error>>>,
+{
+    let mut provider_cfg = cfg.clone();
+    provider_cfg.github_include_source = include_source;
+    let fut = make_fut(provider_cfg, target, progress_tx);
     cancelable(fut, cancel_token.as_ref()).await
 }
 
@@ -444,33 +460,62 @@ fn merge_final_payload(
         .as_object()
         .cloned()
         .unwrap_or_else(serde_json::Map::new);
-    let progress_warning = merged.get("progress_warning").cloned();
-    let result_json_warning = merged.get("result_json_warning").cloned();
+
+    // Snapshot warning fields before the final payload merge so they can be
+    // restored afterwards (they are diagnostics, not overridable by the result).
+    let progress_warning = merged.get(KEY_PROGRESS_WARNING).cloned();
+    let result_json_warning = merged.get(KEY_RESULT_JSON_WARNING).cloned();
+
+    // Snapshot ingestion-quality counters from progress updates before the
+    // merge so final_payload cannot clobber them (O-M4).
+    let pages_total = merged.get(KEY_PAGES_TOTAL).cloned();
+    let pages_dropped_thin = merged.get(KEY_PAGES_DROPPED_THIN).cloned();
+    let files_ast_chunked = merged.get(KEY_FILES_AST_CHUNKED).cloned();
+    let files_prose_fallback = merged.get(KEY_FILES_PROSE_FALLBACK).cloned();
 
     if let serde_json::Value::Object(final_object) = final_payload {
         for (key, value) in final_object {
             merged.insert(key, value);
         }
     }
+
+    // Restore warning fields — they must not be clobbered by the result.
     if let Some(warning) = progress_warning {
-        merged.insert("progress_warning".to_string(), warning);
+        merged.insert(KEY_PROGRESS_WARNING.to_string(), warning);
     }
     if let Some(warning) = result_json_warning {
-        merged.insert("result_json_warning".to_string(), warning);
+        merged.insert(KEY_RESULT_JSON_WARNING.to_string(), warning);
     }
 
-    if !merged.contains_key("chunks_embedded")
-        && let Some(chunks) = merged.get("chunks").cloned()
-    {
-        merged.insert("chunks_embedded".to_string(), chunks);
+    // Restore ingestion-quality counters accumulated from progress events (O-M4).
+    // These counters come from the embed pipeline and must not be overwritten
+    // by the final IngestResult payload, which may not carry them.
+    if let Some(v) = pages_total {
+        merged.insert(KEY_PAGES_TOTAL.to_string(), v);
     }
-    if !merged.contains_key("chunks")
-        && let Some(chunks) = merged.get("chunks_embedded").cloned()
+    if let Some(v) = pages_dropped_thin {
+        merged.insert(KEY_PAGES_DROPPED_THIN.to_string(), v);
+    }
+    if let Some(v) = files_ast_chunked {
+        merged.insert(KEY_FILES_AST_CHUNKED.to_string(), v);
+    }
+    if let Some(v) = files_prose_fallback {
+        merged.insert(KEY_FILES_PROSE_FALLBACK.to_string(), v);
+    }
+
+    // Ensure both chunk-count aliases are present for backward-compatible callers.
+    if !merged.contains_key(KEY_CHUNKS_EMBEDDED)
+        && let Some(chunks) = merged.get(KEY_CHUNKS).cloned()
     {
-        merged.insert("chunks".to_string(), chunks);
+        merged.insert(KEY_CHUNKS_EMBEDDED.to_string(), chunks);
+    }
+    if !merged.contains_key(KEY_CHUNKS)
+        && let Some(chunks) = merged.get(KEY_CHUNKS_EMBEDDED).cloned()
+    {
+        merged.insert(KEY_CHUNKS.to_string(), chunks);
     }
     merged.insert(
-        "phase".to_string(),
+        KEY_PHASE.to_string(),
         serde_json::Value::String("completed".to_string()),
     );
 

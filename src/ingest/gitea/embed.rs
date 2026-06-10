@@ -1,21 +1,17 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use reqwest::Client;
 
 use crate::core::config::Config;
-use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
-use crate::vector::ops::{PreparedDoc, chunk_text, embed_prepared_docs};
+use crate::ingest::git_payload::{
+    ContentKind, GitPayload, build_git_payload, extract_git_item_fields,
+};
+use crate::vector::ops::{PreparedDoc, chunk_text};
 
 use super::GiteaTarget;
 use super::client::{
     GiteaIssue, GiteaLabel, GiteaPullRequest, GiteaRepo, GiteaUser, fetch_paginated,
 };
-
-pub(crate) async fn embed_docs(cfg: &Config, docs: Vec<PreparedDoc>) -> Result<usize> {
-    let summary = embed_prepared_docs(cfg, docs, None)
-        .await
-        .map_err(|e| anyhow!("{}", e))?;
-    Ok(summary.chunks_embedded)
-}
+use crate::ingest::git_files::embed_docs;
 
 pub(crate) fn payload(
     target: &GiteaTarget,
@@ -23,38 +19,13 @@ pub(crate) fn payload(
     kind: &'static str,
     kind_extra: serde_json::Value,
 ) -> serde_json::Value {
-    let (state, number, author, labels, is_draft, merged_at, created_at, updated_at) = match kind {
-        "issue" | "pull_request" => (
-            kind_extra
-                .get("state")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-            kind_extra.get("number").and_then(|v| v.as_u64()),
-            kind_extra
-                .get("author")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-            kind_extra
-                .get("labels")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|s| s.as_str().map(str::to_string))
-                        .collect()
-                }),
-            None::<bool>,
-            None::<String>,
-            kind_extra
-                .get("created_at")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-            kind_extra
-                .get("updated_at")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-        ),
-        _ => (None, None, None, None, None, None, None, None),
-    };
+    // Gitea uses "number" as the item number field (Q-H4: shared decoder)
+    let (state, number, author, labels, is_draft, merged_at, created_at, updated_at) =
+        if matches!(kind, "issue" | "pull_request") {
+            extract_git_item_fields(&kind_extra, "number")
+        } else {
+            (None, None, None, None, None, None, None, None)
+        };
 
     build_git_payload(&GitPayload {
         provider: "gitea".to_string(),

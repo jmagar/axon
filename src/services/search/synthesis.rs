@@ -10,7 +10,7 @@ use source::{classify_source, truncate_chars};
 
 use crate::core::config::Config;
 use crate::core::logging::{log_info, log_warn};
-use crate::services::events::{LogLevel, ServiceEvent, emit};
+use crate::services::events::{LogLevel, ServiceEvent, emit, synthesis_delta_handler};
 use crate::services::llm_backend::{self, CompletionRequest};
 use crate::services::search_crawl;
 use crate::services::types::{
@@ -19,7 +19,6 @@ use crate::services::types::{
 };
 use spider_agent::{TimeRange, TokenUsage};
 use std::error::Error;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -428,22 +427,7 @@ async fn synthesize(
 fn delta_handler(
     tx: Option<mpsc::Sender<ServiceEvent>>,
 ) -> impl FnMut(&str) -> Result<(), Box<dyn Error + Send + Sync>> + Send {
-    // Warn at most once per session about dropped deltas — backpressure
-    // would otherwise flood logs with one warning per dropped token.
-    static WARNED_ONCE: AtomicBool = AtomicBool::new(false);
-    move |delta| {
-        if let Some(ref sender) = tx
-            && let Err(e) = sender.try_send(ServiceEvent::SynthesisDelta {
-                text: delta.to_string(),
-            })
-            && !WARNED_ONCE.swap(true, Ordering::Relaxed)
-        {
-            log_warn(&format!(
-                "synthesis_delta dropped (subsequent drops suppressed): {e}"
-            ));
-        }
-        Ok(())
-    }
+    synthesis_delta_handler(tx, "research")
 }
 
 fn parse_response(response: llm_backend::CompletionResponse) -> (Option<String>, TokenUsage) {

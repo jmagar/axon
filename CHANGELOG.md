@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.0] - 2026-06-09
+
+Multi-lane RAG-pipeline hardening: Qdrant/TEI accuracy fixes, ingest unification,
+jobs ops improvements, documentation correctness sweep, CI hygiene, and plugin cleanup.
+
+### Added
+
+- **`xtask check-version-sync`** — new pre-commit and CI check that verifies
+  `Cargo.toml`, `README.md`, and `CHANGELOG.md` all carry the same version string
+  and that `plugin.json` does NOT contain a `version` key.
+- **`scripts/axon-backup.sh`** — Qdrant snapshot API + `sqlite3 .backup` script
+  with SHA256 checksums and restore instructions.
+- **`benches/chunking.rs`** — criterion benchmarks for `chunk_text` and `chunk_markdown`.
+- **CI path filtering** — `dorny/paths-filter@v3` gates `test-infra` and `live-qdrant`
+  jobs to only run when relevant source paths change; new `version-sync` job in
+  `production-gate`.
+
+### Fixed
+
+- **TEI retry documentation corrected** — 6 attempts (not 5), backoff includes 16s tier,
+  triggers on 429 + any 5xx only (not transport errors), worst-case budget ~213s.
+- **`PAYLOAD_SCHEMA_VERSION` corrected to 7** throughout CLAUDE.md files.
+- **VectorMode cache reconciliation** — `axon migrate` restart note clarified:
+  restart only required when the destination collection name differs from the source.
+- **BM42 collision math** corrected in `src/vector/CLAUDE.md` (12% at 100 terms, 24% at 200).
+- **Plugin SessionStart hook removed** — the axon plugin no longer runs
+  `setup plugin-hook` on every session start; no session side-effects on startup.
+- **Two-Tier Signature Convention documented** in `src/services/CLAUDE.md`.
+
 ## [5.6.1] - 2026-06-09
 
 Remediation of the 10 surviving findings from the four-PR code review of
