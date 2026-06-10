@@ -125,10 +125,7 @@ pub(super) fn router(
 }
 
 /// Panel UI and first-run API routes (`/api/panel/*`).
-fn panel_routes<S>() -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
+fn panel_routes() -> Router<(AppState, Arc<Config>)> {
     Router::new()
         .route("/api/panel/state", get(handlers::panel_state))
         .route("/api/panel/login", post(handlers::login))

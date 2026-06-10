@@ -170,11 +170,31 @@ pub(super) enum ServeSubcommand {
     Mcp(McpArgs),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(super) enum SetupMethod {
+    /// Download the axon binary from GitHub releases (default)
+    Pull,
+    /// Build the axon binary from source with cargo
+    Build,
+}
+
+impl SetupMethod {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Pull => "pull",
+            Self::Build => "build",
+        }
+    }
+}
+
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
 pub(super) struct SetupArgs {
     #[command(subcommand)]
     pub(super) action: Option<SetupSubcommand>,
+    /// Binary acquisition method passed through from install.sh (pull = GitHub release, build = cargo)
+    #[arg(long, value_enum)]
+    pub(super) method: Option<SetupMethod>,
 }
 
 #[derive(Debug, Subcommand)]

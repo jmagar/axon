@@ -67,6 +67,22 @@ fn builds_evaluate_request() {
 }
 
 #[test]
+fn builds_screenshot_rest_request() {
+    let request =
+        build_rest_request(action("screenshot", ArgMode::Split), "https://example.com").unwrap();
+
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/v1/screenshot");
+    assert_eq!(request.body, Some(json!({ "url": "https://example.com" })));
+}
+
+#[test]
+fn screenshot_requires_url_argument() {
+    let result = build_rest_request(action("screenshot", ArgMode::Split), "");
+    assert!(result.is_err(), "screenshot with no url should error");
+}
+
+#[test]
 fn builds_sources_as_read_only_get() {
     let request = build_rest_request(action("sources", ArgMode::None), "").unwrap();
 

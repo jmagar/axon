@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[path = "formatting_rest_tests.rs"]
+mod tests;
+
 const SUMMARY_LIMIT: usize = 10;
 
 pub(super) fn rest_output_text(subcommand: &str, text: &str) -> Option<String> {
@@ -18,6 +22,7 @@ pub(super) fn rest_output_text(subcommand: &str, text: &str) -> Option<String> {
         "map" => map_result(&value),
         "suggest" => suggestions_result(&value),
         "evaluate" => evaluate_result(&value),
+        "screenshot" => screenshot_result(&value),
         "crawl" | "embed" | "extract" | "ingest" => job_start_result(subcommand, &value),
         "sources" => sources_result(&value),
         "domains" => domains_result(&value),
@@ -339,6 +344,42 @@ fn scalar_text(value: &serde_json::Value) -> Option<String> {
         serde_json::Value::Number(value) => Some(value.to_string()),
         serde_json::Value::Bool(value) => Some(value.to_string()),
         _ => None,
+    }
+}
+
+fn screenshot_result(value: &serde_json::Value) -> String {
+    let mut lines = Vec::new();
+    if let Some(url) = string_field(value, "url") {
+        lines.push(url);
+    }
+    let handle = value.get("artifact_handle");
+    let relative_path = handle
+        .and_then(|h| h.get("relative_path"))
+        .and_then(|v| v.as_str());
+    let size_bytes = handle
+        .and_then(|h| h.get("bytes"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| value.get("size_bytes")?.as_u64());
+    let mut meta = Vec::new();
+    if let Some(b) = size_bytes {
+        meta.push(format_bytes(b));
+    }
+    if let Some(path) = relative_path {
+        meta.push(format!("artifact: {path}"));
+    }
+    if !meta.is_empty() {
+        lines.push(meta.join(" · "));
+    }
+    non_empty_or_compact(lines, value)
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
     }
 }
 

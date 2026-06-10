@@ -91,11 +91,30 @@ async fn scrape_with_vertical_timeout(
     vertical_timeout: Duration,
 ) -> Result<ScrapeResult, Box<dyn Error>> {
     let normalized = validate_and_normalize_scrape_url(url, &tx).await?;
-    if let Some(result) = try_vertical_scrape(cfg, &normalized, &tx, vertical_timeout).await? {
-        return Ok(result);
+    let mut result =
+        if let Some(r) = try_vertical_scrape(cfg, &normalized, &tx, vertical_timeout).await? {
+            r
+        } else {
+            let r = generic_scrape(cfg, &normalized).await?;
+            emit_scrape_complete(&tx, &normalized).await;
+            r
+        };
+    // Service-side artifact write: if output_path is configured, write atomically
+    // so all callers (CLI, MCP, /v1/actions) share identical write semantics.
+    if let Some(output_path) = cfg.output_path.as_ref() {
+        crate::services::artifacts::atomic_write_explicit(output_path, result.output.as_bytes())
+            .await
+            .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
+        result.artifact_handle = ArtifactHandle::try_from_path(
+            "scrape",
+            &cfg.output_dir,
+            output_path,
+            result.output.len() as u64,
+            Some(result.output.lines().count() as u64),
+            None,
+            Some(normalized.to_string()),
+        );
     }
-    let result = generic_scrape(cfg, &normalized).await?;
-    emit_scrape_complete(&tx, &normalized).await;
     Ok(result)
 }
 
@@ -235,17 +254,6 @@ async fn generic_scrape(cfg: &Config, normalized: &str) -> Result<ScrapeResult, 
     )?;
     let mut result = map_scrape_payload(payload)?;
     result.output = output;
-    result.artifact_handle = cfg.output_path.as_ref().and_then(|path| {
-        ArtifactHandle::try_from_path(
-            "scrape",
-            &cfg.output_dir,
-            path,
-            result.output.len() as u64,
-            Some(result.output.lines().count() as u64),
-            None,
-            Some(normalized.to_string()),
-        )
-    });
     Ok(result)
 }
 

@@ -197,6 +197,10 @@ pub struct Config {
     /// Skip confirmation prompts (non-interactive mode). Flag: `--yes`.
     pub yes: bool,
 
+    /// Binary acquisition method passed from install.sh via `axon setup --method pull|build`.
+    /// `None` when setup is run directly (not via install.sh).
+    pub setup_method: Option<String>,
+
     /// Terminal color override. Flag: `--color=auto|always|never`.
     pub color_choice: super::enums::ColorChoice,
 

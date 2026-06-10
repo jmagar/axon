@@ -12,7 +12,7 @@ fn query_tokens_basic_split() {
 #[test]
 fn query_tokens_lowercases_input() {
     let tokens = query_tokens("Rust TEI Embed");
-    assert!(tokens.contains("rust"));
+    assert!(tokens.contains(&"rust".to_string()));
     assert!(tokens.contains(&"tei".to_string()));
     assert!(tokens.contains(&"embed".to_string()));
 }
@@ -24,7 +24,7 @@ fn query_tokens_filters_single_char() {
     assert!(!tokens.contains(&"a".to_string()));
     assert!(!tokens.contains(&"b".to_string()));
     assert!(!tokens.contains(&"c".to_string()));
-    assert!(tokens.contains("rust"));
+    assert!(tokens.contains(&"rust".to_string()));
 }
 
 #[test]
@@ -33,8 +33,8 @@ fn query_tokens_removes_stop_words() {
     let tokens = query_tokens("the rust compiler is fast");
     assert!(!tokens.contains(&"the".to_string()));
     assert!(!tokens.contains(&"is".to_string()));
-    assert!(tokens.contains("rust"));
-    assert!(tokens.contains("compiler"));
+    assert!(tokens.contains(&"rust".to_string()));
+    assert!(tokens.contains(&"compiler".to_string()));
     assert!(tokens.contains(&"fast".to_string()));
 }
 

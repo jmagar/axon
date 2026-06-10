@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.4] - 2026-06-09
+
+Relocate crawl audit subsystem to services layer; fix compile errors from
+parallel lanes (routing type, Vec<String> test assertions, doc comment lint).
+
+### Fixed
+
+- **`src/web/server/routing.rs`** — `panel_routes()` return type changed from
+  generic `Router<S>` to concrete `Router<(AppState, Arc<Config>)>`; the
+  `setup_targets` handler requires `State<(AppState, Arc<Config>)>` so the
+  generic bound was never satisfiable at the call site.
+- **`src/vector/ops/token_policy_tests.rs`** — four `Vec<String>::contains("lit")`
+  calls updated to `contains(&"lit".to_string())`; `Vec<T>::contains` requires
+  `&T`, not `&str` (unlike `HashSet` which accepts `&str` via `Borrow`).
+- **`src/ingest/github/files/prepare.rs`** — inserted blank `///` line before
+  continuation paragraph to satisfy `clippy::doc_lazy_continuation`.
+
+### Refactor
+
+- **`src/services/crawl/audit`** — moved `manifest_audit`, `audit_diff`, and `sitemap`
+  modules from `src/cli/commands/crawl/audit/` to `src/services/crawl/audit/`. No
+  behavior changes: snapshot generation, manifest fingerprinting, path-traversal
+  security checks, and diff computation are unchanged.
+- **`src/cli/commands/crawl/audit.rs`** — replaced with a 3-line thin shim that
+  re-exports `run_crawl_audit` and `run_crawl_audit_diff` from the services layer.
+- Sidecar test files (`manifest_audit_tests.rs`, `sitemap_migration_tests.rs`)
+  relocated alongside their modules; all existing tests continue to pass.
+
 ## [5.7.3] - 2026-06-09
 
 Fix desktop palette health check endpoint and add offline test coverage for

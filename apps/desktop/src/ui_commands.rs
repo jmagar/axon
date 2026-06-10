@@ -6,17 +6,65 @@ use super::{ConnectionState, Palette, RunningCommand};
 use crate::Submit;
 use crate::actions::ArgMode;
 use crate::output::{CommandOutput, OutputKind};
-use crate::rest_client::{RestClient, RestOutput, build_rest_request, display_rest_request};
+use crate::rest_client::{
+    RestClient, RestOutput, RestRequest, build_rest_request, display_rest_request,
+};
 
 struct CommandResult {
     id: u64,
     subcommand: &'static str,
     command_line: String,
     result: Result<RestOutput, String>,
+    image_bytes: Option<Vec<u8>>,
 }
 
 struct HealthResult {
     ok: bool,
+}
+
+/// Extract `/v1/artifacts/<relative_path>` from a screenshot JSON response.
+fn screenshot_artifact_path(json_text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json_text).ok()?;
+    let rel = value
+        .get("artifact_handle")?
+        .get("relative_path")?
+        .as_str()?;
+    Some(format!("/v1/artifacts/{rel}"))
+}
+
+/// Run a REST command and optionally fetch a follow-up artifact (screenshot PNG).
+/// Extracted from `submit` so the background spawn closure stays concise.
+fn run_rest_command(
+    subcommand: &'static str,
+    request: &RestRequest,
+    run_id: u64,
+    command_line: String,
+) -> CommandResult {
+    let (result, image_bytes) = match RestClient::from_env() {
+        Err(e) => (Err(e), None),
+        Ok(client) => {
+            let output = client.execute(request);
+            let image_bytes = if subcommand == "screenshot" {
+                output
+                    .as_ref()
+                    .ok()
+                    .filter(|o| o.ok)
+                    .and_then(|o| o.stdout.as_deref())
+                    .and_then(screenshot_artifact_path)
+                    .and_then(|path| client.fetch_bytes(&path))
+            } else {
+                None
+            };
+            (output, image_bytes)
+        }
+    };
+    CommandResult {
+        id: run_id,
+        subcommand,
+        command_line,
+        result,
+        image_bytes,
+    }
 }
 
 impl Palette {
@@ -146,13 +194,7 @@ impl Palette {
         self.spawn_running_tick(run_id, cx);
 
         let task = cx.background_spawn(async move {
-            let result = RestClient::from_env().and_then(|client| client.execute(&request));
-            CommandResult {
-                id: run_id,
-                subcommand: action.subcommand,
-                command_line,
-                result,
-            }
+            run_rest_command(action.subcommand, &request, run_id, command_line)
         });
         cx.spawn(async move |this, cx| {
             let result = task.await;
@@ -217,7 +259,12 @@ impl Palette {
 
     fn finalize_result(&mut self, result: CommandResult) -> CommandOutput {
         match result.result {
-            Ok(output) => CommandOutput::from_rest(&result.command_line, result.subcommand, output),
+            Ok(output) => CommandOutput::from_rest(
+                &result.command_line,
+                result.subcommand,
+                output,
+                result.image_bytes,
+            ),
             Err(error) => CommandOutput::spawn_error(&result.command_line, error),
         }
     }

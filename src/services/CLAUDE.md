@@ -12,6 +12,11 @@ services/
 ├── llm_backend.rs          # Gemini headless LLM completion gateway module root
 ├── llm_backend/           # Gemini dispatch, env allowlist, concurrency, and typed completion API
 ├── crawl.rs                # crawl start/status/cancel/list/cleanup/recover
+├── crawl/audit.rs          # Crawl audit module root — run_crawl_audit, run_crawl_audit_diff, shared types
+├── crawl/audit/            # Audit business logic (relocated from src/cli/commands/crawl/audit/)
+│   ├── manifest_audit.rs   # CrawlAuditSnapshot, ManifestAuditEntry, persist_audit_snapshot; security-critical resolve_manifest_entry_path
+│   ├── audit_diff.rs       # Diff computation (added/removed/changed URLs across two snapshots)
+│   └── sitemap.rs          # SitemapDiscoveryStats, SitemapDiscoveryResult, discover_sitemap_urls_with_robots
 ├── crawl_sync.rs           # Synchronous crawl orchestration (24h cache, sitemap-only, HTTP→Chrome fallback)
 ├── debug.rs                # doctor + LLM-assisted debug
 ├── embed.rs                # embed start/status/cancel/list + shared server-side input guard
