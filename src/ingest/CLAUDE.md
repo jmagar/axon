@@ -62,18 +62,19 @@ ingest/
 - **403/404 graceful degradation:** `is_missing_or_forbidden()` returns `Ok(0)` for any phase that 403s or 404s — private features just silently produce no chunks
 - **Pagination:** `fetch_paginated()` in `client.rs` follows `x-next-page` response header, `per_page=100`; respects `max_items` cap (reuses `cfg.github_max_issues` / `cfg.github_max_prs`)
 - **Payload schema:** `source_type = "gitlab"`. Every chunk carries `provider`, `host`, `namespace_path`, `project`, `content_kind` (`"repo_metadata"` / `"file"` / `"issue"` / `"merge_request"` / `"wiki"`), `default_branch`, `visibility`, `last_activity_at`, plus a `gitlab` nested object with type-specific fields
-- **No file-level chunking strategy selection** — all file content uses `chunk_text()` (prose chunking); tree-sitter code chunking is not yet applied to GitLab files (unlike GitHub)
+- **File chunking** — `gitlab/files.rs` now uses the shared `file_ingest` engine (`chunk_file` / `collect_files`) for tree-sitter code chunking with `code_*`/`symbol_*` payload, matching the GitHub and generic-Git paths. One `PreparedDoc` per `CodeChunk`.
 
 ### Gitea/Forgejo (`gitea.rs`)
 - Uses the Gitea-compatible REST API for repository metadata, issues, and pull requests.
 - `GITEA_TOKEN` is optional for public repositories and is sent as `Authorization: token <token>` when present.
 - Known public hosts (`gitea.com`, `codeberg.org`) auto-classify from URL; self-hosted instances should use `gitea:<host>/<owner>/<repo>` or `forgejo:<host>/<owner>/<repo>`.
-- File ingest delegates to the shared generic Git clone path but preserves `source_type = "gitea"` and `provider = "gitea"` in Qdrant payloads.
+- File ingest delegates to `ingest_git_repository` in `generic_git.rs`, which now uses the shared `file_ingest` engine for tree-sitter code chunking and `code_*`/`symbol_*` payload. Preserves `source_type = "gitea"` and `provider = "gitea"` in Qdrant payloads.
 
 ### Generic Git (`generic_git.rs`)
 - Explicit-only target form: `git:https://host/path/repo.git`.
 - HTTPS-only by design; SSH and local filesystem paths are rejected.
 - Indexes repository docs by default and source files when source inclusion is enabled. It does not call provider APIs, so it does not ingest issues, PRs, wiki pages, releases, or repository metadata beyond clone-derived file metadata.
+- File ingest uses the shared engine (`src/vector/ops/file_ingest.rs`): tree-sitter code chunking with canonical `code_*`/`symbol_*` payload per chunk. One `PreparedDoc` is emitted per `CodeChunk`.
 
 ### GitHub (`github/`)
 - Uses `git clone --depth=1` subprocess for source files and wiki clone; `octocrab` for issues/PRs pagination
