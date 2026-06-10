@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.8] - 2026-06-10
+
+Collapse PR #197 (`feat/qdrant-affinity-tei-burst`) into this branch by
+cherry-picking its four unique commits, so #196 merges to main as a single PR
+with no stack.
+
+### Added
+
+- **`docker-compose.prod.yaml`** — shield `axon-qdrant` from the global OOM
+  killer (`oom_score_adj -500`) and raise its CPU limit from 4 to 8.
+
+### Changed
+
+- **`src/web/server/routing.rs`** — split the monolithic `router()` into scoped
+  route-table builders (`read_routes`/`write_routes`/`large_write_routes`/
+  `panel_routes`). Preserved this branch's `/v1/artifacts/{*path}` read route;
+  dropped the affinity branch's `/api/panel/artifact` route (its `panel_artifact`
+  handler is not part of this branch).
+
 ## [5.7.7] - 2026-06-10
 
 ### Changed

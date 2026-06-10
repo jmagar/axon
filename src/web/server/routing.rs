@@ -167,7 +167,6 @@ fn panel_routes() -> Router<ServeState> {
             post(super::super::panel_first_run::first_run_ask),
         )
         .route("/api/panel/setup/targets", get(handlers::setup_targets))
-        .route("/api/panel/artifact/{*path}", get(handlers::panel_artifact))
 }
 
 async fn v1_capabilities() -> Json<ServerInfo> {
