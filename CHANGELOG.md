@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.6] - 2026-06-10
+
+### Fixed
+
+- **MCP: per-action fields now visible to schema-flattening clients.** The
+  `axon` tool's `tools/list` `inputSchema` kept all per-action request fields
+  (`query`, `url`, `job_id`, `response_mode`, …) inside `oneOf` branches, so
+  clients that render callable parameters from top-level `properties` only
+  (Codex, mcporter signatures, Labby Code Mode `.d.ts` consumers) saw just
+  `{action, subaction}`. `enrich_tool_input_schema` now lifts a merged,
+  all-optional superset of every per-action field into top-level `properties`,
+  each annotated with an `Applies to action(s): …` description prefix and an
+  `x-axon-actions` array; fields with conflicting shapes across actions (e.g.
+  `limit`) publish an `anyOf` union. The strict `oneOf` validation contract and
+  serde parsing are unchanged. (`src/mcp/server/tool_schema.rs`)
+
 ## [5.7.5] - 2026-06-09
 
 Consolidates the multi-lane RAG code-review hardening (P1/P2/P3) plus the two
