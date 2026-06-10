@@ -6,6 +6,13 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{merged_settings, normalize_server_url};
 
+/// Maximum allowed size (in bytes) for a single SSE line.
+///
+/// A rogue or misconfigured server could send an unbounded stream of bytes
+/// without a newline, growing the in-memory `pending` buffer without limit.
+/// This cap returns an error rather than allowing OOM growth.
+const MAX_SSE_LINE_BYTES: usize = 1024 * 1024; // 1 MiB
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PaletteStreamRequest {
@@ -65,9 +72,11 @@ pub(crate) async fn axon_http_stream_request(
         )
         .map_err(|err| err.to_string())?;
 
+    // Use connect_timeout rather than a total-stream timeout so long RAG
+    // responses are not cut off at an arbitrary wall-clock limit.
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .user_agent("Axon Palette/4.5")
+        .connect_timeout(Duration::from_secs(15))
+        .user_agent(concat!("Axon Palette/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|err| err.to_string())?;
     let mut builder = client
@@ -138,8 +147,19 @@ fn validate_saved_server_url(server_url: &str) -> Result<String, String> {
 
 fn drain_sse_lines(pending: &mut Vec<u8>, chunk: &[u8]) -> Result<Vec<String>, String> {
     pending.extend_from_slice(chunk);
+    if pending.len() > MAX_SSE_LINE_BYTES && !pending.contains(&b'\n') {
+        return Err(format!(
+            "SSE line exceeded {MAX_SSE_LINE_BYTES} bytes without a newline — \
+             refusing to buffer further"
+        ));
+    }
     let mut lines = Vec::new();
     while let Some(pos) = pending.iter().position(|byte| *byte == b'\n') {
+        if pos > MAX_SSE_LINE_BYTES {
+            return Err(format!(
+                "SSE line of {pos} bytes exceeds the {MAX_SSE_LINE_BYTES}-byte limit"
+            ));
+        }
         let raw: Vec<u8> = pending.drain(..=pos).collect();
         lines.push(decode_sse_line(raw)?);
     }
@@ -225,35 +245,5 @@ fn handle_palette_sse_line(
 }
 
 #[cfg(test)]
-mod stream_tests {
-    use super::{drain_sse_lines, parse_sse_data_line as parse_data_line};
-
-    #[test]
-    fn parse_sse_data_line() {
-        assert_eq!(
-            parse_data_line("data: {\"type\":\"delta\",\"text\":\"hi\"}"),
-            Some("{\"type\":\"delta\",\"text\":\"hi\"}".to_string())
-        );
-    }
-
-    #[test]
-    fn ignores_non_data_sse_line() {
-        assert_eq!(parse_data_line("event: delta"), None);
-    }
-
-    #[test]
-    fn buffers_split_utf8_until_complete_line() {
-        let mut pending = Vec::new();
-        let snowman = "data: {\"type\":\"delta\",\"text\":\"☃\"}\n".as_bytes();
-        assert!(
-            drain_sse_lines(&mut pending, &snowman[..snowman.len() - 2])
-                .unwrap()
-                .is_empty()
-        );
-
-        let lines = drain_sse_lines(&mut pending, &snowman[snowman.len() - 2..]).unwrap();
-
-        assert_eq!(lines, vec!["data: {\"type\":\"delta\",\"text\":\"☃\"}"]);
-        assert!(pending.is_empty());
-    }
-}
+#[path = "stream_tests.rs"]
+mod stream_tests;

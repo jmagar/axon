@@ -1,9 +1,25 @@
-use std::time::Duration;
-
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::{merged_settings, normalize_server_url};
+
+/// A shared `reqwest::Client` held in Tauri `AppState`.
+///
+/// Creating a new client per-request is wasteful: it allocates a new
+/// connection pool, TLS context, and DNS resolver each time.  Storing one
+/// client in state lets all bridge calls share a single connection pool.
+pub(crate) struct BridgeClient(pub(crate) reqwest::Client);
+
+impl BridgeClient {
+    pub(crate) fn new() -> Result<Self, reqwest::Error> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(300))
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .user_agent(concat!("Axon Palette/", env!("CARGO_PKG_VERSION")))
+            .build()?;
+        Ok(Self(client))
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +54,7 @@ pub(crate) struct AxonHttpResult {
 #[tauri::command]
 pub(crate) async fn axon_http_request(
     app: AppHandle,
+    bridge: tauri::State<'_, BridgeClient>,
     request: AxonHttpRequest,
 ) -> Result<AxonHttpResult, String> {
     let path = validate_axon_route(&request)?.to_string();
@@ -45,11 +62,7 @@ pub(crate) async fn axon_http_request(
     let settings = merged_settings(&app)?;
     let base_url = validate_saved_server_url(&settings.server_url)?;
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .user_agent("Axon Palette/4.5")
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = &bridge.0;
 
     let mut builder = match method {
         HttpMethod::Get => client.get(&url),
