@@ -140,22 +140,19 @@ pub(crate) async fn embed_files(
             }
         };
         if !chunks.is_empty() {
-            docs.push(PreparedDoc {
-                url: format!("{}/-/blob/{}/{}", target.web_url, branch, rel),
-                domain: target.host.clone(),
+            docs.push(PreparedDoc::ingest(
+                format!("{}/-/blob/{}/{}", target.web_url, branch, rel),
+                target.host.clone(),
                 chunks,
-                source_type: "gitlab".to_string(),
-                content_type: "text",
-                title: Some(rel.clone()),
-                extra: Some(gitlab_payload(
+                "gitlab",
+                Some(rel.clone()),
+                Some(gitlab_payload(
                     target,
                     project,
                     "file",
                     serde_json::json!({"path": rel, "branch": branch}),
                 )),
-                extractor_name: None,
-                structured: None,
-            });
+            ));
         }
         if (index + 1) % 25 == 0 || index + 1 == total {
             reporter

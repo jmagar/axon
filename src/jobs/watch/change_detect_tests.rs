@@ -130,8 +130,8 @@ fn expected_hash_for(markdown: &str) -> String {
 /// Create a minimal in-memory SQLite pool with just the `axon_watch_url_state`
 /// table. The FK to `axon_watch_defs` is omitted here; SQLite does not enforce
 /// foreign keys by default so the unit tests work without the parent table.
-async fn make_test_pool() -> sqlx::SqlitePool {
-    let pool = sqlx::SqlitePool::connect(":memory:")
+async fn make_test_pool() -> SqlitePool {
+    let pool = SqlitePool::connect(":memory:")
         .await
         .expect("in-memory SQLite pool");
     sqlx::query(
@@ -160,8 +160,8 @@ async fn make_test_pool() -> sqlx::SqlitePool {
 #[tokio::test]
 async fn probe_not_modified_returns_unchanged_without_scrape() {
     let pool = make_test_pool().await;
-    let cfg = crate::core::config::Config::default_minimal();
-    let watch_id = uuid::Uuid::new_v4();
+    let cfg = Config::default_minimal();
+    let watch_id = Uuid::new_v4();
     let url = "https://example.test/page";
 
     // Probe says 304 — scrape should never be called.
@@ -192,8 +192,8 @@ async fn probe_not_modified_returns_unchanged_without_scrape() {
 #[tokio::test]
 async fn probe_failure_then_scrape_failure_returns_failed() {
     let pool = make_test_pool().await;
-    let cfg = crate::core::config::Config::default_minimal();
-    let watch_id = uuid::Uuid::new_v4();
+    let cfg = Config::default_minimal();
+    let watch_id = Uuid::new_v4();
     let url = "https://example.test/page";
 
     // Probe fails; scrape also fails.
@@ -214,8 +214,8 @@ async fn probe_failure_then_scrape_failure_returns_failed() {
 #[tokio::test]
 async fn hash_equal_prior_returns_unchanged() {
     let pool = make_test_pool().await;
-    let cfg = crate::core::config::Config::default_minimal();
-    let watch_id = uuid::Uuid::new_v4();
+    let cfg = Config::default_minimal();
+    let watch_id = Uuid::new_v4();
     let url = "https://example.test/page";
     let markdown = "# Stable\n\nThis page has not changed.";
 
@@ -226,7 +226,7 @@ async fn hash_equal_prior_returns_unchanged() {
         &pool,
         watch_id,
         url,
-        &crate::jobs::watch::url_state::UrlState {
+        &UrlState {
             content_hash: Some(prior_hash),
             last_markdown: Some(markdown.to_string()),
             last_links_json: Some("[]".into()),
@@ -259,8 +259,8 @@ async fn hash_equal_prior_returns_unchanged() {
 #[tokio::test]
 async fn first_seen_url_returns_changed() {
     let pool = make_test_pool().await;
-    let cfg = crate::core::config::Config::default_minimal();
-    let watch_id = uuid::Uuid::new_v4();
+    let cfg = Config::default_minimal();
+    let watch_id = Uuid::new_v4();
     let url = "https://example.test/new-page";
     let markdown = "# New content\n\nThis is the first time we have seen this page.";
 

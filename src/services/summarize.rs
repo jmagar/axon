@@ -1,6 +1,6 @@
 use crate::core::config::{Config, ConfigOverrides, ScrapeFormat};
+use crate::core::llm::{self, CompletionRequest};
 use crate::services::events::{LogLevel, ServiceEvent, emit, synthesis_delta_handler};
-use crate::services::llm_backend::{self, CompletionRequest};
 use crate::services::scrape;
 use crate::services::types::{SummarizeDocument, SummarizeResult, SummarizeTiming, SummarizeUsage};
 use std::error::Error;
@@ -62,7 +62,7 @@ pub async fn summarize(
     let request = CompletionRequest::new(summary_user_prompt(&context))
         .system_prompt(summary_system_prompt())
         .backend_from_config(cfg);
-    let completion = llm_backend::complete_streaming(request, summarize_delta_handler(tx.clone()))
+    let completion = llm::complete_streaming(request, summarize_delta_handler(tx.clone()))
         .await
         .map_err(|err| -> Box<dyn Error> {
             format!("summary LLM completion failed: {err}").into()

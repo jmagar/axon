@@ -187,17 +187,14 @@ pub(super) async fn read_file_embed_docs(
         ..Default::default()
     });
 
-    Ok(vec![PreparedDoc {
-        url: base_url,
-        domain: "github.com".to_string(),
-        chunks: chunk_texts,
-        source_type: "github".to_string(),
-        content_type: "text",
-        title: Some(path.to_string()),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    }])
+    Ok(vec![PreparedDoc::ingest(
+        base_url,
+        "github.com".to_string(),
+        chunk_texts,
+        "github",
+        Some(path.to_string()),
+        Some(extra),
+    )])
 }
 
 fn code_or_text_chunks(text: &str, ext: &str) -> Vec<CodeChunk> {

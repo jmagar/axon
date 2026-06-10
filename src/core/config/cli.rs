@@ -106,6 +106,8 @@ pub(super) enum CliCommand {
     Config(ConfigArgs),
     /// Reconcile locally produced server-mode artifacts
     Sync(SyncArgs),
+    /// Resolve, launch, and optionally install the axon-palette desktop binary
+    Palette(PaletteArgs),
 }
 
 #[derive(Debug, Args)]
@@ -224,6 +226,17 @@ pub(super) struct MigrateArgs {
     /// Destination collection to create with named dense + bm42 sparse vectors
     #[arg(long)]
     pub(super) to: String,
+}
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(super) struct PaletteArgs {
+    /// Subcommand: launch (default), install, desktop, autostart
+    #[arg(value_name = "SUBCOMMAND")]
+    pub(super) action: Option<String>,
+    /// Binary acquisition method when the palette binary is missing or during install
+    #[arg(long, value_enum)]
+    pub(super) method: Option<SetupMethod>,
 }
 
 #[derive(Debug, Args)]

@@ -1327,37 +1327,6 @@ function hasJobIds(result: Record<string, unknown> | null): boolean {
   return Boolean(result && stringArrayField(result, 'job_ids').length > 0);
 }
 
-function extractArtifactHandle(result: Record<string, unknown> | null): ArtifactHandle | null {
-  const handle = asRecord(result?.artifact_handle);
-  if (!handle || typeof handle.relative_path !== 'string') return null;
-  return {
-    relative_path: handle.relative_path,
-    bytes: typeof handle.bytes === 'number' ? handle.bytes : undefined
-  };
-}
-
-function extractTerminalJob(result: Record<string, unknown> | null): Record<string, unknown> | null {
-  const job = asRecord(result?.job);
-  if (!job) return null;
-  const status = typeof job.status === 'string' ? job.status : '';
-  if (!['completed', 'failed', 'canceled', 'cancelled'].includes(status)) return null;
-  return job;
-}
-
-function terminalJobRows(action: string, job: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const rows: Array<{ label: string; value: string }> = [];
-  addStringRow(rows, 'Status', job.status);
-  addStringRow(rows, 'Error', job.error_text);
-  const resultJson = asRecord(job.result_json);
-  if (resultJson) {
-    addNumberRow(rows, 'Pages crawled', resultJson.pages_crawled);
-    addNumberRow(rows, 'Docs embedded', resultJson.docs_embedded);
-    addNumberRow(rows, 'Chunks embedded', resultJson.chunks_embedded);
-    addNumberRow(rows, `${titleLabel(action)} count`, resultJson.count);
-  }
-  return rows;
-}
-
 function summarizeChecks(checks: StackCheck[]): CheckSummary {
   return checks.reduce(
     (summary, check) => {

@@ -6,8 +6,8 @@
 
 use super::super::super::cli::{
     CliCommand, ComposeArgs, ComposeSubcommand, ConfigArgs, ConfigSubcommand, DoctorSubcommand,
-    IngestArgs, MonitorSubcommand, ServeArgs, ServeSubcommand, SessionsArgs, SetupArgs,
-    SetupAuthMode, SetupInitArgs, SetupMethod, SetupSubcommand, SyncSubcommand,
+    IngestArgs, MonitorSubcommand, PaletteArgs, ServeArgs, ServeSubcommand, SessionsArgs,
+    SetupArgs, SetupAuthMode, SetupInitArgs, SetupSubcommand, SyncSubcommand,
 };
 use super::super::super::types::{
     CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, RedditSort, RedditTime,
@@ -306,6 +306,7 @@ pub(super) fn dispatch(cli_command: CliCommand) -> DispatchOutput {
                 SyncSubcommand::Pending => vec!["pending".to_string()],
             };
         }
+        CliCommand::Palette(args) => apply_palette(&mut out, args),
     }
     out
 }
@@ -525,6 +526,14 @@ fn setup_init_positionals(init: SetupInitArgs) -> Vec<String> {
         init.reddit_client_secret,
     );
     out
+}
+
+fn apply_palette(out: &mut DispatchOutput, args: PaletteArgs) {
+    out.command = CommandKind::Palette;
+    out.positional = args.action.into_iter().collect();
+    if let Some(method) = args.method {
+        out.setup_method = Some(method.as_str().to_string());
+    }
 }
 
 fn push_opt(out: &mut Vec<String>, flag: &str, value: Option<String>) {

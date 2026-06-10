@@ -2,7 +2,7 @@ use super::enums::{
     CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, PerformanceProfile, RedditSort,
     RedditTime, RenderMode, ScrapeFormat,
 };
-use crate::services::llm_backend::LlmBackendKind;
+use crate::core::llm::LlmBackendKind;
 use std::path::PathBuf;
 
 #[derive(Clone)]

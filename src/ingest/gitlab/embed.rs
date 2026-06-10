@@ -137,17 +137,14 @@ pub(crate) async fn embed_metadata(
     );
     embed_docs(
         cfg,
-        vec![PreparedDoc {
-            url: project.web_url.clone(),
-            domain: target.host.clone(),
+        vec![PreparedDoc::ingest(
+            project.web_url.clone(),
+            target.host.clone(),
             chunks,
-            source_type: "gitlab".to_string(),
-            content_type: "text",
-            title: Some(project.path_with_namespace.clone()),
-            extra: Some(extra),
-            extractor_name: None,
-            structured: None,
-        }],
+            "gitlab",
+            Some(project.path_with_namespace.clone()),
+            Some(extra),
+        )],
     )
     .await
 }
@@ -228,17 +225,14 @@ fn issue_doc(
             "comment_count": issue.user_notes_count,
         }),
     );
-    Some(PreparedDoc {
+    Some(PreparedDoc::ingest(
         url,
-        domain: target.host.clone(),
+        target.host.clone(),
         chunks,
-        source_type: "gitlab".to_string(),
-        content_type: "text",
-        title: Some(format!("Issue #{}: {}", issue.iid, issue.title)),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    })
+        "gitlab",
+        Some(format!("Issue #{}: {}", issue.iid, issue.title)),
+        Some(extra),
+    ))
 }
 
 pub(crate) async fn embed_merge_requests(
@@ -305,17 +299,14 @@ fn merge_request_doc(
             "is_draft": mr.draft,
         }),
     );
-    Some(PreparedDoc {
+    Some(PreparedDoc::ingest(
         url,
-        domain: target.host.clone(),
+        target.host.clone(),
         chunks,
-        source_type: "gitlab".to_string(),
-        content_type: "text",
-        title: Some(format!("MR !{}: {}", mr.iid, mr.title)),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    })
+        "gitlab",
+        Some(format!("MR !{}: {}", mr.iid, mr.title)),
+        Some(extra),
+    ))
 }
 
 pub(crate) async fn embed_wiki(
@@ -372,15 +363,12 @@ fn wiki_doc(
             "encoding": page.encoding,
         }),
     );
-    Some(PreparedDoc {
-        url: format!("{}/-/wikis/{}", target.web_url, page.slug),
-        domain: target.host.clone(),
+    Some(PreparedDoc::ingest(
+        format!("{}/-/wikis/{}", target.web_url, page.slug),
+        target.host.clone(),
         chunks,
-        source_type: "gitlab".to_string(),
-        content_type: "text",
-        title: Some(format!("Wiki: {}", page.title)),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    })
+        "gitlab",
+        Some(format!("Wiki: {}", page.title)),
+        Some(extra),
+    ))
 }

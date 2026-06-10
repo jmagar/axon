@@ -60,6 +60,34 @@ pub(crate) struct PreparedDoc {
     pub(crate) structured: Option<StructuredPayload>,
 }
 
+impl PreparedDoc {
+    /// Constructor for ingest-source documents (github/gitlab/gitea/generic-git/
+    /// reddit/youtube/sessions). Fills the ingest-path invariants: `content_type`
+    /// is always `"text"`, and ingest sources carry no vertical extractor or
+    /// page-level structured payload. Crawl/embed paths build the struct literally
+    /// because they vary `content_type`/`extractor_name`/`structured`.
+    pub(crate) fn ingest(
+        url: String,
+        domain: String,
+        chunks: Vec<String>,
+        source_type: impl Into<String>,
+        title: Option<String>,
+        extra: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            url,
+            domain,
+            chunks,
+            source_type: source_type.into(),
+            content_type: "text",
+            title,
+            extra,
+            extractor_name: None,
+            structured: None,
+        }
+    }
+}
+
 /// Per-page structured-data payload attached to every chunk of a doc.
 ///
 /// Produced by `core::structured::extract_all()` at scrape time and reduced

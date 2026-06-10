@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use crate::core::http::http_client;
+use crate::core::llm;
 use crate::core::logging::{log_info, log_warn};
-use crate::services::llm_backend;
 use std::error::Error;
 use std::time::Instant;
 
@@ -69,7 +69,7 @@ where
     log_info(&format!(
         "ask llm request start backend={:?} model={} stream={} context_chars={} query_len={}",
         cfg.llm_backend,
-        llm_backend::configured_model_from_config(cfg).unwrap_or_else(|| "<default>".to_string()),
+        llm::configured_model_from_config(cfg).unwrap_or_else(|| "<default>".to_string()),
         cfg.ask_stream,
         context.len(),
         query.len(),

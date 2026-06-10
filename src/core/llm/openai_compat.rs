@@ -1,7 +1,5 @@
+use crate::core::llm::{CompletionRequest, CompletionResponse, LlmBackendConfig, UsageSnapshot};
 use crate::services::events::is_secret_like;
-use crate::services::llm_backend::{
-    CompletionRequest, CompletionResponse, LlmBackendConfig, UsageSnapshot,
-};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde::Deserialize;

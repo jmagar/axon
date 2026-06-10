@@ -231,17 +231,14 @@ async fn file_doc(
         meta: Some(serde_json::json!({ "clone_url": target.clone_url })),
         ..GitPayload::default()
     });
-    Ok(Some(PreparedDoc {
-        url: format!("{}#{}:{}", target.web_url, branch, rel),
-        domain: target.host.clone(),
+    Ok(Some(PreparedDoc::ingest(
+        format!("{}#{}:{}", target.web_url, branch, rel),
+        target.host.clone(),
         chunks,
-        source_type: source_type.to_string(),
-        content_type: "text",
-        title: Some(rel.clone()),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    }))
+        source_type,
+        Some(rel.clone()),
+        Some(extra),
+    )))
 }
 
 #[cfg(test)]

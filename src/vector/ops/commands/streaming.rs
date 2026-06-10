@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::services::llm_backend::{self, CompletionRequest};
+use crate::core::llm::{self, CompletionRequest};
 use std::error::Error;
 use std::io::Write;
 use tokio::sync::mpsc::UnboundedSender;
@@ -212,7 +212,7 @@ fn judge_completion_request(
 }
 
 fn apply_optional_model(req: CompletionRequest, cfg: &Config) -> CompletionRequest {
-    match llm_backend::configured_model_from_config(cfg) {
+    match llm::configured_model_from_config(cfg) {
         Some(model) => req.model(model),
         None => req,
     }
@@ -328,7 +328,7 @@ where
 {
     let req = req.backend_from_config(cfg);
     let mut state = StreamProcessorState::default();
-    let stream_result = llm_backend::complete_streaming(req, |delta| {
+    let stream_result = llm::complete_streaming(req, |delta| {
         process_one_delta(
             &mut state,
             delta,
@@ -388,7 +388,7 @@ pub(super) async fn run_text_completion(
     cfg: &Config,
     req: CompletionRequest,
 ) -> Result<String, Box<dyn Error>> {
-    llm_backend::complete_text(req.backend_from_config(cfg))
+    llm::complete_text(req.backend_from_config(cfg))
         .await
         .map(|response| response.text)
         .map_err(|err| err.to_string().into())

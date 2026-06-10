@@ -1,8 +1,8 @@
 use crate::core::config::{Config, ConfigOverrides, ScrapeFormat};
+use crate::core::error::{ServiceError, diagnostics_from_error};
 use crate::services::document::{
     decode_document_cursor_backend, is_stale, paginate_document, read_latest_stored_source,
 };
-use crate::services::error::{ServiceError, diagnostics_from_error};
 use crate::services::events::{LogLevel, ServiceEvent, emit, synthesis_delta_handler_infallible};
 use crate::services::scrape as scrape_svc;
 use crate::services::types::{

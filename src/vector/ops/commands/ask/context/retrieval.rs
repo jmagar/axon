@@ -1,7 +1,7 @@
 use super::super::timing::{AskTiming, AskTimingSlot};
+use crate::core::ask_explain::{AskExplainRetrieval, AskExplainScoreKind};
 use crate::core::config::Config;
 use crate::core::logging::{log_debug, log_info};
-use crate::services::types::{AskExplainRetrieval, AskExplainScoreKind};
 use crate::vector::ops::commands::retrieval::{
     CandidateBuildPolicy, CandidateRankingTrace, CandidateScorePolicy, RetrievedCandidate,
     authoritative_ratio, candidates_only, embed_retrieval_inputs, product_authority_ratio,

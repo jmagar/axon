@@ -9,9 +9,9 @@ mod trace;
 
 use super::super::timing::{AskTiming, AskTimingSlot};
 use super::heuristics::{SkipDecision, should_skip_full_doc_fetch};
+use crate::core::ask_explain::AskExplainContext;
 use crate::core::config::Config;
 use crate::core::logging::log_info;
-use crate::services::types::AskExplainContext;
 use crate::vector::ops::ranking;
 use anyhow::Result;
 use std::collections::HashSet;

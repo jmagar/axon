@@ -81,17 +81,15 @@ pub(crate) async fn embed_metadata(
     }
     embed_docs(
         cfg,
-        vec![PreparedDoc {
-            url: repo
-                .html_url
+        vec![PreparedDoc::ingest(
+            repo.html_url
                 .clone()
                 .unwrap_or_else(|| target.web_url.clone()),
-            domain: target.host.clone(),
+            target.host.clone(),
             chunks,
-            source_type: "gitea".to_string(),
-            content_type: "text",
-            title: Some(title),
-            extra: Some(payload(
+            "gitea",
+            Some(title),
+            Some(payload(
                 target,
                 repo,
                 "repo_metadata",
@@ -102,9 +100,7 @@ pub(crate) async fn embed_metadata(
                     "open_issues": repo.open_issues_count,
                 }),
             )),
-            extractor_name: None,
-            structured: None,
-        }],
+        )],
     )
     .await
 }
@@ -164,16 +160,15 @@ pub(crate) fn issue_doc(
     if chunks.is_empty() {
         return None;
     }
-    Some(PreparedDoc {
-        url: issue
+    Some(PreparedDoc::ingest(
+        issue
             .html_url
             .unwrap_or_else(|| format!("{}/issues/{}", target.web_url, issue.number)),
-        domain: target.host.clone(),
+        target.host.clone(),
         chunks,
-        source_type: "gitea".to_string(),
-        content_type: "text",
-        title: Some(format!("Issue #{}: {}", issue.number, issue.title)),
-        extra: Some(payload(
+        "gitea",
+        Some(format!("Issue #{}: {}", issue.number, issue.title)),
+        Some(payload(
             target,
             repo,
             "issue",
@@ -187,9 +182,7 @@ pub(crate) fn issue_doc(
                 "comment_count": issue.comments,
             }),
         )),
-        extractor_name: None,
-        structured: None,
-    })
+    ))
 }
 
 pub(crate) async fn embed_pulls(
@@ -228,16 +221,14 @@ pub(crate) fn pull_doc(
     if chunks.is_empty() {
         return None;
     }
-    Some(PreparedDoc {
-        url: pull
-            .html_url
+    Some(PreparedDoc::ingest(
+        pull.html_url
             .unwrap_or_else(|| format!("{}/pulls/{}", target.web_url, pull.number)),
-        domain: target.host.clone(),
+        target.host.clone(),
         chunks,
-        source_type: "gitea".to_string(),
-        content_type: "text",
-        title: Some(format!("PR #{}: {}", pull.number, pull.title)),
-        extra: Some(payload(
+        "gitea",
+        Some(format!("PR #{}: {}", pull.number, pull.title)),
+        Some(payload(
             target,
             repo,
             "pull_request",
@@ -252,7 +243,5 @@ pub(crate) fn pull_doc(
                 "merged": pull.merged,
             }),
         )),
-        extractor_name: None,
-        structured: None,
-    })
+    ))
 }

@@ -299,8 +299,8 @@ fn gemini_service_json(cfg: &Config, probe: &(bool, String)) -> Value {
 }
 
 fn probe_gemini_headless(cfg: &Config) -> (bool, String) {
-    let gemini_backend = crate::services::llm_backend::LlmBackendConfig::from_config(cfg);
-    match crate::services::llm_backend::headless::gemini::validate_config(&gemini_backend) {
+    let gemini_backend = crate::core::llm::LlmBackendConfig::from_config(cfg);
+    match crate::core::llm::headless::gemini::validate_config(&gemini_backend) {
         Ok(()) => (
             true,
             "Gemini headless command validation passed".to_string(),

@@ -1,6 +1,6 @@
 use super::SearchHitsResult;
+use crate::core::ask_explain::AskExplainScoreKind;
 use crate::core::logging::log_warn;
-use crate::services::types::AskExplainScoreKind;
 use crate::vector::ops::commands::retrieval::{
     CandidateBuildPolicy, CandidateRankingTrace, RetrievedCandidate, build_candidates_from_hits,
     build_candidates_from_hits_with_trace, merge_candidates, merge_candidates_with_trace,

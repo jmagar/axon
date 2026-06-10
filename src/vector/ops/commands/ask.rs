@@ -1,7 +1,7 @@
+use crate::core::ask_explain::{CorpusHealthDiagnostic, CorpusHealthKind};
 use crate::core::config::Config;
+use crate::core::llm;
 use crate::core::logging::log_info;
-use crate::services::llm_backend;
-use crate::services::types::{CorpusHealthDiagnostic, CorpusHealthKind};
 
 mod context;
 mod normalize;
@@ -20,13 +20,12 @@ pub(crate) use normalize::normalize_ask_answer;
 pub(crate) use timing::{AskTiming, AskTimingSlot};
 
 pub(super) fn validate_ask_llm_config(cfg: &Config) -> anyhow::Result<()> {
-    let backend = llm_backend::LlmBackendConfig::from_config(cfg);
+    let backend = llm::LlmBackendConfig::from_config(cfg);
     match backend.kind {
-        llm_backend::LlmBackendKind::GeminiHeadless => {
-            llm_backend::headless::gemini::validate_config(&backend)
-                .map_err(|e| anyhow::anyhow!("{e}"))
+        llm::LlmBackendKind::GeminiHeadless => {
+            llm::headless::gemini::validate_config(&backend).map_err(|e| anyhow::anyhow!("{e}"))
         }
-        llm_backend::LlmBackendKind::OpenAiCompat => {
+        llm::LlmBackendKind::OpenAiCompat => {
             backend
                 .openai_base_url
                 .as_deref()
@@ -141,7 +140,7 @@ where
     log_info(&format!(
         "ask llm starting backend={:?} model={} context_chars={} stream={}",
         cfg.llm_backend,
-        llm_backend::configured_model_from_config(cfg).unwrap_or_else(|| "<default>".to_string()),
+        llm::configured_model_from_config(cfg).unwrap_or_else(|| "<default>".to_string()),
         context.len(),
         cfg.ask_stream,
     ));
