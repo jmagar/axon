@@ -147,17 +147,18 @@ All ingest sources use the unified `embed_prepared_docs` pipeline via `PreparedD
 use crate::core::content::url_to_domain;
 use crate::vector::ops::PreparedDoc;
 use crate::vector::ops::tei::embed_prepared_docs;
-use crate::vector::ops::input::chunk_text;       // prose: 2000-char with 200-char overlap
-use crate::vector::ops::input::code::chunk_code;  // tree-sitter AST-aware chunking
+use crate::vector::ops::file_ingest::{SelectionPolicy, chunk_file, chunking_method, collect_files};
+use crate::vector::ops::input::classify::path_extension;
 
 let url = "https://github.com/rust-lang/rust/blob/main/src/lib.rs".to_string();
 let domain = url_to_domain(&url);  // → "github.com"
-let chunks = chunk_code(&content, "rs").unwrap_or_else(|| chunk_text(&content));
+let ext = path_extension(&rel).to_ascii_lowercase();
+let chunks = chunk_file(&content, &ext); // Vec<CodeChunk> — tree-sitter or prose fallback
 
 let doc = PreparedDoc {
     url,
     domain,
-    chunks,
+    chunks: chunks.into_iter().map(|c| c.text).collect(),
     source_type: "github".to_string(),
     content_type: "text",
     title: Some("src/lib.rs".to_string()),
@@ -182,10 +183,11 @@ let summary = embed_prepared_docs(cfg, vec![doc], None).await?;
 5. Individual doc failures are logged and skipped (reported via `EmbedSummary.docs_failed`)
 
 ### Chunking
-- **Prose** (`chunk_text`): 2000-char chunks with 200-char overlap
-- **Code** (`chunk_code`): tree-sitter AST-aware (Rust, Python, JS, TS, Go, Bash); falls back to `chunk_text` for unsupported extensions
+- All git providers and local `embed <dir>` use `chunk_file(&content, ext) → Vec<CodeChunk>` from `src/vector/ops/file_ingest.rs`. Use `chunk_code` / `chunk_text` only if you need the lower-level primitives directly.
+- **`chunk_file`**: tries tree-sitter via `chunk_code_chunks`; falls back to synthetic `CodeChunk`s wrapping `chunk_text_with_offsets` — callers always get `Vec<CodeChunk>` with line ranges regardless of extension.
+- **Prose** (`chunk_text`): 2000-char chunks with 200-char overlap (low-level; prefer `chunk_file`)
+- **Code** (`chunk_code`): tree-sitter AST-aware (Rust, Python, JS, TS, Go, Bash); falls back to `chunk_text` for unsupported extensions (low-level; prefer `chunk_file`)
 - Callers must chunk content **before** building `PreparedDoc` — the pipeline expects pre-chunked `chunks: Vec<String>`
-- Choose based on file extension: `chunk_code(&text, &ext).unwrap_or_else(|| chunk_text(&text))`
 
 ## ingest_jobs Schema
 `axon_ingest_jobs` differs from other job tables:

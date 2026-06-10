@@ -85,3 +85,33 @@ fn chunk_file_falls_back_to_prose_for_unknown_ext() {
     assert!(chunks.iter().all(|c| c.symbol.is_none()));
     assert_eq!(chunking_method("md", &chunks[0]), "prose");
 }
+
+#[test]
+fn chunk_file_handles_multibyte_content_without_panic() {
+    // A file with multibyte characters; prose fallback path since "txt" has no grammar
+    let base = "fn x() { /* 日本語コメント */ }\n";
+    let text = base.repeat(200); // large enough to produce multiple chunks
+    let chunks = chunk_file(&text, "txt");
+    assert!(!chunks.is_empty());
+    for c in &chunks {
+        // Must not panic on byte boundary — slice into the original string
+        let _ = &text[c.byte_start..c.byte_end.min(text.len())];
+    }
+}
+
+#[test]
+fn chunking_method_returns_prose_for_chunk_without_symbol() {
+    use crate::vector::ops::input::code::CodeChunk;
+    let chunk = CodeChunk {
+        text: "hello".into(),
+        byte_start: 0,
+        byte_end: 5,
+        start_line: 1,
+        end_line: 1,
+        declaration_start_line: 1,
+        declaration_end_line: 1,
+        symbol: None,
+    };
+    // Even for a Rust file extension, a symbol-less chunk should be labeled "prose"
+    assert_eq!(chunking_method("rs", &chunk), "prose");
+}

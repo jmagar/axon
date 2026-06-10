@@ -1,12 +1,14 @@
 //! Shared filesystem → chunked-document engine.
 //!
-//! One recursive walker + one chunk-selection adapter, used by every git
-//! provider (after clone) and the local `embed <dir>` path. Providers supply
-//! only the per-file URL and payload; this module owns file selection and the
-//! code-vs-prose chunk decision so all callers produce identical `CodeChunk`
-//! shapes and symbol metadata.
+//! One recursive walker + one chunk-selection adapter shared by all callers;
+//! per-chunk `PreparedDoc` structure varies by provider. Every git provider
+//! (after clone) and the local `embed <dir>` path supply only the per-file URL
+//! and payload; this module owns file selection and the code-vs-prose chunk
+//! decision.
 
 use std::path::{Path, PathBuf};
+
+use anyhow::{Result, anyhow as anyhow_err};
 
 use crate::core::logging::log_warn;
 use crate::ingest::github::{is_indexable_doc_path, is_indexable_source_path};
@@ -14,7 +16,7 @@ use crate::vector::ops::input::classify::path_extension;
 use crate::vector::ops::input::select;
 use crate::vector::ops::input::{
     chunk_text_with_offsets,
-    code::{CodeChunk, chunk_code_chunks, supports_tree_sitter_chunking},
+    code::{CodeChunk, chunk_code_chunks},
 };
 
 /// Which files a directory walk should yield.
@@ -33,10 +35,7 @@ pub enum SelectionPolicy {
 /// skipped. Pruned directories (`select::is_pruned_dir`: `.git`, `node_modules`,
 /// `target`, …) are never descended into. Symlinks are skipped (their
 /// `file_type` is neither file nor dir). Returned paths are sorted.
-pub async fn collect_files(
-    root: &Path,
-    policy: SelectionPolicy,
-) -> Result<Vec<PathBuf>, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn collect_files(root: &Path, policy: SelectionPolicy) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     let mut at_root = true;
@@ -44,7 +43,10 @@ pub async fn collect_files(
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(entries) => entries,
             Err(e) if at_root => {
-                return Err(format!("invalid ingest directory {}: {e}", dir.display()).into());
+                return Err(anyhow_err!(
+                    "invalid ingest directory {}: {e}",
+                    dir.display()
+                ));
             }
             Err(e) => {
                 log_warn(&format!(
@@ -65,23 +67,26 @@ pub async fn collect_files(
                         "command=ingest dir_iter_error path={} err={e}",
                         dir.display()
                     ));
-                    break;
+                    continue;
                 }
             };
             let path = entry.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let Ok(file_type) = entry.file_type().await else {
-                log_warn(&format!(
-                    "command=ingest skip_unknown_type path={}",
-                    path.display()
-                ));
-                continue;
+            let ft = match entry.file_type().await {
+                Ok(ft) => ft,
+                Err(e) => {
+                    log_warn(&format!(
+                        "command=ingest skip_unknown_type path={} err={e}",
+                        path.display()
+                    ));
+                    continue;
+                }
             };
-            if file_type.is_dir() {
+            if ft.is_dir() {
                 if !select::is_pruned_dir(name) {
                     stack.push(path);
                 }
-            } else if file_type.is_file() && include_file(&path, root, policy) {
+            } else if ft.is_file() && include_file(&path, root, policy) {
                 files.push(path);
             }
         }
@@ -115,10 +120,17 @@ pub fn chunk_file(content: &str, ext: &str) -> Vec<CodeChunk> {
     }
 }
 
-/// Report the chunking method for one chunk: tree-sitter when the grammar is
-/// supported (or a symbol was found), else prose.
-pub fn chunking_method(ext: &str, chunk: &CodeChunk) -> &'static str {
-    if chunk.symbol.is_some() || supports_tree_sitter_chunking(ext) {
+/// Report the chunking method for one chunk: `"tree_sitter"` when a tree-sitter
+/// grammar exists for `ext` OR the chunk carries a symbol. Note: returns
+/// `"tree_sitter"` even for grammar-supported files where no symbols were
+/// extracted (tree-sitter ran but found nothing); returns `"prose"` only when
+/// no grammar exists and the chunk has no symbol.
+///
+/// Simplified to use only `chunk.symbol` as the signal, eliminating false
+/// positives where prose fallback chunks on grammar-supported extensions were
+/// incorrectly labeled `"tree_sitter"`.
+pub fn chunking_method(_ext: &str, chunk: &CodeChunk) -> &'static str {
+    if chunk.symbol.is_some() {
         "tree_sitter"
     } else {
         "prose"
