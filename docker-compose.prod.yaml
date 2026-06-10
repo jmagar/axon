@@ -103,6 +103,12 @@ services:
     <<: *common-service
     image: qdrant/qdrant:v1.13.1
     container_name: axon-qdrant
+    # Shield the vector DB from the kernel's *global* OOM killer: under host
+    # memory pressure (concurrent cargo builds + optimizer churn) qdrant is the
+    # largest RSS on the box and got picked twice in 10 minutes (dmesg
+    # CONSTRAINT_NONE — host-level, not this container's cgroup cap). Prefer
+    # killing a rebuildable build process over the database.
+    oom_score_adj: -500
     ports:
       - "53333:6333"
       - "53334:6334"  # gRPC
