@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.5] - 2026-06-09
+
+Consolidates the multi-lane RAG code-review hardening (P1/P2/P3) plus the two
+critical findings reserved for the lead pass. Tree verified green: `cargo fmt`,
+`cargo check --all-targets`, and `cargo clippy --workspace --all-targets -- -D
+warnings` all clean.
+
+### Changed
+
+- **A-C1 — services↔vector dependency cycle broken.** Relocated the shared leaf
+  code out of the `services` layer so `vector` depends *down* on `core` instead
+  of cyclically on `services`:
+  - `src/services/llm_backend{.rs,/}` → `src/core/llm{.rs,/}` (`crate::core::llm`)
+  - `src/services/error{.rs,/}` (`ServiceError` + taxonomy) → `src/core/error{.rs,/}`
+    (`crate::core::error`)
+  - `AskExplain*` / `CorpusHealthKind` / `CorpusHealthDiagnostic` trace and
+    diagnostic types moved from `services::types::service::query` to
+    `crate::core::ask_explain`, re-exported through `services::types` for the
+    wire/CLI surface (`AskResult`/`AskTiming` remain service-layer wire
+    contracts). The `vector` layer now imports zero `crate::services` paths in
+    production code.
+- **Q-H3 — `PreparedDoc::ingest()` constructor** added to `src/vector/ops/tei.rs`;
+  all 22 ingest-source `PreparedDoc { .. }` literals migrated to it, removing the
+  repeated `content_type: "text", extractor_name: None, structured: None` tail.
+
+### Fixed
+
+- **O-C1 — ask-quality regression gate no longer silently passes.**
+  `scripts/test-ask-quality-regressions.sh` now runs every `cargo test` filter
+  through `scripts/cargo_test_filter_guard.py`, so a filter that matches zero
+  tests hard-fails instead of exiting 0. Removed four filters whose target tests
+  do not exist (citation-grounding / authoritative-allowlist / five-query
+  fixture) — flagged as follow-up coverage to author with their underlying
+  policy code.
+- Removed an unused `SetupMethod` import, fixed `unused_qualifications` warnings
+  in `src/jobs/watch/change_detect_tests.rs`, `collapsible_if` lints in
+  `src/cli/commands/{palette,setup}.rs`, and an orphaned `src/services/crawl/audit.rs`
+  stub surfaced during the green-tree pass.
+
 ## [5.7.4] - 2026-06-09
 
 Fix compile errors from parallel lanes (routing type, Vec<String> test
