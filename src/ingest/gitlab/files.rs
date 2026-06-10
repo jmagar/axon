@@ -140,9 +140,12 @@ pub(crate) async fn embed_files(
         {
             Ok(triple) => triple,
             Err(e) => {
-                log_warn(&format!(
-                    "command=ingest_gitlab chunk_panicked path={rel} err={e}"
-                ));
+                tracing::error!(
+                    namespace = %target.namespace_path,
+                    path = %rel,
+                    err = %e,
+                    "ingest_gitlab: chunk_file task panicked"
+                );
                 continue;
             }
         };
@@ -150,12 +153,12 @@ pub(crate) async fn embed_files(
             continue;
         }
         let symbol_status = code_symbol_extraction_status(&content, &ext, &code_chunks);
-        for chunk in code_chunks {
+        for (idx, chunk) in code_chunks.into_iter().enumerate() {
             let method = chunking_method(&ext, &chunk);
             docs.push(PreparedDoc::ingest(
                 format!(
-                    "{}/-/blob/{}/{}#L{}-L{}",
-                    target.web_url, branch, rel, chunk.start_line, chunk.end_line
+                    "{}/-/blob/{}/{}#L{}-L{}#{}",
+                    target.web_url, branch, rel, chunk.start_line, chunk.end_line, idx
                 ),
                 target.host.clone(),
                 vec![chunk.text.clone()],
@@ -189,3 +192,7 @@ pub(crate) async fn embed_files(
         .await;
     Ok(chunks)
 }
+
+#[cfg(test)]
+#[path = "files_tests.rs"]
+mod tests;
