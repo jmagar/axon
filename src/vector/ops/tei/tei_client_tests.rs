@@ -93,7 +93,9 @@ fn retry_delay_is_capped_at_max_backoff() {
 }
 
 // T-C1: batch-split on 413 — httpmock integration test.
-// First request (2 inputs) returns 413; split single-input requests return 200.
+// In httpmock, first-registered = higher priority. The 413 mock is registered
+// first with body_includes for both inputs so it only fires on the full batch.
+// Single-input requests fall through to the 200 fallback (registered second).
 #[tokio::test]
 async fn tei_embed_splits_batch_on_413() {
     use crate::core::config::Config;
@@ -101,26 +103,25 @@ async fn tei_embed_splits_batch_on_413() {
 
     let server = MockServer::start_async().await;
 
-    // Register the 200 mock first (lower priority — matched when 413 mock doesn't fire).
+    // Register the 413 mock FIRST (higher priority in httpmock — first wins).
+    // Both body_includes conditions must match, so only the 2-input batch fires this.
     server
         .mock_async(|when, then| {
-            when.method(POST).path("/embed");
-            // Return one vector per input (minimal 2D embeddings for test speed).
-            then.status(200)
-                .json_body(serde_json::json!([[0.1_f32, 0.2_f32]]));
+            when.method(POST)
+                .path("/embed")
+                .body_includes("split-alpha")
+                .body_includes("split-beta");
+            then.status(413);
         })
         .await;
 
-    // Register the 413 mock second (higher priority in httpmock — last wins).
-    // Only fires when the batch has more than one input.
+    // Register the 200 fallback SECOND (lower priority).
+    // Fires for single-input requests after the batch is split.
     server
         .mock_async(|when, then| {
-            when.method(POST).path("/embed").is_true(|req| {
-                let body: serde_json::Value =
-                    serde_json::from_slice(req.body()).unwrap_or_default();
-                body["inputs"].as_array().map(|a| a.len()).unwrap_or(0) > 1
-            });
-            then.status(413);
+            when.method(POST).path("/embed");
+            then.status(200)
+                .json_body(serde_json::json!([[0.1_f32, 0.2_f32]]));
         })
         .await;
 
@@ -130,7 +131,7 @@ async fn tei_embed_splits_batch_on_413() {
     cfg.tei_max_retries = 5;
     cfg.tei_request_timeout_ms = 5_000;
 
-    let inputs = vec!["hello world".to_string(), "foo bar".to_string()];
+    let inputs = vec!["split-alpha".to_string(), "split-beta".to_string()];
     let result = super::tei_embed_kind(&cfg, super::EmbedKind::Document, &inputs).await;
 
     assert!(
