@@ -210,6 +210,11 @@ fn evaluate_result(value: &serde_json::Value) -> String {
 }
 
 fn job_start_result(subcommand: &str, value: &serde_json::Value) -> String {
+    // Terminal job state from polling: { "job": { "status": "completed", ... } }
+    if let Some(job) = value.get("job") {
+        return job_terminal_result(subcommand, job);
+    }
+    // Accepted-job response: show job ID so the user can still track it manually
     let result = value.get("result").unwrap_or(value);
     let mut lines = Vec::new();
     if let Some(disposition) = string_field(value, "disposition") {
@@ -237,6 +242,39 @@ fn job_start_result(subcommand: &str, value: &serde_json::Value) -> String {
         lines.push("Next: status".to_string());
     }
     non_empty_or_compact(lines, value)
+}
+
+/// Format a terminal job state returned by the status-polling path.
+/// Shows status, key metrics from `result_json`, and the job's target URL.
+fn job_terminal_result(subcommand: &str, job: &serde_json::Value) -> String {
+    let status = string_field(job, "status").unwrap_or_else(|| "unknown".to_string());
+    let mut lines = vec![format!("{subcommand} {status}")];
+    if let Some(err) = string_field(job, "error_text") {
+        lines.push(format!("error: {err}"));
+    }
+    if let Some(result) = job.get("result_json") {
+        for key in &[
+            "pages_crawled",
+            "docs_embedded",
+            "chunks_embedded",
+            "md_created",
+        ] {
+            if let Some(v) = result.get(*key).and_then(|v| v.as_u64()).filter(|&n| n > 0) {
+                lines.push(format!("{key}: {v}"));
+            }
+        }
+        if let Some(ms) = result
+            .get("elapsed_ms")
+            .and_then(|v| v.as_u64())
+            .filter(|&n| n >= 1000)
+        {
+            lines.push(format!("elapsed: {:.1}s", ms as f64 / 1000.0));
+        }
+    }
+    if let Some(target) = string_field(job, "url").or_else(|| string_field(job, "target")) {
+        lines.push(target);
+    }
+    lines.join("\n")
 }
 
 fn sources_result(value: &serde_json::Value) -> String {

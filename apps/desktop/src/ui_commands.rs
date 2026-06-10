@@ -1,5 +1,9 @@
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
+#[path = "ui_commands_tests.rs"]
+mod tests;
+
 use gpui::{Context, Window, prelude::*};
 
 use super::{ConnectionState, Palette, RunningCommand};
@@ -22,6 +26,76 @@ struct HealthResult {
     ok: bool,
 }
 
+/// Maximum poll attempts for async job commands (~5 minutes at 2s intervals).
+const JOB_POLL_MAX_ATTEMPTS: u32 = 150;
+const JOB_POLL_INTERVAL: Duration = Duration::from_millis(2_000);
+
+/// Returns true for subcommands that start async jobs and should be polled
+/// to a terminal state before showing results.
+pub(crate) fn is_async_job_command(subcommand: &str) -> bool {
+    matches!(subcommand, "crawl" | "embed" | "extract" | "ingest")
+}
+
+/// Terminal job statuses — stop polling when any of these appear.
+pub(crate) fn is_terminal_job_status(status: &str) -> bool {
+    matches!(status, "completed" | "failed" | "canceled" | "cancelled")
+}
+
+/// Extract the `status_url` polling path from an accepted-job JSON response.
+fn accepted_job_poll_path(json_text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json_text).ok()?;
+    value.get("status_url")?.as_str().map(ToString::to_string)
+}
+
+/// If `output` is a 202 accepted-job response, poll the status path until a
+/// terminal state is reached or the max-attempt cap is hit. Falls back to the
+/// original accepted response on timeout so the job ID remains visible.
+fn poll_accepted_job(
+    client: &RestClient,
+    output: Result<RestOutput, String>,
+) -> Result<RestOutput, String> {
+    let Ok(ref accepted) = output else {
+        return output;
+    };
+    if !accepted.ok || accepted.status != 202 {
+        return output;
+    }
+    let Some(poll_path) = accepted.stdout.as_deref().and_then(accepted_job_poll_path) else {
+        return output;
+    };
+    let poll_request = RestRequest {
+        method: "GET",
+        path: poll_path.clone(),
+        body: None,
+        label: format!("GET {poll_path}"),
+    };
+    for attempt in 0..JOB_POLL_MAX_ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(JOB_POLL_INTERVAL);
+        }
+        let Ok(status_output) = client.execute(&poll_request) else {
+            continue;
+        };
+        if !status_output.ok {
+            continue;
+        }
+        let reached_terminal = status_output
+            .stdout
+            .as_deref()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+            .and_then(|v| v.get("job").cloned())
+            .and_then(|j| {
+                j.get("status")
+                    .and_then(|s| s.as_str())
+                    .map(is_terminal_job_status)
+            });
+        if reached_terminal == Some(true) {
+            return Ok(status_output);
+        }
+    }
+    output // timed out — show accepted response so job ID is still visible
+}
+
 /// Extract `/v1/artifacts/<relative_path>` from a screenshot JSON response.
 fn screenshot_artifact_path(json_text: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(json_text).ok()?;
@@ -32,8 +106,8 @@ fn screenshot_artifact_path(json_text: &str) -> Option<String> {
     Some(format!("/v1/artifacts/{rel}"))
 }
 
-/// Run a REST command and optionally fetch a follow-up artifact (screenshot PNG).
-/// Extracted from `submit` so the background spawn closure stays concise.
+/// Run a REST command, poll async jobs to terminal state, and fetch screenshot
+/// artifacts. Extracted from `submit` so the background spawn closure stays concise.
 fn run_rest_command(
     subcommand: &'static str,
     request: &RestRequest,
@@ -44,6 +118,14 @@ fn run_rest_command(
         Err(e) => (Err(e), None),
         Ok(client) => {
             let output = client.execute(request);
+            // For async job commands, poll until a terminal state is reached
+            // so users see results/metrics instead of just a job ID.
+            let output = if is_async_job_command(subcommand) {
+                poll_accepted_job(&client, output)
+            } else {
+                output
+            };
+            // For screenshot, fetch the artifact PNG after a successful response
             let image_bytes = if subcommand == "screenshot" {
                 output
                     .as_ref()
