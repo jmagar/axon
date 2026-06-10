@@ -78,8 +78,8 @@ pub(super) async fn collect_indexable_files(
 /// - TEI to receive a single-chunk batch per doc (batching never engaged).
 /// - A guaranteed no-op stale-tail delete per chunk (filter `chunk_index >= 1`
 ///   on a 1-chunk doc is always empty).
-/// Now each file produces exactly one `PreparedDoc`; TEI can batch all chunks
-/// together and the stale-tail delete fires once per file with the true count.
+///   Now each file produces exactly one `PreparedDoc`; TEI can batch all chunks
+///   together and the stale-tail delete fires once per file with the true count.
 pub(super) async fn read_file_embed_docs(
     ctx: &FileEmbedCtx,
     path: &str,

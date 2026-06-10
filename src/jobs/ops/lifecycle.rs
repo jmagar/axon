@@ -119,7 +119,7 @@ async fn claim_next_pending_for_attempt_inner(
     // namespace (URL/free-text inputs, pre-migration rows) are claimable by
     // any worker regardless of its namespace setting.
     let row: Option<(String, Option<String>, i64)> =
-        match fetch_next_pending_row(&mut *conn, kind, table).await {
+        match fetch_next_pending_row(&mut conn, kind, table).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;

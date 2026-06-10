@@ -79,7 +79,7 @@ fn cached_vector_mode_is_authoritative(cfg: &Config, key: &str, mode: VectorMode
         .read()
         .ok()
         .and_then(|m| m.get(key).copied())
-        .map_or(false, |last| last.elapsed() < PROBE_INTERVAL)
+        .is_some_and(|last| last.elapsed() < PROBE_INTERVAL)
 }
 
 /// Record a successful mode-probe timestamp so the rate-limiter can skip future
@@ -313,7 +313,7 @@ fn memory_settings() -> (bool, bool) {
         .is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes"));
     let always_ram = std::env::var("AXON_QDRANT_QUANTIZATION_ALWAYS_RAM")
         .ok()
-        .map_or(true, |v| !matches!(v.trim(), "0" | "false" | "no"));
+        .is_none_or(|v| !matches!(v.trim(), "0" | "false" | "no"));
     (hnsw_on_disk, always_ram)
 }
 

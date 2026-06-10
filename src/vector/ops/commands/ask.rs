@@ -188,6 +188,7 @@ where
 }
 
 /// Build the final JSON payload for a completed ask (non-explain path).
+#[allow(clippy::too_many_arguments)]
 fn assemble_ask_payload(
     cfg: &Config,
     query: &str,
