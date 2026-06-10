@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.7] - 2026-06-10
+
+### Changed
+
+- **Monolith policy: sitemap split + allowlist cleanup.** Split
+  `src/crawl/engine/sitemap.rs` (721 lines) into
+  `sitemap/{discover,backfill,filter}.rs` with the module root keeping the
+  shared bounded-HTTP fetch helpers and re-exports — no public-surface or
+  behavior change. Pruned 7 stale `.monolith-allowlist` entries: 3 web files
+  that no longer exist (`job-detail-ui.tsx`, `axon-shell-state.ts`,
+  `ws-messages/provider.ts`) and 4 Rust files now under the cap or
+  pattern-exempt (`crawl/scrape.rs`, `core/config/parse.rs`,
+  `core/config/types/config.rs`, `services/system.rs`,
+  `services/types/service.rs`). Pre-commit hooks pass again without
+  `--no-verify`.
+
 ## [5.7.6] - 2026-06-10
 
 ### Fixed

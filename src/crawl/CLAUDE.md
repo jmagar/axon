@@ -19,7 +19,11 @@ crawl/
 │   │   └── util.rs            # Shared collector helpers
 │   ├── map.rs             # Map-mode helpers
 │   ├── map/               # `crawl_and_collect_map()` lives here (engine/map/strategy.rs)
-│   ├── sitemap.rs         # `append_sitemap_backfill()`, sitemap discovery + filtering, `<lastmod>` parsing, `should_retry_status` (52x dead-host classification)
+│   ├── sitemap.rs         # Module root: shared bounded-HTTP fetch helpers (`fetch_text_with_retry`, body caps, `should_retry_status` 52x dead-host classification) + re-exports
+│   ├── sitemap/
+│   │   ├── discover.rs    # `discover_sitemap_urls()` — robots.txt + seed paths, batched JoinSet fetching, `<sitemapindex>` recursion
+│   │   ├── backfill.rs    # `append_sitemap_backfill()`/`append_candidate_backfill()` — fetch missed URLs, convert, append to manifest
+│   │   └── filter.rs      # `loc_in_scope()`, `<lastmod>` recency, `is_already_markdown()` passthrough check
 │   ├── etag.rs            # Conditional re-crawl (ETag/304): sidecar seed/persist + visited-set-gated reconciliation (axon_rust-hiyf)
 │   ├── etag_tests.rs      # sidecar tests for etag.rs
 │   ├── thin_refetch.rs    # Re-fetch thin pages with Chrome
