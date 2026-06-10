@@ -265,6 +265,34 @@ fn env_file_has_private_permissions_after_write() {
     }
 }
 
+// ── Atomic write correctness ──────────────────────────────────────────────
+
+#[test]
+fn no_tmp_file_after_successful_atomic_write() {
+    let _guard = env_lock().lock().expect("env lock");
+    let dir = tempfile_dir("atomic-no-tmp");
+    let path = dir.join(".env");
+    unsafe {
+        std::env::set_var("AXON_ENV_PATH", &path);
+    }
+    let mut values = HashMap::new();
+    values.insert(
+        "TEI_URL".to_string(),
+        serde_json::Value::String("http://127.0.0.1:52000".to_string()),
+    );
+
+    write_axon_env_values(&values).expect("write env");
+
+    let tmp = path.with_extension("tmp");
+    assert!(
+        !tmp.exists(),
+        ".env.tmp must not exist after successful write"
+    );
+    unsafe {
+        std::env::remove_var("AXON_ENV_PATH");
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 fn env_lock() -> &'static Mutex<()> {

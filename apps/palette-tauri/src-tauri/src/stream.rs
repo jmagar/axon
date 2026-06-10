@@ -89,7 +89,10 @@ pub(crate) async fn axon_http_stream_request(
     let response = builder.send().await.map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().await.unwrap_or_default();
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|err| format!("<failed to read body: {err}>"));
         return Err(format!("stream request failed with HTTP {status}: {text}"));
     }
 
@@ -110,13 +113,15 @@ pub(crate) async fn axon_http_stream_request(
     }
     if !terminal {
         let message = "stream ended before done".to_string();
-        let _ = window.emit(
+        if let Err(err) = window.emit(
             "palette://stream",
             PaletteStreamEvent::Error {
                 request_id: request.request_id,
                 message: message.clone(),
             },
-        );
+        ) {
+            eprintln!("palette: failed to emit stream error event: {err}");
+        }
         return Err(message);
     }
     Ok(())
@@ -217,7 +222,11 @@ fn handle_palette_sse_line(
                 .map_err(|err| err.to_string())?;
             Ok(true)
         }
-        _ => Ok(false),
+        Some(unknown) => {
+            eprintln!("palette: unknown SSE event type '{unknown}' — ignoring");
+            Ok(false)
+        }
+        None => Ok(false),
     }
 }
 

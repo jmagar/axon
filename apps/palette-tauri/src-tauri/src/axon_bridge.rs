@@ -6,8 +6,8 @@ use crate::{merged_settings, validate_saved_server_url};
 /// A shared `reqwest::Client` held in Tauri `AppState`.
 ///
 /// Creating a new client per-request is wasteful: it allocates a new
-/// connection pool, TLS context, and DNS resolver each time.  Storing one
-/// client in state lets all bridge calls share a single connection pool.
+/// connection pool and TLS context each time.  Storing one client in state
+/// lets all bridge calls share a single connection pool.
 pub(crate) struct BridgeClient(pub(crate) reqwest::Client);
 
 impl BridgeClient {

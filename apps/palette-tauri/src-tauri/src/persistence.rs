@@ -4,8 +4,9 @@
 //! # Allowlists
 //!
 //! `write_axon_env_values` and `write_axon_config_values` only write keys that
-//! appear in `ALLOWED_ENV_KEYS` and `ALLOWED_TOML_KEYS` respectively.  Any key
-//! not on the list is rejected with a descriptive error before touching disk.
+//! appear in `ALLOWED_ENV_KEYS` and `ALLOWED_TOML_SECTION_PREFIXES` (prefix
+//! match) respectively.  Any key not on the list is rejected with a descriptive
+//! error before touching disk.
 //! This ensures renderer-supplied input cannot overwrite arbitrary keys.
 //!
 //! # Dotenv parser limitations
@@ -187,8 +188,16 @@ pub(crate) fn read_default_env_entries() -> Vec<(String, String)> {
     let Some(path) = default_env_path() else {
         return Vec::new();
     };
-    let Ok(contents) = fs::read_to_string(path) else {
-        return Vec::new();
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(err) => {
+            eprintln!(
+                "palette: failed to read Axon env file at {}: {err}",
+                path.display()
+            );
+            return Vec::new();
+        }
     };
     parse_env_entries(&contents)
 }
@@ -228,13 +237,35 @@ fn trim_env_value(value: &str) -> String {
     let value = value.trim();
     if value.len() >= 2 {
         let bytes = value.as_bytes();
-        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
-        {
+        if bytes[0] == b'"' && bytes[value.len() - 1] == b'"' {
+            return unescape_double_quoted(&value[1..value.len() - 1]);
+        }
+        if bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'' {
             return value[1..value.len() - 1].to_string();
         }
     }
     value.to_string()
+}
+
+fn unescape_double_quoted(inner: &str) -> String {
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 pub(crate) fn write_axon_env_values(
@@ -255,7 +286,18 @@ pub(crate) fn write_axon_env_values(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let existing = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(format!(
+                "failed to read existing env file at {} before writing — \
+                 refusing to continue to avoid data loss: {err}",
+                path.display()
+            )
+            .into());
+        }
+    };
     let mut pending: HashMap<String, String> = values
         .iter()
         .map(|(key, value)| (key.clone(), json_value_to_env_string(value)))
@@ -280,7 +322,7 @@ pub(crate) fn write_axon_env_values(
     }
     let mut remaining: Vec<_> = pending.into_iter().collect();
     remaining.sort_by(|(left, _), (right, _)| left.cmp(right));
-    if !remaining.is_empty() && lines.last().map_or(false, |line| !line.is_empty()) {
+    if !remaining.is_empty() && lines.last().is_some_and(|line| !line.is_empty()) {
         lines.push(String::new());
     }
     for (key, value) in remaining {
@@ -296,11 +338,26 @@ pub(crate) fn read_default_config_values() -> HashMap<String, serde_json::Value>
     let Some(path) = default_config_path() else {
         return HashMap::new();
     };
-    let Ok(contents) = fs::read_to_string(path) else {
-        return HashMap::new();
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return HashMap::new(),
+        Err(err) => {
+            eprintln!(
+                "palette: failed to read Axon config file at {}: {err}",
+                path.display()
+            );
+            return HashMap::new();
+        }
     };
-    let Ok(doc) = contents.parse::<DocumentMut>() else {
-        return HashMap::new();
+    let doc = match contents.parse::<DocumentMut>() {
+        Ok(d) => d,
+        Err(err) => {
+            eprintln!(
+                "palette: failed to parse Axon config file at {}: {err}",
+                path.display()
+            );
+            return HashMap::new();
+        }
     };
     let mut values = HashMap::new();
     collect_toml_values("", doc.as_item(), &mut values);
@@ -328,7 +385,18 @@ pub(crate) fn write_axon_config_values(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let contents = fs::read_to_string(&path).unwrap_or_default();
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(format!(
+                "failed to read existing config file at {} before writing — \
+                 refusing to continue to avoid data loss: {err}",
+                path.display()
+            )
+            .into());
+        }
+    };
     let mut doc = contents
         .parse::<DocumentMut>()
         .unwrap_or_else(|_| DocumentMut::new());
@@ -345,7 +413,8 @@ pub(crate) fn write_axon_config_values(
 ///
 /// On Unix the `.tmp` file is created with mode `0o600` (owner read/write
 /// only) before any data is written, so a partial failure never leaves a
-/// world-readable file at the destination.
+/// world-readable file at the destination.  On Windows no explicit permission
+/// change is applied; rely on the directory ACL to restrict access.
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let tmp = path.with_extension("tmp");
     {
@@ -484,3 +553,7 @@ fn format_env_value(value: &str) -> String {
         value.to_string()
     }
 }
+
+#[cfg(test)]
+#[path = "persistence_tests.rs"]
+mod tests;

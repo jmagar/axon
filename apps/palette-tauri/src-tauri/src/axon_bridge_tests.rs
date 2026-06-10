@@ -107,6 +107,10 @@ fn validates_saved_server_url_shape() {
         "http://127.0.0.1:8001"
     );
     assert_eq!(
+        validate_saved_server_url("localhost:8001").unwrap(),
+        "http://localhost:8001"
+    );
+    assert_eq!(
         validate_saved_server_url("axon.example.com/").unwrap(),
         "https://axon.example.com"
     );

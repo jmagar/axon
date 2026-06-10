@@ -54,3 +54,22 @@ fn accepts_valid_sse_event_within_limit() {
     assert_eq!(lines, vec!["data: {\"type\":\"done\",\"answer\":\"ok\"}"]);
     assert!(pending.is_empty());
 }
+
+#[test]
+fn rejects_oversized_sse_line_with_trailing_newline() {
+    let mut pending = Vec::new();
+    // Build a line that is longer than MAX_SSE_LINE_BYTES and IS followed by a
+    // newline — exercises the second size check inside the newline-scanning loop.
+    let mut big_line = vec![b'x'; MAX_SSE_LINE_BYTES + 1];
+    big_line.push(b'\n');
+    let result = drain_sse_lines(&mut pending, &big_line);
+    assert!(
+        result.is_err(),
+        "oversized line with newline must return an error"
+    );
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("exceeded") || msg.contains("exceeds"),
+        "error message should describe the size violation: {msg}"
+    );
+}
