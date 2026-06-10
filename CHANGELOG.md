@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.7.4] - 2026-06-09
 
-Relocate crawl audit subsystem to services layer; fix compile errors from
-parallel lanes (routing type, Vec<String> test assertions, doc comment lint).
+Fix compile errors from parallel lanes (routing type, Vec<String> test
+assertions, doc comment lint) and add screenshot support to desktop app.
 
 ### Fixed
 
@@ -22,16 +22,14 @@ parallel lanes (routing type, Vec<String> test assertions, doc comment lint).
 - **`src/ingest/github/files/prepare.rs`** — inserted blank `///` line before
   continuation paragraph to satisfy `clippy::doc_lazy_continuation`.
 
-### Refactor
+### Added
 
-- **`src/services/crawl/audit`** — moved `manifest_audit`, `audit_diff`, and `sitemap`
-  modules from `src/cli/commands/crawl/audit/` to `src/services/crawl/audit/`. No
-  behavior changes: snapshot generation, manifest fingerprinting, path-traversal
-  security checks, and diff computation are unchanged.
-- **`src/cli/commands/crawl/audit.rs`** — replaced with a 3-line thin shim that
-  re-exports `run_crawl_audit` and `run_crawl_audit_diff` from the services layer.
-- Sidecar test files (`manifest_audit_tests.rs`, `sitemap_migration_tests.rs`)
-  relocated alongside their modules; all existing tests continue to pass.
+- **Desktop screenshot command** — new `screenshot` action in the palette;
+  `RestClient::fetch_bytes()` retrieves the PNG artifact; `OutputSection` carries
+  an `image` field so the rendered output body can display the screenshot inline.
+- **`src/services/scrape.rs`** — artifact write logic moved from `generic_scrape`
+  to the service layer so all callers (CLI, MCP, REST) share identical write
+  semantics.
 
 ## [5.7.3] - 2026-06-09
 

@@ -17,8 +17,6 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub mod audit;
-
 pub use crate::jobs::crawl::CrawlJob;
 
 // --- Pure mapping helpers (no I/O, testable without live services) ---
