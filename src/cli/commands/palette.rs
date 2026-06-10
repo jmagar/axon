@@ -287,12 +287,13 @@ fn resolve_palette_binary() -> Option<PathBuf> {
     if let Ok(out) = std::process::Command::new("which")
         .arg(PALETTE_BIN)
         .output()
-        && out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(PathBuf::from(path));
-            }
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
         }
+    }
 
     // 2. Known directories not always on PATH (e.g. first-run before shell reload).
     for dir in PALETTE_SEARCH_DIRS {
@@ -335,9 +336,10 @@ fn find_desktop_manifest() -> Result<PathBuf, Box<dyn Error>> {
 
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return PathBuf::from(home).join(rest);
+    }
     PathBuf::from(path)
 }
 

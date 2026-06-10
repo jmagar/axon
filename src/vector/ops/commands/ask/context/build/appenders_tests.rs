@@ -292,7 +292,9 @@ fn full_doc_insertion_skips_oversized_first_doc_and_inserts_later_doc_that_fits(
         &mut inserted,
         1,
         "\n\n---\n\n",
-        140,
+        // Budget sized so the small doc fits once the per-entry XML trust-boundary
+        // wrapper (S-H2) is accounted for; the oversized first doc still cannot fit.
+        140 + XML_WRAPPER_OVERHEAD,
         fetched_docs,
         &[],
         &url_to_score,
@@ -360,8 +362,9 @@ fn supplemental_chunk_stops_when_budget_exhausted() {
         &mut context_char_count,
         &mut source_idx,
         "\n\n---\n\n",
-        // Tiny budget — only the first chunk fits
-        120,
+        // Tiny budget — only the first chunk fits once the per-entry XML
+        // trust-boundary wrapper overhead (S-H2) is accounted for.
+        120 + XML_WRAPPER_OVERHEAD,
     );
 
     assert!(

@@ -37,27 +37,31 @@ async fn read_file_embed_docs_writes_symbol_payload_contract() {
         .await
         .expect("read docs");
 
-    let method_doc = docs
-        .iter()
-        .find(|doc| {
-            doc.extra
-                .as_ref()
-                .and_then(|extra| extra.get("symbol_name"))
-                .and_then(|value| value.as_str())
-                == Some("Response::parse")
-        })
-        .expect("method doc with symbol payload");
-    let extra = method_doc.extra.as_ref().expect("github payload");
+    // P-H1: a file's chunks share one file-level PreparedDoc for TEI batching;
+    // per-chunk symbol_* / code_line_* metadata lives in `chunk_extra`, merged
+    // over `doc.extra` per chunk in the embed pipeline so the symbol-boost survives.
+    let doc = docs.first().expect("one file-level doc");
+    let extra = doc.extra.as_ref().expect("github payload");
     assert_eq!(extra["provider"], "github");
     assert_eq!(extra["git_content_kind"], "file");
     assert_eq!(extra["code_chunking_method"], "tree_sitter");
-    assert_eq!(extra["symbol_name"], "Response::parse");
-    assert_eq!(extra["symbol_kind"], "method");
     assert_eq!(extra["symbol_extraction_status"], "ok");
+
+    let method_chunk = doc
+        .chunk_extra
+        .iter()
+        .find(|ce| ce.get("symbol_name").and_then(|v| v.as_str()) == Some("Response::parse"))
+        .expect("chunk with method symbol payload");
+    assert_eq!(method_chunk["symbol_name"], "Response::parse");
+    assert_eq!(method_chunk["symbol_kind"], "method");
     assert!(
-        method_doc
-            .url
-            .starts_with("https://github.com/owner/repo/blob/main/src/lib.rs#L")
+        method_chunk.get("code_line_start").is_some(),
+        "per-chunk payload must carry its own line range"
+    );
+
+    assert_eq!(
+        doc.url,
+        "https://github.com/owner/repo/blob/main/src/lib.rs"
     );
 }
 

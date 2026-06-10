@@ -402,6 +402,7 @@ pub(crate) fn scrape_result_to_prepared_doc(result: &ScrapeResult) -> PreparedDo
         extra: result.extra.clone(),
         extractor_name: result.extractor_name.clone(),
         structured: None,
+        chunk_extra: Vec::new(),
     }
 }
 

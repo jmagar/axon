@@ -265,6 +265,7 @@ pub(super) async fn prepare_embed_docs(
             extra: None,
             extractor_name: None,
             structured,
+            chunk_extra: Vec::new(),
         });
     }
     if skipped_empty > 0 {

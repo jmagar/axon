@@ -49,9 +49,10 @@ pub async fn run_setup(cfg: &Config) -> Result<(), Box<dyn Error>> {
 /// `cfg.setup_method` carries the acquisition method (`pull`/`build`/`None`).
 async fn run_setup_wizard(cfg: &Config) -> Result<(), Box<dyn Error>> {
     if let Some(method) = &cfg.setup_method
-        && !cfg.json_output {
-            println!("{} {}", muted("acquisition method:"), accent(method));
-        }
+        && !cfg.json_output
+    {
+        println!("{} {}", muted("acquisition method:"), accent(method));
+    }
     run_local_setup_command(cfg, LocalSetupMode::Setup).await?;
     match install_self() {
         Ok(dest) => {

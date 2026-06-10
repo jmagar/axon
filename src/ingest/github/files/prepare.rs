@@ -162,6 +162,26 @@ pub(super) async fn read_file_embed_docs(
     let file_line_end = chunks.last().map(|c| c.end_line);
     let chunk_method = chunking_method(&ext, chunks.first().expect("non-empty"));
 
+    // Per-chunk payload overrides (P-H1): the file's chunks share one PreparedDoc
+    // for TEI batching, but each chunk keeps its own symbol_* and code_line_*
+    // metadata. The embed pipeline merges these over the file-level `extra`, so
+    // the ranking symbol-boost still fires per chunk despite the per-file grouping.
+    let chunk_extra: Vec<serde_json::Value> = chunks
+        .iter()
+        .map(|c| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("code_line_start".into(), c.start_line.into());
+            obj.insert("code_line_end".into(), c.end_line.into());
+            if let Some(name) = c.symbol_name() {
+                obj.insert("symbol_name".into(), name.into());
+            }
+            if let Some(kind) = c.symbol_kind_str() {
+                obj.insert("symbol_kind".into(), kind.into());
+            }
+            serde_json::Value::Object(obj)
+        })
+        .collect();
+
     let chunk_texts: Vec<String> = chunks.into_iter().map(|c| c.text).collect();
 
     let extra = build_github_payload(&GitHubPayloadParams {
@@ -187,14 +207,16 @@ pub(super) async fn read_file_embed_docs(
         ..Default::default()
     });
 
-    Ok(vec![PreparedDoc::ingest(
+    let mut doc = PreparedDoc::ingest(
         base_url,
         "github.com".to_string(),
         chunk_texts,
         "github",
         Some(path.to_string()),
         Some(extra),
-    )])
+    );
+    doc.chunk_extra = chunk_extra;
+    Ok(vec![doc])
 }
 
 fn code_or_text_chunks(text: &str, ext: &str) -> Vec<CodeChunk> {

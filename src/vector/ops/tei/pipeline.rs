@@ -134,6 +134,9 @@ async fn embed_prepared_doc(
         .to_string();
     let timestamp = Utc::now().to_rfc3339();
     let mut points = Vec::with_capacity(vectors.len());
+    // Per-chunk payload overrides (P-H1): taken out before `doc.chunks` is moved
+    // by `into_iter()` below so the two positionally-parallel vectors zip cleanly.
+    let chunk_extra = std::mem::take(&mut doc.chunk_extra);
     for (idx, (chunk, vecv)) in doc.chunks.into_iter().zip(vectors).enumerate() {
         let point_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, format!("{}:{}", url, idx).as_bytes());
         // Apply extra metadata first so that system fields written below always win.
@@ -141,6 +144,10 @@ async fn embed_prepared_doc(
         let mut payload = serde_json::json!({});
         if let Some(ref extra) = doc.extra {
             apply_extra(&mut payload, extra);
+        }
+        // Per-chunk overrides win over doc-level extra (reserved system keys excepted).
+        if let Some(chunk_override) = chunk_extra.get(idx) {
+            apply_extra(&mut payload, chunk_override);
         }
         // System fields — written after extra so they are always authoritative.
         payload["url"] = serde_json::Value::String(url.clone());
