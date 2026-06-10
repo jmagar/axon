@@ -616,6 +616,104 @@ async fn ingest_claim_serializes_same_target_jobs() {
 }
 
 #[tokio::test]
+async fn embed_claim_respects_fs_namespace_affinity() {
+    // A path-like embed input stamped with a foreign filesystem namespace must
+    // not be claimed here — only same-namespace and NULL-affinity (URL /
+    // free-text / legacy) rows are claimable.
+    let pool = test_pool().await;
+    let own_ns = crate::jobs::ops::fs_namespace();
+    let foreign = "00000000-0000-0000-0000-00000000000a";
+    let own = "00000000-0000-0000-0000-00000000000b";
+    let unstamped = "00000000-0000-0000-0000-00000000000c";
+    for (id, created_at, ns) in [
+        (foreign, 0_i64, Some("other-namespace")),
+        (own, 1, Some(own_ns.as_str())),
+        (unstamped, 2, None),
+    ] {
+        sqlx::query(
+            "INSERT INTO axon_embed_jobs (id, status, input_text, config_json, fs_namespace, created_at, updated_at) \
+             VALUES (?, 'pending', '/some/path', '{}', ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(ns)
+        .bind(created_at)
+        .bind(created_at)
+        .execute(&pool)
+        .await
+        .expect("seed row");
+    }
+
+    // Oldest claimable row is the own-namespace one (the foreign row is older
+    // but must be skipped), then the unstamped row, then nothing.
+    let first = claim_next_pending(&pool, JobKind::Embed)
+        .await
+        .expect("claim 1")
+        .expect("own-namespace job claimable");
+    assert_eq!(first.to_string(), own);
+    let second = claim_next_pending(&pool, JobKind::Embed)
+        .await
+        .expect("claim 2")
+        .expect("unstamped job claimable");
+    assert_eq!(second.to_string(), unstamped);
+    assert_eq!(
+        claim_next_pending(&pool, JobKind::Embed)
+            .await
+            .expect("claim 3"),
+        None,
+        "foreign-namespace job must never be claimed here"
+    );
+}
+
+#[tokio::test]
+async fn embed_enqueue_stamps_namespace_only_for_path_like_inputs() {
+    let pool = test_pool().await;
+    let cfg = Config::default_minimal();
+    let path_job = enqueue_job(
+        &pool,
+        &JobPayload::Embed {
+            input: "/home/user/docs".into(),
+            config_json: "{}".into(),
+        },
+        &cfg,
+    )
+    .await
+    .expect("enqueue path-like");
+    let url_job = enqueue_job(
+        &pool,
+        &JobPayload::Embed {
+            input: "https://example.com/page".into(),
+            config_json: "{}".into(),
+        },
+        &cfg,
+    )
+    .await
+    .expect("enqueue url");
+
+    let ns_for = |id: Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT fs_namespace FROM axon_embed_jobs WHERE id = ?",
+            )
+            .bind(id.to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("row")
+        }
+    };
+    assert_eq!(
+        ns_for(path_job).await,
+        Some(crate::jobs::ops::fs_namespace()),
+        "path-like input must carry the enqueuer's namespace"
+    );
+    assert_eq!(
+        ns_for(url_job).await,
+        None,
+        "URL input must stay claimable by any worker"
+    );
+}
+
+#[tokio::test]
 async fn embed_queue_cap_zero_disables_limit() {
     let pool = test_pool().await;
     // Setting limit=0 should allow any number of pending jobs.

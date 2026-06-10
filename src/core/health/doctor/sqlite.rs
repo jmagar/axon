@@ -1,5 +1,9 @@
 //! SQLite-runtime doctor report: SQLite + HTTP services only (no PG/Redis/AMQP probes).
 
+#[cfg(test)]
+#[path = "sqlite_tests.rs"]
+mod tests;
+
 use crate::cli::commands::probe::with_path;
 use crate::core::config::Config;
 use crate::core::endpoints::{EndpointKind, resolve_host_endpoint};
@@ -22,6 +26,7 @@ pub(super) async fn build(cfg: &Config) -> Result<Value, Box<dyn Error>> {
     let gemini_probe = probe_gemini_headless(cfg);
     let tei_model = probes.tei_info.0.as_ref().and_then(tei_model_from_info);
     let tei_summary = probes.tei_info.0.as_ref().and_then(tei_info_summary);
+    let tei_concurrency_warning = tei_concurrency_warning(probes.tei_info.0.as_ref());
     let (chrome_ok, ref chrome_detail) = probes.chrome;
     let tei_ok = probes.tei.0;
     let qdrant_ok = probes.qdrant.0;
@@ -43,6 +48,7 @@ pub(super) async fn build(cfg: &Config) -> Result<Value, Box<dyn Error>> {
             probes.tei.1,
             tei_model,
             tei_summary,
+            tei_concurrency_warning,
             probes.tei_latency_ms,
         ),
     );
@@ -220,6 +226,7 @@ fn tei_service_json(
     detail: Option<String>,
     model: Option<String>,
     summary: Option<String>,
+    concurrency_warning: Option<String>,
     latency_ms: u64,
 ) -> Value {
     serde_json::json!({
@@ -234,8 +241,52 @@ fn tei_service_json(
         "detail": detail,
         "model": model,
         "summary": summary,
+        "concurrency_warning": concurrency_warning,
         "latency_ms": latency_ms,
     })
+}
+
+/// Warn when the live TEI server's `max_concurrent_requests` budget disagrees
+/// with the operator's intent or with axon's own client-side cap.
+///
+/// Two drifts caught here, both observed in production:
+/// - `TEI_MAX_CONCURRENT_REQUESTS` is set in the env file but the running
+///   container reports a different budget — it was started without
+///   `--env-file` and silently fell back to the compose default (32),
+///   producing 429 "Model is overloaded" with an idle GPU under embed bursts.
+/// - `AXON_TEI_MAX_CONCURRENT` (axon's in-flight cap, default 8) exceeds the
+///   server budget, guaranteeing 429s under load.
+fn tei_concurrency_warning(info: Option<&Value>) -> Option<String> {
+    let expected = std::env::var("TEI_MAX_CONCURRENT_REQUESTS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok());
+    let client_max =
+        crate::vector::ops::qdrant::env_usize_clamped("AXON_TEI_MAX_CONCURRENT", 8, 1, 64) as u64;
+    tei_concurrency_warning_inner(info, expected, client_max)
+}
+
+fn tei_concurrency_warning_inner(
+    info: Option<&Value>,
+    expected_server_max: Option<u64>,
+    client_max: u64,
+) -> Option<String> {
+    let server_max = info?.get("max_concurrent_requests")?.as_u64()?;
+    if let Some(expected) = expected_server_max
+        && expected != server_max
+    {
+        return Some(format!(
+            "TEI server reports max_concurrent_requests={server_max} but the env sets \
+             TEI_MAX_CONCURRENT_REQUESTS={expected} — the container was likely started \
+             without --env-file ~/.axon/.env; recreate it to apply the setting"
+        ));
+    }
+    if client_max > server_max {
+        return Some(format!(
+            "AXON_TEI_MAX_CONCURRENT={client_max} exceeds the TEI server's \
+             max_concurrent_requests={server_max}; embed bursts will hit 429s"
+        ));
+    }
+    None
 }
 
 fn qdrant_service_json(

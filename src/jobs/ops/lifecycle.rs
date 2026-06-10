@@ -58,6 +58,11 @@ async fn claim_next_pending_for_attempt_inner(
     // claimed past it) until the sibling reaches a terminal state; the
     // watchdog reclaims crashed `running` rows so a dead job cannot block its
     // target forever.
+    // Embed claims have filesystem-namespace affinity (axon_rust-p2oc): a
+    // path-like input stamped with another namespace is unreadable here —
+    // claiming it would only fail the job a worker in the right namespace
+    // could have run. NULL affinity (URL / free-text / legacy rows) is
+    // claimable by anyone.
     let select_sql = match kind {
         JobKind::Ingest => format!(
             "SELECT id, error_text, attempt_count FROM {table} AS p WHERE p.status='pending' \
@@ -65,12 +70,21 @@ async fn claim_next_pending_for_attempt_inner(
                  AND r.source_type = p.source_type AND r.target = p.target) \
              ORDER BY p.created_at LIMIT 1"
         ),
+        JobKind::Embed => format!(
+            "SELECT id, error_text, attempt_count FROM {table} WHERE status='pending' \
+             AND (fs_namespace IS NULL OR fs_namespace = ?) \
+             ORDER BY created_at LIMIT 1"
+        ),
         _ => format!(
             "SELECT id, error_text, attempt_count FROM {table} WHERE status='pending' ORDER BY created_at LIMIT 1"
         ),
     };
+    let mut select_query = sqlx::query_as(&select_sql);
+    if matches!(kind, JobKind::Embed) {
+        select_query = select_query.bind(super::fs_namespace());
+    }
     let row: Option<(String, Option<String>, i64)> =
-        match sqlx::query_as(&select_sql).fetch_optional(&mut *conn).await {
+        match select_query.fetch_optional(&mut *conn).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;

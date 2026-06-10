@@ -195,13 +195,20 @@ async fn insert_payload(
             .await?;
         }
         JobPayload::Embed { input, config_json } => {
+            // Path-like inputs are only readable inside the enqueuer's
+            // filesystem namespace; stamp it so claims have affinity
+            // (axon_rust-p2oc). URL / free-text inputs stay NULL — claimable
+            // by any worker.
+            let fs_namespace =
+                crate::vector::ops::input::select::looks_path_like(input).then(super::fs_namespace);
             sqlx::query(
-                "INSERT INTO axon_embed_jobs (id, status, input_text, config_json, created_at, updated_at) \
-                 VALUES (?, 'pending', ?, ?, ?, ?)",
+                "INSERT INTO axon_embed_jobs (id, status, input_text, config_json, fs_namespace, created_at, updated_at) \
+                 VALUES (?, 'pending', ?, ?, ?, ?, ?)",
             )
             .bind(id_str)
             .bind(input)
             .bind(config_json)
+            .bind(fs_namespace)
             .bind(now)
             .bind(now)
             .execute(&mut *conn)

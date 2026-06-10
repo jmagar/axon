@@ -54,6 +54,12 @@ services:
       QDRANT_URL: http://axon-qdrant:6333
       TEI_URL: http://axon-tei:80
       AXON_CHROME_REMOTE_URL: http://axon-chrome:6000
+      # Stable filesystem-namespace marker for embed-job claim affinity: a
+      # path-like embed input enqueued on the host must not be claimed by the
+      # container's workers (and vice versa) — neither can read the other's
+      # filesystem. Container hostnames change on every recreate, so pin an
+      # explicit value here.
+      AXON_FS_NAMESPACE: axon-container
       # AXON_SERVER_URL is a client-side switch. The shared ~/.axon/.env may
       # set it for host CLI commands, but the server container must not inherit
       # it or container-local maintenance commands will route back through HTTP.

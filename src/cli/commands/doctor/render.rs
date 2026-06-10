@@ -65,6 +65,9 @@ fn render_tei_info_lines(report: &serde_json::Value) {
     } else if let Some(detail) = report["services"]["tei"]["info_detail"].as_str() {
         println!("    info: {}", muted(detail));
     }
+    if let Some(warning) = report["services"]["tei"]["concurrency_warning"].as_str() {
+        println!("    {} {}", symbol_for_status("failed"), warning);
+    }
 }
 
 fn chrome_status_label(report: &serde_json::Value) -> String {

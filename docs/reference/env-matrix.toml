@@ -491,6 +491,18 @@ compatibility = "canonical"
 reason = "Hugging Face token for TEI model pulls."
 
 [[env]]
+key = "AXON_FS_NAMESPACE"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs", "compose"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Stable filesystem-namespace marker for embed-job claim affinity; compose pins it for the container, hosts default to the kernel hostname."
+
+[[env]]
 key = "AXON_HEADLESS_GEMINI_CMD"
 classification = "keep-env"
 runtime_placement = "both"

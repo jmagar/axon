@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.0] - 2026-06-09
+
+Follow-ups from the 5.6.1 live verification (beads axon_rust-p2oc,
+axon_rust-qg8o, axon_rust-o9y2).
+
+### Added
+
+- **Embed-job claim affinity across filesystem namespaces** — the shared jobs
+  DB is polled by workers on the host and inside the axon container, which
+  cannot read each other's paths. Path-like embed inputs are now stamped with
+  the enqueuer's `AXON_FS_NAMESPACE` (compose pins `axon-container`; hosts
+  default to the kernel hostname; migration `0008`), and embed claims skip
+  rows stamped with a foreign namespace. URL / free-text inputs (and all
+  pre-migration rows) stay claimable by any worker.
+- **Doctor warns on TEI concurrency drift** — `axon doctor` now compares the
+  live TEI `/info` `max_concurrent_requests` against the
+  `TEI_MAX_CONCURRENT_REQUESTS` env (catches a container started without
+  `--env-file` silently running the compose default of 32) and against axon's
+  own `AXON_TEI_MAX_CONCURRENT` in-flight cap (warns when the client cap
+  exceeds the server budget — guaranteed 429s under load).
+
+### Operations (no code)
+
+- Qdrant `axon` collection (4.49M points) switched to
+  `quantization.always_ram: false` + `hnsw_config.on_disk: true` via live
+  PATCH — drops several GiB of pinned RAM at the cost of some query latency;
+  the 16G container cap is unchanged.
+
 ## [5.6.1] - 2026-06-09
 
 Remediation of the 10 surviving findings from the four-PR code review of
