@@ -73,12 +73,47 @@ pub(crate) fn apply_extra(payload: &mut serde_json::Value, extra: &serde_json::V
     }
 }
 
+/// Drop whitespace-only chunks, keeping `chunk_extra` (P-H1 per-chunk payload
+/// overrides) positionally aligned with `chunks`.
+///
+/// `chunk_extra[i]` describes `chunks[i]`, but the two are separate vectors.
+/// Filtering only `chunks` (e.g. via a bare `retain`) would shift every override
+/// after a dropped blank chunk onto the wrong chunk and silently discard the last
+/// one — corrupting the per-chunk symbol-boost signal P-H1 exists to preserve. So
+/// when overrides are present we filter both by the same predicate in lockstep.
+/// When `chunk_extra` is empty (the common crawl/embed/non-code path) only
+/// `chunks` is filtered. A non-empty-but-mismatched `chunk_extra` is a producer
+/// bug (debug-asserted); in release we filter chunks only and drop the unaligned
+/// overrides rather than risk misattributing them.
+fn drop_blank_chunks_aligned(chunks: &mut Vec<String>, chunk_extra: &mut Vec<serde_json::Value>) {
+    if !chunk_extra.is_empty() && chunk_extra.len() == chunks.len() {
+        let paired_chunks = std::mem::take(chunks);
+        let paired_extra = std::mem::take(chunk_extra);
+        let (kept_chunks, kept_extra): (Vec<String>, Vec<serde_json::Value>) = paired_chunks
+            .into_iter()
+            .zip(paired_extra)
+            .filter(|(c, _)| !c.trim().is_empty())
+            .unzip();
+        *chunks = kept_chunks;
+        *chunk_extra = kept_extra;
+    } else {
+        debug_assert!(
+            chunk_extra.is_empty(),
+            "chunk_extra ({}) must be empty or positionally parallel to chunks ({})",
+            chunk_extra.len(),
+            chunks.len()
+        );
+        chunks.retain(|c| !c.trim().is_empty());
+        chunk_extra.clear();
+    }
+}
+
 async fn embed_prepared_doc(
     cfg: &Config,
     mut doc: PreparedDoc,
     mode: VectorMode,
 ) -> Result<EmbeddedDoc, SendError> {
-    doc.chunks.retain(|c| !c.trim().is_empty());
+    drop_blank_chunks_aligned(&mut doc.chunks, &mut doc.chunk_extra);
     if doc.chunks.is_empty() {
         return Err(format!("all chunks empty for {}", doc.url).into());
     }

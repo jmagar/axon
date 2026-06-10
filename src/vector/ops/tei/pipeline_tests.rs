@@ -126,3 +126,53 @@ fn pipeline_payload_stamps_schema_version_and_extractor() {
     }
     assert_eq!(payload["extractor_name"].as_str(), Some("docs"));
 }
+
+/// Regression (P-H1): dropping a blank chunk must drop its parallel `chunk_extra`
+/// entry in lockstep, so surviving chunks keep their OWN per-chunk overrides and
+/// no override shifts onto the wrong chunk or is silently lost.
+#[test]
+fn drop_blank_chunks_aligned_keeps_overrides_with_their_chunks() {
+    let mut chunks = vec![
+        "first".to_string(),
+        "   ".to_string(), // blank — dropped together with override #1
+        "third".to_string(),
+    ];
+    let mut chunk_extra = vec![
+        serde_json::json!({"symbol_name": "a"}),
+        serde_json::json!({"symbol_name": "blank"}),
+        serde_json::json!({"symbol_name": "c"}),
+    ];
+    super::drop_blank_chunks_aligned(&mut chunks, &mut chunk_extra);
+    assert_eq!(chunks, vec!["first".to_string(), "third".to_string()]);
+    assert_eq!(chunk_extra.len(), 2, "chunk_extra filtered in lockstep");
+    // "third" must keep ITS override ("c"), not inherit the dropped blank's.
+    assert_eq!(chunk_extra[0]["symbol_name"], "a");
+    assert_eq!(chunk_extra[1]["symbol_name"], "c");
+}
+
+/// Empty `chunk_extra` (the common crawl/embed/non-code path) just filters chunks.
+#[test]
+fn drop_blank_chunks_aligned_empty_extra_filters_chunks_only() {
+    let mut chunks = vec!["a".to_string(), "  ".to_string(), "b".to_string()];
+    let mut chunk_extra: Vec<serde_json::Value> = Vec::new();
+    super::drop_blank_chunks_aligned(&mut chunks, &mut chunk_extra);
+    assert_eq!(chunks, vec!["a".to_string(), "b".to_string()]);
+    assert!(chunk_extra.is_empty());
+}
+
+/// Per-chunk override wins over the doc-level `extra` (the P-H1 merge contract):
+/// a chunk's `symbol_name` must replace the file-level `null`, and the symbol keys
+/// must NOT be treated as reserved (or the symbol-boost signal would silently vanish).
+#[test]
+fn chunk_override_wins_over_doc_level_extra() {
+    let mut payload = serde_json::json!({});
+    let doc_extra = serde_json::json!({"symbol_name": null, "code_file_path": "src/lib.rs"});
+    let chunk_override = serde_json::json!({"symbol_name": "Response::parse", "symbol_kind": "method", "code_line_start": 42});
+    super::apply_extra(&mut payload, &doc_extra);
+    super::apply_extra(&mut payload, &chunk_override);
+    assert_eq!(payload["symbol_name"], "Response::parse");
+    assert_eq!(payload["symbol_kind"], "method");
+    assert_eq!(payload["code_line_start"], 42);
+    // doc-level keys not overridden by the chunk survive.
+    assert_eq!(payload["code_file_path"], "src/lib.rs");
+}
