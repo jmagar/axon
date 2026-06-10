@@ -1,7 +1,7 @@
 //! Payload-merge helpers for the ingest job runner.
 //!
-//! Extracts the constants and merge functions from the parent module so the
-//! runner file stays within the 500-line monolith limit.
+//! Extracted from the parent module to keep `ingest.rs` within the monolith
+//! 500-line limit. The split is tracked in `.monolith-allowlist`.
 
 // --- Canonical payload field names (B-H3: typed key constants, no stringly-keyed literals) ---
 

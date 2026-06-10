@@ -242,6 +242,7 @@ fn rebuild_points_as_named(
             let payload = pt["payload"].clone();
             let dense: Vec<f32> = pt["vector"]
                 .as_array()
+                .map(|v| v.as_slice())
                 .unwrap_or(EMPTY)
                 .iter()
                 .filter_map(|v| v.as_f64().map(|f| f as f32))

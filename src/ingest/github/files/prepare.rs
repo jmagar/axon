@@ -239,60 +239,6 @@ fn text_chunks(text: &str) -> Vec<CodeChunk> {
         .collect()
 }
 
-struct FileDocAttrs<'a> {
-    base_url: String,
-    path: &'a str,
-    ext: &'a str,
-    lang: &'a str,
-    ftype: &'a str,
-    is_test: bool,
-    file_size: usize,
-    symbol_status: &'static str,
-}
-
-fn prepared_doc_for_chunk(
-    ctx: &FileEmbedCtx,
-    attrs: &FileDocAttrs<'_>,
-    chunk: CodeChunk,
-) -> PreparedDoc {
-    let line_start = chunk.start_line;
-    let line_end = chunk.end_line;
-    let extra = build_github_payload(&GitHubPayloadParams {
-        repo: ctx.name.clone(),
-        owner: ctx.owner.clone(),
-        content_kind: ContentKind::File,
-        branch: Some(ctx.default_branch.clone()),
-        default_branch: Some(ctx.default_branch.clone()),
-        repo_description: ctx.repo_description.clone(),
-        pushed_at: ctx.pushed_at.clone(),
-        is_private: ctx.is_private,
-        file_path: Some(attrs.path.to_string()),
-        file_language: Some(attrs.lang.to_string()),
-        file_type: Some(attrs.ftype.to_string()),
-        is_test: Some(attrs.is_test),
-        file_size_bytes: Some(attrs.file_size),
-        line_start: Some(line_start),
-        line_end: Some(line_end),
-        chunking_method: Some(chunking_method(attrs.ext, &chunk).to_string()),
-        symbol_name: chunk.symbol_name().map(str::to_string),
-        symbol_kind: chunk.symbol_kind_str().map(str::to_string),
-        symbol_extraction_status: Some(attrs.symbol_status.to_string()),
-        ..Default::default()
-    });
-
-    PreparedDoc {
-        url: format!("{}#L{line_start}-L{line_end}", attrs.base_url),
-        domain: "github.com".to_string(),
-        chunks: vec![chunk.text],
-        source_type: "github".to_string(),
-        content_type: "text",
-        title: Some(attrs.path.to_string()),
-        extra: Some(extra),
-        extractor_name: None,
-        structured: None,
-    }
-}
-
 fn chunking_method(ext: &str, chunk: &CodeChunk) -> &'static str {
     if chunk.symbol.is_some() || supports_tree_sitter_chunking(ext) {
         "tree_sitter"

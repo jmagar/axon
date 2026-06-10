@@ -21,7 +21,7 @@ struct UpsertBody<'a> {
 /// Points are split into batches of `AXON_QDRANT_UPSERT_BATCH_SIZE` (default 256)
 /// and each batch is retried up to 3 times with exponential backoff (500ms, 1s, 2s).
 /// Uses `?wait=true` so the call blocks until Qdrant has committed the write.
-pub(super) async fn qdrant_upsert(
+pub(crate) async fn qdrant_upsert(
     cfg: &Config,
     points: &[serde_json::Value],
 ) -> Result<(), Box<dyn Error>> {

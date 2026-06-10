@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use crate::core::http::internal_service_http_client;
 use crate::core::logging::{log_debug, log_info, log_warn};
-use crate::vector::ops::qdrant::{env_usize_clamped, qdrant_base};
+use crate::vector::ops::qdrant::qdrant_base;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::error::Error;
@@ -304,6 +304,19 @@ fn validate_existing_dim(
     Ok(())
 }
 
+/// Read `AXON_QDRANT_HNSW_ON_DISK` (default `false`) and
+/// `AXON_QDRANT_QUANTIZATION_ALWAYS_RAM` (default `true`).
+/// Lever B (axon_rust-o9y2): trade ~5-6 GiB RAM for higher query latency.
+fn memory_settings() -> (bool, bool) {
+    let hnsw_on_disk = std::env::var("AXON_QDRANT_HNSW_ON_DISK")
+        .ok()
+        .is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes"));
+    let always_ram = std::env::var("AXON_QDRANT_QUANTIZATION_ALWAYS_RAM")
+        .ok()
+        .map_or(true, |v| !matches!(v.trim(), "0" | "false" | "no"));
+    (hnsw_on_disk, always_ram)
+}
+
 /// Ensure the collection exists and is configured with the right vector schema.
 ///
 /// Returns the `VectorMode` that describes the collection after this call.
@@ -362,8 +375,7 @@ pub(super) async fn ensure_collection(
         .into());
     }
 
-    let hnsw_on_disk = qdrant_hnsw_on_disk();
-    let always_ram = qdrant_quantization_always_ram();
+    let (hnsw_on_disk, always_ram) = memory_settings();
     let create = serde_json::json!({
         // Memory-bounded large-collection recipe: keep the raw f32 vectors on
         // disk (they're only needed for rescore), but pin the small int8
@@ -446,8 +458,7 @@ async fn maybe_patch_memory_settings(
     cfg: &Config,
     body: &serde_json::Value,
 ) -> Result<(), Box<dyn Error>> {
-    let desired_hnsw_on_disk = qdrant_hnsw_on_disk();
-    let desired_always_ram = qdrant_quantization_always_ram();
+    let (desired_hnsw_on_disk, desired_always_ram) = memory_settings();
     let current_hnsw_on_disk = body
         .pointer("/result/config/hnsw_config/on_disk")
         .and_then(|v| v.as_bool())

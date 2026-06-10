@@ -104,6 +104,7 @@ fn known_private_repo_never_retries() {
         repo_description: None,
         pushed_at: None,
         is_private: Some(true),
+        has_wiki: false,
     };
     assert!(
         !should_retry_unauthenticated_clone(&common, "authentication failed"),
@@ -121,6 +122,7 @@ fn known_public_repo_retries_on_auth_failure() {
         repo_description: None,
         pushed_at: None,
         is_private: Some(false),
+        has_wiki: false,
     };
     assert!(
         should_retry_unauthenticated_clone(&common, "authentication failed"),

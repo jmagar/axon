@@ -144,7 +144,7 @@ pub type GitItemFields = (
 /// Extract the common issue/PR fields from an extra-payload JSON blob.
 /// Parameterised by `number_field` so GitLab (`"iid"`) and Gitea/GitHub
 /// (`"number"`) can both use this function without branching at the call site.
-pub fn extract_git_item_fields(extra: &serde_json::Value, number_field: &str) -> GitItemFields {
+pub fn extract_git_item_fields(extra: &Value, number_field: &str) -> GitItemFields {
     let state = extra
         .get("state")
         .and_then(|v| v.as_str())

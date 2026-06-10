@@ -40,12 +40,10 @@ fn read_cargo_version(content: &str) -> Option<String> {
             // Left the [package] section
             break;
         }
-        if in_package {
-            if let Some(rest) = trimmed.strip_prefix("version") {
-                let rest = rest.trim_start_matches([' ', '\t', '=']);
-                if let Some(ver) = rest.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-                    return Some(ver.to_owned());
-                }
+        if in_package && let Some(rest) = trimmed.strip_prefix("version") {
+            let rest = rest.trim_start_matches([' ', '\t', '=']);
+            if let Some(ver) = rest.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                return Some(ver.to_owned());
             }
         }
     }

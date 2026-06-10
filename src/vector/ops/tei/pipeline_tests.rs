@@ -30,7 +30,7 @@ fn all_empty_chunks_produces_no_chunks() {
 // in caller-supplied extra, while non-reserved keys are applied normally.
 #[test]
 fn apply_extra_does_not_clobber_reserved_keys() {
-    use crate::vector::ops::tei::pipeline::{RESERVED_PAYLOAD_KEYS, apply_extra};
+    use crate::vector::ops::tei::pipeline::apply_extra;
 
     let mut payload = serde_json::json!({
         "url": "https://real.example.com/doc",

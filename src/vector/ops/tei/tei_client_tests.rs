@@ -115,8 +115,9 @@ async fn tei_embed_splits_batch_on_413() {
     // Only fires when the batch has more than one input.
     server
         .mock_async(|when, then| {
-            when.method(POST).path("/embed").matches(|req| {
-                let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or_default();
+            when.method(POST).path("/embed").is_true(|req| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body()).unwrap_or_default();
                 body["inputs"].as_array().map(|a| a.len()).unwrap_or(0) > 1
             });
             then.status(413);

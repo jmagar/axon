@@ -229,7 +229,7 @@ impl std::fmt::Display for RepeatGuardStop {
     }
 }
 
-impl std::error::Error for RepeatGuardStop {}
+impl Error for RepeatGuardStop {}
 
 /// Returns true when the error message came from a `RepeatGuardStop` signal,
 /// including cases where the LLM backend appends cleanup details after it.

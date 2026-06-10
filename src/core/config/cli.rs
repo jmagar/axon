@@ -499,11 +499,8 @@ pub(super) struct IngestArgs {
     #[arg(value_name = "TARGET")]
     pub(super) target: Option<String>,
 
-    /// (GitHub only) Also index source code files in addition to markdown, issues, and PRs
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub(super) include_source: bool,
-
-    /// (GitHub only) Skip source code files when ingesting a GitHub repository (default: include source).
+    /// Skip source code files when ingesting a Git repository (GitHub, GitLab, Gitea, or generic git).
+    /// By default source code is included. Has no effect on Reddit or YouTube targets.
     #[arg(long = "no-source")]
     pub(super) no_source: bool,
     // ── GitHub-specific limits (ignored for Reddit / YouTube) ────────────

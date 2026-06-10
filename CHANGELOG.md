@@ -5,10 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.1] - 2026-06-09
+
+Bug fixes and documentation accuracy corrections.
+
+### Fixed
+
+- **`--etag-conditional` without `--cache` lost 304-skipped pages** (`src/crawl/engine/dir_ops.rs`) —
+  `prepare_crawl_output_dir` now archives `markdown/` to `markdown.old/` when either
+  `cfg.cache` OR `cfg.etag_conditional` is set; previously `etag_conditional=true` with
+  `cache=false` left no recycling bin, so `reconcile_unmodified()` could not relink
+  unchanged pages and they were silently dropped.
+- **SearXNG search wrongly constrained by Tavily's 100-result cap** (`src/services/search.rs`) —
+  `enforce_pagination_window()` is now applied only on the Tavily code path; SearXNG
+  queries above 100 results no longer fail with a misleading Tavily cap error.
+- **`--no-source` / `--include-source` help text said `(GitHub only)`** (`src/core/config/cli.rs`) —
+  these flags apply to all Git providers (GitHub, GitLab, Gitea, generic-git); the
+  redundant `--include-source` flag (inverse of `--no-source`) has been removed.
+
+### Documentation
+
+- **`src/ingest/CLAUDE.md`** — corrected two stale claims: GitHub file ingest now uses
+  `git clone --depth=1` (not reqwest tree-fetch); YouTube playlist ingest is a sequential
+  `for` loop capped at 500 videos (not N=5 concurrent via `FuturesUnordered`).
+
 ## [5.7.0] - 2026-06-09
 
 Multi-lane RAG-pipeline hardening: Qdrant/TEI accuracy fixes, ingest unification,
 jobs ops improvements, documentation correctness sweep, CI hygiene, and plugin cleanup.
+
+### Security
+
+- **Prompt-injection defence in ask context** (`ask/context/build/appenders.rs`) —
+  every retrieved chunk body is now wrapped in a
+  `<retrieved_content trust="evidence_only">` XML trust boundary so the synthesis
+  model can distinguish indexed content from axon-generated scaffolding.  Structural
+  markers (`## Sources`, `## Source Document`, `## Top Chunk`, `## Supplemental Chunk`)
+  and forged citation keys (`[S{n}]`) inside chunk bodies are defanged with
+  U+200B zero-width spaces, preventing indexed content from injecting forged
+  citations or misleading section headers into the answer context. (S-H2)
 
 ### Added
 
@@ -18,9 +53,43 @@ jobs ops improvements, documentation correctness sweep, CI hygiene, and plugin c
 - **`scripts/axon-backup.sh`** — Qdrant snapshot API + `sqlite3 .backup` script
   with SHA256 checksums and restore instructions.
 - **`benches/chunking.rs`** — criterion benchmarks for `chunk_text` and `chunk_markdown`.
+- **Prompt-injection regression tests** (`ask/context/build/appenders_tests.rs`) —
+  T-C2 tests verify `## Sources`/`[S{n}]` blocks injected into retrieved content
+  are defanged before reaching the synthesis prompt. (T-C2)
+- **Budget-fitting and truncation tests** (`ask/context/build/appenders_tests.rs`) —
+  T-H4 tests cover: XML overhead in the minimum-budget guard, unicode-boundary
+  truncation of oversized excerpts, the multi-doc skip-and-continue path, and
+  separator accounting. (T-H4)
+- **Malformed-judge output parse tests** (`evaluate/scoring_tests.rs`) — T-M5
+  sidecar covers empty/garbage judge responses, partial axis detection, winner
+  resolution, `rag_underperformed`, `build_suggestion_focus`, and source URL
+  extraction edge cases. (T-M5)
 - **CI path filtering** — `dorny/paths-filter@v3` gates `test-infra` and `live-qdrant`
   jobs to only run when relevant source paths change; new `version-sync` job in
   `production-gate`.
+
+### Changed
+
+- **`ask_payload_with_delta_handler` decomposed** into three focused functions
+  (`resolve_answer_and_timing`, `assemble_ask_payload`, trimmed orchestrator)
+  each ≤60 lines; eliminates a 124-line mixed-concern function. (Q-M2)
+- **`fetch_full_docs` returns `Arc<Vec<QdrantPoint>>`** — doc-cache hits now
+  share the allocation without cloning the entire point vector; `FetchedDoc` type
+  alias reflects the Arc wrapper throughout `fetchers.rs` / `build.rs` /
+  `appenders.rs`. (P-M4)
+- **One candidate-count integer instead of a cloned pool** — `AskRetrieval` now
+  stores `candidate_count: usize` rather than `candidates: Vec<AskCandidate>`.
+  The pool was materialised only to call `.len()` two lines later; eliminates
+  a full `candidates_only()` clone on every ask request. (P-M5)
+- **`RepeatGuardStop` is a typed error struct** in `streaming.rs` instead of a
+  `const &str` sentinel; `Display` still emits `"repeat_guard_stop"` so LLM
+  backend error-string detection remains stable. (B-M4)
+- **`build_timing_json` slice-iterates the diagnostics fields** — replaces 10
+  repeated `if let Some(v) = e.field { obj.insert(...) }` blocks with a single
+  `&[(&str, Option<u128>)]` loop. (L2)
+- **Inline test blocks → sidecar files** in `ask/output.rs`,
+  `ask/context/retrieval/build.rs`, and `ask/context/retrieval/dispatch.rs`
+  per the project's sidecar `_tests.rs` convention. (B-H1)
 
 ### Fixed
 

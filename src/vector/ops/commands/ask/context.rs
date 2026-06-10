@@ -137,13 +137,13 @@ pub(crate) async fn build_ask_context(
     let corpus_health = classify_corpus_health(
         &retrieval.top_domains,
         &selected_urls,
-        retrieval.candidates.len(),
+        retrieval.candidate_count,
         context.len(),
     );
 
     Ok(AskContext {
         context,
-        candidate_count: retrieval.candidates.len(),
+        candidate_count: retrieval.candidate_count,
         reranked_count: retrieval.reranked.len(),
         chunks_selected: built.chunks_selected,
         full_docs_selected: built.full_docs_selected,
