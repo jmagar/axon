@@ -16,7 +16,7 @@ pub struct ManifestAuditEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct CrawlAuditSnapshot {
+pub struct CrawlAuditSnapshot {
     pub(super) generated_at_epoch_ms: u128,
     pub(super) start_url: String,
     pub(super) output_dir: String,
@@ -30,7 +30,7 @@ pub(super) struct CrawlAuditSnapshot {
     pub(super) manifest_entries: Vec<ManifestAuditEntry>,
 }
 
-fn fnv1a64_hex(bytes: &[u8]) -> String {
+pub(super) fn fnv1a64_hex(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in bytes {
         hash ^= *byte as u64;
@@ -71,7 +71,7 @@ async fn resolve_manifest_entry_path(
 /// referenced file. This performs one file read per entry, so large manifests
 /// will incur significant I/O. A future improvement could make fingerprinting
 /// opt-in (e.g. `--verify-checksums`) or cache fingerprints across runs.
-async fn read_manifest_entries(
+pub(super) async fn read_manifest_entries(
     output_dir: &Path,
 ) -> Result<Vec<ManifestAuditEntry>, Box<dyn Error>> {
     let manifest_path = output_dir.join("manifest.jsonl");

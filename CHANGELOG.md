@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.1] - 2026-06-09
+
+### Changed
+
+- Relocated crawl audit subsystem from `src/cli/commands/crawl/audit/` to
+  `src/services/crawl/audit/` (bead axon_rust-dvo.2). Pure code-relocation —
+  no behavior changes. CLI `audit.rs` is now a two-line re-export shim.
+  `run_crawl_audit` and `run_crawl_audit_diff` are now callable from MCP
+  and HTTP handlers without going through the CLI layer.
+
 ## [5.7.0] - 2026-06-09
 
 Follow-ups from the 5.6.1 live verification (beads axon_rust-p2oc,

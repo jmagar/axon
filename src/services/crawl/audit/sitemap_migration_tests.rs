@@ -1,6 +1,6 @@
 //! Characterization tests for `discover_sitemap_urls_with_robots`.
 //!
-//! These lock the current behavior of the CLI sitemap discovery function
+//! These lock the current behavior of the services-layer sitemap discovery function
 //! before any migration to the engine-backed adapter.
 //!
 //! Each test uses a global `ALLOW_LOOPBACK` bypass (via `LoopbackGuard`)
