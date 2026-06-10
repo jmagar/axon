@@ -208,6 +208,9 @@ pub(crate) async fn file_docs(
         }
     };
 
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
     let ext = path_extension(&rel).to_ascii_lowercase();
     // Move content + ext into spawn_blocking; return both so
     // code_symbol_extraction_status can run after on the calling thread.
@@ -220,7 +223,7 @@ pub(crate) async fn file_docs(
         }
     })
     .await
-    .map_err(|e| anyhow!("chunk_file panicked: {e}"))?;
+    .map_err(|e| anyhow!("chunk_file panicked for {rel}: {e}"))?;
     if code_chunks.is_empty() {
         return Ok(Vec::new());
     }
@@ -229,7 +232,7 @@ pub(crate) async fn file_docs(
     let ftype = classify_file_type(&rel).to_string();
     let is_test = is_test_path(&rel);
     let mut docs = Vec::with_capacity(code_chunks.len());
-    for chunk in code_chunks {
+    for (idx, chunk) in code_chunks.into_iter().enumerate() {
         let method = chunking_method(&ext, &chunk);
         let extra = build_git_payload(&GitPayload {
             provider: provider.to_string(),
@@ -253,8 +256,8 @@ pub(crate) async fn file_docs(
         });
         docs.push(PreparedDoc::ingest(
             format!(
-                "{}#{}:{}#L{}-L{}",
-                target.web_url, branch, rel, chunk.start_line, chunk.end_line
+                "{}#{}:{}#L{}-L{}#{}",
+                target.web_url, branch, rel, chunk.start_line, chunk.end_line, idx
             ),
             target.host.clone(),
             vec![chunk.text],

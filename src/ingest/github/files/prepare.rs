@@ -145,7 +145,10 @@ pub(super) async fn read_file_embed_docs(
     // Use the overall file line range (first chunk start → last chunk end).
     let file_line_start = chunks.first().map(|c| c.start_line);
     let file_line_end = chunks.last().map(|c| c.end_line);
-    let chunk_method = chunking_method(&ext, chunks.first().expect("non-empty"));
+    let chunk_method = match chunks.first() {
+        Some(c) => chunking_method(&ext, c),
+        None => return Ok(Vec::new()),
+    };
 
     // Per-chunk payload overrides (P-H1): the file's chunks share one PreparedDoc
     // for TEI batching, but each chunk keeps its own symbol_* and code_line_*

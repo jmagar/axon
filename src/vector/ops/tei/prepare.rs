@@ -307,8 +307,8 @@ async fn embed_code_file_docs(
     let code_chunks = match tokio::task::spawn_blocking(move || chunk_file(&raw_c, &ext_c)).await {
         Ok(v) => v,
         Err(e) => {
-            log_warn(&format!("command=embed code_chunk_panic url={url} err={e}"));
-            Vec::new()
+            tracing::error!(url = %url, err = %e, "embed: chunk_file task panicked");
+            return None;
         }
     };
     if code_chunks.is_empty() {
@@ -316,12 +316,23 @@ async fn embed_code_file_docs(
         return None;
     }
     let symbol_status = code_symbol_extraction_status(&raw, &ext, &code_chunks);
-    let domain = Url::parse(url)
-        .ok()
-        .and_then(|u| u.host_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let domain = if url.starts_with("http://") || url.starts_with("https://") {
+        Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "local".to_string())
+    } else {
+        // Local file path — use parent directory name as domain identifier
+        Path::new(url)
+            .components()
+            .rev()
+            .nth(1) // parent dir
+            .and_then(|c| c.as_os_str().to_str())
+            .unwrap_or("local")
+            .to_string()
+    };
     let mut docs = Vec::with_capacity(code_chunks.len());
-    for chunk in code_chunks {
+    for (idx, chunk) in code_chunks.into_iter().enumerate() {
         let method = chunking_method(&ext, &chunk);
         let extra = serde_json::json!({
             "code_file_path": url,
@@ -336,7 +347,7 @@ async fn embed_code_file_docs(
             "symbol_extraction_status": symbol_status,
         });
         docs.push(PreparedDoc {
-            url: format!("{url}#L{}-L{}", chunk.start_line, chunk.end_line),
+            url: format!("{url}#L{}-L{}#{}", chunk.start_line, chunk.end_line, idx),
             domain: domain.clone(),
             chunks: vec![chunk.text],
             source_type: source_type.to_string(),
