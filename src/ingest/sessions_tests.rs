@@ -76,8 +76,10 @@ async fn collect_prepared_session_file_doc_parses_claude_file() {
     )
     .unwrap();
 
-    let mut cfg = Config::default();
-    cfg.collection = "axon-test".to_string();
+    let cfg = Config {
+        collection: "axon-test".to_string(),
+        ..Config::default()
+    };
     let doc = collect_prepared_session_file_doc(&cfg, &file)
         .await
         .unwrap()

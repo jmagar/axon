@@ -489,6 +489,12 @@ fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
                 json: watch.json,
             });
         }
+        Some(SessionsSubcommand::WatchStatus { limit }) => {
+            out.sessions_action = Some(SessionsRuntimeAction::WatchStatus { limit });
+        }
+        Some(SessionsSubcommand::SmokeWatch { timeout_secs }) => {
+            out.sessions_action = Some(SessionsRuntimeAction::SmokeWatch { timeout_secs });
+        }
         Some(job) => out.positional = sessions_job_positionals(job),
         None => {
             out.sessions_claude = args.claude;
@@ -510,6 +516,8 @@ fn sessions_job_positionals(job: SessionsSubcommand) -> Vec<String> {
         SessionsSubcommand::Worker => vec!["worker".to_string()],
         SessionsSubcommand::Recover => vec!["recover".to_string()],
         SessionsSubcommand::Watch(_) => Vec::new(),
+        SessionsSubcommand::WatchStatus { .. } => Vec::new(),
+        SessionsSubcommand::SmokeWatch { .. } => Vec::new(),
     }
 }
 

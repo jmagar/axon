@@ -17,7 +17,7 @@ pub struct SessionFileMetadata {
     pub file_mtime_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SessionWatchError {
     pub path_hash: String,
     pub provider: String,
@@ -25,6 +25,13 @@ pub struct SessionWatchError {
     pub error_code: String,
     pub error_redacted: String,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SessionWatchStatus {
+    pub checkpoint_count: i64,
+    pub error_count: i64,
+    pub recent_errors: Vec<SessionWatchError>,
 }
 
 impl SessionFileMetadata {
@@ -199,6 +206,45 @@ pub async fn list_recent_errors(pool: &SqlitePool, limit: i64) -> Result<Vec<Ses
             occurred_at: row.get("occurred_at"),
         })
         .collect())
+}
+
+pub async fn watch_status(pool: &SqlitePool, limit: i64) -> Result<SessionWatchStatus> {
+    let checkpoint_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM axon_session_watch_checkpoints")
+            .fetch_one(pool)
+            .await?;
+    let error_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM axon_session_watch_errors")
+            .fetch_one(pool)
+            .await?;
+    let recent_errors = list_recent_errors(pool, limit.max(0)).await?;
+    Ok(SessionWatchStatus {
+        checkpoint_count,
+        error_count,
+        recent_errors,
+    })
+}
+
+pub async fn checkpoint_success_exists_for_path_hash(
+    pool: &SqlitePool,
+    path_hash: &str,
+) -> Result<bool> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM axon_session_watch_checkpoints
+            WHERE path_hash = ?
+              AND last_error_code IS NULL
+              AND last_indexed_at IS NOT NULL
+            LIMIT 1
+        )
+        "#,
+    )
+    .bind(path_hash)
+    .fetch_one(pool)
+    .await?;
+    Ok(exists)
 }
 
 #[cfg(test)]

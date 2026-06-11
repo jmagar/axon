@@ -10,5 +10,7 @@ pub use local::{
     LocalSetupStatus, run_compose_action, run_local_setup, run_local_setup_with_options,
     stack_already_healthy,
 };
-pub use session_watch_service::SessionWatchServiceAction;
+pub use session_watch_service::{
+    SessionWatchServiceAction, SessionWatchServiceReport, run_session_watch_service_setup,
+};
 pub use ssh_targets::{SshTarget, list_ssh_targets};

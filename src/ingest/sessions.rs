@@ -266,7 +266,7 @@ pub async fn prepare_sessions_request_batches(
         .collect()
 }
 
-fn prepared_session_doc_from_session_doc(
+pub(crate) fn prepared_session_doc_from_session_doc(
     session_doc: SessionDoc,
 ) -> Result<PreparedSessionDoc, String> {
     let platform = match session_doc.doc.source_type.as_str() {

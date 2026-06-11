@@ -248,6 +248,13 @@ fn setup_session_watch_service_help_exposes_install_check_remove_status() {
 }
 
 #[test]
+fn sessions_watch_status_and_smoke_watch_are_documented() {
+    let stdout = run_help(&["sessions", "--help"]);
+    assert!(stdout.contains("watch-status"));
+    assert!(stdout.contains("smoke-watch"));
+}
+
+#[test]
 fn setup_split_help_surfaces_are_focused() {
     let preflight = run_help(&["preflight", "--help"]);
     assert!(preflight.contains("Check host prerequisites and service readiness"));

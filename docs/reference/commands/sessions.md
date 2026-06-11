@@ -52,6 +52,32 @@ axon sessions worker
 
 These subcommands operate on the shared ingest queue across source types.
 
+## Auto-Ingest Watcher
+
+`axon sessions watch` is the host-local long-running auto-ingest process. It watches local AI session export roots, waits for file writes to settle, prepares changed files with the same local parsers used by `axon sessions`, and ingests through the existing prepared-session path.
+
+```bash
+axon sessions watch --json
+axon sessions watch --path ~/.claude/projects --debounce-ms 750 --settle-ms 500 --max-retries 5
+axon sessions watch --no-initial-scan --json
+axon sessions watch-status --json
+axon sessions smoke-watch --timeout-secs 30 --json
+```
+
+Default watched roots:
+
+| Provider | Root | File shape |
+|----------|------|------------|
+| Claude | `~/.claude/projects/` | `.jsonl` |
+| Codex | `~/.codex/sessions/` | `.jsonl` |
+| Gemini | `~/.gemini/history/`, `~/.gemini/tmp/` | `.json` |
+
+The watcher uses non-recursive directory watches and registers newly-created directories as they appear. File events are debounced, then a file is ingested only after size and mtime stay unchanged for the settle window. Overflow or backend rescan signals trigger a full root rescan. Parse/upload/storage failures are retried up to `--max-retries` and recorded in the session watch checkpoint tables.
+
+`watch-status` summarizes checkpoint and recent error rows. `smoke-watch` writes a valid Codex probe transcript and waits for concrete checkpoint evidence from the running watcher; it fails if ingestion is not observed before the timeout.
+
+When `--upload-to-server` is explicitly enabled and `AXON_SERVER_URL` is set, the watcher still parses and redacts local files on the client, then uploads prepared docs to `POST /v1/ingest/sessions/prepared` with bearer auth and request timeouts. It never asks the server to scan server-local transcript roots. Without that opt-in, v0 uses the local prepared-session service path.
+
 ## Examples
 
 ```bash
@@ -72,6 +98,9 @@ AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --codex --json
 
 # Server mode: wait for prepared-session async ingest
 AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --claude --project axon-rust --wait true --json
+
+# Install host-local automatic capture
+axon setup session-watch-service install
 ```
 
 ## Environment Variables

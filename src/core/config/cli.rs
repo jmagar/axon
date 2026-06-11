@@ -706,6 +706,18 @@ pub(super) enum SessionsSubcommand {
     Recover,
     /// Watch local AI session exports and ingest stable changes.
     Watch(SessionsWatchArgs),
+    /// Summarize session watch checkpoints and recent errors.
+    #[command(name = "watch-status")]
+    WatchStatus {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Write a probe transcript and wait for the watcher to ingest it.
+    #[command(name = "smoke-watch")]
+    SmokeWatch {
+        #[arg(long, default_value_t = 30)]
+        timeout_secs: u64,
+    },
 }
 
 #[derive(Debug, Args, Clone)]

@@ -46,6 +46,46 @@ async fn checkpoint_records_and_lists_errors() {
     assert!(!errors[0].error_redacted.contains("Bearer "));
 }
 
+#[tokio::test]
+async fn session_watch_status_counts_checkpoints_and_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let good = temp.path().join(".codex/sessions/good.jsonl");
+    let bad = temp.path().join(".claude/projects/-tmp-axon/bad.jsonl");
+    std::fs::create_dir_all(good.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(bad.parent().unwrap()).unwrap();
+    std::fs::write(&good, "good").unwrap();
+    std::fs::write(&bad, "bad").unwrap();
+    let good_meta =
+        SessionFileMetadata::from_validated_path(&test_validated_codex_path(&good)).unwrap();
+    let bad_meta =
+        SessionFileMetadata::from_validated_path(&test_validated_claude_path(&bad)).unwrap();
+
+    record_success(&pool, &good_meta, Some("hash"))
+        .await
+        .unwrap();
+    record_error(&pool, &bad_meta, "parse_failed", "parse failed")
+        .await
+        .unwrap();
+
+    let status = watch_status(&pool, 5).await.unwrap();
+
+    assert_eq!(status.checkpoint_count, 2);
+    assert_eq!(status.error_count, 1);
+    assert_eq!(status.recent_errors.len(), 1);
+    assert!(
+        checkpoint_success_exists_for_path_hash(&pool, &good_meta.path_hash)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !checkpoint_success_exists_for_path_hash(&pool, &bad_meta.path_hash)
+            .await
+            .unwrap()
+    );
+}
+
 fn test_validated_codex_path(path: &Path) -> ValidatedSessionPath {
     test_validated_path(path, SessionProvider::Codex)
 }

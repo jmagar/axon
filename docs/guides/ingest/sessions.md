@@ -39,6 +39,18 @@ Sessions defaults to **async queued execution** when `--wait false` (default): i
 
 Use `--wait true` for synchronous execution.
 
+## Auto-Capture vs SessionStart Recall
+
+The Claude plugin SessionStart hook is recall-only: it calls `axon memory context` for the current git project and must stay fast and best-effort. It does not scan or ingest session files.
+
+Automatic capture is handled by the separate host-local watcher:
+
+```bash
+axon setup session-watch-service install
+```
+
+That service runs `axon sessions watch --no-initial-scan --json`, watches Claude/Codex/Gemini transcript roots, and reuses prepared-session ingest. Full-file reingest is the v0 behavior; deterministic point IDs and stale-tail cleanup make it correct when a transcript changes. Append-offset optimization can be added later using the checkpoint table fields once the simpler full-file path has proven stable.
+
 ## Server Mode
 
 When `AXON_SERVER_URL` is set, `axon sessions` still reads session files from the client machine. The client parses and redacts Claude, Codex, and Gemini transcripts locally, sends prepared documents to `POST /v1/ingest/sessions/prepared`, and the server persists that upload beside a SQLite ingest job before waking ingest workers.
