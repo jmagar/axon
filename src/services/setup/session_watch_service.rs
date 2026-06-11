@@ -1,4 +1,6 @@
+use crate::core::config::SessionWatchServiceAction;
 use crate::core::paths::axon_home_dir;
+use crate::ingest::sessions::watch::validate::{SessionWatchRoots, validate_session_file_path};
 use crate::services::setup::{LocalSetupPhase, LocalSetupStatus};
 use serde::Serialize;
 use std::io::{self, ErrorKind};
@@ -8,26 +10,6 @@ use std::time::Instant;
 
 const SERVICE_NAME: &str = "session-watch-service";
 const UNIT_NAME: &str = "session-watch-service.service";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionWatchServiceAction {
-    Install,
-    Check,
-    Remove,
-    Status,
-}
-
-impl SessionWatchServiceAction {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Install => "install",
-            Self::Check => "check",
-            Self::Remove => "remove",
-            Self::Status => "status",
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionWatchServiceReport {
@@ -260,30 +242,49 @@ fn status_command() -> CommandSpec {
 }
 
 fn run_command_phase(name: &'static str, spec: CommandSpec) -> LocalSetupPhase {
+    run_command_capture(name, spec).phase
+}
+
+struct CommandPhaseOutput {
+    phase: LocalSetupPhase,
+    stdout: String,
+}
+
+fn run_command_capture(name: &'static str, spec: CommandSpec) -> CommandPhaseOutput {
     let started = Instant::now();
     match Command::new(&spec.program).args(&spec.args).output() {
-        Ok(output) if output.status.success() => phase(
-            name,
-            LocalSetupStatus::Ok,
-            command_detail(&spec, &output.stdout),
-            started,
-        ),
-        Ok(output) => phase(
-            name,
-            LocalSetupStatus::Error,
-            command_detail(&spec, &output.stderr),
-            started,
-        ),
-        Err(error) => phase(name, LocalSetupStatus::Error, error.to_string(), started),
+        Ok(output) if output.status.success() => CommandPhaseOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            phase: phase(
+                name,
+                LocalSetupStatus::Ok,
+                command_detail(&spec, &output.stdout),
+                started,
+            ),
+        },
+        Ok(output) => CommandPhaseOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            phase: phase(
+                name,
+                LocalSetupStatus::Error,
+                command_detail(&spec, &output.stderr),
+                started,
+            ),
+        },
+        Err(error) => CommandPhaseOutput {
+            stdout: String::new(),
+            phase: phase(name, LocalSetupStatus::Error, error.to_string(), started),
+        },
     }
 }
 
 fn initial_ingest_phase(paths: &ServicePaths, spec: CommandSpec) -> LocalSetupPhase {
-    let phase = run_command_phase("initial-ingest", spec);
+    let captured = run_command_capture("initial-ingest", spec);
+    let phase = captured.phase;
     if !matches!(phase.status, LocalSetupStatus::Ok) {
         return phase;
     }
-    if session_files_exist(&paths.home) && command_json_chunks(&phase.detail) == Some(0) {
+    if session_files_exist(&paths.home) && command_json_chunks(&captured.stdout) == Some(0) {
         return LocalSetupPhase {
             name: phase.name,
             status: LocalSetupStatus::Error,
@@ -317,8 +318,7 @@ fn command_status_phase(name: &'static str, spec: CommandSpec) -> LocalSetupPhas
 }
 
 fn command_json_chunks(detail: &str) -> Option<u64> {
-    let json_start = detail.find('{')?;
-    let value = serde_json::from_str::<serde_json::Value>(&detail[json_start..]).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(detail).ok()?;
     value
         .get("chunks_embedded")
         .or_else(|| value.get("chunks"))
@@ -326,17 +326,18 @@ fn command_json_chunks(detail: &str) -> Option<u64> {
 }
 
 fn session_files_exist(home: &Path) -> bool {
+    let roots = SessionWatchRoots::for_home(home);
     [
-        (home.join(".claude/projects"), &["jsonl"][..]),
-        (home.join(".codex/sessions"), &["jsonl"][..]),
-        (home.join(".gemini/history"), &["json"][..]),
-        (home.join(".gemini/tmp"), &["json"][..]),
+        home.join(".claude/projects"),
+        home.join(".codex/sessions"),
+        home.join(".gemini/history"),
+        home.join(".gemini/tmp"),
     ]
     .into_iter()
-    .any(|(root, extensions)| directory_contains_file_with_extension(&root, extensions))
+    .any(|root| directory_contains_supported_session_file(&roots, &root))
 }
 
-fn directory_contains_file_with_extension(root: &Path, extensions: &[&str]) -> bool {
+fn directory_contains_supported_session_file(roots: &SessionWatchRoots, root: &Path) -> bool {
     let mut stack = vec![root.to_path_buf()];
     let mut visited = 0usize;
     while let Some(path) = stack.pop() {
@@ -351,10 +352,7 @@ fn directory_contains_file_with_extension(root: &Path, extensions: &[&str]) -> b
             continue;
         }
         if metadata.is_file() {
-            return path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| extensions.contains(&ext));
+            return validate_session_file_path(roots, &path).is_ok();
         }
         if !metadata.is_dir() {
             continue;

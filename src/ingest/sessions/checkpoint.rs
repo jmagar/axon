@@ -2,6 +2,7 @@ use crate::ingest::sessions::watch::validate::ValidatedSessionPath;
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncReadExt;
@@ -32,6 +33,15 @@ pub struct SessionWatchStatus {
     pub checkpoint_count: i64,
     pub error_count: i64,
     pub recent_errors: Vec<SessionWatchError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionWatchCheckpointRecord {
+    pub file_size: u64,
+    pub file_mtime_ms: i64,
+    pub content_hash: Option<String>,
+    pub last_error_code: Option<String>,
+    pub state: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,26 +89,131 @@ pub async fn checkpoint_metadata_matches(
     pool: &SqlitePool,
     meta: &SessionFileMetadata,
 ) -> Result<bool> {
+    let row = checkpoint_record_for_path_hash(pool, &meta.path_hash).await?;
+    let Some(row) = row else {
+        return Ok(false);
+    };
+    let current_hash = if row.content_hash.is_some() {
+        Some(stream_content_hash(&meta.canonical).await?)
+    } else {
+        None
+    };
+    let matched = checkpoint_record_matches(meta, &row, current_hash.as_deref());
+    if matched && !checkpoint_record_metadata_matches(meta, &row) {
+        refresh_checkpoint_metadata(pool, meta).await?;
+    }
+    Ok(matched)
+}
+
+pub async fn checkpoint_records_by_path_hash(
+    pool: &SqlitePool,
+    path_hashes: &[String],
+) -> Result<HashMap<String, SessionWatchCheckpointRecord>> {
+    if path_hashes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = std::iter::repeat_n("?", path_hashes.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        r#"
+        SELECT path_hash, file_size, file_mtime_ms, content_hash, last_error_code, state
+        FROM axon_session_watch_checkpoints
+        WHERE path_hash IN ({placeholders})
+        "#
+    );
+    let mut sql = sqlx::query(&query);
+    for path_hash in path_hashes {
+        sql = sql.bind(path_hash);
+    }
+    let rows = sql.fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let path_hash: String = row.get("path_hash");
+            (path_hash, checkpoint_record_from_row(&row))
+        })
+        .collect())
+}
+
+pub async fn checkpoint_record_for_path_hash(
+    pool: &SqlitePool,
+    path_hash: &str,
+) -> Result<Option<SessionWatchCheckpointRecord>> {
     let row = sqlx::query(
         r#"
-        SELECT file_size, file_mtime_ms, last_error_code, state
+        SELECT file_size, file_mtime_ms, content_hash, last_error_code, state
         FROM axon_session_watch_checkpoints
         WHERE path_hash = ?
         "#,
     )
-    .bind(&meta.path_hash)
+    .bind(path_hash)
     .fetch_optional(pool)
     .await?;
-    Ok(row.is_some_and(|row| {
-        let file_size: i64 = row.get("file_size");
-        let file_mtime_ms: i64 = row.get("file_mtime_ms");
-        let last_error_code: Option<String> = row.get("last_error_code");
-        let state: String = row.get("state");
-        file_size == meta.file_size as i64
-            && file_mtime_ms == meta.file_mtime_ms
-            && last_error_code.is_none()
-            && matches!(state.as_str(), "local_ingested" | "no_content")
-    }))
+    Ok(row.map(|row| checkpoint_record_from_row(&row)))
+}
+
+pub fn checkpoint_record_matches(
+    meta: &SessionFileMetadata,
+    record: &SessionWatchCheckpointRecord,
+    current_content_hash: Option<&str>,
+) -> bool {
+    if record.last_error_code.is_some() || !reusable_checkpoint_state(&record.state) {
+        return false;
+    }
+    if let Some(stored_hash) = record.content_hash.as_deref() {
+        return current_content_hash == Some(stored_hash);
+    }
+    checkpoint_record_metadata_matches(meta, record)
+}
+
+pub fn checkpoint_record_metadata_matches(
+    meta: &SessionFileMetadata,
+    record: &SessionWatchCheckpointRecord,
+) -> bool {
+    record.file_size == meta.file_size && record.file_mtime_ms == meta.file_mtime_ms
+}
+
+pub async fn refresh_checkpoint_metadata(
+    pool: &SqlitePool,
+    meta: &SessionFileMetadata,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE axon_session_watch_checkpoints
+        SET provider = ?,
+            basename = ?,
+            redacted_display = ?,
+            file_size = ?,
+            file_mtime_ms = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE path_hash = ?
+        "#,
+    )
+    .bind(&meta.provider)
+    .bind(&meta.basename)
+    .bind(&meta.redacted_display)
+    .bind(meta.file_size as i64)
+    .bind(meta.file_mtime_ms)
+    .bind(&meta.path_hash)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+fn checkpoint_record_from_row(row: &SqliteRow) -> SessionWatchCheckpointRecord {
+    let file_size: i64 = row.get("file_size");
+    SessionWatchCheckpointRecord {
+        file_size: file_size.max(0) as u64,
+        file_mtime_ms: row.get("file_mtime_ms"),
+        content_hash: row.get("content_hash"),
+        last_error_code: row.get("last_error_code"),
+        state: row.get("state"),
+    }
+}
+
+fn reusable_checkpoint_state(state: &str) -> bool {
+    matches!(state, "local_ingested" | "no_content")
 }
 
 pub async fn stream_content_hash(path: &Path) -> Result<String> {
@@ -130,7 +245,14 @@ pub async fn record_success(
 }
 
 pub async fn record_no_content(pool: &SqlitePool, meta: &SessionFileMetadata) -> Result<()> {
-    record_success_with_state(pool, meta, None, SessionWatchCheckpointState::NoContent).await
+    let hash = stream_content_hash(&meta.canonical).await.ok();
+    record_success_with_state(
+        pool,
+        meta,
+        hash.as_deref(),
+        SessionWatchCheckpointState::NoContent,
+    )
+    .await
 }
 
 async fn record_success_with_state(

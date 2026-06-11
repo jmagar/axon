@@ -741,7 +741,7 @@ fn parse_setup_session_watch_service_actions_are_typed() {
         env::remove_var("QDRANT_URL");
     }
 
-    use crate::services::setup::SessionWatchServiceAction;
+    use crate::core::config::SessionWatchServiceAction;
     for (subcommand, expected) in [
         ("install", SessionWatchServiceAction::Install),
         ("check", SessionWatchServiceAction::Check),

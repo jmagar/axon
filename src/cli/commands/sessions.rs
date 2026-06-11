@@ -1,9 +1,10 @@
 use crate::cli::commands::ingest_common;
-use crate::core::config::Config;
-use crate::ingest::sessions::watch::{SessionsRuntimeAction, run_session_watch, smoke_watch};
+use crate::core::config::{Config, SessionsRuntimeAction};
+use crate::ingest::sessions::watch::{SessionWatchEventSink, SessionWatchProcessEvent};
 use crate::jobs::ingest::IngestSource;
 use crate::services::context::ServiceContext;
 use crate::services::ingest as ingest_service;
+use crate::services::sessions as sessions_service;
 use std::error::Error;
 
 pub async fn run_sessions(
@@ -21,7 +22,17 @@ pub async fn run_sessions(
     }
 
     if let Some(options) = cfg.sessions_watch.clone() {
-        return run_session_watch(cfg, service_context, options)
+        if options.json {
+            return sessions_service::run_watch_with_event_sink(
+                cfg,
+                service_context,
+                options,
+                &CliSessionWatchEventSink,
+            )
+            .await
+            .map_err(|err| -> Box<dyn Error> { err.into() });
+        }
+        return sessions_service::run_watch(cfg, service_context, options)
             .await
             .map_err(|err| -> Box<dyn Error> { err.into() });
     }
@@ -44,17 +55,30 @@ pub async fn run_sessions(
     run_ingest_sync(cfg).await
 }
 
+struct CliSessionWatchEventSink;
+
+impl SessionWatchEventSink for CliSessionWatchEventSink {
+    fn emit(&self, event: SessionWatchProcessEvent) {
+        println!(
+            "{}",
+            serde_json::json!({
+                "stage": event.stage,
+                "provider": event.provider,
+                "path_hash": event.path_hash,
+                "basename": event.basename,
+                "path": event.path,
+                "detail": event.detail,
+            })
+        );
+    }
+}
+
 async fn run_watch_status(
     cfg: &Config,
     service_context: &ServiceContext,
     limit: usize,
 ) -> Result<(), Box<dyn Error>> {
-    let pool = service_context
-        .jobs
-        .sqlite_pool()
-        .ok_or("watch-status requires the SQLite job runtime")?;
-    let status =
-        crate::ingest::sessions::checkpoint::watch_status(pool.as_ref(), limit as i64).await?;
+    let status = sessions_service::watch_status(service_context, limit).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&status)?);
     } else {
@@ -71,7 +95,7 @@ async fn run_smoke_watch(
     service_context: &ServiceContext,
     timeout_secs: u64,
 ) -> Result<(), Box<dyn Error>> {
-    let report = smoke_watch(cfg, service_context, timeout_secs).await?;
+    let report = sessions_service::smoke(cfg, service_context, timeout_secs).await?;
     if cfg.json_output {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {

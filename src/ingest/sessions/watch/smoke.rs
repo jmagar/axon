@@ -1,7 +1,6 @@
 use super::validate::{SessionWatchRoots, validate_session_file_path};
 use crate::core::config::Config;
 use crate::ingest::sessions::checkpoint::checkpoint_success_exists_for_path_hash;
-use crate::services::context::ServiceContext;
 use anyhow::{Result, anyhow};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -17,7 +16,7 @@ pub struct SessionWatchSmokeReport {
 
 pub async fn smoke_watch(
     cfg: &Config,
-    service_context: &ServiceContext,
+    pool: &sqlx::SqlitePool,
     timeout_secs: u64,
 ) -> Result<SessionWatchSmokeReport> {
     let root = crate::ingest::sessions::expand_home("~/.codex/sessions/axon-smoke-watch");
@@ -43,13 +42,9 @@ pub async fn smoke_watch(
 
     let roots = SessionWatchRoots::from_config(cfg)?;
     let validated = validate_session_file_path(&roots, &transcript_path)?;
-    let pool = service_context
-        .jobs
-        .sqlite_pool()
-        .ok_or_else(|| anyhow!("smoke-watch requires the SQLite job runtime"))?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs.min(60));
     while tokio::time::Instant::now() < deadline {
-        if checkpoint_success_exists_for_path_hash(pool.as_ref(), &validated.path_hash).await? {
+        if checkpoint_success_exists_for_path_hash(pool, &validated.path_hash).await? {
             return Ok(SessionWatchSmokeReport {
                 transcript_path,
                 probe_text,

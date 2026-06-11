@@ -5,7 +5,6 @@ use super::{MAX_WATCH_DIRS, SessionWatchOptions};
 use crate::core::config::Config;
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone)]
 pub(crate) enum WatchTarget {
@@ -46,14 +45,11 @@ pub(crate) fn handle_remove_path(
     roots: &SessionWatchRoots,
     targets: &[WatchTarget],
     pending: &mut PendingFiles,
-    _overflow_rescan: &AtomicBool,
-    prune_missing: &AtomicBool,
 ) {
     if validate_event_path_missing_ok(roots, path).is_some()
         && event_path_allowed_missing_ok(path, targets)
     {
         pending.remove(path);
-        prune_missing.store(true, Ordering::Relaxed);
     }
 }
 
@@ -211,6 +207,16 @@ pub(crate) fn collect_validated_files(
         return files;
     }
     collect_validated_files_inner(roots, target.root(), &mut files);
+    files.sort_by(|left, right| left.canonical.cmp(&right.canonical));
+    files
+}
+
+pub(crate) fn collect_validated_files_under(
+    roots: &SessionWatchRoots,
+    root: &Path,
+) -> Vec<super::validate::ValidatedSessionPath> {
+    let mut files = Vec::new();
+    collect_validated_files_inner(roots, root, &mut files);
     files.sort_by(|left, right| left.canonical.cmp(&right.canonical));
     files
 }

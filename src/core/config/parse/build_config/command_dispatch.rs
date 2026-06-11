@@ -12,10 +12,9 @@ use super::super::super::cli::{
 };
 use super::super::super::types::{
     CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, RedditSort, RedditTime,
+    SessionWatchConfig, SessionWatchServiceAction, SessionsRuntimeAction,
 };
 use super::super::helpers::{positional_from_job, positional_from_watch_subcommand};
-use crate::ingest::sessions::watch::{SessionWatchOptions, SessionsRuntimeAction};
-use crate::services::setup::SessionWatchServiceAction;
 use clap::ValueEnum;
 use std::env;
 use std::time::Duration;
@@ -55,7 +54,7 @@ pub(super) struct DispatchOutput {
     pub sessions_codex: bool,
     pub sessions_gemini: bool,
     pub sessions_project: Option<String>,
-    pub sessions_watch: Option<SessionWatchOptions>,
+    pub sessions_watch: Option<SessionWatchConfig>,
     pub sessions_action: Option<SessionsRuntimeAction>,
     pub setup_session_watch_action: Option<SessionWatchServiceAction>,
     pub mcp_transport: Option<McpTransport>,
@@ -482,8 +481,7 @@ fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
             out.sessions_codex = watch.codex;
             out.sessions_gemini = watch.gemini;
             out.sessions_project = watch.project;
-            out.sessions_action = Some(SessionsRuntimeAction::Watch);
-            out.sessions_watch = Some(SessionWatchOptions {
+            out.sessions_watch = Some(SessionWatchConfig {
                 path: watch.path,
                 debounce: Duration::from_millis(watch.debounce_ms),
                 settle: Duration::from_millis(watch.settle_ms),

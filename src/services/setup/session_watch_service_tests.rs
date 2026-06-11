@@ -93,13 +93,6 @@ fn initial_ingest_zero_chunks_is_error_when_session_files_exist() {
     let session_dir = temp.path().join(".codex/sessions");
     std::fs::create_dir_all(&session_dir).unwrap();
     std::fs::write(session_dir.join("session.jsonl"), "{}\n").unwrap();
-    let phase = LocalSetupPhase {
-        name: "initial-ingest",
-        status: LocalSetupStatus::Ok,
-        detail: "axon: {\"chunks_embedded\":0}".to_string(),
-        elapsed_ms: 0,
-    };
-
-    assert_eq!(command_json_chunks(&phase.detail), Some(0));
+    assert_eq!(command_json_chunks("{\"chunks_embedded\":0}"), Some(0));
     assert!(session_files_exist(temp.path()));
 }

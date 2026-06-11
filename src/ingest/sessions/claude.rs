@@ -14,6 +14,7 @@ use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+#[derive(Debug)]
 pub(crate) struct ParsedClaudeSession {
     pub(crate) text: String,
     pub(crate) turn_count: u32,
@@ -165,10 +166,23 @@ async fn parse_claude_file_streamed(
     let mut workspace_path: Option<String> = None;
     let mut git_branch: Option<String> = None;
     let mut last_message_at: Option<String> = None;
+    let mut malformed_lines = 0_u32;
 
     while let Some(line) = lines.next_line().await? {
-        let Ok(val) = serde_json::from_str::<Value>(&line) else {
+        if line.trim().is_empty() {
             continue;
+        }
+        let val = match serde_json::from_str::<Value>(&line) {
+            Ok(val) => val,
+            Err(error) => {
+                malformed_lines += 1;
+                tracing::debug!(
+                    path = %path.display(),
+                    detail = %error,
+                    "skipping malformed Claude session JSONL line"
+                );
+                continue;
+            }
         };
 
         if workspace_path.is_none() {
@@ -239,6 +253,12 @@ async fn parse_claude_file_streamed(
 
     let mut tools_list: Vec<String> = tools_used.into_iter().collect();
     tools_list.sort();
+
+    if session_text.trim().is_empty() && malformed_lines > 0 {
+        return Err(anyhow::anyhow!(
+            "claude session JSONL parse failed: {malformed_lines} malformed line(s)"
+        ));
+    }
 
     Ok(ParsedClaudeSession {
         text: session_text,

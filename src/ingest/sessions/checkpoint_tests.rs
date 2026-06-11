@@ -25,6 +25,121 @@ async fn checkpoint_skips_unchanged_file_and_records_success() {
 }
 
 #[tokio::test]
+async fn checkpoint_uses_stored_content_hash_even_when_metadata_matches() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let path = temp.path().join(".codex/sessions/session.jsonl");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "aaaa").unwrap();
+
+    let validated = test_validated_codex_path(&path);
+    let meta = SessionFileMetadata::from_validated_path(&validated).unwrap();
+    let old_hash = stream_content_hash(&validated.canonical).await.unwrap();
+    record_success(&pool, &meta, Some(&old_hash)).await.unwrap();
+
+    std::fs::write(&path, "bbbb").unwrap();
+    let rewritten = SessionFileMetadata::from_validated_path(&validated).unwrap();
+    sqlx::query(
+        "UPDATE axon_session_watch_checkpoints SET file_size = ?, file_mtime_ms = ? WHERE path_hash = ?",
+    )
+    .bind(rewritten.file_size as i64)
+    .bind(rewritten.file_mtime_ms)
+    .bind(&rewritten.path_hash)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert!(
+        !checkpoint_metadata_matches(&pool, &rewritten)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn remote_accepted_checkpoint_is_not_reusable_until_success() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let path = temp.path().join(".codex/sessions/session.jsonl");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "remote accepted is only queued").unwrap();
+
+    let validated = test_validated_codex_path(&path);
+    let meta = SessionFileMetadata::from_validated_path(&validated).unwrap();
+    let hash = stream_content_hash(&validated.canonical).await.unwrap();
+    record_remote_accepted(&pool, &meta, Some(&hash), "remote-job-1")
+        .await
+        .unwrap();
+
+    assert!(!checkpoint_metadata_matches(&pool, &meta).await.unwrap());
+    assert!(!checkpoint_record_matches(
+        &meta,
+        &checkpoint_record_for_path_hash(&pool, &meta.path_hash)
+            .await
+            .unwrap()
+            .unwrap(),
+        Some(&hash)
+    ));
+}
+
+#[tokio::test]
+async fn checkpoint_updates_metadata_when_content_hash_is_unchanged() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let path = temp.path().join(".codex/sessions/session.jsonl");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "same").unwrap();
+
+    let validated = test_validated_codex_path(&path);
+    let meta = SessionFileMetadata::from_validated_path(&validated).unwrap();
+    let hash = stream_content_hash(&validated.canonical).await.unwrap();
+    record_success(&pool, &meta, Some(&hash)).await.unwrap();
+    sqlx::query(
+        "UPDATE axon_session_watch_checkpoints SET file_size = 1, file_mtime_ms = 1 WHERE path_hash = ?",
+    )
+    .bind(&meta.path_hash)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert!(checkpoint_metadata_matches(&pool, &meta).await.unwrap());
+    let record = checkpoint_record_for_path_hash(&pool, &meta.path_hash)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.file_size, meta.file_size);
+    assert_eq!(record.file_mtime_ms, meta.file_mtime_ms);
+}
+
+#[tokio::test]
+async fn checkpoint_batch_lookup_returns_records_by_path_hash() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let root = temp.path().join(".codex/sessions");
+    std::fs::create_dir_all(&root).unwrap();
+    let paths = [root.join("one.jsonl"), root.join("two.jsonl")];
+    let mut hashes = Vec::new();
+    for path in paths {
+        std::fs::write(&path, "same").unwrap();
+        let meta =
+            SessionFileMetadata::from_validated_path(&test_validated_codex_path(&path)).unwrap();
+        hashes.push(meta.path_hash.clone());
+        record_success(&pool, &meta, Some("hash")).await.unwrap();
+    }
+
+    let records = checkpoint_records_by_path_hash(&pool, &hashes)
+        .await
+        .unwrap();
+
+    assert_eq!(records.len(), 2);
+    assert!(hashes.iter().all(|hash| records.contains_key(hash)));
+}
+
+#[tokio::test]
 async fn checkpoint_records_and_lists_errors() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");

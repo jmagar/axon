@@ -239,6 +239,13 @@ fn setup_session_watch_service_help_exposes_install_check_remove_status() {
     assert!(stdout.contains("check"));
     assert!(stdout.contains("remove"));
     assert!(stdout.contains("status"));
+    assert!(!stdout.contains("status <job_id>"));
+
+    let status = run_help(&["setup", "session-watch-service", "status", "--help"]);
+    assert!(status.contains("Print current user systemd status for the service"));
+    assert!(!status.contains("--active"));
+    assert!(!status.contains("--recent"));
+    assert!(!status.contains("--reclaimed"));
 }
 
 #[test]
