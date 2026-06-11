@@ -233,7 +233,13 @@ async fn handle_tick(
     if ctx.prune_missing.swap(false, Ordering::Relaxed) {
         mark_missing_checkpoints(ctx.options.json);
     }
-    if ctx.overflow_rescan.swap(false, Ordering::Relaxed) {
+    if ctx.overflow_rescan.load(Ordering::Relaxed)
+        && rescan_due(Instant::now(), *last_rescan, ctx.options.rescan_cooldown)
+        && ctx
+            .overflow_rescan
+            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
         run_initial_rescan_with_cooldown(
             ctx.cfg,
             ctx.service_context,
@@ -264,13 +270,18 @@ async fn run_initial_rescan_with_cooldown(
     targets: &[WatchTarget],
     options: &SessionWatchOptions,
     last_rescan: &mut Option<Instant>,
-) {
+) -> bool {
     let now = Instant::now();
-    if last_rescan.is_some_and(|last| now.duration_since(last) < options.rescan_cooldown) {
-        return;
+    if !rescan_due(now, *last_rescan, options.rescan_cooldown) {
+        return false;
     }
     *last_rescan = Some(now);
     run_initial_rescan(cfg, service_context, pool, roots, targets, options).await;
+    true
+}
+
+pub(crate) fn rescan_due(now: Instant, last_rescan: Option<Instant>, cooldown: Duration) -> bool {
+    last_rescan.is_none_or(|last| now.duration_since(last) >= cooldown)
 }
 
 fn mark_missing_checkpoints(json: bool) {

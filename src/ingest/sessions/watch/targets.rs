@@ -113,12 +113,15 @@ fn watch_target_for_explicit_path(
                 "session watch path does not match selected provider filters"
             ));
         }
-    } else if let Some(provider) = validate_event_path_missing_ok(roots, &canonical)
-        && !provider_allowed(cfg, provider)
-    {
-        return Err(anyhow!(
-            "session watch path does not match selected provider filters"
-        ));
+    } else {
+        let provider = validate_event_path_missing_ok(roots, &canonical).ok_or_else(|| {
+            anyhow!("session watch path must be inside a supported AI session root")
+        })?;
+        if !provider_allowed(cfg, provider) {
+            return Err(anyhow!(
+                "session watch path does not match selected provider filters"
+            ));
+        }
     }
     if canonical.is_file() {
         let parent = canonical

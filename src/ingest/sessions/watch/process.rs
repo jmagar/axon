@@ -4,13 +4,14 @@ use super::targets::provider_allowed;
 use super::validate::{SessionWatchRoots, ValidatedSessionPath, validate_session_file_path};
 use crate::core::config::Config;
 use crate::ingest::sessions::checkpoint::{
-    SessionFileMetadata, checkpoint_metadata_matches, record_error, record_success,
-    stream_content_hash,
+    SessionFileMetadata, checkpoint_metadata_matches, record_error, record_no_content,
+    record_remote_accepted, record_success, stream_content_hash,
 };
 use crate::services::context::ServiceContext;
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use sha2::Digest;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,16 +20,6 @@ use std::time::{Duration, Instant};
 pub(crate) struct WatchOutputMode {
     pub(crate) json: bool,
     pub(crate) verbose_paths: bool,
-}
-
-impl WatchOutputMode {
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn quiet() -> Self {
-        Self {
-            json: false,
-            verbose_paths: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,49 +39,6 @@ pub(crate) fn validate_event_path(
     validate_session_file_path(roots, path)
         .map_err(|err| tracing::debug!(error = %err, "ignored unsupported session watch path"))
         .ok()
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) async fn process_session_file_for_watch(
-    cfg: &Config,
-    pool: &sqlx::SqlitePool,
-    validated: &ValidatedSessionPath,
-    output: WatchOutputMode,
-) -> Result<ProcessOutcome> {
-    let meta = SessionFileMetadata::from_validated_path(validated)?;
-    if checkpoint_metadata_matches(pool, &meta).await? {
-        emit_watch_json(output, "skipped_unchanged", validated, None);
-        return Ok(ProcessOutcome::SkippedUnchanged);
-    }
-
-    match crate::ingest::sessions::collect_session_file_doc(cfg, validated).await {
-        Ok(Some(session_doc)) => {
-            let content_hash = stream_content_hash(&validated.canonical).await.ok();
-            let _doc = crate::ingest::sessions::prepared_session_doc_from_session_doc(session_doc)
-                .map_err(anyhow::Error::msg)?;
-            record_success(pool, &meta, content_hash.as_deref()).await?;
-            emit_watch_json(output, "prepared", validated, None);
-            Ok(ProcessOutcome::Ingested {
-                chunks_or_job: "prepared-session-doc".to_string(),
-            })
-        }
-        Ok(None) => {
-            if cfg.sessions_project.is_some() {
-                emit_watch_json(output, "skipped_filtered", validated, None);
-                Ok(ProcessOutcome::SkippedFiltered)
-            } else {
-                record_success(pool, &meta, None).await?;
-                emit_watch_json(output, "no_content", validated, None);
-                Ok(ProcessOutcome::NoContent)
-            }
-        }
-        Err(error) => {
-            let (code, redacted) = classify_and_redact_watch_error(&error.to_string());
-            record_error(pool, &meta, &code, &redacted).await?;
-            emit_watch_json(output, "error", validated, Some(&code));
-            Ok(ProcessOutcome::RetryableFailure(code))
-        }
-    }
 }
 
 pub(crate) async fn process_session_batch_for_watch(
@@ -133,7 +81,7 @@ pub(crate) async fn process_session_batch_for_watch(
                     emit_watch_json(output, "skipped_filtered", &validated, None);
                     outcomes[index] = Some(ProcessOutcome::SkippedFiltered);
                 } else {
-                    record_success(pool, &meta, None).await?;
+                    record_no_content(pool, &meta).await?;
                     emit_watch_json(output, "no_content", &validated, None);
                     outcomes[index] = Some(ProcessOutcome::NoContent);
                 }
@@ -170,7 +118,7 @@ pub(crate) async fn process_session_batch_for_watch(
             }
             Ok(WatchIngestResult::RemoteAccepted(label)) => {
                 for (index, validated, meta, _, content_hash) in meta_chunk {
-                    record_success(pool, meta, content_hash.as_deref()).await?;
+                    record_remote_accepted(pool, meta, content_hash.as_deref(), &label).await?;
                     emit_watch_json(output, "accepted_remote", validated, Some(&label));
                     outcomes[*index] = Some(ProcessOutcome::RemoteAccepted { job: label.clone() });
                 }
@@ -295,7 +243,7 @@ pub(crate) async fn upload_prepared_sessions_to_server_with_auth(
             "--upload-to-server requires HTTPS unless AXON_SERVER_URL is loopback"
         ));
     }
-    let body = serde_json::to_vec(&request)?;
+    let body = serde_json::to_vec(&redact_remote_prepared_request(request))?;
     const MAX_UPLOAD_BODY_BYTES: usize = 25 * 1024 * 1024;
     if body.len() > MAX_UPLOAD_BODY_BYTES {
         return Err(anyhow!("prepared session upload body exceeds size limit"));
@@ -331,6 +279,62 @@ pub(crate) async fn upload_prepared_sessions_to_server_with_auth(
     }
     parse_remote_job_label(&text)
         .ok_or_else(|| anyhow!("remote prepared session upload response missing job_id"))
+}
+
+pub(crate) fn redact_remote_prepared_request(
+    request: crate::ingest::sessions::IngestSessionsPreparedRequest,
+) -> crate::ingest::sessions::IngestSessionsPreparedRequest {
+    crate::ingest::sessions::IngestSessionsPreparedRequest {
+        docs: request
+            .docs
+            .into_iter()
+            .map(redact_remote_prepared_doc)
+            .collect(),
+        project: request.project,
+        collection: request.collection,
+    }
+}
+
+fn redact_remote_prepared_doc(
+    mut doc: crate::ingest::sessions::PreparedSessionDoc,
+) -> crate::ingest::sessions::PreparedSessionDoc {
+    let mut hasher = sha2::Sha256::new();
+    Digest::update(&mut hasher, doc.url.as_bytes());
+    Digest::update(&mut hasher, doc.session_file.as_bytes());
+    let digest = hex::encode(Digest::finalize(hasher));
+    let basename = Path::new(&doc.session_file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("session")
+        .to_string();
+    doc.url = format!(
+        "file:///redacted/{}/{}/{}",
+        doc.session_platform,
+        &digest[..16],
+        basename
+    );
+    doc.session_file = basename;
+    doc.extra = redact_remote_extra(doc.extra);
+    doc
+}
+
+fn redact_remote_extra(extra: serde_json::Value) -> serde_json::Value {
+    let Some(mut object) = extra.as_object().cloned() else {
+        return serde_json::Value::Object(serde_json::Map::new());
+    };
+    for key in [
+        "cwd",
+        "path",
+        "project_path",
+        "session_file",
+        "source_path",
+        "transcript_path",
+        "workspace",
+        "workspace_path",
+    ] {
+        object.remove(key);
+    }
+    serde_json::Value::Object(object)
 }
 
 pub(crate) async fn process_pending(

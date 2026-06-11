@@ -61,9 +61,7 @@ pub async fn run_session_watch_service_setup(
         SessionWatchServiceAction::Remove => remove(&paths)?,
         SessionWatchServiceAction::Status => status(&paths),
     };
-    let has_errors = phases
-        .iter()
-        .any(|phase| matches!(phase.status, LocalSetupStatus::Error));
+    let has_errors = phases.iter().any(|phase| phase_is_failure(action, phase));
     Ok(SessionWatchServiceReport {
         action,
         service_name: SERVICE_NAME,
@@ -77,12 +75,25 @@ pub async fn run_session_watch_service_setup(
 }
 
 async fn install(paths: &ServicePaths) -> io::Result<Vec<LocalSetupPhase>> {
-    Ok(vec![
-        write_service_files(paths)?,
-        run_command_phase("initial-ingest", initial_ingest_command(paths))?,
-        run_command_phase("systemd-reload", daemon_reload_command())?,
-        run_command_phase("enable-service", enable_now_command())?,
-    ])
+    let mut phases = vec![write_service_files(paths)?];
+    for (name, spec) in [
+        ("initial-ingest", initial_ingest_command(paths)),
+        ("systemd-reload", daemon_reload_command()),
+        ("enable-service", enable_now_command()),
+    ] {
+        phases.push(if name == "initial-ingest" {
+            initial_ingest_phase(paths, spec)
+        } else {
+            run_command_phase(name, spec)
+        });
+        if phases
+            .last()
+            .is_some_and(|phase| matches!(phase.status, LocalSetupStatus::Error))
+        {
+            break;
+        }
+    }
+    Ok(phases)
 }
 
 fn check(paths: &ServicePaths) -> Vec<LocalSetupPhase> {
@@ -96,10 +107,10 @@ fn check(paths: &ServicePaths) -> Vec<LocalSetupPhase> {
 
 fn remove(paths: &ServicePaths) -> io::Result<Vec<LocalSetupPhase>> {
     Ok(vec![
-        run_command_phase("disable-service", disable_now_command())?,
-        remove_file_phase("unit-file", &paths.unit_path)?,
-        remove_file_phase("env-file", &paths.env_path)?,
-        run_command_phase("systemd-reload", daemon_reload_command())?,
+        run_command_phase("disable-service", disable_now_command()),
+        remove_file_phase("unit-file", &paths.unit_path),
+        remove_file_phase("env-file", &paths.env_path),
+        run_command_phase("systemd-reload", daemon_reload_command()),
     ])
 }
 
@@ -154,6 +165,19 @@ pub(crate) fn session_watch_service_unit(
     home: &Path,
 ) -> String {
     let axon_home = home.join(".axon");
+    let write_paths = [
+        state_dir.to_path_buf(),
+        axon_home.join("jobs.db"),
+        axon_home.join("output"),
+        axon_home.join("logs"),
+        axon_home.join("artifacts"),
+        axon_home.join("screenshots"),
+        axon_home.join("chrome-diagnostics"),
+    ]
+    .into_iter()
+    .map(|path| format!("-{}", path.display()))
+    .collect::<Vec<_>>()
+    .join(" ");
     format!(
         r#"[Unit]
 Description=axon real-time local AI session watch
@@ -168,9 +192,9 @@ RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=read-only
-BindReadOnlyPaths=-{} -{} -{} -{}
-ReadWritePaths={} {}
+ProtectHome=tmpfs
+BindReadOnlyPaths=-{} -{} -{} -{} -{} -{}
+ReadWritePaths={}
 StateDirectory=axon
 SyslogIdentifier=session-watch-service
 
@@ -179,12 +203,13 @@ WantedBy=default.target
 "#,
         env_path.display(),
         axon_bin.display(),
+        axon_bin.display(),
+        env_path.display(),
         home.join(".claude/projects").display(),
         home.join(".codex/sessions").display(),
         home.join(".gemini/history").display(),
         home.join(".gemini/tmp").display(),
-        axon_home.display(),
-        state_dir.display(),
+        write_paths,
     )
 }
 
@@ -234,22 +259,42 @@ fn status_command() -> CommandSpec {
     CommandSpec::new("systemctl", ["--user", "status", "--no-pager", UNIT_NAME])
 }
 
-fn run_command_phase(name: &'static str, spec: CommandSpec) -> io::Result<LocalSetupPhase> {
+fn run_command_phase(name: &'static str, spec: CommandSpec) -> LocalSetupPhase {
     let started = Instant::now();
-    let output = Command::new(&spec.program).args(&spec.args).output()?;
-    if output.status.success() {
-        return Ok(phase(
+    match Command::new(&spec.program).args(&spec.args).output() {
+        Ok(output) if output.status.success() => phase(
             name,
             LocalSetupStatus::Ok,
             command_detail(&spec, &output.stdout),
             started,
-        ));
+        ),
+        Ok(output) => phase(
+            name,
+            LocalSetupStatus::Error,
+            command_detail(&spec, &output.stderr),
+            started,
+        ),
+        Err(error) => phase(name, LocalSetupStatus::Error, error.to_string(), started),
     }
-    Err(io::Error::other(format!(
-        "{} failed: {}",
-        name,
-        command_detail(&spec, &output.stderr)
-    )))
+}
+
+fn initial_ingest_phase(paths: &ServicePaths, spec: CommandSpec) -> LocalSetupPhase {
+    let phase = run_command_phase("initial-ingest", spec);
+    if !matches!(phase.status, LocalSetupStatus::Ok) {
+        return phase;
+    }
+    if session_files_exist(&paths.home) && command_json_chunks(&phase.detail) == Some(0) {
+        return LocalSetupPhase {
+            name: phase.name,
+            status: LocalSetupStatus::Error,
+            detail: format!(
+                "{}; found local transcript files but initial ingest embedded 0 chunks",
+                phase.detail
+            ),
+            elapsed_ms: phase.elapsed_ms,
+        };
+    }
+    phase
 }
 
 fn command_status_phase(name: &'static str, spec: CommandSpec) -> LocalSetupPhase {
@@ -271,6 +316,57 @@ fn command_status_phase(name: &'static str, spec: CommandSpec) -> LocalSetupPhas
     }
 }
 
+fn command_json_chunks(detail: &str) -> Option<u64> {
+    let json_start = detail.find('{')?;
+    let value = serde_json::from_str::<serde_json::Value>(&detail[json_start..]).ok()?;
+    value
+        .get("chunks_embedded")
+        .or_else(|| value.get("chunks"))
+        .and_then(serde_json::Value::as_u64)
+}
+
+fn session_files_exist(home: &Path) -> bool {
+    [
+        (home.join(".claude/projects"), &["jsonl"][..]),
+        (home.join(".codex/sessions"), &["jsonl"][..]),
+        (home.join(".gemini/history"), &["json"][..]),
+        (home.join(".gemini/tmp"), &["json"][..]),
+    ]
+    .into_iter()
+    .any(|(root, extensions)| directory_contains_file_with_extension(&root, extensions))
+}
+
+fn directory_contains_file_with_extension(root: &Path, extensions: &[&str]) -> bool {
+    let mut stack = vec![root.to_path_buf()];
+    let mut visited = 0usize;
+    while let Some(path) = stack.pop() {
+        visited += 1;
+        if visited > 8192 {
+            return true;
+        }
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_file() {
+            return path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| extensions.contains(&ext));
+        }
+        if !metadata.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        stack.extend(entries.filter_map(Result::ok).map(|entry| entry.path()));
+    }
+    false
+}
+
 fn file_check_phase(name: &'static str, path: &Path) -> LocalSetupPhase {
     let started = Instant::now();
     if path.exists() {
@@ -290,22 +386,36 @@ fn file_check_phase(name: &'static str, path: &Path) -> LocalSetupPhase {
     }
 }
 
-fn remove_file_phase(name: &'static str, path: &Path) -> io::Result<LocalSetupPhase> {
+fn remove_file_phase(name: &'static str, path: &Path) -> LocalSetupPhase {
     let started = Instant::now();
     match std::fs::remove_file(path) {
-        Ok(()) => Ok(phase(
+        Ok(()) => phase(
             name,
             LocalSetupStatus::Ok,
             format!("removed {}", path.display()),
             started,
-        )),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(phase(
+        ),
+        Err(error) if error.kind() == ErrorKind::NotFound => phase(
             name,
             LocalSetupStatus::Ok,
             format!("already absent {}", path.display()),
             started,
-        )),
-        Err(error) => Err(error),
+        ),
+        Err(error) => phase(name, LocalSetupStatus::Error, error.to_string(), started),
+    }
+}
+
+fn phase_is_failure(action: SessionWatchServiceAction, phase: &LocalSetupPhase) -> bool {
+    match action {
+        SessionWatchServiceAction::Check | SessionWatchServiceAction::Status => {
+            matches!(
+                phase.status,
+                LocalSetupStatus::Warn | LocalSetupStatus::Error
+            )
+        }
+        SessionWatchServiceAction::Install | SessionWatchServiceAction::Remove => {
+            matches!(phase.status, LocalSetupStatus::Error)
+        }
     }
 }
 

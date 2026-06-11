@@ -41,12 +41,14 @@ pub enum SessionsRuntimeAction {
 
 #[cfg(test)]
 pub(crate) use process::{
-    ProcessOutcome, WatchOutputMode, effective_processing_concurrency,
-    process_session_batch_for_watch, process_session_file_for_watch, redact_error_detail,
+    ProcessOutcome, effective_processing_concurrency, process_session_batch_for_watch,
+    redact_error_detail, redact_remote_prepared_request,
     upload_prepared_sessions_to_server_with_auth,
 };
 #[cfg(test)]
 pub(crate) use queue::PendingFiles;
+#[cfg(test)]
+pub(crate) use runner::rescan_due;
 #[cfg(test)]
 pub(crate) use targets::{WatchTarget, collect_watch_dirs, handle_remove_path, watch_targets};
 #[cfg(test)]

@@ -79,7 +79,7 @@ The watcher uses non-recursive directory watches and registers newly-created dir
 
 `sessions watch` accepts the same provider/project filters as one-shot session ingest (`--claude`, `--codex`, `--gemini`, `--project <name>`), scoped to the watch subcommand.
 
-When `--upload-to-server` is explicitly enabled and `AXON_SERVER_URL` is set, the watcher still parses and redacts local files on the client, then uploads prepared docs to `POST /v1/ingest/sessions/prepared` with bearer auth and request timeouts. It never asks the server to scan server-local transcript roots. Remote upload requires `202 Accepted` plus a returned `job_id`; that durable queue acceptance is logged as `accepted_remote` and checkpointed locally to avoid duplicate uploads on later rescans. Without that opt-in, v0 uses the local prepared-session service path and checkpoints only after local prepared-session ingest succeeds.
+When `--upload-to-server` is explicitly enabled and `AXON_SERVER_URL` is set, the watcher still parses and redacts local files on the client, then uploads prepared docs to `POST /v1/ingest/sessions/prepared` with bearer auth and request timeouts. It never asks the server to scan server-local transcript roots. Remote upload requires `202 Accepted` plus a returned `job_id`; that durable queue acceptance is logged as `accepted_remote` and stored as a distinct local `remote_accepted` checkpoint state. It is not treated as a completed local ingest and does not satisfy `smoke-watch` success. Without that opt-in, v0 uses the local prepared-session service path and checkpoints only after local prepared-session ingest succeeds.
 
 ## Examples
 
@@ -96,22 +96,20 @@ axon sessions --claude --gemini --project axon --wait true
 # Check job status
 axon sessions status 550e8400-e29b-41d4-a716-446655440000
 
-# Enqueue through the canonical server
-AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --codex --json
-
-# Server mode: wait for prepared-session async ingest
-AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --claude --project axon-rust --wait true --json
-
 # Install host-local automatic capture
 axon setup session-watch-service install
+
+# Watch locally but upload changed prepared docs to a running server
+AXON_SERVER_URL=https://axon.example.com AXON_MCP_HTTP_TOKEN=... \
+  axon sessions watch --upload-to-server --json
 ```
 
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AXON_SERVER_URL` | — | Routes supported commands, including `sessions`, through a running `axon serve` HTTP endpoint. |
-| `AXON_MCP_HTTP_TOKEN` | — | Bearer token sent to authenticated Axon HTTP servers. |
+| `AXON_SERVER_URL` | — | Server endpoint used by `axon sessions watch --upload-to-server` for prepared-session uploads. Plain `axon sessions` remains host-local. |
+| `AXON_MCP_HTTP_TOKEN` | — | Bearer token sent by `axon sessions watch --upload-to-server` to authenticated Axon HTTP servers. |
 | `AXON_SESSION_INGEST_MAX_BYTES` | `20971520` | Maximum bytes read from one session file before skipping it. |
 | `AXON_SESSION_INGEST_MAX_TOTAL_TEXT_BYTES` | `104857600` | Maximum total prepared text accepted in one server-mode sessions request. |
 | `AXON_COLLECTION` | `axon` | Default target collection when `--collection` is not supplied. |
@@ -132,16 +130,17 @@ just services-up
 ./scripts/axon doctor
 ```
 
-For server mode, start a server built from the same revision before running the client:
+For watcher remote upload, start a server built from the same revision before running the client:
 
 ```bash
 AXON_MCP_HTTP_HOST=127.0.0.1 AXON_MCP_HTTP_PORT=8001 axon serve mcp --transport http
-AXON_SERVER_URL=http://127.0.0.1:8001 axon sessions --codex --wait true
+AXON_SERVER_URL=http://127.0.0.1:8001 AXON_MCP_HTTP_TOKEN=... \
+  axon sessions watch --upload-to-server --codex --json
 ```
 
 ## Notes
 
 - Local session text is decoded and redacted before embedding.
 - Job records for local queued runs are stored in `axon_ingest_jobs` with `source_type='sessions'`.
-- In server mode (`AXON_SERVER_URL`), `axon sessions` decodes and redacts local files on the client, uploads a bounded prepared-session payload to `POST /v1/ingest/sessions/prepared`, and the server embeds it asynchronously through the ingest worker queue. `--wait true` polls server job state and does not spawn host-local workers.
+- `AXON_SERVER_URL` does not route plain `axon sessions` through HTTP in this release. Only `axon sessions watch --upload-to-server` uses it.
 - Legacy remote `source_type="sessions"` ingest is rejected so an Axon server cannot scan its own `~/.claude`, `~/.codex`, or `~/.gemini` paths by accident.

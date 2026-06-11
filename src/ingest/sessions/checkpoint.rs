@@ -34,6 +34,25 @@ pub struct SessionWatchStatus {
     pub recent_errors: Vec<SessionWatchError>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionWatchCheckpointState {
+    LocalIngested,
+    NoContent,
+    RemoteAccepted,
+    Error,
+}
+
+impl SessionWatchCheckpointState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalIngested => "local_ingested",
+            Self::NoContent => "no_content",
+            Self::RemoteAccepted => "remote_accepted",
+            Self::Error => "error",
+        }
+    }
+}
+
 impl SessionFileMetadata {
     pub fn from_validated_path(path: &ValidatedSessionPath) -> Result<Self> {
         let metadata = std::fs::metadata(&path.canonical)?;
@@ -62,7 +81,7 @@ pub async fn checkpoint_metadata_matches(
 ) -> Result<bool> {
     let row = sqlx::query(
         r#"
-        SELECT file_size, file_mtime_ms, last_error_code
+        SELECT file_size, file_mtime_ms, last_error_code, state
         FROM axon_session_watch_checkpoints
         WHERE path_hash = ?
         "#,
@@ -74,9 +93,11 @@ pub async fn checkpoint_metadata_matches(
         let file_size: i64 = row.get("file_size");
         let file_mtime_ms: i64 = row.get("file_mtime_ms");
         let last_error_code: Option<String> = row.get("last_error_code");
+        let state: String = row.get("state");
         file_size == meta.file_size as i64
             && file_mtime_ms == meta.file_mtime_ms
             && last_error_code.is_none()
+            && matches!(state.as_str(), "local_ingested" | "no_content")
     }))
 }
 
@@ -99,12 +120,31 @@ pub async fn record_success(
     meta: &SessionFileMetadata,
     content_hash: Option<&str>,
 ) -> Result<()> {
+    record_success_with_state(
+        pool,
+        meta,
+        content_hash,
+        SessionWatchCheckpointState::LocalIngested,
+    )
+    .await
+}
+
+pub async fn record_no_content(pool: &SqlitePool, meta: &SessionFileMetadata) -> Result<()> {
+    record_success_with_state(pool, meta, None, SessionWatchCheckpointState::NoContent).await
+}
+
+async fn record_success_with_state(
+    pool: &SqlitePool,
+    meta: &SessionFileMetadata,
+    content_hash: Option<&str>,
+    state: SessionWatchCheckpointState,
+) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO axon_session_watch_checkpoints
-            (path_hash, provider, basename, redacted_display, file_size, file_mtime_ms, content_hash, failure_count, next_attempt_at, last_indexed_at, last_error_code, last_error_redacted, updated_at)
+            (path_hash, provider, basename, redacted_display, file_size, file_mtime_ms, content_hash, state, remote_job_id, failure_count, next_attempt_at, last_indexed_at, last_error_code, last_error_redacted, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, 0, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         ON CONFLICT(path_hash) DO UPDATE SET
             provider = excluded.provider,
             basename = excluded.basename,
@@ -112,6 +152,8 @@ pub async fn record_success(
             file_size = excluded.file_size,
             file_mtime_ms = excluded.file_mtime_ms,
             content_hash = excluded.content_hash,
+            state = excluded.state,
+            remote_job_id = NULL,
             failure_count = 0,
             next_attempt_at = NULL,
             last_indexed_at = excluded.last_indexed_at,
@@ -127,9 +169,76 @@ pub async fn record_success(
     .bind(meta.file_size as i64)
     .bind(meta.file_mtime_ms)
     .bind(content_hash)
+    .bind(state.as_str())
     .execute(pool)
     .await?;
     Ok(())
+}
+
+pub async fn record_remote_accepted(
+    pool: &SqlitePool,
+    meta: &SessionFileMetadata,
+    content_hash: Option<&str>,
+    remote_job_id: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO axon_session_watch_checkpoints
+            (path_hash, provider, basename, redacted_display, file_size, file_mtime_ms, content_hash, state, remote_job_id, failure_count, next_attempt_at, last_indexed_at, last_error_code, last_error_redacted, updated_at)
+        VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT(path_hash) DO UPDATE SET
+            provider = excluded.provider,
+            basename = excluded.basename,
+            redacted_display = excluded.redacted_display,
+            file_size = excluded.file_size,
+            file_mtime_ms = excluded.file_mtime_ms,
+            content_hash = excluded.content_hash,
+            state = excluded.state,
+            remote_job_id = excluded.remote_job_id,
+            failure_count = 0,
+            next_attempt_at = NULL,
+            last_indexed_at = NULL,
+            last_error_code = NULL,
+            last_error_redacted = NULL,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(&meta.path_hash)
+    .bind(&meta.provider)
+    .bind(&meta.basename)
+    .bind(&meta.redacted_display)
+    .bind(meta.file_size as i64)
+    .bind(meta.file_mtime_ms)
+    .bind(content_hash)
+    .bind(SessionWatchCheckpointState::RemoteAccepted.as_str())
+    .bind(remote_job_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn checkpoint_remote_accepted_exists_for_path_hash(
+    pool: &SqlitePool,
+    path_hash: &str,
+) -> Result<bool> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM axon_session_watch_checkpoints
+            WHERE path_hash = ?
+              AND state = 'remote_accepted'
+              AND remote_job_id IS NOT NULL
+              AND last_error_code IS NULL
+            LIMIT 1
+        )
+        "#,
+    )
+    .bind(path_hash)
+    .fetch_one(pool)
+    .await?;
+    Ok(exists)
 }
 
 pub async fn record_error(
@@ -155,15 +264,17 @@ pub async fn record_error(
     sqlx::query(
         r#"
         INSERT INTO axon_session_watch_checkpoints
-            (path_hash, provider, basename, redacted_display, file_size, file_mtime_ms, last_error_code, last_error_redacted, failure_count, updated_at)
+            (path_hash, provider, basename, redacted_display, file_size, file_mtime_ms, state, remote_job_id, last_error_code, last_error_redacted, failure_count, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         ON CONFLICT(path_hash) DO UPDATE SET
             provider = excluded.provider,
             basename = excluded.basename,
             redacted_display = excluded.redacted_display,
             file_size = excluded.file_size,
             file_mtime_ms = excluded.file_mtime_ms,
+            state = 'error',
+            remote_job_id = NULL,
             last_error_code = excluded.last_error_code,
             last_error_redacted = excluded.last_error_redacted,
             failure_count = axon_session_watch_checkpoints.failure_count + 1,
@@ -176,6 +287,7 @@ pub async fn record_error(
     .bind(&meta.redacted_display)
     .bind(meta.file_size as i64)
     .bind(meta.file_mtime_ms)
+    .bind(SessionWatchCheckpointState::Error.as_str())
     .bind(error_code)
     .bind(error_redacted)
     .execute(pool)
@@ -221,6 +333,7 @@ pub async fn checkpoint_success_exists_for_path_hash(
             WHERE path_hash = ?
               AND last_error_code IS NULL
               AND last_indexed_at IS NOT NULL
+              AND state IN ('local_ingested', 'no_content')
             LIMIT 1
         )
         "#,

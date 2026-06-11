@@ -1,8 +1,8 @@
 use super::*;
 use crate::core::config::Config;
 use crate::ingest::sessions::checkpoint::{
-    SessionFileMetadata, checkpoint_success_exists_for_path_hash, list_recent_errors,
-    record_success,
+    SessionFileMetadata, checkpoint_remote_accepted_exists_for_path_hash,
+    checkpoint_success_exists_for_path_hash, list_recent_errors, record_success,
 };
 use crate::ingest::sessions::watch::validate::SessionWatchRoots;
 use crate::ingest::sessions::{IngestSessionsPreparedRequest, PreparedSessionDoc};
@@ -59,6 +59,24 @@ fn pending_overflow_requests_rescan() {
         assert!(pending.push(PathBuf::from(format!("/tmp/{i}.jsonl")), Instant::now()));
     }
     assert!(!pending.push(PathBuf::from("/tmp/overflow.jsonl"), Instant::now()));
+}
+
+#[test]
+fn overflow_rescan_cooldown_defers_until_due() {
+    let now = Instant::now();
+    let cooldown = Duration::from_secs(5);
+
+    assert!(rescan_due(now, None, cooldown));
+    assert!(!rescan_due(
+        now,
+        Some(now - Duration::from_secs(4)),
+        cooldown
+    ));
+    assert!(rescan_due(
+        now,
+        Some(now - Duration::from_secs(5)),
+        cooldown
+    ));
 }
 
 #[test]
@@ -140,6 +158,23 @@ fn default_watch_targets_respect_provider_filters() {
     assert!(targets[0].root().ends_with(".codex/sessions"));
 }
 
+#[test]
+fn explicit_directory_outside_session_roots_is_rejected() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".codex/sessions")).unwrap();
+    let outside = temp.path().join("workspace");
+    std::fs::create_dir_all(&outside).unwrap();
+
+    let cfg = Config::default();
+    let roots = SessionWatchRoots::for_home(temp.path());
+    let options = test_watch_options(Some(outside));
+    let error = watch_targets(&cfg, &roots, &options)
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("inside a supported AI session root"));
+}
+
 #[tokio::test]
 async fn process_stable_file_skips_unchanged_checkpoint() {
     let temp = tempfile::tempdir().unwrap();
@@ -168,11 +203,19 @@ async fn process_stable_file_skips_unchanged_checkpoint() {
     record_success(&pool, &meta, None).await.unwrap();
 
     let cfg = Config::default();
-    let outcome = process_session_file_for_watch(&cfg, &pool, &validated, WatchOutputMode::quiet())
-        .await
-        .unwrap();
+    let runtime = Arc::new(AckingRuntime::default());
+    let service_context = ServiceContext::from_runtime(Arc::new(cfg.clone()), runtime);
+    let outcome = process_session_batch_for_watch(
+        &cfg,
+        &service_context,
+        &pool,
+        vec![validated],
+        &test_watch_options(None),
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(outcome, ProcessOutcome::SkippedUnchanged);
+    assert_eq!(outcome, vec![ProcessOutcome::SkippedUnchanged]);
 }
 
 #[tokio::test]
@@ -189,11 +232,19 @@ async fn process_stable_file_records_parse_error_without_panic() {
 
     let cfg = Config::default();
     let validated = test_validated_claude_path(&path);
-    let outcome = process_session_file_for_watch(&cfg, &pool, &validated, WatchOutputMode::quiet())
-        .await
-        .unwrap();
+    let runtime = Arc::new(AckingRuntime::default());
+    let service_context = ServiceContext::from_runtime(Arc::new(cfg.clone()), runtime);
+    let outcome = process_session_batch_for_watch(
+        &cfg,
+        &service_context,
+        &pool,
+        vec![validated],
+        &test_watch_options(None),
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(outcome, ProcessOutcome::NoContent);
+    assert_eq!(outcome, vec![ProcessOutcome::NoContent]);
 }
 
 #[tokio::test]
@@ -279,8 +330,39 @@ async fn upload_prepared_sessions_rejects_success_without_job_id() {
     mock.assert_async().await;
 }
 
+#[test]
+fn remote_prepared_upload_redacts_local_paths_before_serializing() {
+    let request = redact_remote_prepared_request(IngestSessionsPreparedRequest {
+        docs: vec![PreparedSessionDoc {
+            url: "file:///home/jmagar/workspace/axon/.codex/session.jsonl".to_string(),
+            title: Some("session".to_string()),
+            text: "hello from a session".to_string(),
+            session_platform: "codex".to_string(),
+            session_project: Some("axon".to_string()),
+            session_date: None,
+            session_turn_count: Some(1),
+            session_file: "/home/jmagar/.codex/sessions/2026/06/11/session.jsonl".to_string(),
+            extra: serde_json::json!({
+                "cwd": "/home/jmagar/workspace/axon",
+                "workspace_path": "/home/jmagar/workspace/axon",
+                "model": "gpt-5"
+            }),
+        }],
+        project: None,
+        collection: None,
+    });
+    let body = serde_json::to_string(&request).unwrap();
+
+    assert!(!body.contains("/home/jmagar"));
+    assert!(!body.contains("workspace_path"));
+    assert!(!body.contains("\"cwd\""));
+    assert!(request.docs[0].url.starts_with("file:///redacted/codex/"));
+    assert_eq!(request.docs[0].session_file, "session.jsonl");
+    assert_eq!(request.docs[0].extra["model"], "gpt-5");
+}
+
 #[tokio::test]
-async fn remote_watch_acceptance_records_upload_checkpoint() {
+async fn remote_watch_acceptance_records_remote_checkpoint_only() {
     let server = MockServer::start_async().await;
     let mock = server
         .mock_async(|when, then| {
@@ -341,7 +423,12 @@ async fn remote_watch_acceptance_records_upload_checkpoint() {
         [ProcessOutcome::RemoteAccepted { job }] if job == "remote-job-123"
     ));
     assert!(
-        checkpoint_success_exists_for_path_hash(&pool, &validated.path_hash)
+        !checkpoint_success_exists_for_path_hash(&pool, &validated.path_hash)
+            .await
+            .unwrap()
+    );
+    assert!(
+        checkpoint_remote_accepted_exists_for_path_hash(&pool, &validated.path_hash)
             .await
             .unwrap()
     );

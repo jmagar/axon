@@ -53,11 +53,11 @@ That service runs `axon sessions watch --no-initial-scan --json`, watches Claude
 
 Provider and project filters are available on the watcher itself, for example `axon sessions watch --codex --project axon --json`.
 
-## Server Mode
+## Remote Watch Upload
 
-When `AXON_SERVER_URL` is set, `axon sessions` still reads session files from the client machine. The client parses and redacts Claude, Codex, and Gemini transcripts locally, sends prepared documents to `POST /v1/ingest/sessions/prepared`, and the server persists that upload beside a SQLite ingest job before waking ingest workers.
+When `AXON_SERVER_URL` is set together with `axon sessions watch --upload-to-server`, the watcher still reads session files from the client machine. The client parses and redacts Claude, Codex, and Gemini transcripts locally, sends prepared documents to `POST /v1/ingest/sessions/prepared`, and the server persists that upload beside a SQLite ingest job before waking ingest workers. Plain `axon sessions` remains host-local in this release.
 
-For `axon sessions watch --upload-to-server`, the remote server must return `202 Accepted` with a `job_id`. The watcher emits an accepted-remote event and writes a local checkpoint for that durable upload acceptance so unchanged files are not uploaded repeatedly on later rescans. That checkpoint means the file was queued remotely, not that the remote embedding job reached terminal success.
+The remote server must return `202 Accepted` with a `job_id`. The watcher emits an accepted-remote event and writes a local `remote_accepted` checkpoint for that durable upload acceptance. That checkpoint means the file was queued remotely, not that the remote embedding job reached terminal success, and it is intentionally separate from local success checkpoints.
 
 Prepared-session uploads are bounded by semantic limits: max document count, per-document text size, total text size, metadata size, supported platform names, and collection-name validation. The uploaded payload is deleted after successful worker completion and is included in ingest cleanup/clear behavior.
 
