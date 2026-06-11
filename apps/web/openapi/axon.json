@@ -10,7 +10,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "5.9.0"
+    "version": "5.9.1"
   },
   "paths": {
     "/v1/artifacts/{path}": {
@@ -66,7 +66,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/ask": {
@@ -134,7 +144,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ask/stream": {
@@ -184,7 +204,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/brand": {
@@ -234,7 +264,57 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "operationId": "v1_capabilities",
+        "responses": {
+          "200": {
+            "description": "Server capability metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid auth",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/chat": {
@@ -294,7 +374,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/chat/stream": {
@@ -344,7 +434,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/crawl": {
@@ -382,7 +482,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -430,7 +540,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -446,7 +566,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/crawl/cleanup": {
@@ -464,7 +594,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/crawl/recover": {
@@ -482,7 +622,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/crawl/{id}": {
@@ -522,7 +672,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/crawl/{id}/cancel": {
@@ -552,7 +712,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/dedupe": {
@@ -616,7 +786,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/diff": {
@@ -666,7 +846,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/doctor": {
@@ -694,7 +884,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/domains": {
@@ -770,7 +970,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/embed": {
@@ -808,7 +1018,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -856,7 +1076,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -872,7 +1102,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/embed/cleanup": {
@@ -890,7 +1130,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/embed/recover": {
@@ -908,7 +1158,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/embed/{id}": {
@@ -948,7 +1208,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/embed/{id}/cancel": {
@@ -978,7 +1248,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/endpoints": {
@@ -1028,7 +1308,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/evaluate": {
@@ -1076,7 +1366,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/extract": {
@@ -1114,7 +1414,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1162,7 +1472,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1178,7 +1498,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/extract/cleanup": {
@@ -1196,7 +1526,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/extract/recover": {
@@ -1214,7 +1554,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/extract/{id}": {
@@ -1254,7 +1604,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/extract/{id}/cancel": {
@@ -1284,7 +1644,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest": {
@@ -1322,7 +1692,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1370,7 +1750,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1386,7 +1776,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest/cleanup": {
@@ -1404,7 +1804,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest/recover": {
@@ -1422,7 +1832,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest/sessions/prepared": {
@@ -1472,7 +1892,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest/{id}": {
@@ -1512,7 +1942,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/ingest/{id}/cancel": {
@@ -1542,7 +1982,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/map": {
@@ -1590,7 +2040,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/memory": {
@@ -1638,7 +2098,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/query": {
@@ -1686,7 +2156,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/research": {
@@ -1734,7 +2214,67 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/research/stream": {
+      "post": {
+        "tags": [
+          "exploration"
+        ],
+        "operationId": "research_stream",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestResearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Research synthesis streamed as server-sent events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid research request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/retrieve": {
@@ -1782,7 +2322,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/scrape": {
@@ -1830,7 +2380,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/screenshot": {
@@ -1880,7 +2440,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/search": {
@@ -1928,7 +2498,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/sources": {
@@ -2004,7 +2584,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/stats": {
@@ -2032,7 +2622,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/status": {
@@ -2060,7 +2660,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:read"
+            ]
+          }
+        ]
       }
     },
     "/v1/suggest": {
@@ -2098,7 +2708,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/summarize": {
@@ -2146,7 +2766,67 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/summarize/stream": {
+      "post": {
+        "tags": [
+          "exploration"
+        ],
+        "operationId": "summarize_stream",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestSummarizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Brief LLM summary streamed as server-sent events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid summarize request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/watch": {
@@ -2188,7 +2868,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -2234,7 +2924,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     },
     "/v1/watch/{id}/run": {
@@ -2284,7 +2984,17 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:write"
+            ]
+          }
+        ]
       }
     }
   },
@@ -4068,6 +4778,45 @@
           }
         }
       },
+      "ServerInfo": {
+        "type": "object",
+        "required": [
+          "version",
+          "schema_version",
+          "minimum_client_schema_version",
+          "supported_routes"
+        ],
+        "properties": {
+          "minimum_client_schema_version": {
+            "type": "string"
+          },
+          "required_request_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "schema_version": {
+            "type": "string"
+          },
+          "supported_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Legacy internal action names retained for the panel command path.\n\nPublic HTTP clients should use `supported_routes`; `/v1/actions` is no\nlonger mounted after the direct REST cutover."
+          },
+          "supported_routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "WatchDefCreateRequest": {
         "type": "object",
         "required": [
@@ -4103,6 +4852,26 @@
           }
         },
         "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT or static token"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/authorize",
+            "tokenUrl": "/token",
+            "scopes": {
+              "axon:read": "Read Axon REST resources",
+              "axon:write": "Run Axon write and active-network operations"
+            }
+          }
+        }
       }
     }
   },

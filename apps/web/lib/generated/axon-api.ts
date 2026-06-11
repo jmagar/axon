@@ -322,6 +322,14 @@ export type components = {
             "size_bytes": number;
             "url": string;
         };
+        "ServerInfo": {
+            "minimum_client_schema_version": string;
+            "required_request_fields"?: string[];
+            "schema_version": string;
+            "supported_actions"?: string[];
+            "supported_routes": string[];
+            "version": string;
+        };
         "WatchDefCreateRequest": {
             "enabled"?: boolean | null;
             "every_seconds": number;

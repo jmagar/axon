@@ -1,8 +1,14 @@
+use crate::services::types::{RestRouteAuth, rest_route_inventory};
 use utoipa::OpenApi;
+use utoipa::openapi::path::Operation;
+use utoipa::openapi::security::{
+    AuthorizationCode, Flow, HttpAuthScheme, HttpBuilder, OAuth2, Scopes, SecurityRequirement,
+    SecurityScheme,
+};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
 
-use super::{handlers, openapi_jobs};
+use super::{handlers, openapi_jobs, routing};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -12,6 +18,7 @@ use super::{handlers, openapi_jobs};
         description = "Dedicated REST routes for Axon discovery, RAG, crawl, ingest, and watch workflows."
     ),
     paths(
+        routing::v1_capabilities,
         handlers::discovery::sources,
         handlers::discovery::domains,
         handlers::discovery::stats,
@@ -27,6 +34,7 @@ use super::{handlers, openapi_jobs};
         handlers::rag::suggest,
         handlers::exploration::scrape,
         handlers::exploration::summarize,
+        handlers::exploration::exploration_stream::summarize_stream,
         handlers::exploration::map,
         handlers::exploration::endpoints,
         handlers::exploration::brand,
@@ -34,6 +42,7 @@ use super::{handlers, openapi_jobs};
         handlers::exploration::screenshot,
         handlers::exploration::search,
         handlers::exploration::research,
+        handlers::exploration::exploration_stream::research_stream,
         handlers::memory::memory,
         handlers::async_jobs::start_crawl,
         handlers::async_jobs::start_embed,
@@ -74,6 +83,7 @@ use super::{handlers, openapi_jobs};
         crate::services::client_contract::RestAskRequest,
         crate::services::client_contract::RestChatRequest,
         crate::services::client_contract::RestChatResponse,
+        crate::services::types::ServerInfo,
         super::error::ErrorBody,
         crate::services::client_contract::RestQueryRequest,
         crate::services::client_contract::RestRetrieveRequest,
@@ -133,7 +143,67 @@ use super::{handlers, openapi_jobs};
 struct ApiDoc;
 
 pub fn openapi_document() -> utoipa::openapi::OpenApi {
-    ApiDoc::openapi()
+    let mut document = ApiDoc::openapi();
+    apply_security_metadata(&mut document);
+    document
+}
+
+fn apply_security_metadata(document: &mut utoipa::openapi::OpenApi) {
+    let components = document.components.get_or_insert_with(Default::default);
+    components.add_security_scheme(
+        "bearerAuth",
+        SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("JWT or static token")
+                .build(),
+        ),
+    );
+    components.add_security_scheme(
+        "oauth2",
+        SecurityScheme::OAuth2(OAuth2::new([Flow::AuthorizationCode(
+            AuthorizationCode::new(
+                "/authorize",
+                "/token",
+                Scopes::from_iter([
+                    ("axon:read", "Read Axon REST resources"),
+                    ("axon:write", "Run Axon write and active-network operations"),
+                ]),
+            ),
+        )])),
+    );
+
+    for route in rest_route_inventory()
+        .iter()
+        .filter(|route| route.openapi && route.auth != RestRouteAuth::Public)
+    {
+        let Some(operation) = operation_mut(document, route.path, route.method) else {
+            continue;
+        };
+        let scope = match route.auth {
+            RestRouteAuth::Read => "axon:read",
+            RestRouteAuth::Write => "axon:write",
+            RestRouteAuth::Public => continue,
+        };
+        operation.security = Some(vec![
+            SecurityRequirement::new("bearerAuth", Vec::<&str>::new()),
+            SecurityRequirement::new("oauth2", [scope]),
+        ]);
+    }
+}
+
+fn operation_mut<'a>(
+    document: &'a mut utoipa::openapi::OpenApi,
+    path: &str,
+    method: &str,
+) -> Option<&'a mut Operation> {
+    let path_item = document.paths.paths.get_mut(path)?;
+    match method {
+        "GET" => path_item.get.as_mut(),
+        "POST" => path_item.post.as_mut(),
+        "DELETE" => path_item.delete.as_mut(),
+        _ => None,
+    }
 }
 
 pub(super) fn docs_router<S>() -> axum::Router<S>

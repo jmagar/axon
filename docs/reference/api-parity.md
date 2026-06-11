@@ -82,29 +82,34 @@ Status meanings:
 ```text
 GET /healthz
 GET /readyz
+GET /api-docs/openapi.json
+GET /docs
 GET /v1/capabilities
 GET /v1/sources
 GET /v1/domains
 GET /v1/stats
 GET /v1/status
 GET /v1/doctor
-POST /v1/ask
-POST /v1/ask/stream
-POST /v1/chat
-POST /v1/chat/stream
 POST /v1/query
 POST /v1/retrieve
-POST /v1/evaluate
-POST /v1/suggest
-POST /v1/scrape
-POST /v1/summarize
 POST /v1/map
+GET /v1/artifacts/{path}
 POST /v1/endpoints
 POST /v1/brand
 POST /v1/diff
 POST /v1/screenshot
+POST /v1/ask
+POST /v1/ask/stream
+POST /v1/chat
+POST /v1/chat/stream
+POST /v1/evaluate
+POST /v1/suggest
+POST /v1/scrape
+POST /v1/summarize
+POST /v1/summarize/stream
 POST /v1/search
 POST /v1/research
+POST /v1/research/stream
 POST /v1/memory
 POST /v1/crawl
 GET /v1/crawl
@@ -139,7 +144,6 @@ POST /v1/dedupe
 GET /v1/watch
 POST /v1/watch
 POST /v1/watch/{id}/run
-GET /api-docs/openapi.json
 ```
 
 `supported_actions` and action-envelope `required_request_fields` remain in
@@ -153,6 +157,13 @@ The same document can be exported without starting a server:
 
 ```bash
 cargo run --bin axon-openapi > apps/web/openapi/axon.json
+```
+
+Fast API-only local check:
+
+```bash
+cargo test --test http_api_parity_inventory -- --nocapture
+npm --prefix apps/web run openapi:check
 ```
 
 The web client generates TypeScript declarations from that contract:
