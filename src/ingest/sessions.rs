@@ -15,6 +15,7 @@ const PHASE_EMBEDDING: &str = "embedding_sessions";
 const SESSION_INGEST_MAX_BYTES_ENV: &str = "AXON_SESSION_INGEST_MAX_BYTES";
 const DEFAULT_SESSION_INGEST_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
+pub mod checkpoint;
 mod claude;
 mod codex;
 mod gemini;
