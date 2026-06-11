@@ -18,6 +18,7 @@ mod claude;
 mod codex;
 mod gemini;
 mod prepared;
+pub mod watch;
 
 #[cfg(test)]
 pub(crate) use prepared::MAX_PREPARED_SESSION_DOCS;

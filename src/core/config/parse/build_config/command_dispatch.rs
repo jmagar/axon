@@ -7,14 +7,18 @@
 use super::super::super::cli::{
     CliCommand, ComposeArgs, ComposeSubcommand, ConfigArgs, ConfigSubcommand, DoctorSubcommand,
     IngestArgs, MemoryCliSubcommand, MonitorSubcommand, PaletteArgs, ServeArgs, ServeSubcommand,
-    SessionsArgs, SetupArgs, SetupAuthMode, SetupInitArgs, SetupSubcommand, SyncSubcommand,
+    SessionWatchServiceSubcommand, SessionsArgs, SessionsSubcommand, SetupArgs, SetupAuthMode,
+    SetupInitArgs, SetupSubcommand, SyncSubcommand,
 };
 use super::super::super::types::{
     CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, RedditSort, RedditTime,
 };
 use super::super::helpers::{positional_from_job, positional_from_watch_subcommand};
+use crate::ingest::sessions::watch::{SessionWatchOptions, SessionsRuntimeAction};
+use crate::services::setup::SessionWatchServiceAction;
 use clap::ValueEnum;
 use std::env;
+use std::time::Duration;
 
 fn env_usize_or(var: &str, default: usize) -> usize {
     env::var(var)
@@ -51,6 +55,9 @@ pub(super) struct DispatchOutput {
     pub sessions_codex: bool,
     pub sessions_gemini: bool,
     pub sessions_project: Option<String>,
+    pub sessions_watch: Option<SessionWatchOptions>,
+    pub sessions_action: Option<SessionsRuntimeAction>,
+    pub setup_session_watch_action: Option<SessionWatchServiceAction>,
     pub mcp_transport: Option<McpTransport>,
     pub mcp_transport_default: McpTransport,
     pub map_fallback: MapFallback,
@@ -102,6 +109,9 @@ impl DispatchOutput {
             sessions_codex: false,
             sessions_gemini: false,
             sessions_project: None,
+            sessions_watch: None,
+            sessions_action: None,
+            setup_session_watch_action: None,
             mcp_transport: None,
             mcp_transport_default: McpTransport::Http,
             map_fallback: MapFallback::Structure,
@@ -461,16 +471,46 @@ fn apply_ingest(out: &mut DispatchOutput, args: IngestArgs) {
 }
 
 fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
-    out.sessions_claude = args.claude;
-    out.sessions_codex = args.codex;
-    out.sessions_gemini = args.gemini;
-    out.sessions_project = args.project;
     out.command = CommandKind::Sessions;
-    out.positional = if let Some(job) = args.job {
-        positional_from_job(job)
-    } else {
-        Vec::new()
-    };
+    match args.action {
+        Some(SessionsSubcommand::Watch(watch)) => {
+            out.sessions_action = Some(SessionsRuntimeAction::Watch);
+            out.sessions_watch = Some(SessionWatchOptions {
+                path: watch.path,
+                debounce: Duration::from_millis(watch.debounce_ms),
+                settle: Duration::from_millis(watch.settle_ms),
+                max_retries: watch.max_retries,
+                max_batch_docs: watch.max_batch_docs,
+                max_processing_concurrency: watch.max_processing_concurrency,
+                rescan_cooldown: Duration::from_millis(watch.rescan_cooldown_ms),
+                initial_scan: !watch.no_initial_scan,
+                upload_to_server: watch.upload_to_server,
+                verbose_paths: watch.verbose_paths,
+                json: watch.json,
+            });
+        }
+        Some(job) => out.positional = sessions_job_positionals(job),
+        None => {
+            out.sessions_claude = args.claude;
+            out.sessions_codex = args.codex;
+            out.sessions_gemini = args.gemini;
+            out.sessions_project = args.project;
+        }
+    }
+}
+
+fn sessions_job_positionals(job: SessionsSubcommand) -> Vec<String> {
+    match job {
+        SessionsSubcommand::Status { job_id } => vec!["status".to_string(), job_id],
+        SessionsSubcommand::Cancel { job_id } => vec!["cancel".to_string(), job_id],
+        SessionsSubcommand::Errors { job_id } => vec!["errors".to_string(), job_id],
+        SessionsSubcommand::List => vec!["list".to_string()],
+        SessionsSubcommand::Cleanup => vec!["cleanup".to_string()],
+        SessionsSubcommand::Clear => vec!["clear".to_string()],
+        SessionsSubcommand::Worker => vec!["worker".to_string()],
+        SessionsSubcommand::Recover => vec!["recover".to_string()],
+        SessionsSubcommand::Watch(_) => Vec::new(),
+    }
 }
 
 fn apply_serve(out: &mut DispatchOutput, args: ServeArgs) {
@@ -573,6 +613,14 @@ fn apply_setup(out: &mut DispatchOutput, args: SetupArgs) {
         }
         Some(SetupSubcommand::Targets) => {
             out.positional = vec!["targets".to_string()];
+        }
+        Some(SetupSubcommand::SessionWatchService { action }) => {
+            out.setup_session_watch_action = Some(match action {
+                SessionWatchServiceSubcommand::Install => SessionWatchServiceAction::Install,
+                SessionWatchServiceSubcommand::Check => SessionWatchServiceAction::Check,
+                SessionWatchServiceSubcommand::Remove => SessionWatchServiceAction::Remove,
+                SessionWatchServiceSubcommand::Status => SessionWatchServiceAction::Status,
+            });
         }
     }
 }

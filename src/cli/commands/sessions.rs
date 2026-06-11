@@ -1,5 +1,6 @@
 use crate::cli::commands::ingest_common;
 use crate::core::config::Config;
+use crate::ingest::sessions::watch::run_session_watch;
 use crate::jobs::ingest::IngestSource;
 use crate::services::context::ServiceContext;
 use crate::services::ingest as ingest_service;
@@ -9,6 +10,12 @@ pub async fn run_sessions(
     cfg: &Config,
     service_context: &ServiceContext,
 ) -> Result<(), Box<dyn Error>> {
+    if let Some(options) = cfg.sessions_watch.clone() {
+        return run_session_watch(cfg, service_context, options)
+            .await
+            .map_err(|err| -> Box<dyn Error> { err.into() });
+    }
+
     if ingest_common::maybe_handle_ingest_subcommand(cfg, service_context, "sessions").await? {
         return Ok(());
     }
