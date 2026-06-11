@@ -77,7 +77,7 @@ pub fn validate_session_file_path(
         let Ok(relative) = canonical.strip_prefix(&root) else {
             continue;
         };
-        if !has_supported_extension(provider, &canonical) {
+        if !crate::ingest::sessions::has_supported_session_extension(provider, &canonical) {
             return Err(anyhow!("unsupported session file extension"));
         }
         let relative = relative.to_path_buf();
@@ -127,15 +127,6 @@ fn canonical_provider_roots(roots: &SessionWatchRoots) -> Vec<(SessionProvider, 
         root.canonicalize().ok().map(|path| (provider, path))
     })
     .collect()
-}
-
-fn has_supported_extension(provider: SessionProvider, path: &Path) -> bool {
-    match provider {
-        SessionProvider::Claude | SessionProvider::Codex => {
-            path.extension().is_some_and(|ext| ext == "jsonl")
-        }
-        SessionProvider::Gemini => path.extension().is_some_and(|ext| ext == "json"),
-    }
 }
 
 fn reject_secret_components(path: &Path) -> Result<()> {
