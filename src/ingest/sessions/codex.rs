@@ -103,6 +103,37 @@ pub(super) async fn collect_codex_docs(
     Ok(docs)
 }
 
+pub(super) async fn collect_codex_file_doc(
+    cfg: &Config,
+    path: PathBuf,
+) -> IngestResult<Option<SessionDoc>> {
+    let meta = fs::metadata(&path).await?;
+    let mtime = meta.modified()?;
+    let project_name = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_string();
+    if !matches_project_filter(cfg, &project_name) {
+        return Ok(None);
+    }
+    let session_meta = SessionMeta {
+        agent: "codex",
+        project_name,
+        project_path: None,
+        gh_repo: None,
+    };
+    parse_codex_file(
+        path,
+        resolve_collection(cfg, "codex"),
+        mtime,
+        session_meta,
+        super::session_ingest_max_bytes_for_config(cfg),
+    )
+    .await
+}
+
 /// Stream a Codex JSONL session file line-by-line, accumulating extracted text up to
 /// `max_text_bytes`. Avoids loading the entire file into memory.
 async fn parse_codex_file_streamed(

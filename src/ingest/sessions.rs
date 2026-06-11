@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::core::logging::{log_done, log_info, log_warn};
 use crate::ingest::progress::PhaseReporter;
+use crate::ingest::sessions::watch::validate::{SessionProvider, ValidatedSessionPath};
 use crate::vector::ops::{PreparedDoc, embed_prepared_docs};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
@@ -190,6 +191,50 @@ pub async fn prepare_sessions_request(
         collection,
     };
     Ok(request)
+}
+
+pub async fn collect_prepared_session_file_doc(
+    cfg: &Config,
+    path: &Path,
+) -> Result<Option<PreparedSessionDoc>, Box<dyn Error>> {
+    let roots = watch::validate::SessionWatchRoots::from_config(cfg)?;
+    let validated = watch::validate::validate_session_file_path(&roots, path)?;
+    let doc = collect_session_file_doc(cfg, &validated)
+        .await?
+        .map(prepared_session_doc_from_session_doc)
+        .transpose()
+        .map_err(|err| -> Box<dyn Error> { err.into() })?;
+    Ok(doc)
+}
+
+pub(crate) async fn collect_session_file_doc(
+    cfg: &Config,
+    validated: &ValidatedSessionPath,
+) -> Result<Option<SessionDoc>, Box<dyn Error>> {
+    match validated.provider {
+        SessionProvider::Claude => {
+            claude::collect_claude_file_doc(cfg, validated.canonical.clone())
+                .await
+                .map_err(|err| -> Box<dyn Error> { err.into() })
+        }
+        SessionProvider::Codex => codex::collect_codex_file_doc(cfg, validated.canonical.clone())
+            .await
+            .map_err(|err| -> Box<dyn Error> { err.into() }),
+        SessionProvider::Gemini => {
+            gemini::collect_gemini_file_doc(cfg, validated.canonical.clone())
+                .await
+                .map_err(|err| -> Box<dyn Error> { err.into() })
+        }
+    }
+}
+
+pub(crate) fn has_supported_session_extension(provider: SessionProvider, path: &Path) -> bool {
+    match provider {
+        SessionProvider::Claude | SessionProvider::Codex => {
+            path.extension().is_some_and(|ext| ext == "jsonl")
+        }
+        SessionProvider::Gemini => path.extension().is_some_and(|ext| ext == "json"),
+    }
 }
 
 /// Scan local session exports and split them into validated batches, each within

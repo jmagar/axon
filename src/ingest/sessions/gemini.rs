@@ -49,6 +49,16 @@ pub(super) async fn collect_gemini_docs(
     Ok(docs)
 }
 
+pub(super) async fn collect_gemini_file_doc(
+    cfg: &Config,
+    path: PathBuf,
+) -> IngestResult<Option<SessionDoc>> {
+    let meta = fs::metadata(&path).await?;
+    let mtime = meta.modified()?;
+    let collection = resolve_collection(cfg, "gemini");
+    process_gemini_file(path, collection, mtime).await
+}
+
 type GeminiFutures = FuturesUnordered<tokio::task::JoinHandle<IngestResult<Option<SessionDoc>>>>;
 
 async fn enqueue_gemini_dir(

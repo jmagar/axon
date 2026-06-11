@@ -110,6 +110,42 @@ pub(super) async fn collect_claude_docs(
     Ok(docs)
 }
 
+pub(super) async fn collect_claude_file_doc(
+    cfg: &Config,
+    path: PathBuf,
+) -> IngestResult<Option<SessionDoc>> {
+    let meta = fs::metadata(&path).await?;
+    let mtime = meta.modified()?;
+    let project_dir_name = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    let clean_name = clean_claude_project_name(project_dir_name);
+    if !matches_project_filter(cfg, &clean_name) {
+        return Ok(None);
+    }
+    let project_path_opt = super::decode_claude_project_path(project_dir_name);
+    let gh_repo = match project_path_opt {
+        Some(ref project_path) => super::read_git_remote_origin(project_path).await,
+        None => None,
+    };
+    let session_meta = SessionMeta {
+        agent: "claude",
+        project_name: clean_name.clone(),
+        project_path: project_path_opt.map(|path| path.to_string_lossy().into_owned()),
+        gh_repo,
+    };
+    parse_claude_file(
+        path,
+        resolve_collection(cfg, &clean_name),
+        mtime,
+        session_meta,
+        super::session_ingest_max_bytes_for_config(cfg),
+    )
+    .await
+}
+
 /// Stream a Claude JSONL session file line-by-line, accumulating extracted text up to
 /// `max_text_bytes`. Avoids loading the entire file into memory, so files of any size are
 /// handled — large files are truncated at the text limit rather than skipped.

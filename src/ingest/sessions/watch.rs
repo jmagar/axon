@@ -4,6 +4,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub mod validate;
+
 #[derive(Debug, Clone)]
 pub struct SessionWatchOptions {
     pub path: Option<PathBuf>,
