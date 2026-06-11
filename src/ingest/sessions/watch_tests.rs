@@ -107,7 +107,9 @@ fn watch_targets_accepts_single_file_by_watching_parent() {
     std::fs::write(&file, "{}\n").unwrap();
 
     let options = test_watch_options(Some(file.clone()));
-    let targets = watch_targets(&options).unwrap();
+    let cfg = Config::default();
+    let roots = SessionWatchRoots::for_home(temp.path());
+    let targets = watch_targets(&cfg, &roots, &options).unwrap();
 
     assert_eq!(targets.len(), 1);
     match &targets[0] {
@@ -117,6 +119,25 @@ fn watch_targets_accepts_single_file_by_watching_parent() {
         }
         other => panic!("expected file target, got {other:?}"),
     }
+}
+
+#[test]
+fn default_watch_targets_respect_provider_filters() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".claude/projects")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".codex/sessions")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".gemini/history")).unwrap();
+
+    let cfg = Config {
+        sessions_codex: true,
+        ..Config::default()
+    };
+    let roots = SessionWatchRoots::for_home(temp.path());
+    let options = test_watch_options(None);
+    let targets = watch_targets(&cfg, &roots, &options).unwrap();
+
+    assert_eq!(targets.len(), 1);
+    assert!(targets[0].root().ends_with(".codex/sessions"));
 }
 
 #[tokio::test]
@@ -176,14 +197,14 @@ async fn process_stable_file_records_parse_error_without_panic() {
 }
 
 #[tokio::test]
-async fn upload_prepared_sessions_posts_to_authenticated_server() {
+async fn upload_prepared_sessions_requires_accepted_job_response() {
     let server = MockServer::start_async().await;
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/v1/ingest/sessions/prepared")
                 .header("authorization", "Bearer test-token");
-            then.status(200)
+            then.status(202)
                 .header("content-type", "application/json")
                 .json_body(serde_json::json!({
                     "result": { "job_id": "job-123" }
@@ -215,6 +236,173 @@ async fn upload_prepared_sessions_posts_to_authenticated_server() {
 
     assert_eq!(label, "job-123");
     mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn upload_prepared_sessions_rejects_success_without_job_id() {
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/v1/ingest/sessions/prepared")
+                .header("authorization", "Bearer test-token");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({ "ok": true }));
+        })
+        .await;
+
+    let error = upload_prepared_sessions_to_server_with_auth(
+        &server.base_url(),
+        "test-token",
+        IngestSessionsPreparedRequest {
+            docs: vec![PreparedSessionDoc {
+                url: "file:///tmp/session.jsonl".to_string(),
+                title: Some("session".to_string()),
+                text: "hello from a session".to_string(),
+                session_platform: "codex".to_string(),
+                session_project: None,
+                session_date: None,
+                session_turn_count: Some(1),
+                session_file: "session.jsonl".to_string(),
+                extra: serde_json::json!({}),
+            }],
+            project: None,
+            collection: None,
+        },
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("202 Accepted"));
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn remote_watch_acceptance_records_upload_checkpoint() {
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/v1/ingest/sessions/prepared")
+                .header("authorization", "Bearer remote-token");
+            then.status(202)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "result": { "job_id": "remote-job-123" }
+                }));
+        })
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = crate::jobs::store::open_sqlite_pool(&db_path.to_string_lossy())
+        .await
+        .unwrap();
+    let root = temp.path().join(".codex/sessions");
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("remote.jsonl");
+    std::fs::write(
+        &path,
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "remote acceptance is not completion" }]
+            }
+        })
+        .to_string()
+            + "\n",
+    )
+    .unwrap();
+
+    let cfg = Config::default();
+    let runtime = Arc::new(AckingRuntime::default());
+    let service_context = ServiceContext::from_runtime(Arc::new(cfg.clone()), runtime);
+    let mut options = test_watch_options(None);
+    options.upload_to_server = true;
+    options.upload_server_url = Some(server.base_url());
+    options.upload_token = Some("remote-token".to_string());
+
+    let validated = test_validated_codex_path(&path);
+    let outcomes = process_session_batch_for_watch(
+        &cfg,
+        &service_context,
+        &pool,
+        vec![validated.clone()],
+        &options,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        outcomes.as_slice(),
+        [ProcessOutcome::RemoteAccepted { job }] if job == "remote-job-123"
+    ));
+    assert!(
+        checkpoint_success_exists_for_path_hash(&pool, &validated.path_hash)
+            .await
+            .unwrap()
+    );
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn project_filtered_watch_skip_does_not_record_success_checkpoint() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("jobs.db");
+    let pool = crate::jobs::store::open_sqlite_pool(&db_path.to_string_lossy())
+        .await
+        .unwrap();
+    let root = temp.path().join(".codex/sessions/2026/06/11");
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("filtered.jsonl");
+    std::fs::write(
+        &path,
+        serde_json::json!({
+            "type": "session_meta",
+            "payload": { "cwd": "/tmp/other-project", "model": "gpt-5" }
+        })
+        .to_string()
+            + "\n"
+            + &serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "this should be filtered" }]
+                }
+            })
+            .to_string()
+            + "\n",
+    )
+    .unwrap();
+
+    let cfg = Config {
+        sessions_project: Some("axon".to_string()),
+        ..Config::default()
+    };
+    let runtime = Arc::new(AckingRuntime::default());
+    let service_context = ServiceContext::from_runtime(Arc::new(cfg.clone()), runtime);
+    let options = test_watch_options(None);
+    let validated = test_validated_codex_path(&path);
+
+    let outcomes = process_session_batch_for_watch(
+        &cfg,
+        &service_context,
+        &pool,
+        vec![validated.clone()],
+        &options,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcomes, vec![ProcessOutcome::SkippedFiltered]);
+    assert!(
+        !checkpoint_success_exists_for_path_hash(&pool, &validated.path_hash)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -283,6 +471,18 @@ fn max_processing_concurrency_is_clamped_for_batch_preparation() {
     assert_eq!(effective_processing_concurrency(&options), 7);
 }
 
+#[test]
+fn redact_error_detail_removes_home_paths_and_tokens() {
+    let home = std::env::var("HOME").unwrap();
+    let detail = redact_error_detail(&format!(
+        "failed to read {home}/.codex/sessions/private.jsonl bearer secret-token"
+    ));
+
+    assert!(!detail.contains(&home));
+    assert!(!detail.contains("secret-token"));
+    assert!(detail.contains("[REDACTED-HOME]") || detail.contains("[REDACTED-SESSION-ROOT]"));
+}
+
 fn test_watch_options(path: Option<PathBuf>) -> SessionWatchOptions {
     SessionWatchOptions {
         path,
@@ -294,6 +494,8 @@ fn test_watch_options(path: Option<PathBuf>) -> SessionWatchOptions {
         rescan_cooldown: Duration::from_secs(5),
         initial_scan: false,
         upload_to_server: false,
+        upload_server_url: None,
+        upload_token: None,
         verbose_paths: false,
         json: false,
     }

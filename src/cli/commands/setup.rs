@@ -250,20 +250,7 @@ fn print_session_watch_service_report(
     println!("{} {}", muted("unit:"), report.unit_path.display());
     println!("{} {}", muted("env:"), report.env_path.display());
     println!("{} {}", muted("binary:"), report.axon_bin.display());
-    for phase in &report.phases {
-        let slug = match phase.status {
-            LocalSetupStatus::Ok => "completed",
-            LocalSetupStatus::Warn => "warn",
-            LocalSetupStatus::Error => "failed",
-            LocalSetupStatus::Skipped => "pending",
-        };
-        println!(
-            "  {} {} {}",
-            symbol_for_status(slug),
-            phase.name,
-            muted(&format!("{}ms  {}", phase.elapsed_ms, phase.detail))
-        );
-    }
+    print_setup_phases(&report.phases);
     Ok(())
 }
 
@@ -395,7 +382,14 @@ fn print_local_setup_report(
         }
     );
     println!();
-    for phase in &report.phases {
+    print_setup_phases(&report.phases);
+    println!();
+    println!("{}", muted("next diagnostic: axon doctor"));
+    Ok(())
+}
+
+fn print_setup_phases(phases: &[setup::LocalSetupPhase]) {
+    for phase in phases {
         let slug = match phase.status {
             LocalSetupStatus::Ok => "completed",
             LocalSetupStatus::Warn => "warn",
@@ -409,9 +403,6 @@ fn print_local_setup_report(
             muted(&format!("{}ms  {}", phase.elapsed_ms, phase.detail))
         );
     }
-    println!();
-    println!("{}", muted("next diagnostic: axon doctor"));
-    Ok(())
 }
 
 #[cfg(test)]

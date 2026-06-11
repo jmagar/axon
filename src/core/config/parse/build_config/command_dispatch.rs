@@ -472,8 +472,16 @@ fn apply_ingest(out: &mut DispatchOutput, args: IngestArgs) {
 
 fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
     out.command = CommandKind::Sessions;
+    out.sessions_claude = args.claude;
+    out.sessions_codex = args.codex;
+    out.sessions_gemini = args.gemini;
+    out.sessions_project = args.project;
     match args.action {
         Some(SessionsSubcommand::Watch(watch)) => {
+            out.sessions_claude = watch.claude;
+            out.sessions_codex = watch.codex;
+            out.sessions_gemini = watch.gemini;
+            out.sessions_project = watch.project;
             out.sessions_action = Some(SessionsRuntimeAction::Watch);
             out.sessions_watch = Some(SessionWatchOptions {
                 path: watch.path,
@@ -485,6 +493,8 @@ fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
                 rescan_cooldown: Duration::from_millis(watch.rescan_cooldown_ms),
                 initial_scan: !watch.no_initial_scan,
                 upload_to_server: watch.upload_to_server,
+                upload_server_url: None,
+                upload_token: None,
                 verbose_paths: watch.verbose_paths,
                 json: watch.json,
             });
@@ -495,29 +505,28 @@ fn apply_sessions(out: &mut DispatchOutput, args: SessionsArgs) {
         Some(SessionsSubcommand::SmokeWatch { timeout_secs }) => {
             out.sessions_action = Some(SessionsRuntimeAction::SmokeWatch { timeout_secs });
         }
-        Some(job) => out.positional = sessions_job_positionals(job),
-        None => {
-            out.sessions_claude = args.claude;
-            out.sessions_codex = args.codex;
-            out.sessions_gemini = args.gemini;
-            out.sessions_project = args.project;
+        Some(job) => {
+            if let Some(positional) = sessions_job_positionals(job) {
+                out.positional = positional;
+            }
         }
+        None => {}
     }
 }
 
-fn sessions_job_positionals(job: SessionsSubcommand) -> Vec<String> {
+fn sessions_job_positionals(job: SessionsSubcommand) -> Option<Vec<String>> {
     match job {
-        SessionsSubcommand::Status { job_id } => vec!["status".to_string(), job_id],
-        SessionsSubcommand::Cancel { job_id } => vec!["cancel".to_string(), job_id],
-        SessionsSubcommand::Errors { job_id } => vec!["errors".to_string(), job_id],
-        SessionsSubcommand::List => vec!["list".to_string()],
-        SessionsSubcommand::Cleanup => vec!["cleanup".to_string()],
-        SessionsSubcommand::Clear => vec!["clear".to_string()],
-        SessionsSubcommand::Worker => vec!["worker".to_string()],
-        SessionsSubcommand::Recover => vec!["recover".to_string()],
-        SessionsSubcommand::Watch(_) => Vec::new(),
-        SessionsSubcommand::WatchStatus { .. } => Vec::new(),
-        SessionsSubcommand::SmokeWatch { .. } => Vec::new(),
+        SessionsSubcommand::Status { job_id } => Some(vec!["status".to_string(), job_id]),
+        SessionsSubcommand::Cancel { job_id } => Some(vec!["cancel".to_string(), job_id]),
+        SessionsSubcommand::Errors { job_id } => Some(vec!["errors".to_string(), job_id]),
+        SessionsSubcommand::List => Some(vec!["list".to_string()]),
+        SessionsSubcommand::Cleanup => Some(vec!["cleanup".to_string()]),
+        SessionsSubcommand::Clear => Some(vec!["clear".to_string()]),
+        SessionsSubcommand::Worker => Some(vec!["worker".to_string()]),
+        SessionsSubcommand::Recover => Some(vec!["recover".to_string()]),
+        SessionsSubcommand::Watch(_)
+        | SessionsSubcommand::WatchStatus { .. }
+        | SessionsSubcommand::SmokeWatch { .. } => None,
     }
 }
 

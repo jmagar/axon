@@ -128,6 +128,99 @@ async fn collect_prepared_session_file_doc_parses_codex_file() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn collect_prepared_session_file_doc_filters_codex_date_tree_by_workspace_project() {
+    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME for session tests"));
+    let session_dir = home.join(".codex/sessions/2026/06/11");
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let file = session_dir.join(format!("codex-date-tree-{}.jsonl", uuid::Uuid::new_v4()));
+    std::fs::write(
+        &file,
+        serde_json::json!({
+            "type": "session_meta",
+            "payload": { "cwd": "/home/jmagar/workspace/axon", "model": "gpt-5" }
+        })
+        .to_string()
+            + "\n"
+            + &serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "date tree codex project filter" }]
+                }
+            })
+            .to_string()
+            + "\n",
+    )
+    .unwrap();
+
+    let cfg = Config {
+        sessions_project: Some("axon".to_string()),
+        ..Config::default()
+    };
+    let doc = collect_prepared_session_file_doc(&cfg, &file)
+        .await
+        .unwrap()
+        .expect("codex doc matching workspace project");
+
+    assert_eq!(doc.session_project.as_deref(), Some("axon"));
+    assert!(doc.text.contains("date tree codex project filter"));
+
+    let cfg = Config {
+        sessions_project: Some("not-axon".to_string()),
+        ..Config::default()
+    };
+    assert!(
+        collect_prepared_session_file_doc(&cfg, &file)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn collect_prepared_session_file_doc_parses_gemini_project_metadata() {
+    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME for session tests"));
+    let gemini_root = home.join(".gemini");
+    std::fs::create_dir_all(&gemini_root).unwrap();
+    let project_dir = home_provider_tempdir(".gemini/history");
+    let project_name = project_dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let chats_dir = project_dir.path().join("chats");
+    std::fs::create_dir_all(&chats_dir).unwrap();
+    let file = chats_dir.join("gemini-1.json");
+    std::fs::write(
+        &file,
+        serde_json::json!({
+            "messages": [{
+                "type": "user",
+                "content": [{ "text": "remember this gemini session" }]
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let cfg = Config {
+        sessions_project: Some(project_name.clone()),
+        ..Config::default()
+    };
+    let doc = collect_prepared_session_file_doc(&cfg, &file)
+        .await
+        .unwrap()
+        .expect("gemini doc");
+
+    assert_eq!(doc.session_platform, "gemini");
+    assert_eq!(doc.session_project.as_deref(), Some(project_name.as_str()));
+    assert!(doc.text.contains("remember this gemini session"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn collect_prepared_session_file_doc_rejects_unsupported_file() {
     let temp = tempfile::tempdir().unwrap();
     let file = temp.path().join("notes.txt");

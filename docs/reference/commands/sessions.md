@@ -1,5 +1,5 @@
 # axon sessions
-Last Modified: 2026-03-09
+Last Modified: 2026-06-11
 
 Ingest local AI session history (Claude, Codex, Gemini) into Qdrant.
 
@@ -58,6 +58,7 @@ These subcommands operate on the shared ingest queue across source types.
 
 ```bash
 axon sessions watch --json
+axon sessions watch --codex --project axon --json
 axon sessions watch --path ~/.claude/projects --debounce-ms 750 --settle-ms 500 --max-retries 5
 axon sessions watch --no-initial-scan --json
 axon sessions watch-status --json
@@ -76,7 +77,9 @@ The watcher uses non-recursive directory watches and registers newly-created dir
 
 `watch-status` summarizes checkpoint and recent error rows. `smoke-watch` writes a valid Codex probe transcript and waits for concrete checkpoint evidence from the running watcher; it fails if ingestion is not observed before the timeout.
 
-When `--upload-to-server` is explicitly enabled and `AXON_SERVER_URL` is set, the watcher still parses and redacts local files on the client, then uploads prepared docs to `POST /v1/ingest/sessions/prepared` with bearer auth and request timeouts. It never asks the server to scan server-local transcript roots. Without that opt-in, v0 uses the local prepared-session service path.
+`sessions watch` accepts the same provider/project filters as one-shot session ingest (`--claude`, `--codex`, `--gemini`, `--project <name>`), scoped to the watch subcommand.
+
+When `--upload-to-server` is explicitly enabled and `AXON_SERVER_URL` is set, the watcher still parses and redacts local files on the client, then uploads prepared docs to `POST /v1/ingest/sessions/prepared` with bearer auth and request timeouts. It never asks the server to scan server-local transcript roots. Remote upload requires `202 Accepted` plus a returned `job_id`; that durable queue acceptance is logged as `accepted_remote` and checkpointed locally to avoid duplicate uploads on later rescans. Without that opt-in, v0 uses the local prepared-session service path and checkpoints only after local prepared-session ingest succeeds.
 
 ## Examples
 

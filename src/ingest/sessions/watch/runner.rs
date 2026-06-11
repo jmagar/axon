@@ -24,7 +24,7 @@ pub async fn run_session_watch(
     options: SessionWatchOptions,
 ) -> Result<()> {
     let roots = SessionWatchRoots::from_config(cfg)?;
-    let targets = watch_targets(&options)?;
+    let targets = watch_targets(cfg, &roots, &options)?;
     if targets.is_empty() {
         return Err(anyhow!("no AI session roots exist to watch"));
     }
@@ -90,31 +90,23 @@ pub async fn run_session_watch(
                     prune_missing.as_ref(),
                 ) {
                     watch_directory_tree(&mut watcher, &dir, &mut watched_dirs)?;
+                    overflow_rescan.store(true, Ordering::Relaxed);
                 }
             }
             _ = tick.tick() => {
-                if prune_missing.swap(false, Ordering::Relaxed) {
-                    mark_missing_checkpoints(options.json).await;
-                }
-                if overflow_rescan.swap(false, Ordering::Relaxed) {
-                    run_initial_rescan_with_cooldown(
+                handle_tick(
+                    TickContext {
                         cfg,
                         service_context,
-                        pool.as_ref(),
-                        &roots,
-                        &targets,
-                        &options,
-                        &mut last_rescan,
-                    )
-                    .await;
-                }
-                process_pending(
-                    cfg,
-                    service_context,
-                    pool.as_ref(),
-                    &roots,
-                    &options,
+                        pool: pool.as_ref(),
+                        roots: &roots,
+                        targets: &targets,
+                        options: &options,
+                        prune_missing: prune_missing.as_ref(),
+                        overflow_rescan: overflow_rescan.as_ref(),
+                    },
                     &mut pending,
+                    &mut last_rescan,
                 )
                 .await;
             }
@@ -222,6 +214,48 @@ async fn run_initial_rescan(
     }
 }
 
+struct TickContext<'a> {
+    cfg: &'a Config,
+    service_context: &'a ServiceContext,
+    pool: &'a sqlx::SqlitePool,
+    roots: &'a SessionWatchRoots,
+    targets: &'a [WatchTarget],
+    options: &'a SessionWatchOptions,
+    prune_missing: &'a AtomicBool,
+    overflow_rescan: &'a AtomicBool,
+}
+
+async fn handle_tick(
+    ctx: TickContext<'_>,
+    pending: &mut PendingFiles,
+    last_rescan: &mut Option<Instant>,
+) {
+    if ctx.prune_missing.swap(false, Ordering::Relaxed) {
+        mark_missing_checkpoints(ctx.options.json);
+    }
+    if ctx.overflow_rescan.swap(false, Ordering::Relaxed) {
+        run_initial_rescan_with_cooldown(
+            ctx.cfg,
+            ctx.service_context,
+            ctx.pool,
+            ctx.roots,
+            ctx.targets,
+            ctx.options,
+            last_rescan,
+        )
+        .await;
+    }
+    process_pending(
+        ctx.cfg,
+        ctx.service_context,
+        ctx.pool,
+        ctx.roots,
+        ctx.options,
+        pending,
+    )
+    .await;
+}
+
 async fn run_initial_rescan_with_cooldown(
     cfg: &Config,
     service_context: &ServiceContext,
@@ -239,27 +273,36 @@ async fn run_initial_rescan_with_cooldown(
     run_initial_rescan(cfg, service_context, pool, roots, targets, options).await;
 }
 
-async fn mark_missing_checkpoints(json: bool) {
+fn mark_missing_checkpoints(json: bool) {
     if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "stage": "prune_missing",
-                "result": "checkpoint pruning deferred"
-            })
-        );
+        emit_status("prune_missing", "checkpoint pruning deferred");
     }
+}
+
+fn emit_status(stage: &str, result: &str) {
+    println!(
+        "{}",
+        serde_json::json!({ "stage": stage, "result": result })
+    );
 }
 
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("install SIGTERM handler");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = terminate.recv() => {}
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = terminate.recv() => {}
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    detail = %redact_error_detail(&error.to_string()),
+                    "failed to install SIGTERM handler for session watcher"
+                );
+                let _ = tokio::signal::ctrl_c().await;
+            }
         }
     }
     #[cfg(not(unix))]

@@ -322,6 +322,20 @@ pub(crate) fn prepared_session_doc_from_session_doc(
 
 /// Groups collected docs by collection and calls `embed_prepared_docs` once per collection.
 async fn embed_all_session_docs(cfg: &Config, docs: Vec<SessionDoc>) -> usize {
+    match embed_session_docs(cfg, docs, false).await {
+        Ok(total) => total,
+        Err(error) => {
+            log_warn(&format!("sessions embed failed: {error}"));
+            0
+        }
+    }
+}
+
+async fn embed_session_docs(
+    cfg: &Config,
+    docs: Vec<SessionDoc>,
+    strict: bool,
+) -> Result<usize, Box<dyn Error>> {
     let mut by_collection: HashMap<String, Vec<PreparedDoc>> = HashMap::new();
     for sd in docs {
         by_collection.entry(sd.collection).or_default().push(sd.doc);
@@ -329,6 +343,7 @@ async fn embed_all_session_docs(cfg: &Config, docs: Vec<SessionDoc>) -> usize {
 
     let mut total = 0;
     for (collection, prepared) in by_collection {
+        let doc_count = prepared.len();
         let mut session_cfg = cfg.clone();
         session_cfg.collection = collection;
 
@@ -336,21 +351,36 @@ async fn embed_all_session_docs(cfg: &Config, docs: Vec<SessionDoc>) -> usize {
             Ok(summary) => {
                 total += summary.chunks_embedded;
                 if summary.docs_failed > 0 {
-                    log_warn(&format!(
+                    let message = format!(
                         "sessions embed partial failure collection={} docs_failed={} docs_embedded={}",
                         session_cfg.collection, summary.docs_failed, summary.docs_embedded
-                    ));
+                    );
+                    if strict {
+                        return Err(message.into());
+                    }
+                    log_warn(&message);
+                }
+                if strict && doc_count > 0 && summary.chunks_embedded == 0 {
+                    return Err(format!(
+                        "sessions embed produced zero chunks for nonempty collection={}",
+                        session_cfg.collection
+                    )
+                    .into());
                 }
             }
             Err(e) => {
-                log_warn(&format!(
+                let message = format!(
                     "sessions embed failed collection={} error={e}",
                     session_cfg.collection
-                ));
+                );
+                if strict {
+                    return Err(message.into());
+                }
+                log_warn(&message);
             }
         }
     }
-    total
+    Ok(total)
 }
 
 pub async fn ingest_prepared_sessions(
@@ -363,7 +393,7 @@ pub async fn ingest_prepared_sessions(
     let docs = request
         .into_session_docs(cfg)
         .map_err(|err| -> Box<dyn Error> { err.into() })?;
-    let total_chunks = embed_all_session_docs(cfg, docs).await;
+    let total_chunks = embed_session_docs(cfg, docs, true).await?;
     log_done(&format!(
         "command=ingest source=prepared_sessions total_chunk_count={total_chunks}"
     ));

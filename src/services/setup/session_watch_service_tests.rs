@@ -25,7 +25,6 @@ fn session_watch_service_unit_runs_sessions_watch_no_initial_scan() {
     let unit = session_watch_service_unit(
         Path::new("/home/j/.local/bin/axon"),
         Path::new("/home/j/.config/axon/session-watch.env"),
-        Path::new("/home/j/.axon/jobs.db"),
         Path::new("/home/j/.local/state/axon"),
         Path::new("/home/j"),
     );

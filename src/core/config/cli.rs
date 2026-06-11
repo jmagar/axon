@@ -722,6 +722,18 @@ pub(super) enum SessionsSubcommand {
 
 #[derive(Debug, Args, Clone)]
 pub(super) struct SessionsWatchArgs {
+    /// Only watch Claude session exports.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(super) claude: bool,
+    /// Only watch Codex session exports.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(super) codex: bool,
+    /// Only watch Gemini session exports.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(super) gemini: bool,
+    /// Filter watched session projects by substring.
+    #[arg(long, value_name = "NAME")]
+    pub(super) project: Option<String>,
     /// Watch one transcript file or directory instead of all default provider roots.
     #[arg(long)]
     pub(super) path: Option<std::path::PathBuf>,

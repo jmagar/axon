@@ -1,5 +1,6 @@
 use super::SessionWatchOptions;
 use super::queue::{PendingFiles, PendingState};
+use super::targets::provider_allowed;
 use super::validate::{SessionWatchRoots, ValidatedSessionPath, validate_session_file_path};
 use crate::core::config::Config;
 use crate::ingest::sessions::checkpoint::{
@@ -33,7 +34,9 @@ impl WatchOutputMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProcessOutcome {
     Ingested { chunks_or_job: String },
+    RemoteAccepted { job: String },
     SkippedUnchanged,
+    SkippedFiltered,
     NoContent,
     RetryableFailure(String),
 }
@@ -72,9 +75,14 @@ pub(crate) async fn process_session_file_for_watch(
             })
         }
         Ok(None) => {
-            record_success(pool, &meta, None).await?;
-            emit_watch_json(output, "no_content", validated, None);
-            Ok(ProcessOutcome::NoContent)
+            if cfg.sessions_project.is_some() {
+                emit_watch_json(output, "skipped_filtered", validated, None);
+                Ok(ProcessOutcome::SkippedFiltered)
+            } else {
+                record_success(pool, &meta, None).await?;
+                emit_watch_json(output, "no_content", validated, None);
+                Ok(ProcessOutcome::NoContent)
+            }
         }
         Err(error) => {
             let (code, redacted) = classify_and_redact_watch_error(&error.to_string());
@@ -121,9 +129,14 @@ pub(crate) async fn process_session_batch_for_watch(
                 prepared_meta.push((index, validated, meta, doc, content_hash));
             }
             Ok(None) => {
-                record_success(pool, &meta, None).await?;
-                emit_watch_json(output, "no_content", &validated, None);
-                outcomes[index] = Some(ProcessOutcome::NoContent);
+                if cfg.sessions_project.is_some() {
+                    emit_watch_json(output, "skipped_filtered", &validated, None);
+                    outcomes[index] = Some(ProcessOutcome::SkippedFiltered);
+                } else {
+                    record_success(pool, &meta, None).await?;
+                    emit_watch_json(output, "no_content", &validated, None);
+                    outcomes[index] = Some(ProcessOutcome::NoContent);
+                }
             }
             Err(error) => {
                 let (code, redacted) = classify_and_redact_watch_error(&error.to_string());
@@ -146,13 +159,20 @@ pub(crate) async fn process_session_batch_for_watch(
             collection: collection.clone(),
         };
         match ingest_prepared_request_for_watch(cfg, service_context, request, options).await {
-            Ok(label) => {
+            Ok(WatchIngestResult::Completed(label)) => {
                 for (index, validated, meta, _, content_hash) in meta_chunk {
                     record_success(pool, meta, content_hash.as_deref()).await?;
                     emit_watch_json(output, "ingested", validated, Some(&label));
                     outcomes[*index] = Some(ProcessOutcome::Ingested {
                         chunks_or_job: label.clone(),
                     });
+                }
+            }
+            Ok(WatchIngestResult::RemoteAccepted(label)) => {
+                for (index, validated, meta, _, content_hash) in meta_chunk {
+                    record_success(pool, meta, content_hash.as_deref()).await?;
+                    emit_watch_json(output, "accepted_remote", validated, Some(&label));
+                    outcomes[*index] = Some(ProcessOutcome::RemoteAccepted { job: label.clone() });
                 }
             }
             Err(error) => {
@@ -190,10 +210,10 @@ async fn prepare_session_docs_for_watch(
         let cfg = cfg.clone();
         let semaphore = Arc::clone(&semaphore);
         tasks.push(async move {
-            let _permit = semaphore
-                .acquire_owned()
-                .await
-                .expect("session watch parse semaphore closed");
+            let _permit = match semaphore.acquire_owned().await {
+                Ok(permit) => permit,
+                Err(error) => return (index, validated, meta, Err(error.into())),
+            };
             let parsed = crate::ingest::sessions::collect_session_file_doc(&cfg, &validated).await;
             (index, validated, meta, parsed)
         });
@@ -211,14 +231,21 @@ pub(crate) fn effective_processing_concurrency(options: &SessionWatchOptions) ->
     options.max_processing_concurrency.max(1)
 }
 
+enum WatchIngestResult {
+    Completed(String),
+    RemoteAccepted(String),
+}
+
 async fn ingest_prepared_request_for_watch(
     cfg: &Config,
     _service_context: &ServiceContext,
     request: crate::ingest::sessions::IngestSessionsPreparedRequest,
     options: &SessionWatchOptions,
-) -> Result<String> {
+) -> Result<WatchIngestResult> {
     if options.upload_to_server {
-        return upload_prepared_sessions_to_server(request).await;
+        return upload_prepared_sessions_to_server(request, options)
+            .await
+            .map(WatchIngestResult::RemoteAccepted);
     }
 
     let outcome =
@@ -230,15 +257,26 @@ async fn ingest_prepared_request_for_watch(
         .get("chunks")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    Ok(format!("prepared-session-chunks={chunks}"))
+    Ok(WatchIngestResult::Completed(format!(
+        "prepared-session-chunks={chunks}"
+    )))
 }
 
 async fn upload_prepared_sessions_to_server(
     request: crate::ingest::sessions::IngestSessionsPreparedRequest,
+    options: &SessionWatchOptions,
 ) -> Result<String> {
-    let base = std::env::var("AXON_SERVER_URL")
+    let base = options
+        .upload_server_url
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(|| std::env::var("AXON_SERVER_URL"))
         .map_err(|_| anyhow!("AXON_SERVER_URL is required when --upload-to-server is set"))?;
-    let token = std::env::var("AXON_MCP_HTTP_TOKEN")
+    let token = options
+        .upload_token
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(|| std::env::var("AXON_MCP_HTTP_TOKEN"))
         .map_err(|_| anyhow!("AXON_MCP_HTTP_TOKEN is required when --upload-to-server is set"))?;
     upload_prepared_sessions_to_server_with_auth(&base, &token, request).await
 }
@@ -273,7 +311,10 @@ pub(crate) async fn upload_prepared_sessions_to_server_with_auth(
         .send()
         .await?;
     let status = response.status();
-    let text = response.text().await.unwrap_or_default();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| anyhow!("remote prepared session upload response read failed: {error}"))?;
     if !status.is_success() {
         return Err(anyhow!(
             "remote prepared session upload failed: status={} body={}",
@@ -281,7 +322,15 @@ pub(crate) async fn upload_prepared_sessions_to_server_with_auth(
             redact_error_detail(&text)
         ));
     }
-    Ok(parse_remote_job_label(&text).unwrap_or_else(|| "remote-prepared-session-job".to_string()))
+    if status != reqwest::StatusCode::ACCEPTED {
+        return Err(anyhow!(
+            "remote prepared session upload did not return 202 Accepted: status={} body={}",
+            status.as_u16(),
+            redact_error_detail(&text)
+        ));
+    }
+    parse_remote_job_label(&text)
+        .ok_or_else(|| anyhow!("remote prepared session upload response missing job_id"))
 }
 
 pub(crate) async fn process_pending(
@@ -299,7 +348,9 @@ pub(crate) async fn process_pending(
     for path in pending.debounced_paths(now, options.debounce) {
         match pending.stable(&path, now, options.settle) {
             Ok(PendingState::Stable) => {
-                if let Some(validated) = validate_event_path(roots, &path) {
+                if let Some(validated) = validate_event_path(roots, &path)
+                    && provider_allowed(cfg, validated.provider)
+                {
                     stable.push(validated);
                     stable_paths.push(path);
                 } else {
@@ -386,7 +437,7 @@ fn classify_and_redact_watch_error(error: &str) -> (String, String) {
 }
 
 pub(crate) fn redact_error_detail(raw: &str) -> String {
-    let mut redacted = raw
+    let mut redacted = redact_local_paths(raw)
         .split_whitespace()
         .map(|part| {
             let lower = part.to_ascii_lowercase();
@@ -407,6 +458,27 @@ pub(crate) fn redact_error_detail(raw: &str) -> String {
     if redacted.len() > MAX_ERROR_DETAIL_CHARS {
         redacted.truncate(MAX_ERROR_DETAIL_CHARS);
         redacted.push_str("...");
+    }
+    redacted
+}
+
+fn redact_local_paths(raw: &str) -> String {
+    let mut redacted = raw.to_string();
+    if let Some(home) = std::env::var_os("HOME").and_then(|value| value.into_string().ok())
+        && home.len() > 1
+    {
+        redacted = redacted.replace(&home, "[REDACTED-HOME]");
+    }
+    for root in [
+        crate::ingest::sessions::expand_home("~/.claude/projects"),
+        crate::ingest::sessions::expand_home("~/.codex/sessions"),
+        crate::ingest::sessions::expand_home("~/.gemini/history"),
+        crate::ingest::sessions::expand_home("~/.gemini/tmp"),
+    ] {
+        let root = root.display().to_string();
+        if root.len() > 1 {
+            redacted = redacted.replace(&root, "[REDACTED-SESSION-ROOT]");
+        }
     }
     redacted
 }

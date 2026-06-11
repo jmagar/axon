@@ -1,7 +1,7 @@
 use crate::ingest::sessions::watch::validate::ValidatedSessionPath;
 use anyhow::Result;
 use sha2::{Digest, Sha256};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncReadExt;
@@ -195,28 +195,12 @@ pub async fn list_recent_errors(pool: &SqlitePool, limit: i64) -> Result<Vec<Ses
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| SessionWatchError {
-            path_hash: row.get("path_hash"),
-            provider: row.get("provider"),
-            basename: row.get("basename"),
-            error_code: row.get("error_code"),
-            error_redacted: row.get("error_redacted"),
-            occurred_at: row.get("occurred_at"),
-        })
-        .collect())
+    Ok(rows.into_iter().map(session_watch_error_from_row).collect())
 }
 
 pub async fn watch_status(pool: &SqlitePool, limit: i64) -> Result<SessionWatchStatus> {
-    let checkpoint_count =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM axon_session_watch_checkpoints")
-            .fetch_one(pool)
-            .await?;
-    let error_count =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM axon_session_watch_errors")
-            .fetch_one(pool)
-            .await?;
+    let checkpoint_count = table_count(pool, "axon_session_watch_checkpoints").await?;
+    let error_count = table_count(pool, "axon_session_watch_errors").await?;
     let recent_errors = list_recent_errors(pool, limit.max(0)).await?;
     Ok(SessionWatchStatus {
         checkpoint_count,
@@ -245,6 +229,22 @@ pub async fn checkpoint_success_exists_for_path_hash(
     .fetch_one(pool)
     .await?;
     Ok(exists)
+}
+
+fn session_watch_error_from_row(row: SqliteRow) -> SessionWatchError {
+    SessionWatchError {
+        path_hash: row.get("path_hash"),
+        provider: row.get("provider"),
+        basename: row.get("basename"),
+        error_code: row.get("error_code"),
+        error_redacted: row.get("error_redacted"),
+        occurred_at: row.get("occurred_at"),
+    }
+}
+
+async fn table_count(pool: &SqlitePool, table: &'static str) -> Result<i64> {
+    let query = format!("SELECT COUNT(*) FROM {table}");
+    Ok(sqlx::query_scalar::<_, i64>(&query).fetch_one(pool).await?)
 }
 
 #[cfg(test)]

@@ -210,13 +210,12 @@ fn setup_help_is_not_polluted_by_crawl_or_vector_flags() {
 
 #[test]
 fn sessions_watch_help_exposes_debounce_settle_and_initial_scan_flags() {
-    let output = Command::new(env!("CARGO_BIN_EXE_axon"))
-        .args(["sessions", "watch", "--help"])
-        .output()
-        .expect("run axon sessions watch --help");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_help(&["sessions", "watch", "--help"]);
     assert!(stdout.contains("Watch local AI session exports and ingest stable changes"));
+    assert!(stdout.contains("--claude"));
+    assert!(stdout.contains("--codex"));
+    assert!(stdout.contains("--gemini"));
+    assert!(stdout.contains("--project"));
     assert!(stdout.contains("--path"));
     assert!(stdout.contains("--debounce-ms"));
     assert!(stdout.contains("--settle-ms"));
@@ -232,12 +231,7 @@ fn sessions_watch_help_exposes_debounce_settle_and_initial_scan_flags() {
 
 #[test]
 fn setup_session_watch_service_help_exposes_install_check_remove_status() {
-    let output = Command::new(env!("CARGO_BIN_EXE_axon"))
-        .args(["setup", "session-watch-service", "--help"])
-        .output()
-        .expect("run axon setup session-watch-service --help");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_help(&["setup", "session-watch-service", "--help"]);
     assert!(
         stdout.contains("Install, check, remove, or inspect the host-local session watch service")
     );

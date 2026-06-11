@@ -128,7 +128,6 @@ fn write_service_files(paths: &ServicePaths) -> io::Result<LocalSetupPhase> {
         session_watch_service_unit(
             &paths.axon_bin,
             &paths.env_path,
-            &paths.sqlite_path,
             &paths.state_dir,
             &paths.home,
         ),
@@ -151,7 +150,6 @@ pub(crate) fn session_watch_env_file(sqlite_path: &Path) -> String {
 pub(crate) fn session_watch_service_unit(
     axon_bin: &Path,
     env_path: &Path,
-    _sqlite_path: &Path,
     state_dir: &Path,
     home: &Path,
 ) -> String {

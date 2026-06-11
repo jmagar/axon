@@ -26,6 +26,18 @@ pub(crate) enum PendingState {
     Terminal,
 }
 
+impl PendingFile {
+    fn new(now: Instant) -> Self {
+        Self {
+            last_seen: now,
+            retries: 0,
+            last_len: None,
+            last_mtime: None,
+            stable_since: None,
+        }
+    }
+}
+
 impl PendingFiles {
     pub(crate) fn push(&mut self, path: PathBuf, now: Instant) -> bool {
         if let Some(entry) = self.files.get_mut(&path) {
@@ -36,27 +48,15 @@ impl PendingFiles {
         if self.files.len() >= MAX_PENDING_FILES {
             return false;
         }
-        self.files.insert(
-            path,
-            PendingFile {
-                last_seen: now,
-                retries: 0,
-                last_len: None,
-                last_mtime: None,
-                stable_since: None,
-            },
-        );
+        self.files.insert(path, PendingFile::new(now));
         true
     }
 
     pub(crate) fn requeue(&mut self, path: PathBuf, now: Instant, max_retries: u8) -> bool {
-        let entry = self.files.entry(path).or_insert(PendingFile {
-            last_seen: now,
-            retries: 0,
-            last_len: None,
-            last_mtime: None,
-            stable_since: None,
-        });
+        let entry = self
+            .files
+            .entry(path)
+            .or_insert_with(|| PendingFile::new(now));
         if entry.retries >= max_retries {
             return false;
         }

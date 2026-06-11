@@ -26,6 +26,8 @@ pub struct SessionWatchOptions {
     pub rescan_cooldown: Duration,
     pub initial_scan: bool,
     pub upload_to_server: bool,
+    pub upload_server_url: Option<String>,
+    pub upload_token: Option<String>,
     pub verbose_paths: bool,
     pub json: bool,
 }
@@ -40,7 +42,7 @@ pub enum SessionsRuntimeAction {
 #[cfg(test)]
 pub(crate) use process::{
     ProcessOutcome, WatchOutputMode, effective_processing_concurrency,
-    process_session_batch_for_watch, process_session_file_for_watch,
+    process_session_batch_for_watch, process_session_file_for_watch, redact_error_detail,
     upload_prepared_sessions_to_server_with_auth,
 };
 #[cfg(test)]

@@ -1,5 +1,5 @@
 # Sessions Ingest
-Last Modified: 2026-03-09
+Last Modified: 2026-06-11
 
 Version: 1.0.0
 Last Updated: 01:26:53 | 02/25/2026 EST
@@ -51,9 +51,13 @@ axon setup session-watch-service install
 
 That service runs `axon sessions watch --no-initial-scan --json`, watches Claude/Codex/Gemini transcript roots, and reuses prepared-session ingest. Full-file reingest is the v0 behavior; deterministic point IDs and stale-tail cleanup make it correct when a transcript changes. Append-offset optimization can be added later using the checkpoint table fields once the simpler full-file path has proven stable.
 
+Provider and project filters are available on the watcher itself, for example `axon sessions watch --codex --project axon --json`.
+
 ## Server Mode
 
 When `AXON_SERVER_URL` is set, `axon sessions` still reads session files from the client machine. The client parses and redacts Claude, Codex, and Gemini transcripts locally, sends prepared documents to `POST /v1/ingest/sessions/prepared`, and the server persists that upload beside a SQLite ingest job before waking ingest workers.
+
+For `axon sessions watch --upload-to-server`, the remote server must return `202 Accepted` with a `job_id`. The watcher emits an accepted-remote event and writes a local checkpoint for that durable upload acceptance so unchanged files are not uploaded repeatedly on later rescans. That checkpoint means the file was queued remotely, not that the remote embedding job reached terminal success.
 
 Prepared-session uploads are bounded by semantic limits: max document count, per-document text size, total text size, metadata size, supported platform names, and collection-name validation. The uploaded payload is deleted after successful worker completion and is included in ingest cleanup/clear behavior.
 
