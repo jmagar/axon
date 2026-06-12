@@ -1,3 +1,4 @@
+use crate::core::llm::CompletionResponse;
 use axum::{body::to_bytes, http::StatusCode, response::sse::Event};
 use std::convert::Infallible;
 use std::sync::{
@@ -31,9 +32,20 @@ async fn v1_chat_stream_rejects_unknown_fields() {
 
 #[tokio::test]
 async fn v1_chat_stream_emits_meta_delta_done_sequence() {
-    let response = super::v1_chat_stream_test_response(serde_json::json!({
-        "message": "hello"
-    }))
+    let response = super::v1_chat_stream_test_response_with_completion(
+        serde_json::json!({
+            "message": "hello"
+        }),
+        Box::new(|_request, mut on_delta| {
+            Box::pin(async move {
+                on_delta("hello")?;
+                Ok(CompletionResponse {
+                    text: "hello".to_string(),
+                    usage: None,
+                })
+            })
+        }),
+    )
     .await;
 
     assert_eq!(response.status(), StatusCode::OK);
