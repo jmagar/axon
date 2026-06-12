@@ -49,6 +49,12 @@ pub use waf::{WafDiagnostics, build_waf_diagnostics};
 
 pub const MAX_CRAWL_DIAGNOSTICS: usize = 100;
 
+fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
+    let min = cfg.crawl_broadcast_buffer_min.max(1);
+    let max = cfg.crawl_broadcast_buffer_max.max(min);
+    (cfg.max_pages as usize).clamp(min, max)
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct CrawlDiagnostic {
     pub phase: String,
@@ -252,9 +258,9 @@ pub async fn run_crawl_once(
         etag::load_and_seed(cfg, &mut website, output_dir).await;
 
     // Buffer at least max_pages worth of messages to prevent silent page drops
-    // under high-throughput crawls (extreme/max profiles). Clamp to 16 384 so
-    // a large --max-pages value can't allocate an unbounded broadcast ring buffer.
-    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
+    // under high-throughput crawls. Profile-derived bounds keep the broadcast
+    // ring large enough for fast profiles without making huge max_pages unbounded.
+    let subscribe_buf = crawl_subscribe_buffer_size(cfg);
     let rx = website.subscribe(subscribe_buf);
     let markdown_dir = output_dir.join("markdown");
     let manifest_path = output_dir.join("manifest.jsonl");
@@ -390,7 +396,7 @@ pub async fn run_sitemap_only(
     // Override the default set by configure_website: sitemap IS the crawl here.
     website.with_ignore_sitemap(false);
 
-    let subscribe_buf = (cfg.max_pages as usize).clamp(4096, 16_384);
+    let subscribe_buf = crawl_subscribe_buffer_size(cfg);
     let rx = website.subscribe(subscribe_buf);
     let manifest_path = output_dir.join("manifest.jsonl");
     let markdown_dir = output_dir.join("markdown");
