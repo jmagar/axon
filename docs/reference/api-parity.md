@@ -24,7 +24,7 @@ Status meanings:
 | `GET /healthz` | process health | none | Panel/server health, not CLI/MCP parity. |
 | `GET /readyz` | readiness | none | Panel/server readiness, not CLI/MCP parity. |
 | `GET /api-docs/openapi.json` | OpenAPI contract | none | Source for generated TypeScript client types. |
-| `GET /v1/capabilities` | client/server capability metadata | none | Advertises `supported_routes` for direct REST. |
+| `GET /v1/capabilities` | client/server capability metadata | axon:read or axon:write | Advertises `supported_routes` for direct REST. |
 | `POST /v1/actions` | removed legacy action envelope | none | Always returns 404 with direct REST migration text. |
 | `/api/panel/*` | web panel operations | panel token / local policy | Panel-only, excluded from parity accounting unless promoted to `/v1`. |
 
@@ -93,7 +93,7 @@ GET /v1/doctor
 POST /v1/query
 POST /v1/retrieve
 POST /v1/map
-GET /v1/artifacts/{path}
+GET /v1/artifacts
 POST /v1/endpoints
 POST /v1/brand
 POST /v1/diff
@@ -178,10 +178,10 @@ Generated files:
 - `apps/web/openapi/axon.json`
 - `apps/web/lib/generated/axon-api.ts`
 
-`apps/web/lib/axon-client.ts` imports generated component schemas for request
-and response DTO aliases. The wrapper still owns fetch/auth/error ergonomics,
-but request shape drift now comes from OpenAPI generation instead of manual
-hand-carved DTOs.
+`apps/web/lib/axon-client.ts` imports generated component schemas plus `paths`
+and `operations` maps for request, response, parameter, and auth metadata. The
+wrapper still owns fetch/auth/error ergonomics, but request and route-shape
+drift now comes from OpenAPI generation instead of manual hand-carved DTOs.
 
 ## MCP-Only or MCP-First Surfaces
 

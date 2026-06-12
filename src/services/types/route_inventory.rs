@@ -1,7 +1,11 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestRouteAuth {
     Public,
+    /// Protected metadata/retrieval bucket. Runtime OAuth accepts any Axon
+    /// scope (`axon:read` or `axon:write`) for protected Axon REST routes.
     Read,
+    /// Protected active-operation bucket. Runtime OAuth accepts any Axon
+    /// scope (`axon:read` or `axon:write`) for protected Axon REST routes.
     Write,
 }
 
@@ -118,7 +122,7 @@ const REST_ROUTE_INVENTORY: &[RestRouteInfo] = &[
     },
     RestRouteInfo {
         method: "GET",
-        path: "/v1/artifacts/{path}",
+        path: "/v1/artifacts",
         auth: RestRouteAuth::Read,
         openapi: true,
     },

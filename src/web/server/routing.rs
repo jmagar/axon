@@ -72,8 +72,12 @@ fn read_routes() -> Router<ServeState> {
         .route("/v1/retrieve", post(handlers::rag::retrieve))
         .route("/v1/map", post(handlers::exploration::map))
         .route(
+            "/v1/artifacts",
+            get(handlers::artifacts::serve_artifact_query),
+        )
+        .route(
             "/v1/artifacts/{*path}",
-            get(handlers::artifacts::serve_artifact),
+            get(handlers::artifacts::serve_artifact_path),
         )
 }
 

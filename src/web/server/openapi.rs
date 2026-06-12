@@ -1,9 +1,13 @@
 use crate::services::types::{RestRouteAuth, rest_route_inventory};
 use utoipa::OpenApi;
-use utoipa::openapi::path::Operation;
 use utoipa::openapi::security::{
     AuthorizationCode, Flow, HttpAuthScheme, HttpBuilder, OAuth2, Scopes, SecurityRequirement,
     SecurityScheme,
+};
+use utoipa::openapi::{
+    Content, Ref, RefOr,
+    path::Operation,
+    response::{Response, Responses},
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
@@ -77,13 +81,14 @@ use super::{handlers, openapi_jobs, routing};
         handlers::admin::list_watch,
         handlers::admin::create_watch,
         handlers::admin::run_watch,
-        handlers::artifacts::serve_artifact
+        handlers::artifacts::serve_artifact_query
     ),
     components(schemas(
         crate::services::client_contract::RestAskRequest,
         crate::services::client_contract::RestChatRequest,
         crate::services::client_contract::RestChatResponse,
         crate::services::types::ServerInfo,
+        super::error::ErrorKind,
         super::error::ErrorBody,
         crate::services::client_contract::RestQueryRequest,
         crate::services::client_contract::RestRetrieveRequest,
@@ -166,8 +171,8 @@ fn apply_security_metadata(document: &mut utoipa::openapi::OpenApi) {
                 "/authorize",
                 "/token",
                 Scopes::from_iter([
-                    ("axon:read", "Read Axon REST resources"),
-                    ("axon:write", "Run Axon write and active-network operations"),
+                    ("axon:read", "Authenticated Axon REST access"),
+                    ("axon:write", "Authenticated Axon REST access"),
                 ]),
             ),
         )])),
@@ -180,16 +185,33 @@ fn apply_security_metadata(document: &mut utoipa::openapi::OpenApi) {
         let Some(operation) = operation_mut(document, route.path, route.method) else {
             continue;
         };
-        let scope = match route.auth {
-            RestRouteAuth::Read => "axon:read",
-            RestRouteAuth::Write => "axon:write",
-            RestRouteAuth::Public => continue,
-        };
         operation.security = Some(vec![
             SecurityRequirement::new("bearerAuth", Vec::<&str>::new()),
-            SecurityRequirement::new("oauth2", [scope]),
+            SecurityRequirement::new("oauth2", ["axon:read"]),
+            SecurityRequirement::new("oauth2", ["axon:write"]),
         ]);
+        add_auth_error_responses(&mut operation.responses);
     }
+}
+
+fn add_auth_error_responses(responses: &mut Responses) {
+    responses
+        .responses
+        .entry("401".to_string())
+        .or_insert_with(|| auth_error_response("Missing or invalid authentication"));
+    responses
+        .responses
+        .entry("403".to_string())
+        .or_insert_with(|| auth_error_response("Authenticated token lacks Axon access"));
+}
+
+fn auth_error_response(description: &'static str) -> RefOr<Response> {
+    let mut response = Response::new(description);
+    response.content.insert(
+        "application/json".to_string(),
+        Content::new(Some(Ref::from_schema_name("ErrorBody"))),
+    );
+    RefOr::T(response)
 }
 
 fn operation_mut<'a>(

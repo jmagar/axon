@@ -52,10 +52,15 @@ pub fn validate_custom_header_policy(raw_headers: &[String]) -> Result<(), Strin
 }
 
 fn is_rejected_forwarded_header(name: &str) -> bool {
+    let name = name.trim().to_ascii_lowercase();
+    if name.starts_with("x-forwarded-") {
+        return true;
+    }
     matches!(
-        name.trim().to_ascii_lowercase().as_str(),
+        name.as_str(),
         "connection"
             | "keep-alive"
+            | "proxy-connection"
             | "proxy-authenticate"
             | "proxy-authorization"
             | "te"
@@ -65,9 +70,7 @@ fn is_rejected_forwarded_header(name: &str) -> bool {
             | "host"
             | "content-length"
             | "forwarded"
-            | "x-forwarded-for"
-            | "x-forwarded-host"
-            | "x-forwarded-proto"
+            | "via"
             | "x-real-ip"
     )
 }

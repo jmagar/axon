@@ -124,13 +124,9 @@ pub(crate) async fn summarize_stream(
                 }
             }
         });
-        let result = tokio::time::timeout(
-            STREAM_TIMEOUT,
-            services::summarize::summarize(&cfg, &urls, Some(event_tx)),
-        )
-        .await
-        .map_err(|_| "stream timed out".to_string())
-        .and_then(|result| result.map_err(|err| err.to_string()));
+        let result = services::summarize::summarize(&cfg, &urls, Some(event_tx))
+            .await
+            .map_err(|err| err.to_string());
         let _ = delta_task.await;
         if disconnected.load(Ordering::Relaxed) {
             return;
@@ -162,7 +158,12 @@ pub(super) fn sse_event_buffer_for_tests() -> usize {
 }
 
 #[cfg(test)]
-pub(super) fn stream_timeout_for_tests() -> Duration {
+pub(super) fn summarize_stream_timeout_for_tests() -> Option<Duration> {
+    None
+}
+
+#[cfg(test)]
+pub(super) fn research_stream_timeout_for_tests() -> Duration {
     STREAM_TIMEOUT
 }
 
@@ -301,8 +302,13 @@ mod tests {
     }
 
     #[test]
-    fn exploration_stream_budget_is_finite() {
-        assert_eq!(stream_timeout_for_tests(), Duration::from_secs(35));
+    fn research_stream_budget_is_finite() {
+        assert_eq!(research_stream_timeout_for_tests(), Duration::from_secs(35));
+    }
+
+    #[test]
+    fn summarize_stream_has_no_fixed_wall_clock_timeout() {
+        assert_eq!(summarize_stream_timeout_for_tests(), None);
     }
 
     #[tokio::test]
