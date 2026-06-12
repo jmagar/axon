@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 
+import { HelpResultView } from "@/components/palette/HelpResultView";
 import {
   ChipSection,
   DetailLine,
@@ -67,6 +68,7 @@ export function hasStructuredOperationView(subcommand: string): boolean {
       "watch-list",
       "watch-create",
       "watch-run",
+      "help",
     ].includes(subcommand) || isJobLifecycle(subcommand)
   );
 }
@@ -75,6 +77,8 @@ export function OperationResultView({ payload, subcommand }: OperationResultView
   const data = unwrapPayload(payload);
 
   switch (subcommand) {
+    case "help":
+      return <HelpResultView payload={payload} fallbackText="" />;
     case "scrape":
       return <ReadingView payload={data} mode="scrape" />;
     case "query":
