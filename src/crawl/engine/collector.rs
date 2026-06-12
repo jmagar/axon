@@ -19,7 +19,7 @@ use tokio::task::JoinSet;
 use super::thin_refetch::{RefetchResult, THIN_REFETCH_CONCURRENCY, write_refetch_results};
 use super::{
     CrawlDiagnostic, CrawlSummary, PageEvent, canonicalize_url_for_dedupe, is_excluded_url_path,
-    normalize_map_candidate_url,
+    is_junk_discovered_url, normalize_map_candidate_url,
 };
 use crate::core::logging::log_warn;
 
@@ -36,13 +36,21 @@ fn canonicalize_discovered_link(
     page_url: &str,
     col: &CollectorConfig,
 ) -> Option<String> {
+    if is_junk_discovered_url(raw) || spider::utils::media_asset::is_media_asset_url(raw) {
+        return None;
+    }
+
     let base = url::Url::parse(page_url).ok()?;
     let resolved = base.join(raw).ok()?;
-    if resolved.host_str()? != base.host_str()? {
+    let host = resolved.host_str()?;
+    if !discovered_host_in_scope(host, base.host_str()?, col) {
         return None;
     }
 
     let resolved = resolved.as_str();
+    if spider::utils::media_asset::is_media_asset_url(resolved) {
+        return None;
+    }
     if is_excluded_url_path(resolved, &col.exclude_path_prefix) {
         return None;
     }
@@ -51,6 +59,22 @@ fn canonicalize_discovered_link(
         Some(scope) => normalize_map_candidate_url(resolved, scope, false),
         None => canonicalize_url_for_dedupe(resolved),
     }
+}
+
+fn discovered_host_in_scope(host: &str, page_host: &str, col: &CollectorConfig) -> bool {
+    if let Some(scope) = col.scope.as_ref() {
+        return host.eq_ignore_ascii_case(&scope.host);
+    }
+
+    let root = col.start_host.as_deref().unwrap_or(page_host);
+    if host.eq_ignore_ascii_case(root) {
+        return true;
+    }
+    col.include_subdomains
+        && host
+            .to_ascii_lowercase()
+            .strip_suffix(&root.to_ascii_lowercase())
+            .is_some_and(|rest| rest.ends_with('.'))
 }
 
 /// Apply the outcome of `process_page()`: update summary counters, spawn Chrome
@@ -319,6 +343,8 @@ mod tests {
             min_chars: 10,
             drop_thin: false,
             exclude_path_prefix: Vec::new(),
+            include_subdomains: false,
+            start_host: None,
             scope,
             progress_tx: None,
             previous_manifest: Arc::new(HashMap::new()),
@@ -413,6 +439,45 @@ mod tests {
                 &col,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn canonicalize_discovered_link_rejects_media_assets_and_junk() {
+        let col = test_collector_config(None);
+
+        assert_eq!(
+            canonicalize_discovered_link(
+                "/assets/logo.png",
+                "https://platform.claude.com/docs/en/home",
+                &col,
+            ),
+            None
+        );
+        assert_eq!(
+            canonicalize_discovered_link(
+                "/$%7BshareBaseUrl%7D/s/$%7BshareId%7D",
+                "https://platform.claude.com/docs/en/home",
+                &col,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn canonicalize_discovered_link_counts_subdomain_when_enabled() {
+        let mut col = test_collector_config(None);
+        col.include_subdomains = true;
+        col.start_host = Some("example.com".to_string());
+
+        assert_eq!(
+            canonicalize_discovered_link(
+                "https://docs.example.com/guide/",
+                "https://example.com/docs/en/home",
+                &col,
+            )
+            .as_deref(),
+            Some("https://docs.example.com/guide")
         );
     }
 }

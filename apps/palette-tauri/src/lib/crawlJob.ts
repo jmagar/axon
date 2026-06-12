@@ -88,13 +88,6 @@ function optNum(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function firstNum(...values: unknown[]): number {
-  for (const value of values) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return 0;
-}
-
 function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -203,15 +196,7 @@ export function summarizeCrawl(
   let phase = phaseFor(status);
 
   const fetched = num(result.pages_crawled);
-  const docs = firstNum(
-    result.md_created,
-    result.markdown_files,
-    result.saved_docs,
-    result.docs_written,
-    result.files_written,
-    result.manifest_count,
-    result.manifest_entries,
-  );
+  const docs = num(result.md_created);
   const errorCount = num(result.error_pages);
   const embedJobId = str(result.embed_job_id);
 
@@ -236,6 +221,7 @@ export function summarizeCrawl(
   let chunks = 0;
   let embedStatus: string | null = null;
   let embedUpdatedAtMs: number | null = null;
+  let embedErrorText: string | null = null;
   const embedJob = jobFromPayload(embedPayload);
   if (embedJob) {
     const embedResult = asRecord(embedJob.result_json) ?? {};
@@ -243,12 +229,17 @@ export function summarizeCrawl(
     chunks = num(embedResult.chunks_embedded);
     embedStatus = str(embedJob.status);
     embedUpdatedAtMs = parseTimestamp(embedJob.updated_at);
+    embedErrorText = str(embedJob.error_text);
   }
 
   // After the crawl finishes, the embed job is the active phase until it reaches
   // a terminal state. A crawl that produced no docs (no embed job) is just done.
   if (phase === "done" && embedJobId) {
-    if (embedStatus === "completed" || embedStatus === "failed" || embedStatus === "canceled") {
+    if (embedStatus === "failed") {
+      phase = "failed";
+    } else if (embedStatus === "canceled") {
+      phase = "canceled";
+    } else if (embedStatus === "completed") {
       phase = "done";
     } else {
       phase = "embedding";
@@ -294,7 +285,7 @@ export function summarizeCrawl(
     events,
     rateLimited,
     errorCount,
-    errorText: str(job.error_text),
+    errorText: phase === "failed" || phase === "canceled" ? (embedErrorText ?? str(job.error_text)) : str(job.error_text),
     embedJobId,
     // During embedding, liveness comes from the embed job's heartbeat, not the
     // (now-frozen) crawl row.

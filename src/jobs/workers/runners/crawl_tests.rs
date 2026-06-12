@@ -17,6 +17,13 @@ fn make_summary() -> CrawlSummary {
         elapsed_ms: 1234,
         ..CrawlSummary::default()
     };
+    summary.push_event(crate::crawl::engine::PageEvent {
+        t: 42,
+        url: "https://example.com/docs".to_string(),
+        status: 200,
+        links: Some(3),
+    });
+    summary.note_rate_limited("example.com", 250);
     summary.push_diagnostic(
         CrawlDiagnostic::new("http_fetch", "http_status", "skipped page with HTTP 500")
             .with_url("https://example.com/broken")
@@ -96,6 +103,16 @@ fn crawl_result_json_uses_canonical_keys() {
             .map(Vec::len),
         Some(1)
     );
+    assert_eq!(
+        obj.get("events").and_then(|v| v.as_array()).map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        obj.get("rate_limited")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(1)
+    );
     assert_eq!(obj.get("elapsed_ms").and_then(|v| v.as_u64()), Some(1234));
     assert_eq!(
         obj.get("embed_job_id").and_then(|v| v.as_str()),
@@ -160,6 +177,8 @@ fn crawl_result_json_required_keys() {
         "diagnostic_count",
         "diagnostic_counts",
         "diagnostics",
+        "events",
+        "rate_limited",
         "elapsed_ms",
         "embed_job_id",
     ] {
