@@ -254,13 +254,18 @@ fn services_up_starts_only_infrastructure_services() {
     let justfile = fs::read_to_string("Justfile").expect("Justfile should be readable");
 
     assert!(
-        justfile.contains("up -d axon-qdrant axon-tei axon-chrome"),
+        justfile.contains("up -d axon-tei axon-chrome"),
         "just services-up should keep its infrastructure-only contract"
     );
     assert!(
-        justfile.contains("stop axon-qdrant axon-tei axon-chrome")
-            && justfile.contains("rm -f axon-qdrant axon-tei axon-chrome"),
+        justfile.contains("stop axon-tei axon-chrome")
+            && justfile.contains("rm -f axon-tei axon-chrome"),
         "just services-down should stop only infrastructure services"
+    );
+    assert!(
+        justfile.contains("qdrant-up:")
+            && justfile.contains("--profile local-qdrant up -d axon-qdrant"),
+        "local qdrant should stay behind the explicit qdrant-up recipe"
     );
     assert!(
         !justfile.contains("-f docker-compose.prod.yaml down"),
@@ -395,6 +400,7 @@ fn env_example_only_contains_production_runtime_keys() {
         "AXON_DATA_DIR",
         "AXON_IMAGE",
         "AXON_COLLECTION",
+        "AXON_QDRANT_URL",
         // MCP HTTP transport + auth
         "AXON_MCP_HTTP_PUBLISH",
         "AXON_MCP_HTTP_HOST",
