@@ -17,7 +17,10 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use super::thin_refetch::{RefetchResult, THIN_REFETCH_CONCURRENCY, write_refetch_results};
-use super::{CrawlDiagnostic, CrawlSummary, PageEvent, canonicalize_url_for_dedupe};
+use super::{
+    CrawlDiagnostic, CrawlSummary, PageEvent, canonicalize_url_for_dedupe, is_excluded_url_path,
+    normalize_map_candidate_url,
+};
 use crate::core::logging::log_warn;
 
 /// Extract the host of a URL for the rate-limit banner; empty string on parse failure.
@@ -26,6 +29,28 @@ fn host_of(url: &str) -> String {
         .ok()
         .and_then(|parsed| parsed.host_str().map(str::to_string))
         .unwrap_or_default()
+}
+
+fn canonicalize_discovered_link(
+    raw: &str,
+    page_url: &str,
+    col: &CollectorConfig,
+) -> Option<String> {
+    let base = url::Url::parse(page_url).ok()?;
+    let resolved = base.join(raw).ok()?;
+    if resolved.host_str()? != base.host_str()? {
+        return None;
+    }
+
+    let resolved = resolved.as_str();
+    if is_excluded_url_path(resolved, &col.exclude_path_prefix) {
+        return None;
+    }
+
+    match col.scope.as_ref() {
+        Some(scope) => normalize_map_candidate_url(resolved, scope, false),
+        None => canonicalize_url_for_dedupe(resolved),
+    }
 }
 
 /// Apply the outcome of `process_page()`: update summary counters, spawn Chrome
@@ -215,16 +240,11 @@ async fn process_received_page(
     };
     // Accumulate same-host discovered links into the cumulative backlog. Relative
     // links (no host) resolve same-site, so they count too.
-    let page_host = host_of(&url);
     let mut link_count: Option<u32> = None;
     if let Some(links) = page.page_links.as_ref() {
         link_count = Some(links.len() as u32);
         for link in links.iter() {
-            let raw = link.as_ref();
-            let link_host = host_of(raw);
-            if (link_host.is_empty() || link_host == page_host)
-                && let Some(canon) = canonicalize_url_for_dedupe(raw)
-            {
+            if let Some(canon) = canonicalize_discovered_link(link.as_ref(), &url, col) {
                 discovered.insert(canon);
             }
         }
@@ -365,5 +385,34 @@ mod tests {
         );
         assert_eq!(summary.pages_seen, 1);
         assert!(urls.contains("https://example.github.io/project/docs"));
+    }
+
+    #[test]
+    fn canonicalize_discovered_link_resolves_relative_links_against_page_url() {
+        let col = test_collector_config(None);
+
+        assert_eq!(
+            canonicalize_discovered_link(
+                "/docs/en/api/messages/",
+                "https://platform.claude.com/docs/en/home",
+                &col,
+            )
+            .as_deref(),
+            Some("https://platform.claude.com/docs/en/api/messages")
+        );
+    }
+
+    #[test]
+    fn canonicalize_discovered_link_rejects_cross_host_links() {
+        let col = test_collector_config(None);
+
+        assert_eq!(
+            canonicalize_discovered_link(
+                "https://example.com/docs/en/api/messages/",
+                "https://platform.claude.com/docs/en/home",
+                &col,
+            ),
+            None
+        );
     }
 }

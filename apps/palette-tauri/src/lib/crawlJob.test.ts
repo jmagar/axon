@@ -56,6 +56,62 @@ describe("summarizeCrawl", () => {
     expect(snap.etaText).toMatch(/min left$/);
   });
 
+  it("derives queued from total pages_discovered when direct queued is absent", () => {
+    const snap = summarizeCrawl(
+      {
+        job: {
+          status: "running",
+          result_json: {
+            pages_crawled: 758,
+            pages_discovered: 820,
+            md_created: 2,
+          },
+        },
+      },
+      { jobId: "job-1", url, elapsedSec: 24 },
+    );
+
+    expect(snap.fetched).toBe(758);
+    expect(snap.queued).toBe(62);
+    expect(Math.round(snap.percent)).toBe(92);
+  });
+
+  it("prefers backend queued over derived discovered totals", () => {
+    const snap = summarizeCrawl(
+      {
+        job: {
+          status: "running",
+          result_json: {
+            pages_crawled: 758,
+            pages_discovered: 820,
+            queued: 140,
+          },
+        },
+      },
+      { jobId: "job-1", url },
+    );
+
+    expect(snap.queued).toBe(140);
+  });
+
+  it("maps alternate saved markdown count fields", () => {
+    const snap = summarizeCrawl(
+      {
+        job: {
+          status: "running",
+          result_json: {
+            pages_crawled: 12,
+            markdown_files: 9,
+            queued: 3,
+          },
+        },
+      },
+      { jobId: "job-1", url },
+    );
+
+    expect(snap.docs).toBe(9);
+  });
+
   it("maps pending status before any progress", () => {
     const snap = summarizeCrawl({ job: { status: "pending" } }, { jobId: "j", url });
     expect(snap.phase).toBe("pending");

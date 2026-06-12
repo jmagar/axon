@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolvePaletteWindowSize } from "./useWindowChrome";
 
 describe("resolvePaletteWindowSize", () => {
-  it("uses a shorter result window for expanded crawl jobs", () => {
+  it("uses a compact result window for expanded crawl jobs", () => {
     expect(
       resolvePaletteWindowSize(
         {
@@ -18,6 +18,6 @@ describe("resolvePaletteWindowSize", () => {
         { width: 2560, height: 1440 },
         () => 468,
       ),
-    ).toEqual({ width: 1280, height: 620 });
+    ).toEqual({ width: 1280, height: 470 });
   });
 });

@@ -88,6 +88,13 @@ function optNum(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function firstNum(...values: unknown[]): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
 function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -196,13 +203,22 @@ export function summarizeCrawl(
   let phase = phaseFor(status);
 
   const fetched = num(result.pages_crawled);
-  const docs = num(result.md_created);
+  const docs = firstNum(
+    result.md_created,
+    result.markdown_files,
+    result.saved_docs,
+    result.docs_written,
+    result.files_written,
+    result.manifest_count,
+    result.manifest_entries,
+  );
   const errorCount = num(result.error_pages);
   const embedJobId = str(result.embed_job_id);
 
-  // Queued: real value comes from the Tier-2 event stream (`queued`). Until that
-  // lands, fall back to pages_discovered (which is 0 on most crawls).
-  const queued = Math.max(num(result.queued ?? result.pages_discovered), 0);
+  // `queued` is the backend's live frontier count. Older/alternate payloads may
+  // only expose `pages_discovered`, which is a total discovered count, so subtract
+  // fetched pages instead of displaying the total as pending work.
+  const queued = deriveQueued(result, fetched);
 
   const events = parseEvents(result.events);
   const rateLimited = parseRateLimited(result.rate_limited);
@@ -285,6 +301,18 @@ export function summarizeCrawl(
     updatedAtMs: phase === "embedding" && embedUpdatedAtMs != null ? embedUpdatedAtMs : parseTimestamp(job.updated_at),
     startedAtMs: parseTimestamp(job.started_at),
   };
+}
+
+function deriveQueued(result: JsonRecord, fetched: number): number {
+  const direct = optNum(result.queued ?? result.pending_pages ?? result.frontier_pending ?? result.frontier_count);
+  if (direct != null) return Math.max(direct, 0);
+
+  const discovered = optNum(
+    result.pages_discovered ?? result.discovered_pages ?? result.urls_discovered ?? result.total_discovered,
+  );
+  if (discovered != null) return Math.max(discovered - fetched, 0);
+
+  return 0;
 }
 
 /** Max path depth below the seed across recent crawled URLs (seed = depth 1). */

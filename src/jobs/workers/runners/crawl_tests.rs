@@ -73,6 +73,7 @@ fn crawl_result_json_uses_canonical_keys() {
         obj.get("pages_discovered").and_then(|v| v.as_u64()),
         Some(9)
     );
+    assert_eq!(obj.get("queued").and_then(|v| v.as_u64()), Some(2));
     assert_eq!(obj.get("thin_md").and_then(|v| v.as_u64()), Some(2));
     assert_eq!(obj.get("error_pages").and_then(|v| v.as_u64()), Some(1));
     assert_eq!(
@@ -152,6 +153,7 @@ fn crawl_result_json_required_keys() {
         "pages_crawled",
         "md_created",
         "pages_discovered",
+        "queued",
         "thin_md",
         "error_pages",
         "waf_blocked_pages",
