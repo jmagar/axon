@@ -93,20 +93,30 @@ describe("useActionRunner local help", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("routes mode-local help through the Help action while targeting the current mode", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("REST should not be called"));
-    const rendered = setup("?", { modeAction: action("scrape") });
+  it("keeps help-like text as backend input when already in action mode", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ query: "help" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const rendered = setup("help", { modeAction: action("ask") });
     await act(async () => {
-      await rendered.result.current.submit(action("scrape"));
+      await rendered.result.current.submit(action("ask"));
     });
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(rendered.result.current.history[0]?.action.subcommand).toBe("help");
-    expect(rendered.result.current.history[0]?.target).toBe("scrape");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/v1/ask",
+      expect.objectContaining({
+        body: JSON.stringify({ query: "help", explain: false, diagnostics: false, collection: "axon" }),
+      }),
+    );
+    expect(rendered.result.current.history[0]?.action.subcommand).toBe("ask");
+    expect(rendered.result.current.history[0]?.target).toBe("help");
     expect(rendered.result.current.run.kind).toBe("success");
-    expect("result" in rendered.result.current.run ? rendered.result.current.run.result.path : "").toBe("palette://help");
+    expect("result" in rendered.result.current.run ? rendered.result.current.run.result.path : "").toBe("/v1/ask");
     expect("result" in rendered.result.current.run ? rendered.result.current.run.result.payload : null).toMatchObject({
-      target: { subcommand: "scrape" },
+      query: "help",
     });
   });
 });

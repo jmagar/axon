@@ -295,7 +295,9 @@ jobs:
         with:
           shared-key: axon-windows-gnu
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo build --release -p axon (windows-gnu cross)
         run: cargo build --release --locked -p axon --target x86_64-pc-windows-gnu
       - name: Upload axon.exe artifact
@@ -329,7 +331,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Build axon binary
         run: cargo build --locked --bin axon
       - name: Smoke test generated shell completions
@@ -379,7 +383,9 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: install web dependencies
         run: npm ci --prefix apps/web
       - name: REST route contract inventory
@@ -420,7 +426,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Build axon binary
         run: cargo build --locked --bin axon
       - name: OAuth protection smoke test (/mcp requires auth)
@@ -613,7 +621,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo check (warnings are errors)
         env:
           RUSTFLAGS: -D warnings
@@ -649,7 +659,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo check (MSRV)
         run: cargo check --workspace --all-targets --locked --features test-helpers
 
@@ -678,7 +690,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked --features test-helpers -- -D warnings
 
@@ -719,7 +733,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo test
         run: cargo test --workspace --locked --features test-helpers -- --skip worker_e2e --quiet
 
@@ -897,7 +913,9 @@ jobs:
           docker save qdrant/qdrant:v1.13.1 -o /tmp/docker-images/qdrant.tar
 
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Build axon binary (release)
         run: cargo build --release --locked --bin axon
 
@@ -1021,7 +1039,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo build release axon
         run: cargo build --release --locked --bin axon
 
@@ -1036,7 +1056,9 @@ jobs:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
-        run: mkdir -p apps/web/out
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: build release binary for smoke test
         run: cargo build --release --locked --bin axon
       - name: smoke test release binary help output

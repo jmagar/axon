@@ -3,46 +3,73 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+const FALLBACK_MARKER: &str = "AXON_FALLBACK_WEB_PANEL";
+
 fn main() {
     println!("cargo:rerun-if-changed=apps/web/out");
+    println!("cargo:rerun-if-env-changed=AXON_ALLOW_FALLBACK_WEB_ASSETS");
 
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set"));
     let source = manifest_dir.join("apps/web/out");
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR set")).join("web-assets");
 
-    if out_dir.exists() {
-        fs::remove_dir_all(&out_dir).expect("remove stale generated web assets");
-    }
-    fs::create_dir_all(&out_dir).expect("create generated web assets dir");
-
-    if has_entries(&source) {
-        copy_dir(&source, &out_dir).expect("copy apps/web/out into generated web assets");
-    } else {
-        write_fallback_index(&out_dir).expect("write fallback web index");
+    match asset_state(&source) {
+        Ok(AssetState::Ready) => {}
+        Ok(AssetState::Missing | AssetState::Empty | AssetState::FallbackOnly)
+            if allow_fallback_assets() =>
+        {
+            println!("cargo:warning=apps/web/out is empty; embedding fallback web panel");
+            fs::create_dir_all(&source).expect("create web assets fallback dir");
+            write_fallback_index(&source).expect("write fallback web index");
+        }
+        Ok(AssetState::Missing | AssetState::Empty) => {
+            panic!("apps/web/out is empty; run the web build before compiling axon")
+        }
+        Ok(AssetState::FallbackOnly) => {
+            panic!(
+                "apps/web/out contains only fallback assets; run the web build before compiling axon"
+            )
+        }
+        Err(error) if allow_fallback_assets() => {
+            println!(
+                "cargo:warning=apps/web/out is unreadable: {error}; embedding fallback web panel"
+            );
+            fs::create_dir_all(&source).expect("create web assets fallback dir");
+            write_fallback_index(&source).expect("write fallback web index");
+        }
+        Err(error) => panic!("apps/web/out is unreadable: {error}"),
     }
 }
 
-fn has_entries(path: &Path) -> bool {
-    path.is_dir()
-        && fs::read_dir(path)
-            .map(|mut entries| entries.next().is_some())
-            .unwrap_or(false)
+fn allow_fallback_assets() -> bool {
+    env::var_os("AXON_ALLOW_FALLBACK_WEB_ASSETS").is_some()
 }
 
-fn copy_dir(source: &Path, destination: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            fs::create_dir_all(&destination_path)?;
-            copy_dir(&source_path, &destination_path)?;
-        } else {
-            fs::copy(source_path, destination_path)?;
+enum AssetState {
+    Missing,
+    Empty,
+    FallbackOnly,
+    Ready,
+}
+
+fn asset_state(path: &Path) -> io::Result<AssetState> {
+    if !path.is_dir() {
+        return Ok(AssetState::Missing);
+    }
+
+    let entries = fs::read_dir(path)?.collect::<Result<Vec<_>, _>>()?;
+    if entries.is_empty() {
+        return Ok(AssetState::Empty);
+    }
+
+    if entries.len() == 1 && entries[0].file_name() == "index.html" {
+        let index = fs::read_to_string(entries[0].path())?;
+        if index.contains(FALLBACK_MARKER) {
+            return Ok(AssetState::FallbackOnly);
         }
     }
-    Ok(())
+
+    Ok(AssetState::Ready)
 }
 
 fn write_fallback_index(destination: &Path) -> io::Result<()> {
@@ -52,6 +79,7 @@ fn write_fallback_index(destination: &Path) -> io::Result<()> {
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="axon-build" content="AXON_FALLBACK_WEB_PANEL" />
     <title>Axon</title>
   </head>
   <body>

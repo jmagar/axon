@@ -28,7 +28,7 @@ export interface HelpRunState {
 const ASYNC_ACTIONS = new Set(["crawl", "embed", "extract", "ingest", "ingest-sessions-prepared"]);
 
 export function isAsyncAction(action: PaletteAction): boolean {
-  return ASYNC_ACTIONS.has(action.subcommand) || action.kind === "job";
+  return ASYNC_ACTIONS.has(action.subcommand);
 }
 
 const PARAMETER_DETAILS: Record<string, string[]> = {
@@ -41,6 +41,8 @@ const PARAMETER_DETAILS: Record<string, string[]> = {
   search: ["query from input", "limit from palette settings"],
   research: ["query from input", "limit from palette settings"],
   map: ["url from input", "limit=100"],
+  dedupe: ["collection from palette settings when configured"],
+  screenshot: ["url from input", "full_page=true", "default backend viewport"],
 };
 
 const OPTION_DETAILS: Record<string, string[]> = {
@@ -51,6 +53,8 @@ const OPTION_DETAILS: Record<string, string[]> = {
   retrieve: ["--token-budget is fixed to 6000 in the current palette request", "--collection is currently driven by palette settings"],
   search: ["--limit is currently driven by palette settings"],
   research: ["--limit is currently driven by palette settings"],
+  dedupe: ["--collection is currently driven by palette settings"],
+  screenshot: ["Viewport options are backend-supported but not editable in the palette yet"],
 };
 
 export function isHelpRequest(value: string): boolean {

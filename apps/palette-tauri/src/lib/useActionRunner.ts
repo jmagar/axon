@@ -2,7 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction } from "react";
 
 import type { HistoryItem } from "@/components/palette/HistoryPanel";
 import type { PaletteAction } from "@/lib/actions";
-import { buildHelpRun, findHelpTarget, helpAction, isHelpRequest } from "@/lib/actionHelp";
+import { buildHelpRun, findHelpTarget, helpAction } from "@/lib/actionHelp";
 import { crawlSeedUrl, newRequestId, normalizeSubmitArgument } from "@/lib/appHelpers";
 import {
   buildActionRequest,
@@ -115,20 +115,21 @@ export function useActionRunner({
   async function submit(action: PaletteAction, argumentOverride?: string) {
     if (!action || run.kind === "running" || run.kind === "streaming") return;
     const rawArgument = argumentOverride ?? argumentFor(action, modeAction, parsed, query);
-    if (action.subcommand === "help" || isHelpRequest(rawArgument)) {
+    if (action.subcommand === "help") {
       const localHelpAction = helpAction();
-      const targetToken = action.subcommand === "help" ? rawArgument : action.subcommand;
+      const targetToken = rawArgument;
       const target = findHelpTarget(targetToken);
-      const unknownTarget = action.subcommand === "help" && targetToken.trim() && !target ? targetToken.trim() : undefined;
+      const unknownTarget = targetToken.trim() && !target ? targetToken.trim() : undefined;
       const helpRun = buildHelpRun(target, unknownTarget);
       setRun(helpRun);
       setModeAction(localHelpAction);
-      setQuery(action.subcommand === "help" ? rawArgument.trim() : target?.subcommand ?? "");
+      setQuery(rawArgument.trim());
       setBrowseOpen(false);
       pushHistory(localHelpAction, target?.subcommand ?? unknownTarget ?? "catalog", 200, helpRun.text, "markdown", helpRun.result.payload);
       return;
     }
 
+    if (action.kind === "local") return;
     if (!client || !config) return;
     const argument = normalizeSubmitArgument(action, rawArgument);
     const validation = validationMessage(action, argument);

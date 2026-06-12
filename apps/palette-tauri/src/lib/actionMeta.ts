@@ -1,4 +1,4 @@
-import type { PaletteAction } from "@/lib/actions";
+import type { PaletteAction, PaletteSubcommand } from "@/lib/actions";
 import type { HttpMethod } from "@/lib/axonClient";
 
 export type ActionDisplayMeta = {
@@ -10,7 +10,7 @@ export type ActionDisplayMeta = {
   method: HttpMethod;
 };
 
-const ACTION_META: Record<string, ActionDisplayMeta> = {
+const ACTION_META: Partial<Record<PaletteSubcommand, ActionDisplayMeta>> = {
   help: { category: "System", endpoint: "palette://help", input: "action", output: "help", label: "Help", method: "GET" },
   scrape: { category: "Fetch & read", endpoint: "/v1/scrape", input: "one URL", output: "content", label: "Scrape", method: "POST" },
   map: { category: "Fetch & read", endpoint: "/v1/map", input: "one URL", output: "links", label: "Map", method: "POST" },
@@ -37,7 +37,7 @@ const ACTION_META: Record<string, ActionDisplayMeta> = {
   doctor: { category: "System", endpoint: "/v1/doctor", input: "none", output: "health", label: "Doctor", method: "GET" },
   endpoints: { category: "Inspect", endpoint: "/v1/endpoints", input: "URL", output: "endpoints", label: "Endpoints", method: "POST" },
   brand: { category: "Inspect", endpoint: "/v1/brand", input: "URL", output: "brand", label: "Brand", method: "POST" },
-  dedupe: { category: "System", endpoint: "/v1/dedupe", input: "collection", output: "report", label: "Dedupe", method: "POST" },
+  dedupe: { category: "System", endpoint: "/v1/dedupe", input: "settings", output: "report", label: "Dedupe", method: "POST" },
   "watch-list": { category: "Watch", endpoint: "/v1/watch", input: "none", output: "watches", label: "Watch list", method: "GET" },
   "watch-create": { category: "Watch", endpoint: "/v1/watch", input: "URL", output: "watch", label: "Watch create", method: "POST" },
   "watch-run": { category: "Watch", endpoint: "/v1/watch/{id}/run", input: "watch id", output: "run", label: "Watch run", method: "POST" },
@@ -106,7 +106,7 @@ function lifecycleDisplayMeta(action: PaletteAction): ActionDisplayMeta | undefi
     category: "Jobs",
     endpoint,
     input,
-    output: "job",
+    output: operation === "list" ? "job list" : operation === "status" ? "job status" : `${operation} report`,
     label: action.label,
     method,
   };

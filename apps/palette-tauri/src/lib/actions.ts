@@ -1,15 +1,27 @@
 export type ArgMode = "none" | "optionalSingle" | "single" | "split";
+type RemoteActionKind = "operation" | "job" | "admin" | "discovery";
+type ActionTone = "info" | "success" | "warn" | "neutral" | "rose" | "violet";
 
-export interface PaletteAction {
+interface PaletteActionBase {
   label: string;
   subcommand: string;
-  kind?: "operation" | "job" | "admin" | "discovery" | "local";
   argMode: ArgMode;
   aliases: string[];
   description: string;
   example: string;
-  tone: "info" | "success" | "warn" | "neutral" | "rose" | "violet";
+  tone: ActionTone;
 }
+
+export interface LocalPaletteAction extends PaletteActionBase {
+  kind: "local";
+}
+
+export interface RemotePaletteAction extends PaletteActionBase {
+  kind: RemoteActionKind;
+}
+
+export type PaletteAction = LocalPaletteAction | RemotePaletteAction;
+export type PaletteSubcommand = PaletteAction["subcommand"];
 
 export const ACTIONS: PaletteAction[] = [
   {
@@ -258,7 +270,7 @@ export const ACTIONS: PaletteAction[] = [
     kind: "operation",
     argMode: "split",
     aliases: ["screenshot", "capture", "shot", "png"],
-    description: "Render a URL in Chrome and capture a screenshot at a given viewport.",
+    description: "Render a URL in Chrome and capture a full-page screenshot using the default viewport.",
     example: "screenshot https://example.com",
     tone: "violet",
   },
@@ -266,9 +278,9 @@ export const ACTIONS: PaletteAction[] = [
     label: "Dedupe collection",
     subcommand: "dedupe",
     kind: "admin",
-    argMode: "optionalSingle",
+    argMode: "none",
     aliases: ["dedupe", "deduplicate", "clean-vectors"],
-    description: "Remove near-duplicate chunks from the selected collection.",
+    description: "Remove near-duplicate chunks from the collection selected in palette settings.",
     example: "dedupe",
     tone: "warn",
   },

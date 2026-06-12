@@ -7,7 +7,7 @@
 
 import { invoke } from "./invoke";
 
-import type { PaletteAction } from "./actions";
+import type { PaletteAction, RemotePaletteAction } from "./actions";
 import { splitShellWords } from "./shellWords";
 
 export interface PaletteConfig {
@@ -65,7 +65,7 @@ function normalizeServerUrl(value: string): string {
 
 export async function executeAction(
   client: Client,
-  action: PaletteAction,
+  action: RemotePaletteAction,
   arg: string,
   config: PaletteConfig,
 ): Promise<PaletteResult> {
@@ -82,11 +82,11 @@ export async function executeAction(
 
 export function buildActionRequest(
   client: Client,
-  action: PaletteAction,
+  action: RemotePaletteAction,
   arg: string,
   config: PaletteConfig,
 ): PaletteHttpRequest {
-  if (action.kind === "local") {
+  if ((action as PaletteAction).kind === "local") {
     throw new Error(`Local action ${action.subcommand} cannot be sent to Axon REST`);
   }
   const body = bodyFor(action, arg, config);
@@ -100,7 +100,7 @@ export function buildActionRequest(
 }
 
 function bodyFor(
-  action: PaletteAction,
+  action: RemotePaletteAction,
   arg: string,
   config: PaletteConfig,
 ): { method: HttpMethod; path: string; body: Record<string, unknown> | null } {
@@ -226,7 +226,7 @@ function jobLifecycleRequest(
   }
 }
 
-function wordsFor(action: PaletteAction, arg: string): string[] {
+function wordsFor(action: RemotePaletteAction, arg: string): string[] {
   switch (action.argMode) {
     case "none":
       return [];

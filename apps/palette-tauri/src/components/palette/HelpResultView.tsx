@@ -4,14 +4,21 @@ function isActionHelp(value: unknown): value is ActionHelp {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   const route = item.route as Record<string, unknown> | undefined;
+  const stringArray = (candidate: unknown) => Array.isArray(candidate) && candidate.every((entry) => typeof entry === "string");
   return (
     typeof item.title === "string" &&
     typeof item.subcommand === "string" &&
+    stringArray(item.aliases) &&
+    typeof item.description === "string" &&
+    typeof item.usage === "string" &&
+    typeof item.category === "string" &&
+    typeof item.output === "string" &&
+    typeof item.async === "boolean" &&
     route !== undefined &&
     (route.method === "GET" || route.method === "POST" || route.method === "DELETE") &&
     typeof route.path === "string" &&
-    Array.isArray(item.parameters) &&
-    Array.isArray(item.options)
+    stringArray(item.parameters) &&
+    stringArray(item.options)
   );
 }
 
