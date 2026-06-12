@@ -4,6 +4,7 @@ import {
   acceptsDirectUrl,
   actionInvokedBy,
 } from "@/lib/actions";
+import { findHelpTarget, isHelpRequest } from "@/lib/actionHelp";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import type { PaletteResult } from "@/lib/axonClient";
 
@@ -24,10 +25,27 @@ export function focusInput(select = false) {
 export function parseCommand(raw: string): ParsedCommand {
   const trimmed = raw.trimStart();
   const [token = ""] = trimmed.split(/\s+/);
-  const invoked = ACTIONS.find((action) => actionInvokedBy(action, token));
-  if (invoked) {
-    return { invoked, search: token, arg: trimmed.slice(token.length).trimStart() };
+  const rest = trimmed.slice(token.length).trimStart();
+  const helpAction = ACTIONS.find((action) => action.subcommand === "help");
+
+  if (helpAction && actionInvokedBy(helpAction, token)) {
+    return { invoked: helpAction, search: token, arg: rest };
   }
+
+  const invoked = ACTIONS.find((action) => actionInvokedBy(action, token));
+  if (helpAction && invoked && isHelpRequest(rest)) {
+    return { invoked: helpAction, search: token, arg: invoked.subcommand };
+  }
+
+  if (invoked) {
+    return { invoked, search: token, arg: rest };
+  }
+
+  const helpTarget = findHelpTarget(trimmed);
+  if (helpAction && helpTarget) {
+    return { invoked: helpAction, search: helpTarget.subcommand, arg: helpTarget.subcommand };
+  }
+
   return { search: trimmed, arg: "" };
 }
 
