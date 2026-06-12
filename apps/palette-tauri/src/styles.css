@@ -3954,7 +3954,7 @@ textarea {
 }
 
 .help-warning {
-  color: var(--aurora-warning-strong);
+  color: var(--aurora-warn-foreground);
 }
 
 @media (max-width: 760px) {

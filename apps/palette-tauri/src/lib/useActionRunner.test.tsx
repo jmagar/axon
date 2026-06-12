@@ -2,7 +2,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HistoryItem } from "@/components/palette/HistoryPanel";
 import { ACTIONS, type PaletteAction } from "@/lib/actions";
@@ -28,6 +28,8 @@ const config: PaletteConfig = {
 };
 
 const client: Client = { baseUrl: "http://127.0.0.1:9999", headers: {} };
+
+afterEach(() => vi.restoreAllMocks());
 
 function setup(
   query: string,
@@ -59,19 +61,22 @@ function setup(
 
 describe("useActionRunner local help", () => {
   it.each([
-    ["help", "help"],
-    ["help scrape", "help"],
-    ["scrape help", "help"],
-    ["fetch help", "help"],
-    ["crawl --help", "help"],
-    ["?", "help"],
-  ])("handles %s without requiring a backend client", async (query, subcommand) => {
+    ["help", "help", undefined],
+    ["help scrape", "help", "scrape"],
+    ["scrape help", "help", "scrape"],
+    ["fetch help", "help", "scrape"],
+    ["crawl --help", "help", "crawl"],
+    ["?", "help", undefined],
+  ])("handles %s without requiring a backend client", async (query, subcommand, target) => {
     const rendered = setup(query, { client: null, config: null });
     await act(async () => {
       await rendered.result.current.submit(action(subcommand));
     });
     expect(rendered.result.current.run.kind).toBe("success");
     expect("result" in rendered.result.current.run ? rendered.result.current.run.result.path : "").toBe("palette://help");
+    const payload = "result" in rendered.result.current.run ? rendered.result.current.run.result.payload : null;
+    if (target) expect(payload).toMatchObject({ target: { subcommand: target } });
+    else expect(payload).toMatchObject({ catalog: expect.any(Array) });
   });
 
   it.each([
@@ -86,7 +91,6 @@ describe("useActionRunner local help", () => {
       await rendered.result.current.submit(action(subcommand));
     });
     expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
   });
 
   it("routes mode-local help through the Help action while targeting the current mode", async () => {
@@ -104,6 +108,5 @@ describe("useActionRunner local help", () => {
     expect("result" in rendered.result.current.run ? rendered.result.current.run.result.payload : null).toMatchObject({
       target: { subcommand: "scrape" },
     });
-    fetchSpy.mockRestore();
   });
 });

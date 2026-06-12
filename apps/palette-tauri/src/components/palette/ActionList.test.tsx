@@ -14,7 +14,10 @@ const onSubmit = vi.fn();
 const onEnterMode = vi.fn();
 const onHelp = vi.fn();
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function Harness() {
   const [selected, setSelected] = useState(0);
@@ -32,9 +35,6 @@ function Harness() {
 }
 
 it("opens selected-row help without submitting or entering action mode", () => {
-  onSubmit.mockClear();
-  onEnterMode.mockClear();
-  onHelp.mockClear();
   render(<Harness />);
   fireEvent.click(screen.getByRole("button", { name: "Help for Help" }));
   expect(onHelp).toHaveBeenCalledTimes(1);
@@ -43,9 +43,6 @@ it("opens selected-row help without submitting or entering action mode", () => {
 });
 
 it("reveals row help on hover before running the row action", () => {
-  onSubmit.mockClear();
-  onEnterMode.mockClear();
-  onHelp.mockClear();
   render(<Harness />);
 
   const scrapeRow = screen.getByText((text, node) => (

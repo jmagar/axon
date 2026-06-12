@@ -4,7 +4,7 @@ import {
   acceptsDirectUrl,
   actionInvokedBy,
 } from "@/lib/actions";
-import { isHelpRequest } from "@/lib/actionHelp";
+import { helpAction, isHelpRequest } from "@/lib/actionHelp";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import type { PaletteResult } from "@/lib/axonClient";
 
@@ -26,15 +26,15 @@ export function parseCommand(raw: string): ParsedCommand {
   const trimmed = raw.trimStart();
   const [token = ""] = trimmed.split(/\s+/);
   const rest = trimmed.slice(token.length).trimStart();
-  const helpAction = ACTIONS.find((action) => action.subcommand === "help");
+  const localHelpAction = helpAction();
 
-  if (helpAction && actionInvokedBy(helpAction, token)) {
-    return { invoked: helpAction, search: token, arg: rest };
+  if (actionInvokedBy(localHelpAction, token)) {
+    return { invoked: localHelpAction, search: token, arg: rest };
   }
 
   const invoked = ACTIONS.find((action) => actionInvokedBy(action, token));
-  if (helpAction && invoked && isHelpRequest(rest)) {
-    return { invoked: helpAction, search: token, arg: invoked.subcommand };
+  if (invoked && isHelpRequest(rest)) {
+    return { invoked: localHelpAction, search: token, arg: invoked.subcommand };
   }
 
   if (invoked) {

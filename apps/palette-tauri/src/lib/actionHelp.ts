@@ -57,6 +57,12 @@ export function isHelpRequest(value: string): boolean {
   return /^(?:help|--help|-h|\?)$/i.test(value.trim());
 }
 
+export function helpAction(): PaletteAction {
+  const action = ACTIONS.find((candidate) => candidate.subcommand === "help");
+  if (!action) throw new Error("missing local help action");
+  return action;
+}
+
 export function findHelpTarget(value: string): PaletteAction | undefined {
   const token = value.trim().split(/\s+/)[0] ?? "";
   if (!token) return undefined;
@@ -96,7 +102,6 @@ export function helpMarkdown(target?: PaletteAction, unknownTarget?: string): st
       "# Axon Palette Help",
       "",
       unknownTarget ? `No matching action: \`${unknownTarget}\`` : "",
-      unknownTarget ? "" : "",
       "Use `help <action>`, `<action> help`, `<action> --help`, or the selected action `?` button.",
       "",
       ...[...groups.entries()].flatMap(([category, items]) => [

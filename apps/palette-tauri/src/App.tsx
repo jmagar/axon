@@ -23,7 +23,7 @@ import {
   type PaletteAction,
   actionMatches,
 } from "@/lib/actions";
-import { buildHelpRun, isHelpRequest } from "@/lib/actionHelp";
+import { buildHelpRun, helpAction, isHelpRequest } from "@/lib/actionHelp";
 import { currentOutputTarget } from "@/lib/appHelpers";
 import { type PaletteConfig, createAxonClient } from "@/lib/axonClient";
 import { outputKindFor } from "@/lib/format";
@@ -295,9 +295,9 @@ export default function App() {
 
   function showHelpFor(action?: PaletteAction) {
     const helpRun = buildHelpRun(action);
-    const helpAction = ACTIONS.find((candidate) => candidate.subcommand === "help") ?? action ?? null;
+    const localHelpAction = helpAction();
     const historyItem: HistoryItem = {
-      action: helpAction ?? ACTIONS[0],
+      action: localHelpAction,
       target: action?.subcommand ?? "catalog",
       status: 200,
       text: helpRun.text,
@@ -305,7 +305,7 @@ export default function App() {
       payload: helpRun.result.payload,
       when: "just now",
     };
-    setModeAction(helpAction);
+    setModeAction(localHelpAction);
     setQuery(action?.subcommand ?? "");
     setRun(helpRun);
     setHistory((items) => [historyItem, ...items].slice(0, 18));

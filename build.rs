@@ -16,11 +16,18 @@ fn main() {
     }
     fs::create_dir_all(&out_dir).expect("create generated web assets dir");
 
-    if source.is_dir() {
+    if has_entries(&source) {
         copy_dir(&source, &out_dir).expect("copy apps/web/out into generated web assets");
     } else {
         write_fallback_index(&out_dir).expect("write fallback web index");
     }
+}
+
+fn has_entries(path: &Path) -> bool {
+    path.is_dir()
+        && fs::read_dir(path)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false)
 }
 
 fn copy_dir(source: &Path, destination: &Path) -> io::Result<()> {
