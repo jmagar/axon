@@ -3,6 +3,7 @@ import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { ActionIcon } from "@/components/palette/ActionIcon";
 import { ScrollArea } from "@/components/ui/aurora/scroll-area";
 import { acceptsDirectUrl, type PaletteAction } from "@/lib/actions";
+import { isAsyncAction } from "@/lib/actionHelp";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import { looksLikeUrl, type ParsedCommand } from "@/lib/paletteView";
 
@@ -50,7 +51,11 @@ export function ActionList({ filtered, selected, setSelected, parsed, onSubmit, 
                     <span>{meta.input} → {meta.output}</span>
                   </div>
                 )}
-                <div className={selectedRow ? "action-row action-row-selected" : "action-row"}>
+                <div
+                  className={selectedRow ? "action-row action-row-selected" : "action-row"}
+                  onFocusCapture={() => setSelected(index)}
+                  onPointerEnter={() => setSelected(index)}
+                >
                   <button
                     className="action-row-main"
                     type="button"
@@ -74,7 +79,7 @@ export function ActionList({ filtered, selected, setSelected, parsed, onSubmit, 
                         <span className="action-label">{meta.label}</span>
                         <span className="action-method">{meta.method}</span>
                         <span className="action-endpoint">{meta.endpoint}</span>
-                        {action.subcommand === "crawl" || action.subcommand === "ingest" || action.subcommand === "embed" || action.subcommand === "extract" ? (
+                        {isAsyncAction(action) ? (
                           <span className="action-async">ASYNC</span>
                         ) : null}
                       </span>

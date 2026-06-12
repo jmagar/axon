@@ -2508,6 +2508,11 @@ textarea {
   border-color: color-mix(in srgb, var(--aurora-accent-primary) 28%, transparent);
 }
 
+.action-help-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--aurora-accent-primary) 60%, transparent);
+  outline-offset: 2px;
+}
+
 .action-meta kbd {
   min-width: 0;
   padding: 2px 7px;
@@ -3864,7 +3869,7 @@ textarea {
 
 .help-result {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   color: var(--aurora-text-primary);
 }
 
@@ -3876,10 +3881,26 @@ textarea {
   border-radius: 8px;
 }
 
+.help-catalog-section {
+  display: grid;
+  gap: 4px;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--aurora-border-default) 52%, transparent);
+}
+
 .help-header h2,
-.help-section h3 {
+.help-section h3,
+.help-catalog-section h3 {
   margin: 0;
   line-height: 1.2;
+}
+
+.help-catalog-section h3 {
+  color: var(--aurora-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .help-header p {
@@ -3916,7 +3937,7 @@ textarea {
 .help-aliases div,
 .help-catalog {
   display: grid;
-  gap: 8px;
+  gap: 1px;
 }
 
 .help-aliases div {
@@ -3926,8 +3947,10 @@ textarea {
 .help-catalog-item {
   display: grid;
   grid-template-columns: minmax(92px, 150px) minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   align-items: start;
+  padding: 4px 0;
+  color: var(--aurora-text-muted);
 }
 
 .help-warning {

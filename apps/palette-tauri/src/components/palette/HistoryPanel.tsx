@@ -13,6 +13,7 @@ export interface HistoryItem {
   duration?: string;
   text?: string;
   outputKind?: "markdown" | "code";
+  payload?: unknown;
 }
 
 export function HistoryPanel({

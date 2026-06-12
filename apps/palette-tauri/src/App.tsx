@@ -23,7 +23,7 @@ import {
   type PaletteAction,
   actionMatches,
 } from "@/lib/actions";
-import { buildHelpRun } from "@/lib/actionHelp";
+import { buildHelpRun, isHelpRequest } from "@/lib/actionHelp";
 import { currentOutputTarget } from "@/lib/appHelpers";
 import { type PaletteConfig, createAxonClient } from "@/lib/axonClient";
 import { outputKindFor } from "@/lib/format";
@@ -204,6 +204,7 @@ export default function App() {
   const active = modeAction ?? suggestedAction;
   const activeArgument = active ? argumentFor(active, modeAction, parsed, query) : "";
   const validation = active ? validationMessage(active, activeArgument) : "No matching action";
+  const canRunLocalAction = active?.kind === "local" || Boolean(active && active.subcommand !== "help" && isHelpRequest(activeArgument));
   const jobMinimized = run.kind === "job" && run.minimized;
   const jobExpanded = run.kind === "job" && !run.minimized;
   const showOutput = run.kind !== "idle" && !jobMinimized;
@@ -301,6 +302,7 @@ export default function App() {
       status: 200,
       text: helpRun.text,
       outputKind: "markdown",
+      payload: helpRun.result.payload,
       when: "just now",
     };
     setModeAction(helpAction);
@@ -518,7 +520,7 @@ export default function App() {
           className={active && !validation ? `command-submit command-submit-${active.tone}` : "command-submit"}
           type="button"
           onClick={() => active && void submit(active)}
-          disabled={!client || !active || run.kind === "running" || run.kind === "streaming" || Boolean(validation)}
+          disabled={(!client && !canRunLocalAction) || !active || run.kind === "running" || run.kind === "streaming" || Boolean(validation)}
           aria-label="Run selected action"
           title={validation || "Run selected action"}
         >
@@ -604,7 +606,7 @@ export default function App() {
                     status: item.status,
                     path: item.action.subcommand,
                     method: "POST",
-                    payload: null,
+                    payload: item.payload ?? null,
                   },
                 });
               } else if (item.running) {

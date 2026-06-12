@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 
 import type { HistoryItem } from "@/components/palette/HistoryPanel";
-import type { PaletteAction } from "@/lib/actions";
+import { ACTIONS, type PaletteAction } from "@/lib/actions";
 import { buildHelpRun, findHelpTarget, isHelpRequest } from "@/lib/actionHelp";
 import { crawlSeedUrl, newRequestId, normalizeSubmitArgument } from "@/lib/appHelpers";
 import {
@@ -116,15 +116,16 @@ export function useActionRunner({
     if (!action || run.kind === "running" || run.kind === "streaming") return;
     const rawArgument = argumentOverride ?? argumentFor(action, modeAction, parsed, query);
     if (action.subcommand === "help" || isHelpRequest(rawArgument)) {
+      const helpAction = ACTIONS.find((candidate) => candidate.subcommand === "help") ?? action;
       const targetToken = action.subcommand === "help" ? rawArgument : action.subcommand;
       const target = findHelpTarget(targetToken);
       const unknownTarget = action.subcommand === "help" && targetToken.trim() && !target ? targetToken.trim() : undefined;
       const helpRun = buildHelpRun(target, unknownTarget);
       setRun(helpRun);
-      setModeAction(action);
+      setModeAction(helpAction);
       setQuery(action.subcommand === "help" ? rawArgument.trim() : target?.subcommand ?? "");
       setBrowseOpen(false);
-      pushHistory(action, target?.subcommand ?? unknownTarget ?? "catalog", 200, helpRun.text, "markdown");
+      pushHistory(helpAction, target?.subcommand ?? unknownTarget ?? "catalog", 200, helpRun.text, "markdown", helpRun.result.payload);
       return;
     }
 
@@ -303,9 +304,9 @@ export function useActionRunner({
     }
   }
 
-  function pushHistory(action: PaletteAction, target: string, status: number, text?: string, outputKind?: "markdown" | "code") {
+  function pushHistory(action: PaletteAction, target: string, status: number, text?: string, outputKind?: "markdown" | "code", payload?: unknown) {
     setHistory((items) => [
-      { action, target, status, text, outputKind, when: "just now", duration: status === 0 ? "fail" : undefined },
+      { action, target, status, text, outputKind, payload, when: "just now", duration: status === 0 ? "fail" : undefined },
       ...items,
     ].slice(0, 18));
   }

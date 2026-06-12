@@ -60,6 +60,11 @@ describe("OperationResultView routing", () => {
     expect(screen.getByText("Parameters")).toBeInTheDocument();
   });
 
+  it("falls back to markdown text for historical help entries without payloads", () => {
+    render(<OperationResultView payload={null} subcommand="help" fallbackText="# Scrape URL\n\nRoute: `POST /v1/scrape`" />);
+    expect(screen.getByText(/# Scrape URL/)).toBeInTheDocument();
+  });
+
   it("removes empty markdown bullets and dash-only fenced blocks", () => {
     const markdown = [
       "- Real item",

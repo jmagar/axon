@@ -2,7 +2,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { HistoryItem } from "@/components/palette/HistoryPanel";
 import { ACTIONS, type PaletteAction } from "@/lib/actions";
@@ -29,12 +29,15 @@ const config: PaletteConfig = {
 
 const client: Client = { baseUrl: "http://127.0.0.1:9999", headers: {} };
 
-function setup(query: string, overrides: { client?: Client | null; config?: PaletteConfig | null } = {}) {
+function setup(
+  query: string,
+  overrides: { client?: Client | null; config?: PaletteConfig | null; modeAction?: PaletteAction | null } = {},
+) {
   const parsed = parseCommand(query);
   return renderHook(() => {
     const [run, setRun] = useState<RunState>({ kind: "idle" });
     const [history, setHistory] = useState<HistoryItem[]>([]);
-    const [modeAction, setModeAction] = useState<PaletteAction | null>(null);
+    const [modeAction, setModeAction] = useState<PaletteAction | null>(overrides.modeAction ?? null);
     const [input, setQuery] = useState(query);
     const [, setBrowseOpen] = useState(false);
     const runner = useActionRunner({
@@ -69,5 +72,38 @@ describe("useActionRunner local help", () => {
     });
     expect(rendered.result.current.run.kind).toBe("success");
     expect("result" in rendered.result.current.run ? rendered.result.current.run.result.path : "").toBe("palette://help");
+  });
+
+  it.each([
+    ["help", "help"],
+    ["help scrape", "help"],
+    ["scrape help", "help"],
+    ["crawl --help", "help"],
+  ])("does not call REST for %s when a backend client exists", async (query, subcommand) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("REST should not be called"));
+    const rendered = setup(query);
+    await act(async () => {
+      await rendered.result.current.submit(action(subcommand));
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("routes mode-local help through the Help action while targeting the current mode", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("REST should not be called"));
+    const rendered = setup("?", { modeAction: action("scrape") });
+    await act(async () => {
+      await rendered.result.current.submit(action("scrape"));
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(rendered.result.current.history[0]?.action.subcommand).toBe("help");
+    expect(rendered.result.current.history[0]?.target).toBe("scrape");
+    expect(rendered.result.current.run.kind).toBe("success");
+    expect("result" in rendered.result.current.run ? rendered.result.current.run.result.path : "").toBe("palette://help");
+    expect("result" in rendered.result.current.run ? rendered.result.current.run.result.payload : null).toMatchObject({
+      target: { subcommand: "scrape" },
+    });
+    fetchSpy.mockRestore();
   });
 });

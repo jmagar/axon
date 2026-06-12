@@ -40,6 +40,7 @@ export { sanitizeReaderMarkdown } from "@/components/palette/OperationResultView
 interface OperationResultViewProps {
   payload: unknown;
   subcommand: string;
+  fallbackText?: string;
 }
 
 export function hasStructuredOperationView(subcommand: string): boolean {
@@ -73,12 +74,12 @@ export function hasStructuredOperationView(subcommand: string): boolean {
   );
 }
 
-export function OperationResultView({ payload, subcommand }: OperationResultViewProps) {
+export function OperationResultView({ payload, subcommand, fallbackText = "" }: OperationResultViewProps) {
   const data = unwrapPayload(payload);
 
   switch (subcommand) {
     case "help":
-      return <HelpResultView payload={payload} fallbackText="" />;
+      return <HelpResultView payload={payload} fallbackText={fallbackText} />;
     case "scrape":
       return <ReadingView payload={data} mode="scrape" />;
     case "query":

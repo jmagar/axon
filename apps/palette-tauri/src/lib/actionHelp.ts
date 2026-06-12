@@ -27,6 +27,10 @@ export interface HelpRunState {
 
 const ASYNC_ACTIONS = new Set(["crawl", "embed", "extract", "ingest", "ingest-sessions-prepared"]);
 
+export function isAsyncAction(action: PaletteAction): boolean {
+  return ASYNC_ACTIONS.has(action.subcommand) || action.kind === "job";
+}
+
 const PARAMETER_DETAILS: Record<string, string[]> = {
   scrape: ["url from input", "collection from palette settings when configured"],
   crawl: ["urls from input", "collection from palette settings when configured"],
@@ -70,7 +74,7 @@ export function buildActionHelp(action: PaletteAction): ActionHelp {
     category: meta.category,
     route: { method: meta.method, path: meta.endpoint },
     output: meta.output,
-    async: ASYNC_ACTIONS.has(action.subcommand) || action.kind === "job",
+    async: isAsyncAction(action),
     parameters: PARAMETER_DETAILS[action.subcommand] ?? (action.argMode === "none" ? ["none"] : ["input from command text"]),
     options: OPTION_DETAILS[action.subcommand] ?? ["No palette-specific options are exposed yet."],
   };

@@ -4,7 +4,7 @@ import {
   acceptsDirectUrl,
   actionInvokedBy,
 } from "@/lib/actions";
-import { findHelpTarget, isHelpRequest } from "@/lib/actionHelp";
+import { isHelpRequest } from "@/lib/actionHelp";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import type { PaletteResult } from "@/lib/axonClient";
 
@@ -39,11 +39,6 @@ export function parseCommand(raw: string): ParsedCommand {
 
   if (invoked) {
     return { invoked, search: token, arg: rest };
-  }
-
-  const helpTarget = findHelpTarget(trimmed);
-  if (helpAction && helpTarget) {
-    return { invoked: helpAction, search: helpTarget.subcommand, arg: helpTarget.subcommand };
   }
 
   return { search: trimmed, arg: "" };

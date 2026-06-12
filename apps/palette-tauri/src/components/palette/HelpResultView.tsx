@@ -75,7 +75,7 @@ export function HelpResultView({ payload, fallbackText }: { payload: unknown; fa
         {unknownTarget ? <p className="help-warning">No matching action: <code>{unknownTarget}</code></p> : null}
       </header>
       {[...groups.entries()].map(([category, items]) => (
-        <section className="help-section" key={category}>
+        <section className="help-catalog-section" key={category}>
           <h3>{category}</h3>
           <div className="help-catalog">
             {items.map((item) => (
