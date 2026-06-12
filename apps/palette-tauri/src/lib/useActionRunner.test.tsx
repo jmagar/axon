@@ -36,7 +36,7 @@ function setup(query: string, overrides: { client?: Client | null; config?: Pale
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [modeAction, setModeAction] = useState<PaletteAction | null>(null);
     const [input, setQuery] = useState(query);
-    const [browseOpen, setBrowseOpen] = useState(false);
+    const [, setBrowseOpen] = useState(false);
     const runner = useActionRunner({
       client: overrides.client === undefined ? client : overrides.client,
       config: overrides.config === undefined ? config : overrides.config,

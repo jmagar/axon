@@ -295,20 +295,18 @@ export default function App() {
   function showHelpFor(action?: PaletteAction) {
     const helpRun = buildHelpRun(action);
     const helpAction = ACTIONS.find((candidate) => candidate.subcommand === "help") ?? action ?? null;
+    const historyItem: HistoryItem = {
+      action: helpAction ?? ACTIONS[0],
+      target: action?.subcommand ?? "catalog",
+      status: 200,
+      text: helpRun.text,
+      outputKind: "markdown",
+      when: "just now",
+    };
     setModeAction(helpAction);
     setQuery(action?.subcommand ?? "");
     setRun(helpRun);
-    setHistory((items) => [
-      {
-        action: helpAction ?? ACTIONS[0],
-        target: action?.subcommand ?? "catalog",
-        status: 200,
-        text: helpRun.text,
-        outputKind: "markdown",
-        when: "just now",
-      },
-      ...items,
-    ].slice(0, 18));
+    setHistory((items) => [historyItem, ...items].slice(0, 18));
     setHistoryOpen(false);
     setSettingsOpen(false);
     setBrowseOpen(false);

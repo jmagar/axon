@@ -1,7 +1,6 @@
 import { ACTIONS, type PaletteAction, actionInvokedBy } from "@/lib/actions";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import type { HttpMethod, PaletteResult } from "@/lib/axonClient";
-import type { RunState } from "@/lib/runState";
 
 export interface ActionHelp {
   title: string;
@@ -15,6 +14,15 @@ export interface ActionHelp {
   async: boolean;
   parameters: string[];
   options: string[];
+}
+
+export interface HelpRunState {
+  kind: "success";
+  title: string;
+  subtitle: string;
+  text: string;
+  outputKind: "markdown";
+  result: PaletteResult;
 }
 
 const ASYNC_ACTIONS = new Set(["crawl", "embed", "extract", "ingest", "ingest-sessions-prepared"]);
@@ -123,7 +131,7 @@ export function buildHelpPayload(
   return target ? { target: buildActionHelp(target) } : { catalog: buildCatalogHelp(), unknownTarget };
 }
 
-export function buildHelpRun(target?: PaletteAction, unknownTarget?: string): RunState {
+export function buildHelpRun(target?: PaletteAction, unknownTarget?: string): HelpRunState {
   const text = helpMarkdown(target, unknownTarget);
   const result: PaletteResult = {
     ok: true,
