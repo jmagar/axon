@@ -9,7 +9,7 @@ use axum::{
 use rust_embed::{Embed as _, RustEmbed};
 
 #[derive(RustEmbed)]
-#[folder = "apps/web/out/"]
+#[folder = "$OUT_DIR/web-assets/"]
 struct WebAssets;
 
 pub(crate) async fn serve_static(uri: axum::http::Uri) -> Response {

@@ -160,7 +160,7 @@ url = "2"
 html5gum = "0.8"
 libc = "0.2"
 mime_guess = "2"
-rust-embed = "8"
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 
 [features]
 # Feature gates for optional heavy dependencies from the webclaw port.
