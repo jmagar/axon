@@ -373,7 +373,9 @@ fn shell_scripts_share_canonical_env_resolution() {
 }
 
 fn env_example_keys() -> BTreeSet<String> {
-    include_str!("../.env.example")
+    const ENV_EXAMPLE: &str = include_str!("../.env.example");
+
+    ENV_EXAMPLE
         .lines()
         .filter_map(|line| {
             let line = line.trim();
