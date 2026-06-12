@@ -138,10 +138,18 @@ describe("executeAction", () => {
     });
   });
 
+  it("rejects local actions before request construction", () => {
+    const client = createAxonClient(config);
+    expect(() => buildActionRequest(client, action("help"), "scrape", config)).toThrow(
+      "Local action help cannot be sent to Axon REST",
+    );
+  });
+
   it("has REST request mappings for every palette action example", () => {
     const client = createAxonClient(config);
 
     for (const candidate of ACTIONS) {
+      if (candidate.kind === "local") continue;
       const arg = candidate.example.startsWith(candidate.subcommand)
         ? candidate.example.slice(candidate.subcommand.length).trim()
         : "";
@@ -230,7 +238,7 @@ describe("executeAction", () => {
       "watch-run",
     ]);
 
-    const actionSubcommands = ACTIONS.map((a) => a.subcommand);
+    const actionSubcommands = ACTIONS.filter((a) => a.kind !== "local").map((a) => a.subcommand);
     const unlisted = actionSubcommands.filter((s) => !RUST_ALLOWED_SUBCOMMANDS.has(s));
 
     expect(

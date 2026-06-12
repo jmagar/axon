@@ -86,6 +86,9 @@ export function buildActionRequest(
   arg: string,
   config: PaletteConfig,
 ): PaletteHttpRequest {
+  if (action.kind === "local") {
+    throw new Error(`Local action ${action.subcommand} cannot be sent to Axon REST`);
+  }
   const body = bodyFor(action, arg, config);
   return {
     baseUrl: client.baseUrl,
