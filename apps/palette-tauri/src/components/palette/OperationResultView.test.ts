@@ -1,3 +1,6 @@
+// @ts-expect-error Vitest runs this file in Node; the app tsconfig intentionally omits Node globals.
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { hasStructuredOperationView, sanitizeReaderMarkdown } from "./OperationResultView";
@@ -38,7 +41,7 @@ describe("OperationResultView routing", () => {
     }
   });
 
-  it("removes empty markdown bullets without changing fenced code", () => {
+  it("removes empty markdown bullets and dash-only fenced blocks", () => {
     const markdown = [
       "- Real item",
       "-",
@@ -48,8 +51,43 @@ describe("OperationResultView routing", () => {
       "```txt",
       "-",
       "```",
+      "",
+      "```rust",
+      "let ok = true;",
+      "```",
     ].join("\n");
 
-    expect(sanitizeReaderMarkdown(markdown)).toBe(["- Real item", "", "```txt", "-", "```"].join("\n"));
+    expect(sanitizeReaderMarkdown(markdown)).toBe(["- Real item", "```rust", "let ok = true;", "```"].join("\n"));
+  });
+
+  it("cleans common scrape chrome without touching fenced code", () => {
+    const markdown = [
+      "Claude Code by Anthropic | AI Coding Agent, Terminal, IDESkip to main content Debugging...",
+      "Slack curl -fsSL https://claude.ai/install.sh | bash Or read the documentation Try Claude Code (opens in new tab)Developer docs (opens in new tab)",
+      "",
+      "```bash",
+      "echo 'Skip to main content should stay in code'",
+      "```",
+      "-",
+    ].join("\n");
+
+    expect(sanitizeReaderMarkdown(markdown)).toBe(
+      [
+        "Claude Code by Anthropic | AI Coding Agent, Terminal, IDE",
+        "Slack curl -fsSL https://claude.ai/install.sh | bash Or read the documentation Try Claude Code Developer docs",
+        "```bash",
+        "echo 'Skip to main content should stay in code'",
+        "```",
+      ].join("\n"),
+    );
+  });
+
+  it("lets scraped document readers use the full output panel height", () => {
+    const styles = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+
+    expect(styles).toContain(".operation-reader-view");
+    expect(styles).toContain(".operation-reader-section");
+    expect(styles).toContain("max-height: none");
+    expect(styles).not.toContain("max-height: min(48vh, 560px)");
   });
 });

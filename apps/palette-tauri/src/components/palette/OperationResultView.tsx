@@ -10,14 +10,14 @@ import {
   Palette,
   ServerCog,
 } from "lucide-react";
-import { code } from "@streamdown/code";
 import type { ReactNode } from "react";
 import { Streamdown, type ThemeInput } from "streamdown";
 
+import { limitedCode } from "@/lib/limitedStreamdownCode";
 import { arrField, boolField, isRecord, numField, strField, unwrapPayload } from "@/lib/payload";
 
 const LIST_LIMIT = 18;
-const STREAMDOWN_PLUGINS = { code };
+const STREAMDOWN_PLUGINS = { code: limitedCode };
 const CODE_THEMES: [ThemeInput, ThemeInput] = ["one-dark-pro", "one-dark-pro"];
 
 interface OperationResultViewProps {
@@ -190,9 +190,9 @@ function ReadingView({
   const chunks = firstArray(payload, ["chunks", "documents", "results"]);
 
   return (
-    <div className="output-body operation-view aurora-scrollbar">
+    <div className="output-body operation-view operation-reader-view aurora-scrollbar">
       {readerMarkdown ? (
-        <section className="operation-section">
+        <section className="operation-section operation-reader-section">
           <div className="operation-reader">
             <Streamdown plugins={STREAMDOWN_PLUGINS} shikiTheme={CODE_THEMES}>
               {readerMarkdown}
@@ -689,19 +689,57 @@ export function sanitizeReaderMarkdown(value: string | undefined): string | unde
   if (!value) return value;
 
   let inFence = false;
+  let fenceStart = -1;
   const lines = value.split(/\r?\n/);
-  const kept = lines.filter((line) => {
+  const kept: string[] = [];
+
+  for (const rawLine of lines) {
+    const cleanedLine = inFence ? rawLine : cleanupScrapeArtifactLine(rawLine);
+    if (cleanedLine === undefined) continue;
+    const line = cleanedLine;
     if (/^\s*(```|~~~)/.test(line)) {
+      if (!inFence) {
+        fenceStart = kept.length;
+        kept.push(line);
+        inFence = true;
+        continue;
+      }
+
+      kept.push(line);
+      const body = kept.slice(fenceStart + 1, -1);
+      if (body.length === 0 || body.every(isEmptyBulletLine)) {
+        kept.splice(fenceStart);
+      }
       inFence = !inFence;
-      return true;
+      fenceStart = -1;
+      continue;
     }
 
-    if (inFence) return true;
+    if (inFence || !isEmptyBulletLine(line)) {
+      kept.push(line);
+    }
+  }
 
-    return !/^\s*(?:[-+*]\s*|[•‣◦]\s*)$/.test(line);
-  });
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 
-  return kept.join("\n").trim();
+function cleanupScrapeArtifactLine(line: string): string | undefined {
+  const cleaned = line
+    .replace(/Skip to main content/gi, "")
+    .replace(/Debugging\.{0,3}/gi, "")
+    .replace(/\s*\(opens in new tab\)/gi, "")
+    .replace(/\)(?=[A-Z][A-Za-z])/g, ") ")
+    .replace(/([a-z0-9])(?=(?:Developer docs|Onboarding|Triage issues|Refactor code)\b)/g, "$1 ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trimEnd();
+
+  const normalized = cleaned.trim();
+  if (/^(?:debugging|skip to main content)$/i.test(normalized)) return undefined;
+  return cleaned;
+}
+
+function isEmptyBulletLine(line: string): boolean {
+  return /^\s*$/.test(line) || /^\s*(?:[-+*]\s*|[•‣◦]\s*)$/.test(line);
 }
 
 function imagePreviewSrc(path: string | undefined): string | undefined {
@@ -801,6 +839,8 @@ function toneForStatus(status: string | undefined): Tone {
     case "pending":
     case "running":
     case "accepted":
+    case "warn":
+    case "warning":
       return "warn";
     case "error":
     case "failed":
