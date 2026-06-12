@@ -111,7 +111,7 @@ export function PaletteCommandBar({
         className="command-help"
         type="button"
         onClick={() => onHelp(active)}
-        disabled={!active || running}
+        disabled={running}
         aria-label={active ? `Help for ${active.label}` : "Help"}
         title={active ? `Help for ${active.label}` : "Help"}
       >

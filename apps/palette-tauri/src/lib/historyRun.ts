@@ -3,7 +3,7 @@ import { outputKindFor } from "@/lib/format";
 import type { RunState } from "@/lib/runState";
 
 export function runStateFromHistory(item: HistoryItem): RunState | null {
-  if (!item.text) return null;
+  if (item.text == null) return null;
   const ok = item.status >= 200 && item.status < 300;
   return {
     kind: ok ? "success" : "error",

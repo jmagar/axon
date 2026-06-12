@@ -3,7 +3,9 @@ import type { ActionHelp } from "@/lib/actionHelp";
 function isActionHelp(value: unknown): value is ActionHelp {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  const route = item.route as Record<string, unknown> | undefined;
+  const route = item.route;
+  if (route === null || typeof route !== "object") return false;
+  const routeRecord = route as Record<string, unknown>;
   const stringArray = (candidate: unknown) => Array.isArray(candidate) && candidate.every((entry) => typeof entry === "string");
   return (
     typeof item.title === "string" &&
@@ -14,9 +16,8 @@ function isActionHelp(value: unknown): value is ActionHelp {
     typeof item.category === "string" &&
     typeof item.output === "string" &&
     typeof item.async === "boolean" &&
-    route !== undefined &&
-    (route.method === "GET" || route.method === "POST" || route.method === "DELETE") &&
-    typeof route.path === "string" &&
+    (routeRecord.method === "GET" || routeRecord.method === "POST" || routeRecord.method === "DELETE") &&
+    typeof routeRecord.path === "string" &&
     stringArray(item.parameters) &&
     stringArray(item.options)
   );
@@ -26,7 +27,12 @@ function payloadRecord(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
 }
 
-export function HelpResultView({ payload, fallbackText }: { payload: unknown; fallbackText: string }) {
+export interface HelpResultViewProps {
+  payload: unknown;
+  fallbackText: string;
+}
+
+export function HelpResultView({ payload, fallbackText }: HelpResultViewProps) {
   const body = payloadRecord(payload);
   const target = isActionHelp(body.target) ? body.target : undefined;
   const catalog = Array.isArray(body.catalog) ? body.catalog.filter(isActionHelp) : [];
