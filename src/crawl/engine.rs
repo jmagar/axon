@@ -48,11 +48,21 @@ pub(crate) use url_utils::{is_junk_discovered_url, regex_escape};
 pub use waf::{WafDiagnostics, build_waf_diagnostics};
 
 pub const MAX_CRAWL_DIAGNOSTICS: usize = 100;
+const LEGACY_CRAWL_BROADCAST_BUFFER_MAX: usize = 16_384;
 
-fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
+pub(crate) fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
     let min = cfg.crawl_broadcast_buffer_min.max(1);
-    let max = cfg.crawl_broadcast_buffer_max.max(min);
-    (cfg.max_pages as usize).clamp(min, max)
+    let max = cfg
+        .crawl_broadcast_buffer_max
+        .max(min)
+        .max(LEGACY_CRAWL_BROADCAST_BUFFER_MAX);
+    let desired = if cfg.max_pages == 0 {
+        max
+    } else {
+        cfg.max_pages as usize
+    };
+
+    desired.clamp(min, max)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

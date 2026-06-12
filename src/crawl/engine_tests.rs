@@ -28,7 +28,7 @@ fn default_cfg() -> Config {
 fn crawl_subscribe_buffer_uses_default_profile_bounds() {
     let mut cfg = default_cfg();
     cfg.max_pages = 0;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 4096);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
 
     cfg.max_pages = 10_000;
     assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
@@ -44,7 +44,7 @@ fn crawl_subscribe_buffer_uses_configured_profile_bounds() {
     cfg.crawl_broadcast_buffer_max = 65_536;
 
     cfg.max_pages = 0;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 65_536);
 
     cfg.max_pages = 32_000;
     assert_eq!(crawl_subscribe_buffer_size(&cfg), 32_000);
@@ -60,7 +60,20 @@ fn crawl_subscribe_buffer_handles_inverted_bounds() {
     cfg.crawl_broadcast_buffer_max = 128;
     cfg.max_pages = 10_000;
 
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 1024);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
+}
+
+#[test]
+fn crawl_subscribe_buffer_does_not_regress_below_legacy_cap() {
+    let mut cfg = default_cfg();
+    cfg.crawl_broadcast_buffer_min = 4096;
+    cfg.crawl_broadcast_buffer_max = 8_192;
+
+    cfg.max_pages = 10_000;
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
+
+    cfg.max_pages = 0;
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
 }
 
 #[test]
