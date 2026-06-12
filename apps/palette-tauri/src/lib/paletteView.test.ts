@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTIONS, actionMatches } from "./actions";
+import { actionDisplayMeta, actionKindLabel, actionKindTone } from "./actionMeta";
 import {
-  actionDisplayMeta,
   sortActionsByRelevance,
   sortActionsForDisplay,
   actionHint,
@@ -62,6 +62,29 @@ describe("palette view parsing helpers", () => {
       input: "one URL",
       output: "content",
       label: "Scrape",
+      method: "POST",
+    });
+  });
+
+  it("exposes local help route metadata from actionMeta", () => {
+    expect(actionDisplayMeta(action("help"))).toEqual({
+      category: "System",
+      endpoint: "palette://help",
+      input: "action",
+      output: "help",
+      label: "Help",
+      method: "GET",
+    });
+  });
+
+  it("labels local actions without treating them like backend operations", () => {
+    expect(actionKindLabel(action("help"))).toBe("Local");
+    expect(actionKindTone(action("help"))).toBe("info");
+  });
+
+  it("keeps retrieve route metadata aligned with the actual palette request", () => {
+    expect(actionDisplayMeta(action("retrieve"))).toMatchObject({
+      endpoint: "/v1/retrieve",
       method: "POST",
     });
   });

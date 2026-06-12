@@ -3,7 +3,8 @@ import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { ActionIcon } from "@/components/palette/ActionIcon";
 import { ScrollArea } from "@/components/ui/aurora/scroll-area";
 import { acceptsDirectUrl, type PaletteAction } from "@/lib/actions";
-import { actionDisplayMeta, looksLikeUrl, type ParsedCommand } from "@/lib/paletteView";
+import { actionDisplayMeta } from "@/lib/actionMeta";
+import { looksLikeUrl, type ParsedCommand } from "@/lib/paletteView";
 
 interface ActionListProps {
   filtered: PaletteAction[];

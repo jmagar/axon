@@ -3,7 +3,7 @@ export type ArgMode = "none" | "optionalSingle" | "single" | "split";
 export interface PaletteAction {
   label: string;
   subcommand: string;
-  kind?: "operation" | "job" | "admin" | "discovery";
+  kind?: "operation" | "job" | "admin" | "discovery" | "local";
   argMode: ArgMode;
   aliases: string[];
   description: string;
@@ -12,6 +12,16 @@ export interface PaletteAction {
 }
 
 export const ACTIONS: PaletteAction[] = [
+  {
+    label: "Help",
+    subcommand: "help",
+    kind: "local",
+    argMode: "optionalSingle",
+    aliases: ["help", "?", "--help", "-h"],
+    description: "Show command help, usage, current request params, and available options.",
+    example: "help scrape",
+    tone: "info",
+  },
   {
     label: "Scrape URL",
     subcommand: "scrape",
