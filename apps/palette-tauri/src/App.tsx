@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
+  HelpCircle,
   Search,
   Send,
   Settings,
@@ -22,6 +23,7 @@ import {
   type PaletteAction,
   actionMatches,
 } from "@/lib/actions";
+import { buildHelpRun } from "@/lib/actionHelp";
 import { currentOutputTarget } from "@/lib/appHelpers";
 import { type PaletteConfig, createAxonClient } from "@/lib/axonClient";
 import { outputKindFor } from "@/lib/format";
@@ -290,6 +292,28 @@ export default function App() {
     focusInput(true);
   }
 
+  function showHelpFor(action?: PaletteAction) {
+    const helpRun = buildHelpRun(action);
+    const helpAction = ACTIONS.find((candidate) => candidate.subcommand === "help") ?? action ?? null;
+    setModeAction(helpAction);
+    setQuery(action?.subcommand ?? "");
+    setRun(helpRun);
+    setHistory((items) => [
+      {
+        action: helpAction ?? ACTIONS[0],
+        target: action?.subcommand ?? "catalog",
+        status: 200,
+        text: helpRun.text,
+        outputKind: "markdown",
+        when: "just now",
+      },
+      ...items,
+    ].slice(0, 18));
+    setHistoryOpen(false);
+    setSettingsOpen(false);
+    setBrowseOpen(false);
+  }
+
   async function saveSettings() {
     if (!draftConfig) return;
     try {
@@ -483,6 +507,16 @@ export default function App() {
           />
         </div>
         <button
+          className="command-help"
+          type="button"
+          onClick={() => showHelpFor(active)}
+          disabled={!active || run.kind === "running" || run.kind === "streaming"}
+          aria-label={active ? `Help for ${active.label}` : "Help"}
+          title={active ? `Help for ${active.label}` : "Help"}
+        >
+          <HelpCircle size={15} />
+        </button>
+        <button
           className={active && !validation ? `command-submit command-submit-${active.tone}` : "command-submit"}
           type="button"
           onClick={() => active && void submit(active)}
@@ -546,6 +580,7 @@ export default function App() {
             parsed={parsed}
             onSubmit={(action) => void submit(action)}
             onEnterMode={enterActionMode}
+            onHelp={showHelpFor}
           />
         )}
 
