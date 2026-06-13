@@ -858,6 +858,7 @@ jobs:
   mcp-smoke:
     name: mcp-smoke
     runs-on: ubuntu-latest
+    needs: [release]
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
@@ -877,12 +878,6 @@ jobs:
             .cargo
       - name: Fetch MCP doc fixture for smoke test
         run: mkdir -p docs && git show HEAD:docs/reference/mcp/overview.md > docs/reference/mcp/overview.md
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.94.0
-
-      - uses: Swatinem/rust-cache@v2
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -922,8 +917,12 @@ jobs:
         run: |
           mkdir -p apps/web/out
           echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
-      - name: Build axon binary (release)
-        run: cargo build --release --locked --bin axon
+      - uses: actions/download-artifact@v5
+        with:
+          name: axon-release-linux-smoke
+          path: target/release
+      - name: Prepare release binary
+        run: chmod +x ./target/release/axon
 
       - name: Write CI mcporter config
         run: |
