@@ -272,4 +272,52 @@ mod rendered_context_tests {
         assert_eq!(rendered.bytes_used, finalized.context.len());
         assert_eq!(rendered.chars_used, finalized.context.chars().count());
     }
+
+    #[test]
+    fn higher_scored_full_docs_render_before_chunks() {
+        let reranked = vec![candidate("https://docs.example.com/chunk", "chunk", 0.95)];
+        let finalized = finalize_built_context(FinalizeContextInputs {
+            reranked: &reranked,
+            top_chunk_indices: &[0],
+            top_full_doc_indices: &[0],
+            selected_top_chunk_indices: &[0],
+            planned_full_doc_urls_set: &HashSet::new(),
+            full_doc_fetch_errors: &[],
+            inserted_full_doc_urls: &HashSet::new(),
+            supplemental: &[],
+            supplemental_count: 0,
+            top_chunks_selected: 1,
+            full_docs_selected: 1,
+            max_context_chars: 1_000,
+            skip_decision: SkipDecision {
+                skip: false,
+                reason: "disabled",
+            },
+            is_rrf: false,
+            separator: super::super::CONTEXT_SEPARATOR,
+            context_started: std::time::Instant::now(),
+            context_entries: vec![
+                (
+                    10.1,
+                    "## Source Document [S10]: docs.example.com/full\n\nfull body".to_string(),
+                ),
+                (
+                    0.95,
+                    "## Top Chunk [S2]: docs.example.com/chunk\n\nchunk body".to_string(),
+                ),
+            ],
+        })
+        .expect("context finalizes");
+
+        assert!(
+            finalized
+                .context
+                .starts_with("Sources:\n## Source Document [S1]: docs.example.com/full")
+        );
+        assert!(
+            finalized
+                .context
+                .contains("## Top Chunk [S2]: docs.example.com/chunk")
+        );
+    }
 }

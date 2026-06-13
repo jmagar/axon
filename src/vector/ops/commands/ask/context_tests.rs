@@ -8,7 +8,10 @@ use super::heuristics::{
 };
 use super::query_rewrite::{QueryComplexity, build_query_forms};
 use super::retrieval::{RerankParams, apply_mode_aware_rerank, is_rrf_mode};
-use super::{FullDocsSource, resolve_ask_full_docs};
+use super::{
+    FullDocsSource, high_context_synthesis_model, resolve_ask_full_docs,
+    resolve_ask_full_docs_for_model,
+};
 use crate::core::config::Config;
 use crate::services::types::{
     AskExplainContext, AskExplainFilterDecision, AskExplainFilterDecisionKind,
@@ -784,6 +787,42 @@ fn selection_deduplicates_full_doc_urls() {
 }
 
 #[test]
+fn selection_deduplicates_full_doc_canonical_url_variants() {
+    let candidates = vec![
+        test_candidate("https://code.claude.com/docs/en/plugins.md", 0.99),
+        test_candidate("https://code.claude.com/docs/en/plugins", 0.98),
+        test_candidate("https://code.claude.com/docs/en/plugins/", 0.97),
+        test_candidate(
+            "https://code.claude.com/docs/en/plugin-marketplaces.md",
+            0.90,
+        ),
+        test_candidate("https://docs.anthropic.com/claude-code", 0.80),
+    ];
+
+    let (_, full_doc_indices) =
+        select_context_indices(&candidates, &[], 2, 4, SelectionPolicy::default());
+    let full_doc_urls = full_doc_indices
+        .iter()
+        .map(|&idx| candidates[idx].url.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        full_doc_urls
+            .iter()
+            .filter(|url| url.contains("/plugins"))
+            .count(),
+        1,
+        "extensionless/.md/trailing-slash variants should not consume multiple full-doc slots: {full_doc_urls:?}"
+    );
+    assert!(
+        full_doc_urls
+            .iter()
+            .any(|url| url.contains("plugin-marketplaces")),
+        "deduped slot should admit another relevant doc: {full_doc_urls:?}"
+    );
+}
+
+#[test]
 fn selection_fills_from_single_domain_when_no_alternatives_exist() {
     let candidates = vec![
         test_candidate("https://a.dev/docs/one", 0.99),
@@ -1126,6 +1165,33 @@ fn user_explicit_override_wins_over_adaptive() {
 }
 
 #[test]
+fn high_context_models_floor_full_docs_at_4() {
+    let (resolved, source) =
+        resolve_ask_full_docs_for_model(1, true, QueryComplexity::Complex, true);
+    assert_eq!(resolved, 4);
+    assert_eq!(source.as_str(), "user_override_minimum");
+}
+
+#[test]
+fn gpt_models_are_high_context_for_full_doc_selection() {
+    let cfg = Config {
+        llm_backend: crate::core::llm::LlmBackendKind::OpenAiCompat,
+        openai_model: "gpt-5.4-mini".to_string(),
+        ..Default::default()
+    };
+
+    assert!(high_context_synthesis_model(&cfg));
+}
+
+#[test]
+fn non_high_context_models_keep_explicit_low_override() {
+    let (resolved, source) =
+        resolve_ask_full_docs_for_model(1, true, QueryComplexity::Complex, false);
+    assert_eq!(resolved, 1);
+    assert_eq!(source.as_str(), "user_override");
+}
+
+#[test]
 fn complexity_hint_matches_use_dual_signal() {
     // Single-token / keyword-shaped queries: use_dual=false → Simple.
     let simple = build_query_forms("rust");
@@ -1143,6 +1209,10 @@ fn complexity_hint_matches_use_dual_signal() {
 fn full_docs_source_strings_are_stable() {
     // The diagnostic surface is a public contract — guard against typos.
     assert_eq!(FullDocsSource::UserOverride.as_str(), "user_override");
+    assert_eq!(
+        FullDocsSource::UserOverrideMinimum.as_str(),
+        "user_override_minimum"
+    );
     assert_eq!(FullDocsSource::AdaptiveSimple.as_str(), "adaptive_simple");
     assert_eq!(FullDocsSource::AdaptiveComplex.as_str(), "adaptive_complex");
 }

@@ -3,6 +3,7 @@ mod diagnostics;
 mod fetchers;
 mod finalize;
 mod logging;
+mod route_score;
 mod selection;
 mod supplemental;
 mod trace;
@@ -23,10 +24,10 @@ pub(super) use fetchers::ask_doc_cache;
 pub(super) use fetchers::fetch_full_docs;
 use finalize::{FinalizeContextInputs, FinalizedAskContext, finalize_built_context};
 use logging::{ContextCompleteLog, ContextStartLog, log_context_complete, log_context_start};
+use route_score::{dominant_retrieval_hosts, full_doc_selection_score};
 #[cfg(test)]
 pub(super) use selection::collect_supplemental_candidate_indices;
 pub(super) use selection::{SelectionPolicy, planned_full_doc_urls, select_context_indices};
-use selection::{dominant_retrieval_hosts, full_doc_selection_score};
 use supplemental::maybe_inject_supplemental;
 pub(super) use trace::{CandidateSelectionMetadata, candidate_selection_key};
 pub(super) use trace::{

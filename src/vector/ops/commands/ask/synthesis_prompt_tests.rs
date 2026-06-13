@@ -127,6 +127,10 @@ fn synthesis_prompt_contains_tightened_grounding_contract() {
         "prompt should explicitly handle conflicting sources"
     );
     assert!(
+        prompt.contains("For non-trivial answers, cite at least two distinct source identifiers"),
+        "prompt should align with ask citation validation"
+    );
+    assert!(
         prompt.contains("Do not request tools, browsing, web search, or additional retrieval."),
         "prompt should forbid synthesis-time tool or web requests"
     );

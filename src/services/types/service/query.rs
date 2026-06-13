@@ -292,6 +292,8 @@ pub struct AskResult {
     pub query: String,
     pub answer: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citation_validation: Option<AskCitationValidation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
@@ -299,6 +301,13 @@ pub struct AskResult {
     #[serde(default)]
     pub explain: Option<AskExplainTrace>,
     pub timing_ms: AskTiming,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AskCitationValidation {
+    pub valid: bool,
+    pub issues: Vec<String>,
+    pub canonical_citation_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

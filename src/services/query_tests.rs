@@ -130,6 +130,7 @@ fn map_ask_payload_typed() {
     let result = map_ask_payload(payload).unwrap();
     assert_eq!(result.query, "what is axon?");
     assert_eq!(result.answer, "A crawler.");
+    assert!(result.citation_validation.is_none());
     assert!(result.diagnostics.is_none());
     assert!(result.explain.is_none());
     assert_eq!(result.timing_ms.total, 6);
@@ -140,6 +141,7 @@ fn ask_result_serializes_absent_explain_as_null() {
     let result = AskResult {
         query: "what is axon?".to_string(),
         answer: "A crawler.".to_string(),
+        citation_validation: None,
         session: None,
         warnings: Vec::new(),
         diagnostics: None,
