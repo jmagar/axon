@@ -3,11 +3,10 @@ set -euo pipefail
 
 # Ask-quality regression gate.
 #
-# Every test is run through cargo_test_filter_guard.py, which lists matching
-# tests first and FAILS if a filter matches zero tests. This closes the
-# silent-pass hole: `cargo test <filter>` exits 0 when the filter matches
-# nothing, so a renamed/deleted test would let the gate go green while
-# asserting nothing. The guard turns a zero-match filter into a hard error.
+# The required test names are checked against one `cargo test -- --list`
+# first. This closes the silent-pass hole: `cargo test <filter>` exits 0 when
+# the filter matches nothing, so a renamed/deleted test would let the gate go
+# green while asserting nothing.
 #
 # NOTE: four former filters were removed because their target tests/functions
 # do not exist in the tree (they matched zero tests and were silently passing):
@@ -22,13 +21,25 @@ set -euo pipefail
 # will (correctly) fail the gate.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GUARD="python3 ${SCRIPT_DIR}/cargo_test_filter_guard.py"
 
 echo "[ask-quality] Running regression fixtures and policy tests..."
 
-${GUARD} -- cargo test -q --locked normalize_ask_answer_dedupes_sources_by_url
-${GUARD} -- cargo test -q --locked normalize_ask_answer_formats_insufficient_evidence_when_uncited
-${GUARD} -- cargo test -q --locked normalize_ask_answer_formats_insufficient_evidence_when_flagged_in_body
-${GUARD} -- cargo test -q --locked non_trivial_answer_requires_minimum_citation_count
+mapfile -t REQUIRED_TESTS <<'TESTS'
+normalize_ask_answer_dedupes_sources_by_url
+normalize_ask_answer_formats_insufficient_evidence_when_uncited
+normalize_ask_answer_formats_insufficient_evidence_when_flagged_in_body
+non_trivial_answer_requires_minimum_citation_count
+TESTS
+
+LIST_OUTPUT="$(cargo test --locked -- --list)"
+for test_name in "${REQUIRED_TESTS[@]}"; do
+  if ! grep -Fq "${test_name}:" <<<"${LIST_OUTPUT}"; then
+    echo "[ask-quality] required cargo test is missing: ${test_name}" >&2
+    exit 1
+  fi
+done
+
+cargo test -q --locked normalize_ask_answer
+cargo test -q --locked non_trivial_answer_requires_minimum_citation_count
 
 echo "[ask-quality] All regression checks passed."
