@@ -215,6 +215,8 @@ pub struct AskDiagnostics {
     pub full_doc_fetch_skipped: bool,
     #[serde(default)]
     pub full_doc_fetch_skip_reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub full_doc_fetch_errors: Vec<AskExplainFullDocFetchError>,
     #[serde(default)]
     pub detected_complexity: String,
     #[serde(default)]

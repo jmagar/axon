@@ -80,6 +80,7 @@ fn explain_retrieval() -> AskExplainRetrieval {
 fn explain_context() -> AskExplainContext {
     AskExplainContext {
         planned_full_doc_urls: Vec::new(),
+        full_doc_fetch_errors: Vec::new(),
         full_doc_fetch_skipped: false,
         full_doc_fetch_skip_reason: AskExplainFullDocFetchSkipReason::Disabled,
         full_doc_fetch_mode: AskExplainFullDocFetchMode::Cosine,

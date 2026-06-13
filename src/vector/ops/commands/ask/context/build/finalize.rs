@@ -5,7 +5,8 @@ use super::{
     final_source_order_from_entries, sorted_urls,
 };
 use crate::core::ask_explain::{
-    AskExplainContext, AskExplainFullDocFetchMode, AskExplainFullDocFetchSkipReason,
+    AskExplainContext, AskExplainFullDocFetchError, AskExplainFullDocFetchMode,
+    AskExplainFullDocFetchSkipReason,
 };
 use crate::vector::ops::ranking;
 use anyhow::{Result, anyhow};
@@ -17,6 +18,7 @@ pub(super) struct FinalizeContextInputs<'a> {
     pub(super) top_full_doc_indices: &'a [usize],
     pub(super) selected_top_chunk_indices: &'a [usize],
     pub(super) planned_full_doc_urls_set: &'a HashSet<String>,
+    pub(super) full_doc_fetch_errors: &'a [super::fetchers::FullDocFetchError],
     pub(super) inserted_full_doc_urls: &'a HashSet<String>,
     pub(super) supplemental: &'a [usize],
     pub(super) supplemental_count: usize,
@@ -66,6 +68,7 @@ pub(super) fn finalize_built_context(
             top_full_doc_indices: inputs.top_full_doc_indices,
             selected_top_chunk_indices: inputs.selected_top_chunk_indices,
             planned_full_doc_urls_set: inputs.planned_full_doc_urls_set,
+            full_doc_fetch_errors: inputs.full_doc_fetch_errors,
             inserted_full_doc_urls: inputs.inserted_full_doc_urls,
             supplemental: inputs.supplemental,
             supplemental_count: inputs.supplemental_count,
@@ -112,6 +115,7 @@ struct ExplainContextInputs<'a> {
     top_full_doc_indices: &'a [usize],
     selected_top_chunk_indices: &'a [usize],
     planned_full_doc_urls_set: &'a HashSet<String>,
+    full_doc_fetch_errors: &'a [super::fetchers::FullDocFetchError],
     inserted_full_doc_urls: &'a HashSet<String>,
     supplemental: &'a [usize],
     supplemental_count: usize,
@@ -136,6 +140,14 @@ fn build_explain_context(context: &str, inputs: ExplainContextInputs<'_>) -> Ask
         );
     AskExplainContext {
         planned_full_doc_urls: sorted_urls(inputs.planned_full_doc_urls_set),
+        full_doc_fetch_errors: inputs
+            .full_doc_fetch_errors
+            .iter()
+            .map(|err| AskExplainFullDocFetchError {
+                url: err.url.clone(),
+                error: err.error.clone(),
+            })
+            .collect(),
         full_doc_fetch_skipped: inputs.skip_decision.skip,
         full_doc_fetch_skip_reason: AskExplainFullDocFetchSkipReason::from(
             inputs.skip_decision.reason,
@@ -209,6 +221,7 @@ mod rendered_context_tests {
             top_full_doc_indices: &[],
             selected_top_chunk_indices: &[0, 1],
             planned_full_doc_urls_set: &HashSet::new(),
+            full_doc_fetch_errors: &[],
             inserted_full_doc_urls: &HashSet::new(),
             supplemental: &[],
             supplemental_count: 0,

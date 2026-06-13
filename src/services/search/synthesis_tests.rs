@@ -161,7 +161,10 @@ fn fallback_summary_uses_extractions_when_synthesis_unavailable() {
         "Example Source",
         "Example extracted snippet text.",
     )];
-    let summary = fallback_summary("test query", &extractions);
+    let err = std::io::Error::other("model unavailable");
+    let summary = fallback_summary("test query", &extractions, Some(&err));
+    assert!(summary.contains("Synthesis degraded"));
+    assert!(summary.contains("model unavailable"));
     assert!(summary.contains("test query"));
     assert!(summary.contains("Example Source"));
     assert!(summary.contains("Example extracted snippet text."));
@@ -172,7 +175,7 @@ fn fallback_summary_truncates_to_max_extractions() {
     let extractions: Vec<_> = (0..10)
         .map(|i| ext("https://x", &format!("title{i}"), "body"))
         .collect();
-    let summary = fallback_summary("q", &extractions);
+    let summary = fallback_summary("q", &extractions, None);
     // Only the first FALLBACK_MAX_EXTRACTIONS titles should appear.
     assert!(summary.contains("title0"));
     assert!(summary.contains(&format!("title{}", FALLBACK_MAX_EXTRACTIONS - 1)));

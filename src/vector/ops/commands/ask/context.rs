@@ -80,6 +80,7 @@ pub(crate) struct AskContext {
     pub full_doc_fetch_skipped: bool,
     /// Static reason string ("disabled", "ok_skip", "insufficient_urls", ...).
     pub full_doc_fetch_skip_reason: &'static str,
+    pub full_doc_fetch_errors: Vec<crate::core::ask_explain::AskExplainFullDocFetchError>,
     /// Coarse query-complexity signal feeding the adaptive resolver below.
     /// "simple" or "complex". (bd axon_rust-721)
     pub detected_complexity: &'static str,
@@ -141,6 +142,24 @@ pub(crate) async fn build_ask_context(
         context.len(),
     );
 
+    let full_doc_fetch_errors = built
+        .full_doc_fetch_errors
+        .iter()
+        .map(
+            |err| crate::core::ask_explain::AskExplainFullDocFetchError {
+                url: err.url.clone(),
+                error: err.error.clone(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let mut warnings = retrieval.warnings;
+    if !full_doc_fetch_errors.is_empty() {
+        warnings.push(format!(
+            "full-doc context degraded: {} planned document(s) failed to fetch; see diagnostics/explain for URLs",
+            full_doc_fetch_errors.len()
+        ));
+    }
+
     Ok(AskContext {
         context,
         candidate_count: retrieval.candidate_count,
@@ -158,10 +177,11 @@ pub(crate) async fn build_ask_context(
         corpus_health,
         full_doc_fetch_skipped: built.full_doc_fetch_skipped,
         full_doc_fetch_skip_reason: built.full_doc_fetch_skip_reason,
+        full_doc_fetch_errors,
         detected_complexity,
         resolved_full_docs,
         full_docs_source: full_docs_source.as_str(),
-        warnings: retrieval.warnings,
+        warnings,
         explain: if cfg.ask_explain {
             build_explain_trace(
                 query,
