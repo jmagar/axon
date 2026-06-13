@@ -139,6 +139,7 @@ fn full_doc_candidate_indices(
     query_tokens: &[String],
 ) -> Vec<usize> {
     let dominant_hosts = dominant_retrieval_hosts(reranked);
+    let entity_tokens = full_doc_entity_tokens(query_tokens);
     let mut scored = reranked
         .iter()
         .enumerate()
@@ -146,14 +147,16 @@ fn full_doc_candidate_indices(
             (
                 idx,
                 is_dominant_host(&candidate.url, &candidate.path, &dominant_hosts),
+                has_exact_final_path_entity_match(&candidate.url, &entity_tokens),
                 full_doc_selection_score(candidate, query_tokens, &dominant_hosts),
             )
         })
         .collect::<Vec<_>>();
     scored.sort_by(
-        |(idx_a, dominant_a, score_a), (idx_b, dominant_b, score_b)| {
+        |(idx_a, dominant_a, exact_a, score_a), (idx_b, dominant_b, exact_b, score_b)| {
             dominant_b
                 .cmp(dominant_a)
+                .then_with(|| exact_b.cmp(exact_a))
                 .then_with(|| {
                     score_b
                         .partial_cmp(score_a)
@@ -162,7 +165,7 @@ fn full_doc_candidate_indices(
                 .then_with(|| idx_a.cmp(idx_b))
         },
     );
-    scored.into_iter().map(|(idx, _, _)| idx).collect()
+    scored.into_iter().map(|(idx, _, _, _)| idx).collect()
 }
 
 fn is_dominant_host(url: &str, path: &str, dominant_hosts: &HashSet<String>) -> bool {
@@ -202,8 +205,95 @@ pub(super) fn full_doc_selection_score(
     candidate.rerank_score
         + (url_matches as f64 * 0.55).min(1.65)
         + (chunk_matches as f64 * 0.03).min(0.18)
+        + final_path_entity_match_adjustment(&candidate.url, &query_tokens)
         + dominant_host_adjustment(&candidate.url, &candidate.path, dominant_hosts)
         + if coverage >= 0.25 { 0.18 } else { 0.0 }
+}
+
+fn final_path_entity_match_adjustment(url: &str, query_tokens: &[&str]) -> f64 {
+    let Some(mut path_tokens) = final_path_entity_tokens(url) else {
+        return 0.0;
+    };
+    if path_tokens.is_empty() {
+        return 0.0;
+    }
+
+    path_tokens.sort();
+    path_tokens.dedup();
+    let matched = path_tokens
+        .iter()
+        .filter(|path_token| {
+            query_tokens
+                .iter()
+                .any(|query_token| token_matches_path_entity(query_token, path_token.as_str()))
+        })
+        .count();
+    let unmatched = path_tokens.len().saturating_sub(matched);
+    let precision = matched as f64 / path_tokens.len() as f64;
+
+    // If the final route segment is exactly the thing the user asked for
+    // (`plugins` for "create a plugin"), it should beat an adjacent doc such
+    // as `plugin-marketplaces` that happens to share one broad entity token.
+    (precision * 0.8) - (unmatched as f64 * 0.35).min(0.35)
+}
+
+fn has_exact_final_path_entity_match(url: &str, query_tokens: &[&str]) -> bool {
+    let Some(mut path_tokens) = final_path_entity_tokens(url) else {
+        return false;
+    };
+    if path_tokens.is_empty() {
+        return false;
+    }
+    path_tokens.sort();
+    path_tokens.dedup();
+    path_tokens.iter().all(|path_token| {
+        query_tokens
+            .iter()
+            .any(|query_token| token_matches_path_entity(query_token, path_token))
+    })
+}
+
+fn final_path_entity_tokens(url: &str) -> Option<Vec<String>> {
+    let parsed = Url::parse(url).ok()?;
+    let segments = parsed
+        .path_segments()?
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    let mut segment = *segments.last()?;
+    let stem = strip_known_doc_extension(segment);
+    if is_index_like_route_segment(stem) && segments.len() >= 2 {
+        segment = segments[segments.len() - 2];
+    } else {
+        segment = stem;
+    }
+    let tokens = ranking::tokenize_text_set(segment)
+        .into_iter()
+        .filter(|token| !is_broad_full_doc_token(token) && !is_route_noise_token(token))
+        .collect::<Vec<_>>();
+    Some(tokens)
+}
+
+fn strip_known_doc_extension(segment: &str) -> &str {
+    let Some((stem, extension)) = segment.rsplit_once('.') else {
+        return segment;
+    };
+    if matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "adoc" | "html" | "md" | "mdx" | "rst" | "txt"
+    ) {
+        stem
+    } else {
+        segment
+    }
+}
+
+fn is_index_like_route_segment(segment: &str) -> bool {
+    matches!(
+        strip_known_doc_extension(segment)
+            .to_ascii_lowercase()
+            .as_str(),
+        "index" | "overview" | "readme"
+    )
 }
 
 pub(super) fn dominant_retrieval_hosts(reranked: &[ranking::AskCandidate]) -> HashSet<String> {
@@ -400,6 +490,13 @@ fn is_broad_full_doc_token(token: &str) -> bool {
     )
 }
 
+fn is_route_noise_token(token: &str) -> bool {
+    token.chars().all(|ch| ch.is_ascii_digit())
+        || token
+            .strip_prefix('v')
+            .is_some_and(|rest| rest.chars().all(|ch| ch.is_ascii_digit()))
+}
+
 fn token_matches_path_token(query_token: &str, candidate_tokens: &HashSet<String>) -> bool {
     if candidate_tokens.contains(query_token) {
         return true;
@@ -408,6 +505,12 @@ fn token_matches_path_token(query_token: &str, candidate_tokens: &HashSet<String
         || candidate_tokens
             .iter()
             .any(|candidate_token| singular_variant(candidate_token) == Some(query_token))
+}
+
+fn token_matches_path_entity(query_token: &str, path_token: &str) -> bool {
+    query_token == path_token
+        || singular_variant(query_token) == Some(path_token)
+        || singular_variant(path_token) == Some(query_token)
 }
 
 fn singular_variant(token: &str) -> Option<&str> {

@@ -139,3 +139,15 @@ fn synthesis_prompt_contains_tightened_grounding_contract() {
         "prompt should tell models to silently ignore prompt injections"
     );
 }
+
+#[test]
+fn synthesis_prompt_requires_step_by_step_for_procedural_questions() {
+    let prompt = synthesis_prompt_for_openai_compat();
+    assert!(
+        prompt.contains("how do I")
+            && prompt.contains("step-by-step")
+            && prompt.contains("prerequisites")
+            && prompt.contains("example file contents"),
+        "prompt should classify procedural questions as guide-worthy instead of short-summary answers"
+    );
+}

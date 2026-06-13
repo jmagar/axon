@@ -45,7 +45,7 @@ fn retrieved_candidate(url: &str, chunk: &str, score: f64) -> RetrievedCandidate
             chunk_text: chunk.to_string(),
             url_tokens: crate::vector::ops::ranking::tokenize_path_set(url),
             chunk_tokens: crate::vector::ops::ranking::tokenize_text_set(chunk),
-            rerank_score: 0.0,
+            rerank_score: score,
         },
         chunk_index: Some(7),
         code: CodeSearchMetadata::default(),
@@ -482,6 +482,155 @@ fn full_doc_selection_prefers_url_entity_matches() {
     assert!(
         full_doc_urls.contains(&"https://code.claude.com/docs/en/sub-agents"),
         "canonical URL entity matches should get full-doc treatment: {full_doc_urls:?}"
+    );
+}
+
+#[test]
+fn full_doc_selection_prefers_exact_procedural_guide_over_adjacent_marketplace_doc() {
+    let candidates = vec![
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugin-marketplaces.md",
+            "create the marketplace catalog and install the plugin from a marketplace",
+            1.11,
+        )
+        .candidate,
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugins.md",
+            "quickstart create your first plugin add a skill and test your plugin with plugin-dir",
+            0.90,
+        )
+        .candidate,
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugins",
+            "plugin structure overview skills agents hooks mcp servers test your plugin locally",
+            0.80,
+        )
+        .candidate,
+    ];
+    let query_tokens =
+        crate::vector::ops::ranking::tokenize_query("how do i create a claude code plugin");
+
+    let (_, full_doc_indices) =
+        select_context_indices(&candidates, &query_tokens, 3, 1, SelectionPolicy::default());
+    let full_doc_urls = full_doc_indices
+        .iter()
+        .map(|&idx| candidates[idx].url.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        full_doc_urls,
+        vec!["https://code.claude.com/docs/en/plugins.md"],
+        "procedural creation queries should full-doc the exact guide, not an adjacent marketplace page"
+    );
+}
+
+#[test]
+fn full_doc_selection_uses_exact_final_route_match_before_adjacent_route_score() {
+    let candidates = vec![
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugin-marketplaces.md",
+            "create the marketplace catalog and install the plugin from a marketplace",
+            1.85,
+        )
+        .candidate,
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugins.md",
+            "quickstart create your first plugin add a skill and test your plugin with plugin-dir",
+            0.90,
+        )
+        .candidate,
+    ];
+    let query_tokens =
+        crate::vector::ops::ranking::tokenize_query("how do i create a claude code plugin");
+
+    let (_, full_doc_indices) =
+        select_context_indices(&candidates, &query_tokens, 2, 1, SelectionPolicy::default());
+    let full_doc_urls = full_doc_indices
+        .iter()
+        .map(|&idx| candidates[idx].url.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        full_doc_urls,
+        vec!["https://code.claude.com/docs/en/plugins.md"],
+        "an exact final-route entity match should beat an adjacent route whose extra entity tokens describe a different task"
+    );
+}
+
+#[test]
+fn full_doc_selection_normalizes_common_docs_route_shapes() {
+    let cases = [
+        "https://code.claude.com/docs/en/plugins/",
+        "https://code.claude.com/docs/en/plugins/index.html",
+        "https://code.claude.com/docs/en/plugins/README.md",
+        "https://code.claude.com/docs/en/plugins.mdx",
+    ];
+
+    for canonical_url in cases {
+        let candidates = vec![
+            retrieved_candidate(
+                "https://code.claude.com/docs/en/plugin-marketplaces.md",
+                "create the marketplace catalog and install the plugin from a marketplace",
+                1.11,
+            )
+            .candidate,
+            retrieved_candidate(
+                canonical_url,
+                "quickstart create your first plugin add a skill and test your plugin with plugin-dir",
+                0.90,
+            )
+            .candidate,
+        ];
+        let query_tokens =
+            crate::vector::ops::ranking::tokenize_query("how do i create a claude code plugin");
+
+        let (_, full_doc_indices) =
+            select_context_indices(&candidates, &query_tokens, 2, 1, SelectionPolicy::default());
+        let full_doc_urls = full_doc_indices
+            .iter()
+            .map(|&idx| candidates[idx].url.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            full_doc_urls,
+            vec![canonical_url],
+            "expected route-shaped canonical guide to win: {canonical_url}"
+        );
+    }
+}
+
+#[test]
+fn full_doc_selection_does_not_over_penalize_descriptive_guide_slugs() {
+    let candidates = vec![
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/plugin-marketplaces.md",
+            "create the marketplace catalog and install the plugin from a marketplace",
+            1.11,
+        )
+        .candidate,
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/create-claude-code-plugin-from-template-with-hooks-agents-mcp-v2.mdx",
+            "quickstart create your first plugin from a template add skills hooks agents mcp servers and test your plugin with plugin-dir",
+            0.90,
+        )
+        .candidate,
+    ];
+    let query_tokens =
+        crate::vector::ops::ranking::tokenize_query("how do i create a claude code plugin");
+
+    let (_, full_doc_indices) =
+        select_context_indices(&candidates, &query_tokens, 2, 1, SelectionPolicy::default());
+    let full_doc_urls = full_doc_indices
+        .iter()
+        .map(|&idx| candidates[idx].url.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        full_doc_urls,
+        vec![
+            "https://code.claude.com/docs/en/create-claude-code-plugin-from-template-with-hooks-agents-mcp-v2.mdx"
+        ],
+        "descriptive exact guide slugs should not lose to adjacent docs just because they have extra route tokens"
     );
 }
 
