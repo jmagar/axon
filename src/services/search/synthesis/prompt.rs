@@ -44,15 +44,41 @@ pub(super) fn escape_xml_attr(input: &str) -> String {
 }
 
 pub(super) fn escape_xml_body(input: &str) -> String {
+    defang_evidence_body(input)
+}
+
+pub(super) fn defang_evidence_body(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '[' {
+            let mut digits = String::new();
+            while let Some(next) = chars.peek().copied() {
+                if next.is_ascii_digit() {
+                    digits.push(next);
+                    let _ = chars.next();
+                    continue;
+                }
+                break;
+            }
+            if !digits.is_empty() && chars.peek() == Some(&']') {
+                let _ = chars.next();
+                out.push('[');
+                out.push('\u{200b}');
+                out.push_str(&digits);
+                out.push(']');
+                continue;
+            }
+            out.push('[');
+            out.push_str(&digits);
+            continue;
+        }
+
         match ch {
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '&' => out.push_str("&amp;"),
             c if (c as u32) < 0x20 && c != '\n' && c != '\r' && c != '\t' => {}
             c => out.push(c),
         }
     }
-    out
+    out.replace("</evidence_source>", "<\\/evidence_source>")
+        .replace("<evidence_source", "<\u{200b}evidence_source")
 }

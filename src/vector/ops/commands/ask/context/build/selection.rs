@@ -144,10 +144,13 @@ fn full_doc_candidate_indices(
         .iter()
         .enumerate()
         .map(|(idx, candidate)| {
+            let final_path_match = final_path_entity_match(&candidate.url, &entity_tokens);
             (
                 idx,
                 is_dominant_host(&candidate.url, &candidate.path, &dominant_hosts),
-                has_exact_final_path_entity_match(&candidate.url, &entity_tokens),
+                final_path_match
+                    .as_ref()
+                    .is_some_and(|entity_match| entity_match.all_match),
                 full_doc_selection_score(candidate, query_tokens, &dominant_hosts),
             )
         })
@@ -156,12 +159,12 @@ fn full_doc_candidate_indices(
         |(idx_a, dominant_a, exact_a, score_a), (idx_b, dominant_b, exact_b, score_b)| {
             dominant_b
                 .cmp(dominant_a)
-                .then_with(|| exact_b.cmp(exact_a))
                 .then_with(|| {
                     score_b
                         .partial_cmp(score_a)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
+                .then_with(|| exact_b.cmp(exact_a))
                 .then_with(|| idx_a.cmp(idx_b))
         },
     );
@@ -211,15 +214,31 @@ pub(super) fn full_doc_selection_score(
 }
 
 fn final_path_entity_match_adjustment(url: &str, query_tokens: &[&str]) -> f64 {
-    let Some(mut path_tokens) = final_path_entity_tokens(url) else {
+    let Some(entity_match) = final_path_entity_match(url, query_tokens) else {
         return 0.0;
     };
-    if path_tokens.is_empty() {
-        return 0.0;
-    }
 
+    // If the final route segment is exactly the thing the user asked for
+    // (`plugins` for "create a plugin"), boost it within the numeric score
+    // instead of letting it bypass retrieval evidence entirely.
+    (entity_match.precision * 1.15) - (entity_match.unmatched as f64 * 0.6).min(0.6)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FinalPathEntityMatch {
+    all_match: bool,
+    unmatched: usize,
+    precision: f64,
+}
+
+fn final_path_entity_match(url: &str, query_tokens: &[&str]) -> Option<FinalPathEntityMatch> {
+    let mut path_tokens = final_path_entity_tokens(url)?;
+    if path_tokens.is_empty() {
+        return None;
+    }
     path_tokens.sort();
     path_tokens.dedup();
+
     let matched = path_tokens
         .iter()
         .filter(|path_token| {
@@ -231,25 +250,10 @@ fn final_path_entity_match_adjustment(url: &str, query_tokens: &[&str]) -> f64 {
     let unmatched = path_tokens.len().saturating_sub(matched);
     let precision = matched as f64 / path_tokens.len() as f64;
 
-    // If the final route segment is exactly the thing the user asked for
-    // (`plugins` for "create a plugin"), it should beat an adjacent doc such
-    // as `plugin-marketplaces` that happens to share one broad entity token.
-    (precision * 0.8) - (unmatched as f64 * 0.35).min(0.35)
-}
-
-fn has_exact_final_path_entity_match(url: &str, query_tokens: &[&str]) -> bool {
-    let Some(mut path_tokens) = final_path_entity_tokens(url) else {
-        return false;
-    };
-    if path_tokens.is_empty() {
-        return false;
-    }
-    path_tokens.sort();
-    path_tokens.dedup();
-    path_tokens.iter().all(|path_token| {
-        query_tokens
-            .iter()
-            .any(|query_token| token_matches_path_entity(query_token, path_token))
+    Some(FinalPathEntityMatch {
+        all_match: unmatched == 0,
+        unmatched,
+        precision,
     })
 }
 

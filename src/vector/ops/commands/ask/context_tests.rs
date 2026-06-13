@@ -37,13 +37,14 @@ fn test_candidate(url: &str, rerank_score: f64) -> AskCandidate {
 }
 
 fn retrieved_candidate(url: &str, chunk: &str, score: f64) -> RetrievedCandidate {
+    let path = crate::vector::ops::ranking::extract_path_from_url(url);
     RetrievedCandidate {
         candidate: AskCandidate {
             score,
             url: url.to_string(),
-            path: url.to_string(),
+            path: path.clone(),
             chunk_text: chunk.to_string(),
-            url_tokens: crate::vector::ops::ranking::tokenize_path_set(url),
+            url_tokens: crate::vector::ops::ranking::tokenize_path_set(&path),
             chunk_tokens: crate::vector::ops::ranking::tokenize_text_set(chunk),
             rerank_score: score,
         },
@@ -525,12 +526,45 @@ fn full_doc_selection_prefers_exact_procedural_guide_over_adjacent_marketplace_d
 }
 
 #[test]
-fn full_doc_selection_uses_exact_final_route_match_before_adjacent_route_score() {
+fn full_doc_selection_keeps_retrieval_score_ahead_of_weak_exact_route_match() {
+    let candidates = vec![
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/create.md",
+            "create a generic resource from unrelated admin docs",
+            0.35,
+        )
+        .candidate,
+        retrieved_candidate(
+            "https://code.claude.com/docs/en/create-plugin-with-hooks.md",
+            "create your first plugin add hooks skills agents mcp servers and test your plugin locally",
+            1.85,
+        )
+        .candidate,
+    ];
+    let query_tokens =
+        crate::vector::ops::ranking::tokenize_query("how do i create a claude code plugin");
+
+    let (_, full_doc_indices) =
+        select_context_indices(&candidates, &query_tokens, 2, 1, SelectionPolicy::default());
+    let full_doc_urls = full_doc_indices
+        .iter()
+        .map(|&idx| candidates[idx].url.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        full_doc_urls,
+        vec!["https://code.claude.com/docs/en/create-plugin-with-hooks.md"],
+        "exact final-route matches should not bypass much stronger retrieval evidence"
+    );
+}
+
+#[test]
+fn full_doc_selection_uses_exact_final_route_match_as_bounded_score_signal() {
     let candidates = vec![
         retrieved_candidate(
             "https://code.claude.com/docs/en/plugin-marketplaces.md",
             "create the marketplace catalog and install the plugin from a marketplace",
-            1.85,
+            1.11,
         )
         .candidate,
         retrieved_candidate(
