@@ -44,7 +44,15 @@ TESTS
 
 if [[ "${MODE}" == "--verify-only" ]]; then
   for test_name in "${REQUIRED_TESTS[@]}"; do
-    if ! rg -q "fn[[:space:]]+${test_name}\\b" src tests; then
+    pattern="fn[[:space:]]+${test_name}\\b"
+    if command -v rg >/dev/null 2>&1; then
+      found="$(rg -l "${pattern}" src tests || true)"
+    elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      found="$(git grep -l -E "${pattern}" -- src tests || true)"
+    else
+      found="$(grep -R -l -E "${pattern}" src tests || true)"
+    fi
+    if [[ -z "${found}" ]]; then
       echo "[ask-quality] required test function is missing: ${test_name}" >&2
       exit 1
     fi
