@@ -3,10 +3,14 @@ set -euo pipefail
 
 # Ask-quality regression gate.
 #
-# The required test names are checked against one `cargo test -- --list`
-# first. This closes the silent-pass hole: `cargo test <filter>` exits 0 when
-# the filter matches nothing, so a renamed/deleted test would let the gate go
-# green while asserting nothing.
+# The required test names are checked before running focused filters. This
+# closes the silent-pass hole: `cargo test <filter>` exits 0 when the filter
+# matches nothing, so a renamed/deleted test would let the gate go green while
+# asserting nothing.
+#
+# CI invokes `--verify-only` after the broad nextest run has already executed
+# these tests. That keeps the explicit named-test guard without re-entering
+# Cargo test a second time.
 #
 # NOTE: four former filters were removed because their target tests/functions
 # do not exist in the tree (they matched zero tests and were silently passing):
@@ -20,7 +24,14 @@ set -euo pipefail
 # Do NOT re-add a filter here until the matching test exists, or the guard
 # will (correctly) fail the gate.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODE="${1:-run}"
+case "${MODE}" in
+  run | --run | --verify-only) ;;
+  *)
+    echo "usage: $0 [--verify-only]" >&2
+    exit 2
+    ;;
+esac
 
 echo "[ask-quality] Running regression fixtures and policy tests..."
 
@@ -30,6 +41,17 @@ normalize_ask_answer_formats_insufficient_evidence_when_uncited
 normalize_ask_answer_formats_insufficient_evidence_when_flagged_in_body
 non_trivial_answer_requires_minimum_citation_count
 TESTS
+
+if [[ "${MODE}" == "--verify-only" ]]; then
+  for test_name in "${REQUIRED_TESTS[@]}"; do
+    if ! rg -q "fn[[:space:]]+${test_name}\\b" src tests; then
+      echo "[ask-quality] required test function is missing: ${test_name}" >&2
+      exit 1
+    fi
+  done
+  echo "[ask-quality] Required regression tests are present; execution covered by cargo nextest."
+  exit 0
+fi
 
 LIST_OUTPUT="$(cargo test --locked -- --list)"
 for test_name in "${REQUIRED_TESTS[@]}"; do

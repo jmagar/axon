@@ -752,7 +752,7 @@ jobs:
         run: cargo test --locked --features test-helpers -- github_integration_ --ignored --quiet
 
       - name: ask quality regression fixtures
-        run: ./scripts/test-ask-quality-regressions.sh
+        run: ./scripts/test-ask-quality-regressions.sh --verify-only
 
   test-infra:
     name: test-infra
