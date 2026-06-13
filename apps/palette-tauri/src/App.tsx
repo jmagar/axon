@@ -227,6 +227,15 @@ export default function App() {
     focusInput(true);
   }
 
+  function switchActionMode(action: PaletteAction) {
+    setModeAction(action);
+    if (action.argMode === "none") setQuery("");
+    setSelected(0);
+    setRun({ kind: "idle" });
+    setBrowseOpen(false);
+    focusInput(true);
+  }
+
   function showHelpFor(action?: PaletteAction, unknownTarget?: string) {
     const cleanUnknownTarget = !action && unknownTarget?.trim() ? unknownTarget.trim() : undefined;
     const helpRun = buildHelpRun(action, cleanUnknownTarget);
@@ -329,7 +338,6 @@ export default function App() {
         submitDisabled={submitDisabled}
         validation={validation}
         onBack={goBackToBrowse}
-        onClearMode={() => setModeAction(null)}
         onHelp={showHelpFor}
         onInputKeyDown={onInputKeyDown}
         onQueryChange={setQuery}
@@ -341,6 +349,7 @@ export default function App() {
           setBrowseOpen(false);
         }}
         onSubmit={(action) => void submit(action)}
+        onSwitchAction={switchActionMode}
         onToggleMaximize={() => void invoke("toggle_maximize")}
         onToggleSettings={() => setSettingsOpen((open) => {
           const next = !open;
