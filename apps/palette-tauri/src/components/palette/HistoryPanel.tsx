@@ -2,18 +2,21 @@ import { Activity, Sparkles } from "lucide-react";
 
 import { ActionIcon } from "@/components/palette/ActionIcon";
 import type { PaletteAction } from "@/lib/actions";
+import type { PaletteResult } from "@/lib/axonClient";
 
 export interface HistoryItem {
   action: PaletteAction;
   target: string;
   status: number;
+  title: string;
+  subtitle: string;
   when: string;
   pinned?: boolean;
   running?: boolean;
   duration?: string;
   text?: string;
   outputKind?: "markdown" | "code";
-  payload?: unknown;
+  result?: PaletteResult;
 }
 
 export function HistoryPanel({

@@ -114,6 +114,9 @@ jobs:
             .cargo/config.toml
             .config/nextest.toml
             .taplo.toml
+            Cargo.toml
+            Cargo.lock
+            build.rs
             config.example.toml
             deny.toml
             rust-toolchain.toml
@@ -211,6 +214,7 @@ jobs:
           sparse-checkout: |
             Cargo.toml
             Cargo.lock
+            build.rs
             .env.example
             config.example.toml
             docker-compose.prod.yaml
@@ -268,6 +272,7 @@ jobs:
           sparse-checkout: |
             Cargo.toml
             Cargo.lock
+            build.rs
             .env.example
             config.example.toml
             docker-compose.prod.yaml
@@ -294,10 +299,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: axon-windows-gnu
-      - name: create web assets placeholder
-        run: |
-          mkdir -p apps/web/out
-          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web panel dependencies
+        run: npm ci --prefix apps/web
+      - name: Build web panel assets
+        run: npm --prefix apps/web run build
       - name: cargo build --release -p axon (windows-gnu cross)
         run: cargo build --release --locked -p axon --target x86_64-pc-windows-gnu
       - name: Upload axon.exe artifact
@@ -639,6 +649,7 @@ jobs:
           sparse-checkout: |
             Cargo.toml
             Cargo.lock
+            build.rs
             .env.example
             config.example.toml
             docker-compose.prod.yaml
@@ -1038,10 +1049,15 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: |
-          mkdir -p apps/web/out
-          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web panel dependencies
+        run: npm ci --prefix apps/web
+      - name: Build web panel assets
+        run: npm --prefix apps/web run build
       - name: cargo build release axon
         run: cargo build --release --locked --bin axon
 
@@ -1055,10 +1071,15 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: |
-          mkdir -p apps/web/out
-          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web panel dependencies
+        run: npm ci --prefix apps/web
+      - name: Build web panel assets
+        run: npm --prefix apps/web run build
       - name: build release binary for smoke test
         run: cargo build --release --locked --bin axon
       - name: smoke test release binary help output
@@ -1076,6 +1097,7 @@ jobs:
       - check
       - clippy
       - test
+      - palette-tauri
       - security
       - release
       - release-smoke
@@ -1089,6 +1111,7 @@ jobs:
           test "${{ needs.check.result }}" = "success"
           test "${{ needs.clippy.result }}" = "success"
           test "${{ needs.test.result }}" = "success"
+          test "${{ needs.palette-tauri.result }}" = "success"
           test "${{ needs.security.result }}" = "success"
           test "${{ needs.release.result }}" = "success"
           test "${{ needs.release-smoke.result }}" = "success"

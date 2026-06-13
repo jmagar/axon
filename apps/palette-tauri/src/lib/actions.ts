@@ -1,10 +1,45 @@
 export type ArgMode = "none" | "optionalSingle" | "single" | "split";
 type RemoteActionKind = "operation" | "job" | "admin" | "discovery";
 type ActionTone = "info" | "success" | "warn" | "neutral" | "rose" | "violet";
+type JobFamily = "crawl" | "embed" | "extract" | "ingest";
+type JobOperation = "list" | "status" | "cancel" | "cleanup" | "clear" | "recover";
+
+export type PaletteSubcommand =
+  | "help"
+  | "scrape"
+  | "crawl"
+  | "map"
+  | "summarize"
+  | "ask"
+  | "chat"
+  | "query"
+  | "retrieve"
+  | "suggest"
+  | "evaluate"
+  | "search"
+  | "research"
+  | "embed"
+  | "extract"
+  | "ingest"
+  | "status"
+  | "sources"
+  | "domains"
+  | "stats"
+  | "doctor"
+  | "endpoints"
+  | "brand"
+  | "diff"
+  | "screenshot"
+  | "dedupe"
+  | "watch-list"
+  | "watch-create"
+  | "watch-run"
+  | "ingest-sessions-prepared"
+  | `${JobFamily}-${JobOperation}`;
 
 interface PaletteActionBase {
   label: string;
-  subcommand: string;
+  subcommand: PaletteSubcommand;
   argMode: ArgMode;
   aliases: string[];
   description: string;
@@ -21,7 +56,6 @@ export interface RemotePaletteAction extends PaletteActionBase {
 }
 
 export type PaletteAction = LocalPaletteAction | RemotePaletteAction;
-export type PaletteSubcommand = PaletteAction["subcommand"];
 
 export const ACTIONS: PaletteAction[] = [
   {
@@ -330,7 +364,7 @@ export const ACTIONS: PaletteAction[] = [
   ...jobLifecycleActions("ingest"),
 ];
 
-function jobLifecycleActions(family: "crawl" | "embed" | "extract" | "ingest"): PaletteAction[] {
+function jobLifecycleActions(family: JobFamily): PaletteAction[] {
   const label = family[0].toUpperCase() + family.slice(1);
   return [
     {

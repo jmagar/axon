@@ -15,10 +15,15 @@ fn main() {
 
     match asset_state(&source) {
         Ok(AssetState::Ready) => {}
-        Ok(AssetState::Missing | AssetState::Empty | AssetState::FallbackOnly)
-            if allow_fallback_assets() =>
-        {
-            println!("cargo:warning=apps/web/out is empty; embedding fallback web panel");
+        Ok(
+            AssetState::Missing
+            | AssetState::Empty
+            | AssetState::Incomplete(_)
+            | AssetState::FallbackOnly,
+        ) if allow_fallback_assets() => {
+            println!(
+                "cargo:warning=apps/web/out is not a complete web build; embedding fallback web panel"
+            );
             fs::create_dir_all(&source).expect("create web assets fallback dir");
             write_fallback_index(&source).expect("write fallback web index");
         }
@@ -30,12 +35,8 @@ fn main() {
                 "apps/web/out contains only fallback assets; run the web build before compiling axon"
             )
         }
-        Err(error) if allow_fallback_assets() => {
-            println!(
-                "cargo:warning=apps/web/out is unreadable: {error}; embedding fallback web panel"
-            );
-            fs::create_dir_all(&source).expect("create web assets fallback dir");
-            write_fallback_index(&source).expect("write fallback web index");
+        Ok(AssetState::Incomplete(reason)) => {
+            panic!("apps/web/out is incomplete ({reason}); run the web build before compiling axon")
         }
         Err(error) => panic!("apps/web/out is unreadable: {error}"),
     }
@@ -48,6 +49,7 @@ fn allow_fallback_assets() -> bool {
 enum AssetState {
     Missing,
     Empty,
+    Incomplete(&'static str),
     FallbackOnly,
     Ready,
 }
@@ -62,11 +64,18 @@ fn asset_state(path: &Path) -> io::Result<AssetState> {
         return Ok(AssetState::Empty);
     }
 
-    if entries.len() == 1 && entries[0].file_name() == "index.html" {
-        let index = fs::read_to_string(entries[0].path())?;
-        if index.contains(FALLBACK_MARKER) {
-            return Ok(AssetState::FallbackOnly);
-        }
+    let index_path = path.join("index.html");
+    if !index_path.is_file() {
+        return Ok(AssetState::Incomplete("missing index.html"));
+    }
+
+    let index = fs::read_to_string(index_path)?;
+    if index.contains(FALLBACK_MARKER) {
+        return Ok(AssetState::FallbackOnly);
+    }
+
+    if !path.join("_next").is_dir() && !path.join("assets").is_dir() {
+        return Ok(AssetState::Incomplete("missing static asset directory"));
     }
 
     Ok(AssetState::Ready)

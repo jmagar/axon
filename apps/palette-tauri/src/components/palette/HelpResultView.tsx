@@ -39,7 +39,18 @@ export function HelpResultView({ payload, fallbackText }: HelpResultViewProps) {
   const unknownTarget = typeof body.unknownTarget === "string" ? body.unknownTarget : "";
 
   if (!target && catalog.length === 0) {
-    return <pre className="result-code">{fallbackText}</pre>;
+    if (fallbackText.trim()) {
+      return <pre className="result-code">{fallbackText}</pre>;
+    }
+    return (
+      <div className="output-body help-result help-result-invalid aurora-scrollbar" role="alert">
+        <header className="help-header">
+          <span className="help-route">palette://help</span>
+          <h2>Help payload is malformed</h2>
+          <p>The palette could not render structured help from this run.</p>
+        </header>
+      </div>
+    );
   }
 
   if (target) {

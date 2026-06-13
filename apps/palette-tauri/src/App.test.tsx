@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { invoke } from "./lib/invoke";
@@ -28,6 +28,8 @@ const config = {
 };
 
 describe("App local help", () => {
+  afterEach(() => cleanup());
+
   beforeEach(() => {
     Object.defineProperty(window, "matchMedia", {
       writable: true,
@@ -49,28 +51,59 @@ describe("App local help", () => {
     });
   });
 
-  it("opens selected action help from the command bar and replays it from history as local help", async () => {
+  async function renderAndType(value: string) {
     render(<App />);
 
     const input = await screen.findByLabelText("Axon command");
-    fireEvent.change(input, { target: { value: "scrape" } });
+    fireEvent.change(input, { target: { value } });
+    return input;
+  }
+
+  it.each(["help scrape", "scrape help"])("runs %s from Enter as local help", async (command) => {
+    const input = await renderAndType(command);
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect((await screen.findAllByText("POST /v1/scrape")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Scrape URL").length).toBeGreaterThan(0);
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("axon_http_request", expect.anything());
+  });
+
+  it("runs question-mark catalog help from Enter without REST", async () => {
+    const input = await renderAndType("?");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByRole("heading", { name: "Axon Palette Help" })).toBeTruthy();
+    expect(screen.getAllByText("scrape").length).toBeGreaterThan(0);
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("axon_http_request", expect.anything());
+  });
+
+  it("opens selected action help from the command bar and replays it from history as local help", async () => {
+    await renderAndType("scrape");
     const commandHelp = (await screen.findAllByLabelText("Help for Scrape URL")).find((button) =>
       button.classList.contains("command-help"),
     );
     expect(commandHelp).toBeDefined();
     fireEvent.click(commandHelp!);
 
-    expect(await screen.findByText("Scrape URL")).toBeTruthy();
-    expect(screen.getByText("POST /v1/scrape")).toBeTruthy();
+    expect((await screen.findAllByText("Scrape URL")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("POST /v1/scrape").length).toBeGreaterThan(0);
     expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("axon_http_request", expect.anything());
 
     fireEvent.click(screen.getByText("↺ recent"));
-    const historyRow = (await screen.findAllByRole("button")).find((button) => button.classList.contains("history-row"));
-    expect(historyRow).toBeDefined();
-    fireEvent.click(historyRow!);
+    fireEvent.click(await screen.findByRole("button", { name: /scrape.*Help.*just now/i }));
 
-    await waitFor(() => expect(screen.getByText("POST /v1/scrape")).toBeTruthy());
-    expect(screen.getByText("Scrape URL")).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("POST /v1/scrape").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("Scrape URL").length).toBeGreaterThan(0);
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("axon_http_request", expect.anything());
+  });
+
+  it("shows unknown-query help from the command-bar question mark without REST", async () => {
+    await renderAndType("nope");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Help" }));
+
+    expect(await screen.findByText("No matching action:")).toBeTruthy();
+    expect(screen.getByText("nope")).toBeTruthy();
     expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("axon_http_request", expect.anything());
   });
 });

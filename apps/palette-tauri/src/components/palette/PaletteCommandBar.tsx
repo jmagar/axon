@@ -21,7 +21,7 @@ interface PaletteCommandBarProps {
   validation: string;
   onBack: () => void;
   onClearMode: () => void;
-  onHelp: (action?: PaletteAction) => void;
+  onHelp: (action?: PaletteAction, unknownTarget?: string) => void;
   onInputKeyDown: React.KeyboardEventHandler<HTMLInputElement>;
   onQueryChange: (value: string) => void;
   onReset: () => void;
@@ -110,7 +110,7 @@ export function PaletteCommandBar({
       <button
         className="command-help"
         type="button"
-        onClick={() => onHelp(active)}
+        onClick={() => onHelp(active, active ? undefined : query.trim())}
         disabled={running}
         aria-label={active ? `Help for ${active.label}` : "Help"}
         title={active ? `Help for ${active.label}` : "Help"}

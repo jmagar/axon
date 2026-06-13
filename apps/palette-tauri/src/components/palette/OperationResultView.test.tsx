@@ -65,6 +65,11 @@ describe("OperationResultView routing", () => {
     expect(screen.getByText(/# Scrape URL/)).toBeInTheDocument();
   });
 
+  it("renders malformed help payloads as a visible error when no fallback text exists", () => {
+    render(<OperationResultView payload={{ target: { title: "bad" } }} subcommand="help" fallbackText="" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Help payload is malformed");
+  });
+
   it("removes empty markdown bullets and dash-only fenced blocks", () => {
     const markdown = [
       "- Real item",

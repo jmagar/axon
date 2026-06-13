@@ -9,6 +9,7 @@ import {
   executeAction,
   type Client,
   type PaletteConfig,
+  type PaletteResult,
 } from "@/lib/axonClient";
 import { hostFromUrl, summarizeCrawl } from "@/lib/crawlJob";
 import { formatPayload, outputKindFor } from "@/lib/format";
@@ -125,7 +126,14 @@ export function useActionRunner({
       setModeAction(localHelpAction);
       setQuery(rawArgument.trim());
       setBrowseOpen(false);
-      pushHistory(localHelpAction, target?.subcommand ?? unknownTarget ?? "catalog", 200, helpRun.text, "markdown", helpRun.result.payload);
+      pushHistory(localHelpAction, target?.subcommand ?? unknownTarget ?? "catalog", {
+        status: helpRun.result.status,
+        title: helpRun.title,
+        subtitle: helpRun.subtitle,
+        text: helpRun.text,
+        outputKind: "markdown",
+        result: helpRun.result,
+      });
       return;
     }
 
@@ -167,7 +175,14 @@ export function useActionRunner({
               : null;
         if (!result.ok || !jobId) {
           const text = formatPayload(action.subcommand, result.payload);
-          pushHistory(action, seedUrl, result.status, text, "code");
+          pushHistory(action, seedUrl, {
+            status: result.status,
+            title: "Crawl failed",
+            subtitle: `${result.method} ${result.path} | HTTP ${result.status}`,
+            text,
+            outputKind: "code",
+            result,
+          });
           setRun({
             kind: "error",
             title: "Crawl failed",
@@ -178,7 +193,13 @@ export function useActionRunner({
           });
           return;
         }
-        pushHistory(action, seedUrl, result.status, undefined, "code");
+        pushHistory(action, seedUrl, {
+          status: result.status,
+          title: `Crawling ${hostFromUrl(seedUrl)}`,
+          subtitle: `job ${jobId}`,
+          outputKind: "code",
+          result,
+        });
         setRun((current) =>
           current.kind === "job" && current.url === seedUrl
             ? {
@@ -270,16 +291,25 @@ export function useActionRunner({
     try {
       const result = await executeAction(client, action, argument, config);
       const text = formatPayload(action.subcommand, result.payload);
-      pushHistory(action, argument || action.subcommand, result.status, text, outputKindFor(action.subcommand));
       const isConversation = action.subcommand === "ask" || action.subcommand === "chat";
+      const title = isConversation ? action.label : `${action.label} ${result.ok ? "completed" : "failed"}`;
+      const subtitle = action.subcommand === "ask"
+        ? `RAG over ${config.collection || "axon"} | ${result.path}`
+        : action.subcommand === "chat"
+        ? result.path
+        : `${result.method} ${result.path} | HTTP ${result.status}`;
+      pushHistory(action, argument || action.subcommand, {
+        status: result.status,
+        title,
+        subtitle,
+        text,
+        outputKind: outputKindFor(action.subcommand),
+        result,
+      });
       setRun({
         kind: result.ok ? "success" : "error",
-        title: isConversation ? action.label : `${action.label} ${result.ok ? "completed" : "failed"}`,
-        subtitle: action.subcommand === "ask"
-          ? `RAG over ${config.collection || "axon"} | ${result.path}`
-          : action.subcommand === "chat"
-          ? result.path
-          : `${result.method} ${result.path} | HTTP ${result.status}`,
+        title,
+        subtitle,
         text,
         outputKind: outputKindFor(action.subcommand),
         prompt: isConversation ? argument : undefined,
@@ -287,27 +317,48 @@ export function useActionRunner({
       });
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
-      pushHistory(action, argument || action.subcommand, 0, text, outputKindFor(action.subcommand));
       const isConversation = action.subcommand === "ask" || action.subcommand === "chat";
+      const result: PaletteResult = { ok: false, status: 0, path: "", method: "POST", payload: null };
+      const title = isConversation ? action.label : `${action.label} failed`;
+      const subtitle = action.subcommand === "ask"
+        ? `RAG over ${config.collection || "axon"} | /v1/ask`
+        : action.subcommand === "chat"
+        ? "/v1/chat"
+        : commandLine;
+      pushHistory(action, argument || action.subcommand, {
+        status: 0,
+        title,
+        subtitle,
+        text,
+        outputKind: outputKindFor(action.subcommand),
+        result,
+      });
       setRun({
         kind: "error",
-        title: isConversation ? action.label : `${action.label} failed`,
-        subtitle: action.subcommand === "ask"
-          ? `RAG over ${config.collection || "axon"} | /v1/ask`
-          : action.subcommand === "chat"
-          ? "/v1/chat"
-          : commandLine,
+        title,
+        subtitle,
         text,
         outputKind: outputKindFor(action.subcommand),
         prompt: isConversation ? argument : undefined,
-        result: { ok: false, status: 0, path: "", method: "POST", payload: null },
+        result,
       });
     }
   }
 
-  function pushHistory(action: PaletteAction, target: string, status: number, text?: string, outputKind?: "markdown" | "code", payload?: unknown) {
+  function pushHistory(
+    action: PaletteAction,
+    target: string,
+    entry: {
+      status: number;
+      title: string;
+      subtitle: string;
+      text?: string;
+      outputKind?: "markdown" | "code";
+      result?: PaletteResult;
+    },
+  ) {
     setHistory((items) => [
-      { action, target, status, text, outputKind, payload, when: "just now", duration: status === 0 ? "fail" : undefined },
+      { action, target, ...entry, when: "just now", duration: entry.status === 0 ? "fail" : undefined },
       ...items,
     ].slice(0, 18));
   }

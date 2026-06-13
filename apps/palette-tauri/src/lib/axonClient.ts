@@ -46,6 +46,11 @@ export interface PaletteHttpRequest {
   body: Record<string, unknown> | null;
 }
 
+export interface ActionRouteTemplate {
+  method: HttpMethod;
+  path: string;
+}
+
 export function createAxonClient(config: PaletteConfig): Client {
   const token = config.token?.trim();
   return {
@@ -111,20 +116,21 @@ function bodyFor(
 
   const lifecycle = jobLifecycleRequest(action.subcommand, words);
   if (lifecycle) return lifecycle;
+  const route = actionRouteTemplate(action.subcommand);
 
   switch (action.subcommand) {
     case "doctor":
-      return { method: "GET", path: "/v1/doctor", body: null };
+      return { ...route, body: null };
     case "status":
-      return { method: "GET", path: "/v1/status", body: null };
+      return { ...route, body: null };
     case "sources":
-      return { method: "GET", path: "/v1/sources", body: null };
+      return { ...route, body: null };
     case "domains":
-      return { method: "GET", path: "/v1/domains", body: null };
+      return { ...route, body: null };
     case "stats":
-      return { method: "GET", path: "/v1/stats", body: null };
+      return { ...route, body: null };
     case "scrape":
-      return { method: "POST", path: "/v1/scrape", body: { url: first(words, "url"), ...collectionBody } };
+      return { ...route, body: { url: first(words, "url"), ...collectionBody } };
     case "crawl":
       return { method: "POST", path: "/v1/crawl", body: { urls: required(words, "urls"), ...collectionBody } };
     case "map":
@@ -198,6 +204,52 @@ function bodyFor(
       };
     default:
       throw new Error(`REST route is not wired for ${action.subcommand}`);
+  }
+}
+
+export function actionRouteTemplate(subcommand: string): ActionRouteTemplate {
+  const lifecycle = jobLifecycleRouteTemplate(subcommand);
+  if (lifecycle) return lifecycle;
+
+  switch (subcommand) {
+    case "doctor":
+    case "status":
+    case "sources":
+    case "domains":
+    case "stats":
+      return { method: "GET", path: `/v1/${subcommand}` };
+    case "watch-list":
+      return { method: "GET", path: "/v1/watch" };
+    case "watch-create":
+      return { method: "POST", path: "/v1/watch" };
+    case "watch-run":
+      return { method: "POST", path: "/v1/watch/{id}/run" };
+    case "ingest-sessions-prepared":
+      return { method: "POST", path: "/v1/ingest/sessions/prepared" };
+    default:
+      return { method: "POST", path: `/v1/${subcommand}` };
+  }
+}
+
+function jobLifecycleRouteTemplate(subcommand: string): ActionRouteTemplate | null {
+  const match = /^(crawl|embed|extract|ingest)-(list|status|cancel|cleanup|clear|recover)$/.exec(subcommand);
+  if (!match) return null;
+  const [, family, operation] = match;
+  switch (operation) {
+    case "list":
+      return { method: "GET", path: `/v1/${family}` };
+    case "status":
+      return { method: "GET", path: `/v1/${family}/{id}` };
+    case "cancel":
+      return { method: "POST", path: `/v1/${family}/{id}/cancel` };
+    case "cleanup":
+      return { method: "POST", path: `/v1/${family}/cleanup` };
+    case "clear":
+      return { method: "DELETE", path: `/v1/${family}` };
+    case "recover":
+      return { method: "POST", path: `/v1/${family}/recover` };
+    default:
+      return null;
   }
 }
 
