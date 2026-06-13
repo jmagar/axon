@@ -210,14 +210,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout-cone-mode: false
+          # Cone mode keeps root-level files such as `.gitignore` available.
+          # Non-cone sparse checkouts can make older Cargo/gix fail while
+          # fingerprinting the root build script.
           sparse-checkout: |
-            Cargo.toml
-            Cargo.lock
-            build.rs
-            .env.example
-            config.example.toml
-            docker-compose.prod.yaml
             src
             xtask
             benches
@@ -229,7 +225,7 @@ jobs:
             scripts
             config
             vendor
-            .cargo/config.toml
+            .cargo
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -268,17 +264,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout-cone-mode: false
+          # Cone mode keeps root-level files such as `.gitignore` available.
+          # Non-cone sparse checkouts can make older Cargo/gix fail while
+          # fingerprinting the root build script.
           sparse-checkout: |
-            Cargo.toml
-            Cargo.lock
-            build.rs
-            .env.example
-            config.example.toml
-            docker-compose.prod.yaml
             src
             xtask
             benches
+            assets
             apps/web
             plugins
             docs
@@ -287,10 +280,12 @@ jobs:
             scripts
             config
             vendor
-            .cargo/config.toml
+            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.94.0
+          # Match rust-toolchain.toml so the Windows target is installed on
+          # the same toolchain cargo uses under the repo override.
+          toolchain: 1.96.0
           targets: x86_64-pc-windows-gnu
       - name: Install mingw-w64
         run: |
@@ -645,14 +640,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout-cone-mode: false
+          # Cone mode keeps root-level files such as `.gitignore` available.
+          # Non-cone sparse checkouts can make older Cargo/gix fail while
+          # fingerprinting the root build script.
           sparse-checkout: |
-            Cargo.toml
-            Cargo.lock
-            build.rs
-            .env.example
-            config.example.toml
-            docker-compose.prod.yaml
             src
             xtask
             benches
@@ -664,7 +655,7 @@ jobs:
             scripts
             config
             vendor
-            .cargo/config.toml
+            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
