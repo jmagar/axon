@@ -26,6 +26,8 @@ impl Default for Config {
             exclude_path_prefix: Vec::new(),
             output_dir: PathBuf::from(".cache/axon-rust/output"),
             output_path: None,
+            warc_output: None,
+            automation_script: None,
             render_mode: RenderMode::AutoSwitch,
             chrome_remote_url: None,
             chrome_proxy: None,

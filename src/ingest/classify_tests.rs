@@ -193,6 +193,56 @@ fn reddit_old_subdomain() {
 }
 
 #[test]
+fn rss_explicit_prefix_adds_scheme() {
+    let r = classify_target("rss:example.com/feed", false).unwrap();
+    if let IngestSource::Rss { target } = r {
+        assert_eq!(target, "https://example.com/feed");
+    } else {
+        panic!("expected Rss variant");
+    }
+}
+
+#[test]
+fn rss_feed_prefix_with_scheme_preserved() {
+    let r = classify_target("feed:https://blog.example.com/atom.xml", false).unwrap();
+    if let IngestSource::Rss { target } = r {
+        assert_eq!(target, "https://blog.example.com/atom.xml");
+    } else {
+        panic!("expected Rss variant");
+    }
+}
+
+#[test]
+fn rss_atom_extension_url() {
+    assert!(matches!(
+        classify_target("https://blog.rust-lang.org/feed.xml", false),
+        Ok(IngestSource::Rss { .. })
+    ));
+    assert!(matches!(
+        classify_target("https://example.com/releases.atom", false),
+        Ok(IngestSource::Rss { .. })
+    ));
+}
+
+#[test]
+fn rss_feed_path_segment_and_query() {
+    assert!(matches!(
+        classify_target("https://example.com/blog/feed/", false),
+        Ok(IngestSource::Rss { .. })
+    ));
+    assert!(matches!(
+        classify_target("https://example.com/?feed=rss2", false),
+        Ok(IngestSource::Rss { .. })
+    ));
+}
+
+#[test]
+fn non_feed_url_does_not_classify_as_rss() {
+    // A plain content URL must not be misrouted to RSS.
+    assert!(classify_target("https://example.com/about", false).is_err());
+}
+
+#[test]
 fn unknown_target_returns_error() {
     assert!(classify_target("not-a-target", false).is_err());
 }

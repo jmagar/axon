@@ -50,6 +50,8 @@ All global flags apply. Key flags:
 | `--include-subdomains <bool>` | `false` | Include subdomains under the same parent domain. |
 | `--budget <PATH=N>` | — | Per-path page cap, repeatable (e.g. `--budget /blog=100 --budget '*=1000'`). `*` = all paths. Unset = no budget. |
 | `--etag-conditional` | `false` | Conditional re-crawl: seed spider's ETag cache from `etag.json` so unchanged pages return `304` and are reused (relinked, `changed=false`) instead of re-fetched. Independent of `--cache`. |
+| `--warc <PATH>` | — | Write every fetched page to a WARC 1.1 archive at `PATH`. HTTP and Chrome render paths both archive. Round-trips through the crawl job config snapshot. |
+| `--automation-script <PATH>` | — | JSON file mapping URL path prefixes → ordered Chrome web-automation steps run before each matching page is captured. Requires `--render-mode chrome`/`auto-switch`; ignored (with a warning) on HTTP-only. |
 | `--sitemap-only` | `false` | Sync-only path: run sitemap backfill without full crawl. |
 | `--skip-embed` | `false` | Do not queue an embed job from crawl output. |
 | `--json` | `false` | JSON output for job metadata/status responses. |
@@ -76,6 +78,12 @@ axon crawl https://example.com --wait true
 # Chrome-only crawl with custom limits
 axon crawl https://example.com --render-mode chrome --max-pages 200 --max-depth 3
 
+# Archive every fetched page to a WARC 1.1 file
+axon crawl https://example.com --wait true --warc out/example.warc
+
+# Chrome crawl driven by web-automation steps
+axon crawl https://example.com --render-mode chrome --automation-script steps.json
+
 # Job status
 axon crawl status 550e8400-e29b-41d4-a716-446655440000
 
@@ -85,6 +93,35 @@ axon crawl errors 550e8400-e29b-41d4-a716-446655440000
 # Enqueue through the canonical server
 AXON_SERVER_URL=http://127.0.0.1:8001 axon crawl https://example.com --json
 ```
+
+## Automation-script format
+
+`--automation-script <PATH>` takes a JSON object keyed by URL path prefix. spider
+matches each page's URL path against the keys, so `"/"` applies to every page and
+`"/blog"` only to pages under `/blog`. Each value is an ordered list of steps run
+against the page (during a Chrome render) before it is captured:
+
+```json
+{
+  "/": [
+    { "action": "wait_for", "selector": "main" },
+    { "action": "click", "selector": "button.accept-cookies" },
+    { "action": "scroll_y", "pixels": 4000 },
+    { "action": "wait", "ms": 1500 }
+  ],
+  "/blog": [
+    { "action": "click", "selector": "button.load-more" },
+    { "action": "infinite_scroll", "times": 5 }
+  ]
+}
+```
+
+Supported `action` values: `evaluate` (`script`), `click` / `click_all` /
+`wait_for` / `wait_for_and_click` (`selector`), `wait` (`ms`),
+`wait_for_navigation`, `scroll_x` / `scroll_y` (`pixels`), `infinite_scroll`
+(`times`), `fill` (`selector`, `value`), and `screenshot` (`output`,
+`full_page`, `omit_background`). Automation requires a Chrome render path; it is
+skipped with a warning when `--render-mode http` is in effect.
 
 ## Behavior Notes
 

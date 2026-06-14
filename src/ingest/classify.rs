@@ -78,6 +78,15 @@ pub fn classify_target(input: &str, include_source: bool) -> Result<IngestSource
         });
     }
 
+    // 5b. RSS / Atom feed: explicit `rss:` / `feed:` / `atom:` prefix, or a
+    // URL shaped like a feed (`.rss`/`.atom`/`.rdf` extension, a `feed`/`rss`/
+    // `atom` path segment, or a `?feed=` query). Checked after the provider
+    // hosts so github.com/reddit/youtube URLs are never misrouted, but before
+    // the bare GitHub slug so `owner/repo/releases.atom` resolves to a feed.
+    if let Some(target) = classify_feed_target(s) {
+        return Ok(IngestSource::Rss { target });
+    }
+
     // 6. GitHub: URL or owner/repo slug
     if is_host(s, &["github.com", "www.github.com"]) {
         let repo = extract_github_repo_from_url(s)?;
@@ -103,6 +112,51 @@ pub fn classify_target(input: &str, include_source: bool) -> Result<IngestSource
          or Reddit subreddit (r/name) or URL"
     )
     .into())
+}
+
+/// Resolve a raw input to an RSS/Atom feed target, or `None` if it doesn't look
+/// like a feed. Honors explicit `rss:` / `feed:` / `atom:` prefixes (scheme is
+/// added when missing) and otherwise applies a conservative URL-shape heuristic.
+fn classify_feed_target(s: &str) -> Option<String> {
+    for prefix in ["rss:", "feed:", "atom:"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            let rest = rest.trim();
+            if rest.is_empty() {
+                return None;
+            }
+            return Some(if rest.contains("://") {
+                rest.to_string()
+            } else {
+                format!("https://{rest}")
+            });
+        }
+    }
+    looks_like_feed_url(s).then(|| s.to_string())
+}
+
+/// Conservative heuristic: does this URL look like an RSS/Atom/RDF feed?
+fn looks_like_feed_url(s: &str) -> bool {
+    let Ok(u) = Url::parse(s) else {
+        return false;
+    };
+    if !matches!(u.scheme(), "http" | "https") {
+        return false;
+    }
+    let path = u.path().to_ascii_lowercase();
+    let has_feed_ext = path.ends_with(".rss") || path.ends_with(".atom") || path.ends_with(".rdf");
+    let last_segment = path.rsplit('/').next().unwrap_or("");
+    let common_feed_file = matches!(
+        last_segment,
+        "feed.xml" | "rss.xml" | "atom.xml" | "index.xml" | "feed" | "rss" | "atom"
+    );
+    let feed_segment = path
+        .split('/')
+        .any(|seg| matches!(seg, "feed" | "feeds" | "rss" | "atom"));
+    let feed_query = u
+        .query()
+        .map(|q| q.to_ascii_lowercase().contains("feed"))
+        .unwrap_or(false);
+    has_feed_ext || common_feed_file || feed_segment || feed_query
 }
 
 fn is_host(input: &str, hosts: &[&str]) -> bool {
