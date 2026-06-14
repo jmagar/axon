@@ -9,12 +9,6 @@
 # Rust files still over 500 lines -- needs splitting
 src/services/query.rs  # expires: 2026-07-11 | owner: jmagar | split: query/{ask,retrieve,suggest}.rs
 src/jobs/workers/runners/ingest.rs  # expires: 2026-07-17 | owner: jmagar | split: ingest/{merge,progress}.rs (payload-merge helpers + progress persister)
-# Pre-existing config monoliths only minimally touched by the spider-examples PR
-# (added warc/automation Config fields + snapshot round-trip). Splitting the core
-# Config struct is a separate refactor tracked by these entries.
-src/core/config/types/config.rs  # expires: 2026-07-18 | owner: jmagar | split: config/{crawl,vector,ask,ingest}_fields struct-group modules
-src/core/config/types/config_impls.rs  # expires: 2026-07-18 | owner: jmagar | split: config_impls/{default,debug}.rs
-src/jobs/config_snapshot.rs  # expires: 2026-07-18 | owner: jmagar | split: config_snapshot/{snapshot,apply}.rs
 
 # Vendored lab-auth source (upstream pinned SHA 87cec324).
 # Cannot be split — upstream code vendored to resolve libsqlite3-sys link conflict.
