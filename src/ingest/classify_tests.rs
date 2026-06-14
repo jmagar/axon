@@ -249,6 +249,34 @@ fn feedback_query_is_not_a_feed() {
 }
 
 #[test]
+fn category_atom_value_is_not_a_feed() {
+    // A feed-shaped value under a non-format key (e.g. `?category=atom`) must
+    // not be misrouted to RSS.
+    assert!(classify_target("https://example.com/posts?category=atom", false).is_err());
+}
+
+#[test]
+fn format_atom_query_is_a_feed() {
+    assert!(matches!(
+        classify_target("https://example.com/posts?format=atom", false),
+        Ok(IngestSource::Rss { .. })
+    ));
+}
+
+#[test]
+fn github_releases_atom_classifies_as_rss() {
+    // A `.atom` feed under a github.com path is a feed, not a repo — the feed
+    // check runs before the GitHub host/slug branches (classify.rs comment).
+    assert!(matches!(
+        classify_target(
+            "https://github.com/anthropics/claude-code/releases.atom",
+            false
+        ),
+        Ok(IngestSource::Rss { .. })
+    ));
+}
+
+#[test]
 fn unknown_target_returns_error() {
     assert!(classify_target("not-a-target", false).is_err());
 }

@@ -109,7 +109,8 @@ pub fn classify_target(input: &str, include_source: bool) -> Result<IngestSource
          Gitea/Forgejo URL or gitea:<host>/<owner>/<repo>, \
          git:https://host/path/repo.git, \
          YouTube URL or @handle, \
-         or Reddit subreddit (r/name) or URL"
+         Reddit subreddit (r/name) or URL, \
+         or an RSS/Atom feed URL (or rss:/feed:/atom: prefix)"
     )
     .into())
 }
@@ -153,14 +154,17 @@ fn looks_like_feed_url(s: &str) -> bool {
         .split('/')
         .any(|seg| matches!(seg, "feed" | "feeds" | "rss" | "atom"));
     // Match a real feed query parameter (e.g. `?feed=rss2`, `?format=atom`),
-    // not any query that merely contains the substring "feed" (e.g.
-    // `?feedback=1`), which would misroute normal pages to RSS.
+    // not any query that merely mentions a feed word. A bare `feed` key counts;
+    // a feed-shaped value (`rss`/`atom`/…) counts only under a format-selecting
+    // key, so `?feedback=1` and `?category=atom` are NOT treated as feeds.
     let feed_query = u.query_pairs().any(|(k, v)| {
-        k.eq_ignore_ascii_case("feed")
-            || matches!(
-                v.to_ascii_lowercase().as_str(),
-                "rss" | "rss2" | "atom" | "rdf"
-            )
+        let k = k.to_ascii_lowercase();
+        k == "feed"
+            || ((k == "format" || k == "type" || k == "output")
+                && matches!(
+                    v.to_ascii_lowercase().as_str(),
+                    "rss" | "rss2" | "atom" | "rdf" | "feed"
+                ))
     });
     has_feed_ext || common_feed_file || feed_segment || feed_query
 }
