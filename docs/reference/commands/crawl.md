@@ -125,6 +125,7 @@ skipped with a warning when `--render-mode http` is in effect.
 
 ## Behavior Notes
 
+- `--warc` and `--automation-script` paths resolve on the **worker's** filesystem. Unlike `--output-dir`, they are not container-path-normalized, so for async crawls claimed by a dockerized worker a host path resolves inside the container. Use them with `--wait true` (or `axon serve`/`axon mcp` running on the same host) when pointing at host paths.
 - Async mode prints one job ID per URL and returns immediately.
 - In server mode (`AXON_SERVER_URL`), crawl submit and lifecycle subcommands call `axon serve`; `--wait true` polls server job state and does not spawn host-local workers. Use `--local` to force the local behavior.
 - Async JSON output now includes the predicted `output_dir` plus `predicted_paths` for each enqueued job.

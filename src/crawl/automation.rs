@@ -123,8 +123,8 @@ pub fn parse_automation_scripts(json: &str) -> Result<AutomationScriptsMap, Box<
 }
 
 /// Load and parse the automation-scripts file at `path`.
-pub fn load_automation_scripts(path: &Path) -> Result<AutomationScriptsMap, Box<dyn Error>> {
-    let json = std::fs::read_to_string(path).map_err(|e| {
+pub async fn load_automation_scripts(path: &Path) -> Result<AutomationScriptsMap, Box<dyn Error>> {
+    let json = tokio::fs::read_to_string(path).await.map_err(|e| {
         format!(
             "failed to read automation-script file {}: {e}",
             path.display()

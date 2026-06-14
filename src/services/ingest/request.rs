@@ -53,6 +53,11 @@ pub fn source_from_mcp_request(
             validate_youtube_ingest_target(&target)?;
             Ok(IngestSource::Youtube { target })
         }
+        IngestSourceType::Rss => {
+            let target = required_ingest_target(req, "target")?;
+            validate_rss_ingest_target(&target)?;
+            Ok(IngestSource::Rss { target })
+        }
         IngestSourceType::Sessions => Err(
             "remote sessions ingest must use /v1/ingest/sessions/prepared; server-local session scanning is disabled"
                 .to_string(),

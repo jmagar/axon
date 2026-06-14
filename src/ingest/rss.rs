@@ -13,6 +13,7 @@
 use std::error::Error;
 
 use feed_rs::model::{Entry, Feed};
+use futures_util::StreamExt;
 
 use crate::core::config::Config;
 use crate::core::content::{to_markdown, url_to_domain};
@@ -69,23 +70,43 @@ pub async fn ingest_rss(
     Ok(summary.chunks_embedded)
 }
 
-/// Fetch the feed document, enforcing the size cap.
+/// Fetch the feed document, enforcing the size cap while streaming so a hostile
+/// or misconfigured endpoint can't OOM us by returning a multi-GB body before
+/// the cap is checked.
 async fn fetch_feed_bytes(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let client = http_client()?;
     let resp = client.get(url).send().await?.error_for_status()?;
-    let bytes = resp.bytes().await?;
-    if bytes.len() > MAX_FEED_BYTES {
+    // Reject early when the server advertises an over-cap body.
+    if let Some(len) = resp.content_length()
+        && len > MAX_FEED_BYTES as u64
+    {
         return Err(format!(
-            "feed at {url} is {} bytes, exceeds {MAX_FEED_BYTES} byte cap",
-            bytes.len()
+            "feed at {url} advertises {len} bytes, exceeds {MAX_FEED_BYTES} byte cap"
         )
         .into());
     }
-    Ok(bytes.to_vec())
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if buf.len() + chunk.len() > MAX_FEED_BYTES {
+            return Err(
+                format!("feed at {url} exceeds {MAX_FEED_BYTES} byte cap while streaming").into(),
+            );
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
 }
 
 /// Build one `PreparedDoc` per feed entry that has usable content.
 fn prepare_feed_docs(feed_url: &str, feed_title: Option<&str>, feed: &Feed) -> Vec<PreparedDoc> {
+    if feed.entries.len() > MAX_FEED_ENTRIES {
+        log_warn(&format!(
+            "feed {feed_url} has {} entries; embedding only the first {MAX_FEED_ENTRIES}",
+            feed.entries.len()
+        ));
+    }
     let mut docs = Vec::new();
     for entry in feed.entries.iter().take(MAX_FEED_ENTRIES) {
         match prepare_entry_doc(feed_url, feed_title, entry) {

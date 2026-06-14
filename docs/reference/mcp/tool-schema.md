@@ -168,7 +168,7 @@ Values: `http|chrome|auto_switch`
 Values: `day|week|month|year`
 
 ### `IngestSourceType`
-Values: `github|gitlab|gitea|git|reddit|youtube|sessions`
+Values: `github|gitlab|gitea|git|reddit|youtube|rss|sessions`
 
 ## Pagination Defaults
 List/search style endpoints default to low limits and accept `limit` + `offset`.

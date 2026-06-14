@@ -28,8 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit `rss:` / `feed:` / `atom:` prefix) auto-classifies feed URLs and
   embeds one document per entry (HTML content converted to markdown, with
   title/link/published metadata). Backed by `feed-rs`; new `src/ingest/rss.rs`.
-  Participates in `axon refresh` via `seed_url`. Ported from spider's `rss`
-  example, adapted to axon's ingest framework.
+  Participates in `axon refresh` via `seed_url`. Available on the CLI
+  (auto-classified), MCP (`source_type=rss`), and REST ingest paths. Ported
+  from spider's `rss` example, adapted to axon's ingest framework.
 
 ## [5.9.1] - 2026-06-11
 
