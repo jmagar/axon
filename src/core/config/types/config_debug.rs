@@ -1,5 +1,7 @@
 //! `fmt::Debug` for [`Config`], split out of `config_impls.rs` to keep that file
 //! under the repository's 500-line cap. Secret-bearing fields are redacted.
+//!
+//! Field list mirrors the `Config` struct; keep in sync when adding fields.
 
 use super::config::Config;
 use std::fmt;
@@ -117,6 +119,13 @@ impl fmt::Debug for Config {
             )
             .field("headless_gemini_cmd", &self.headless_gemini_cmd)
             .field("headless_gemini_home", &self.headless_gemini_home)
+            .field("codex_cmd", &self.codex_cmd)
+            .field("codex_home", &self.codex_home)
+            .field("codex_model", &self.codex_model)
+            .field(
+                "codex_completion_concurrency",
+                &self.codex_completion_concurrency,
+            )
             .field("openai_base_url", &self.openai_base_url)
             .field("openai_api_key", &"[REDACTED]")
             .field("openai_model", &self.openai_model)
