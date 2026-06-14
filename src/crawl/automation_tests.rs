@@ -80,6 +80,13 @@ fn rejects_prefix_with_no_steps() {
 }
 
 #[test]
+fn rejects_non_path_prefix() {
+    // A key without a leading '/' can never match a URL path and must be rejected.
+    let json = r#"{ "blog": [ { "action": "wait", "ms": 10 } ] }"#;
+    assert!(parse_automation_scripts(json).is_err());
+}
+
+#[test]
 fn rejects_unknown_action() {
     let json = r#"{ "/": [ { "action": "teleport", "selector": "a" } ] }"#;
     assert!(parse_automation_scripts(json).is_err());

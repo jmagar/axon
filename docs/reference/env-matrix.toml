@@ -263,6 +263,30 @@ compatibility = "advanced"
 reason = "Development Compose bind-mount source for the locally built Axon binary directory."
 
 [[env]]
+key = "AXON_UPDATE_FILE_RELEASE_DIR"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side update smoke-test override pointing at a directory with local release assets."
+
+[[env]]
+key = "AXON_UPDATE_INSTALL_PATH"
+classification = "trusted-operator-bootstrap"
+runtime_placement = "host-only"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side axon update install destination override; useful for controlled local installs and smoke tests."
+
+[[env]]
 key = "AXON_BASE_ENV_FILE"
 classification = "external/test-only"
 runtime_placement = "not-runtime"
@@ -861,6 +885,42 @@ container_allowed = true
 toml_destination = ""
 compatibility = "canonical"
 reason = "Non-secret tuning knob; migrate to config.toml. Kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_ASK_QUALITY_MIN_CANONICAL_SOURCES"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side ask-quality smoke-test assertion threshold; not Axon runtime config."
+
+[[env]]
+key = "AXON_ASK_QUALITY_MIN_FULL_DOCS"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side ask-quality smoke-test assertion threshold; not Axon runtime config."
+
+[[env]]
+key = "AXON_ASK_QUALITY_QUERY"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side ask-quality smoke-test query override; not Axon runtime config."
 
 [[env]]
 key = "AXON_ASK_HYBRID_CANDIDATES"

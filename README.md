@@ -126,7 +126,7 @@ For local bearer-token operation, no manual env values are required. `setup init
 defaults to loopback MCP HTTP, writes `AXON_MCP_AUTH_MODE=bearer`, and generates
 `AXON_MCP_HTTP_TOKEN`. Optional features need credentials: Gemini auth under
 `~/.gemini` for default LLM features or `AXON_LLM_BACKEND=openai-compat` plus
-`AXON_OPENAI_BASE_URL` and `AXON_OPENAI_MODEL` for OpenAI-compatible synthesis,
+`AXON_OPENAI_BASE_URL` and `AXON_SYNTHESIS_OPENAI_MODEL` for OpenAI-compatible synthesis,
 `TAVILY_API_KEY` for search/research, `GITHUB_TOKEN` for higher-rate GitHub
 ingest, and `REDDIT_CLIENT_ID` plus `REDDIT_CLIENT_SECRET` for Reddit ingest.
 OAuth mode also requires
@@ -200,7 +200,8 @@ Keep in `.env`:
 - Docker/runtime bootstrap: `AXON_HOME`, `AXON_DATA_DIR`, `AXON_IMAGE`, `AXON_MCP_HTTP_PUBLISH`, `TEI_HTTP_PORT`, GPU device values.
 - LLM runtime pointers when needed: `AXON_HEADLESS_GEMINI_CMD`,
   `AXON_HEADLESS_GEMINI_HOME`, `AXON_LLM_BACKEND`, `AXON_OPENAI_BASE_URL`,
-  `AXON_OPENAI_MODEL`, and optional `AXON_OPENAI_API_KEY`.
+  `AXON_SYNTHESIS_OPENAI_MODEL` (legacy alias: `AXON_OPENAI_MODEL`), and
+  optional `AXON_OPENAI_API_KEY`.
 
 Put in `config.toml`:
 
@@ -228,7 +229,8 @@ CLI and MCP commands always run in-process against Qdrant and TEI. `axon serve` 
 ## Notable Capabilities
 
 - **Hybrid search.** New Qdrant collections are created with named `dense` + `bm42` sparse vectors and queried with Reciprocal Rank Fusion (RRF). Legacy unnamed collections fall back to dense-only cosine search. Tune via the `[search]` section in `config.toml`; run `axon migrate --from <old> --to <new>` to copy a legacy unnamed collection into a new named-mode one, then point `AXON_COLLECTION` at it.
-- **Vertical extractors.** `scrape` (and the `scrape` MCP/REST action) auto-routes known URLs to structured per-site extractors (GitHub, PyPI, npm, crates.io, Reddit, YouTube, and more) instead of generic HTML→markdown. Disable with `AXON_ENABLE_VERTICALS=false` or the `[verticals]` config section.
+- **Normalized source planning.** Crawl manifests, scrape results, ingest sources, local files, and memory records are normalized into `SourceDocument` before chunking. The source-doc planner is the only layer that chooses markdown/plain-text/file chunking and emits `PreparedDoc` values for TEI/Qdrant. File origins (`GitFile`, `LocalFile`) get tree-sitter-aware code chunks where supported plus `code_*`, `symbol_*`, `chunk_locator`, `source_range`, and `chunk_content_kind` payload metadata; unsupported code falls back to prose chunks with fallback metadata instead of losing enrichment.
+- **Vertical extractors.** `scrape` (and the `scrape` MCP/REST action) auto-routes known URLs to structured per-site extractors (GitHub, PyPI, npm, crates.io, Reddit, YouTube, and more) instead of generic HTML→markdown. Vertical payloads keep `extractor_name` and bounded structured data through the same source-doc planner used by generic scrape. Disable with `AXON_ENABLE_VERTICALS=false` or the `[verticals]` config section.
 - **Web panel.** `axon serve` hosts an Aurora-styled control panel at the bind address (default `http://127.0.0.1:8001`) with a first-run setup flow, config/stack inspection, and a command runner, alongside the `/v1/*` REST surface and OpenAPI docs at `/docs`.
 
 ## CLI Map
@@ -260,6 +262,7 @@ Discovery and ingest:
 Operations:
 
 - `setup`
+- `update` — install the latest GitHub Release binary and sync the local container
 - `doctor`
 - `debug`
 - `serve`
@@ -400,7 +403,7 @@ Common failures:
 - `plugins/axon/.claude-plugin/plugin.json` — Claude plugin manifest.
 - `scripts/plugin-setup.sh` — plugin hook delegating to shared setup.
 - `docs/reference/mcp/tool-schema.md` — generated MCP wire contract.
-- `docs/` — full documentation tree: guides, `reference/commands/`, architecture, and operations.
+- `docs/` — full documentation tree: guides, `reference/actions/`, architecture, and operations.
 
 ## License
 

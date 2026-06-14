@@ -243,6 +243,12 @@ fn non_feed_url_does_not_classify_as_rss() {
 }
 
 #[test]
+fn feedback_query_is_not_a_feed() {
+    // `?feedback=1` contains the substring "feed" but is not a feed parameter.
+    assert!(classify_target("https://example.com/page?feedback=1", false).is_err());
+}
+
+#[test]
 fn unknown_target_returns_error() {
     assert!(classify_target("not-a-target", false).is_err());
 }

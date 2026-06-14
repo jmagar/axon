@@ -152,10 +152,16 @@ fn looks_like_feed_url(s: &str) -> bool {
     let feed_segment = path
         .split('/')
         .any(|seg| matches!(seg, "feed" | "feeds" | "rss" | "atom"));
-    let feed_query = u
-        .query()
-        .map(|q| q.to_ascii_lowercase().contains("feed"))
-        .unwrap_or(false);
+    // Match a real feed query parameter (e.g. `?feed=rss2`, `?format=atom`),
+    // not any query that merely contains the substring "feed" (e.g.
+    // `?feedback=1`), which would misroute normal pages to RSS.
+    let feed_query = u.query_pairs().any(|(k, v)| {
+        k.eq_ignore_ascii_case("feed")
+            || matches!(
+                v.to_ascii_lowercase().as_str(),
+                "rss" | "rss2" | "atom" | "rdf"
+            )
+    });
     has_feed_ext || common_feed_file || feed_segment || feed_query
 }
 

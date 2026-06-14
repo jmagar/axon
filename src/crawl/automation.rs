@@ -114,6 +114,15 @@ pub fn parse_automation_scripts(json: &str) -> Result<AutomationScriptsMap, Box<
     }
     let mut map = AutomationScriptsMap::new();
     for (prefix, steps) in raw {
+        // Keys are URL *path* prefixes that spider matches against each page's
+        // path. A key without a leading '/' (e.g. "blog") can never match and
+        // would silently become a no-op, so reject it up front.
+        if !prefix.starts_with('/') {
+            return Err(format!(
+                "automation-script prefix {prefix:?} must be a URL path starting with '/'"
+            )
+            .into());
+        }
         if steps.is_empty() {
             return Err(format!("automation-script prefix {prefix:?} has no steps").into());
         }

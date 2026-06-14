@@ -83,7 +83,7 @@ Populate `~/.axon/.env` before first deploy. `dev-setup.sh` handles secrets and 
 - `TEI_URL` — text embedding service URL (runs as `axon-tei` in `docker-compose.prod.yaml`)
 - Gemini CLI auth plus `AXON_HEADLESS_GEMINI_CMD` for the default LLM synthesis
   path, or `AXON_LLM_BACKEND=openai-compat` plus `AXON_OPENAI_BASE_URL` and
-  `AXON_OPENAI_MODEL` for llama.cpp/OpenAI-compatible endpoints
+  `AXON_SYNTHESIS_OPENAI_MODEL` (legacy alias: `AXON_OPENAI_MODEL`) for llama.cpp/OpenAI-compatible endpoints
 
 The legacy `OPENAI_*` env vars were removed in 3.0.0. Gemini headless remains
 the default backend (`AXON_HEADLESS_GEMINI_*`), and OpenAI-compatible
@@ -102,7 +102,8 @@ variables when `AXON_LLM_BACKEND=openai-compat`.
 |----------|---------|---------|
 | `AXON_LLM_BACKEND` | `gemini-headless` | Completion backend. Use `openai-compat` for llama.cpp/OpenAI-compatible `/v1/chat/completions` servers. |
 | `AXON_OPENAI_BASE_URL` | -- | OpenAI-compatible API root, for example `http://127.0.0.1:8080/v1`. |
-| `AXON_OPENAI_MODEL` | -- | Model name sent when `AXON_LLM_BACKEND=openai-compat`. |
+| `AXON_SYNTHESIS_OPENAI_MODEL` | -- | Model name sent for synthesis when `AXON_LLM_BACKEND=openai-compat`. |
+| `AXON_OPENAI_MODEL` | -- | Legacy alias for `AXON_SYNTHESIS_OPENAI_MODEL`. |
 | `AXON_OPENAI_API_KEY` | -- | Optional bearer token for endpoints that require auth. |
 | `AXON_HEADLESS_GEMINI_CMD` | `gemini` | Gemini CLI command used for synthesis. Path-like values are validated before launch. |
 | `AXON_HEADLESS_GEMINI_HOME` | process `HOME` | Source HOME for copying Gemini auth into an isolated temporary HOME. |
@@ -250,6 +251,31 @@ Restart `axon serve` locally as in the standard deploy procedure.
 4. Re-run validation checklist.
 
 ## Upgrade Procedure
+
+### Updating the local Axon binary from GitHub Releases
+
+Use `axon update` to install the latest published Linux release binary into
+`~/.local/bin/axon` and restart the local Axon container against the same
+binary:
+
+```bash
+axon update
+```
+
+Useful variants:
+
+```bash
+axon update --version v5.9.2      # install a specific release tag
+axon update --no-container        # update PATH only
+axon update --force               # reinstall even if the version already matches
+```
+
+The updater currently supports the `axon-linux-x86_64.tar.gz` GitHub Release
+asset and requires the matching `.sha256` sidecar. It downloads into a temporary
+directory, verifies the checksum, installs atomically over the destination, and
+only then syncs the Compose service. For local smoke tests or CI, set
+`AXON_UPDATE_FILE_RELEASE_DIR` to a directory containing those two release files
+and `AXON_UPDATE_INSTALL_PATH` to a temporary destination.
 
 For code/config upgrades:
 
