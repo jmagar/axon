@@ -1,4 +1,6 @@
 use crate::core::config::Config;
+use crate::core::http::http_client;
+use crate::core::ui::{accent, muted, primary};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -81,26 +83,27 @@ pub async fn run_update(cfg: &Config) -> Result<(), Box<dyn Error>> {
     let report = perform_update(options).await?;
 
     if cfg.json_output {
-        println!(
-            "{}",
-            serde_json::json!({
-                "version": report.version,
-                "install_path": report.install_path,
-                "installed": report.installed,
-                "container_synced": report.container_synced,
-            })
-        );
+        let json = serde_json::to_string_pretty(&serde_json::json!({
+            "version": report.version,
+            "install_path": report.install_path,
+            "installed": report.installed,
+            "container_synced": report.container_synced,
+        }))?;
+        println!("{json}");
     } else {
         if report.installed {
-            println!("installed axon {}", report.version);
+            println!("{}", primary(&format!("installed axon {}", report.version)));
         } else {
-            println!("axon {} already installed", report.version);
+            println!(
+                "{}",
+                muted(&format!("axon {} already installed", report.version))
+            );
         }
-        println!("path: {}", report.install_path.display());
+        println!("{} {}", accent("path:"), report.install_path.display());
         if report.container_synced {
-            println!("container synced");
+            println!("{}", primary("container synced"));
         } else {
-            println!("container sync skipped");
+            println!("{}", muted("container sync skipped"));
         }
     }
 
@@ -204,9 +207,7 @@ async fn download_release_assets(
     version: Option<&str>,
     names: &ReleaseAssetNames,
 ) -> Result<(String, Vec<u8>, String), Box<dyn Error>> {
-    let client = reqwest::Client::builder()
-        .user_agent(format!("axon-update/{}", env!("CARGO_PKG_VERSION")))
-        .build()?;
+    let client = http_client()?;
     let api_url = match version {
         Some(tag) => format!("https://api.github.com/repos/{repo}/releases/tags/{tag}"),
         None => format!("https://api.github.com/repos/{repo}/releases/latest"),
