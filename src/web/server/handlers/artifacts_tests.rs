@@ -1,4 +1,6 @@
-use super::{artifact_headers_for_path, is_structurally_unsafe, resolve_artifact_path};
+use super::{
+    artifact_headers_for_path, is_structurally_unsafe, open_artifact_error, resolve_artifact_path,
+};
 use axum::http::StatusCode;
 
 #[test]
@@ -119,6 +121,24 @@ fn artifact_content_types_are_inferred_from_extension() {
             .content_disposition
             .unwrap()
             .starts_with("attachment")
+    );
+}
+
+#[test]
+fn open_error_maps_vanished_file_to_404_and_other_io_errors_to_500() {
+    // A file validated by resolve_artifact_path can vanish before File::open in
+    // the TOCTOU window — that is a 404, not a server error.
+    let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+    assert_eq!(
+        open_artifact_error(&not_found, "jobs/abc/output.md").status(),
+        StatusCode::NOT_FOUND
+    );
+
+    // Any other IO error (e.g. permission denied) is a genuine 500.
+    let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "nope");
+    assert_eq!(
+        open_artifact_error(&denied, "jobs/abc/output.md").status(),
+        StatusCode::INTERNAL_SERVER_ERROR
     );
 }
 

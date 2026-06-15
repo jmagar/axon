@@ -6,9 +6,9 @@ import {
   FileText,
   ServerCog,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 
+import { AuthenticatedArtifactImage } from "@/components/palette/AuthenticatedArtifactImage";
 import { HelpResultView } from "@/components/palette/HelpResultView";
 import {
   ChipSection,
@@ -33,7 +33,6 @@ import {
   toneForStatus,
 } from "@/components/palette/OperationResultViewShared";
 import { arrField, boolField, isRecord, numField, strField, unwrapPayload } from "@/lib/payload";
-import { loadArtifactObjectUrl } from "@/lib/artifactPreview";
 import { STREAMDOWN_CODE_THEMES, STREAMDOWN_PLUGINS } from "@/lib/streamdownConfig";
 
 const LIST_LIMIT = 18;
@@ -431,63 +430,6 @@ function ScreenshotView({ payload }: { payload: Record<string, unknown> }) {
         </div>
       </section>
     </div>
-  );
-}
-
-function AuthenticatedArtifactImage({ relativePath, alt }: { relativePath: string; alt: string }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let activeUrl: string | null = null;
-
-    setObjectUrl(null);
-    setError(null);
-
-    loadArtifactObjectUrl(relativePath)
-      .then((url) => {
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        activeUrl = url;
-        setObjectUrl(url);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-
-    return () => {
-      cancelled = true;
-      if (activeUrl) URL.revokeObjectURL(activeUrl);
-    };
-  }, [relativePath]);
-
-  if (error) {
-    return (
-      <section className="operation-section">
-        <p className="operation-muted">Preview unavailable: {error}</p>
-      </section>
-    );
-  }
-  if (!objectUrl) return null;
-  return (
-    <section className="operation-section">
-      <figure className="operation-screenshot-preview">
-        <img
-          src={objectUrl}
-          alt={alt}
-          onError={() => {
-            // The img is being replaced by the error text, so revoke its blob now
-            // instead of waiting for the next effect run / unmount.
-            URL.revokeObjectURL(objectUrl);
-            setObjectUrl(null);
-            setError("image decode failed");
-          }}
-        />
-      </figure>
-    </section>
   );
 }
 

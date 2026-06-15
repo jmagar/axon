@@ -80,23 +80,29 @@ pub(crate) async fn serve_artifact_from_path(
     raw_path: String,
 ) -> Result<Response, HttpError> {
     let artifact_path = resolve_artifact_path(&cfg.output_dir, &raw_path).await?;
-    let file = tokio::fs::File::open(&artifact_path).await.map_err(|e| {
-        // `resolve_artifact_path` already validated existence, but the file can be
-        // removed in the TOCTOU window before this open. Treat a vanished file as a
-        // 404 rather than a 500 so the status reflects the real cause.
-        if e.kind() == std::io::ErrorKind::NotFound {
-            artifact_not_found(&raw_path)
-        } else {
-            HttpError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "read_error",
-                format!("failed to open artifact: {e}"),
-            )
-        }
-    })?;
+    let file = tokio::fs::File::open(&artifact_path)
+        .await
+        .map_err(|e| open_artifact_error(&e, &raw_path))?;
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
     Ok(artifact_headers_for_path(&raw_path).into_response(body))
+}
+
+/// Map a `File::open` failure for an already-validated artifact to an HTTP error.
+///
+/// `resolve_artifact_path` validated existence, so a `NotFound` here means the
+/// file vanished in the TOCTOU window — a 404, not a server error. Every other
+/// IO error (permission denied, etc.) is a genuine 500.
+fn open_artifact_error(error: &std::io::Error, raw_path: &str) -> HttpError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        artifact_not_found(raw_path)
+    } else {
+        HttpError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "read_error",
+            format!("failed to open artifact: {error}"),
+        )
+    }
 }
 
 pub(crate) async fn resolve_artifact_path(

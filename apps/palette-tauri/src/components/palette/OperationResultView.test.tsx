@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen } from "@testing-library/react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACTIONS } from "@/lib/actions";
@@ -165,6 +166,37 @@ describe("OperationResultView routing", () => {
     render(<OperationResultView subcommand="screenshot" payload={screenshotWithArtifactHandle()} />);
 
     expect(await screen.findByText(/preview unavailable/i)).toBeInTheDocument();
+  });
+
+  it("revokes the object URL and shows an error when the preview image fails to decode", async () => {
+    // Use a raw root (not RTL render) so a manually dispatched `error` event
+    // reliably reaches React's onError handler under React 19.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => {
+        root.render(<OperationResultView subcommand="screenshot" payload={screenshotWithArtifactHandle()} />);
+      });
+      // Flush the mocked loadArtifactObjectUrl promise so the <img> renders.
+      await act(async () => {});
+
+      const img = host.querySelector("img");
+      expect(img?.getAttribute("src")).toBe("blob:test-shot");
+
+      await act(async () => {
+        img?.dispatchEvent(new Event("error"));
+      });
+
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test-shot");
+      expect(host.querySelector("img")).toBeNull();
+      expect(host.textContent).toContain("Preview unavailable: image decode failed");
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      host.remove();
+    }
   });
 
   it("revokes stale artifact object URLs that resolve after unmount", async () => {

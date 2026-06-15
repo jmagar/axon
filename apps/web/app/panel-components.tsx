@@ -15,7 +15,7 @@ import {
   TriangleAlert,
   XCircle
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type {
   ArtifactHandle,
@@ -299,10 +299,19 @@ function AuthenticatedPanelArtifactImage({
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Single source of truth for the live blob URL so the effect cleanup and the
+  // <img> onError handler revoke it exactly once (no double-revoke).
+  const activeUrlRef = useRef<string | null>(null);
+
+  function revokeActiveUrl() {
+    if (activeUrlRef.current) {
+      URL.revokeObjectURL(activeUrlRef.current);
+      activeUrlRef.current = null;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
-    let blobUrl: string | null = null;
 
     setObjectUrl(null);
     setError(null);
@@ -312,11 +321,12 @@ function AuthenticatedPanelArtifactImage({
         const response = await fetch(src, { headers: { 'x-axon-panel-token': panelToken } });
         if (!response.ok) throw new Error(`artifact fetch failed with ${response.status}`);
         const blob = await previewableRasterBlob(response);
-        blobUrl = URL.createObjectURL(blob);
+        const blobUrl = URL.createObjectURL(blob);
         if (cancelled) {
           URL.revokeObjectURL(blobUrl);
           return;
         }
+        activeUrlRef.current = blobUrl;
         setObjectUrl(blobUrl);
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
@@ -327,7 +337,7 @@ function AuthenticatedPanelArtifactImage({
 
     return () => {
       cancelled = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      revokeActiveUrl();
     };
   }, [panelToken, src]);
 
@@ -341,7 +351,7 @@ function AuthenticatedPanelArtifactImage({
       onError={() => {
         // The img is being replaced by the error text, so revoke its blob now
         // instead of waiting for the next effect run / unmount.
-        URL.revokeObjectURL(objectUrl);
+        revokeActiveUrl();
         setObjectUrl(null);
         setError('image decode failed');
       }}

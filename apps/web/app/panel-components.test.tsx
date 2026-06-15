@@ -98,6 +98,29 @@ describe('panel artifact rendering', () => {
     expect(host.querySelector('img')).toBeNull();
   });
 
+  it('revokes the object URL and shows an error when the image fails to decode', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('png', {
+        headers: { 'content-type': 'image/png', 'content-length': '3' }
+      })
+    );
+
+    await act(async () => {
+      root.render(<CommandResultCard result={commandResult()} panelToken="panel-token" />);
+    });
+
+    const img = host.querySelector('img');
+    expect(img?.getAttribute('src')).toBe('blob:artifact');
+
+    await act(async () => {
+      img?.dispatchEvent(new Event('error'));
+    });
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:artifact');
+    expect(host.querySelector('img')).toBeNull();
+    expect(host.textContent).toContain('Preview unavailable: image decode failed');
+  });
+
   it('shows artifact row errors when download/open fails', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('missing', { status: 404 }));
 
