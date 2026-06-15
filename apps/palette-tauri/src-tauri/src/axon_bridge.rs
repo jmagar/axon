@@ -160,8 +160,6 @@ pub(crate) async fn axon_http_request(
 pub(crate) async fn axon_artifact_request(
     app: AppHandle,
     bridge: tauri::State<'_, BridgeClient>,
-    _base_url: Option<String>,
-    _token: Option<String>,
     relative_path: String,
 ) -> Result<AxonArtifactResult, String> {
     let settings = merged_settings(&app)?;
@@ -232,7 +230,7 @@ where
         if (body.len() + chunk.len()) as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
             return Err(ARTIFACT_TOO_LARGE.to_string());
         }
-        body.extend_from_slice(&chunk);
+        body.extend_from_slice(chunk);
     }
     Ok(body)
 }

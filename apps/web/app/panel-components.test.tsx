@@ -82,6 +82,24 @@ describe('panel artifact rendering', () => {
     expect(host.querySelector('.artifact-name')?.textContent).toBe('shot.png');
   });
 
+  it('rejects oversized previews via blob size when content-length is absent', async () => {
+    // No content-length header, so the header-based cap is bypassed; the
+    // post-download blob.size check is the real defense and must still trip.
+    const oversized = new Response('x', { headers: { 'content-type': 'image/png' } });
+    vi.spyOn(oversized, 'blob').mockResolvedValue({
+      size: 9 * 1024 * 1024,
+      type: 'image/png'
+    } as Blob);
+    vi.mocked(fetch).mockResolvedValue(oversized);
+
+    await act(async () => {
+      root.render(<CommandResultCard result={commandResult()} panelToken="panel-token" />);
+    });
+
+    expect(host.textContent).toContain('Preview unavailable: artifact is too large to preview');
+    expect(host.querySelector('img')).toBeNull();
+  });
+
   it('shows artifact row errors when download/open fails', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('missing', { status: 404 }));
 

@@ -475,7 +475,17 @@ function AuthenticatedArtifactImage({ relativePath, alt }: { relativePath: strin
   return (
     <section className="operation-section">
       <figure className="operation-screenshot-preview">
-        <img src={objectUrl} alt={alt} />
+        <img
+          src={objectUrl}
+          alt={alt}
+          onError={() => {
+            // The img is being replaced by the error text, so revoke its blob now
+            // instead of waiting for the next effect run / unmount.
+            URL.revokeObjectURL(objectUrl);
+            setObjectUrl(null);
+            setError("image decode failed");
+          }}
+        />
       </figure>
     </section>
   );

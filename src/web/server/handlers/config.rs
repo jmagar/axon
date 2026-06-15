@@ -369,9 +369,11 @@ fn sanitize_status_payload(mut value: serde_json::Value) -> serde_json::Value {
 
 /// Serve an artifact file from the configured output directory.
 ///
-///  must be a relative path (no , no leading ) — enforced
-/// by . Files are served from , the
-/// same root used when constructing  values.
+/// Requires a valid panel session, then delegates to
+/// [`super::artifacts::serve_artifact_from_path`], which validates `rel_path`
+/// (rejecting absolute paths, `..` traversal, symlinks, and escapes of
+/// `cfg.output_dir`) before streaming the file. The output root is the same one
+/// used when constructing the artifact handle paths the panel links to.
 pub async fn panel_artifact(
     State((state, cfg)): State<(AppState, Arc<Config>)>,
     headers: HeaderMap,

@@ -332,7 +332,13 @@ function AuthenticatedPanelArtifactImage({
       className="palette-result-image"
       src={objectUrl}
       alt={alt}
-      onError={() => setError('image decode failed')}
+      onError={() => {
+        // The img is being replaced by the error text, so revoke its blob now
+        // instead of waiting for the next effect run / unmount.
+        URL.revokeObjectURL(objectUrl);
+        setObjectUrl(null);
+        setError('image decode failed');
+      }}
     />
   );
 }

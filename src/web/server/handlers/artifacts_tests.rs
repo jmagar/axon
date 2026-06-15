@@ -106,3 +106,20 @@ fn artifact_content_types_are_inferred_from_extension() {
             .starts_with("attachment")
     );
 }
+
+#[test]
+fn download_filename_strips_header_injection_characters() {
+    // A double-quote is not rejected by `is_structurally_unsafe`, so it can reach
+    // the Content-Disposition header; CR/LF would split headers. Both must be
+    // sanitized to `_` and only the leaf name should appear.
+    let disposition = artifact_headers_for_path("jobs/abc/re\"port\r\n.json")
+        .content_disposition
+        .expect("non-inline type should have a disposition");
+    assert_eq!(disposition, "attachment; filename=\"re_port__.json\"");
+
+    // The directory prefix must not leak into the filename.
+    let nested = artifact_headers_for_path("jobs/abc123/output.log")
+        .content_disposition
+        .expect("log is non-inline");
+    assert_eq!(nested, "attachment; filename=\"output.log\"");
+}

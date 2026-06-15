@@ -74,11 +74,18 @@ pub(crate) async fn serve_artifact_from_path(
 ) -> Result<Response, HttpError> {
     let artifact_path = resolve_artifact_path(&cfg.output_dir, &raw_path).await?;
     let file = tokio::fs::File::open(&artifact_path).await.map_err(|e| {
-        HttpError::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "read_error",
-            format!("failed to open artifact: {e}"),
-        )
+        // `resolve_artifact_path` already validated existence, but the file can be
+        // removed in the TOCTOU window before this open. Treat a vanished file as a
+        // 404 rather than a 500 so the status reflects the real cause.
+        if e.kind() == std::io::ErrorKind::NotFound {
+            artifact_not_found(&raw_path)
+        } else {
+            HttpError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "read_error",
+                format!("failed to open artifact: {e}"),
+            )
+        }
     })?;
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
@@ -146,6 +153,10 @@ fn artifact_not_found(path: &str) -> HttpError {
 
 async fn reject_symlink_components(root: &StdPath, raw_path: &str) -> Result<(), HttpError> {
     let mut current: PathBuf = root.to_path_buf();
+    // Defense-in-depth only: decode so that an encoded separator/component can't
+    // hide a symlink hop from this walk. The authoritative escape guard is the
+    // `canonicalize()` + `starts_with(canonical_root)` check in
+    // `resolve_artifact_path`, which operates on the joined raw path.
     let decoded = percent_decode_str(raw_path).decode_utf8_lossy();
     for component in decoded.split('/') {
         if component.is_empty() {
