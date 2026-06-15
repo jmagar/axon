@@ -7,6 +7,14 @@ use crate::{merged_settings, validate_saved_server_url};
 
 const PALETTE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const MAX_ARTIFACT_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
+const ARTIFACT_TOO_LARGE: &str = "artifact is too large to preview";
+const RASTER_ARTIFACT_CONTENT_TYPES: &[&str] = &[
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/avif",
+];
 
 /// A shared `reqwest::Client` held in Tauri `AppState`.
 ///
@@ -152,8 +160,8 @@ pub(crate) async fn axon_http_request(
 pub(crate) async fn axon_artifact_request(
     app: AppHandle,
     bridge: tauri::State<'_, BridgeClient>,
-    #[allow(unused_variables)] base_url: Option<String>,
-    #[allow(unused_variables)] token: Option<String>,
+    _base_url: Option<String>,
+    _token: Option<String>,
     relative_path: String,
 ) -> Result<AxonArtifactResult, String> {
     let settings = merged_settings(&app)?;
@@ -195,7 +203,7 @@ pub(crate) async fn axon_artifact_request(
         return Err("artifact content type is not previewable".to_string());
     }
     if response.content_length().unwrap_or(0) > MAX_ARTIFACT_PREVIEW_BYTES {
-        return Err("artifact is too large to preview".to_string());
+        return Err(ARTIFACT_TOO_LARGE.to_string());
     }
     let bytes = read_limited_artifact_body(response).await?;
 
@@ -221,9 +229,8 @@ where
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|err| err.to_string())?;
         let chunk = chunk.as_ref();
-        let next_len = body.len() + chunk.len();
-        if next_len as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
-            return Err("artifact is too large to preview".to_string());
+        if (body.len() + chunk.len()) as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
+            return Err(ARTIFACT_TOO_LARGE.to_string());
         }
         body.extend_from_slice(&chunk);
     }
@@ -252,10 +259,8 @@ fn artifact_url(base_url: &str, relative_path: &str) -> Result<url::Url, String>
 }
 
 fn is_allowed_artifact_content_type(value: &str) -> bool {
-    matches!(
-        value.split(';').next().unwrap_or("").trim(),
-        "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/avif"
-    )
+    let media_type = value.split(';').next().unwrap_or("").trim();
+    RASTER_ARTIFACT_CONTENT_TYPES.contains(&media_type)
 }
 
 fn validate_axon_route(request: &AxonHttpRequest) -> Result<&str, String> {

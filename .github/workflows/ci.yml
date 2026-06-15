@@ -301,6 +301,8 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - name: Install web panel dependencies
         run: npm ci --prefix apps/web
+      - name: Test web panel
+        run: npm --prefix apps/web test
       - name: Build web panel assets
         run: npm --prefix apps/web run build
       - name: cargo build --release -p axon (windows-gnu cross)

@@ -436,38 +436,38 @@ function ScreenshotView({ payload }: { payload: Record<string, unknown> }) {
 
 function AuthenticatedArtifactImage({ relativePath, alt }: { relativePath: string; alt: string }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let resolvedUrl: string | null = null;
+    let activeUrl: string | null = null;
 
     setObjectUrl(null);
-    setFailed(false);
+    setError(null);
 
     loadArtifactObjectUrl(relativePath)
       .then((url) => {
-        resolvedUrl = url;
         if (cancelled) {
           URL.revokeObjectURL(url);
           return;
         }
+        activeUrl = url;
         setObjectUrl(url);
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
 
     return () => {
       cancelled = true;
-      if (resolvedUrl) URL.revokeObjectURL(resolvedUrl);
+      if (activeUrl) URL.revokeObjectURL(activeUrl);
     };
   }, [relativePath]);
 
-  if (failed) {
+  if (error) {
     return (
       <section className="operation-section">
-        <p className="operation-muted">Preview unavailable</p>
+        <p className="operation-muted">Preview unavailable: {error}</p>
       </section>
     );
   }

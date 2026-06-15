@@ -373,7 +373,7 @@ This section describes the behavior contract between the server and user-facing 
 | Consumer | Behavior | Expectations |
 |---|---|---|
 | Automation / agents / CLI | Fire-and-forget or explicit `--wait`; receives 202 with `job_id` + `status_url` | Raw JSON, job IDs, absolute paths all acceptable |
-| Desktop palette / web panel | Renders artifact handles from completed inline results; generalized app job polling is deferred to `axon_rust-gnb6.5` | No raw absolute paths as primary output; previews use authenticated artifact access |
+| Desktop palette / web panel | Renders artifact handles from completed inline results; generalized app job polling is deferred to `axon_rust-gnb6.5` | No raw absolute paths as primary output; authenticated artifact previews only |
 
 ### Accepted-job response (202)
 
@@ -428,9 +428,9 @@ Screenshot commands return an `artifact_handle` alongside the standard response 
 
 Artifact handles are the app contract. Absolute `path` fields are debug metadata for the server host and must not be used as a primary UI label or preview source.
 
-Web panel previews fetch `/api/panel/artifact/{relative_path}` with panel-auth headers and render object URLs. REST clients use `GET /v1/artifacts?path=<relative_path>` with normal `axon:read` auth. The Tauri palette previews raster image artifact bytes through its dedicated capped artifact bridge command and renders object URLs.
+Web panel previews fetch `/api/panel/artifact/{relative_path}` with panel auth and render object URLs. REST clients use `GET /v1/artifacts?path=<relative_path>` with normal `axon:read` auth. The Tauri palette fetches raster image bytes through its capped artifact bridge command and renders object URLs.
 
-Only raster image artifacts are previewed inline. Active or ambiguous artifact types such as HTML, SVG, and unknown extensions are served as opaque attachments with `X-Content-Type-Options: nosniff`. JSON, markdown, text, and logs keep accurate passive content types but are still served as attachments.
+Only raster image artifacts are previewed inline. Active or ambiguous types such as HTML, SVG, and unknown extensions are served as attachments with `X-Content-Type-Options: nosniff`. JSON, markdown, text, and logs keep accurate passive content types but are still attachments.
 
 ### What must not regress
 

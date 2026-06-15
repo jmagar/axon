@@ -718,12 +718,12 @@ Add to `docs/reference/job-lifecycle.md`:
 Automation-facing REST job submission routes keep returning `202 AcceptedJob`.
 This artifact UX contract does not change job submission semantics.
 
-Artifact handles are the app contract. Absolute `path` fields are debug metadata
-for the server host. Web panel previews fetch `/api/panel/artifact/{relative_path}`
-with panel-auth headers and render object URLs. REST clients use
+Artifact handles are the app contract. Absolute `path` fields are server-host
+debug metadata. Web panel previews fetch `/api/panel/artifact/{relative_path}`
+with panel auth and render object URLs. REST clients use
 `GET /v1/artifacts?path=...` with normal `axon:read` auth. Tauri palette previews
-fetch raster image artifact bytes through the dedicated capped artifact bridge
-command and render object URLs.
+fetch raster image bytes through the capped artifact bridge command and render
+object URLs.
 
 Only raster image artifacts are previewed inline. Active or ambiguous artifact
 types such as HTML and SVG are served as opaque attachments with `nosniff`.
@@ -742,11 +742,10 @@ Artifact download:
   requires read auth.
 - Clients must pass the `relative_path` from an `ArtifactHandle`; absolute server
   paths are not accepted.
-- Browser apps must fetch bytes with panel auth and render object URLs; image
-  tags must not point directly at authenticated artifact routes.
-- HTML, SVG, and unknown artifact types are not inline preview content. JSON,
-  markdown, text, and logs keep accurate passive content types but are still
-  served as attachments with `nosniff`.
+- Browser apps must fetch authenticated bytes and render object URLs; image tags
+  must not point directly at authenticated artifact routes.
+- Only raster image artifacts are inline preview content. HTML, SVG, unknown
+  types, JSON, markdown, text, and logs are served as attachments with `nosniff`.
 ```
 
 - [x] **Step 3: Run backend verification**
@@ -766,7 +765,7 @@ Run:
 
 ```bash
 cd apps/web
-pnpm vitest run app/command-format.test.ts
+npm test
 pnpm tsc --noEmit
 cd ../palette-tauri/src-tauri
 cargo test axon_bridge -- --nocapture
@@ -803,6 +802,11 @@ Deferred bead: `axon_rust-gnb6.5` for generalized user-facing app job polling.
 - Requirements: one foreground poller per active run, abortable cleanup, backoff, max duration, visible failure state, terminal `result_json` and artifact rendering, tests for stale/unmount/server-down behavior.
 - Non-goal for this plan: changing `/v1/crawl`, `/v1/embed`, `/v1/extract`, or `/v1/ingest` `202 AcceptedJob` semantics.
 
+Additional post-review follow-up candidates:
+
+- Add command-level HTTP mock tests for `axon_artifact_request` auth header forwarding, non-2xx response shape, rejected response content types, and oversized `Content-Length`.
+- Add direct route-level tests for `serve_artifact_from_path` streaming headers and legacy path/query route parity. The dangerous resolver/header boundaries are covered in this plan; these route tests are lower-risk belt-and-suspenders coverage.
+
 ## Self-Review
 
 Spec coverage:
@@ -813,6 +817,7 @@ Spec coverage:
 - Web panel and palette avoid raw absolute paths as the primary contract: Tasks 2 and 3.
 - Security review findings are covered: active content attachment policy, `nosniff`, stronger path validation, symlink-component checks, and dedicated Tauri artifact bridge.
 - Performance review findings are covered: streaming artifact responses, preview byte cap, object URL cleanup, and deferral of broad polling.
+- Final PR-review findings are covered: web Vitest runs in CI, web component tests cover authenticated fetch/error behavior, preview artifacts remain downloadable when preview fails, and web/Tauri preview failures preserve specific error messages.
 
 Placeholder scan:
 

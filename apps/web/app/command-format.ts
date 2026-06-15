@@ -293,10 +293,8 @@ export function formatCommandResponse(response: PanelCommandResponse): CommandRe
   const artifacts = extractArtifactHandles(result);
 
   const handle = extractArtifactHandle(result);
-  const imageUrl = handle && isPreviewableRasterArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
-  const visibleArtifacts = imageUrl
-    ? artifacts.filter((artifact) => artifact.relative_path !== handle?.relative_path)
-    : artifacts;
+  const imageArtifact = handle && isPreviewableRasterArtifact(handle) ? handle : undefined;
+  const imageUrl = imageArtifact ? panelArtifactUrl(imageArtifact.relative_path) : undefined;
 
   return {
     ok: true,
@@ -304,9 +302,9 @@ export function formatCommandResponse(response: PanelCommandResponse): CommandRe
     subtitle,
     rows: compactRows(rows),
     body: commandResultBody(action, result),
-    artifacts: visibleArtifacts.length > 0 ? visibleArtifacts : undefined,
+    artifacts: artifacts.length > 0 ? artifacts : undefined,
     raw: shouldShowRawResult(action, result) ? JSON.stringify(response.result, null, 2) : undefined,
     imageUrl,
-    imageArtifact: imageUrl && handle ? handle : undefined
+    imageArtifact
   };
 }

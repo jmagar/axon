@@ -25,7 +25,14 @@ import type {
   StackCheck,
   StackUrlCheck
 } from './panel-types';
-import { compactJobTarget, formatBytes, isPreviewableRasterArtifact, panelArtifactUrl, titleLabel } from './command-format';
+import {
+  MAX_INLINE_ARTIFACT_BYTES,
+  compactJobTarget,
+  formatBytes,
+  isPreviewableRasterArtifact,
+  panelArtifactUrl,
+  titleLabel
+} from './command-format';
 import { normalizeJobStatus, jobTargetFromUrls, jobKindLabel } from './job-helpers';
 import type { ServiceJob } from './panel-types';
 
@@ -54,6 +61,8 @@ const urlIcons: Record<string, LucideIcon> = {
   'Qdrant readyz': Database,
   'TEI health': Cpu
 };
+
+const PREVIEWABLE_RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
 
 // ---------------------------------------------------------------------------
 // Pure check/status utility functions
@@ -283,41 +292,49 @@ function AuthenticatedPanelArtifactImage({
   src: string;
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let resolvedUrl: string | null = null;
+    let blobUrl: string | null = null;
 
     setObjectUrl(null);
-    setFailed(false);
+    setError(null);
 
-    fetch(src, { headers: { 'x-axon-panel-token': panelToken } })
-      .then(async (response) => {
+    async function loadArtifactImage() {
+      try {
+        const response = await fetch(src, { headers: { 'x-axon-panel-token': panelToken } });
         if (!response.ok) throw new Error(`artifact fetch failed with ${response.status}`);
-        return response.blob();
-      })
-      .then((blob) => {
-        resolvedUrl = URL.createObjectURL(blob);
+        const blob = await previewableRasterBlob(response);
+        blobUrl = URL.createObjectURL(blob);
         if (cancelled) {
-          URL.revokeObjectURL(resolvedUrl);
+          URL.revokeObjectURL(blobUrl);
           return;
         }
-        setObjectUrl(resolvedUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+        setObjectUrl(blobUrl);
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err));
+      }
+    }
+
+    void loadArtifactImage();
 
     return () => {
       cancelled = true;
-      if (resolvedUrl) URL.revokeObjectURL(resolvedUrl);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [panelToken, src]);
 
-  if (failed) return <p className="palette-result-body">Preview unavailable</p>;
+  if (error) return <p className="palette-result-body">Preview unavailable: {error}</p>;
   if (!objectUrl) return null;
-  return <img className="palette-result-image" src={objectUrl} alt={alt} />;
+  return (
+    <img
+      className="palette-result-image"
+      src={objectUrl}
+      alt={alt}
+      onError={() => setError('image decode failed')}
+    />
+  );
 }
 
 export function ArtifactRow({ artifact, panelToken }: { artifact: ArtifactHandle; panelToken: string }) {
@@ -325,25 +342,30 @@ export function ArtifactRow({ artifact, panelToken }: { artifact: ArtifactHandle
   const src = panelArtifactUrl(artifact.relative_path);
   const name = artifact.display_path.split('/').pop() ?? artifact.display_path;
   const meta = formatBytes(artifact.bytes ?? 0) + (artifact.line_count ? ` · ${artifact.line_count.toLocaleString()} lines` : '');
+  const actionLabel = isImage ? '↗' : '↓';
+  const [error, setError] = useState<string | null>(null);
 
-  if (isImage) {
-    return (
-      <div className="artifact-row artifact-row-image">
+  return (
+    <>
+      <div className={`artifact-row${isImage ? ' artifact-row-image' : ''}`}>
         <span className="artifact-kind">{artifact.kind}</span>
         <span className="artifact-name" title={artifact.display_path}>{name}</span>
         <span className="artifact-meta">{meta}</span>
-        <button type="button" onClick={() => void openPanelArtifact(src, panelToken, name)} className="artifact-download">↗</button>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            void openPanelArtifact(src, panelToken, name).catch((err) => {
+              setError(`Could not open ${name}: ${errorMessage(err)}`);
+            });
+          }}
+          className="artifact-download"
+        >
+          {actionLabel}
+        </button>
       </div>
-    );
-  }
-
-  return (
-    <div className="artifact-row">
-      <span className="artifact-kind">{artifact.kind}</span>
-      <span className="artifact-name" title={artifact.display_path}>{name}</span>
-      <span className="artifact-meta">{meta}</span>
-      <button type="button" onClick={() => void openPanelArtifact(src, panelToken, name)} className="artifact-download">↓</button>
-    </div>
+      {error && <p className="artifact-error">{error}</p>}
+    </>
   );
 }
 
@@ -360,6 +382,28 @@ async function openPanelArtifact(src: string, panelToken: string, filename: stri
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+}
+
+async function previewableRasterBlob(response: Response): Promise<Blob> {
+  const type = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!PREVIEWABLE_RASTER_TYPES.has(type)) {
+    throw new Error(`artifact is ${type || 'unknown type'}, not a previewable image`);
+  }
+
+  const length = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(length) && length > MAX_INLINE_ARTIFACT_BYTES) {
+    throw new Error('artifact is too large to preview');
+  }
+
+  const blob = await response.blob();
+  if (blob.size > MAX_INLINE_ARTIFACT_BYTES) {
+    throw new Error('artifact is too large to preview');
+  }
+  return blob;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function DoctorCard({ service }: { service: DoctorService & { name: string } }) {

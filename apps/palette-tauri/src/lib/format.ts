@@ -199,13 +199,13 @@ function truncateTextDiff(text: string): string {
 
 function screenshotReport(value: Record<string, unknown>): string {
   const artifact = recordField(value, "artifact_handle");
+  const artifactDisplay = artifact
+    ? (stringField(artifact, "display_path") ?? stringField(artifact, "relative_path"))
+    : undefined;
   return [
     "## Screenshot captured",
     stringField(value, "url") ?? "",
-    artifact && stringField(artifact, "display_path") ? `artifact: ${stringField(artifact, "display_path")}` : "",
-    artifact && stringField(artifact, "relative_path") && !stringField(artifact, "display_path")
-      ? `artifact: ${stringField(artifact, "relative_path")}`
-      : "",
+    artifactDisplay ? `artifact: ${artifactDisplay}` : "",
     numberField(value, "size_bytes") !== undefined ? `bytes: ${numberField(value, "size_bytes")}` : "",
   ]
     .filter(Boolean)

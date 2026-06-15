@@ -72,24 +72,14 @@ pub(crate) async fn serve_artifact_from_path(
     cfg: &crate::core::config::Config,
     raw_path: String,
 ) -> Result<Response, HttpError> {
-    if is_structurally_unsafe(&raw_path) {
-        return Err(HttpError::new(
-            StatusCode::BAD_REQUEST,
-            "invalid_path",
-            "path contains traversal components or is absolute",
-        ));
-    }
-
-    let canonical_candidate = resolve_artifact_path(&cfg.output_dir, &raw_path).await?;
-    let file = tokio::fs::File::open(&canonical_candidate)
-        .await
-        .map_err(|e| {
-            HttpError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "read_error",
-                format!("failed to open artifact: {e}"),
-            )
-        })?;
+    let artifact_path = resolve_artifact_path(&cfg.output_dir, &raw_path).await?;
+    let file = tokio::fs::File::open(&artifact_path).await.map_err(|e| {
+        HttpError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "read_error",
+            format!("failed to open artifact: {e}"),
+        )
+    })?;
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
     Ok(artifact_headers_for_path(&raw_path).into_response(body))
@@ -107,8 +97,6 @@ pub(crate) async fn resolve_artifact_path(
         ));
     }
 
-    let candidate = root.join(raw_path);
-
     let canonical_root = tokio::fs::canonicalize(root).await.map_err(|_| {
         HttpError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -118,13 +106,10 @@ pub(crate) async fn resolve_artifact_path(
     })?;
     reject_symlink_components(&canonical_root, raw_path).await?;
 
+    let candidate = root.join(raw_path);
     let canonical_candidate = tokio::fs::canonicalize(&candidate).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            HttpError::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                format!("artifact not found: {raw_path}"),
-            )
+            artifact_not_found(raw_path)
         } else {
             HttpError::new(
                 StatusCode::FORBIDDEN,
@@ -144,21 +129,19 @@ pub(crate) async fn resolve_artifact_path(
 
     let meta = tokio::fs::metadata(&canonical_candidate)
         .await
-        .map_err(|_| {
-            HttpError::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                format!("artifact not found: {raw_path}"),
-            )
-        })?;
+        .map_err(|_| artifact_not_found(raw_path))?;
     if !meta.is_file() {
-        return Err(HttpError::new(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            format!("artifact not found: {raw_path}"),
-        ));
+        return Err(artifact_not_found(raw_path));
     }
     Ok(canonical_candidate)
+}
+
+fn artifact_not_found(path: &str) -> HttpError {
+    HttpError::new(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        format!("artifact not found: {path}"),
+    )
 }
 
 async fn reject_symlink_components(root: &StdPath, raw_path: &str) -> Result<(), HttpError> {
@@ -259,12 +242,6 @@ fn is_inline_content_type(content_type: &str) -> bool {
         content_type,
         "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif"
     )
-}
-
-/// Infer a safe `Content-Type` value from the file extension in `path`.
-#[cfg(test)]
-pub(crate) fn infer_content_type(path: &str) -> &'static str {
-    artifact_headers_for_path(path).content_type
 }
 
 fn safe_download_filename(path: &str) -> String {
