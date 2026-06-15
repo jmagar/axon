@@ -24,7 +24,7 @@ import type {
   StackCheck,
   StackUrlCheck
 } from './panel-types';
-import { compactJobTarget, formatBytes, titleLabel } from './command-format';
+import { compactJobTarget, formatBytes, panelArtifactUrl, titleLabel } from './command-format';
 import { normalizeJobStatus, jobTargetFromUrls, jobKindLabel } from './job-helpers';
 import type { ServiceJob } from './panel-types';
 
@@ -271,7 +271,7 @@ export function CommandResultCard({ result }: { result: CommandResultView }) {
 export function ArtifactRow({ artifact }: { artifact: ArtifactHandle }) {
   const isScreenshot = artifact.kind === 'screenshot';
   const isImage = isScreenshot || artifact.kind.startsWith('image');
-  const src = `/api/panel/artifact/${artifact.relative_path}`;
+  const src = panelArtifactUrl(artifact.relative_path);
   const name = artifact.display_path.split('/').pop() ?? artifact.display_path;
   const meta = formatBytes(artifact.bytes ?? 0) + (artifact.line_count ? ` · ${artifact.line_count.toLocaleString()} lines` : '');
 

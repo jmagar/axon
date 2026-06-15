@@ -58,6 +58,14 @@ export function extractArtifactHandles(result: Record<string, unknown> | null): 
   );
 }
 
+export function isImageArtifact(handle: ArtifactHandle): boolean {
+  return handle.kind === 'screenshot' || handle.kind === 'image' || handle.kind.startsWith('image/');
+}
+
+export function panelArtifactUrl(relativePath: string): string {
+  return `/api/panel/artifact/${relativePath.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export function arrayField(record: Record<string, unknown>, key: string): unknown[] {
   return Array.isArray(record[key]) ? record[key] : [];
 }
@@ -275,7 +283,7 @@ export function formatCommandResponse(response: PanelCommandResponse): CommandRe
   const artifacts = extractArtifactHandles(result);
 
   const handle = extractArtifactHandle(result);
-  const imageUrl = handle ? `/v1/artifacts/${handle.relative_path}` : undefined;
+  const imageUrl = handle && isImageArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
 
   return {
     ok: true,
