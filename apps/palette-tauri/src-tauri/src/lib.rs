@@ -460,6 +460,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             toggle_maximize,
             set_blur_dismiss,
             axon_bridge::axon_http_request,
+            axon_bridge::axon_artifact_request,
             axon_http_stream_request
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))

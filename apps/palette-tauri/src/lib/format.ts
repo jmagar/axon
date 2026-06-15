@@ -202,8 +202,10 @@ function screenshotReport(value: Record<string, unknown>): string {
   return [
     "## Screenshot captured",
     stringField(value, "url") ?? "",
-    stringField(value, "path") ? `path: ${stringField(value, "path")}` : "",
-    artifact && stringField(artifact, "display_path") ? `display: ${stringField(artifact, "display_path")}` : "",
+    artifact && stringField(artifact, "display_path") ? `artifact: ${stringField(artifact, "display_path")}` : "",
+    artifact && stringField(artifact, "relative_path") && !stringField(artifact, "display_path")
+      ? `artifact: ${stringField(artifact, "relative_path")}`
+      : "",
     numberField(value, "size_bytes") !== undefined ? `bytes: ${numberField(value, "size_bytes")}` : "",
   ]
     .filter(Boolean)

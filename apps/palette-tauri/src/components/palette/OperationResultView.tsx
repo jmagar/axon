@@ -6,6 +6,7 @@ import {
   FileText,
   ServerCog,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 
 import { HelpResultView } from "@/components/palette/HelpResultView";
@@ -32,6 +33,7 @@ import {
   toneForStatus,
 } from "@/components/palette/OperationResultViewShared";
 import { arrField, boolField, isRecord, numField, strField, unwrapPayload } from "@/lib/payload";
+import { loadArtifactObjectUrl } from "@/lib/artifactPreview";
 import { STREAMDOWN_CODE_THEMES, STREAMDOWN_PLUGINS } from "@/lib/streamdownConfig";
 
 const LIST_LIMIT = 18;
@@ -402,30 +404,80 @@ function DiffView({ payload }: { payload: Record<string, unknown> }) {
 
 function ScreenshotView({ payload }: { payload: Record<string, unknown> }) {
   const artifact = isRecord(payload.artifact_handle) ? payload.artifact_handle : {};
-  const path = strField(payload, "path") ?? strField(artifact, "display_path");
+  const relativePath = strField(artifact, "relative_path");
+  const artifactDisplay = strField(artifact, "display_path") ?? relativePath;
   const previewSrc =
     imagePreviewSrc(strField(payload, "preview_url")) ??
     imagePreviewSrc(strField(payload, "image_url")) ??
     imagePreviewSrc(strField(payload, "data_url")) ??
-    imagePreviewSrc(strField(artifact, "url")) ??
-    imagePreviewSrc(path);
+    imagePreviewSrc(strField(artifact, "url"));
+  const alt = `Screenshot of ${strField(payload, "url") ?? "captured page"}`;
   return (
     <div className="output-body operation-view aurora-scrollbar">
       <ResultHero icon={<FileImage size={16} />} title="Screenshot captured" tone="violet" metrics={[["Size", formatDetailValue("size_bytes", numField(payload, "size_bytes"))]]} />
       {previewSrc ? (
         <section className="operation-section">
           <figure className="operation-screenshot-preview">
-            <img src={previewSrc} alt={`Screenshot of ${strField(payload, "url") ?? "captured page"}`} />
+            <img src={previewSrc} alt={alt} />
           </figure>
         </section>
+      ) : relativePath ? (
+        <AuthenticatedArtifactImage relativePath={relativePath} alt={alt} />
       ) : null}
       <section className="operation-section">
         <div className="operation-detail-card">
           <DetailLine label="URL" value={strField(payload, "url") ?? "-"} mono />
-          <DetailLine label="Path" value={path ?? "-"} mono />
+          <DetailLine label="Artifact" value={artifactDisplay ?? "-"} mono />
         </div>
       </section>
     </div>
+  );
+}
+
+function AuthenticatedArtifactImage({ relativePath, alt }: { relativePath: string; alt: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let resolvedUrl: string | null = null;
+
+    setObjectUrl(null);
+    setFailed(false);
+
+    loadArtifactObjectUrl(relativePath)
+      .then((url) => {
+        resolvedUrl = url;
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setObjectUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (resolvedUrl) URL.revokeObjectURL(resolvedUrl);
+    };
+  }, [relativePath]);
+
+  if (failed) {
+    return (
+      <section className="operation-section">
+        <p className="operation-muted">Preview unavailable</p>
+      </section>
+    );
+  }
+  if (!objectUrl) return null;
+  return (
+    <section className="operation-section">
+      <figure className="operation-screenshot-preview">
+        <img src={objectUrl} alt={alt} />
+      </figure>
+    </section>
   );
 }
 

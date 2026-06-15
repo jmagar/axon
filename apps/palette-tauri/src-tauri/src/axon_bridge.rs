@@ -1,9 +1,11 @@
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::{merged_settings, validate_saved_server_url};
 
 const PALETTE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const MAX_ARTIFACT_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
 
 /// A shared `reqwest::Client` held in Tauri `AppState`.
 ///
@@ -83,6 +85,15 @@ pub(crate) struct AxonHttpResult {
     payload: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AxonArtifactResult {
+    ok: bool,
+    status: u16,
+    content_type: String,
+    body_base64: String,
+}
+
 #[tauri::command]
 pub(crate) async fn axon_http_request(
     app: AppHandle,
@@ -134,6 +145,96 @@ pub(crate) async fn axon_http_request(
         method,
         payload,
     })
+}
+
+#[tauri::command]
+pub(crate) async fn axon_artifact_request(
+    app: AppHandle,
+    bridge: tauri::State<'_, BridgeClient>,
+    #[allow(unused_variables)] base_url: Option<String>,
+    #[allow(unused_variables)] token: Option<String>,
+    relative_path: String,
+) -> Result<AxonArtifactResult, String> {
+    let settings = merged_settings(&app)?;
+    let base_url = validate_saved_server_url(&settings.server_url)?;
+    let url = artifact_url(&base_url, &relative_path)?;
+    let client = (*bridge).client();
+    let mut request = client.get(url).header(
+        reqwest::header::ACCEPT,
+        "image/png, image/jpeg, image/webp, image/gif, image/avif",
+    );
+
+    if let Some(token) = settings
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        request = request.bearer_auth(token).header("x-api-key", token);
+    }
+
+    let response = request.send().await.map_err(|err| err.to_string())?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    if !status.is_success() {
+        return Ok(AxonArtifactResult {
+            ok: false,
+            status: status.as_u16(),
+            content_type,
+            body_base64: String::new(),
+        });
+    }
+    if !is_allowed_artifact_content_type(&content_type) {
+        return Err("artifact content type is not previewable".to_string());
+    }
+    if response.content_length().unwrap_or(0) > MAX_ARTIFACT_PREVIEW_BYTES {
+        return Err("artifact is too large to preview".to_string());
+    }
+    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+    if bytes.len() as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
+        return Err("artifact is too large to preview".to_string());
+    }
+
+    Ok(AxonArtifactResult {
+        ok: true,
+        status: status.as_u16(),
+        content_type,
+        body_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+    })
+}
+
+fn validate_artifact_relative_path(path: &str) -> Result<(), String> {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\0')
+        || path.contains('\\')
+        || path.contains(':')
+        || path.split('/').any(|part| part == ".." || part.is_empty())
+    {
+        return Err("artifact path must be a safe relative path".to_string());
+    }
+    Ok(())
+}
+
+fn artifact_url(base_url: &str, relative_path: &str) -> Result<url::Url, String> {
+    validate_artifact_relative_path(relative_path)?;
+    let mut url = url::Url::parse(base_url).map_err(|err| err.to_string())?;
+    url.set_path("/v1/artifacts");
+    url.query_pairs_mut().append_pair("path", relative_path);
+    Ok(url)
+}
+
+fn is_allowed_artifact_content_type(value: &str) -> bool {
+    matches!(
+        value.split(';').next().unwrap_or("").trim(),
+        "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/avif"
+    )
 }
 
 fn validate_axon_route(request: &AxonHttpRequest) -> Result<&str, String> {

@@ -134,3 +134,31 @@ fn validates_saved_server_url_accepts_ipv6() {
         Err(_) => {} // rejection is also acceptable — URL parsing of IPv6 without scheme varies
     }
 }
+
+#[test]
+fn artifact_relative_path_validation_rejects_unsafe_values() {
+    assert!(validate_artifact_relative_path("../secret").is_err());
+    assert!(validate_artifact_relative_path(r"screenshots\\..\\secret").is_err());
+    assert!(validate_artifact_relative_path("C:\\secret").is_err());
+    assert!(validate_artifact_relative_path("screenshots/shot.png\0").is_err());
+    assert!(validate_artifact_relative_path("screenshots/shot.png").is_ok());
+}
+
+#[test]
+fn artifact_url_uses_query_encoding_without_accepting_raw_query_paths() {
+    let url = artifact_url("https://axon.local", "screenshots/foo #1.png").unwrap();
+    assert_eq!(
+        url.as_str(),
+        "https://axon.local/v1/artifacts?path=screenshots%2Ffoo+%231.png"
+    );
+}
+
+#[test]
+fn artifact_content_type_allowlist_is_raster_only() {
+    assert!(is_allowed_artifact_content_type("image/png"));
+    assert!(is_allowed_artifact_content_type(
+        "image/jpeg; charset=binary"
+    ));
+    assert!(!is_allowed_artifact_content_type("image/svg+xml"));
+    assert!(!is_allowed_artifact_content_type("text/html"));
+}
