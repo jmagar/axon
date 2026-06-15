@@ -1,4 +1,8 @@
-use super::{infer_content_type, is_structurally_unsafe};
+use super::{
+    artifact_headers_for_path, infer_content_type, is_structurally_unsafe,
+    validate_artifact_path_for_test,
+};
+use axum::http::StatusCode;
 
 // ── is_structurally_unsafe ────────────────────────────────────────────────────
 
@@ -37,6 +41,65 @@ fn subdirectory_path_is_safe() {
     assert!(!is_structurally_unsafe("jobs/abc123/output.md"));
 }
 
+#[test]
+fn unsafe_artifact_paths_are_rejected_structurally() {
+    assert!(is_structurally_unsafe("../secret.txt"));
+    assert!(is_structurally_unsafe("screenshots/../secret.txt"));
+    assert!(is_structurally_unsafe("screenshots/%2e%2e/secret.txt"));
+    assert!(is_structurally_unsafe(r"screenshots\\..\\secret.txt"));
+    assert!(is_structurally_unsafe(r"C:\\Windows\\secret.txt"));
+    assert!(is_structurally_unsafe("screenshots/shot.png\0"));
+}
+
+#[test]
+fn raster_images_are_inline_but_active_content_is_attachment() {
+    assert_eq!(
+        artifact_headers_for_path("screenshots/shot.png").content_type,
+        "image/png"
+    );
+    assert!(
+        artifact_headers_for_path("screenshots/shot.png")
+            .content_disposition
+            .is_none()
+    );
+    assert_eq!(
+        artifact_headers_for_path("page.html").content_type,
+        "application/octet-stream"
+    );
+    assert!(
+        artifact_headers_for_path("page.html")
+            .content_disposition
+            .unwrap()
+            .starts_with("attachment")
+    );
+    assert_eq!(
+        artifact_headers_for_path("logo.svg").content_type,
+        "application/octet-stream"
+    );
+}
+
+#[tokio::test]
+async fn symlink_component_under_output_root_is_forbidden() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("output");
+    let screenshots = root.join("screenshots");
+    tokio::fs::create_dir_all(&screenshots).await.unwrap();
+    tokio::fs::write(screenshots.join("real.png"), b"png")
+        .await
+        .unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(screenshots.join("real.png"), screenshots.join("alias.png"))
+        .unwrap();
+
+    #[cfg(unix)]
+    {
+        let err = validate_artifact_path_for_test(&root, "screenshots/alias.png")
+            .await
+            .expect_err("symlink should be rejected");
+        assert_eq!(err.status(), StatusCode::FORBIDDEN);
+    }
+}
+
 // ── infer_content_type ────────────────────────────────────────────────────────
 
 #[test]
@@ -56,20 +119,17 @@ fn jpeg_returns_image_jpeg() {
 
 #[test]
 fn json_returns_application_json() {
-    assert_eq!(infer_content_type("data.json"), "application/json");
+    assert_eq!(infer_content_type("data.json"), "application/octet-stream");
 }
 
 #[test]
 fn md_returns_text_markdown() {
-    assert_eq!(
-        infer_content_type("README.md"),
-        "text/markdown; charset=utf-8"
-    );
+    assert_eq!(infer_content_type("README.md"), "application/octet-stream");
 }
 
 #[test]
 fn log_returns_text_plain() {
-    assert_eq!(infer_content_type("run.log"), "text/plain; charset=utf-8");
+    assert_eq!(infer_content_type("run.log"), "application/octet-stream");
 }
 
 #[test]
@@ -92,10 +152,10 @@ fn uppercase_png_extension_returns_image_png() {
 
 #[test]
 fn svg_returns_image_svg() {
-    assert_eq!(infer_content_type("logo.svg"), "image/svg+xml");
+    assert_eq!(infer_content_type("logo.svg"), "application/octet-stream");
 }
 
 #[test]
 fn html_returns_text_html() {
-    assert_eq!(infer_content_type("page.html"), "text/html; charset=utf-8");
+    assert_eq!(infer_content_type("page.html"), "application/octet-stream");
 }

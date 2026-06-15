@@ -7,7 +7,7 @@ use crate::services::context::ServiceContext;
 use crate::services::runtime::ServiceJobRuntime;
 use crate::services::types::ServiceJob;
 use async_trait::async_trait;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use serial_test::serial;
 use std::error::Error;
 use std::sync::Arc;
@@ -144,10 +144,21 @@ pub(super) async fn spawn_ask_test_server(
 pub(super) async fn spawn_full_test_server(
     auth_policy: AuthPolicy,
 ) -> (String, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+    spawn_full_test_server_with_config(auth_policy, crate::core::config::Config::default()).await
+}
+
+pub(super) async fn spawn_full_test_server_with_config(
+    auth_policy: AuthPolicy,
+    cfg: crate::core::config::Config,
+) -> (String, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
     let home = tempfile::tempdir().expect("temp home");
     let home_guard = EnvGuard::set_key("HOME", home.path().to_str());
+    let axon_home = home.path().join(".axon");
+    std::fs::create_dir_all(&axon_home).expect("create axon home");
+    std::fs::write(axon_home.join("panel-password"), b"test-panel-token\n")
+        .expect("write panel password");
     let panel = Arc::new(super::PanelRuntimeState::initialize("127.0.0.1", 0).expect("panel"));
-    let cfg = Arc::new(crate::core::config::Config::default());
+    let cfg = Arc::new(cfg);
     let ctx = Arc::new(ServiceContext::from_runtime(
         Arc::clone(&cfg),
         Arc::new(EmptyRuntime),
@@ -176,6 +187,50 @@ pub(super) async fn spawn_full_test_server(
 pub(super) async fn stop(shutdown: oneshot::Sender<()>, handle: tokio::task::JoinHandle<()>) {
     let _ = shutdown.send(());
     handle.await.expect("server task");
+}
+
+#[tokio::test]
+#[serial]
+async fn panel_artifact_requires_panel_token_and_serves_png() {
+    let temp = tempfile::tempdir().unwrap();
+    let screenshot_dir = temp.path().join("screenshots");
+    std::fs::create_dir_all(&screenshot_dir).unwrap();
+    std::fs::write(screenshot_dir.join("shot.png"), b"png-bytes").unwrap();
+
+    let mut cfg = crate::core::config::Config::default();
+    cfg.output_dir = temp.path().to_path_buf();
+    let (base, shutdown, handle) =
+        spawn_full_test_server_with_config(AuthPolicy::LoopbackDev, cfg).await;
+    let client = reqwest::Client::new();
+
+    let unauthorized = client
+        .get(format!("{base}/api/panel/artifact/screenshots/shot.png"))
+        .send()
+        .await
+        .expect("unauthorized request");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let authorized = client
+        .get(format!("{base}/api/panel/artifact/screenshots/shot.png"))
+        .header("x-axon-panel-token", "test-panel-token")
+        .send()
+        .await
+        .expect("authorized request");
+    assert_eq!(authorized.status(), StatusCode::OK);
+    assert_eq!(
+        authorized.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+    assert_eq!(
+        authorized
+            .headers()
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
+    assert_eq!(authorized.bytes().await.unwrap().as_ref(), b"png-bytes");
+
+    stop(shutdown, handle).await;
 }
 
 #[tokio::test]
