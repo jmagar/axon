@@ -47,6 +47,8 @@ fn unsafe_artifact_paths_are_rejected_structurally() {
     assert!(is_structurally_unsafe("screenshots/../secret.txt"));
     assert!(is_structurally_unsafe("screenshots/%2e%2e/secret.txt"));
     assert!(is_structurally_unsafe(r"screenshots\\..\\secret.txt"));
+    assert!(is_structurally_unsafe(r"screenshots\\shot.png"));
+    assert!(is_structurally_unsafe("screenshots%5cshot.png"));
     assert!(is_structurally_unsafe(r"C:\\Windows\\secret.txt"));
     assert!(is_structurally_unsafe("screenshots/shot.png\0"));
 }

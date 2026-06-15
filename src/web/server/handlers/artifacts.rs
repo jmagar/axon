@@ -149,9 +149,7 @@ pub(crate) async fn serve_artifact_from_path(
 
 async fn reject_symlink_components(root: &StdPath, raw_path: &str) -> Result<(), HttpError> {
     let mut current: PathBuf = root.to_path_buf();
-    let decoded = percent_decode_str(raw_path)
-        .decode_utf8_lossy()
-        .replace('\\', "/");
+    let decoded = percent_decode_str(raw_path).decode_utf8_lossy();
     for component in decoded.split('/') {
         if component.is_empty() {
             continue;
@@ -173,16 +171,14 @@ async fn reject_symlink_components(root: &StdPath, raw_path: &str) -> Result<(),
 /// Return `true` when `path` contains traversal or absolute-path components
 /// that must be rejected before joining with any root.
 pub(crate) fn is_structurally_unsafe(path: &str) -> bool {
-    if path.is_empty() || path.starts_with('/') || path.contains('\0') {
+    if path.is_empty() || path.starts_with('/') || path.contains('\0') || path.contains('\\') {
         return true;
     }
-    let decoded = percent_decode_str(path)
-        .decode_utf8_lossy()
-        .replace('\\', "/");
-    if decoded.contains(':') {
+    let decoded = percent_decode_str(path).decode_utf8_lossy();
+    if decoded.contains(':') || decoded.contains('\\') {
         return true;
     }
-    StdPath::new(decoded.as_str()).components().any(|c| {
+    StdPath::new(decoded.as_ref()).components().any(|c| {
         matches!(
             c,
             std::path::Component::ParentDir

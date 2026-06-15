@@ -132,13 +132,12 @@ Change `is_structurally_unsafe` in `src/web/server/handlers/artifacts.rs`:
 
 ```rust
 pub(crate) fn is_structurally_unsafe(path: &str) -> bool {
-    if path.is_empty() || path.starts_with('/') || path.contains('\0') {
+    if path.is_empty() || path.starts_with('/') || path.contains('\0') || path.contains('\\') {
         return true;
     }
     let decoded = percent_encoding::percent_decode_str(path)
-        .decode_utf8_lossy()
-        .replace('\\', "/");
-    if decoded.contains(':') {
+        .decode_utf8_lossy();
+    if decoded.contains(':') || decoded.contains('\\') {
         return true;
     }
     FsPath::new(decoded.as_ref()).components().any(|c| {
@@ -161,7 +160,8 @@ Add a helper in `artifacts.rs`:
 ```rust
 async fn reject_symlink_components(root: &Path, raw_path: &str) -> Result<(), HttpError> {
     let mut current = root.to_path_buf();
-    for component in raw_path.replace('\\', "/").split('/') {
+    let decoded = percent_encoding::percent_decode_str(raw_path).decode_utf8_lossy();
+    for component in decoded.split('/') {
         if component.is_empty() {
             continue;
         }
