@@ -51,7 +51,7 @@ describe('panel artifact rendering', () => {
 
   it('keeps the artifact row visible while loading the authenticated preview', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(new Blob(['png'], { type: 'image/png' }), {
+      new Response('png', {
         headers: { 'content-type': 'image/png', 'content-length': '3' }
       })
     );
@@ -69,7 +69,7 @@ describe('panel artifact rendering', () => {
 
   it('shows preview errors when the server returns non-raster content', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(new Blob(['{}'], { type: 'application/json' }), {
+      new Response('{}', {
         headers: { 'content-type': 'application/json', 'content-length': '2' }
       })
     );
