@@ -197,8 +197,10 @@ async fn panel_artifact_requires_panel_token_and_serves_png() {
     std::fs::create_dir_all(&screenshot_dir).unwrap();
     std::fs::write(screenshot_dir.join("shot.png"), b"png-bytes").unwrap();
 
-    let mut cfg = crate::core::config::Config::default();
-    cfg.output_dir = temp.path().to_path_buf();
+    let cfg = crate::core::config::Config {
+        output_dir: temp.path().to_path_buf(),
+        ..Default::default()
+    };
     let (base, shutdown, handle) =
         spawn_full_test_server_with_config(AuthPolicy::LoopbackDev, cfg).await;
     let client = reqwest::Client::new();
