@@ -63,6 +63,7 @@ const urlIcons: Record<string, LucideIcon> = {
 };
 
 const PREVIEWABLE_RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+const MAX_OPEN_ARTIFACT_BYTES = 64 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Pure check/status utility functions
@@ -240,7 +241,12 @@ export function EmptyState({ loading, text }: { loading: boolean; text: string }
   return <p className="empty-state">{loading ? 'Checking...' : text}</p>;
 }
 
-export function CommandResultCard({ result, panelToken }: { result: CommandResultView; panelToken: string }) {
+type CommandResultCardProps = {
+  result: CommandResultView;
+  panelToken: string;
+};
+
+export function CommandResultCard({ result, panelToken }: CommandResultCardProps) {
   return (
     <section className={`palette-result ${result.ok ? 'ok' : 'error'}`} aria-live="polite">
       <div className="palette-result-heading">
@@ -343,7 +349,12 @@ function AuthenticatedPanelArtifactImage({
   );
 }
 
-export function ArtifactRow({ artifact, panelToken }: { artifact: ArtifactHandle; panelToken: string }) {
+type ArtifactRowProps = {
+  artifact: ArtifactHandle;
+  panelToken: string;
+};
+
+export function ArtifactRow({ artifact, panelToken }: ArtifactRowProps) {
   const isImage = isPreviewableRasterArtifact(artifact);
   const src = panelArtifactUrl(artifact.relative_path);
   const name = artifact.display_path.split('/').pop() ?? artifact.display_path;
@@ -378,7 +389,11 @@ export function ArtifactRow({ artifact, panelToken }: { artifact: ArtifactHandle
 async function openPanelArtifact(src: string, panelToken: string, filename: string) {
   const response = await fetch(src, { headers: { 'x-axon-panel-token': panelToken } });
   if (!response.ok) throw new Error(`artifact fetch failed with ${response.status}`);
-  const blob = await response.blob();
+  const blob = await cappedResponseBlob(
+    response,
+    MAX_OPEN_ARTIFACT_BYTES,
+    'artifact is too large to open in the panel'
+  );
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = objectUrl;
@@ -396,14 +411,41 @@ async function previewableRasterBlob(response: Response): Promise<Blob> {
     throw new Error(`artifact is ${type || 'unknown type'}, not a previewable image`);
   }
 
+  return cappedResponseBlob(response, MAX_INLINE_ARTIFACT_BYTES, 'artifact is too large to preview');
+}
+
+async function cappedResponseBlob(response: Response, maxBytes: number, tooLargeMessage: string): Promise<Blob> {
   const length = Number(response.headers.get('content-length') ?? 0);
-  if (Number.isFinite(length) && length > MAX_INLINE_ARTIFACT_BYTES) {
-    throw new Error('artifact is too large to preview');
+  if (Number.isFinite(length) && length > maxBytes) {
+    throw new Error(tooLargeMessage);
+  }
+
+  const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+  if (response.body) {
+    const reader = response.body.getReader();
+    const chunks: BlobPart[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          throw new Error(tooLargeMessage);
+        }
+        const chunk = new Uint8Array(value.byteLength);
+        chunk.set(value);
+        chunks.push(chunk.buffer);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return new Blob(chunks, { type: contentType });
   }
 
   const blob = await response.blob();
-  if (blob.size > MAX_INLINE_ARTIFACT_BYTES) {
-    throw new Error('artifact is too large to preview');
+  if (blob.size > maxBytes) {
+    throw new Error(tooLargeMessage);
   }
   return blob;
 }

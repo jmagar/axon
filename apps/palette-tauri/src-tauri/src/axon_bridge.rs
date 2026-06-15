@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use futures_util::{Stream, StreamExt as _};
+use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -7,6 +8,7 @@ use crate::{merged_settings, validate_saved_server_url};
 
 const PALETTE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const MAX_ARTIFACT_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_ARTIFACT_ERROR_MESSAGE_BYTES: u64 = 2048;
 const ARTIFACT_TOO_LARGE: &str = "artifact is too large to preview";
 const RASTER_ARTIFACT_CONTENT_TYPES: &[&str] = &[
     "image/png",
@@ -100,6 +102,7 @@ pub(crate) struct AxonArtifactResult {
     ok: bool,
     status: u16,
     content_type: String,
+    message: Option<String>,
     body_base64: String,
 }
 
@@ -190,10 +193,14 @@ pub(crate) async fn axon_artifact_request(
         .to_string();
 
     if !status.is_success() {
+        let message = read_limited_text_body(response, MAX_ARTIFACT_ERROR_MESSAGE_BYTES)
+            .await
+            .unwrap_or_default();
         return Ok(AxonArtifactResult {
             ok: false,
             status: status.as_u16(),
             content_type,
+            message: Some(message).filter(|value| !value.trim().is_empty()),
             body_base64: String::new(),
         });
     }
@@ -209,6 +216,7 @@ pub(crate) async fn axon_artifact_request(
         ok: true,
         status: status.as_u16(),
         content_type,
+        message: None,
         body_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
     })
 }
@@ -217,7 +225,24 @@ async fn read_limited_artifact_body(response: reqwest::Response) -> Result<Vec<u
     read_limited_artifact_stream(response.bytes_stream()).await
 }
 
-async fn read_limited_artifact_stream<S, B, E>(mut stream: S) -> Result<Vec<u8>, String>
+async fn read_limited_text_body(
+    response: reqwest::Response,
+    max_bytes: u64,
+) -> Result<String, String> {
+    let bytes = read_limited_stream(response.bytes_stream(), max_bytes).await?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+async fn read_limited_artifact_stream<S, B, E>(stream: S) -> Result<Vec<u8>, String>
+where
+    S: Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    read_limited_stream(stream, MAX_ARTIFACT_PREVIEW_BYTES).await
+}
+
+async fn read_limited_stream<S, B, E>(mut stream: S, max_bytes: u64) -> Result<Vec<u8>, String>
 where
     S: Stream<Item = Result<B, E>> + Unpin,
     B: AsRef<[u8]>,
@@ -227,7 +252,7 @@ where
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|err| err.to_string())?;
         let chunk = chunk.as_ref();
-        if (body.len() + chunk.len()) as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
+        if (body.len() + chunk.len()) as u64 > max_bytes {
             return Err(ARTIFACT_TOO_LARGE.to_string());
         }
         body.extend_from_slice(chunk);
@@ -241,7 +266,27 @@ fn validate_artifact_relative_path(path: &str) -> Result<(), String> {
         || path.contains('\0')
         || path.contains('\\')
         || path.contains(':')
-        || path.split('/').any(|part| part == ".." || part.is_empty())
+    {
+        return Err("artifact path must be a safe relative path".to_string());
+    }
+    let decoded = percent_decode_str(path).decode_utf8_lossy();
+    if decoded.contains(':')
+        || decoded.contains('\\')
+        || decoded
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+        || decoded.split('/').any(str::is_empty)
+        || std::path::Path::new(decoded.as_ref())
+            .components()
+            .any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::CurDir
+                        | std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
     {
         return Err("artifact path must be a safe relative path".to_string());
     }

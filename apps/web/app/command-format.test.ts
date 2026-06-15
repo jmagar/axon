@@ -5,9 +5,12 @@ import type { ArtifactHandle } from './panel-types';
 describe('artifact preview URLs', () => {
   it('segment-encodes panel artifact paths', () => {
     expect(panelArtifactUrl('screenshots/foo #1.png')).toBe(
-      '/api/panel/artifact/screenshots/foo%20%231.png'
+      '/api/panel/artifact/screenshots/foo%20%231%2Epng'
     );
-    expect(panelArtifactUrl('markdown/a%2Fb.md')).toBe('/api/panel/artifact/markdown/a%252Fb.md');
+    expect(panelArtifactUrl('markdown/a%2Fb.md')).toBe('/api/panel/artifact/markdown/a%252Fb%2Emd');
+    expect(panelArtifactUrl('screenshots/../secret.png')).toBe(
+      '/api/panel/artifact/screenshots/%2E%2E/secret%2Epng'
+    );
   });
 
   it('uses the panel artifact route for screenshot previews and keeps the artifact row', () => {
@@ -27,7 +30,7 @@ describe('artifact preview URLs', () => {
       }
     });
 
-    expect(view.imageUrl).toBe('/api/panel/artifact/screenshots/example.png');
+    expect(view.imageUrl).toBe('/api/panel/artifact/screenshots/example%2Epng');
     expect(view.imageArtifact?.relative_path).toBe('screenshots/example.png');
     expect(view.artifacts?.[0]?.relative_path).toBe('screenshots/example.png');
     expect(view.raw).toBeUndefined();
@@ -51,6 +54,7 @@ describe('artifact preview URLs', () => {
 
     expect(view.imageUrl).toBeUndefined();
     expect(view.artifacts?.[0].relative_path).toBe('markdown/example.md');
+    expect(view.artifacts?.[0].display_path).toBe('markdown/example.md');
   });
 
   it('only previews raster image artifact kinds and extensions', () => {

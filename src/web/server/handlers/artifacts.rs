@@ -2,7 +2,7 @@
 //! legacy `GET /v1/artifacts/{*path}` compatibility route.
 //!
 //! Serves files from `cfg.output_dir` with content-type inference.
-//! Path traversal and symlink escapes are rejected before any I/O.
+//! Path traversal and symlink escapes are rejected before serving bytes.
 
 use crate::web::server::error::HttpError;
 use axum::{
@@ -28,7 +28,7 @@ type WebState = (
 /// Serve an artifact file from the configured output directory.
 ///
 /// The `path` query parameter is validated structurally and via canonicalization
-/// before any file I/O. Returns:
+/// before serving the file. Returns:
 /// - `400` for structurally unsafe paths (absolute, `..`, etc.)
 /// - `403` when the resolved path escapes the output root or is a symlink
 /// - `404` when the file does not exist or is not a regular file
@@ -53,7 +53,14 @@ pub(crate) async fn serve_artifact_query(
     State((_state, cfg)): State<WebState>,
     Query(query): Query<ArtifactQuery>,
 ) -> Result<Response, HttpError> {
-    serve_artifact_from_path(&cfg, query.path).await
+    let path = query.path.ok_or_else(|| {
+        HttpError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_path",
+            "missing required path query parameter",
+        )
+    })?;
+    serve_artifact_from_path(&cfg, path).await
 }
 
 pub(crate) async fn serve_artifact_path(
@@ -65,7 +72,7 @@ pub(crate) async fn serve_artifact_path(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ArtifactQuery {
-    path: String,
+    path: Option<String>,
 }
 
 pub(crate) async fn serve_artifact_from_path(
@@ -183,13 +190,19 @@ pub(crate) fn is_structurally_unsafe(path: &str) -> bool {
         return true;
     }
     let decoded = percent_decode_str(path).decode_utf8_lossy();
-    if decoded.contains(':') || decoded.contains('\\') {
+    if decoded.contains(':')
+        || decoded.contains('\\')
+        || decoded
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+    {
         return true;
     }
     StdPath::new(decoded.as_ref()).components().any(|c| {
         matches!(
             c,
-            std::path::Component::ParentDir
+            std::path::Component::CurDir
+                | std::path::Component::ParentDir
                 | std::path::Component::RootDir
                 | std::path::Component::Prefix(_)
         )
@@ -214,9 +227,9 @@ impl ArtifactHeaders {
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         );
-        if let Some(disposition) = self.content_disposition
-            && let Ok(value) = HeaderValue::from_str(&disposition)
-        {
+        if let Some(disposition) = self.content_disposition {
+            let value =
+                HeaderValue::from_str(&disposition).expect("artifact disposition is ASCII-safe");
             headers.insert(header::CONTENT_DISPOSITION, value);
         }
         response
@@ -264,7 +277,8 @@ fn safe_download_filename(path: &str) -> String {
         .chars()
         .map(|ch| match ch {
             '"' | '\\' | '\r' | '\n' | '\0' => '_',
-            _ => ch,
+            ch if ch.is_ascii_graphic() || ch == ' ' => ch,
+            _ => '_',
         })
         .collect();
     if sanitized.is_empty() {

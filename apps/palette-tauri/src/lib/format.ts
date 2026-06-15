@@ -200,7 +200,7 @@ function truncateTextDiff(text: string): string {
 function screenshotReport(value: Record<string, unknown>): string {
   const artifact = recordField(value, "artifact_handle");
   const artifactDisplay = artifact
-    ? (stringField(artifact, "display_path") ?? stringField(artifact, "relative_path"))
+    ? (nonEmptyStringField(artifact, "display_path") ?? nonEmptyStringField(artifact, "relative_path"))
     : undefined;
   return [
     "## Screenshot captured",
@@ -210,6 +210,11 @@ function screenshotReport(value: Record<string, unknown>): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function nonEmptyStringField(value: Record<string, unknown>, key: string): string | undefined {
+  const text = stringField(value, key)?.trim();
+  return text ? text : undefined;
 }
 
 function dedupeReport(value: Record<string, unknown>): string {

@@ -237,6 +237,63 @@ async fn panel_artifact_requires_panel_token_and_serves_png() {
 
 #[tokio::test]
 #[serial]
+async fn v1_artifact_query_requires_bearer_auth_and_serves_png() {
+    let _env = EnvGuard::set(Some("secret"));
+    let temp = tempfile::tempdir().unwrap();
+    let screenshot_dir = temp.path().join("screenshots");
+    std::fs::create_dir_all(&screenshot_dir).unwrap();
+    std::fs::write(screenshot_dir.join("shot.png"), b"png-bytes").unwrap();
+
+    let cfg = crate::core::config::Config {
+        output_dir: temp.path().to_path_buf(),
+        ..Default::default()
+    };
+    let (base, shutdown, handle) =
+        spawn_full_test_server_with_config(AuthPolicy::Mounted { auth_state: None }, cfg).await;
+    let client = reqwest::Client::new();
+
+    let unauthorized = client
+        .get(format!("{base}/v1/artifacts?path=screenshots/shot.png"))
+        .send()
+        .await
+        .expect("unauthorized request");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let missing_path = client
+        .get(format!("{base}/v1/artifacts"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("missing path request");
+    assert_eq!(missing_path.status(), StatusCode::BAD_REQUEST);
+    let error_body: serde_json::Value = missing_path.json().await.unwrap();
+    assert_eq!(error_body["kind"], "invalid_path");
+
+    let authorized = client
+        .get(format!("{base}/v1/artifacts?path=screenshots/shot.png"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("authorized request");
+    assert_eq!(authorized.status(), StatusCode::OK);
+    assert_eq!(
+        authorized.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+    assert_eq!(
+        authorized
+            .headers()
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
+    assert_eq!(authorized.bytes().await.unwrap().as_ref(), b"png-bytes");
+
+    stop(shutdown, handle).await;
+}
+
+#[tokio::test]
+#[serial]
 async fn panel_artifact_rejects_unsafe_paths_when_authorized() {
     // The unit tests for `is_structurally_unsafe` feed it raw strings, but the
     // live `/api/panel/artifact/{*path}` route percent-decodes the segment first

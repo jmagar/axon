@@ -20,7 +20,7 @@ function commandResult(overrides: Partial<CommandResultView> = {}): CommandResul
     title: 'Screenshot captured',
     subtitle: 'screenshots/shot.png',
     rows: [],
-    imageUrl: '/api/panel/artifact/screenshots/shot.png',
+    imageUrl: '/api/panel/artifact/screenshots/shot%2Epng',
     imageArtifact: artifact,
     artifacts: [artifact],
     ...overrides
@@ -60,7 +60,7 @@ describe('panel artifact rendering', () => {
       root.render(<CommandResultCard result={commandResult()} panelToken="panel-token" />);
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/panel/artifact/screenshots/shot.png', {
+    expect(fetch).toHaveBeenCalledWith('/api/panel/artifact/screenshots/shot%2Epng', {
       headers: { 'x-axon-panel-token': 'panel-token' }
     });
     expect(host.querySelector('.artifact-name')?.textContent).toBe('shot.png');
@@ -84,12 +84,10 @@ describe('panel artifact rendering', () => {
 
   it('rejects oversized previews via blob size when content-length is absent', async () => {
     // No content-length header, so the header-based cap is bypassed; the
-    // post-download blob.size check is the real defense and must still trip.
-    const oversized = new Response('x', { headers: { 'content-type': 'image/png' } });
-    vi.spyOn(oversized, 'blob').mockResolvedValue({
-      size: 9 * 1024 * 1024,
-      type: 'image/png'
-    } as Blob);
+    // streaming body cap is the real defense and must still trip.
+    const oversized = new Response(new Uint8Array(9 * 1024 * 1024), {
+      headers: { 'content-type': 'image/png' }
+    });
     vi.mocked(fetch).mockResolvedValue(oversized);
 
     await act(async () => {
@@ -114,5 +112,8 @@ describe('panel artifact rendering', () => {
     });
 
     expect(host.textContent).toContain('Could not open shot.png: artifact fetch failed with 404');
+    expect(fetch).toHaveBeenCalledWith('/api/panel/artifact/screenshots/shot%2Epng', {
+      headers: { 'x-axon-panel-token': 'panel-token' }
+    });
   });
 });

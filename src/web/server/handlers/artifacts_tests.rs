@@ -22,6 +22,7 @@ fn unsafe_artifact_paths_are_rejected_structurally() {
         "screenshots/../../../etc/passwd",
         "screenshots/../secret.txt",
         "screenshots/%2e%2e/secret.txt",
+        "screenshots/%2e/secret.txt",
         r"screenshots\\..\\secret.txt",
         r"screenshots\\shot.png",
         "screenshots%5cshot.png",
@@ -71,12 +72,26 @@ async fn symlink_component_under_output_root_is_forbidden() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(screenshots.join("real.png"), screenshots.join("alias.png"))
         .unwrap();
+    #[cfg(unix)]
+    {
+        let realdir = root.join("realdir");
+        tokio::fs::create_dir_all(&realdir).await.unwrap();
+        tokio::fs::write(realdir.join("nested.png"), b"png")
+            .await
+            .unwrap();
+        std::os::unix::fs::symlink(&realdir, screenshots.join("linkdir")).unwrap();
+    }
 
     #[cfg(unix)]
     {
         let err = resolve_artifact_path(&root, "screenshots/alias.png")
             .await
             .expect_err("symlink should be rejected");
+        assert_eq!(err.status(), StatusCode::FORBIDDEN);
+
+        let err = resolve_artifact_path(&root, "screenshots/linkdir/nested.png")
+            .await
+            .expect_err("intermediate symlink directory should be rejected");
         assert_eq!(err.status(), StatusCode::FORBIDDEN);
     }
 }
@@ -122,4 +137,9 @@ fn download_filename_strips_header_injection_characters() {
         .content_disposition
         .expect("log is non-inline");
     assert_eq!(nested, "attachment; filename=\"output.log\"");
+
+    let unicode = artifact_headers_for_path("jobs/abc/résumé\t.json")
+        .content_disposition
+        .expect("json is non-inline");
+    assert_eq!(unicode, "attachment; filename=\"r_sum__.json\"");
 }

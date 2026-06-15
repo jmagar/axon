@@ -1317,10 +1317,13 @@ textarea {
 .artifact-download {
   appearance: none;
   background: transparent;
+  box-shadow: none;
   border: 0;
+  border-radius: 0;
   color: var(--aurora-accent);
   cursor: pointer;
   font-size: var(--aurora-type-caption);
+  min-height: 0;
   padding: 0;
   text-decoration: none;
 }

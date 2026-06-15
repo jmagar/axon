@@ -6,6 +6,7 @@ type ArtifactHttpResult = {
   ok: boolean;
   status: number;
   contentType: string;
+  message?: string;
   bodyBase64: string;
 };
 
@@ -14,7 +15,10 @@ export async function loadArtifactObjectUrl(relativePath: string): Promise<strin
     const result = await invoke<ArtifactHttpResult>("axon_artifact_request", {
       relativePath,
     });
-    if (!result.ok) throw new Error(`artifact fetch failed with ${result.status}`);
+    if (!result.ok) {
+      const detail = result.message?.trim();
+      throw new Error(`artifact fetch failed with ${result.status}${detail ? `: ${detail}` : ""}`);
+    }
     const blob = new Blob([decodeBase64(result.bodyBase64)], {
       type: result.contentType || DEFAULT_ARTIFACT_CONTENT_TYPE,
     });

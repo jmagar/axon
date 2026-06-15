@@ -41,21 +41,24 @@ export function extractArtifactHandle(result: Record<string, unknown> | null): A
 
 export function extractArtifactHandles(result: Record<string, unknown> | null): ArtifactHandle[] {
   if (!result) return [];
-  const candidates: unknown[] = [];
+  const candidates: Record<string, unknown>[] = [];
   const single = result.artifact_handle;
-  if (single && typeof single === 'object') candidates.push(single);
+  if (single && typeof single === 'object' && !Array.isArray(single)) {
+    candidates.push({ artifact_handle: single });
+  }
   for (const key of ['predicted_artifact_handles', 'output_file_handles', 'artifact_handles']) {
     const arr = result[key];
-    if (Array.isArray(arr)) candidates.push(...arr);
+    if (Array.isArray(arr)) {
+      candidates.push(
+        ...arr
+          .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+          .map((item) => ({ artifact_handle: item }))
+      );
+    }
   }
-  return candidates.filter((item): item is ArtifactHandle =>
-    item !== null &&
-    typeof item === 'object' &&
-    'kind' in (item as object) &&
-    'relative_path' in (item as object) &&
-    typeof (item as ArtifactHandle).relative_path === 'string' &&
-    (item as ArtifactHandle).relative_path.length > 0
-  );
+  return candidates
+    .map((candidate) => extractArtifactHandle(candidate))
+    .filter((handle): handle is ArtifactHandle => handle !== null);
 }
 
 const RASTER_IMAGE_KINDS = new Set(['screenshot', 'image', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/avif']);
@@ -73,7 +76,11 @@ export function isPreviewableRasterArtifact(handle: ArtifactHandle): boolean {
 }
 
 export function panelArtifactUrl(relativePath: string): string {
-  return `/api/panel/artifact/${relativePath.split('/').map(encodeURIComponent).join('/')}`;
+  return `/api/panel/artifact/${relativePath.split('/').map(encodeArtifactSegment).join('/')}`;
+}
+
+function encodeArtifactSegment(segment: string): string {
+  return encodeURIComponent(segment).replaceAll('.', '%2E');
 }
 
 export function arrayField(record: Record<string, unknown>, key: string): unknown[] {
