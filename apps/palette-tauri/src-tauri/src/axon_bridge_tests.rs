@@ -162,3 +162,16 @@ fn artifact_content_type_allowlist_is_raster_only() {
     assert!(!is_allowed_artifact_content_type("image/svg+xml"));
     assert!(!is_allowed_artifact_content_type("text/html"));
 }
+
+#[test]
+fn artifact_stream_reader_errors_as_soon_as_preview_cap_is_crossed() {
+    let chunks = vec![
+        Ok::<_, String>(vec![1; MAX_ARTIFACT_PREVIEW_BYTES as usize]),
+        Ok(b"x".to_vec()),
+    ];
+    let err = tauri::async_runtime::block_on(read_limited_artifact_stream(
+        futures_util::stream::iter(chunks),
+    ))
+    .expect_err("stream should stop when the cap is exceeded");
+    assert_eq!(err, "artifact is too large to preview");
+}

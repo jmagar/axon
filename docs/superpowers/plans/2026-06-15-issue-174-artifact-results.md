@@ -1,6 +1,6 @@
 # Issue 174 Artifact Results Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make user-facing Axon web panel and palette surfaces render screenshot/artifact previews from `ArtifactHandle.relative_path` without exposing unsafe filesystem paths or unauthenticated image URLs.
 
@@ -14,9 +14,9 @@
 
 This plan was revised after Lavra engineering review.
 
-- **Defer generalized app job polling.** It is useful UX work, but it is not required to fix screenshot/artifact rendering and adds lifecycle/polling risk. Track it as a separate follow-up bead.
+- **Defer generalized app job polling.** It is useful UX work, but it is not required to fix screenshot/artifact rendering and adds lifecycle/polling risk. Track it as separate follow-up bead `axon_rust-gnb6.5`.
 - **Artifact serving must stream files.** Do not broaden `/v1/artifacts` and `/api/panel/artifact` usage while buffering whole files with `tokio::fs::read`.
-- **Only raster images can render inline.** HTML, SVG, markdown, JSON, logs, and unknown artifacts must not execute under the Axon origin. Serve active or ambiguous content with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
+- **Only raster images can render inline.** HTML, SVG, and unknown artifacts must not execute under the Axon origin. JSON, markdown, text, and logs keep accurate passive content types but are still served as attachments with `X-Content-Type-Options: nosniff`.
 - **Symlink rejection must happen before canonicalization.** Reject symlink components in the requested path, not only the final canonical target.
 - **The palette needs an explicit artifact bridge.** Existing `axon_http_request` rejects query-string paths and returns parsed text/JSON, not bytes. Add a narrow `axon_artifact_request(relative_path)` command with validation, route construction, content-type allowlist, and byte cap.
 - **Absolute server paths are debug metadata only.** Screenshot UI must prefer `artifact_handle.display_path` and `artifact_handle.relative_path`; do not render absolute `path` as a primary result or `file://` preview source.
@@ -35,13 +35,17 @@ Already present:
 - `apps/palette-tauri/src/components/palette/OperationResultView.tsx` has a screenshot view.
 - `apps/palette-tauri/src/lib/axonClient.ts` routes `screenshot` to `POST /v1/screenshot`.
 
-Remaining implementation risks:
+Completed implementation status:
 
-- The web panel currently builds screenshot image URLs as `/v1/artifacts/${relative_path}`, but panel auth is header-based and image tags cannot attach `x-axon-panel-token`.
-- The panel artifact route duplicates weaker path checks than `artifacts.rs` and does not reject symlink components consistently.
-- Artifact serving currently buffers files into memory and allows same-origin active content types.
-- The Tauri palette screenshot view cannot load canonical artifact bytes because the existing bridge does not support artifact binary responses.
-- Palette screenshot output still risks showing absolute server paths as primary UI.
+- The web panel now builds screenshot image URLs through the panel-auth artifact route.
+- The panel artifact route now uses the shared artifact-serving implementation.
+- Artifact serving streams files, rejects unsafe paths and symlink components, serves active/ambiguous content as opaque attachments, and serves passive text-like content as typed attachments with `nosniff`.
+- The Tauri palette now loads canonical raster artifact bytes through a dedicated capped bridge.
+- Palette screenshot output now prefers artifact display metadata and keeps absolute server paths out of primary UI.
+
+Remaining scope:
+
+- Generalized user-facing app job polling/waited terminal job results remain deferred follow-up work in `axon_rust-gnb6.5`, tracked outside this artifact-preview implementation.
 
 ## File Structure
 
@@ -49,7 +53,7 @@ Remaining implementation risks:
 - Modify: `src/web/server/handlers/artifacts_tests.rs` - structural path, symlink, content-type/header, and missing-root tests.
 - Modify: `src/web/server/handlers/config.rs` - route `/api/panel/artifact/{*path}` through shared artifact serving after panel auth.
 - Test: `src/web/server/handlers/rest_auth_tests.rs` or existing panel handler tests - assert panel artifact route requires panel auth and serves raster bytes with content type.
-- Modify: `apps/web/app/command-format.ts` - export a segment-encoding `panelArtifactUrl()` helper and image-artifact predicate.
+- Modify: `apps/web/app/command-format.ts` - export a segment-encoding `panelArtifactUrl()` helper and raster-artifact predicate.
 - Modify: `apps/web/app/panel-components.tsx` - use the shared helper for preview image `src`, artifact links, and download/open links.
 - Test: create `apps/web/app/command-format.test.ts` - cover screenshot image URL, path encoding, non-image artifact handling, and raw-result suppression.
 - Modify: `apps/palette-tauri/src-tauri/src/axon_bridge.rs` - add dedicated `axon_artifact_request(relative_path)` command with validation, byte cap, content-type allowlist, and base64 response.
@@ -69,7 +73,7 @@ Remaining implementation risks:
 - Test: `src/web/server/handlers/artifacts_tests.rs`
 - Test: `src/web/server/handlers/rest_auth_tests.rs`
 
-- [ ] **Step 1: Write failing shared-helper tests**
+- [x] **Step 1: Write failing shared-helper tests**
 
 Add tests in `src/web/server/handlers/artifacts_tests.rs`:
 
@@ -116,7 +120,7 @@ async fn symlink_component_under_output_root_is_forbidden() {
 
 If helper names differ during implementation, keep the assertions and expose test-only helpers under `#[cfg(test)]`.
 
-- [ ] **Step 2: Run the focused test and confirm failure**
+- [x] **Step 2: Run the focused test and confirm failure**
 
 Run:
 
@@ -126,7 +130,7 @@ cargo test artifacts_tests -- --nocapture
 
 Expected: FAIL because backslash/colon/encoded traversal, active content attachment policy, and symlink-component rejection are not implemented yet.
 
-- [ ] **Step 3: Strengthen structural path validation**
+- [x] **Step 3: Strengthen structural path validation**
 
 Change `is_structurally_unsafe` in `src/web/server/handlers/artifacts.rs`:
 
@@ -153,7 +157,7 @@ pub(crate) fn is_structurally_unsafe(path: &str) -> bool {
 
 If `percent-encoding` is not already a direct dependency, prefer the existing URL/percent-decoding utility in the repo. If no suitable utility exists, add the smallest direct dependency and keep it scoped.
 
-- [ ] **Step 4: Validate every path component before canonicalization**
+- [x] **Step 4: Validate every path component before canonicalization**
 
 Add a helper in `artifacts.rs`:
 
@@ -182,7 +186,7 @@ async fn reject_symlink_components(root: &Path, raw_path: &str) -> Result<(), Ht
 
 Call this before `tokio::fs::canonicalize(&candidate)`.
 
-- [ ] **Step 5: Stream artifact responses and add safe headers**
+- [x] **Step 5: Stream artifact responses and add safe headers**
 
 Replace whole-file reads with streaming:
 
@@ -208,9 +212,9 @@ Content-Type: <safe content type>
 Content-Disposition: attachment; filename="<leaf>" // for non-inline-safe types
 ```
 
-Allowed inline image extensions: `png`, `jpg`, `jpeg`, `webp`, `gif`, `avif`. Serve `svg`, `html`, `htm`, `md`, `json`, `txt`, `log`, and unknown extensions as non-executable attachment content unless a later explicit safe text-preview feature is built.
+Allowed inline image extensions: `png`, `jpg`, `jpeg`, `webp`, `gif`, `avif`. Serve `svg`, `html`, `htm`, and unknown extensions as opaque attachments. Serve `md`, `json`, `txt`, and `log` with accurate passive content types, still as attachments with `nosniff`, unless a later explicit safe text-preview feature is built.
 
-- [ ] **Step 6: Use the shared helper from panel artifact serving**
+- [x] **Step 6: Use the shared helper from panel artifact serving**
 
 Make `serve_artifact_from_path` visible inside the server handlers module:
 
@@ -245,7 +249,7 @@ pub async fn panel_artifact(
 
 Remove now-unused `Body` and `header` imports from `config.rs`.
 
-- [ ] **Step 7: Add panel route auth/content regression tests**
+- [x] **Step 7: Add panel route auth/content regression tests**
 
 In the existing REST/panel auth test module, add a test equivalent to:
 
@@ -281,7 +285,7 @@ async fn panel_artifact_requires_panel_token_and_serves_png() {
 
 Use the repo's existing router/test helper names rather than creating a second test harness if one already exists.
 
-- [ ] **Step 8: Verify backend artifact tests pass**
+- [x] **Step 8: Verify backend artifact tests pass**
 
 Run:
 
@@ -291,7 +295,7 @@ cargo test artifacts_tests panel_artifact -- --nocapture
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/web/server/handlers/artifacts.rs src/web/server/handlers/artifacts_tests.rs src/web/server/handlers/config.rs src/web/server/handlers/rest_auth_tests.rs Cargo.toml Cargo.lock
@@ -305,7 +309,7 @@ git commit -m "fix(web): stream safe artifact previews"
 - Modify: `apps/web/app/panel-components.tsx`
 - Test: create `apps/web/app/command-format.test.ts`
 
-- [ ] **Step 1: Write failing command-format tests**
+- [x] **Step 1: Write failing command-format tests**
 
 Create `apps/web/app/command-format.test.ts`:
 
@@ -362,7 +366,7 @@ describe('artifact preview URLs', () => {
 });
 ```
 
-- [ ] **Step 2: Run the web test and confirm failure**
+- [x] **Step 2: Run the web test and confirm failure**
 
 Run:
 
@@ -373,13 +377,15 @@ pnpm vitest run app/command-format.test.ts
 
 Expected: FAIL because `imageUrl` currently uses `/v1/artifacts/<path>` and `ArtifactRow` builds raw URLs.
 
-- [ ] **Step 3: Add shared panel URL and image predicates**
+- [x] **Step 3: Add shared panel URL and image predicates**
 
 In `apps/web/app/command-format.ts`, add exported helpers:
 
 ```ts
-export function isImageArtifact(handle: ArtifactHandle): boolean {
-  return handle.kind === 'screenshot' || handle.kind === 'image' || handle.kind.startsWith('image/');
+export function isPreviewableRasterArtifact(handle: ArtifactHandle): boolean {
+  // Allow screenshot and raster image artifacts only; active image/* types such
+  // as SVG are attachments, not inline previews.
+  return handle.kind === 'screenshot' || isSafeRasterKindOrExtension(handle);
 }
 
 export function panelArtifactUrl(relativePath: string): string {
@@ -391,10 +397,10 @@ Then set the command result image URL with:
 
 ```ts
 const handle = extractArtifactHandle(result);
-const imageUrl = handle && isImageArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
+const imageUrl = handle && isPreviewableRasterArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
 ```
 
-- [ ] **Step 4: Use the shared helper in all panel artifact rows**
+- [x] **Step 4: Use the shared helper in all panel artifact rows**
 
 In `apps/web/app/panel-components.tsx`, import `panelArtifactUrl` and change:
 
@@ -410,7 +416,7 @@ const src = panelArtifactUrl(artifact.relative_path);
 
 Use `src` for preview image source and artifact links. Do not build raw artifact URLs anywhere in this file.
 
-- [ ] **Step 5: Verify web tests**
+- [x] **Step 5: Verify web tests**
 
 Run:
 
@@ -422,7 +428,7 @@ pnpm tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/app/command-format.ts apps/web/app/command-format.test.ts apps/web/app/panel-components.tsx
@@ -438,7 +444,7 @@ git commit -m "fix(web): render artifact previews through panel auth"
 - Modify: `apps/palette-tauri/src/components/palette/OperationResultView.tsx`
 - Test: `apps/palette-tauri/src/components/palette/OperationResultView.test.tsx`
 
-- [ ] **Step 1: Write failing bridge tests**
+- [x] **Step 1: Write failing bridge tests**
 
 Add Rust tests around the Tauri bridge:
 
@@ -461,7 +467,7 @@ fn artifact_url_uses_query_encoding_without_accepting_raw_query_paths() {
 
 If the bridge tests use different helpers, expose these helpers under `#[cfg(test)]` or place tests beside the helper implementation.
 
-- [ ] **Step 2: Run bridge tests and confirm failure**
+- [x] **Step 2: Run bridge tests and confirm failure**
 
 Run:
 
@@ -472,7 +478,7 @@ cargo test axon_bridge -- --nocapture
 
 Expected: FAIL because no dedicated artifact bridge command/helper exists.
 
-- [ ] **Step 3: Add a narrow artifact bridge response type**
+- [x] **Step 3: Add a narrow artifact bridge response type**
 
 In `apps/palette-tauri/src-tauri/src/axon_bridge.rs`, add:
 
@@ -490,7 +496,7 @@ pub struct AxonArtifactResult {
 
 Use a preview cap low enough to protect the renderer. If product needs larger downloads later, add a separate download/open flow.
 
-- [ ] **Step 4: Add strict relative-path validation and URL construction**
+- [x] **Step 4: Add strict relative-path validation and URL construction**
 
 Add:
 
@@ -524,7 +530,7 @@ fn is_allowed_artifact_content_type(value: &str) -> bool {
 }
 ```
 
-- [ ] **Step 5: Add the Tauri command**
+- [x] **Step 5: Add the Tauri command**
 
 Add a command like:
 
@@ -580,7 +586,7 @@ pub async fn axon_artifact_request(
 
 Add any required imports and register the command wherever `axon_http_request` is registered.
 
-- [ ] **Step 6: Create the TypeScript artifact preview loader**
+- [x] **Step 6: Create the TypeScript artifact preview loader**
 
 Create `apps/palette-tauri/src/lib/artifactPreview.ts`:
 
@@ -608,7 +614,7 @@ export async function loadArtifactObjectUrl(client: Client, relativePath: string
 }
 ```
 
-- [ ] **Step 7: Write failing palette render tests**
+- [x] **Step 7: Write failing palette render tests**
 
 Add to `apps/palette-tauri/src/components/palette/OperationResultView.test.tsx`:
 
@@ -645,7 +651,7 @@ it('shows a compact artifact preview failure state', async () => {
 
 Mock `loadArtifactObjectUrl` to return `blob:test-shot` for the success test.
 
-- [ ] **Step 8: Render authenticated artifact images with race-safe cleanup**
+- [x] **Step 8: Render authenticated artifact images with race-safe cleanup**
 
 In `OperationResultView.tsx`, add an `AuthenticatedArtifactImage` component. Use the existing client/config passed to the view or thread the existing `Client` down from the caller; do not invent a nonexistent `useAxonClientFromSettings()` hook.
 
@@ -658,7 +664,7 @@ The effect must:
 
 Use this component for screenshot payloads when `artifact_handle.relative_path` is present and no `preview_url`/`image_url`/`data_url` exists.
 
-- [ ] **Step 9: Keep absolute paths out of screenshot primary UI**
+- [x] **Step 9: Keep absolute paths out of screenshot primary UI**
 
 Change screenshot rendering and formatting so:
 
@@ -674,7 +680,7 @@ stringField(value, "path") ? `path: ${stringField(value, "path")}` : "",
 
 from `screenshotReport`. Keep absolute `path` only in raw JSON/debug surfaces.
 
-- [ ] **Step 10: Verify palette bridge and UI tests**
+- [x] **Step 10: Verify palette bridge and UI tests**
 
 Run:
 
@@ -688,7 +694,7 @@ pnpm tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add apps/palette-tauri/src-tauri/src/axon_bridge.rs apps/palette-tauri/src-tauri/src/axon_bridge_tests.rs apps/palette-tauri/src/lib/artifactPreview.ts apps/palette-tauri/src/components/palette/OperationResultView.tsx apps/palette-tauri/src/components/palette/OperationResultView.test.tsx apps/palette-tauri/src/lib/format.ts apps/palette-tauri/src/lib/format.test.ts
@@ -702,7 +708,7 @@ git commit -m "fix(palette): preview artifacts through a capped bridge"
 - Modify: `docs/reference/http-api.md`
 - Test: existing Rust and app test suites touched above
 
-- [ ] **Step 1: Document the artifact app UX contract**
+- [x] **Step 1: Document the artifact app UX contract**
 
 Add to `docs/reference/job-lifecycle.md`:
 
@@ -713,16 +719,19 @@ Automation-facing REST job submission routes keep returning `202 AcceptedJob`.
 This artifact UX contract does not change job submission semantics.
 
 Artifact handles are the app contract. Absolute `path` fields are debug metadata
-for the server host. Web panel previews use `/api/panel/artifact/{relative_path}`
-under panel authentication. REST clients use `GET /v1/artifacts?path=...` with
-normal `axon:read` auth. Tauri palette previews fetch raster image artifact bytes
-through the dedicated capped artifact bridge command and render object URLs.
+for the server host. Web panel previews fetch `/api/panel/artifact/{relative_path}`
+with panel-auth headers and render object URLs. REST clients use
+`GET /v1/artifacts?path=...` with normal `axon:read` auth. Tauri palette previews
+fetch raster image artifact bytes through the dedicated capped artifact bridge
+command and render object URLs.
 
 Only raster image artifacts are previewed inline. Active or ambiguous artifact
-types such as HTML and SVG are served as attachments with `nosniff`.
+types such as HTML and SVG are served as opaque attachments with `nosniff`.
+JSON, markdown, text, and logs keep accurate passive content types but are still
+served as attachments.
 ```
 
-- [ ] **Step 2: Document artifact route usage in HTTP API reference**
+- [x] **Step 2: Document artifact route usage in HTTP API reference**
 
 In `docs/reference/http-api.md`, add:
 
@@ -733,13 +742,14 @@ Artifact download:
   requires read auth.
 - Clients must pass the `relative_path` from an `ArtifactHandle`; absolute server
   paths are not accepted.
-- Browser app image tags should use panel-auth routes or fetch bytes with auth
-  and render an object URL; do not make `/v1/artifacts` public for previews.
-- HTML, SVG, markdown, JSON, logs, and unknown artifact types are not inline
-  preview content.
+- Browser apps must fetch bytes with panel auth and render object URLs; image
+  tags must not point directly at authenticated artifact routes.
+- HTML, SVG, and unknown artifact types are not inline preview content. JSON,
+  markdown, text, and logs keep accurate passive content types but are still
+  served as attachments with `nosniff`.
 ```
 
-- [ ] **Step 3: Run backend verification**
+- [x] **Step 3: Run backend verification**
 
 Run:
 
@@ -750,7 +760,7 @@ cargo fmt --all -- --check
 
 Expected: PASS.
 
-- [ ] **Step 4: Run app verification**
+- [x] **Step 4: Run app verification**
 
 Run:
 
@@ -767,7 +777,7 @@ pnpm tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 5: Run final broad checks if time permits**
+- [x] **Step 5: Run final broad checks if time permits**
 
 Run:
 
@@ -778,7 +788,7 @@ cargo test --locked
 
 Expected: PASS. If the known cargo wrapper drift reproduces an `E0514` mixed-rustc failure, prove it with a fresh target dir and explicit wrapper override before treating it as a code failure.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/reference/job-lifecycle.md docs/reference/http-api.md
@@ -787,7 +797,7 @@ git commit -m "docs(app): document artifact result UX contract"
 
 ## Deferred Follow-Up
 
-Create or use a separate bead for generalized user-facing app job polling:
+Deferred bead: `axon_rust-gnb6.5` for generalized user-facing app job polling.
 
 - Scope: poll app-triggered crawl/embed/extract/ingest jobs to terminal state.
 - Requirements: one foreground poller per active run, abortable cleanup, backoff, max duration, visible failure state, terminal `result_json` and artifact rendering, tests for stale/unmount/server-down behavior.

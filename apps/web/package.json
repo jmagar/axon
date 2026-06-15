@@ -6,6 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
     "openapi:export": "mkdir -p openapi && cargo run --quiet --manifest-path ../../Cargo.toml --bin axon-openapi > openapi/axon.json",
     "openapi:types": "node scripts/generate-openapi-types.mjs openapi/axon.json lib/generated/axon-api.ts",
     "openapi:generate": "npm run openapi:export && npm run openapi:types",

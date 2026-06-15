@@ -1,6 +1,5 @@
 use super::{
-    artifact_headers_for_path, infer_content_type, is_structurally_unsafe,
-    validate_artifact_path_for_test,
+    artifact_headers_for_path, infer_content_type, is_structurally_unsafe, resolve_artifact_path,
 };
 use axum::http::StatusCode;
 
@@ -95,7 +94,7 @@ async fn symlink_component_under_output_root_is_forbidden() {
 
     #[cfg(unix)]
     {
-        let err = validate_artifact_path_for_test(&root, "screenshots/alias.png")
+        let err = resolve_artifact_path(&root, "screenshots/alias.png")
             .await
             .expect_err("symlink should be rejected");
         assert_eq!(err.status(), StatusCode::FORBIDDEN);
@@ -121,17 +120,26 @@ fn jpeg_returns_image_jpeg() {
 
 #[test]
 fn json_returns_application_json() {
-    assert_eq!(infer_content_type("data.json"), "application/octet-stream");
+    assert_eq!(infer_content_type("data.json"), "application/json");
+    assert!(
+        artifact_headers_for_path("data.json")
+            .content_disposition
+            .unwrap()
+            .starts_with("attachment")
+    );
 }
 
 #[test]
 fn md_returns_text_markdown() {
-    assert_eq!(infer_content_type("README.md"), "application/octet-stream");
+    assert_eq!(
+        infer_content_type("README.md"),
+        "text/markdown; charset=utf-8"
+    );
 }
 
 #[test]
 fn log_returns_text_plain() {
-    assert_eq!(infer_content_type("run.log"), "application/octet-stream");
+    assert_eq!(infer_content_type("run.log"), "text/plain; charset=utf-8");
 }
 
 #[test]

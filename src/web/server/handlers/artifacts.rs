@@ -80,8 +80,34 @@ pub(crate) async fn serve_artifact_from_path(
         ));
     }
 
-    let root = &cfg.output_dir;
-    let candidate = root.join(&raw_path);
+    let canonical_candidate = resolve_artifact_path(&cfg.output_dir, &raw_path).await?;
+    let file = tokio::fs::File::open(&canonical_candidate)
+        .await
+        .map_err(|e| {
+            HttpError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "read_error",
+                format!("failed to open artifact: {e}"),
+            )
+        })?;
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+    Ok(artifact_headers_for_path(&raw_path).into_response(body))
+}
+
+pub(crate) async fn resolve_artifact_path(
+    root: &StdPath,
+    raw_path: &str,
+) -> Result<PathBuf, HttpError> {
+    if is_structurally_unsafe(raw_path) {
+        return Err(HttpError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_path",
+            "path contains traversal components or is absolute",
+        ));
+    }
+
+    let candidate = root.join(raw_path);
 
     let canonical_root = tokio::fs::canonicalize(root).await.map_err(|_| {
         HttpError::new(
@@ -90,7 +116,7 @@ pub(crate) async fn serve_artifact_from_path(
             "output directory is not accessible",
         )
     })?;
-    reject_symlink_components(&canonical_root, &raw_path).await?;
+    reject_symlink_components(&canonical_root, raw_path).await?;
 
     let canonical_candidate = tokio::fs::canonicalize(&candidate).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -132,19 +158,7 @@ pub(crate) async fn serve_artifact_from_path(
             format!("artifact not found: {raw_path}"),
         ));
     }
-
-    let file = tokio::fs::File::open(&canonical_candidate)
-        .await
-        .map_err(|e| {
-            HttpError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "read_error",
-                format!("failed to open artifact: {e}"),
-            )
-        })?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
-    Ok(artifact_headers_for_path(&raw_path).into_response(body))
+    Ok(canonical_candidate)
 }
 
 async fn reject_symlink_components(root: &StdPath, raw_path: &str) -> Result<(), HttpError> {
@@ -227,14 +241,24 @@ pub(crate) fn artifact_headers_for_path(path: &str) -> ArtifactHeaders {
         "gif" => "image/gif",
         "webp" => "image/webp",
         "avif" => "image/avif",
+        "json" => "application/json",
+        "md" => "text/markdown; charset=utf-8",
+        "txt" | "log" => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     };
-    let content_disposition = (content_type == "application/octet-stream")
+    let content_disposition = (!is_inline_content_type(content_type))
         .then(|| format!("attachment; filename=\"{}\"", safe_download_filename(path)));
     ArtifactHeaders {
         content_type,
         content_disposition,
     }
+}
+
+fn is_inline_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif"
+    )
 }
 
 /// Infer a safe `Content-Type` value from the file extension in `path`.
@@ -260,45 +284,6 @@ fn safe_download_filename(path: &str) -> String {
     } else {
         sanitized
     }
-}
-
-#[cfg(test)]
-pub(crate) async fn validate_artifact_path_for_test(
-    root: &StdPath,
-    raw_path: &str,
-) -> Result<PathBuf, HttpError> {
-    if is_structurally_unsafe(raw_path) {
-        return Err(HttpError::new(
-            StatusCode::BAD_REQUEST,
-            "invalid_path",
-            "path contains traversal components or is absolute",
-        ));
-    }
-    let canonical_root = tokio::fs::canonicalize(root).await.map_err(|_| {
-        HttpError::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "output_dir_error",
-            "output directory is not accessible",
-        )
-    })?;
-    reject_symlink_components(&canonical_root, raw_path).await?;
-    let canonical_candidate = tokio::fs::canonicalize(root.join(raw_path))
-        .await
-        .map_err(|_| {
-            HttpError::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                format!("artifact not found: {raw_path}"),
-            )
-        })?;
-    if !canonical_candidate.starts_with(&canonical_root) {
-        return Err(HttpError::new(
-            StatusCode::FORBIDDEN,
-            "path_escape",
-            "path escapes the output root",
-        ));
-    }
-    Ok(canonical_candidate)
 }
 
 #[cfg(test)]

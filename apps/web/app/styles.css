@@ -1315,8 +1315,13 @@ textarea {
 }
 
 .artifact-download {
+  appearance: none;
+  background: transparent;
+  border: 0;
   color: var(--aurora-accent);
+  cursor: pointer;
   font-size: var(--aurora-type-caption);
+  padding: 0;
   text-decoration: none;
 }
 

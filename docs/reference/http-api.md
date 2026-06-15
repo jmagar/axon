@@ -53,8 +53,8 @@ Artifact download:
 
 - `GET /v1/artifacts?path=<relative_path>` serves files under `output_dir` and requires read auth.
 - Clients must pass the `relative_path` from an `ArtifactHandle`; absolute server paths are not accepted.
-- Browser app image tags should use panel-auth routes or fetch bytes with auth and render an object URL; do not make `/v1/artifacts` public for previews.
-- HTML, SVG, markdown, JSON, logs, and unknown artifact types are not inline preview content.
+- Browser apps must fetch bytes with panel auth and render object URLs; image tags must not point directly at authenticated artifact routes.
+- HTML, SVG, and unknown artifact types are not inline preview content. JSON, markdown, text, and logs keep accurate passive content types but are still served as attachments with `nosniff`.
 
 Async job routes:
 

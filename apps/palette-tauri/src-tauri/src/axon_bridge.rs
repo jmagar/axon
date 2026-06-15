@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use futures_util::{Stream, StreamExt as _};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -196,10 +197,7 @@ pub(crate) async fn axon_artifact_request(
     if response.content_length().unwrap_or(0) > MAX_ARTIFACT_PREVIEW_BYTES {
         return Err("artifact is too large to preview".to_string());
     }
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
-    if bytes.len() as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
-        return Err("artifact is too large to preview".to_string());
-    }
+    let bytes = read_limited_artifact_body(response).await?;
 
     Ok(AxonArtifactResult {
         ok: true,
@@ -207,6 +205,29 @@ pub(crate) async fn axon_artifact_request(
         content_type,
         body_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
     })
+}
+
+async fn read_limited_artifact_body(response: reqwest::Response) -> Result<Vec<u8>, String> {
+    read_limited_artifact_stream(response.bytes_stream()).await
+}
+
+async fn read_limited_artifact_stream<S, B, E>(mut stream: S) -> Result<Vec<u8>, String>
+where
+    S: Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|err| err.to_string())?;
+        let chunk = chunk.as_ref();
+        let next_len = body.len() + chunk.len();
+        if next_len as u64 > MAX_ARTIFACT_PREVIEW_BYTES {
+            return Err("artifact is too large to preview".to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 fn validate_artifact_relative_path(path: &str) -> Result<(), String> {

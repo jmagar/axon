@@ -15,6 +15,7 @@ import {
   TriangleAlert,
   XCircle
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type {
   ArtifactHandle,
@@ -24,7 +25,7 @@ import type {
   StackCheck,
   StackUrlCheck
 } from './panel-types';
-import { compactJobTarget, formatBytes, panelArtifactUrl, titleLabel } from './command-format';
+import { compactJobTarget, formatBytes, isPreviewableRasterArtifact, panelArtifactUrl, titleLabel } from './command-format';
 import { normalizeJobStatus, jobTargetFromUrls, jobKindLabel } from './job-helpers';
 import type { ServiceJob } from './panel-types';
 
@@ -230,7 +231,7 @@ export function EmptyState({ loading, text }: { loading: boolean; text: string }
   return <p className="empty-state">{loading ? 'Checking...' : text}</p>;
 }
 
-export function CommandResultCard({ result }: { result: CommandResultView }) {
+export function CommandResultCard({ result, panelToken }: { result: CommandResultView; panelToken: string }) {
   return (
     <section className={`palette-result ${result.ok ? 'ok' : 'error'}`} aria-live="polite">
       <div className="palette-result-heading">
@@ -251,15 +252,19 @@ export function CommandResultCard({ result }: { result: CommandResultView }) {
           ))}
         </dl>
       )}
-      {result.imageUrl && (
-        <img className="palette-result-image" src={result.imageUrl} alt="Screenshot" />
+      {result.imageUrl && result.imageArtifact && (
+        <AuthenticatedPanelArtifactImage
+          alt={result.imageArtifact.display_path}
+          panelToken={panelToken}
+          src={result.imageUrl}
+        />
       )}
       {result.body && <p className="palette-result-body">{result.body}</p>}
       {result.artifacts && result.artifacts.length > 0 && (
         <div className="artifact-list">
           <p className="artifact-list-label">Artifacts</p>
           {result.artifacts.map((a) => (
-            <ArtifactRow key={a.relative_path} artifact={a} />
+            <ArtifactRow key={a.relative_path} artifact={a} panelToken={panelToken} />
           ))}
         </div>
       )}
@@ -268,9 +273,55 @@ export function CommandResultCard({ result }: { result: CommandResultView }) {
   );
 }
 
-export function ArtifactRow({ artifact }: { artifact: ArtifactHandle }) {
-  const isScreenshot = artifact.kind === 'screenshot';
-  const isImage = isScreenshot || artifact.kind.startsWith('image');
+function AuthenticatedPanelArtifactImage({
+  alt,
+  panelToken,
+  src
+}: {
+  alt: string;
+  panelToken: string;
+  src: string;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let resolvedUrl: string | null = null;
+
+    setObjectUrl(null);
+    setFailed(false);
+
+    fetch(src, { headers: { 'x-axon-panel-token': panelToken } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`artifact fetch failed with ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => {
+        resolvedUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(resolvedUrl);
+          return;
+        }
+        setObjectUrl(resolvedUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (resolvedUrl) URL.revokeObjectURL(resolvedUrl);
+    };
+  }, [panelToken, src]);
+
+  if (failed) return <p className="palette-result-body">Preview unavailable</p>;
+  if (!objectUrl) return null;
+  return <img className="palette-result-image" src={objectUrl} alt={alt} />;
+}
+
+export function ArtifactRow({ artifact, panelToken }: { artifact: ArtifactHandle; panelToken: string }) {
+  const isImage = isPreviewableRasterArtifact(artifact);
   const src = panelArtifactUrl(artifact.relative_path);
   const name = artifact.display_path.split('/').pop() ?? artifact.display_path;
   const meta = formatBytes(artifact.bytes ?? 0) + (artifact.line_count ? ` · ${artifact.line_count.toLocaleString()} lines` : '');
@@ -279,11 +330,9 @@ export function ArtifactRow({ artifact }: { artifact: ArtifactHandle }) {
     return (
       <div className="artifact-row artifact-row-image">
         <span className="artifact-kind">{artifact.kind}</span>
-        <a href={src} target="_blank" rel="noreferrer" className="artifact-preview-link">
-          <img src={src} alt={artifact.display_path} className="artifact-preview" />
-        </a>
         <span className="artifact-name" title={artifact.display_path}>{name}</span>
         <span className="artifact-meta">{meta}</span>
+        <button type="button" onClick={() => void openPanelArtifact(src, panelToken, name)} className="artifact-download">↗</button>
       </div>
     );
   }
@@ -293,9 +342,24 @@ export function ArtifactRow({ artifact }: { artifact: ArtifactHandle }) {
       <span className="artifact-kind">{artifact.kind}</span>
       <span className="artifact-name" title={artifact.display_path}>{name}</span>
       <span className="artifact-meta">{meta}</span>
-      <a href={src} target="_blank" rel="noreferrer" download={name} className="artifact-download">↓</a>
+      <button type="button" onClick={() => void openPanelArtifact(src, panelToken, name)} className="artifact-download">↓</button>
     </div>
   );
+}
+
+async function openPanelArtifact(src: string, panelToken: string, filename: string) {
+  const response = await fetch(src, { headers: { 'x-axon-panel-token': panelToken } });
+  if (!response.ok) throw new Error(`artifact fetch failed with ${response.status}`);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.target = '_blank';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
 }
 
 export function DoctorCard({ service }: { service: DoctorService & { name: string } }) {

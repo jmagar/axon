@@ -58,8 +58,18 @@ export function extractArtifactHandles(result: Record<string, unknown> | null): 
   );
 }
 
-export function isImageArtifact(handle: ArtifactHandle): boolean {
-  return handle.kind === 'screenshot' || handle.kind === 'image' || handle.kind.startsWith('image/');
+const RASTER_IMAGE_KINDS = new Set(['screenshot', 'image', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/avif']);
+const RASTER_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif']);
+export const MAX_INLINE_ARTIFACT_BYTES = 8 * 1024 * 1024;
+
+export function isPreviewableRasterArtifact(handle: ArtifactHandle): boolean {
+  if (typeof handle.bytes === 'number' && handle.bytes > MAX_INLINE_ARTIFACT_BYTES) return false;
+  const kind = handle.kind.toLowerCase();
+  if (RASTER_IMAGE_KINDS.has(kind)) return true;
+  if (kind.startsWith('image/')) return false;
+  const leaf = handle.relative_path.split('/').pop() ?? '';
+  const extension = leaf.includes('.') ? leaf.split('.').pop()?.toLowerCase() : undefined;
+  return extension ? RASTER_IMAGE_EXTENSIONS.has(extension) : false;
 }
 
 export function panelArtifactUrl(relativePath: string): string {
@@ -283,7 +293,10 @@ export function formatCommandResponse(response: PanelCommandResponse): CommandRe
   const artifacts = extractArtifactHandles(result);
 
   const handle = extractArtifactHandle(result);
-  const imageUrl = handle && isImageArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
+  const imageUrl = handle && isPreviewableRasterArtifact(handle) ? panelArtifactUrl(handle.relative_path) : undefined;
+  const visibleArtifacts = imageUrl
+    ? artifacts.filter((artifact) => artifact.relative_path !== handle?.relative_path)
+    : artifacts;
 
   return {
     ok: true,
@@ -291,8 +304,9 @@ export function formatCommandResponse(response: PanelCommandResponse): CommandRe
     subtitle,
     rows: compactRows(rows),
     body: commandResultBody(action, result),
-    artifacts: artifacts.length > 0 ? artifacts : undefined,
+    artifacts: visibleArtifacts.length > 0 ? visibleArtifacts : undefined,
     raw: shouldShowRawResult(action, result) ? JSON.stringify(response.result, null, 2) : undefined,
-    imageUrl
+    imageUrl,
+    imageArtifact: imageUrl && handle ? handle : undefined
   };
 }
