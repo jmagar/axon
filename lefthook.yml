@@ -99,6 +99,17 @@ pre-push:
         else
           cargo xtask check-version-sync;
         fi
+    build-web-assets:
+      # build.rs embeds apps/web/out/ (rust-embed) at compile time, so the
+      # clippy/test workspace compile below hard-fails when the Next.js static
+      # export is missing/empty/fallback-only. Build the real panel first so a
+      # push never trips on stale embedded assets. out/ stays gitignored — this
+      # regenerates it from source rather than relying on a committed copy.
+      # Named to sort before clippy/test so it runs first under serial execution.
+      # Idempotent (Turbopack caches); deps installed once on a fresh checkout.
+      run: >
+        if [ ! -d apps/web/node_modules ]; then npm ci --prefix apps/web; fi &&
+        npm --prefix apps/web run build
     clippy:
       run: cargo clippy --workspace --all-targets --locked -- -D warnings
     test:
