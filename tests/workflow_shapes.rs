@@ -121,3 +121,31 @@ fn ci_uses_guard_for_named_cargo_test_filters() {
         }
     }
 }
+
+#[test]
+fn ci_runs_release_version_gate_before_merge() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    assert!(
+        workflow.contains(
+            "cargo xtask check-release-versions --base origin/main --head HEAD --mode pr"
+        ),
+        "CI must run the multi-component release version gate on pull requests"
+    );
+    assert!(
+        workflow.contains("fetch-depth: 0"),
+        "release version gate needs tags and history"
+    );
+}
+
+#[test]
+fn auto_tag_uses_xtask_release_plan() {
+    let workflow = include_str!("../.github/workflows/auto-tag.yml");
+    assert!(
+        workflow.contains("cargo xtask check-release-versions --head HEAD --mode main --json"),
+        "auto-tag must use the shared xtask release-version detector"
+    );
+    assert!(
+        workflow.contains("matrix.candidate_tag") && workflow.contains("matrix.release_workflow"),
+        "auto-tag must consume tags and workflows from the xtask release plan"
+    );
+}

@@ -26,10 +26,35 @@ enum Command {
     CheckBrokenSymlinks,
     /// Scan staged files for secrets and credentials.
     CheckSecrets,
-    /// Verify the CLI component's version-bearing files (Cargo.toml, README.md,
-    /// CHANGELOG.md, apps/web/package.json, apps/web/openapi/axon.json) carry the
-    /// same version, and that plugin.json carries none.
+    /// Compatibility check for the CLI component's version-bearing files.
+    /// The full multi-component gate is `check-release-versions`.
     CheckVersionSync,
+    /// Verify all releasable components have valid versions and changed shipping paths have bumps.
+    CheckReleaseVersions {
+        #[arg(long)]
+        base: Option<String>,
+        #[arg(long, default_value = "HEAD")]
+        head: String,
+        #[arg(long, value_parser = ["pr", "main"], default_value = "pr")]
+        mode: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the release plan consumed by GitHub Actions.
+    ReleasePlan {
+        #[arg(long)]
+        base: Option<String>,
+        #[arg(long, default_value = "HEAD")]
+        head: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Bump all version-bearing files for one component.
+    BumpVersion {
+        component: String,
+        #[arg(value_parser = ["patch", "minor", "major"])]
+        level: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -45,6 +70,46 @@ fn main() -> Result<()> {
         Command::CheckBrokenSymlinks => checks::broken_symlinks::check(&root),
         Command::CheckSecrets => checks::secrets::check(&root),
         Command::CheckVersionSync => checks::version_sync::check(&root),
+        Command::CheckReleaseVersions {
+            base,
+            head,
+            mode,
+            json,
+        } => {
+            let mode = match mode.as_str() {
+                "pr" => checks::release_versions::GateMode::Pr,
+                "main" => checks::release_versions::GateMode::Main,
+                _ => unreachable!(),
+            };
+            checks::release_versions::check(&root, base.as_deref(), &head, mode, json)
+        }
+        Command::ReleasePlan { base, head, json } => {
+            let plans = checks::release_versions::plan(&root, base.as_deref(), &head)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&plans)?);
+            } else {
+                for plan in plans {
+                    println!(
+                        "{} changed={} version={} tag={} workflow={}",
+                        plan.id,
+                        plan.changed,
+                        plan.version,
+                        plan.candidate_tag,
+                        plan.release_workflow
+                    );
+                }
+            }
+            Ok(())
+        }
+        Command::BumpVersion { component, level } => {
+            let level = match level.as_str() {
+                "patch" => checks::release_versions::BumpLevel::Patch,
+                "minor" => checks::release_versions::BumpLevel::Minor,
+                "major" => checks::release_versions::BumpLevel::Major,
+                _ => unreachable!(),
+            };
+            checks::release_versions::bump(&root, &component, level)
+        }
     }
 }
 

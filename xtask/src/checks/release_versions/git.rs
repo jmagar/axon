@@ -1,0 +1,192 @@
+use super::files::read_gradle_version_code;
+use super::{Component, GateMode, VersionKind};
+use anyhow::{Context, Result, bail};
+use semver::Version;
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::process::Command;
+
+pub(super) fn latest_tag(root: &Path, prefix: &str) -> Result<Option<String>> {
+    let output = git_output(root, &["tag", "-l", &format!("{prefix}*")])?;
+    let mut candidates = Vec::new();
+    for tag in output.lines().filter(|line| !line.trim().is_empty()) {
+        let Some(version) = tag.strip_prefix(prefix) else {
+            continue;
+        };
+        if let Ok(version) = Version::parse(version) {
+            candidates.push((version, tag.to_owned()));
+        }
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(candidates.pop().map(|(_, tag)| tag))
+}
+
+pub(super) fn latest_version(root: &Path, prefix: &str) -> Result<Option<Version>> {
+    Ok(latest_tag(root, prefix)?
+        .and_then(|tag| tag.strip_prefix(prefix).map(ToOwned::to_owned))
+        .and_then(|version| Version::parse(&version).ok()))
+}
+
+pub(super) fn tag_exists(root: &Path, tag: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "-q", "--verify"])
+        .arg(format!("refs/tags/{tag}"))
+        .output()
+        .with_context(|| format!("failed to check tag {tag}"))?;
+    Ok(output.status.success())
+}
+
+pub(super) fn component_changed_since_ref(
+    root: &Path,
+    component: &Component,
+    base: &str,
+    head: &str,
+) -> Result<bool> {
+    let changed = changed_paths_since_ref(root, base, head, &component.shipping_paths)?;
+    if changed.is_empty() {
+        return Ok(false);
+    }
+
+    if component.id == "cli"
+        && changed.iter().all(|path| path == "Cargo.lock")
+        && cargo_lock_only_xtask_package_changed(root, base, head)?
+    {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+fn changed_paths_since_ref(
+    root: &Path,
+    base: &str,
+    head: &str,
+    paths: &[String],
+) -> Result<Vec<String>> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(root)
+        .args(["diff", "--name-only"])
+        .arg(format!("{base}..{head}"))
+        .arg("--")
+        .args(paths);
+    let output = command
+        .output()
+        .with_context(|| format!("failed to diff {base}..{head}"))?;
+    if !output.status.success() {
+        bail!(
+            "git diff failed for {base}..{head}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
+fn merge_base_origin_main(root: &Path) -> Result<String> {
+    git_output(root, &["merge-base", "origin/main", "HEAD"]).map(|output| output.trim().to_owned())
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .with_context(|| format!("failed to run git {args:?}"))?;
+    if !output.status.success() {
+        bail!(
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub(super) fn compare_ref_for_component(
+    root: &Path,
+    component: &Component,
+    base: Option<&str>,
+    mode: GateMode,
+) -> Result<Option<String>> {
+    match mode {
+        GateMode::Pr => Ok(Some(match base {
+            Some(base) => base.to_owned(),
+            None => merge_base_origin_main(root).unwrap_or_else(|_| "origin/main".to_owned()),
+        })),
+        GateMode::Main => Ok(latest_tag(root, &component.tag_prefix)?),
+    }
+}
+
+pub(super) fn check_gradle_version_code_increased(
+    root: &Path,
+    component: &Component,
+    compare_ref: &str,
+) -> Result<()> {
+    let Some(file) = component
+        .version_files
+        .iter()
+        .find(|file| file.kind == VersionKind::GradleVersionCode)
+    else {
+        return Ok(());
+    };
+    let current_content = std::fs::read_to_string(root.join(&file.path))
+        .with_context(|| format!("failed to read {}", file.path))?;
+    let current = read_gradle_version_code(&current_content)?;
+    let previous = git_show(root, compare_ref, &file.path)
+        .ok()
+        .and_then(|content| read_gradle_version_code(&content).ok());
+    if let Some(previous) = previous
+        && current <= previous
+    {
+        bail!(
+            "{} versionCode must increase when Android shipping paths change ({} <= {})",
+            file.path,
+            current,
+            previous
+        );
+    }
+    Ok(())
+}
+
+fn git_show(root: &Path, reference: &str, path: &str) -> Result<String> {
+    git_output(root, &["show", &format!("{reference}:{path}")])
+}
+
+fn cargo_lock_only_xtask_package_changed(root: &Path, base: &str, head: &str) -> Result<bool> {
+    let before = git_show(root, base, "Cargo.lock")?;
+    let after = git_show(root, head, "Cargo.lock")?;
+    let before = cargo_lock_package_sections(&before);
+    let after = cargo_lock_package_sections(&after);
+    let mut names = before.keys().chain(after.keys()).collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    let changed = names
+        .into_iter()
+        .filter(|name| before.get(*name) != after.get(*name))
+        .map(|name| name.as_str())
+        .collect::<Vec<_>>();
+    Ok(changed == ["xtask"])
+}
+
+fn cargo_lock_package_sections(content: &str) -> BTreeMap<String, String> {
+    let mut packages = BTreeMap::new();
+    for section in content.split("[[package]]").skip(1) {
+        let name = section.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("name = ")
+                .and_then(|value| value.trim().strip_prefix('"')?.strip_suffix('"'))
+        });
+        if let Some(name) = name {
+            packages.insert(name.to_owned(), section.trim().to_owned());
+        }
+    }
+    packages
+}

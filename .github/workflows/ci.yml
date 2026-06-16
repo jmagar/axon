@@ -31,17 +31,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           sparse-checkout: |
             src
             xtask
             benches
             apps/web
+            apps/palette-tauri
+            apps/android
+            apps/chrome-extension
+            assets
             plugins
             docs
             .github
             tests
             scripts
             config
+            release
             vendor
             .cargo
       - uses: dtolnay/rust-toolchain@stable
@@ -57,17 +63,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           sparse-checkout: |
             src
             xtask
             benches
             apps/web
+            apps/palette-tauri
+            apps/android
+            apps/chrome-extension
+            assets
             plugins
             docs
             .github
             tests
             scripts
             config
+            release
             vendor
             .cargo
       - uses: dtolnay/rust-toolchain@stable
@@ -76,6 +88,8 @@ jobs:
           shared-key: xtask
       - name: Verify version parity across Cargo.toml / README / CHANGELOG / plugin.json
         run: cargo xtask check-version-sync
+      - name: Verify release versions for changed shipping components
+        run: cargo xtask check-release-versions --base origin/main --head HEAD --mode pr
 
   no-mod-rs:
     name: no-mod-rs
@@ -94,6 +108,7 @@ jobs:
             tests
             scripts
             config
+            release
             vendor
             .cargo
       - uses: dtolnay/rust-toolchain@stable
