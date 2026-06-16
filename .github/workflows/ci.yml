@@ -230,7 +230,7 @@ jobs:
       # Without this the first real desktop build happens only in
       # palette-release.yml *after* the palette-v* tag is published.
       - name: Tauri build (no bundle)
-        run: pnpm --dir apps/palette-tauri tauri build --no-bundle
+        run: pnpm --dir apps/palette-tauri exec tauri build --no-bundle
 
   windows-check:
     name: windows-check (xtask only)
