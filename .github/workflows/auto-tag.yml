@@ -68,7 +68,7 @@ jobs:
         id: plan
         run: |
           set -euo pipefail
-          cargo xtask release-plan --head HEAD --mode main --json > release-plan.json
+          cargo xtask check-release-versions --head HEAD --mode main --json > release-plan.json
           matrix=$(jq -c '{include: [.[] | select(.changed == true)]}' release-plan.json)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           cat release-plan.json
@@ -98,12 +98,17 @@ jobs:
           deadline=$(( $(date +%s) + 1800 ))  # 30 minute cap
           echo "Waiting for CI to succeed for $sha ..."
           while :; do
-            runs_json=$(gh run list \
+            gh_stderr="$(mktemp)"
+            if ! runs_json=$(gh run list \
               --workflow=ci.yml \
               --commit "$sha" \
               --branch main \
               --event push \
-              --json databaseId,status,conclusion,headSha,event,headBranch 2>/dev/null || true)
+              --json databaseId,status,conclusion,headSha,event,headBranch 2>"$gh_stderr"); then
+              echo "::error::gh run list failed while polling ci.yml for $sha" >&2
+              cat "$gh_stderr" >&2
+              exit 1
+            fi
             run_json=$(jq -c --arg sha "$sha" \
               '[.[] | select(.headSha == $sha and .event == "push" and .headBranch == "main")][0] // null' \
               <<<"${runs_json:-[]}")

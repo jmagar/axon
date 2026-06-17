@@ -1,16 +1,30 @@
-use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::Path;
 
+type ReleaseResult<T> = std::result::Result<T, ReleaseVersionError>;
+
+macro_rules! release_bail {
+    ($($arg:tt)*) => {
+        return Err($crate::checks::release_versions::ReleaseVersionError::msg(format!($($arg)*)))
+    };
+}
+
+mod error;
 mod files;
 mod git;
+mod manifest;
+
+use error::{ReleaseContext, ReleaseVersionError};
+use manifest::validate_manifest;
+
+#[cfg(test)]
+use manifest::same_version_file;
 
 use files::{
     check_component_parity, ensure_changelog_heading, increment_gradle_version_code, read_version,
-    replace_cargo_package_version, replace_gradle_version_name, replace_json_version,
-    replace_readme_version_line,
+    replace_cargo_lock_package_version, replace_cargo_package_version, replace_gradle_version_name,
+    replace_json_version, replace_npm_package_lock_version, replace_readme_version_line,
 };
 use git::{
     check_gradle_version_code_increased, compare_ref_for_component, component_changed_since_ref,
@@ -19,8 +33,8 @@ use git::{
 
 #[cfg(test)]
 use files::{
-    read_cargo_package_version, read_gradle_version_code, read_gradle_version_name,
-    read_json_version,
+    read_cargo_lock_package_version, read_cargo_package_version, read_gradle_version_code,
+    read_gradle_version_name, read_json_version, read_npm_package_lock_version,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -70,10 +84,12 @@ struct VersionFile {
 #[serde(rename_all = "snake_case")]
 enum VersionKind {
     CargoPackage,
+    CargoLockPackage,
     ReadmeVersionLine,
     ChangelogHeading,
     JsonVersion,
     JsonNoVersion,
+    NpmPackageLock,
     GradleVersionName,
     GradleVersionCode,
 }
@@ -91,7 +107,7 @@ pub fn check(
     head: &str,
     mode: GateMode,
     json: bool,
-) -> Result<()> {
+) -> ReleaseResult<()> {
     let manifest = load_manifest(root)?;
     let plans = build_plan(root, &manifest, base, head, mode)?;
     let mut errors = Vec::new();
@@ -111,18 +127,18 @@ pub fn check(
         collect_changed_component_errors(root, component, plan, base, head, mode, &mut errors)?;
     }
 
-    print_plans(&plans, json)?;
-
     if !errors.is_empty() {
         for error in &errors {
             eprintln!("release version error: {error}");
         }
-        bail!(
+        release_bail!(
             "release version check failed ({} error(s)): {}",
             errors.len(),
             errors.join("; ")
         );
     }
+
+    print_plans(&plans, json)?;
 
     Ok(())
 }
@@ -132,14 +148,18 @@ pub fn plan(
     base: Option<&str>,
     head: &str,
     mode: GateMode,
-) -> Result<Vec<ComponentPlan>> {
+) -> ReleaseResult<Vec<ComponentPlan>> {
     let manifest = load_manifest(root)?;
     build_plan(root, &manifest, base, head, mode)
 }
 
-pub fn print_plans(plans: &[ComponentPlan], json: bool) -> Result<()> {
+pub fn print_plans(plans: &[ComponentPlan], json: bool) -> ReleaseResult<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(plans)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(plans)
+                .release_context("failed to serialize release plan")?
+        );
     } else {
         for plan in plans {
             println!(
@@ -156,16 +176,17 @@ pub fn print_plans(plans: &[ComponentPlan], json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn bump(root: &Path, component_id: &str, level: BumpLevel) -> Result<()> {
+pub fn bump(root: &Path, component_id: &str, level: BumpLevel) -> ReleaseResult<()> {
     let manifest = load_manifest(root)?;
     let component = manifest
         .components
         .iter()
         .find(|component| component.id == component_id)
-        .with_context(|| format!("unknown release component {component_id}"))?;
+        .with_release_context(|| format!("unknown release component {component_id}"))?;
     let current = read_version(root, &component.version_source)?;
-    let current = Version::parse(&current)
-        .with_context(|| format!("{} version is not valid semver: {current}", component.id))?;
+    let current = Version::parse(&current).with_release_context(|| {
+        format!("{} version is not valid semver: {current}", component.id)
+    })?;
     let next = match level {
         BumpLevel::Patch => Version::new(current.major, current.minor, current.patch + 1),
         BumpLevel::Minor => Version::new(current.major, current.minor + 1, 0),
@@ -176,63 +197,102 @@ pub fn bump(root: &Path, component_id: &str, level: BumpLevel) -> Result<()> {
     for file in &component.version_files {
         let path = root.join(&file.path);
         let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", file.path))?;
+            .with_release_context(|| format!("failed to read {}", file.path))?;
         let updated = match file.kind {
             VersionKind::CargoPackage => {
                 replace_cargo_package_version(&content, file.package.as_deref(), &next)?
             }
+            VersionKind::CargoLockPackage => {
+                replace_cargo_lock_package_version(&content, file.package.as_deref(), &next)?
+            }
             VersionKind::ReadmeVersionLine => replace_readme_version_line(&content, &next)?,
-            VersionKind::ChangelogHeading => ensure_changelog_heading(&content, &next),
+            VersionKind::ChangelogHeading => ensure_changelog_heading(&content, &next)?,
             VersionKind::JsonVersion => {
                 replace_json_version(&content, file.json_pointer.as_deref(), &next)?
             }
             VersionKind::JsonNoVersion => content.clone(),
+            VersionKind::NpmPackageLock => {
+                replace_npm_package_lock_version(&content, file.package.as_deref(), &next)?
+            }
             VersionKind::GradleVersionName => replace_gradle_version_name(&content, &next)?,
             VersionKind::GradleVersionCode => increment_gradle_version_code(&content)?,
         };
         if updated != content {
             std::fs::write(&path, updated)
-                .with_context(|| format!("failed to write {}", file.path))?;
+                .with_release_context(|| format!("failed to write {}", file.path))?;
         }
     }
 
     Ok(())
 }
 
-pub fn check_cli_parity_only(root: &Path) -> Result<()> {
+pub fn check_local(root: &Path) -> ReleaseResult<()> {
+    let manifest = load_manifest(root)?;
+    let mut errors = Vec::new();
+
+    for component in &manifest.components {
+        let version = read_version(root, &component.version_source)?;
+        Version::parse(&version).with_release_context(|| {
+            format!("{} version is not valid semver: {version}", component.id)
+        })?;
+        let parity_errors = check_component_parity(root, component, &version)?;
+        errors.extend(
+            parity_errors
+                .into_iter()
+                .map(|error| format!("{}: {error}", component.id)),
+        );
+    }
+
+    if !errors.is_empty() {
+        for error in &errors {
+            eprintln!("release version error: {error}");
+        }
+        release_bail!(
+            "local release version check failed ({} error(s)): {}",
+            errors.len(),
+            errors.join("; ")
+        );
+    }
+
+    println!("OK: all release version files are valid in the local checkout.");
+    Ok(())
+}
+
+pub fn check_cli_parity_only(root: &Path) -> ReleaseResult<()> {
     let manifest = load_manifest(root)?;
     let component = manifest
         .components
         .iter()
         .find(|component| component.id == "cli")
-        .context("release manifest is missing cli component")?;
+        .release_context("release manifest is missing cli component")?;
     let version = read_version(root, &component.version_source)?;
-    Version::parse(&version)
-        .with_context(|| format!("{} version is not valid semver: {version}", component.id))?;
+    Version::parse(&version).with_release_context(|| {
+        format!("{} version is not valid semver: {version}", component.id)
+    })?;
     let errors = check_component_parity(root, component, &version)?;
     if !errors.is_empty() {
         for error in &errors {
             eprintln!("version sync error: cli: {error}");
         }
-        bail!("version sync check failed ({} error(s))", errors.len());
+        release_bail!("version sync check failed ({} error(s))", errors.len());
     }
     println!("OK: all CLI version-bearing files are in sync at {version}.");
     Ok(())
 }
 
-fn load_manifest(root: &Path) -> Result<Manifest> {
+fn load_manifest(root: &Path) -> ReleaseResult<Manifest> {
     let path = root.join("release/components.toml");
     let content =
-        std::fs::read_to_string(&path).context("failed to read release/components.toml")?;
+        std::fs::read_to_string(&path).release_context("failed to read release/components.toml")?;
     let manifest: Manifest =
-        toml::from_str(&content).context("failed to parse release/components.toml")?;
+        toml::from_str(&content).release_context("failed to parse release/components.toml")?;
     if manifest.schema_version != 1 {
-        bail!(
+        release_bail!(
             "unsupported release/components.toml schema_version {}",
             manifest.schema_version
         );
     }
-    validate_manifest(&manifest)?;
+    validate_manifest(root, &manifest)?;
     Ok(manifest)
 }
 
@@ -242,13 +302,13 @@ fn build_plan(
     base: Option<&str>,
     head: &str,
     mode: GateMode,
-) -> Result<Vec<ComponentPlan>> {
+) -> ReleaseResult<Vec<ComponentPlan>> {
     manifest
         .components
         .iter()
         .map(|component| {
             let version = read_version(root, &component.version_source)?;
-            Version::parse(&version).with_context(|| {
+            Version::parse(&version).with_release_context(|| {
                 format!("{} version is not valid semver: {version}", component.id)
             })?;
             let candidate_tag = format!("{}{}", component.tag_prefix, version);
@@ -286,8 +346,8 @@ fn collect_changed_component_errors(
     head: &str,
     mode: GateMode,
     errors: &mut Vec<String>,
-) -> Result<()> {
-    let candidate = Version::parse(&plan.version).with_context(|| {
+) -> ReleaseResult<()> {
+    let candidate = Version::parse(&plan.version).with_release_context(|| {
         format!(
             "{} version is not valid semver: {}",
             component.id, plan.version
@@ -330,14 +390,16 @@ fn collect_changed_component_errors(
 fn latest_version_from_plan(
     component: &Component,
     plan: &ComponentPlan,
-) -> Result<Option<Version>> {
+) -> ReleaseResult<Option<Version>> {
     plan.last_tag
         .as_deref()
         .map(|tag| {
             let version = tag
                 .strip_prefix(&component.tag_prefix)
-                .with_context(|| format!("{} latest tag has wrong prefix: {tag}", component.id))?;
-            Version::parse(version).with_context(|| {
+                .with_release_context(|| {
+                    format!("{} latest tag has wrong prefix: {tag}", component.id)
+                })?;
+            Version::parse(version).with_release_context(|| {
                 format!(
                     "{} latest tag has invalid semver suffix: {tag}",
                     component.id
@@ -345,118 +407,6 @@ fn latest_version_from_plan(
             })
         })
         .transpose()
-}
-
-fn validate_manifest(manifest: &Manifest) -> Result<()> {
-    let mut component_ids = HashSet::new();
-    let mut tag_prefixes: Vec<&str> = Vec::new();
-
-    for component in &manifest.components {
-        if component.id.trim().is_empty() {
-            bail!("release manifest contains an empty component id");
-        }
-        if !component_ids.insert(component.id.as_str()) {
-            bail!("duplicate release component id {}", component.id);
-        }
-        if component.tag_prefix.trim().is_empty() {
-            bail!("{} has an empty tag_prefix", component.id);
-        }
-        if tag_prefixes.iter().any(|existing| {
-            existing.starts_with(&component.tag_prefix)
-                || component.tag_prefix.starts_with(*existing)
-        }) {
-            bail!("{} tag_prefix overlaps another component", component.id);
-        }
-        tag_prefixes.push(&component.tag_prefix);
-        if component.shipping_paths.is_empty() {
-            bail!("{} has no shipping_paths", component.id);
-        }
-        if !component.release_workflow.ends_with(".yml")
-            && !component.release_workflow.ends_with(".yaml")
-        {
-            bail!("{} release_workflow must be a YAML workflow", component.id);
-        }
-        validate_version_file(component, "version_source", &component.version_source)?;
-        for file in &component.version_files {
-            validate_version_file(component, "version_files", file)?;
-        }
-        if !component
-            .version_files
-            .iter()
-            .any(|file| same_version_file(file, &component.version_source))
-        {
-            bail!(
-                "{} version_source is not listed in version_files",
-                component.id
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_version_file(component: &Component, field: &str, file: &VersionFile) -> Result<()> {
-    match file.kind {
-        VersionKind::CargoPackage => {
-            if file.package.as_deref().unwrap_or("").trim().is_empty() {
-                bail!(
-                    "{} {field} {} cargo_package requires package",
-                    component.id,
-                    file.path
-                );
-            }
-            if file.json_pointer.is_some() {
-                bail!(
-                    "{} {field} {} cargo_package must not set json_pointer",
-                    component.id,
-                    file.path
-                );
-            }
-        }
-        VersionKind::JsonVersion => {
-            if file.package.is_some() {
-                bail!(
-                    "{} {field} {} json_version must not set package",
-                    component.id,
-                    file.path
-                );
-            }
-            let pointer = file.json_pointer.as_deref().unwrap_or("");
-            if !pointer.starts_with('/') {
-                bail!(
-                    "{} {field} {} json_version requires an absolute json_pointer",
-                    component.id,
-                    file.path
-                );
-            }
-        }
-        _ => {
-            if file.package.is_some() {
-                bail!(
-                    "{} {field} {} {:?} must not set package",
-                    component.id,
-                    file.path,
-                    file.kind
-                );
-            }
-            if file.json_pointer.is_some() {
-                bail!(
-                    "{} {field} {} {:?} must not set json_pointer",
-                    component.id,
-                    file.path,
-                    file.kind
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn same_version_file(left: &VersionFile, right: &VersionFile) -> bool {
-    left.kind == right.kind
-        && left.path == right.path
-        && left.package == right.package
-        && left.json_pointer == right.json_pointer
 }
 
 fn bump_hint(component: &Component) -> String {

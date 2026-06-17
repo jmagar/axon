@@ -151,13 +151,31 @@ fn ci_runs_release_version_gate_before_merge() {
 }
 
 #[test]
-fn auto_tag_uses_xtask_release_plan() {
+fn ci_xtask_compiling_jobs_checkout_release_manifest() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    for job_name in ["check", "msrv", "clippy", "test", "windows-check"] {
+        let job = workflow_job_block(workflow, job_name);
+        if job.contains("cargo check --workspace --all-targets")
+            || job.contains("cargo clippy --workspace --all-targets")
+            || job.contains("cargo test -p xtask")
+            || job.contains("cargo check -p xtask")
+        {
+            assert!(
+                sparse_checkout_covers(job, "release/components.toml"),
+                "{job_name} compiles xtask tests and must checkout release/components.toml"
+            );
+        }
+    }
+}
+
+#[test]
+fn auto_tag_uses_validated_xtask_release_plan() {
     let workflow = include_str!("../.github/workflows/auto-tag.yml");
     let plan = workflow_job_block(workflow, "plan");
     let release = workflow_job_block(workflow, "release");
     assert!(
-        plan.contains("cargo xtask release-plan --head HEAD --mode main --json"),
-        "auto-tag must use the shared xtask release-version detector"
+        plan.contains("cargo xtask check-release-versions --head HEAD --mode main --json"),
+        "auto-tag must use the validated shared xtask release-version detector"
     );
     assert!(
         plan.contains("fetch-depth: 0"),
@@ -189,6 +207,8 @@ fn auto_tag_uses_xtask_release_plan() {
         "auto-tag must wait for CI before creating release tags"
     );
     for required in [
+        "if ! runs_json=$(gh run list",
+        "gh run list failed while polling ci.yml",
         "--branch main",
         "--event push",
         ".headSha == $sha",

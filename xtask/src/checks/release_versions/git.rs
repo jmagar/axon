@@ -1,12 +1,11 @@
 use super::files::read_gradle_version_code;
-use super::{Component, GateMode, VersionKind};
-use anyhow::{Context, Result, bail};
+use super::{Component, GateMode, ReleaseContext, ReleaseResult, VersionKind};
 use semver::Version;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
-pub(super) fn latest_tag(root: &Path, prefix: &str) -> Result<Option<String>> {
+pub(super) fn latest_tag(root: &Path, prefix: &str) -> ReleaseResult<Option<String>> {
     let output = git_output(root, &["tag", "-l", &format!("{prefix}*")])?;
     let mut candidates = Vec::new();
     for tag in output.lines().filter(|line| !line.trim().is_empty()) {
@@ -21,14 +20,14 @@ pub(super) fn latest_tag(root: &Path, prefix: &str) -> Result<Option<String>> {
     Ok(candidates.pop().map(|(_, tag)| tag))
 }
 
-pub(super) fn tag_exists(root: &Path, tag: &str) -> Result<bool> {
+pub(super) fn tag_exists(root: &Path, tag: &str) -> ReleaseResult<bool> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
         .args(["rev-parse", "-q", "--verify"])
         .arg(format!("refs/tags/{tag}"))
         .output()
-        .with_context(|| format!("failed to check tag {tag}"))?;
+        .with_release_context(|| format!("failed to check tag {tag}"))?;
     Ok(output.status.success())
 }
 
@@ -37,7 +36,7 @@ pub(super) fn component_changed_since_ref(
     component: &Component,
     base: &str,
     head: &str,
-) -> Result<bool> {
+) -> ReleaseResult<bool> {
     let changed = changed_paths_since_ref(root, base, head, &component.shipping_paths)?;
     if changed.is_empty() {
         return Ok(false);
@@ -58,7 +57,7 @@ fn changed_paths_since_ref(
     base: &str,
     head: &str,
     paths: &[String],
-) -> Result<Vec<String>> {
+) -> ReleaseResult<Vec<String>> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -69,9 +68,9 @@ fn changed_paths_since_ref(
         .args(paths);
     let output = command
         .output()
-        .with_context(|| format!("failed to diff {base}..{head}"))?;
+        .with_release_context(|| format!("failed to diff {base}..{head}"))?;
     if !output.status.success() {
-        bail!(
+        release_bail!(
             "git diff failed for {base}..{head}: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
@@ -83,19 +82,19 @@ fn changed_paths_since_ref(
         .collect())
 }
 
-pub(super) fn merge_base(root: &Path, base: &str, head: &str) -> Result<String> {
+pub(super) fn merge_base(root: &Path, base: &str, head: &str) -> ReleaseResult<String> {
     git_output(root, &["merge-base", base, head]).map(|output| output.trim().to_owned())
 }
 
-fn git_output(root: &Path, args: &[&str]) -> Result<String> {
+fn git_output(root: &Path, args: &[&str]) -> ReleaseResult<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
         .args(args)
         .output()
-        .with_context(|| format!("failed to run git {args:?}"))?;
+        .with_release_context(|| format!("failed to run git {args:?}"))?;
     if !output.status.success() {
-        bail!(
+        release_bail!(
             "git {:?} failed: {}",
             args,
             String::from_utf8_lossy(&output.stderr).trim()
@@ -110,7 +109,7 @@ pub(super) fn compare_ref_for_component(
     base: Option<&str>,
     head: &str,
     mode: GateMode,
-) -> Result<Option<String>> {
+) -> ReleaseResult<Option<String>> {
     match mode {
         GateMode::Pr => Ok(Some(match base {
             Some(base) => merge_base(root, base, head)?,
@@ -126,7 +125,7 @@ pub(super) fn check_gradle_version_code_increased(
     root: &Path,
     component: &Component,
     compare_ref: &str,
-) -> Result<()> {
+) -> ReleaseResult<()> {
     let Some(file) = component
         .version_files
         .iter()
@@ -135,18 +134,18 @@ pub(super) fn check_gradle_version_code_increased(
         return Ok(());
     };
     let current_content = std::fs::read_to_string(root.join(&file.path))
-        .with_context(|| format!("failed to read {}", file.path))?;
+        .with_release_context(|| format!("failed to read {}", file.path))?;
     let current = read_gradle_version_code(&current_content)?;
     let previous_content = git_show(root, compare_ref, &file.path)
-        .with_context(|| format!("failed to read previous {}", file.path))?;
-    let previous = read_gradle_version_code(&previous_content).with_context(|| {
+        .with_release_context(|| format!("failed to read previous {}", file.path))?;
+    let previous = read_gradle_version_code(&previous_content).with_release_context(|| {
         format!(
             "failed to parse previous versionCode in {} at {}",
             file.path, compare_ref
         )
     })?;
     if current <= previous {
-        bail!(
+        release_bail!(
             "{} versionCode must increase when Android shipping paths change ({} <= {})",
             file.path,
             current,
@@ -156,11 +155,15 @@ pub(super) fn check_gradle_version_code_increased(
     Ok(())
 }
 
-fn git_show(root: &Path, reference: &str, path: &str) -> Result<String> {
+fn git_show(root: &Path, reference: &str, path: &str) -> ReleaseResult<String> {
     git_output(root, &["show", &format!("{reference}:{path}")])
 }
 
-fn cargo_lock_only_xtask_package_changed(root: &Path, base: &str, head: &str) -> Result<bool> {
+fn cargo_lock_only_xtask_package_changed(
+    root: &Path,
+    base: &str,
+    head: &str,
+) -> ReleaseResult<bool> {
     let before = git_show(root, base, "Cargo.lock")?;
     let after = git_show(root, head, "Cargo.lock")?;
     let before = cargo_lock_package_sections(&before);

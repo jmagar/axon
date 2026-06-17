@@ -18,9 +18,11 @@ shipping_paths = [
 version_source = { kind = "cargo_package", path = "Cargo.toml", package = "axon" }
 version_files = [
   { kind = "cargo_package", path = "Cargo.toml", package = "axon" },
+  { kind = "cargo_lock_package", path = "Cargo.lock", package = "axon" },
   { kind = "readme_version_line", path = "README.md" },
   { kind = "changelog_heading", path = "CHANGELOG.md" },
   { kind = "json_version", path = "apps/web/package.json", json_pointer = "/version" },
+  { kind = "npm_package_lock", path = "apps/web/package-lock.json", package = "@axon/admin-panel" },
   { kind = "json_version", path = "apps/web/openapi/axon.json", json_pointer = "/info/version" },
   { kind = "json_no_version", path = "plugins/axon/.claude-plugin/plugin.json" },
 ]
@@ -36,6 +38,7 @@ version_files = [
   { kind = "json_version", path = "apps/palette-tauri/src-tauri/tauri.conf.json", json_pointer = "/version" },
   { kind = "json_version", path = "apps/palette-tauri/package.json", json_pointer = "/version" },
   { kind = "cargo_package", path = "apps/palette-tauri/src-tauri/Cargo.toml", package = "axon-palette-tauri" },
+  { kind = "cargo_lock_package", path = "apps/palette-tauri/src-tauri/Cargo.lock", package = "axon-palette-tauri" },
 ]
 
 [[components]]

@@ -271,6 +271,7 @@ jobs:
             tests
             scripts
             config
+            release
             vendor
             .cargo
       - uses: dtolnay/rust-toolchain@stable
@@ -328,6 +329,7 @@ jobs:
             config
             vendor
             .cargo
+            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Match rust-toolchain.toml so the Windows target is installed on
@@ -378,6 +380,7 @@ jobs:
             config
             vendor
             .cargo
+            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -440,6 +443,7 @@ jobs:
             config
             vendor
             .cargo
+            release
             Cargo.toml
             Cargo.lock
             rust-toolchain.toml
@@ -688,6 +692,7 @@ jobs:
             config
             vendor
             .cargo
+            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -723,6 +728,7 @@ jobs:
             config
             vendor
             .cargo
+            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -753,6 +759,7 @@ jobs:
             config
             vendor
             .cargo
+            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -795,6 +802,7 @@ jobs:
             tests
             scripts
             config
+            release
             vendor
             .cargo
             .config/nextest.toml

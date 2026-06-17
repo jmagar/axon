@@ -77,7 +77,13 @@ fn main() -> Result<()> {
             head,
             mode,
             json,
-        } => checks::release_versions::check(&root, base.as_deref(), &head, mode, json),
+        } => Ok(checks::release_versions::check(
+            &root,
+            base.as_deref(),
+            &head,
+            mode,
+            json,
+        )?),
         Command::ReleasePlan {
             base,
             head,
@@ -89,7 +95,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::BumpVersion { component, level } => {
-            checks::release_versions::bump(&root, &component, level)
+            Ok(checks::release_versions::bump(&root, &component, level)?)
         }
     }
 }

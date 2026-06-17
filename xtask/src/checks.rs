@@ -19,7 +19,7 @@ pub fn check(root: &Path) -> Result<()> {
     claude_symlinks::check(root)?;
     broken_symlinks::check(root)?;
     secrets::check(root)?;
-    release_versions::check(root, None, "HEAD", release_versions::GateMode::Pr, false)?;
+    release_versions::check_local(root)?;
     println!("All checks passed.");
     Ok(())
 }
