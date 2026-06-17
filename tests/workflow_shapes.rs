@@ -161,10 +161,20 @@ fn ci_xtask_compiling_jobs_checkout_release_manifest() {
             || job.contains("cargo test -p xtask")
             || job.contains("cargo check -p xtask")
         {
-            assert!(
-                sparse_checkout_covers(job, "release/components.toml"),
-                "{job_name} compiles xtask tests and must checkout release/components.toml"
-            );
+            for path in [
+                "release/components.toml",
+                "apps/android",
+                "apps/chrome-extension",
+                "apps/palette-tauri",
+                "apps/web/openapi/axon.json",
+                "migrations",
+                "assets",
+            ] {
+                assert!(
+                    sparse_checkout_covers(job, path),
+                    "{job_name} compiles xtask tests and must checkout {path}"
+                );
+            }
         }
     }
 }
