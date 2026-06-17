@@ -206,14 +206,15 @@ export function EmptyResult({ kind = "generic" }: { kind?: EmptyKind }) {
 
 export function StatusDot({ status }: { status: string }) {
   const tone = toneForStatus(status);
+  const presentation = statusPresentation(tone);
   return (
     <StatusIndicator
-      tone={statusIndicatorTone(tone)}
+      tone={presentation.indicatorTone}
       showLabel={false}
       pulse={false}
       className="operation-status-indicator"
       dotClassName="operation-status-dot"
-      dotStyle={statusDotStyle(tone)}
+      dotStyle={presentation.dotStyle}
       aria-hidden="true"
     />
   );
@@ -422,30 +423,17 @@ export function toneForStatus(status: string | undefined): Tone {
   }
 }
 
-function statusIndicatorTone(tone: Tone): StatusTone {
+function statusPresentation(tone: Tone): { indicatorTone: StatusTone; dotStyle: CSSProperties } {
   switch (tone) {
     case "success":
-      return "online";
+      return { indicatorTone: "online", dotStyle: { boxShadow: "0 0 0 3px var(--aurora-success-surface)" } };
     case "warn":
-      return "degraded";
+      return { indicatorTone: "degraded", dotStyle: { boxShadow: "0 0 0 3px var(--aurora-warn-surface)" } };
     case "error":
-      return "error";
+      return { indicatorTone: "error", dotStyle: { boxShadow: "0 0 0 3px var(--aurora-error-surface)" } };
     case "violet":
-      return "automating";
+      return { indicatorTone: "automating", dotStyle: { boxShadow: "0 0 0 3px var(--aurora-neutral-surface)" } };
     default:
-      return "queued";
-  }
-}
-
-function statusDotStyle(tone: Tone): CSSProperties {
-  switch (tone) {
-    case "success":
-      return { boxShadow: "0 0 0 3px var(--aurora-success-surface)" };
-    case "warn":
-      return { boxShadow: "0 0 0 3px var(--aurora-warn-surface)" };
-    case "error":
-      return { boxShadow: "0 0 0 3px var(--aurora-error-surface)" };
-    default:
-      return { boxShadow: "0 0 0 3px var(--aurora-neutral-surface)" };
+      return { indicatorTone: "queued", dotStyle: { boxShadow: "0 0 0 3px var(--aurora-neutral-surface)" } };
   }
 }

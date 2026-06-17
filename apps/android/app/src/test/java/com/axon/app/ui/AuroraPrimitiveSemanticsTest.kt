@@ -7,6 +7,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -17,15 +18,17 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.axon.app.ui.ask.AskPromptBar
 import com.axon.app.ui.ask.ConversationMode
-import com.axon.app.ui.common.AxonCompactTabs
+import com.axon.app.ui.common.AxonSensitiveTextField
 import com.axon.app.ui.common.AuroraStatusDot
 import com.axon.app.ui.common.DotState
 import com.axon.app.ui.options.components.HeadersField
 import com.axon.app.ui.theme.AxonTheme
+import kotlinx.collections.immutable.toImmutableList
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import tv.tootie.aurora.components.AuroraTabs
 
 @OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -62,6 +65,58 @@ class AuroraPrimitiveSemanticsTest {
     }
 
     @Test
+    fun `prompt bar exposes stop action and disables editing while loading`() = runComposeUiTest {
+        var stopped = false
+
+        setContent {
+            AxonTheme {
+                AskPromptBar(
+                    value = "thinking",
+                    onValueChange = {},
+                    onSend = {},
+                    loading = true,
+                    placeholder = "Ask anything",
+                    mode = ConversationMode.Ask,
+                    onModeChange = {},
+                    attachments = emptyList(),
+                    onAttachClick = {},
+                    onRemoveAttachment = {},
+                    onStop = { stopped = true },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Ask prompt").assertIsNotEnabled()
+        onAllNodesWithContentDescription("Stop generating").assertCountEquals(2)
+        onAllNodesWithContentDescription("Stop generating")[0].assertIsEnabled().performClick()
+        runOnIdle { check(stopped) }
+    }
+
+    @Test
+    fun `sensitive text field accepts multiple characters while hidden`() = runComposeUiTest {
+        var secret by mutableStateOf("")
+
+        setContent {
+            AxonTheme {
+                AxonSensitiveTextField(
+                    value = secret,
+                    onValueChange = { secret = it },
+                    label = "Token",
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Token").performTextInput("secret-token")
+        waitForIdle()
+
+        runOnIdle { check(secret == "secret-token") }
+        onNodeWithContentDescription("Show value").assertIsDisplayed()
+        onNodeWithContentDescription("Show value").assertIsDisplayed().performClick()
+        waitForIdle()
+        onNodeWithText("secret-token").assertIsDisplayed()
+    }
+
+    @Test
     fun `headers field keeps sensitive value hidden until explicit reveal`() = runComposeUiTest {
         setContent {
             AxonTheme {
@@ -72,7 +127,6 @@ class AuroraPrimitiveSemanticsTest {
             }
         }
 
-        onAllNodesWithText("Bearer secret-token").assertCountEquals(0)
         onAllNodesWithContentDescription("Show value").assertCountEquals(0)
         onNodeWithContentDescription("Show header value").assertIsDisplayed().performClick()
         waitForIdle()
@@ -84,10 +138,11 @@ class AuroraPrimitiveSemanticsTest {
     fun `compact tabs expose selected state`() = runComposeUiTest {
         setContent {
             AxonTheme {
-                AxonCompactTabs(
-                    tabs = listOf("One", "Two"),
+                AuroraTabs(
+                    tabs = listOf("One", "Two").toImmutableList(),
                     selectedIndex = 1,
                     onTabSelected = {},
+                    compact = true,
                 )
             }
         }

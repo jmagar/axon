@@ -83,9 +83,16 @@ internal fun AskPromptBar(
         },
         modifier = modifier,
         placeholder = placeholder,
-        enabled = true,
-        loading = false,
+        enabled = !loading,
+        loading = loading,
         hasSendableContent = canSend || loading,
+        primaryActionEnabled = canSend || loading,
+        primaryActionContent = { isLoading ->
+            Icon(
+                imageVector = if (isLoading) Icons.Rounded.Stop else Icons.AutoMirrored.Filled.Send,
+                contentDescription = null,
+            )
+        },
         compact = true,
         maxLines = 6,
         textFieldContentDescription = "Ask prompt",

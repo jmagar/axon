@@ -85,27 +85,14 @@ internal fun AxonSidebarSheet(
         }
         Spacer(Modifier.height(2.dp))
         items.forEach { item ->
-            AxonSidebarRow(
-                item = item,
+            AuroraSidebarRow(
+                item = AuroraSidebarRowItem(label = item.label, value = item.value, icon = item.icon),
                 selected = item.value == selected,
                 onClick = { onSelect(item.value) },
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
-}
-
-@Composable
-private fun AxonSidebarRow(
-    item: SidebarItem,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    AuroraSidebarRow(
-        item = AuroraSidebarRowItem(label = item.label, value = item.value, icon = item.icon),
-        selected = selected,
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 @Composable

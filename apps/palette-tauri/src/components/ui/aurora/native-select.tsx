@@ -10,9 +10,10 @@ export interface NativeSelectProps extends React.SelectHTMLAttributes<HTMLSelect
 }
 
 const NativeSelect = React.forwardRef<HTMLSelectElement, NativeSelectProps>(
-  ({ className, style, children, placeholder, disabled, ...props }, ref) => (
+  ({ className, style, children, placeholder, disabled, onFocus, onBlur, ...props }, ref) => (
     <span className="relative inline-flex w-full items-center">
       <select
+        {...props}
         ref={ref}
         disabled={disabled}
         className={cn(
@@ -40,14 +41,13 @@ const NativeSelect = React.forwardRef<HTMLSelectElement, NativeSelectProps>(
           event.currentTarget.dataset.previousBoxShadow = event.currentTarget.style.boxShadow
           event.currentTarget.style.borderColor = "color-mix(in srgb, var(--aurora-accent-primary) 42%, var(--aurora-border-strong))"
           event.currentTarget.style.boxShadow = "0 0 0 2px color-mix(in srgb, var(--aurora-accent-primary) 22%, transparent)"
-          props.onFocus?.(event)
+          onFocus?.(event)
         }}
         onBlur={(event) => {
           event.currentTarget.style.borderColor = event.currentTarget.dataset.previousBorderColor ?? ""
           event.currentTarget.style.boxShadow = event.currentTarget.dataset.previousBoxShadow ?? ""
-          props.onBlur?.(event)
+          onBlur?.(event)
         }}
-        {...props}
       >
         {placeholder ? (
           <option value="" disabled>

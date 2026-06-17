@@ -12,23 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INVENTORY_PATH = ROOT / "docs/reference/aurora-primitive-inventory.json"
 WEB_TAG_RE = re.compile(r"<(button|input|select|textarea|kbd)\b")
-ANDROID_PATTERNS = (
-    "BasicTextField",
-    "IconButton",
-    "ToolbarIconButton",
-    "SendButton",
-    "CompactActionButton",
-    "SettingsTabButton",
-    "SuggestionChip",
-    "SwitchRow",
-    "AxonCompactTabs",
-    "AuroraProgressBar",
-    "AuroraStatusDot",
-    "ProgressBar",
-    "AxonSidebarRow",
-    "Sidebar",
-)
-
 
 def rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
@@ -41,6 +24,19 @@ def line_number(text: str, index: int) -> int:
 def load_inventory() -> dict:
     with INVENTORY_PATH.open(encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def android_patterns(inventory: dict) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                entry["pattern"]
+                for entry in inventory.get("android_reusable_control_allowlist", [])
+                if entry.get("pattern")
+            },
+            key=lambda value: (-len(value), value),
+        )
+    )
 
 
 def validate_schema(inventory: dict) -> list[str]:
@@ -83,6 +79,8 @@ def validate_schema(inventory: dict) -> list[str]:
             file_path = entry.get("file_path")
             if file_path and not (ROOT / file_path).exists():
                 errors.append(f"{section}: file path does not exist: {file_path}")
+            if section == "android_reusable_control_allowlist" and not entry.get("pattern"):
+                errors.append(f"{section}: missing pattern for {file_path}")
 
     for rec in inventory.get("stale_bead_recommendations", []):
         for row_id in rec.get("row_ids", []):
@@ -121,7 +119,7 @@ def scan_android(inventory: dict) -> list[str]:
     for path in sorted(app_src.rglob("*.kt")):
         path_rel = rel(path)
         text = path.read_text(encoding="utf-8")
-        for pattern in ANDROID_PATTERNS:
+        for pattern in android_patterns(inventory):
             for match in re.finditer(rf"\b{re.escape(pattern)}\b", text):
                 if (path_rel, pattern) not in allow:
                     errors.append(

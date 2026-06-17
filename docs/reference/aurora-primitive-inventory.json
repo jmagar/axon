@@ -123,7 +123,6 @@
       "id": "A-AND-003",
       "platform": "android",
       "file_paths": [
-        "apps/android/app/src/main/java/com/axon/app/ui/common/AxonCompactTabs.kt",
         "apps/android/app/src/main/java/com/axon/app/ui/settings/SettingsScreen.kt",
         "apps/android/app/src/main/java/com/axon/app/ui/ask/AskScreenParts.kt",
         "apps/android/app/src/main/java/com/axon/app/ui/options/forms/AskOptionsForm.kt",
@@ -131,7 +130,7 @@
         "apps/android/app/src/main/java/com/axon/app/ui/options/forms/IngestOptionsForm.kt",
         "apps/android/app/src/main/java/com/axon/app/ui/options/forms/ScrapeOptionsForm.kt"
       ],
-      "symbols": ["AxonCompactTabs", "SettingsTabButton", "SuggestionChip", "SwitchRow"],
+      "symbols": ["AuroraTabs", "SettingsTabButton", "SuggestionChip", "SwitchRow"],
       "current_primitive_smell": "Tabs, chips, and switch rows are recurring app-local control shells.",
       "classification": "aurora-ready",
       "migration_owner": "axon_rust-hrqn.5",
@@ -171,7 +170,7 @@
         "apps/android/app/src/main/java/com/axon/app/ui/nav/RailScaffold.kt",
         "apps/android/app/src/main/java/com/axon/app/ui/nav/AxonRail.kt"
       ],
-      "symbols": ["AxonSidebarSheet", "AxonSidebarRow", "sidebar toggle", "AxonMarkGlyph"],
+      "symbols": ["AxonSidebarSheet", "AuroraSidebarRow", "sidebar toggle", "AxonMarkGlyph"],
       "current_primitive_smell": "Navigation/sidebar row affordances overlap with Aurora navigation primitives, while Axon brand and shell semantics are local.",
       "classification": "axon-composite",
       "migration_owner": "axon_rust-hrqn.5",
@@ -250,7 +249,6 @@
     { "row_id": "A-AND-002", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/settings/SettingsScreen.kt", "pattern": "CompactActionButton" },
     { "row_id": "A-AND-002", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/jobs/JobsDrawerContent.kt", "pattern": "IconButton" },
     { "row_id": "A-AND-002", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/options/components/HeadersField.kt", "pattern": "IconButton" },
-    { "row_id": "A-AND-003", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/common/AxonCompactTabs.kt", "pattern": "AxonCompactTabs" },
     { "row_id": "A-AND-003", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/settings/SettingsScreen.kt", "pattern": "SettingsTabButton" },
     { "row_id": "A-AND-003", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/ask/AskScreenParts.kt", "pattern": "SuggestionChip" },
     { "row_id": "A-AND-003", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/options/forms/AskOptionsForm.kt", "pattern": "SwitchRow" },
@@ -264,7 +262,6 @@
     { "row_id": "A-AND-004", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/ask/ChatBubble.kt", "pattern": "AuroraStatusDot" },
     { "row_id": "A-AND-004", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/ask/InjectionCard.kt", "pattern": "AuroraProgressBar" },
     { "row_id": "A-AND-004", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/nav/ShellCommandReport.kt", "pattern": "AuroraStatusDot" },
-    { "row_id": "A-AND-005", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/nav/ShellSidebar.kt", "pattern": "AxonSidebarRow" },
     { "row_id": "A-AND-005", "file_path": "apps/android/app/src/main/java/com/axon/app/ui/nav/RailScaffold.kt", "pattern": "Sidebar" }
   ],
   "stale_bead_recommendations": [

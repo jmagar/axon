@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -123,12 +124,13 @@ fun HeadersField(
     onChange: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Seed local state from `headers` ONCE on first composition. Re-keying on
-    // `headers` (the old behaviour) discarded in-progress keystrokes whenever
-    // the parent's persistence layer round-tripped a new list back through us.
-    // The persistence side mirrors what we emit, so the seed value is the
-    // canonical input — subsequent edits flow through this state.
     var rows by remember { mutableStateOf(HeadersReducer.init(headers)) }
+
+    LaunchedEffect(headers) {
+        if (headers != HeadersReducer.toWire(rows)) {
+            rows = HeadersReducer.init(headers)
+        }
+    }
 
     fun publish(next: List<Pair<String, String>>) {
         rows = next

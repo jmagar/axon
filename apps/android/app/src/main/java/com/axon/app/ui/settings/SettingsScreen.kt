@@ -65,11 +65,7 @@ fun SettingsScreen(vm: SettingsViewModel = viewModel()) {
     var token by remember(settings.token) { mutableStateOf(settings.token.value) }
     var panelToken by remember(settings.panelToken) { mutableStateOf(settings.panelToken.value) }
     var collection by remember(settings.collection) { mutableStateOf(settings.collection) }
-    val saveLabel = when (tab) {
-        SettingsTab.Connection -> "Save"
-        SettingsTab.Env -> "Save"
-        SettingsTab.Config -> "Save"
-    }
+    val saveLabel = "Save"
     val canSaveTab = when (tab) {
         SettingsTab.Connection -> true
         SettingsTab.Env -> !files.loading && files.error == null && files.envDirty.isNotEmpty()
