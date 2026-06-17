@@ -21,12 +21,6 @@ pub(super) fn latest_tag(root: &Path, prefix: &str) -> Result<Option<String>> {
     Ok(candidates.pop().map(|(_, tag)| tag))
 }
 
-pub(super) fn latest_version(root: &Path, prefix: &str) -> Result<Option<Version>> {
-    Ok(latest_tag(root, prefix)?
-        .and_then(|tag| tag.strip_prefix(prefix).map(ToOwned::to_owned))
-        .and_then(|version| Version::parse(&version).ok()))
-}
-
 pub(super) fn tag_exists(root: &Path, tag: &str) -> Result<bool> {
     let output = Command::new("git")
         .arg("-C")
@@ -89,8 +83,8 @@ fn changed_paths_since_ref(
         .collect())
 }
 
-fn merge_base_origin_main(root: &Path) -> Result<String> {
-    git_output(root, &["merge-base", "origin/main", "HEAD"]).map(|output| output.trim().to_owned())
+pub(super) fn merge_base(root: &Path, base: &str, head: &str) -> Result<String> {
+    git_output(root, &["merge-base", base, head]).map(|output| output.trim().to_owned())
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<String> {
@@ -114,12 +108,15 @@ pub(super) fn compare_ref_for_component(
     root: &Path,
     component: &Component,
     base: Option<&str>,
+    head: &str,
     mode: GateMode,
 ) -> Result<Option<String>> {
     match mode {
         GateMode::Pr => Ok(Some(match base {
-            Some(base) => base.to_owned(),
-            None => merge_base_origin_main(root).unwrap_or_else(|_| "origin/main".to_owned()),
+            Some(base) => merge_base(root, base, head)?,
+            None => {
+                merge_base(root, "origin/main", head).unwrap_or_else(|_| "origin/main".to_owned())
+            }
         })),
         GateMode::Main => Ok(latest_tag(root, &component.tag_prefix)?),
     }
@@ -140,12 +137,15 @@ pub(super) fn check_gradle_version_code_increased(
     let current_content = std::fs::read_to_string(root.join(&file.path))
         .with_context(|| format!("failed to read {}", file.path))?;
     let current = read_gradle_version_code(&current_content)?;
-    let previous = git_show(root, compare_ref, &file.path)
-        .ok()
-        .and_then(|content| read_gradle_version_code(&content).ok());
-    if let Some(previous) = previous
-        && current <= previous
-    {
+    let previous_content = git_show(root, compare_ref, &file.path)
+        .with_context(|| format!("failed to read previous {}", file.path))?;
+    let previous = read_gradle_version_code(&previous_content).with_context(|| {
+        format!(
+            "failed to parse previous versionCode in {} at {}",
+            file.path, compare_ref
+        )
+    })?;
+    if current <= previous {
         bail!(
             "{} versionCode must increase when Android shipping paths change ({} <= {})",
             file.path,

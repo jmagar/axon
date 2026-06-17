@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 
 mod files;
@@ -13,7 +14,7 @@ use files::{
 };
 use git::{
     check_gradle_version_code_increased, compare_ref_for_component, component_changed_since_ref,
-    latest_tag, latest_version, tag_exists,
+    latest_tag, merge_base, tag_exists,
 };
 
 #[cfg(test)]
@@ -62,6 +63,7 @@ struct VersionFile {
     kind: VersionKind,
     path: String,
     package: Option<String>,
+    json_pointer: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -95,53 +97,18 @@ pub fn check(
     let mut errors = Vec::new();
 
     for (component, plan) in manifest.components.iter().zip(plans.iter()) {
-        let expected = &plan.version;
-        let parity_errors = check_component_parity(root, component, expected)?;
+        let parity_errors = check_component_parity(root, component, &plan.version)?;
         errors.extend(
             parity_errors
                 .into_iter()
                 .map(|error| format!("{}: {error}", component.id)),
         );
 
-        let candidate = Version::parse(&plan.version).with_context(|| {
-            format!(
-                "{} version is not valid semver: {}",
-                component.id, plan.version
-            )
-        })?;
         if !plan.changed {
             continue;
         }
 
-        let latest = latest_version(root, &component.tag_prefix)?;
-        if let Some(latest) = latest
-            && candidate <= latest
-        {
-            errors.push(format!(
-                "{} code changed but version {} is not greater than latest {} tag version {}. Bump {} before merging.",
-                component.id,
-                plan.version,
-                component.tag_prefix,
-                latest,
-                bump_hint(component)
-            ));
-        }
-
-        if tag_exists(root, &plan.candidate_tag)? {
-            errors.push(format!(
-                "{} code changed but tag {} already exists. Bump {} before merging.",
-                component.id,
-                plan.candidate_tag,
-                bump_hint(component)
-            ));
-        }
-
-        if component_has_kind(component, VersionKind::GradleVersionCode)
-            && let Some(compare_ref) = compare_ref_for_component(root, component, base, mode)?
-            && let Err(error) = check_gradle_version_code_increased(root, component, &compare_ref)
-        {
-            errors.push(format!("{}: {error}", component.id));
-        }
+        collect_changed_component_errors(root, component, plan, base, head, mode, &mut errors)?;
     }
 
     print_plans(&plans, json)?;
@@ -160,9 +127,14 @@ pub fn check(
     Ok(())
 }
 
-pub fn plan(root: &Path, base: Option<&str>, head: &str) -> Result<Vec<ComponentPlan>> {
+pub fn plan(
+    root: &Path,
+    base: Option<&str>,
+    head: &str,
+    mode: GateMode,
+) -> Result<Vec<ComponentPlan>> {
     let manifest = load_manifest(root)?;
-    build_plan(root, &manifest, base, head, GateMode::Pr)
+    build_plan(root, &manifest, base, head, mode)
 }
 
 pub fn print_plans(plans: &[ComponentPlan], json: bool) -> Result<()> {
@@ -211,7 +183,9 @@ pub fn bump(root: &Path, component_id: &str, level: BumpLevel) -> Result<()> {
             }
             VersionKind::ReadmeVersionLine => replace_readme_version_line(&content, &next)?,
             VersionKind::ChangelogHeading => ensure_changelog_heading(&content, &next),
-            VersionKind::JsonVersion => replace_json_version(&content, &next)?,
+            VersionKind::JsonVersion => {
+                replace_json_version(&content, file.json_pointer.as_deref(), &next)?
+            }
             VersionKind::JsonNoVersion => content.clone(),
             VersionKind::GradleVersionName => replace_gradle_version_name(&content, &next)?,
             VersionKind::GradleVersionCode => increment_gradle_version_code(&content)?,
@@ -258,6 +232,7 @@ fn load_manifest(root: &Path) -> Result<Manifest> {
             manifest.schema_version
         );
     }
+    validate_manifest(&manifest)?;
     Ok(manifest)
 }
 
@@ -273,15 +248,17 @@ fn build_plan(
         .iter()
         .map(|component| {
             let version = read_version(root, &component.version_source)?;
+            Version::parse(&version).with_context(|| {
+                format!("{} version is not valid semver: {version}", component.id)
+            })?;
             let candidate_tag = format!("{}{}", component.tag_prefix, version);
             let last_tag = latest_tag(root, &component.tag_prefix)?;
             let changed = match mode {
-                GateMode::Pr => component_changed_since_ref(
-                    root,
-                    component,
-                    base.unwrap_or("origin/main"),
-                    head,
-                )?,
+                GateMode::Pr => {
+                    let base = base.unwrap_or("origin/main");
+                    let compare_ref = merge_base(root, base, head)?;
+                    component_changed_since_ref(root, component, &compare_ref, head)?
+                }
                 GateMode::Main => match last_tag.as_deref() {
                     Some(tag) => component_changed_since_ref(root, component, tag, head)?,
                     None => true,
@@ -299,6 +276,187 @@ fn build_plan(
             })
         })
         .collect()
+}
+
+fn collect_changed_component_errors(
+    root: &Path,
+    component: &Component,
+    plan: &ComponentPlan,
+    base: Option<&str>,
+    head: &str,
+    mode: GateMode,
+    errors: &mut Vec<String>,
+) -> Result<()> {
+    let candidate = Version::parse(&plan.version).with_context(|| {
+        format!(
+            "{} version is not valid semver: {}",
+            component.id, plan.version
+        )
+    })?;
+
+    let latest = latest_version_from_plan(component, plan)?;
+    if let Some(latest) = latest
+        && candidate <= latest
+    {
+        errors.push(format!(
+            "{} code changed but version {} is not greater than latest {} tag version {}. Bump {} before merging.",
+            component.id,
+            plan.version,
+            component.tag_prefix,
+            latest,
+            bump_hint(component)
+        ));
+    }
+
+    if tag_exists(root, &plan.candidate_tag)? {
+        errors.push(format!(
+            "{} code changed but tag {} already exists. Bump {} before merging.",
+            component.id,
+            plan.candidate_tag,
+            bump_hint(component)
+        ));
+    }
+
+    if component_has_kind(component, VersionKind::GradleVersionCode)
+        && let Some(compare_ref) = compare_ref_for_component(root, component, base, head, mode)?
+        && let Err(error) = check_gradle_version_code_increased(root, component, &compare_ref)
+    {
+        errors.push(format!("{}: {error}", component.id));
+    }
+
+    Ok(())
+}
+
+fn latest_version_from_plan(
+    component: &Component,
+    plan: &ComponentPlan,
+) -> Result<Option<Version>> {
+    plan.last_tag
+        .as_deref()
+        .map(|tag| {
+            let version = tag
+                .strip_prefix(&component.tag_prefix)
+                .with_context(|| format!("{} latest tag has wrong prefix: {tag}", component.id))?;
+            Version::parse(version).with_context(|| {
+                format!(
+                    "{} latest tag has invalid semver suffix: {tag}",
+                    component.id
+                )
+            })
+        })
+        .transpose()
+}
+
+fn validate_manifest(manifest: &Manifest) -> Result<()> {
+    let mut component_ids = HashSet::new();
+    let mut tag_prefixes: Vec<&str> = Vec::new();
+
+    for component in &manifest.components {
+        if component.id.trim().is_empty() {
+            bail!("release manifest contains an empty component id");
+        }
+        if !component_ids.insert(component.id.as_str()) {
+            bail!("duplicate release component id {}", component.id);
+        }
+        if component.tag_prefix.trim().is_empty() {
+            bail!("{} has an empty tag_prefix", component.id);
+        }
+        if tag_prefixes.iter().any(|existing| {
+            existing.starts_with(&component.tag_prefix)
+                || component.tag_prefix.starts_with(*existing)
+        }) {
+            bail!("{} tag_prefix overlaps another component", component.id);
+        }
+        tag_prefixes.push(&component.tag_prefix);
+        if component.shipping_paths.is_empty() {
+            bail!("{} has no shipping_paths", component.id);
+        }
+        if !component.release_workflow.ends_with(".yml")
+            && !component.release_workflow.ends_with(".yaml")
+        {
+            bail!("{} release_workflow must be a YAML workflow", component.id);
+        }
+        validate_version_file(component, "version_source", &component.version_source)?;
+        for file in &component.version_files {
+            validate_version_file(component, "version_files", file)?;
+        }
+        if !component
+            .version_files
+            .iter()
+            .any(|file| same_version_file(file, &component.version_source))
+        {
+            bail!(
+                "{} version_source is not listed in version_files",
+                component.id
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_version_file(component: &Component, field: &str, file: &VersionFile) -> Result<()> {
+    match file.kind {
+        VersionKind::CargoPackage => {
+            if file.package.as_deref().unwrap_or("").trim().is_empty() {
+                bail!(
+                    "{} {field} {} cargo_package requires package",
+                    component.id,
+                    file.path
+                );
+            }
+            if file.json_pointer.is_some() {
+                bail!(
+                    "{} {field} {} cargo_package must not set json_pointer",
+                    component.id,
+                    file.path
+                );
+            }
+        }
+        VersionKind::JsonVersion => {
+            if file.package.is_some() {
+                bail!(
+                    "{} {field} {} json_version must not set package",
+                    component.id,
+                    file.path
+                );
+            }
+            let pointer = file.json_pointer.as_deref().unwrap_or("");
+            if !pointer.starts_with('/') {
+                bail!(
+                    "{} {field} {} json_version requires an absolute json_pointer",
+                    component.id,
+                    file.path
+                );
+            }
+        }
+        _ => {
+            if file.package.is_some() {
+                bail!(
+                    "{} {field} {} {:?} must not set package",
+                    component.id,
+                    file.path,
+                    file.kind
+                );
+            }
+            if file.json_pointer.is_some() {
+                bail!(
+                    "{} {field} {} {:?} must not set json_pointer",
+                    component.id,
+                    file.path,
+                    file.kind
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn same_version_file(left: &VersionFile, right: &VersionFile) -> bool {
+    left.kind == right.kind
+        && left.path == right.path
+        && left.package == right.package
+        && left.json_pointer == right.json_pointer
 }
 
 fn bump_hint(component: &Component) -> String {

@@ -11,7 +11,7 @@ pub(super) fn read_version(root: &Path, file: &VersionFile) -> Result<String> {
     match file.kind {
         VersionKind::CargoPackage => read_cargo_package_version(&content, file.package.as_deref())
             .with_context(|| format!("failed to read Cargo package version from {}", file.path)),
-        VersionKind::JsonVersion => read_json_version(&content)
+        VersionKind::JsonVersion => read_json_version(&content, file.json_pointer.as_deref())
             .with_context(|| format!("failed to read JSON version from {}", file.path)),
         VersionKind::GradleVersionName => read_gradle_version_name(&content)
             .with_context(|| format!("failed to read versionName from {}", file.path)),
@@ -44,7 +44,9 @@ pub(super) fn check_component_parity(
             }
             VersionKind::ReadmeVersionLine => check_readme_version_line(&content, expected),
             VersionKind::ChangelogHeading => check_changelog_heading(&content, expected),
-            VersionKind::JsonVersion => check_json_version(&content, expected),
+            VersionKind::JsonVersion => {
+                check_json_version(&content, file.json_pointer.as_deref(), expected)
+            }
             VersionKind::JsonNoVersion => check_json_no_version(&content),
             VersionKind::GradleVersionName => check_gradle_version_name(&content, expected),
             VersionKind::GradleVersionCode => check_gradle_version_code_present(&content),
@@ -78,22 +80,14 @@ pub(super) fn read_cargo_package_version(content: &str, package: Option<&str>) -
         .context("missing package.version")
 }
 
-pub(super) fn read_json_version(content: &str) -> Result<String> {
+pub(super) fn read_json_version(content: &str, pointer: Option<&str>) -> Result<String> {
     let value: serde_json::Value = serde_json::from_str(content).context("invalid JSON")?;
-    find_json_version(&value).context("missing JSON version field")
-}
-
-fn find_json_version(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Object(map) => {
-            if let Some(version) = map.get("version").and_then(|value| value.as_str()) {
-                return Some(version.to_owned());
-            }
-            map.values().find_map(find_json_version)
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(find_json_version),
-        _ => None,
-    }
+    let pointer = pointer.unwrap_or("/version");
+    value
+        .pointer(pointer)
+        .and_then(|value| value.as_str())
+        .map(ToOwned::to_owned)
+        .with_context(|| format!("missing JSON version field at {pointer}"))
 }
 
 pub(super) fn read_gradle_version_name(content: &str) -> Result<String> {
@@ -140,8 +134,8 @@ fn check_changelog_heading(content: &str, expected: &str) -> Result<()> {
     Ok(())
 }
 
-fn check_json_version(content: &str, expected: &str) -> Result<()> {
-    let actual = read_json_version(content)?;
+fn check_json_version(content: &str, pointer: Option<&str>, expected: &str) -> Result<()> {
+    let actual = read_json_version(content, pointer)?;
     if actual != expected {
         bail!("expected JSON version {expected}, found {actual}");
     }
@@ -150,10 +144,20 @@ fn check_json_version(content: &str, expected: &str) -> Result<()> {
 
 fn check_json_no_version(content: &str) -> Result<()> {
     let value: serde_json::Value = serde_json::from_str(content).context("invalid JSON")?;
-    if find_json_version(&value).is_some() {
+    if contains_json_version_key(&value) {
         bail!("must not contain a version key");
     }
     Ok(())
+}
+
+fn contains_json_version_key(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.contains_key("version") || map.values().any(contains_json_version_key)
+        }
+        serde_json::Value::Array(values) => values.iter().any(contains_json_version_key),
+        _ => false,
+    }
 }
 
 fn check_gradle_version_name(content: &str, expected: &str) -> Result<()> {
@@ -169,14 +173,21 @@ fn check_gradle_version_code_present(content: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn replace_json_version(content: &str, next: &str) -> Result<String> {
-    let regex = Regex::new(r#""version"\s*:\s*"[^"]+""#)?;
-    if !regex.is_match(content) {
-        bail!("missing JSON version field");
+pub(super) fn replace_json_version(
+    content: &str,
+    pointer: Option<&str>,
+    next: &str,
+) -> Result<String> {
+    let pointer = pointer.unwrap_or("/version");
+    let mut value: serde_json::Value = serde_json::from_str(content).context("invalid JSON")?;
+    let target = value
+        .pointer_mut(pointer)
+        .with_context(|| format!("missing JSON version field at {pointer}"))?;
+    if !target.is_string() {
+        bail!("JSON version field at {pointer} is not a string");
     }
-    Ok(regex
-        .replacen(content, 1, format!(r#""version": "{next}""#))
-        .to_string())
+    *target = serde_json::Value::String(next.to_owned());
+    serde_json::to_string_pretty(&value).context("failed to serialize JSON")
 }
 
 pub(super) fn replace_cargo_package_version(

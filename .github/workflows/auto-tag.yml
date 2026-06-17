@@ -50,22 +50,25 @@ concurrency:
 
 jobs:
   plan:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           shared-key: xtask
       - name: Build release plan
         id: plan
         run: |
           set -euo pipefail
-          cargo xtask check-release-versions --head HEAD --mode main --json > release-plan.json
+          cargo xtask release-plan --head HEAD --mode main --json > release-plan.json
           matrix=$(jq -c '{include: [.[] | select(.changed == true)]}' release-plan.json)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           cat release-plan.json
@@ -79,7 +82,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           fetch-depth: 0
 
@@ -95,16 +98,17 @@ jobs:
           deadline=$(( $(date +%s) + 1800 ))  # 30 minute cap
           echo "Waiting for CI to succeed for $sha ..."
           while :; do
-            conclusion=$(gh run list \
+            runs_json=$(gh run list \
               --workflow=ci.yml \
               --commit "$sha" \
-              --json databaseId,status,conclusion \
-              --jq '.[0].conclusion' 2>/dev/null || true)
-            status=$(gh run list \
-              --workflow=ci.yml \
-              --commit "$sha" \
-              --json status \
-              --jq '.[0].status' 2>/dev/null || true)
+              --branch main \
+              --event push \
+              --json databaseId,status,conclusion,headSha,event,headBranch 2>/dev/null || true)
+            run_json=$(jq -c --arg sha "$sha" \
+              '[.[] | select(.headSha == $sha and .event == "push" and .headBranch == "main")][0] // null' \
+              <<<"${runs_json:-[]}")
+            conclusion=$(jq -r '.conclusion // ""' <<<"${run_json:-null}")
+            status=$(jq -r '.status // ""' <<<"${run_json:-null}")
             if [ "$conclusion" = "success" ]; then
               echo "CI succeeded for $sha — proceeding to tag."
               break

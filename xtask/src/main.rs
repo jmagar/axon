@@ -46,6 +46,8 @@ enum Command {
         base: Option<String>,
         #[arg(long, default_value = "HEAD")]
         head: String,
+        #[arg(long, value_enum, default_value = "pr")]
+        mode: checks::release_versions::GateMode,
         #[arg(long)]
         json: bool,
     },
@@ -76,8 +78,13 @@ fn main() -> Result<()> {
             mode,
             json,
         } => checks::release_versions::check(&root, base.as_deref(), &head, mode, json),
-        Command::ReleasePlan { base, head, json } => {
-            let plans = checks::release_versions::plan(&root, base.as_deref(), &head)?;
+        Command::ReleasePlan {
+            base,
+            head,
+            mode,
+            json,
+        } => {
+            let plans = checks::release_versions::plan(&root, base.as_deref(), &head, mode)?;
             checks::release_versions::print_plans(&plans, json)?;
             Ok(())
         }

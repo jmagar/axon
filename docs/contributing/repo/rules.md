@@ -53,7 +53,7 @@ Release checklist:
 4. Run `cargo xtask check`.
 
 CLI version-bearing files must have the same version (see the root `CLAUDE.md`
-"Version Bumping" section):
+"Version bumping rules" section):
 
 | File | Field |
 |------|-------|

@@ -20,6 +20,9 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
@@ -86,8 +89,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: xtask
-      - name: Verify version parity across Cargo.toml / README / CHANGELOG / plugin.json
-        run: cargo xtask check-version-sync
       - name: Verify release versions for changed shipping components
         run: cargo xtask check-release-versions --base origin/main --head HEAD --mode pr
 

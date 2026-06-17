@@ -798,9 +798,11 @@ palette/android/chrome publish with `make_latest: false`.
 - A change touching only one component releases only that component — e.g. an
   `apps/android/**`-only change cuts an Android release and nothing else; it
   does **not** rebuild the CLI.
-- Dev-only trees (`xtask`, `benches`, `.github`, `docs`, top-level config) are
+- Dev-only trees (`xtask`, `benches`, `.github`, `docs`, and non-shipping
+  repo policy/config files) are
   **not** in any component's shipping paths, so a tooling/docs-only merge cuts
-  no release and needs no version bump.
+  no release and needs no version bump. `Cargo.toml`, `Cargo.lock`, and
+  `rust-toolchain.toml` are CLI shipping paths and are not part of this carve-out.
 - If a component's code changed but its version was **not** bumped (the tag
   already exists), `cargo xtask check-release-versions --base origin/main --head
   HEAD --mode pr` fails before merge with a message naming the component.

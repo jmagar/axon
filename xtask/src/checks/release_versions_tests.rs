@@ -9,17 +9,55 @@ fn reads_component_manifest() {
     let manifest = load_manifest(&root).expect("manifest loads");
     assert_eq!(manifest.schema_version, 1);
     assert_eq!(manifest.components.len(), 4);
-    assert!(
-        manifest
-            .components
-            .iter()
-            .any(|component| component.id == "cli")
-    );
-    assert!(
-        manifest
-            .components
-            .iter()
-            .any(|component| component.tag_prefix == "chrome-ext-v")
+    let actual = manifest
+        .components
+        .iter()
+        .map(|component| {
+            (
+                component.id.as_str(),
+                component.tag_prefix.as_str(),
+                component.release_workflow.as_str(),
+                component.shipping_paths.as_slice(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        [
+            (
+                "cli",
+                "v",
+                "release.yml",
+                &[
+                    "src".to_owned(),
+                    "Cargo.toml".to_owned(),
+                    "Cargo.lock".to_owned(),
+                    "build.rs".to_owned(),
+                    "migrations".to_owned(),
+                    "apps/web".to_owned(),
+                    "rust-toolchain.toml".to_owned(),
+                    "vendor".to_owned(),
+                ][..],
+            ),
+            (
+                "palette",
+                "palette-v",
+                "palette-release.yml",
+                &["apps/palette-tauri".to_owned()][..],
+            ),
+            (
+                "android",
+                "android-v",
+                "android-release.yml",
+                &["apps/android".to_owned()][..],
+            ),
+            (
+                "chrome",
+                "chrome-ext-v",
+                "chrome-extension-release.yml",
+                &["apps/chrome-extension".to_owned(), "assets".to_owned()][..],
+            ),
+        ]
     );
 }
 
@@ -55,16 +93,41 @@ name = "axon"
 #[test]
 fn json_version_reader_handles_pretty_and_compact_json() {
     assert_eq!(
-        read_json_version(r#"{ "name": "axon", "version": "1.2.3" }"#).expect("pretty"),
+        read_json_version(
+            r#"{ "name": "axon", "version": "1.2.3" }"#,
+            Some("/version")
+        )
+        .expect("pretty"),
         "1.2.3"
     );
     assert_eq!(
-        read_json_version(r#"{"name":"axon","version":"1.2.4"}"#).expect("compact"),
+        read_json_version(r#"{"name":"axon","version":"1.2.4"}"#, Some("/version"))
+            .expect("compact"),
         "1.2.4"
     );
     assert_eq!(
-        read_json_version(r#"{"info":{"version":"1.2.5"}}"#).expect("nested"),
+        read_json_version(r#"{"info":{"version":"1.2.5"}}"#, Some("/info/version"))
+            .expect("nested"),
         "1.2.5"
+    );
+}
+
+#[test]
+fn json_version_reader_uses_configured_pointer() {
+    let content = r#"{"version":"0.1.0","info":{"version":"1.2.5"}}"#;
+    assert_eq!(
+        read_json_version(content, Some("/info/version")).expect("openapi info version"),
+        "1.2.5"
+    );
+    let updated =
+        replace_json_version(content, Some("/info/version"), "1.2.6").expect("replace pointer");
+    assert_eq!(
+        read_json_version(&updated, Some("/version")).expect("root untouched"),
+        "0.1.0"
+    );
+    assert_eq!(
+        read_json_version(&updated, Some("/info/version")).expect("nested updated"),
+        "1.2.6"
     );
 }
 
@@ -133,7 +196,12 @@ fn android_parity_requires_version_code() {
     let fixture = Fixture::new();
     fs::write(
         fixture.path("apps/android/app/build.gradle.kts"),
-        r#"android { defaultConfig { versionName = "1.3.2" } }"#,
+        r#"android {
+    defaultConfig {
+        versionName = "1.3.2"
+    }
+}
+"#,
     )
     .unwrap();
     let manifest = load_manifest(fixture.root()).unwrap();
@@ -143,6 +211,10 @@ fn android_parity_requires_version_code() {
         .find(|component| component.id == "android")
         .unwrap();
     let errors = check_component_parity(fixture.root(), android, "1.3.2").unwrap();
+    assert!(
+        !errors.iter().any(|error| error.contains("versionName")),
+        "fixture should isolate the missing versionCode error"
+    );
     assert!(errors.iter().any(|error| error.contains("versionCode")));
 }
 
@@ -222,6 +294,25 @@ fn docs_only_change_does_not_require_component_bump() {
 }
 
 #[test]
+fn pr_mode_ignores_shipping_changes_that_only_exist_on_base_branch() {
+    let fixture = Fixture::new();
+    fixture.init_repo();
+    fixture.git(&["checkout", "-b", "feature"]);
+    fs::create_dir_all(fixture.path("docs")).unwrap();
+    fs::write(fixture.path("docs/notes.md"), "feature docs\n").unwrap();
+    fixture.git(&["add", "docs/notes.md"]);
+    fixture.git(&["commit", "-m", "docs"]);
+    fixture.git(&["checkout", "main"]);
+    fs::write(fixture.path("src/lib.rs"), "pub fn main_changed() {}\n").unwrap();
+    fixture.git(&["add", "src/lib.rs"]);
+    fixture.git(&["commit", "-m", "main cli change"]);
+    fixture.git(&["checkout", "feature"]);
+
+    check(fixture.root(), Some("main"), "HEAD", GateMode::Pr, false)
+        .expect("base-only shipping changes do not force PR bump");
+}
+
+#[test]
 fn xtask_only_lockfile_change_does_not_require_cli_bump() {
     let fixture = Fixture::new();
     fs::write(
@@ -278,6 +369,66 @@ dependencies = [
     assert!(!cli.changed, "xtask-only lockfile changes are tooling-only");
     check(fixture.root(), Some("v1.0.0"), "HEAD", GateMode::Pr, false)
         .expect("xtask-only lockfile change is allowed");
+}
+
+#[test]
+fn xtask_lockfile_change_with_new_package_sections_requires_cli_bump() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.path("Cargo.lock"),
+        r#"# This file is automatically @generated by Cargo.
+version = 4
+
+[[package]]
+name = "axon"
+version = "1.0.0"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+"#,
+    )
+    .unwrap();
+    fixture.init_repo();
+    fixture.git(&["tag", "v1.0.0"]);
+    fs::write(
+        fixture.path("Cargo.lock"),
+        r#"# This file is automatically @generated by Cargo.
+version = 4
+
+[[package]]
+name = "axon"
+version = "1.0.0"
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+"#,
+    )
+    .unwrap();
+    fixture.git(&["add", "Cargo.lock"]);
+    fixture.git(&["commit", "-m", "add xtask dep"]);
+
+    let plans = build_plan(
+        fixture.root(),
+        &load_manifest(fixture.root()).unwrap(),
+        Some("v1.0.0"),
+        "HEAD",
+        GateMode::Pr,
+    )
+    .unwrap();
+    let cli = plans.iter().find(|plan| plan.id == "cli").unwrap();
+    assert!(
+        cli.changed,
+        "new lockfile package sections are conservatively release-relevant"
+    );
 }
 
 #[test]
@@ -397,6 +548,40 @@ fn android_change_allows_version_code_increase() {
         false,
     )
     .expect("android versionName and versionCode bump is accepted");
+}
+
+#[test]
+fn changed_shipping_path_rejects_version_downgrade_without_existing_tag() {
+    let fixture = Fixture::new();
+    fixture.init_repo();
+    fixture.git(&["tag", "v1.2.0"]);
+    fs::write(
+        fixture.path("Cargo.toml"),
+        r#"[package]
+name = "axon"
+version = "1.1.0"
+"#,
+    )
+    .unwrap();
+    fs::write(fixture.path("README.md"), "# Axon\n\nVersion: 1.1.0\n").unwrap();
+    fs::write(fixture.path("CHANGELOG.md"), "# Changelog\n\n## [1.1.0]\n").unwrap();
+    fs::write(
+        fixture.path("apps/web/package.json"),
+        r#"{"version":"1.1.0"}"#,
+    )
+    .unwrap();
+    fs::write(
+        fixture.path("apps/web/openapi/axon.json"),
+        r#"{"info":{"version":"1.1.0"}}"#,
+    )
+    .unwrap();
+    fs::write(fixture.path("src/lib.rs"), "pub fn downgraded() {}\n").unwrap();
+    fixture.git(&["add", "."]);
+    fixture.git(&["commit", "-m", "downgrade cli"]);
+
+    let error = check(fixture.root(), Some("v1.2.0"), "HEAD", GateMode::Pr, false)
+        .expect_err("version downgrade should fail even when tag does not exist");
+    assert!(error.to_string().contains("not greater than latest"));
 }
 
 #[test]
