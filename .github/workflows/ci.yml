@@ -134,6 +134,7 @@ jobs:
             build.rs
             config.example.toml
             deny.toml
+            release/components.toml
             rust-toolchain.toml
             docs/reference/env-matrix.toml
             src
@@ -146,6 +147,7 @@ jobs:
             tests
             scripts
             config
+            release
             vendor
       - uses: taiki-e/install-action@v2
         with:
@@ -158,6 +160,7 @@ jobs:
             .taplo.toml \
             config.example.toml \
             deny.toml \
+            release/components.toml \
             docs/reference/env-matrix.toml \
             rust-toolchain.toml
 

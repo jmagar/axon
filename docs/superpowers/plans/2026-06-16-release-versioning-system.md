@@ -64,7 +64,7 @@ version_source = { kind = "json_version", path = "apps/palette-tauri/src-tauri/t
 version_files = [
   { kind = "json_version", path = "apps/palette-tauri/src-tauri/tauri.conf.json" },
   { kind = "json_version", path = "apps/palette-tauri/package.json" },
-  { kind = "cargo_package", path = "apps/palette-tauri/src-tauri/Cargo.toml", package = "axon-palette" },
+  { kind = "cargo_package", path = "apps/palette-tauri/src-tauri/Cargo.toml", package = "axon-palette-tauri" },
 ]
 
 [[components]]
