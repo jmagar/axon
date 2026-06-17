@@ -926,6 +926,7 @@ impl Fixture {
         self.git(&["config", "user.name", "Test User"]);
         self.git(&["add", "."]);
         self.git(&["commit", "-m", "initial"]);
+        self.git(&["branch", "-M", "main"]);
     }
 
     fn git(&self, args: &[&str]) {
