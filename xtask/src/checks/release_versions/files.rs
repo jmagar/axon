@@ -184,8 +184,8 @@ pub(super) fn replace_cargo_package_version(
     package: Option<&str>,
     next: &str,
 ) -> Result<String> {
+    read_cargo_package_version(content, package)?;
     let mut in_package = false;
-    let mut saw_package_name = package.is_none();
     let mut replaced = false;
     let mut output = Vec::new();
     for line in content.lines() {
@@ -197,22 +197,13 @@ pub(super) fn replace_cargo_package_version(
         }
 
         let mut next_line = line.to_owned();
-        if in_package {
-            if let Some(package) = package
-                && let Some(name) = trimmed
-                    .strip_prefix("name")
-                    .and_then(extract_toml_string_assignment)
-            {
-                saw_package_name = name == package;
-            }
-            if saw_package_name
-                && trimmed.starts_with("version")
-                && extract_toml_string_assignment(trimmed).is_some()
-            {
-                let leading = &line[..line.len() - line.trim_start().len()];
-                next_line = format!(r#"{leading}version = "{next}""#);
-                replaced = true;
-            }
+        if in_package
+            && trimmed.starts_with("version")
+            && extract_toml_string_assignment(trimmed).is_some()
+        {
+            let leading = &line[..line.len() - line.trim_start().len()];
+            next_line = format!(r#"{leading}version = "{next}""#);
+            replaced = true;
         }
         output.push(next_line);
     }

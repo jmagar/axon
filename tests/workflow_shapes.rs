@@ -125,16 +125,29 @@ fn ci_uses_guard_for_named_cargo_test_filters() {
 #[test]
 fn ci_runs_release_version_gate_before_merge() {
     let workflow = include_str!("../.github/workflows/ci.yml");
+    let version_sync = workflow_job_block(workflow, "version-sync");
     assert!(
-        workflow.contains(
+        version_sync.contains(
             "cargo xtask check-release-versions --base origin/main --head HEAD --mode pr"
         ),
         "CI must run the multi-component release version gate on pull requests"
     );
     assert!(
-        workflow.contains("fetch-depth: 0"),
+        version_sync.contains("fetch-depth: 0"),
         "release version gate needs tags and history"
     );
+    for path in [
+        "release/components.toml",
+        "apps/android",
+        "apps/chrome-extension",
+        "apps/palette-tauri",
+        "apps/web/openapi/axon.json",
+    ] {
+        assert!(
+            sparse_checkout_covers(version_sync, path),
+            "version-sync checkout must include {path}"
+        );
+    }
 }
 
 #[test]
@@ -148,4 +161,38 @@ fn auto_tag_uses_xtask_release_plan() {
         workflow.contains("matrix.candidate_tag") && workflow.contains("matrix.release_workflow"),
         "auto-tag must consume tags and workflows from the xtask release plan"
     );
+}
+
+fn workflow_job_block<'a>(workflow: &'a str, job_name: &str) -> &'a str {
+    let marker = format!("  {job_name}:");
+    let start = workflow
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing workflow job {job_name}"));
+    let rest = &workflow[start + marker.len()..];
+    let end = rest
+        .lines()
+        .scan(0, |offset, line| {
+            let line_start = *offset;
+            *offset += line.len() + 1;
+            Some((line_start, line))
+        })
+        .skip(1)
+        .find_map(|(offset, line)| {
+            if line.starts_with("  ") && !line.starts_with("    ") {
+                Some(offset)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
+fn sparse_checkout_covers(block: &str, path: &str) -> bool {
+    block.lines().map(str::trim).any(|entry| {
+        entry == path
+            || path
+                .strip_prefix(entry)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    })
 }

@@ -14,7 +14,7 @@ name: auto-tag
 #
 # RELEASE GATES (OPS-M1): before a tag is created we (1) verify the new version
 # is a strictly-monotonic bump over that component's highest existing tag, and
-# (2) wait for the `CI` workflow (production-gate aggregation) to succeed for
+# (2) wait for the entire `CI` workflow to succeed for
 # this exact commit. This prevents an accidental version edit or a red CI from
 # auto-publishing a broken public release.
 #

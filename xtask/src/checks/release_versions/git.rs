@@ -165,28 +165,40 @@ fn cargo_lock_only_xtask_package_changed(root: &Path, base: &str, head: &str) ->
     let after = git_show(root, head, "Cargo.lock")?;
     let before = cargo_lock_package_sections(&before);
     let after = cargo_lock_package_sections(&after);
-    let mut names = before.keys().chain(after.keys()).collect::<Vec<_>>();
-    names.sort();
-    names.dedup();
-    let changed = names
+    let mut package_ids = before.keys().chain(after.keys()).collect::<Vec<_>>();
+    package_ids.sort();
+    package_ids.dedup();
+    let changed = package_ids
         .into_iter()
-        .filter(|name| before.get(*name) != after.get(*name))
-        .map(|name| name.as_str())
+        .filter(|package_id| before.get(*package_id) != after.get(*package_id))
+        .map(|package_id| package_id.as_str())
         .collect::<Vec<_>>();
-    Ok(changed == ["xtask"])
+    Ok(changed.len() == 1 && changed[0].starts_with("xtask|"))
 }
 
 fn cargo_lock_package_sections(content: &str) -> BTreeMap<String, String> {
     let mut packages = BTreeMap::new();
     for section in content.split("[[package]]").skip(1) {
-        let name = section.lines().find_map(|line| {
-            line.trim()
-                .strip_prefix("name = ")
-                .and_then(|value| value.trim().strip_prefix('"')?.strip_suffix('"'))
-        });
-        if let Some(name) = name {
-            packages.insert(name.to_owned(), section.trim().to_owned());
+        if let Some(package_id) = cargo_lock_package_id(section) {
+            packages.insert(package_id, section.trim().to_owned());
         }
     }
     packages
+}
+
+fn cargo_lock_package_id(section: &str) -> Option<String> {
+    let name = cargo_lock_field(section, "name")?;
+    let version = cargo_lock_field(section, "version").unwrap_or_default();
+    let source = cargo_lock_field(section, "source").unwrap_or_default();
+    Some(format!("{name}|{version}|{source}"))
+}
+
+fn cargo_lock_field(section: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key} = ");
+    section.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(&prefix)
+            .and_then(|value| value.trim().strip_prefix('"')?.strip_suffix('"'))
+            .map(ToOwned::to_owned)
+    })
 }

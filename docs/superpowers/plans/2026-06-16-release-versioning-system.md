@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust 2024 `xtask`, `clap`, `anyhow`, `regex`, `serde`, `serde_json`, `toml`, `semver`, Git CLI, GitHub Actions, existing Axon workflows.
 
+**Implementation Status:** Completed in PR #233 (`codex/release-versioning-system`). The checklist below is retained as the original execution record.
+
 ## Global Constraints
 
 - Preserve per-component releases: CLI, palette, Android, and Chrome extension continue to tag and publish independently.

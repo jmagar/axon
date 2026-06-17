@@ -35,8 +35,8 @@ enum Command {
         base: Option<String>,
         #[arg(long, default_value = "HEAD")]
         head: String,
-        #[arg(long, value_parser = ["pr", "main"], default_value = "pr")]
-        mode: String,
+        #[arg(long, value_enum, default_value = "pr")]
+        mode: checks::release_versions::GateMode,
         #[arg(long)]
         json: bool,
     },
@@ -52,8 +52,8 @@ enum Command {
     /// Bump all version-bearing files for one component.
     BumpVersion {
         component: String,
-        #[arg(value_parser = ["patch", "minor", "major"])]
-        level: String,
+        #[arg(value_enum)]
+        level: checks::release_versions::BumpLevel,
     },
 }
 
@@ -75,39 +75,13 @@ fn main() -> Result<()> {
             head,
             mode,
             json,
-        } => {
-            let mode = match mode.as_str() {
-                "pr" => checks::release_versions::GateMode::Pr,
-                "main" => checks::release_versions::GateMode::Main,
-                _ => unreachable!(),
-            };
-            checks::release_versions::check(&root, base.as_deref(), &head, mode, json)
-        }
+        } => checks::release_versions::check(&root, base.as_deref(), &head, mode, json),
         Command::ReleasePlan { base, head, json } => {
             let plans = checks::release_versions::plan(&root, base.as_deref(), &head)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&plans)?);
-            } else {
-                for plan in plans {
-                    println!(
-                        "{} changed={} version={} tag={} workflow={}",
-                        plan.id,
-                        plan.changed,
-                        plan.version,
-                        plan.candidate_tag,
-                        plan.release_workflow
-                    );
-                }
-            }
+            checks::release_versions::print_plans(&plans, json)?;
             Ok(())
         }
         Command::BumpVersion { component, level } => {
-            let level = match level.as_str() {
-                "patch" => checks::release_versions::BumpLevel::Patch,
-                "minor" => checks::release_versions::BumpLevel::Minor,
-                "major" => checks::release_versions::BumpLevel::Major,
-                _ => unreachable!(),
-            };
             checks::release_versions::bump(&root, &component, level)
         }
     }

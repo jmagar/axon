@@ -59,8 +59,9 @@ CLI version-bearing files must have the same version (see the root `CLAUDE.md`
 |------|-------|
 | `Cargo.toml` | `version = "X.Y.Z"` in `[package]` |
 | `apps/web/package.json` | `"version": "X.Y.Z"` |
-| `README.md` | Version header / badge |
-| `CHANGELOG.md` | New entry under `## X.Y.Z` |
+| `apps/web/openapi/axon.json` | `"info.version": "X.Y.Z"` |
+| `README.md` | `Version: X.Y.Z` |
+| `CHANGELOG.md` | New entry under `## [X.Y.Z]` |
 
 `plugins/axon/.claude-plugin/plugin.json` has no `version` key; the plugin is
 versioned by the marketplace, not the manifest.

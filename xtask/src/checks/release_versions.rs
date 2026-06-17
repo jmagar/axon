@@ -22,7 +22,7 @@ use files::{
     read_json_version,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum GateMode {
     Pr,
     Main,
@@ -76,7 +76,7 @@ enum VersionKind {
     GradleVersionCode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum BumpLevel {
     Patch,
     Minor,
@@ -103,17 +103,17 @@ pub fn check(
                 .map(|error| format!("{}: {error}", component.id)),
         );
 
-        if !plan.changed {
-            continue;
-        }
-
-        let latest = latest_version(root, &component.tag_prefix)?;
         let candidate = Version::parse(&plan.version).with_context(|| {
             format!(
                 "{} version is not valid semver: {}",
                 component.id, plan.version
             )
         })?;
+        if !plan.changed {
+            continue;
+        }
+
+        let latest = latest_version(root, &component.tag_prefix)?;
         if let Some(latest) = latest
             && candidate <= latest
         {
@@ -144,10 +144,32 @@ pub fn check(
         }
     }
 
+    print_plans(&plans, json)?;
+
+    if !errors.is_empty() {
+        for error in &errors {
+            eprintln!("release version error: {error}");
+        }
+        bail!(
+            "release version check failed ({} error(s)): {}",
+            errors.len(),
+            errors.join("; ")
+        );
+    }
+
+    Ok(())
+}
+
+pub fn plan(root: &Path, base: Option<&str>, head: &str) -> Result<Vec<ComponentPlan>> {
+    let manifest = load_manifest(root)?;
+    build_plan(root, &manifest, base, head, GateMode::Pr)
+}
+
+pub fn print_plans(plans: &[ComponentPlan], json: bool) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(&plans)?);
+        println!("{}", serde_json::to_string_pretty(plans)?);
     } else {
-        for plan in &plans {
+        for plan in plans {
             println!(
                 "{} changed={} version={} tag={} last_tag={} workflow={}",
                 plan.id,
@@ -159,20 +181,7 @@ pub fn check(
             );
         }
     }
-
-    if !errors.is_empty() {
-        for error in &errors {
-            eprintln!("release version error: {error}");
-        }
-        bail!("release version check failed ({} error(s))", errors.len());
-    }
-
     Ok(())
-}
-
-pub fn plan(root: &Path, base: Option<&str>, head: &str) -> Result<Vec<ComponentPlan>> {
-    let manifest = load_manifest(root)?;
-    build_plan(root, &manifest, base, head, GateMode::Pr)
 }
 
 pub fn bump(root: &Path, component_id: &str, level: BumpLevel) -> Result<()> {
@@ -224,6 +233,8 @@ pub fn check_cli_parity_only(root: &Path) -> Result<()> {
         .find(|component| component.id == "cli")
         .context("release manifest is missing cli component")?;
     let version = read_version(root, &component.version_source)?;
+    Version::parse(&version)
+        .with_context(|| format!("{} version is not valid semver: {version}", component.id))?;
     let errors = check_component_parity(root, component, &version)?;
     if !errors.is_empty() {
         for error in &errors {

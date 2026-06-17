@@ -811,7 +811,7 @@ push the component's tag directly:
 ```bash
 git tag vX.Y.Z         && git push origin vX.Y.Z          # cli
 git tag palette-vX.Y.Z && git push origin palette-vX.Y.Z  # palette
-git tag android-vX.Y   && git push origin android-vX.Y    # android
+git tag android-vX.Y.Z && git push origin android-vX.Y.Z  # android
 git tag chrome-ext-vX.Y.Z && git push origin chrome-ext-vX.Y.Z  # chrome
 ```
 
