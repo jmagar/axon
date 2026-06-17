@@ -158,6 +158,7 @@ fn ci_xtask_compiling_jobs_checkout_release_manifest() {
         let job = workflow_job_block(workflow, job_name);
         if job.contains("cargo check --workspace --all-targets")
             || job.contains("cargo clippy --workspace --all-targets")
+            || job.contains("cargo nextest run --workspace")
             || job.contains("cargo test -p xtask")
             || job.contains("cargo check -p xtask")
         {

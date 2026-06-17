@@ -823,8 +823,13 @@ jobs:
             xtask
             benches
             apps/web
+            apps/palette-tauri
+            apps/android
+            apps/chrome-extension
+            assets
             plugins
             docs
+            migrations
             .github
             tests
             scripts
