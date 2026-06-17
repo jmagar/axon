@@ -46,6 +46,7 @@ jobs:
             assets
             plugins
             docs
+            migrations
             .github
             tests
             scripts
@@ -78,6 +79,7 @@ jobs:
             assets
             plugins
             docs
+            migrations
             .github
             tests
             scripts

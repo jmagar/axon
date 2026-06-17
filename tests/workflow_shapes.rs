@@ -142,6 +142,7 @@ fn ci_runs_release_version_gate_before_merge() {
         "apps/chrome-extension",
         "apps/palette-tauri",
         "apps/web/openapi/axon.json",
+        "migrations",
     ] {
         assert!(
             sparse_checkout_covers(version_sync, path),
