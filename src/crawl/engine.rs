@@ -23,7 +23,6 @@ pub use adaptive::AdaptiveCrawlSnapshot;
 use collector::{CollectorConfig, collect_crawl_pages};
 use dir_ops::prepare_crawl_output_dir;
 pub use dir_ops::update_latest_reflink;
-use runtime::configure_website;
 use spider::website::Website;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -66,7 +65,7 @@ pub(crate) fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
 }
 
 pub(crate) fn validate_crawl_memory_safety(cfg: &Config, start_url: &str) -> Result<(), String> {
-    if cfg.max_pages > 0 || has_explicit_scope(cfg) || allow_unbounded_broad_crawl() {
+    if cfg.max_pages > 0 || has_explicit_scope(cfg) || cfg.allow_unbounded_broad_crawl {
         return Ok(());
     }
 
@@ -79,10 +78,10 @@ fn has_explicit_scope(cfg: &Config) -> bool {
     !cfg.path_budgets.is_empty() || !cfg.url_whitelist.is_empty()
 }
 
-fn allow_unbounded_broad_crawl() -> bool {
-    std::env::var("AXON_ALLOW_UNBOUNDED_BROAD_CRAWL")
-        .ok()
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+fn crawl_control_id(crawl_id: Option<&str>) -> String {
+    crawl_id
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("sync-{}", uuid::Uuid::new_v4()))
 }
 
 fn start_host(start_url: &str) -> Option<String> {
@@ -312,13 +311,19 @@ pub async fn run_crawl_once(
         cfg.max_pages, cfg.max_depth
     ));
     let total_start = Instant::now();
-    let memory_guard = memory_guard::CrawlMemoryGuard::spawn(crawl_id, start_url);
+    let control_id = crawl_control_id(crawl_id);
+    let memory_guard = memory_guard::CrawlMemoryGuard::spawn(
+        &control_id,
+        start_url,
+        cfg.crawl_memory_abort_percent,
+    );
 
     let (_, recycling_bin) = prepare_crawl_dirs(cfg, start_url, output_dir).await?;
 
-    let mut website = runtime::configure_website_with_crawl_id(cfg, start_url, mode, crawl_id)
-        .await
-        .map_err(|e| format!("failed to configure crawl website for {start_url}: {e}"))?;
+    let mut website =
+        runtime::configure_website_with_crawl_id(cfg, start_url, mode, Some(&control_id))
+            .await
+            .map_err(|e| format!("failed to configure crawl website for {start_url}: {e}"))?;
     let adaptive = configure_adaptive_crawl(cfg, &mut website);
 
     // Conditional re-crawl seeding (bead axon_rust-hiyf): load persisted ETag
@@ -385,14 +390,15 @@ pub async fn run_crawl_once(
     }
     website.unsubscribe();
     memory_guard.stop();
+
+    let joined = join
+        .await
+        .map_err(|e| format!("collector join failure for {start_url}: {e}"));
     if let Some(reason) = memory_guard.abort_reason() {
         return Err(reason.into());
     }
-
-    let (mut summary, urls) = join
-        .await
-        .map_err(|e| format!("collector join failure for {start_url}: {e}"))?
-        .map_err(|e| format!("collector failure for {start_url}: {e}"))?;
+    let (mut summary, urls) =
+        joined?.map_err(|e| format!("collector failure for {start_url}: {e}"))?;
     summary.elapsed_ms = crawl_start.elapsed().as_millis();
     record_adaptive_summary(&adaptive, &mut summary);
 
@@ -494,17 +500,28 @@ pub async fn run_sitemap_only(
     output_dir: &Path,
     previous_manifest: Arc<HashMap<String, ManifestEntry>>,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    validate_crawl_memory_safety(cfg, start_url).map_err(|e| -> Box<dyn Error> { e.into() })?;
+
     tokio::fs::create_dir_all(output_dir.join("markdown"))
         .await
         .map_err(|e| {
             format!("failed to create markdown dir for sitemap crawl of {start_url}: {e}")
         })?;
 
-    let mut website = configure_website(cfg, start_url, cfg.render_mode)
-        .await
-        .map_err(|e| {
-            format!("failed to configure website for sitemap crawl of {start_url}: {e}")
-        })?;
+    let control_id = crawl_control_id(None);
+    let memory_guard = memory_guard::CrawlMemoryGuard::spawn(
+        &control_id,
+        start_url,
+        cfg.crawl_memory_abort_percent,
+    );
+    let mut website = runtime::configure_website_with_crawl_id(
+        cfg,
+        start_url,
+        cfg.render_mode,
+        Some(&control_id),
+    )
+    .await
+    .map_err(|e| format!("failed to configure website for sitemap crawl of {start_url}: {e}"))?;
     // Override the default set by configure_website: sitemap IS the crawl here.
     website.with_ignore_sitemap(false);
 
@@ -545,11 +562,16 @@ pub async fn run_sitemap_only(
 
     website.crawl_sitemap().await;
     website.unsubscribe();
+    memory_guard.stop();
 
-    let (mut summary, urls) = join
+    let joined = join
         .await
-        .map_err(|e| format!("sitemap collector join failure for {start_url}: {e}"))?
-        .map_err(|e| format!("sitemap collector failure for {start_url}: {e}"))?;
+        .map_err(|e| format!("sitemap collector join failure for {start_url}: {e}"));
+    if let Some(reason) = memory_guard.abort_reason() {
+        return Err(reason.into());
+    }
+    let (mut summary, urls) =
+        joined?.map_err(|e| format!("sitemap collector failure for {start_url}: {e}"))?;
     summary.elapsed_ms = crawl_start.elapsed().as_millis();
 
     Ok((summary, urls))

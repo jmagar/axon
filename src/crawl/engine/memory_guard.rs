@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::logging::log_warn;
 
-const DEFAULT_ABORT_PERCENT: f64 = 85.0;
+pub(crate) const MEMORY_ABORT_PREFIX: &str = "crawl memory guard tripped";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy)]
@@ -22,50 +22,57 @@ pub(crate) fn should_abort_for_usage(snapshot: MemorySnapshot, abort_percent: f6
     used_percent >= abort_percent
 }
 
+pub(crate) fn is_memory_abort_message(message: &str) -> bool {
+    message.contains(MEMORY_ABORT_PREFIX)
+}
+
 pub(crate) struct CrawlMemoryGuard {
     cancel: CancellationToken,
     abort_reason: Arc<Mutex<Option<String>>>,
 }
 
 impl CrawlMemoryGuard {
-    pub(crate) fn spawn(crawl_id: Option<&str>, start_url: &str) -> Self {
+    pub(crate) fn spawn(crawl_id: &str, start_url: &str, abort_percent: Option<f64>) -> Self {
         let cancel = CancellationToken::new();
         let abort_reason = Arc::new(Mutex::new(None));
-        let Some(abort_percent) = abort_percent_from_env() else {
+        let Some(abort_percent) = abort_percent else {
             return Self {
                 cancel,
                 abort_reason,
             };
         };
 
-        let target = crawl_id.map(|id| format!("{id}{start_url}"));
+        let target = format!("{crawl_id}{start_url}");
         let url = start_url.to_string();
         let cancel_task = cancel.clone();
         let reason_task = Arc::clone(&abort_reason);
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(POLL_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut snapshot_warning_logged = false;
             loop {
                 tokio::select! {
                     _ = cancel_task.cancelled() => break,
                     _ = ticker.tick() => {
                         let Some(snapshot) = linux_memory_snapshot() else {
+                            if !snapshot_warning_logged {
+                                log_warn("crawl memory guard could not read RSS/limit telemetry; guard will retry on the next poll");
+                                snapshot_warning_logged = true;
+                            }
                             continue;
                         };
                         if !should_abort_for_usage(snapshot, abort_percent) {
                             continue;
                         }
                         let reason = format!(
-                            "crawl memory guard tripped for {url}: rss={} bytes total={} bytes threshold={abort_percent:.1}%",
+                            "{MEMORY_ABORT_PREFIX} for {url}: rss={} bytes total={} bytes threshold={abort_percent:.1}%",
                             snapshot.rss_bytes, snapshot.total_bytes
                         );
                         log_warn(&reason);
                         if let Ok(mut slot) = reason_task.lock() {
                             *slot = Some(reason);
                         }
-                        if let Some(target) = target.as_deref() {
-                            spider::utils::shutdown(target).await;
-                        }
+                        spider::utils::shutdown(&target).await;
                         break;
                     }
                 }
@@ -87,19 +94,16 @@ impl CrawlMemoryGuard {
     }
 }
 
-fn abort_percent_from_env() -> Option<f64> {
-    let raw = std::env::var("AXON_CRAWL_MEMORY_ABORT_PERCENT").ok();
-    let percent = match raw.as_deref() {
-        Some(value) => value.parse::<f64>().unwrap_or(DEFAULT_ABORT_PERCENT),
-        None => DEFAULT_ABORT_PERCENT,
-    };
-    (percent > 0.0).then_some(percent.clamp(1.0, 100.0))
+impl Drop for CrawlMemoryGuard {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 #[cfg(target_os = "linux")]
 fn linux_memory_snapshot() -> Option<MemorySnapshot> {
     let rss_bytes = read_status_rss_bytes()?;
-    let total_bytes = read_meminfo_total_bytes()?;
+    let total_bytes = effective_memory_total_bytes()?;
     Some(MemorySnapshot {
         rss_bytes,
         total_bytes,
@@ -127,6 +131,38 @@ fn read_meminfo_total_bytes() -> Option<u64> {
         let value = line.strip_prefix("MemTotal:")?.trim();
         parse_kib_line(value)
     })
+}
+
+#[cfg(target_os = "linux")]
+fn effective_memory_total_bytes() -> Option<u64> {
+    match (read_cgroup_limit_bytes(), read_meminfo_total_bytes()) {
+        (Some(cgroup), Some(host)) => Some(cgroup.min(host)),
+        (Some(cgroup), None) => Some(cgroup),
+        (None, Some(host)) => Some(host),
+        (None, None) => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_cgroup_limit_bytes() -> Option<u64> {
+    [
+        "/sys/fs/cgroup/memory.max",
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+    ]
+    .iter()
+    .filter_map(|path| read_cgroup_limit_file(path))
+    .min()
+}
+
+#[cfg(target_os = "linux")]
+fn read_cgroup_limit_file(path: &str) -> Option<u64> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "max" {
+        return None;
+    }
+    let limit = trimmed.parse::<u64>().ok()?;
+    (limit < (1_u64 << 60)).then_some(limit)
 }
 
 #[cfg(target_os = "linux")]

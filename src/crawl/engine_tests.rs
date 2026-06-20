@@ -1,4 +1,34 @@
 use super::*;
+use std::env;
+
+struct EnvRestore {
+    saved: Vec<(String, Option<String>)>,
+}
+
+impl EnvRestore {
+    fn save(keys: &[&str]) -> Self {
+        Self {
+            saved: keys
+                .iter()
+                .map(|key| ((*key).to_string(), env::var(key).ok()))
+                .collect(),
+        }
+    }
+}
+
+impl Drop for EnvRestore {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        for (key, value) in self.saved.drain(..) {
+            unsafe {
+                match value {
+                    Some(value) => env::set_var(&key, value),
+                    None => env::remove_var(&key),
+                }
+            }
+        }
+    }
+}
 
 fn summary(pages_seen: u32, thin: u32, markdown_files: u32) -> CrawlSummary {
     CrawlSummary {
@@ -121,6 +151,59 @@ fn uncapped_crawl_with_explicit_scope_is_allowed() {
 }
 
 #[test]
+fn uncapped_crawl_with_url_whitelist_is_allowed() {
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.url_whitelist
+        .push("^https://developer\\.android\\.com/reference/".to_string());
+
+    validate_crawl_memory_safety(&cfg, "https://developer.android.com/reference/").unwrap();
+}
+
+#[test]
+fn uncapped_crawl_with_config_override_is_allowed() {
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.clear();
+    cfg.url_whitelist.clear();
+    cfg.allow_unbounded_broad_crawl = true;
+
+    validate_crawl_memory_safety(&cfg, "https://developer.android.com/").unwrap();
+}
+
+#[allow(unsafe_code)]
+#[serial_test::serial]
+#[tokio::test]
+async fn run_crawl_once_rejects_uncapped_broad_crawl_before_output_dirs() {
+    let _restore = EnvRestore::save(&["AXON_ALLOW_UNBOUNDED_BROAD_CRAWL"]);
+    unsafe {
+        env::remove_var("AXON_ALLOW_UNBOUNDED_BROAD_CRAWL");
+    }
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.clear();
+    cfg.url_whitelist.clear();
+    let temp = tempfile::tempdir().expect("temp dir");
+    let output_dir = temp.path().join("rejected-crawl");
+
+    let err = run_crawl_once(
+        &cfg,
+        "https://developer.android.com/",
+        RenderMode::Http,
+        &output_dir,
+        None,
+        false,
+        Arc::new(HashMap::new()),
+        None,
+    )
+    .await
+    .expect_err("uncapped broad crawl should be rejected");
+
+    assert!(err.to_string().contains("uncapped unscoped crawl"));
+    assert!(!output_dir.exists());
+}
+
+#[test]
 fn crawl_memory_guard_trips_at_configured_ram_percent() {
     let snapshot = memory_guard::MemorySnapshot {
         rss_bytes: 900,
@@ -129,6 +212,16 @@ fn crawl_memory_guard_trips_at_configured_ram_percent() {
 
     assert!(memory_guard::should_abort_for_usage(snapshot, 85.0));
     assert!(!memory_guard::should_abort_for_usage(snapshot, 95.0));
+}
+
+#[test]
+fn crawl_memory_guard_error_is_identifiable_for_fallback_propagation() {
+    assert!(memory_guard::is_memory_abort_message(
+        "crawl memory guard tripped for https://example.com"
+    ));
+    assert!(!memory_guard::is_memory_abort_message(
+        "chrome fallback failed for unrelated reasons"
+    ));
 }
 
 #[test]

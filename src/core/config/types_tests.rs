@@ -363,6 +363,8 @@ fn new_engine_tuning_defaults() {
     assert_eq!(cfg.auto_switch_min_pages, 10);
     assert_eq!(cfg.crawl_broadcast_buffer_min, 512);
     assert_eq!(cfg.crawl_broadcast_buffer_max, 2_048);
+    assert!(!cfg.allow_unbounded_broad_crawl);
+    assert_eq!(cfg.crawl_memory_abort_percent, Some(85.0));
 }
 
 #[test]

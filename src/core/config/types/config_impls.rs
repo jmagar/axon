@@ -4,6 +4,10 @@ use super::enums::{
     RedditTime, RenderMode, ScrapeFormat,
 };
 use super::subconfigs::AskConfig;
+use super::{
+    DEFAULT_CRAWL_BROADCAST_BUFFER_MAX, DEFAULT_CRAWL_BROADCAST_BUFFER_MIN,
+    DEFAULT_CRAWL_MEMORY_ABORT_PERCENT, DEFAULT_MAX_PAGE_BYTES,
+};
 use std::path::PathBuf;
 
 impl Default for Config {
@@ -192,11 +196,13 @@ impl Default for Config {
             chrome_network_idle_timeout_secs: 15,
             auto_switch_thin_ratio: 0.60,
             auto_switch_min_pages: 10,
-            crawl_broadcast_buffer_min: 512,
-            crawl_broadcast_buffer_max: 2_048,
+            crawl_broadcast_buffer_min: DEFAULT_CRAWL_BROADCAST_BUFFER_MIN,
+            crawl_broadcast_buffer_max: DEFAULT_CRAWL_BROADCAST_BUFFER_MAX,
+            allow_unbounded_broad_crawl: false,
             url_whitelist: vec![],
             block_assets: false,
-            max_page_bytes: Some(4 * 1024 * 1024),
+            max_page_bytes: Some(DEFAULT_MAX_PAGE_BYTES),
+            crawl_memory_abort_percent: Some(DEFAULT_CRAWL_MEMORY_ABORT_PERCENT),
             redirect_policy_strict: false,
             chrome_wait_for_selector: None,
             root_selector: None,
