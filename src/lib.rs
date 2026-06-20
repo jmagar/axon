@@ -2,6 +2,7 @@
 
 pub(crate) mod authz;
 pub mod cli;
+pub(crate) mod code_index;
 pub mod core;
 pub mod crawl;
 pub mod extract;
