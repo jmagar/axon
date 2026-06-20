@@ -49,10 +49,6 @@ impl FileDiff {
         self.added.is_empty() && self.modified.is_empty() && self.removed.is_empty()
     }
 
-    pub(crate) fn changed_entries(&self) -> impl Iterator<Item = &FileManifestEntry> {
-        self.added.iter().chain(self.modified.iter())
-    }
-
     #[cfg(test)]
     pub(crate) fn modified_paths(&self) -> Vec<&str> {
         self.modified

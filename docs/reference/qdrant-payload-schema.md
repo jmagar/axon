@@ -128,15 +128,19 @@ Lumen-like code-search shape used by query ranking and result output.
 
 Local `code-search` vectors use `source_type = "local_code"` and add these fields.
 Absolute project roots are not stored in Qdrant; they stay in private SQLite
-code-index state only.
+code-index state only. The derived project key is scoped to the canonical checkout
+root, collection, embedder, and local index version. Generic `query`, `ask`, and
+`retrieve` surfaces exclude `local_code`; `code-search` filters by project key and
+committed generation. Changed refreshes write complete generation snapshots and
+track previous-generation cleanup debt in SQLite until Qdrant deletion succeeds.
 
 | Field | Qdrant type | Indexed | Notes |
 |-------|-------------|---------|-------|
-| `local_project_key` | keyword | yes | Stable project key derived from repository origin, or a private fallback identity when no origin exists. |
+| `local_project_key` | keyword | yes | Stable private project key derived from repository origin plus checkout/config identity. |
 | `local_project_display` | keyword | no | Non-sensitive display label, usually the Git root directory name. |
 | `local_file_hash` | keyword | no | SHA-256 content hash for the repository-relative file. |
 | `local_index_version` | integer | yes | Local code index schema version. |
-| `local_generation` | integer | yes | Committed local-code generation used by generation-fenced deletes. |
+| `local_generation` | integer | yes | Local-code generation; `code-search` only queries the committed generation. |
 | `code_file_path` | keyword | yes | Repository-relative path. |
 | `code_path_prefixes` | keyword[] | yes | Prefix buckets used for exact path-prefix filtering. |
 

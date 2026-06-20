@@ -62,12 +62,17 @@ const CORE_KEYWORD_INDEX_FIELDS: &[&str] = &[
     "source_type",
     "seed_url",
     "extractor_name",
+    "local_project_key",
+    "code_file_path",
+    "code_path_prefixes",
     "chunk_content_kind",
 ];
 
 const CORE_TYPED_FIELDS: &[(&str, &str)] = &[
     ("chunk_index", "integer"),
     ("payload_schema_version", "integer"),
+    ("local_index_version", "integer"),
+    ("local_generation", "integer"),
     ("scraped_at", "datetime"),
 ];
 

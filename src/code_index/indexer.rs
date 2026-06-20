@@ -28,6 +28,14 @@ pub(crate) async fn reindex_changed_files(
     reindex_changed_files_inner(Some(cfg), store, identity, manifest, diff, generation, None).await
 }
 
+pub(crate) async fn retry_cleanup_debt(
+    cfg: &Config,
+    store: &CodeIndexStore,
+    identity: &CodeIndexIdentity,
+) -> anyhow::Result<()> {
+    cleanup_debt(Some(cfg), store, identity, None).await
+}
+
 async fn reindex_changed_files_inner(
     cfg: Option<&Config>,
     store: &CodeIndexStore,
@@ -39,46 +47,26 @@ async fn reindex_changed_files_inner(
 ) -> anyhow::Result<ReindexSummary> {
     let mut summary = ReindexSummary::default();
     let previous_generation = generation.saturating_sub(1);
+    let mut cleanup_paths = diff.removed.clone();
 
     for removed in &diff.removed {
-        delete_previous_generation(cfg, identity, previous_generation, removed, &test_deletes)
-            .await?;
         store.remove_file(identity, removed).await?;
         summary.removed_files += 1;
     }
 
-    let changed_entries = diff.changed_entries().cloned().collect::<Vec<_>>();
-    for batch in changed_entries.chunks(changed_file_batch_size()) {
+    for batch in manifest.files.chunks(changed_file_batch_size()) {
         let mut prepared = Vec::new();
-        let mut indexed_without_embed = Vec::new();
 
         for entry in batch {
             store
                 .mark_file_pending(identity, &entry.relative_path)
                 .await?;
+            cleanup_paths.push(entry.relative_path.clone());
             if entry.size_bytes == 0 {
-                delete_previous_generation(
-                    cfg,
-                    identity,
-                    previous_generation,
-                    &entry.relative_path,
-                    &test_deletes,
-                )
-                .await?;
-                indexed_without_embed.push(entry.clone());
                 continue;
             }
 
             let Some(doc) = prepare_local_code_doc(identity, entry, generation).await? else {
-                delete_previous_generation(
-                    cfg,
-                    identity,
-                    previous_generation,
-                    &entry.relative_path,
-                    &test_deletes,
-                )
-                .await?;
-                indexed_without_embed.push(entry.clone());
                 continue;
             };
             prepared.push(doc);
@@ -96,20 +84,17 @@ async fn reindex_changed_files_inner(
 
         for entry in batch {
             store.mark_file_indexed(identity, entry, generation).await?;
-            summary.indexed_files += 1;
-        }
-        for entry in indexed_without_embed {
-            if !manifest
-                .files
-                .iter()
-                .any(|candidate| candidate.relative_path == entry.relative_path)
-            {
-                continue;
-            }
         }
     }
+    summary.indexed_files = diff.added.len() + diff.modified.len();
 
+    cleanup_paths.sort();
+    cleanup_paths.dedup();
+    store
+        .add_cleanup_debt(identity, previous_generation, &cleanup_paths)
+        .await?;
     store.commit_generation(identity, generation).await?;
+    cleanup_debt(cfg, store, identity, test_deletes).await?;
     Ok(summary)
 }
 
@@ -144,8 +129,9 @@ async fn prepare_local_code_doc(
         "code_path_prefixes": code_path_prefixes(&entry.relative_path),
     });
     let url = format!(
-        "local-code://{}/{}",
+        "local-code://{}/g/{}/{}",
         identity.project_key,
+        generation,
         percent_encoding::utf8_percent_encode(
             &entry.relative_path,
             percent_encoding::NON_ALPHANUMERIC
@@ -183,30 +169,38 @@ pub(crate) fn code_path_prefixes(relative_path: &str) -> Vec<String> {
     prefixes
 }
 
-async fn delete_previous_generation(
+async fn cleanup_debt(
     cfg: Option<&Config>,
+    store: &CodeIndexStore,
     identity: &CodeIndexIdentity,
-    previous_generation: i64,
-    path: &str,
-    test_deletes: &Option<Arc<Mutex<Vec<String>>>>,
+    test_deletes: Option<Arc<Mutex<Vec<String>>>>,
 ) -> anyhow::Result<()> {
-    if previous_generation <= 0 {
-        if let Some(deletes) = test_deletes {
-            deletes.lock().unwrap().push(path.to_string());
+    let debt = store.cleanup_debt(identity).await?;
+    for (generation, paths) in debt {
+        if generation <= 0 || paths.is_empty() {
+            store
+                .clear_cleanup_debt(identity, generation, &paths)
+                .await?;
+            continue;
         }
-        return Ok(());
-    }
-    if let Some(cfg) = cfg {
-        crate::vector::ops::qdrant::qdrant_delete_local_code_files_for_generation(
-            cfg,
-            &identity.project_key,
-            previous_generation,
-            &[path.to_string()],
-        )
-        .await?;
-    }
-    if let Some(deletes) = test_deletes {
-        deletes.lock().unwrap().push(path.to_string());
+        if let Some(cfg) = cfg {
+            crate::vector::ops::qdrant::qdrant_delete_local_code_files_for_generation(
+                cfg,
+                &identity.project_key,
+                generation,
+                &paths,
+            )
+            .await?;
+        }
+        if let Some(deletes) = &test_deletes {
+            deletes
+                .lock()
+                .map_err(|err| anyhow::anyhow!("cleanup delete tracker lock poisoned: {err}"))?
+                .extend(paths.iter().cloned());
+        }
+        store
+            .clear_cleanup_debt(identity, generation, &paths)
+            .await?;
     }
     Ok(())
 }

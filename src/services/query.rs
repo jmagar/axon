@@ -1,5 +1,6 @@
 use crate::code_index::config::validate_path_prefix;
 use crate::code_index::ensure::EnsureFreshOptions;
+use crate::code_index::store::CodeIndexStore;
 use crate::code_index::{
     CodeIndexIdentity, CodeSearchAllowedRoots, FreshnessWarning, ensure_fresh,
 };
@@ -217,6 +218,17 @@ pub async fn code_search(
         code_search_freshness("skipped", None, 0, 0)
     };
 
+    let store = CodeIndexStore::open_for_context(ctx).await?;
+    let committed_generation = store.committed_generation(&identity).await?.unwrap_or(0);
+    if committed_generation <= 0 {
+        return Ok(CodeSearchResult {
+            query: text.to_string(),
+            content_trust: "untrusted_local_code".to_string(),
+            results: Vec::new(),
+            freshness: code_search_missing_index_freshness(freshness),
+        });
+    }
+
     let results = code_search_hits(
         ctx.cfg(),
         CodeSearchVectorRequest {
@@ -224,6 +236,7 @@ pub async fn code_search(
             limit: opts.limit.max(1),
             offset: opts.offset,
             project_key: &identity.project_key,
+            generation: committed_generation,
             path_prefix: path_prefix.as_deref(),
         },
     )
@@ -259,6 +272,14 @@ fn code_search_freshness(
     }
 }
 
+fn code_search_missing_index_freshness(mut freshness: CodeSearchFreshness) -> CodeSearchFreshness {
+    if freshness.warning.is_none() {
+        freshness.status = "stale".to_string();
+        freshness.warning = Some(FreshnessWarning::MissingCommittedIndex.message());
+    }
+    freshness
+}
+
 fn resolve_code_search_root(
     cwd: Option<&Path>,
     caller: CodeSearchCaller,
@@ -271,21 +292,21 @@ fn resolve_code_search_root(
             return Err("code_search MCP requests must provide cwd".into());
         }
     };
-    let canonical_cwd = std::fs::canonicalize(&cwd)
-        .map_err(|e| format!("resolve code_search cwd {}: {e}", cwd.display()))?;
+    let canonical_cwd =
+        std::fs::canonicalize(&cwd).map_err(|_| "code_search cwd could not be resolved")?;
     let git_root = git_toplevel(&canonical_cwd)?;
     reject_unsafe_code_root(&git_root)?;
     if matches!(caller, CodeSearchCaller::Mcp) {
         let allowed = CodeSearchAllowedRoots::from_env()?;
         if !allowed.contains(&git_root) {
-            return Err(format!(
-                "code_search cwd {} is outside AXON_CODE_SEARCH_ALLOWED_ROOTS",
-                git_root.display()
-            )
-            .into());
+            return Err(code_search_outside_allowed_roots_message().into());
         }
     }
     Ok(git_root)
+}
+
+fn code_search_outside_allowed_roots_message() -> &'static str {
+    "code_search cwd is outside AXON_CODE_SEARCH_ALLOWED_ROOTS"
 }
 
 fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
@@ -294,13 +315,9 @@ fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
         .arg(cwd)
         .args(["rev-parse", "--show-toplevel"])
         .output()
-        .map_err(|e| format!("run git rev-parse for {}: {e}", cwd.display()))?;
+        .map_err(|_| "code_search cwd is not inside a git checkout")?;
     if !output.status.success() {
-        return Err(format!(
-            "code_search cwd {} is not inside a git checkout",
-            cwd.display()
-        )
-        .into());
+        return Err("code_search cwd is not inside a git checkout".into());
     }
     let root = String::from_utf8(output.stdout)
         .map_err(|e| format!("git rev-parse output was not UTF-8: {e}"))?;
@@ -324,17 +341,20 @@ fn reject_unsafe_code_root(root: &Path) -> Result<(), Box<dyn Error + Send + Syn
 }
 
 fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexIdentity {
-    let origin = git_remote_origin(&project_root).unwrap_or_else(|| {
-        // This seed is private input to the UUID project key. Only the derived
-        // key is stored in Qdrant payloads; the absolute root remains SQLite-only.
-        format!("local-git:{}", project_root.display())
-    });
+    let origin = code_search_project_origin(&project_root);
     let embedder = if cfg.tei_url.trim().is_empty() {
         "tei".to_string()
     } else {
         cfg.tei_url.clone()
     };
     CodeIndexIdentity::new(project_root, origin, &cfg.collection, &embedder)
+}
+
+fn code_search_project_origin(project_root: &Path) -> String {
+    let remote = git_remote_origin(project_root).unwrap_or_else(|| "git:no-origin".to_string());
+    // This seed is private input to the UUID project key. Only the derived key is
+    // stored in Qdrant payloads; the absolute root remains SQLite-only.
+    format!("{remote}\nworktree:{}", project_root.display())
 }
 
 fn git_remote_origin(project_root: &Path) -> Option<String> {
@@ -359,6 +379,9 @@ pub async fn retrieve(
     url: &str,
     opts: RetrieveOptions,
 ) -> Result<RetrieveResult, Box<dyn Error + Send + Sync>> {
+    if url.starts_with("local-code://") {
+        return Err("local-code documents are only available through code_search".into());
+    }
     let pinned_backend = decode_document_cursor_backend(opts.cursor.as_deref()).map_err(
         |e| -> Box<dyn Error + Send + Sync> {
             format!("invalid retrieve cursor for {url}: {e}").into()

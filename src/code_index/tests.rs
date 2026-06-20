@@ -1,6 +1,44 @@
 use super::*;
 use tempfile::tempdir;
 
+#[test]
+fn project_key_is_scoped_to_checkout_collection_and_embedder() {
+    let a = tempdir().unwrap();
+    let b = tempdir().unwrap();
+    let origin = "git:https://example.test/owner/repo\nworktree:";
+    let identity_a = CodeIndexIdentity::for_test(
+        a.path(),
+        &format!("{origin}{}", a.path().display()),
+        "axon",
+        "tei-a",
+    );
+    let identity_b = CodeIndexIdentity::for_test(
+        b.path(),
+        &format!("{origin}{}", b.path().display()),
+        "axon",
+        "tei-a",
+    );
+    let identity_other_collection = CodeIndexIdentity::for_test(
+        a.path(),
+        &format!("{origin}{}", a.path().display()),
+        "other",
+        "tei-a",
+    );
+    let identity_other_embedder = CodeIndexIdentity::for_test(
+        a.path(),
+        &format!("{origin}{}", a.path().display()),
+        "axon",
+        "tei-b",
+    );
+
+    assert_ne!(identity_a.project_key, identity_b.project_key);
+    assert_ne!(
+        identity_a.project_key,
+        identity_other_collection.project_key
+    );
+    assert_ne!(identity_a.project_key, identity_other_embedder.project_key);
+}
+
 #[tokio::test]
 async fn manifest_uses_metadata_fast_path_for_unchanged_files() {
     let dir = tempdir().unwrap();
@@ -92,6 +130,42 @@ async fn empty_file_deletes_old_vectors_and_marks_current_hash() {
             .unwrap()
             .pending
     );
+}
+
+#[tokio::test]
+async fn changed_refresh_cleans_previous_generation_for_complete_snapshot() {
+    let dir = tempdir().unwrap();
+    tokio::fs::write(dir.path().join("a.rs"), "pub fn alpha() {}\n")
+        .await
+        .unwrap();
+    tokio::fs::write(dir.path().join("b.rs"), "pub fn beta() {}\n")
+        .await
+        .unwrap();
+    let store = store::CodeIndexStore::open_in_memory().await.unwrap();
+    store.init_schema().await.unwrap();
+    let identity = CodeIndexIdentity::for_test(dir.path(), "origin:axon", "axon", "tei-test");
+    let manifest =
+        manifest::build_manifest(&store, &identity, manifest::ManifestOptions::default())
+            .await
+            .unwrap();
+    let diff = store.diff_manifest(&identity, &manifest).await.unwrap();
+
+    let deletes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    indexer::reindex_changed_files_for_test(
+        &store,
+        &identity,
+        &manifest,
+        &diff,
+        7,
+        deletes.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        deletes.lock().unwrap().as_slice(),
+        &["a.rs".to_string(), "b.rs".to_string()]
+    );
+    assert_eq!(store.cleanup_debt(&identity).await.unwrap().len(), 0);
 }
 
 #[tokio::test]

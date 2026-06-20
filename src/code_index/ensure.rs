@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use tokio::sync::Mutex;
 
 use crate::code_index::config::{CodeIndexIdentity, freshness_ttl, reindex_timeout};
-use crate::code_index::indexer::{ReindexSummary, reindex_changed_files};
+use crate::code_index::indexer::{ReindexSummary, reindex_changed_files, retry_cleanup_debt};
 use crate::code_index::manifest::{ManifestOptions, build_manifest};
 use crate::code_index::store::CodeIndexStore;
 use crate::services::context::ServiceContext;
@@ -26,6 +26,7 @@ pub(crate) enum FreshnessWarning {
     TimedOut { timeout_ms: u64 },
     Failed { error: String },
     AlreadyRunning,
+    MissingCommittedIndex,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +83,8 @@ pub(crate) async fn ensure_fresh(
     let owner = format!("{}:{}", std::process::id(), uuid::Uuid::new_v4());
     let lease_ms = options
         .reindex_timeout
-        .saturating_add(Duration::from_secs(5))
+        .saturating_mul(2)
+        .saturating_add(Duration::from_secs(30))
         .as_millis() as i64;
     if !store.acquire_lease(identity, &owner, lease_ms).await? {
         return Ok(EnsureFreshOutcome {
@@ -137,6 +139,20 @@ async fn refresh_under_lease(
     identity: &CodeIndexIdentity,
     options: &EnsureFreshOptions,
 ) -> Result<ReindexSummary, RefreshError> {
+    tokio::time::timeout(
+        options.reindex_timeout,
+        refresh_under_lease_inner(ctx, store, identity, options),
+    )
+    .await
+    .map_err(|_| RefreshError::TimedOut)?
+}
+
+async fn refresh_under_lease_inner(
+    ctx: &ServiceContext,
+    store: &CodeIndexStore,
+    identity: &CodeIndexIdentity,
+    options: &EnsureFreshOptions,
+) -> Result<ReindexSummary, RefreshError> {
     let manifest = build_manifest(store, identity, options.manifest_options)
         .await
         .map_err(|err| RefreshError::Failed(err.to_string()))?;
@@ -145,6 +161,9 @@ async fn refresh_under_lease(
         .await
         .map_err(|err| RefreshError::Failed(err.to_string()))?;
     if diff.is_empty() {
+        retry_cleanup_debt(ctx.cfg(), store, identity)
+            .await
+            .map_err(|err| RefreshError::Failed(err.to_string()))?;
         store
             .touch_last_checked(identity)
             .await
@@ -152,13 +171,9 @@ async fn refresh_under_lease(
         return Ok(ReindexSummary::default());
     }
 
-    tokio::time::timeout(
-        options.reindex_timeout,
-        reindex_changed_files(ctx.cfg(), store, identity, &manifest, &diff),
-    )
-    .await
-    .map_err(|_| RefreshError::TimedOut)?
-    .map_err(|err| RefreshError::Failed(err.to_string()))
+    reindex_changed_files(ctx.cfg(), store, identity, &manifest, &diff)
+        .await
+        .map_err(|err| RefreshError::Failed(err.to_string()))
 }
 
 impl FreshnessWarning {
@@ -171,6 +186,9 @@ impl FreshnessWarning {
                 format!("refresh failed: {error}; stale index used")
             }
             Self::AlreadyRunning => "refresh already running; stale index used".to_string(),
+            Self::MissingCommittedIndex => {
+                "no committed code index; rerun without --no-freshness to build it".to_string()
+            }
         }
     }
 }

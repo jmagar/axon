@@ -5,6 +5,7 @@ use crate::vector::ops::commands::retrieval::{
     build_typed_retrieval_result, candidates_only, dispatch_vector_search_with_diagnostics,
     embed_retrieval_inputs, query_allows_low_signal, vector_mode_metadata,
 };
+use crate::vector::ops::qdrant::exclude_local_code_filter;
 use crate::vector::ops::source_display::display_source;
 use crate::vector::ops::{qdrant, ranking, tei};
 use std::error::Error;
@@ -40,7 +41,7 @@ pub async fn query_hits(
         offset,
         QueryHitOptions {
             command: "query",
-            filter: None,
+            filter: Some(exclude_local_code_filter()),
             allow_short_content: false,
             score_policy: query_score_policy(cfg),
         },

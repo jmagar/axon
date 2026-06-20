@@ -1,10 +1,11 @@
 use super::*;
+use crate::core::config::Config;
 use crate::services::types::{
     AskExplainCandidate, AskExplainContext, AskExplainContextRendered, AskExplainContextSourceTier,
     AskExplainFilterDecisionKind, AskExplainFullDocFetchMode, AskExplainFullDocFetchSkipReason,
     AskExplainMode, AskExplainRenderedContextFormat, AskExplainScoreComponentStatus,
     AskExplainScoreKind, AskExplainSelectionDecisionKind, AskTiming, CodeSearchFreshness,
-    CodeSearchResult, CorpusHealthKind,
+    CodeSearchResult, CorpusHealthKind, RetrieveOptions,
 };
 use serde_json::json;
 
@@ -557,6 +558,71 @@ fn code_search_result_marks_snippets_untrusted() {
     assert_eq!(
         value["content_trust"].as_str(),
         Some("untrusted_local_code")
+    );
+}
+
+#[test]
+fn code_search_missing_index_freshness_warns() {
+    let freshness = code_search_missing_index_freshness(CodeSearchFreshness {
+        status: "skipped".to_string(),
+        warning: None,
+        indexed_files: 0,
+        removed_files: 0,
+    });
+    assert_eq!(freshness.status, "stale");
+    assert_eq!(
+        freshness.warning.as_deref(),
+        Some("no committed code index; rerun without --no-freshness to build it")
+    );
+}
+
+#[test]
+fn code_search_allowed_roots_error_does_not_leak_absolute_path() {
+    let message = code_search_outside_allowed_roots_message();
+    assert_eq!(
+        message,
+        "code_search cwd is outside AXON_CODE_SEARCH_ALLOWED_ROOTS"
+    );
+    assert!(!message.contains("/"));
+}
+
+#[test]
+fn code_search_resolution_errors_do_not_echo_probe_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("secret-checkout");
+    let err = resolve_code_search_root(Some(&missing), CodeSearchCaller::Cli)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(err, "code_search cwd could not be resolved");
+    assert!(!err.contains(dir.path().to_string_lossy().as_ref()));
+}
+
+#[test]
+fn code_search_project_origin_is_checkout_scoped() {
+    let a = tempfile::tempdir().expect("tempdir a");
+    let b = tempfile::tempdir().expect("tempdir b");
+    let origin_a = code_search_project_origin(a.path());
+    let origin_b = code_search_project_origin(b.path());
+    assert_ne!(origin_a, origin_b);
+}
+
+#[tokio::test]
+async fn retrieve_rejects_local_code_urls() {
+    let err = retrieve(
+        &Config::test_default(),
+        "local-code://project/g/1/src%2Flib.rs",
+        RetrieveOptions {
+            max_points: None,
+            cursor: None,
+            token_budget: None,
+        },
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert_eq!(
+        err,
+        "local-code documents are only available through code_search"
     );
 }
 

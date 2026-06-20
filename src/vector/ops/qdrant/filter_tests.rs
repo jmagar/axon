@@ -166,8 +166,22 @@ fn combine_must_filters_concatenates_conditions() {
 }
 
 #[test]
+fn combine_must_filters_preserves_must_not_conditions() {
+    let combined = combine_must_filters(&[
+        url_filter("https://example.com/a"),
+        exclude_local_code_filter(),
+    ]);
+    let must = combined["must"].as_array().unwrap();
+    let must_not = combined["must_not"].as_array().unwrap();
+    assert_eq!(must.len(), 1);
+    assert_eq!(must_not.len(), 1);
+    assert_eq!(must_not[0]["key"].as_str(), Some("source_type"));
+    assert_eq!(must_not[0]["match"]["value"].as_str(), Some("local_code"));
+}
+
+#[test]
 fn local_project_code_filter_requires_project_and_prefix_bucket() {
-    let filter = build_local_project_code_filter("project-1", Some("src/vector/"));
+    let filter = build_local_project_code_filter("project-1", 7, Some("src/vector/"));
     let must = filter["must"].as_array().unwrap();
     assert!(
         must.iter()
@@ -180,6 +194,10 @@ fn local_project_code_filter_requires_project_and_prefix_bucket() {
     assert!(
         must.iter()
             .any(|c| c["key"] == "local_index_version" && c["match"]["value"] == 1)
+    );
+    assert!(
+        must.iter()
+            .any(|c| c["key"] == "local_generation" && c["match"]["value"] == 7)
     );
     assert!(
         must.iter()

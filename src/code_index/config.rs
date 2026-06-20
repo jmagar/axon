@@ -52,8 +52,11 @@ impl CodeIndexIdentity {
         collection: &str,
         embedder_key: &str,
     ) -> Self {
+        let key_seed = format!(
+            "origin={project_origin}\ncollection={collection}\nembedder={embedder_key}\nindex_version={CODE_INDEX_VERSION}"
+        );
         let project_key =
-            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, project_origin.as_bytes()).to_string();
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, key_seed.as_bytes()).to_string();
         let project_display = project_root
             .file_name()
             .and_then(|name| name.to_str())

@@ -23,8 +23,11 @@ impl CodeIndexStore {
     pub(crate) async fn open_for_context(
         ctx: &crate::services::context::ServiceContext,
     ) -> anyhow::Result<Self> {
-        let pool =
-            crate::jobs::store::open_sqlite_pool(&ctx.cfg.sqlite_path.to_string_lossy()).await?;
+        let pool = ctx
+            .jobs
+            .sqlite_pool()
+            .map(|pool| pool.as_ref().clone())
+            .ok_or_else(|| anyhow::anyhow!("code search requires a SQLite service runtime"))?;
         let store = Self { pool };
         store.init_schema().await?;
         Ok(store)
@@ -68,6 +71,20 @@ impl CodeIndexStore {
               lease_owner TEXT,
               lease_expires_at_ms INTEGER NOT NULL DEFAULT 0,
               last_checked_at_ms INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS axon_code_cleanup_debt (
+              project_key TEXT NOT NULL,
+              generation INTEGER NOT NULL,
+              relative_path TEXT NOT NULL,
+              updated_at_ms INTEGER NOT NULL,
+              PRIMARY KEY (project_key, generation, relative_path)
             )
             "#,
         )
@@ -200,6 +217,22 @@ impl CodeIndexStore {
         Ok(current.map(|(generation,)| generation + 1).unwrap_or(1))
     }
 
+    pub(crate) async fn committed_generation(
+        &self,
+        identity: &CodeIndexIdentity,
+    ) -> anyhow::Result<Option<i64>> {
+        self.upsert_project(identity).await?;
+        let current: Option<(i64,)> = sqlx::query_as(
+            "SELECT committed_generation FROM axon_code_projects WHERE project_key = ?",
+        )
+        .bind(&identity.project_key)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(current
+            .map(|(generation,)| generation)
+            .filter(|generation| *generation > 0))
+    }
+
     pub(crate) async fn mark_file_pending(
         &self,
         identity: &CodeIndexIdentity,
@@ -286,6 +319,82 @@ impl CodeIndexStore {
         .bind(&identity.project_key)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn add_cleanup_debt(
+        &self,
+        identity: &CodeIndexIdentity,
+        generation: i64,
+        paths: &[String],
+    ) -> anyhow::Result<()> {
+        if generation <= 0 || paths.is_empty() {
+            return Ok(());
+        }
+        for path in paths {
+            sqlx::query(
+                r#"
+                INSERT INTO axon_code_cleanup_debt
+                  (project_key, generation, relative_path, updated_at_ms)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(project_key, generation, relative_path) DO UPDATE SET
+                  updated_at_ms = excluded.updated_at_ms
+                "#,
+            )
+            .bind(&identity.project_key)
+            .bind(generation)
+            .bind(path)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn cleanup_debt(
+        &self,
+        identity: &CodeIndexIdentity,
+    ) -> anyhow::Result<HashMap<i64, Vec<String>>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT generation, relative_path
+            FROM axon_code_cleanup_debt
+            WHERE project_key = ?
+            ORDER BY generation, relative_path
+            "#,
+        )
+        .bind(&identity.project_key)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut debt: HashMap<i64, Vec<String>> = HashMap::new();
+        for row in rows {
+            debt.entry(row.get::<i64, _>("generation"))
+                .or_default()
+                .push(row.get::<String, _>("relative_path"));
+        }
+        Ok(debt)
+    }
+
+    pub(crate) async fn clear_cleanup_debt(
+        &self,
+        identity: &CodeIndexIdentity,
+        generation: i64,
+        paths: &[String],
+    ) -> anyhow::Result<()> {
+        for path in paths {
+            sqlx::query(
+                r#"
+                DELETE FROM axon_code_cleanup_debt
+                WHERE project_key = ? AND generation = ? AND relative_path = ?
+                "#,
+            )
+            .bind(&identity.project_key)
+            .bind(generation)
+            .bind(path)
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 

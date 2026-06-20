@@ -9,6 +9,7 @@ pub(crate) struct CodeSearchVectorRequest<'a> {
     pub limit: usize,
     pub offset: usize,
     pub project_key: &'a str,
+    pub generation: i64,
     pub path_prefix: Option<&'a str>,
 }
 
@@ -25,6 +26,7 @@ pub(crate) async fn code_search_hits(
             command: "code_search",
             filter: Some(build_local_project_code_filter(
                 req.project_key,
+                req.generation,
                 req.path_prefix,
             )),
             allow_short_content: true,
