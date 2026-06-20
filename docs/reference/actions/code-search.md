@@ -22,6 +22,17 @@ axon code-search "freshness lease" --cwd /path/to/repo --path-prefix src/vector 
 escapes. `--no-freshness` searches the existing index without refreshing changed
 local files first.
 
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `<text>` | positional | Required | Search query text. |
+| `--cwd <path>` | path | Current directory | Working directory, resolved to the containing Git root. |
+| `--path-prefix <prefix>` | string | None | Repository-relative path prefix filter. Absolute paths and parent-directory escapes are rejected. |
+| `--limit <n>` | usize | `10` | Maximum number of results to return. |
+| `--offset <n>` | usize | `0` | Number of ranked results to skip. |
+| `--collection <name>` | string | Configured collection, default `axon` | Qdrant collection to query and refresh. |
+| `--no-freshness` | flag | `false` | Skip manifest refresh and search the committed index only. |
+| `--json` | flag | `false` | Emit machine-readable JSON output. |
+
 ## MCP
 
 MCP callers must provide `cwd`; it must resolve to a Git root under
@@ -36,6 +47,13 @@ freshness pass updates SQLite manifest state and may write/delete Qdrant points.
   "path_prefix": "src/vector"
 }
 ```
+
+## Configuration
+
+Environment variables and tuning are documented in
+[Local code search](../../guides/configuration.md#local-code-search), including
+`AXON_CODE_SEARCH_ALLOWED_ROOTS` for MCP root allowlisting and
+`AXON_CODE_SEARCH_FRESHNESS_TTL_SECS` for freshness timeout tuning.
 
 ## Freshness
 

@@ -191,10 +191,8 @@ fn local_project_code_filter_requires_project_and_prefix_bucket() {
         must.iter()
             .any(|c| c["key"] == "local_project_key" && c["match"]["value"] == "project-1")
     );
-    assert!(
-        must.iter()
-            .any(|c| c["key"] == "local_index_version" && c["match"]["value"] == 1)
-    );
+    assert!(must.iter().any(|c| c["key"] == "local_index_version"
+        && c["match"]["value"] == crate::code_index::config::CODE_INDEX_VERSION));
     assert!(
         must.iter()
             .any(|c| c["key"] == "local_generation" && c["match"]["value"] == 7)

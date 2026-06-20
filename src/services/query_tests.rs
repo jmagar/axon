@@ -586,23 +586,24 @@ fn code_search_allowed_roots_error_does_not_leak_absolute_path() {
     assert!(!message.contains("/"));
 }
 
-#[test]
-fn code_search_resolution_errors_do_not_echo_probe_paths() {
+#[tokio::test]
+async fn code_search_resolution_errors_do_not_echo_probe_paths() {
     let dir = tempfile::tempdir().expect("tempdir");
     let missing = dir.path().join("secret-checkout");
     let err = resolve_code_search_root(Some(&missing), CodeSearchCaller::Cli)
+        .await
         .unwrap_err()
         .to_string();
     assert_eq!(err, "code_search cwd could not be resolved");
     assert!(!err.contains(dir.path().to_string_lossy().as_ref()));
 }
 
-#[test]
-fn code_search_project_origin_is_checkout_scoped() {
+#[tokio::test]
+async fn code_search_project_origin_is_checkout_scoped() {
     let a = tempfile::tempdir().expect("tempdir a");
     let b = tempfile::tempdir().expect("tempdir b");
-    let origin_a = code_search_project_origin(a.path());
-    let origin_b = code_search_project_origin(b.path());
+    let origin_a = code_search_project_origin(a.path()).await;
+    let origin_b = code_search_project_origin(b.path()).await;
     assert_ne!(origin_a, origin_b);
 }
 

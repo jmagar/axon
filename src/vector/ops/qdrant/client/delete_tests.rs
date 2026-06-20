@@ -264,7 +264,7 @@ fn local_code_batch_delete_body_is_generation_fenced() {
     })));
     assert!(must.contains(&serde_json::json!({
         "key": "local_index_version",
-        "match": {"value": 1}
+        "match": {"value": crate::code_index::config::CODE_INDEX_VERSION}
     })));
     assert!(must.contains(&serde_json::json!({
         "key": "local_generation",

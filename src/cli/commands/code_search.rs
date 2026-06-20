@@ -36,7 +36,7 @@ pub async fn run_code_search(
     .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
 
     if cfg.json_output {
-        println!("{}", serde_json::to_string(&result)?);
+        println!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
 

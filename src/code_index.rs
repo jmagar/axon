@@ -8,5 +8,5 @@ pub(crate) use config::{CodeIndexIdentity, CodeSearchAllowedRoots};
 pub(crate) use ensure::{FreshnessWarning, ensure_fresh};
 
 #[cfg(test)]
-#[path = "code_index/tests.rs"]
+#[path = "code_index_tests.rs"]
 mod tests;

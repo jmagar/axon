@@ -31,6 +31,7 @@ use tokio::sync::mpsc;
 
 const RETRIEVE_STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_CODE_SEARCH_QUERY_LEN_BYTES: usize = 64 * 1024;
+const CODE_SEARCH_GIT_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct ResolvedDocument {
     backend: DocumentBackend,
@@ -194,40 +195,12 @@ pub async fn code_search(
         .map(validate_path_prefix)
         .transpose()?
         .flatten();
-    let root = resolve_code_search_root(opts.cwd.as_deref(), opts.caller)?;
-    let identity = code_search_identity(ctx.cfg(), root);
-
-    let freshness = if opts.ensure_fresh {
-        match ensure_fresh(ctx, &identity, EnsureFreshOptions::default()).await {
-            Ok(outcome) => code_search_freshness(
-                "fresh",
-                outcome.warning,
-                outcome.indexed_files,
-                outcome.removed_files,
-            ),
-            Err(err) => code_search_freshness(
-                "stale",
-                Some(FreshnessWarning::Failed {
-                    error: err.to_string(),
-                }),
-                0,
-                0,
-            ),
-        }
-    } else {
-        code_search_freshness("skipped", None, 0, 0)
+    let root = resolve_code_search_root(opts.cwd.as_deref(), opts.caller).await?;
+    let identity = code_search_identity(ctx.cfg(), root).await;
+    let freshness = resolve_code_search_freshness(ctx, &identity, opts.ensure_fresh).await;
+    let Some(committed_generation) = code_search_committed_generation(ctx, &identity).await? else {
+        return Ok(code_search_missing_index_result(text, freshness));
     };
-
-    let store = CodeIndexStore::open_for_context(ctx).await?;
-    let committed_generation = store.committed_generation(&identity).await?.unwrap_or(0);
-    if committed_generation <= 0 {
-        return Ok(CodeSearchResult {
-            query: text.to_string(),
-            content_trust: "untrusted_local_code".to_string(),
-            results: Vec::new(),
-            freshness: code_search_missing_index_freshness(freshness),
-        });
-    }
 
     let results = code_search_hits(
         ctx.cfg(),
@@ -257,6 +230,54 @@ pub async fn code_search(
     })
 }
 
+async fn resolve_code_search_freshness(
+    ctx: &ServiceContext,
+    identity: &CodeIndexIdentity,
+    ensure: bool,
+) -> CodeSearchFreshness {
+    if !ensure {
+        return code_search_freshness("skipped", None, 0, 0);
+    }
+
+    match ensure_fresh(ctx, identity, EnsureFreshOptions::default()).await {
+        Ok(outcome) => code_search_freshness(
+            "fresh",
+            outcome.warning,
+            outcome.indexed_files,
+            outcome.removed_files,
+        ),
+        Err(err) => code_search_freshness(
+            "stale",
+            Some(FreshnessWarning::Failed {
+                error: err.to_string(),
+            }),
+            0,
+            0,
+        ),
+    }
+}
+
+async fn code_search_committed_generation(
+    ctx: &ServiceContext,
+    identity: &CodeIndexIdentity,
+) -> Result<Option<i64>, Box<dyn Error + Send + Sync>> {
+    let store = CodeIndexStore::open_for_context(ctx).await?;
+    let generation = store.committed_generation(identity).await?.unwrap_or(0);
+    Ok((generation > 0).then_some(generation))
+}
+
+fn code_search_missing_index_result(
+    text: &str,
+    freshness: CodeSearchFreshness,
+) -> CodeSearchResult {
+    CodeSearchResult {
+        query: text.to_string(),
+        content_trust: "untrusted_local_code".to_string(),
+        results: Vec::new(),
+        freshness: code_search_missing_index_freshness(freshness),
+    }
+}
+
 fn code_search_freshness(
     status: &str,
     warning: Option<FreshnessWarning>,
@@ -280,7 +301,7 @@ fn code_search_missing_index_freshness(mut freshness: CodeSearchFreshness) -> Co
     freshness
 }
 
-fn resolve_code_search_root(
+async fn resolve_code_search_root(
     cwd: Option<&Path>,
     caller: CodeSearchCaller,
 ) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
@@ -294,7 +315,7 @@ fn resolve_code_search_root(
     };
     let canonical_cwd =
         std::fs::canonicalize(&cwd).map_err(|_| "code_search cwd could not be resolved")?;
-    let git_root = git_toplevel(&canonical_cwd)?;
+    let git_root = git_toplevel(&canonical_cwd).await?;
     reject_unsafe_code_root(&git_root)?;
     if matches!(caller, CodeSearchCaller::Mcp) {
         let allowed = CodeSearchAllowedRoots::from_env()?;
@@ -309,13 +330,22 @@ fn code_search_outside_allowed_roots_message() -> &'static str {
     "code_search cwd is outside AXON_CODE_SEARCH_ALLOWED_ROOTS"
 }
 
-fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .map_err(|_| "code_search cwd is not inside a git checkout")?;
+async fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
+    let cwd = cwd.to_path_buf();
+    let output = tokio::time::timeout(
+        CODE_SEARCH_GIT_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            Command::new("git")
+                .arg("-C")
+                .arg(cwd)
+                .args(["rev-parse", "--show-toplevel"])
+                .output()
+        }),
+    )
+    .await
+    .map_err(|_| "git rev-parse timed out")?
+    .map_err(|e| format!("git rev-parse task failed: {e}"))?
+    .map_err(|_| "code_search cwd is not inside a git checkout")?;
     if !output.status.success() {
         return Err("code_search cwd is not inside a git checkout".into());
     }
@@ -325,7 +355,7 @@ fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
     if root.is_empty() {
         return Err("git rev-parse returned an empty repository root".into());
     }
-    Ok(std::fs::canonicalize(root)?)
+    std::fs::canonicalize(root).map_err(Into::into)
 }
 
 fn reject_unsafe_code_root(root: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -340,8 +370,8 @@ fn reject_unsafe_code_root(root: &Path) -> Result<(), Box<dyn Error + Send + Syn
     Ok(())
 }
 
-fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexIdentity {
-    let origin = code_search_project_origin(&project_root);
+async fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexIdentity {
+    let origin = code_search_project_origin(&project_root).await;
     let embedder = if cfg.tei_url.trim().is_empty() {
         "tei".to_string()
     } else {
@@ -350,20 +380,31 @@ fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexIdentit
     CodeIndexIdentity::new(project_root, origin, &cfg.collection, &embedder)
 }
 
-fn code_search_project_origin(project_root: &Path) -> String {
-    let remote = git_remote_origin(project_root).unwrap_or_else(|| "git:no-origin".to_string());
+async fn code_search_project_origin(project_root: &Path) -> String {
+    let remote = git_remote_origin(project_root)
+        .await
+        .unwrap_or_else(|| "git:no-origin".to_string());
     // This seed is private input to the UUID project key. Only the derived key is
     // stored in Qdrant payloads; the absolute root remains SQLite-only.
     format!("{remote}\nworktree:{}", project_root.display())
 }
 
-fn git_remote_origin(project_root: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(project_root)
-        .args(["config", "--get", "remote.origin.url"])
-        .output()
-        .ok()?;
+async fn git_remote_origin(project_root: &Path) -> Option<String> {
+    let project_root = project_root.to_path_buf();
+    let output = tokio::time::timeout(
+        CODE_SEARCH_GIT_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            Command::new("git")
+                .arg("-C")
+                .arg(project_root)
+                .args(["config", "--get", "remote.origin.url"])
+                .output()
+        }),
+    )
+    .await
+    .ok()?
+    .ok()?
+    .ok()?;
     if !output.status.success() {
         return None;
     }

@@ -45,7 +45,7 @@ This plan was revised after Lavra engineering review.
 - Create: `src/code_index/store.rs` - SQLite schema using shared Axon pool settings, sentinels, generation state, leases.
 - Create: `src/code_index/indexer.rs` - batched changed-file preparation, generation-fenced upserts/deletes.
 - Create: `src/code_index/ensure.rs` - TTL and single-flight `ensure_fresh` with timeout/stale fallback.
-- Create: `src/code_index/tests.rs` - manifest, store, security, race, and timeout tests.
+- Create: `src/code_index_tests.rs` - manifest, store, security, race, and timeout tests.
 - Modify: `src/vector/ops/qdrant/filter.rs` - local-project code filters and prefix-bucket filters.
 - Modify: `src/vector/ops/qdrant/filter_tests.rs` - filter-shape tests.
 - Modify: `src/vector/ops/qdrant/client/delete.rs` - batch local-code delete helper.
@@ -71,7 +71,7 @@ This plan was revised after Lavra engineering review.
 - Create: `src/code_index/config.rs`
 - Create: `src/code_index/manifest.rs`
 - Create: `src/code_index/store.rs`
-- Create: `src/code_index/tests.rs`
+- Create: `src/code_index_tests.rs`
 - Modify: `src/lib.rs`
 
 **Interfaces:**
@@ -80,7 +80,7 @@ This plan was revised after Lavra engineering review.
 
 - [ ] **Step 1: Write failing store and manifest tests**
 
-Add tests to `src/code_index/tests.rs`:
+Add tests to `src/code_index_tests.rs`:
 
 ```rust
 use super::*;
@@ -160,13 +160,13 @@ pub(crate) use config::{CodeIndexIdentity, CodeSearchAllowedRoots};
 pub(crate) use ensure::{EnsureFreshOutcome, FreshnessWarning, ensure_fresh};
 
 #[cfg(test)]
-#[path = "code_index/tests.rs"]
+#[path = "code_index_tests.rs"]
 mod tests;
 ```
 
-Add `pub(crate) mod code_index;` to `src/lib.rs`.
+Then, add `pub(crate) mod code_index;` to `src/lib.rs`.
 
-Add `src/code_index/config.rs`:
+Create `src/code_index/config.rs`:
 
 ```rust
 use std::path::{Component, Path, PathBuf};
@@ -448,7 +448,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib.rs src/code_index.rs src/code_index/config.rs src/code_index/manifest.rs src/code_index/store.rs src/code_index/tests.rs
+git add src/lib.rs src/code_index.rs src/code_index/config.rs src/code_index/manifest.rs src/code_index/store.rs src/code_index_tests.rs
 git commit -m "feat(code-search): add local code index state"
 ```
 
@@ -460,7 +460,7 @@ git commit -m "feat(code-search): add local code index state"
 - Modify: `src/vector/ops/qdrant/client/delete.rs`
 - Modify: `src/vector/ops/qdrant/client/delete_tests.rs`
 - Modify: `src/vector/ops/tei/qdrant_store/payload_indexes.rs`
-- Test: `src/code_index/tests.rs`
+- Test: `src/code_index_tests.rs`
 
 **Interfaces:**
 - Produces: `ensure_fresh(ctx, cfg, root, opts)` and `reindex_changed_files`.
@@ -617,7 +617,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/code_index/indexer.rs src/code_index/ensure.rs src/code_index/tests.rs src/vector/ops/qdrant/client/delete.rs src/vector/ops/qdrant/client/delete_tests.rs src/vector/ops/tei/qdrant_store/payload_indexes.rs
+git add src/code_index/indexer.rs src/code_index/ensure.rs src/code_index_tests.rs src/vector/ops/qdrant/client/delete.rs src/vector/ops/qdrant/client/delete_tests.rs src/vector/ops/tei/qdrant_store/payload_indexes.rs
 git commit -m "feat(code-search): freshen local code vectors safely"
 ```
 

@@ -12,12 +12,12 @@ and marks returned snippets as `untrusted_local_code`.
 
 ## Scope
 
-- Added the SQLite-backed local code index state, manifest diffing, pending
+- SQLite-backed local code index state, manifest diffing, pending
   sentinels, generation state, and single-flight freshness path.
-- Added batched changed-file embedding and generation-fenced local-code deletes.
-- Added local-project Qdrant filters, payload indexes, and code-search retrieval
+- Batched changed-file embedding and generation-fenced local-code deletes.
+- Local-project Qdrant filters, payload indexes, and code-search retrieval
   ranking that accepts small source chunks.
-- Added `axon code-search` and MCP `action=code_search` as write-scoped surfaces.
+- `axon code-search` and MCP `action=code_search` as write-scoped surfaces.
 - Deferred REST/OpenAPI, donor seeding, global code search, background refresh,
   and UI work.
 

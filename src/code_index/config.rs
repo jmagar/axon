@@ -87,7 +87,11 @@ impl CodeSearchAllowedRoots {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         let raw = std::env::var("AXON_CODE_SEARCH_ALLOWED_ROOTS").unwrap_or_default();
         let mut roots = Vec::new();
-        for part in raw.split([':', ',']).filter(|part| !part.trim().is_empty()) {
+        for part in raw
+            .split([':', ','])
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+        {
             let canonical = std::fs::canonicalize(part)?;
             let home = std::env::var_os("HOME").map(PathBuf::from);
             if canonical == Path::new("/") || home.as_deref() == Some(canonical.as_path()) {

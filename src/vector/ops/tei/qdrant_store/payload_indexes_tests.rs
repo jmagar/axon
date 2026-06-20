@@ -56,9 +56,11 @@ async fn ensure_payload_indexes_fires_one_put_per_field() {
         FULL_TYPED_FIELDS.contains(&("local_generation", "integer")),
         "local_generation must be in the typed index request list"
     );
-    assert!(
-        mock.calls_async().await > 0,
-        "expected payload index PUT requests"
+    let expected_puts = KEYWORD_INDEX_FIELDS.len() + FULL_TYPED_FIELDS.len();
+    assert_eq!(
+        mock.calls_async().await,
+        expected_puts,
+        "expected one index PUT per missing payload field"
     );
 }
 
