@@ -84,6 +84,62 @@ async fn sentinel_pending_file_is_modified_even_when_hash_matches() {
     assert_eq!(diff.modified_paths(), vec!["lib.rs"]);
 }
 
+#[tokio::test]
+async fn failed_partial_generation_is_not_reused_for_deleted_file_cleanup() {
+    let dir = tempdir().unwrap();
+    tokio::fs::write(dir.path().join("lib.rs"), "pub fn one() {}\n")
+        .await
+        .unwrap();
+    let store = store::CodeIndexStore::open_in_memory().await.unwrap();
+    store.init_schema().await.unwrap();
+    let identity = CodeIndexIdentity::for_test(dir.path(), "origin:axon", "axon", "tei-test");
+    let manifest =
+        manifest::build_manifest(&store, &identity, manifest::ManifestOptions::default())
+            .await
+            .unwrap();
+    let partial_generation = store.next_generation(&identity).await.unwrap();
+    assert_eq!(partial_generation, 1);
+
+    // Simulate a refresh that embedded/recorded generation 1, then timed out
+    // before `commit_generation`. The next successful refresh must not reuse 1.
+    store
+        .mark_file_indexed(&identity, &manifest.files[0], partial_generation)
+        .await
+        .unwrap();
+    tokio::fs::remove_file(dir.path().join("lib.rs"))
+        .await
+        .unwrap();
+
+    let empty_manifest =
+        manifest::build_manifest(&store, &identity, manifest::ManifestOptions::default())
+            .await
+            .unwrap();
+    let diff = store
+        .diff_manifest(&identity, &empty_manifest)
+        .await
+        .unwrap();
+    assert_eq!(diff.removed, vec!["lib.rs"]);
+    let next_generation = store.next_generation(&identity).await.unwrap();
+    assert_eq!(next_generation, 2);
+
+    let deletes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    indexer::reindex_changed_files_for_test(
+        &store,
+        &identity,
+        &empty_manifest,
+        &diff,
+        next_generation,
+        deletes.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(deletes.lock().unwrap().as_slice(), &["lib.rs"]);
+    assert_eq!(
+        store.committed_generation(&identity).await.unwrap(),
+        Some(next_generation)
+    );
+}
+
 #[test]
 fn path_prefix_rejects_absolute_parent_and_escape_segments() {
     assert!(config::validate_path_prefix("/etc").is_err());
@@ -93,6 +149,20 @@ fn path_prefix_rejects_absolute_parent_and_escape_segments() {
         config::validate_path_prefix("src/vector").unwrap(),
         Some("src/vector/".to_string())
     );
+}
+
+#[test]
+fn allowed_roots_parse_valid_roots_and_reject_unsafe_roots() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("repo");
+    std::fs::create_dir(&nested).unwrap();
+    let allowed = CodeSearchAllowedRoots::from_raw_for_test(&dir.path().to_string_lossy()).unwrap();
+    assert!(allowed.contains(&std::fs::canonicalize(&nested).unwrap()));
+
+    let err = CodeSearchAllowedRoots::from_raw_for_test("/")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("code search allowed root cannot be / or HOME"));
 }
 
 #[tokio::test]

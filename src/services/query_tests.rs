@@ -577,6 +577,25 @@ fn code_search_missing_index_freshness_warns() {
 }
 
 #[test]
+fn code_search_freshness_marks_warning_branches_stale() {
+    for warning in [
+        FreshnessWarning::AlreadyRunning,
+        FreshnessWarning::TimedOut { timeout_ms: 5000 },
+        FreshnessWarning::Failed {
+            error: "embed failed".to_string(),
+        },
+    ] {
+        let freshness = code_search_freshness("fresh", Some(warning), 0, 0);
+        assert_eq!(freshness.status, "stale");
+        assert!(freshness.warning.is_some());
+    }
+
+    let skipped = code_search_freshness("skipped", None, 0, 0);
+    assert_eq!(skipped.status, "skipped");
+    assert!(skipped.warning.is_none());
+}
+
+#[test]
 fn code_search_allowed_roots_error_does_not_leak_absolute_path() {
     let message = code_search_outside_allowed_roots_message();
     assert_eq!(

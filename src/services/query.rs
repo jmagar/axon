@@ -381,15 +381,24 @@ async fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexI
 }
 
 async fn code_search_project_origin(project_root: &Path) -> String {
-    let remote = git_remote_origin(project_root)
-        .await
-        .unwrap_or_else(|| "git:no-origin".to_string());
+    let remote = match git_remote_origin(project_root).await {
+        Ok(Some(remote)) => remote,
+        Ok(None) => "git:no-origin".to_string(),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                project_root = %project_root.display(),
+                "code_search git remote origin lookup failed; using checkout-scoped fallback"
+            );
+            "git:no-origin".to_string()
+        }
+    };
     // This seed is private input to the UUID project key. Only the derived key is
     // stored in Qdrant payloads; the absolute root remains SQLite-only.
     format!("{remote}\nworktree:{}", project_root.display())
 }
 
-async fn git_remote_origin(project_root: &Path) -> Option<String> {
+async fn git_remote_origin(project_root: &Path) -> Result<Option<String>, String> {
     let project_root = project_root.to_path_buf();
     let output = tokio::time::timeout(
         CODE_SEARCH_GIT_TIMEOUT,
@@ -402,15 +411,16 @@ async fn git_remote_origin(project_root: &Path) -> Option<String> {
         }),
     )
     .await
-    .ok()?
-    .ok()?
-    .ok()?;
+    .map_err(|_| "git remote origin lookup timed out".to_string())?
+    .map_err(|err| format!("git remote origin lookup task failed: {err}"))?
+    .map_err(|err| format!("git remote origin lookup failed to spawn git: {err}"))?;
     if !output.status.success() {
-        return None;
+        return Ok(None);
     }
-    let origin = String::from_utf8(output.stdout).ok()?;
+    let origin = String::from_utf8(output.stdout)
+        .map_err(|err| format!("git remote origin output was not UTF-8: {err}"))?;
     let origin = origin.trim();
-    (!origin.is_empty()).then(|| format!("git:{origin}"))
+    Ok((!origin.is_empty()).then(|| format!("git:{origin}")))
 }
 
 /// Retrieve stored document chunks for a URL.

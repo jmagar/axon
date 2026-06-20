@@ -19,20 +19,34 @@ pub(crate) fn reindex_timeout() -> Duration {
 }
 
 pub(crate) fn max_indexed_file_bytes() -> u64 {
-    std::env::var("AXON_CODE_SEARCH_MAX_FILE_BYTES")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(MAX_INDEXED_FILE_BYTES)
+    u64_env(
+        "AXON_CODE_SEARCH_MAX_FILE_BYTES",
+        MAX_INDEXED_FILE_BYTES,
+        "bytes",
+    )
 }
 
 fn duration_secs_env(name: &str, fallback: Duration) -> Duration {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .map(Duration::from_secs)
-        .unwrap_or(fallback)
+    Duration::from_secs(u64_env(name, fallback.as_secs(), "seconds"))
+}
+
+pub(crate) fn u64_env(name: &str, fallback: u64, unit: &'static str) -> u64 {
+    match std::env::var(name) {
+        Ok(value) => match value.parse::<u64>() {
+            Ok(parsed) if parsed > 0 => parsed,
+            _ => {
+                tracing::warn!(
+                    env_var = name,
+                    value,
+                    default = fallback,
+                    unit,
+                    "invalid code search environment variable; using default"
+                );
+                fallback
+            }
+        },
+        Err(_) => fallback,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,27 +100,46 @@ pub(crate) struct CodeSearchAllowedRoots {
 impl CodeSearchAllowedRoots {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         let raw = std::env::var("AXON_CODE_SEARCH_ALLOWED_ROOTS").unwrap_or_default();
+        Self::from_root_strings(
+            raw.split([':', ','])
+                .map(str::trim)
+                .filter(|part| !part.is_empty()),
+        )
+    }
+
+    fn from_root_strings<'a>(parts: impl IntoIterator<Item = &'a str>) -> anyhow::Result<Self> {
         let mut roots = Vec::new();
-        for part in raw
-            .split([':', ','])
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-        {
-            let canonical = std::fs::canonicalize(part)?;
-            let home = std::env::var_os("HOME").map(PathBuf::from);
-            if canonical == Path::new("/") || home.as_deref() == Some(canonical.as_path()) {
-                anyhow::bail!(
-                    "code search allowed root cannot be / or HOME: {}",
-                    canonical.display()
-                );
-            }
-            roots.push(canonical);
+        for part in parts {
+            roots.push(validate_allowed_root(part)?);
         }
         Ok(Self { roots })
     }
 
     pub(crate) fn contains(&self, path: &Path) -> bool {
         self.roots.iter().any(|root| path.starts_with(root))
+    }
+}
+
+fn validate_allowed_root(part: &str) -> anyhow::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(part)?;
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if canonical == Path::new("/") || home.as_deref() == Some(canonical.as_path()) {
+        anyhow::bail!(
+            "code search allowed root cannot be / or HOME: {}",
+            canonical.display()
+        );
+    }
+    Ok(canonical)
+}
+
+#[cfg(test)]
+impl CodeSearchAllowedRoots {
+    pub(crate) fn from_raw_for_test(raw: &str) -> anyhow::Result<Self> {
+        Self::from_root_strings(
+            raw.split([':', ','])
+                .map(str::trim)
+                .filter(|part| !part.is_empty()),
+        )
     }
 }
 

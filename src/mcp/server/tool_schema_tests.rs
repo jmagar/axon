@@ -74,6 +74,21 @@ fn mcp_schema_includes_code_search() {
 }
 
 #[test]
+fn mcp_schema_documents_code_search_required_fields() {
+    let schema = axon_input_schema();
+    let required = schema
+        .pointer("/x-axon-required-fields/code_search")
+        .and_then(serde_json::Value::as_array)
+        .expect("code_search required field metadata is present");
+    for field in ["query", "cwd"] {
+        assert!(
+            required.iter().any(|value| value.as_str() == Some(field)),
+            "code_search should document `{field}` as required"
+        );
+    }
+}
+
+#[test]
 fn axon_tool_input_schema_flattens_per_action_fields_to_top_level() {
     let schema = axon_input_schema();
     let properties = schema

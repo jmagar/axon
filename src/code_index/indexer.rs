@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::code_index::config::{
-    CodeIndexIdentity, DEFAULT_CHANGED_FILE_BATCH_SIZE, max_indexed_file_bytes,
+    CodeIndexIdentity, DEFAULT_CHANGED_FILE_BATCH_SIZE, max_indexed_file_bytes, u64_env,
 };
 use crate::code_index::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
 use crate::code_index::store::CodeIndexStore;
@@ -206,11 +206,11 @@ async fn cleanup_debt(
 }
 
 fn changed_file_batch_size() -> usize {
-    std::env::var("AXON_CODE_SEARCH_CHANGED_FILE_BATCH_SIZE")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_CHANGED_FILE_BATCH_SIZE)
+    u64_env(
+        "AXON_CODE_SEARCH_CHANGED_FILE_BATCH_SIZE",
+        DEFAULT_CHANGED_FILE_BATCH_SIZE as u64,
+        "files",
+    ) as usize
 }
 
 #[cfg(test)]

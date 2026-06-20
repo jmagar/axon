@@ -7,7 +7,7 @@ use crate::code_index::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot}
 
 #[derive(Clone)]
 pub(crate) struct CodeIndexStore {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,61 +37,6 @@ impl CodeIndexStore {
     pub(crate) async fn open_in_memory() -> anyhow::Result<Self> {
         let pool = crate::jobs::store::open_sqlite_pool(":memory:").await?;
         Ok(Self { pool })
-    }
-
-    pub(crate) async fn init_schema(&self) -> anyhow::Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS axon_code_files (
-              project_key TEXT NOT NULL,
-              relative_path TEXT NOT NULL,
-              hash TEXT NOT NULL,
-              size_bytes INTEGER NOT NULL,
-              mtime_ns INTEGER NOT NULL,
-              indexed_generation INTEGER NOT NULL,
-              pending INTEGER NOT NULL DEFAULT 0,
-              updated_at_ms INTEGER NOT NULL,
-              PRIMARY KEY (project_key, relative_path)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS axon_code_projects (
-              project_key TEXT PRIMARY KEY,
-              project_display TEXT NOT NULL,
-              project_root TEXT NOT NULL,
-              collection TEXT NOT NULL,
-              embedder_key TEXT NOT NULL,
-              index_version INTEGER NOT NULL,
-              committed_generation INTEGER NOT NULL DEFAULT 0,
-              lease_owner TEXT,
-              lease_expires_at_ms INTEGER NOT NULL DEFAULT 0,
-              last_checked_at_ms INTEGER NOT NULL DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS axon_code_cleanup_debt (
-              project_key TEXT NOT NULL,
-              generation INTEGER NOT NULL,
-              relative_path TEXT NOT NULL,
-              updated_at_ms INTEGER NOT NULL,
-              PRIMARY KEY (project_key, generation, relative_path)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
     }
 
     pub(crate) async fn lookup_file(
@@ -208,13 +153,33 @@ impl CodeIndexStore {
         identity: &CodeIndexIdentity,
     ) -> anyhow::Result<i64> {
         self.upsert_project(identity).await?;
-        let current: Option<(i64,)> = sqlx::query_as(
-            "SELECT committed_generation FROM axon_code_projects WHERE project_key = ?",
+        let current: Option<(i64, i64)> = sqlx::query_as(
+            r#"
+            SELECT committed_generation, max_generation
+            FROM axon_code_projects
+            WHERE project_key = ?
+            "#,
         )
         .bind(&identity.project_key)
         .fetch_optional(&self.pool)
         .await?;
-        Ok(current.map(|(generation,)| generation + 1).unwrap_or(1))
+        let next = current
+            .map(|(committed_generation, max_generation)| {
+                committed_generation.max(max_generation) + 1
+            })
+            .unwrap_or(1);
+        sqlx::query(
+            r#"
+            UPDATE axon_code_projects
+            SET max_generation = ?
+            WHERE project_key = ?
+            "#,
+        )
+        .bind(next)
+        .bind(&identity.project_key)
+        .execute(&self.pool)
+        .await?;
+        Ok(next)
     }
 
     pub(crate) async fn committed_generation(
@@ -310,10 +275,11 @@ impl CodeIndexStore {
         sqlx::query(
             r#"
             UPDATE axon_code_projects
-            SET committed_generation = ?, last_checked_at_ms = ?
+            SET committed_generation = ?, max_generation = MAX(max_generation, ?), last_checked_at_ms = ?
             WHERE project_key = ?
             "#,
         )
+        .bind(generation)
         .bind(generation)
         .bind(now_ms())
         .bind(&identity.project_key)
@@ -435,8 +401,8 @@ impl CodeIndexStore {
         sqlx::query(
             r#"
             INSERT INTO axon_code_projects
-              (project_key, project_display, project_root, collection, embedder_key, index_version, committed_generation, last_checked_at_ms)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+              (project_key, project_display, project_root, collection, embedder_key, index_version, committed_generation, max_generation, last_checked_at_ms)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
             ON CONFLICT(project_key) DO UPDATE SET
               project_display = excluded.project_display,
               project_root = excluded.project_root,

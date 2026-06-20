@@ -210,7 +210,7 @@ fn help_payload() -> Value {
             "ingest": ["start", "status", "cancel", "list", "cleanup", "clear", "recover"],
             "memory": ["remember", "list", "search", "show", "link", "supersede", "context"],
             "query": ["query"],
-            "code_search": ["code_search"],
+            "code_search": [],
             "retrieve": ["retrieve"],
             "search": ["search"],
             "map": ["map"],

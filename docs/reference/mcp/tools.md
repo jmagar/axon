@@ -298,12 +298,10 @@ These additional direct actions are exposed by the same `axon` tool. See [`../MC
 | `brand` | `url` | `render_mode` | Extract brand identity (colors, fonts, logos, favicon). `render_mode` is accepted but currently ignored. |
 | `diff` | `url_a`, `url_b` | `render_mode` | Compare two URLs (content/metadata/link changes). |
 | `endpoints` | `url` | `include_bundles`, `first_party_only`, `unique_only`, `max_scripts`, `max_scan_bytes`, `verify`, `capture_network`, `probe_rpc`, `probe_rpc_subdomains` | Static endpoint/API discovery from page scripts. Read-scoped, side-effect-free; `capture_network` opt-in executes page code. |
-| `debug` | -- | `context` | Run doctor plus LLM-assisted troubleshooting. |
-| `dedupe` | -- | `collection` | Deduplicate near-identical chunks in a collection (admin scope). |
-| `migrate` | -- | `from`, `to` | Copy an unnamed-vector collection into a new named-mode (dense + bm42) collection (admin scope). |
-| `watch` | `subaction` | `id`, `name`, `task_type`, `task_payload`, `every_seconds`, `enabled`, `limit` | Recurring task scheduler. Subactions: `create`, `list`, `get`, `run_now`, `history` (`get` parses but is not yet implemented). |
-| `setup` | -- | `mode` (`check`/`first-run`/`repair`/`migrate-env`) | First-run/local setup helper. |
 | `vertical_scrape` | `subaction` | `extractor` | **Discovery only.** `list` returns the extractor catalog; `capabilities` returns per-extractor metadata. `run` is removed — use `scrape` instead (verticals fire automatically). |
+
+The CLI-only `debug`, `dedupe`, `migrate`, `watch`, and `setup` commands are
+not currently exposed by the MCP server action allowlist.
 
 ## Lifecycle action families
 

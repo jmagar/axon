@@ -53,7 +53,7 @@ impl AxonMcpServer {
             },
         )
         .await
-        .map_err(|e| logged_internal_error(&format!("code_search '{query}'"), e.as_ref()))?;
+        .map_err(|e| code_search_error(&query, e.as_ref()))?;
 
         respond_with_mode(
             "code_search",
@@ -66,4 +66,31 @@ impl AxonMcpServer {
         )
         .await
     }
+}
+
+fn code_search_error(
+    query: &str,
+    error: &(dyn std::error::Error + Send + Sync + 'static),
+) -> ErrorData {
+    let message = error.to_string();
+    if is_code_search_invalid_params(&message) {
+        invalid_params(message)
+    } else {
+        logged_internal_error(&format!("code_search '{query}'"), error)
+    }
+}
+
+fn is_code_search_invalid_params(message: &str) -> bool {
+    message.starts_with("code_search query exceeds ")
+        || matches!(
+            message,
+            "code_search MCP requests must provide cwd"
+                | "code_search cwd could not be resolved"
+                | "code_search cwd is not inside a git checkout"
+                | "code_search cwd is outside AXON_CODE_SEARCH_ALLOWED_ROOTS"
+                | "code_search refuses to index filesystem root"
+                | "code_search refuses to index HOME directly"
+                | "path_prefix must be repository-relative"
+                | "path_prefix cannot escape the repository root"
+        )
 }
