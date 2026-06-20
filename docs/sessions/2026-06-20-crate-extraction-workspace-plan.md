@@ -118,11 +118,16 @@ Existing dirty files were observed before writing this artifact: a renamed sessi
 | `git status --short` | Showed pre-existing dirty rename and Rust source modification |
 | `git worktree list --porcelain` | Confirmed active and sibling worktrees |
 | `gh pr view --json number,title,url` | Confirmed active PR #246 |
+| `git commit -m "docs: save session log"` | Created path-limited session artifact commit after staging only this file |
+| `git push` | Pushed branch state; upstream and HEAD both resolved to `5f9dd646` after push |
+| `git diff-tree --no-commit-id --name-only -r HEAD` | Verified the session commit touched only this artifact |
 
 ## Errors Encountered
 
 - Transcript discovery was noisy because the requested save skill is Claude-session oriented while this work happened in Codex. No clean transcript path was used in the metadata.
 - `test -e docs/sessions/2026-06-20-crate-extraction-workspace-plan.md` returned nonzero as expected, confirming the target artifact did not already exist.
+- Initial `git commit --only` attempts failed for the new ignored session file because Git did not accept the path as a known file. I recovered by ensuring only this artifact was staged, then committed normally.
+- A transient `.git/index.lock` appeared after the failed commit attempt. I checked process state; by the next status check the lock file was gone and Git operations resumed normally.
 
 ## Behavior Changes (Before/After)
 
@@ -141,6 +146,7 @@ Existing dirty files were observed before writing this artifact: a renamed sessi
 | `bd swarm validate axon_rust-23dw` | Epic remains valid and executable | Passed: 17 issues, 11 waves, max parallelism 3 | pass |
 | `bd show axon_rust-23dw --json` | Epic notes and child bead notes reflect review amendments | Output showed epic notes and amended child bead notes | pass |
 | `git status --short` | Only pre-existing dirty files plus this generated artifact before commit | Pre-existing dirty rename/source change observed; generated artifact added by save pass | warn |
+| `git diff-tree --no-commit-id --name-only -r HEAD` | Latest session artifact commit contains only the generated markdown file | Output listed only `docs/sessions/2026-06-20-crate-extraction-workspace-plan.md` | pass |
 
 ## Risks and Rollback
 
