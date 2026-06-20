@@ -2,6 +2,9 @@
 
 ## [5.16.5] - 2026-06-20
 
+### Changed
+- Release version bump.
+
 ### Fixed
 - Added crawl memory guardrails for unscoped uncapped crawls, oversized page
   bodies, broadcast buffering, and queued HTML-owning fallback tasks.
