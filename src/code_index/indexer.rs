@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::code_index::config::{
-    CodeIndexIdentity, DEFAULT_CHANGED_FILE_BATCH_SIZE, MAX_INDEXED_FILE_BYTES,
+    CodeIndexIdentity, DEFAULT_CHANGED_FILE_BATCH_SIZE, max_indexed_file_bytes,
 };
 use crate::code_index::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
 use crate::code_index::store::CodeIndexStore;
@@ -120,7 +120,7 @@ async fn prepare_local_code_doc(
 ) -> anyhow::Result<Option<crate::vector::ops::PreparedDoc>> {
     let path = identity.project_root.join(&entry.relative_path);
     let metadata = tokio::fs::metadata(&path).await?;
-    if metadata.len() > MAX_INDEXED_FILE_BYTES {
+    if metadata.len() > max_indexed_file_bytes() {
         return Ok(None);
     }
     let bytes = tokio::fs::read(&path).await?;

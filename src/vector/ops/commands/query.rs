@@ -41,6 +41,7 @@ pub async fn query_hits(
         QueryHitOptions {
             command: "query",
             filter: None,
+            allow_short_content: false,
             score_policy: query_score_policy(cfg),
         },
     )
@@ -50,6 +51,7 @@ pub async fn query_hits(
 pub(crate) struct QueryHitOptions<'a> {
     pub command: &'static str,
     pub filter: Option<serde_json::Value>,
+    pub allow_short_content: bool,
     pub score_policy: CandidateScorePolicy<'a>,
 }
 
@@ -94,6 +96,7 @@ pub(crate) async fn query_hits_with_options(
     let query_tokens = ranking::tokenize_query(query);
     let build_policy = CandidateBuildPolicy {
         allow_low_signal: query_allows_low_signal(&query_tokens, query),
+        allow_short_content: options.allow_short_content,
     };
     let retrieval =
         build_typed_retrieval_result(hits, &query_tokens, &build_policy, &options.score_policy);

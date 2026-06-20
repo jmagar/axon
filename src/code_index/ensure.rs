@@ -5,9 +5,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
-use crate::code_index::config::{
-    CodeIndexIdentity, DEFAULT_FRESHNESS_TTL, DEFAULT_REINDEX_TIMEOUT,
-};
+use crate::code_index::config::{CodeIndexIdentity, freshness_ttl, reindex_timeout};
 use crate::code_index::indexer::{ReindexSummary, reindex_changed_files};
 use crate::code_index::manifest::{ManifestOptions, build_manifest};
 use crate::code_index::store::CodeIndexStore;
@@ -25,9 +23,9 @@ pub(crate) struct EnsureFreshOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FreshnessWarning {
-    RefreshTimedOut { timeout_ms: u64 },
-    RefreshFailed { error: String },
-    RefreshAlreadyRunning,
+    TimedOut { timeout_ms: u64 },
+    Failed { error: String },
+    AlreadyRunning,
 }
 
 #[derive(Debug, Clone)]
@@ -40,8 +38,8 @@ pub(crate) struct EnsureFreshOptions {
 impl Default for EnsureFreshOptions {
     fn default() -> Self {
         Self {
-            freshness_ttl: DEFAULT_FRESHNESS_TTL,
-            reindex_timeout: DEFAULT_REINDEX_TIMEOUT,
+            freshness_ttl: freshness_ttl(),
+            reindex_timeout: reindex_timeout(),
             manifest_options: ManifestOptions::default(),
         }
     }
@@ -90,7 +88,7 @@ pub(crate) async fn ensure_fresh(
         return Ok(EnsureFreshOutcome {
             indexed_files: 0,
             removed_files: 0,
-            warning: Some(FreshnessWarning::RefreshAlreadyRunning),
+            warning: Some(FreshnessWarning::AlreadyRunning),
         });
     }
 
@@ -115,14 +113,14 @@ pub(crate) async fn ensure_fresh(
         Err(RefreshError::TimedOut) => EnsureFreshOutcome {
             indexed_files: 0,
             removed_files: 0,
-            warning: Some(FreshnessWarning::RefreshTimedOut {
+            warning: Some(FreshnessWarning::TimedOut {
                 timeout_ms: options.reindex_timeout.as_millis() as u64,
             }),
         },
         Err(RefreshError::Failed(error)) => EnsureFreshOutcome {
             indexed_files: 0,
             removed_files: 0,
-            warning: Some(FreshnessWarning::RefreshFailed { error }),
+            warning: Some(FreshnessWarning::Failed { error }),
         },
     };
     Ok(outcome)
@@ -166,13 +164,13 @@ async fn refresh_under_lease(
 impl FreshnessWarning {
     pub(crate) fn message(&self) -> String {
         match self {
-            Self::RefreshTimedOut { timeout_ms } => {
+            Self::TimedOut { timeout_ms } => {
                 format!("refresh timed out after {timeout_ms}ms; stale index used")
             }
-            Self::RefreshFailed { error } => {
+            Self::Failed { error } => {
                 format!("refresh failed: {error}; stale index used")
             }
-            Self::RefreshAlreadyRunning => "refresh already running; stale index used".to_string(),
+            Self::AlreadyRunning => "refresh already running; stale index used".to_string(),
         }
     }
 }

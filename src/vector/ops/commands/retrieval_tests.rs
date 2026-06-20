@@ -63,6 +63,7 @@ fn merge_candidates_handles_multibyte_chunk_prefix() {
 fn build_candidates_trace_records_low_signal_drops() {
     let policy = CandidateBuildPolicy {
         allow_low_signal: false,
+        allow_short_content: false,
     };
     let built = build_candidates_from_hits_with_trace(
         vec![make_hit(

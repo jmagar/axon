@@ -206,7 +206,7 @@ pub async fn code_search(
             ),
             Err(err) => code_search_freshness(
                 "stale",
-                Some(FreshnessWarning::RefreshFailed {
+                Some(FreshnessWarning::Failed {
                     error: err.to_string(),
                 }),
                 0,

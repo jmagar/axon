@@ -16,7 +16,7 @@ pub(crate) async fn code_search_hits(
     cfg: &Config,
     req: CodeSearchVectorRequest<'_>,
 ) -> Result<Vec<QueryHit>, Box<dyn std::error::Error + Send + Sync>> {
-    Ok(query_hits_with_options(
+    query_hits_with_options(
         cfg,
         req.query,
         req.limit,
@@ -27,10 +27,11 @@ pub(crate) async fn code_search_hits(
                 req.project_key,
                 req.path_prefix,
             )),
+            allow_short_content: true,
             score_policy: code_search_score_policy(),
         },
     )
-    .await?)
+    .await
 }
 
 pub(crate) fn code_search_score_policy() -> CandidateScorePolicy<'static> {

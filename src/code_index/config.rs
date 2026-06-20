@@ -7,6 +7,34 @@ pub(crate) const DEFAULT_REINDEX_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const DEFAULT_CHANGED_FILE_BATCH_SIZE: usize = 50;
 pub(crate) const MAX_INDEXED_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
+pub(crate) fn freshness_ttl() -> Duration {
+    duration_secs_env("AXON_CODE_SEARCH_FRESHNESS_TTL_SECS", DEFAULT_FRESHNESS_TTL)
+}
+
+pub(crate) fn reindex_timeout() -> Duration {
+    duration_secs_env(
+        "AXON_CODE_SEARCH_REINDEX_TIMEOUT_SECS",
+        DEFAULT_REINDEX_TIMEOUT,
+    )
+}
+
+pub(crate) fn max_indexed_file_bytes() -> u64 {
+    std::env::var("AXON_CODE_SEARCH_MAX_FILE_BYTES")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MAX_INDEXED_FILE_BYTES)
+}
+
+fn duration_secs_env(name: &str, fallback: Duration) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .map(Duration::from_secs)
+        .unwrap_or(fallback)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CodeIndexIdentity {
     pub project_root: PathBuf,

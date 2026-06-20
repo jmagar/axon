@@ -1,4 +1,4 @@
-use crate::code_index::config::{CodeIndexIdentity, MAX_INDEXED_FILE_BYTES};
+use crate::code_index::config::{CodeIndexIdentity, max_indexed_file_bytes};
 use crate::code_index::store::CodeIndexStore;
 use crate::vector::ops::file_ingest::{SelectionPolicy, collect_files};
 use sha2::{Digest, Sha256};
@@ -12,7 +12,7 @@ pub(crate) struct ManifestOptions {
 impl Default for ManifestOptions {
     fn default() -> Self {
         Self {
-            max_file_bytes: MAX_INDEXED_FILE_BYTES,
+            max_file_bytes: max_indexed_file_bytes(),
         }
     }
 }
