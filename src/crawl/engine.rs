@@ -5,6 +5,7 @@ mod dir_ops;
 pub(crate) mod etag;
 pub(crate) mod llms_txt;
 pub(crate) mod map;
+pub(crate) mod memory_guard;
 mod runtime;
 pub(crate) mod sitemap;
 #[cfg(test)]
@@ -50,15 +51,11 @@ pub(crate) use url_utils::{
 pub use waf::{WafDiagnostics, build_waf_diagnostics};
 
 pub const MAX_CRAWL_DIAGNOSTICS: usize = 100;
-const LEGACY_CRAWL_BROADCAST_BUFFER_MAX: usize = 16_384;
 pub(crate) const MAX_TRACKED_DISCOVERED_URLS: usize = 50_000;
 
 pub(crate) fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
     let min = cfg.crawl_broadcast_buffer_min.max(1);
-    let max = cfg
-        .crawl_broadcast_buffer_max
-        .max(min)
-        .max(LEGACY_CRAWL_BROADCAST_BUFFER_MAX);
+    let max = cfg.crawl_broadcast_buffer_max.max(min);
     let desired = if cfg.max_pages == 0 {
         max
     } else {
@@ -66,6 +63,26 @@ pub(crate) fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
     };
 
     desired.clamp(min, max)
+}
+
+pub(crate) fn validate_crawl_memory_safety(cfg: &Config, start_url: &str) -> Result<(), String> {
+    if cfg.max_pages > 0 || has_explicit_scope(cfg) || allow_unbounded_broad_crawl() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "uncapped unscoped crawl rejected for {start_url}; set --max-pages, --budget, or --url-whitelist, or set AXON_ALLOW_UNBOUNDED_BROAD_CRAWL=true to override"
+    ))
+}
+
+fn has_explicit_scope(cfg: &Config) -> bool {
+    !cfg.path_budgets.is_empty() || !cfg.url_whitelist.is_empty()
+}
+
+fn allow_unbounded_broad_crawl() -> bool {
+    std::env::var("AXON_ALLOW_UNBOUNDED_BROAD_CRAWL")
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }
 
 fn start_host(start_url: &str) -> Option<String> {
@@ -288,11 +305,14 @@ pub async fn run_crawl_once(
     previous_manifest: Arc<HashMap<String, ManifestEntry>>,
     crawl_id: Option<&str>,
 ) -> Result<(CrawlSummary, HashSet<String>), Box<dyn Error>> {
+    validate_crawl_memory_safety(cfg, start_url).map_err(|e| -> Box<dyn Error> { e.into() })?;
+
     log_info(&format!(
         "crawl start url={start_url} render_mode={mode:?} max_pages={} max_depth={}",
         cfg.max_pages, cfg.max_depth
     ));
     let total_start = Instant::now();
+    let memory_guard = memory_guard::CrawlMemoryGuard::spawn(crawl_id, start_url);
 
     let (_, recycling_bin) = prepare_crawl_dirs(cfg, start_url, output_dir).await?;
 
@@ -364,6 +384,10 @@ pub async fn run_crawl_once(
         RenderMode::AutoSwitch => website.crawl_raw().await,
     }
     website.unsubscribe();
+    memory_guard.stop();
+    if let Some(reason) = memory_guard.abort_reason() {
+        return Err(reason.into());
+    }
 
     let (mut summary, urls) = join
         .await

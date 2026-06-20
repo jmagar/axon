@@ -77,6 +77,12 @@ dependent embed job. Use `--wait true` to wait for the submitted crawl and its
 explicit dependent embed job, if one is created. Pass `--skip-embed` to crawl
 without indexing the output.
 
+Uncapped crawls (`--max-pages 0`) are rejected unless you also provide an
+explicit `--budget` or `--url-whitelist` scope. Set
+`AXON_ALLOW_UNBOUNDED_BROAD_CRAWL=true` only for intentional dangerous runs.
+During any crawl, Axon asks Spider to shut down if process RSS reaches
+`AXON_CRAWL_MEMORY_ABORT_PERCENT` of host RAM (default `85`; `0` disables).
+
 ## Examples
 
 ```bash

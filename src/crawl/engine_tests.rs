@@ -29,13 +29,13 @@ fn default_cfg() -> Config {
 fn crawl_subscribe_buffer_uses_default_profile_bounds() {
     let mut cfg = default_cfg();
     cfg.max_pages = 0;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 2_048);
 
     cfg.max_pages = 10_000;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 2_048);
 
     cfg.max_pages = 100_000;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 2_048);
 }
 
 #[test]
@@ -61,20 +61,74 @@ fn crawl_subscribe_buffer_handles_inverted_bounds() {
     cfg.crawl_broadcast_buffer_max = 128;
     cfg.max_pages = 10_000;
 
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 1024);
 }
 
 #[test]
-fn crawl_subscribe_buffer_does_not_regress_below_legacy_cap() {
+fn crawl_subscribe_buffer_honors_configured_max_without_legacy_floor() {
     let mut cfg = default_cfg();
     cfg.crawl_broadcast_buffer_min = 4096;
     cfg.crawl_broadcast_buffer_max = 8_192;
 
     cfg.max_pages = 10_000;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 10_000);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 8_192);
 
     cfg.max_pages = 0;
-    assert_eq!(crawl_subscribe_buffer_size(&cfg), 16_384);
+    assert_eq!(crawl_subscribe_buffer_size(&cfg), 8_192);
+}
+
+#[test]
+fn default_config_sets_crawl_memory_safety_defaults() {
+    let cfg = default_cfg();
+
+    assert_eq!(cfg.crawl_broadcast_buffer_max, 2_048);
+    assert_eq!(cfg.max_page_bytes, Some(4 * 1024 * 1024));
+}
+
+#[test]
+fn uncapped_root_domain_crawl_without_scope_is_rejected() {
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.clear();
+    cfg.url_whitelist.clear();
+
+    let err = validate_crawl_memory_safety(&cfg, "https://developer.android.com/")
+        .expect_err("uncapped root crawl should be rejected");
+
+    assert!(err.contains("uncapped unscoped crawl"));
+}
+
+#[test]
+fn uncapped_deep_path_crawl_without_scope_is_rejected() {
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.clear();
+    cfg.url_whitelist.clear();
+
+    let err = validate_crawl_memory_safety(&cfg, "https://developer.android.com/reference/kotlin")
+        .expect_err("uncapped unscoped crawl should be rejected even below root");
+
+    assert!(err.contains("uncapped unscoped crawl"));
+}
+
+#[test]
+fn uncapped_crawl_with_explicit_scope_is_allowed() {
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.push(("/reference".to_string(), 500));
+
+    validate_crawl_memory_safety(&cfg, "https://developer.android.com/").unwrap();
+}
+
+#[test]
+fn crawl_memory_guard_trips_at_configured_ram_percent() {
+    let snapshot = memory_guard::MemorySnapshot {
+        rss_bytes: 900,
+        total_bytes: 1000,
+    };
+
+    assert!(memory_guard::should_abort_for_usage(snapshot, 85.0));
+    assert!(!memory_guard::should_abort_for_usage(snapshot, 95.0));
 }
 
 #[test]
