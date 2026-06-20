@@ -50,6 +50,7 @@ pub(crate) struct CandidateScorePolicy<'a> {
     pub(crate) authoritative_boost: f64,
     pub(crate) product_authority_boost: f64,
     pub(crate) apply_code_search_adjustment: bool,
+    pub(crate) force_code_intent: bool,
     pub(crate) min_relevance_score: Option<f64>,
     pub(crate) require_topical_overlap: bool,
 }

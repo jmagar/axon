@@ -168,6 +168,21 @@ pub(crate) fn combine_must_filters(filters: &[serde_json::Value]) -> serde_json:
     serde_json::json!({ "must": must })
 }
 
+pub(crate) fn build_local_project_code_filter(
+    project_key: &str,
+    path_prefix: Option<&str>,
+) -> serde_json::Value {
+    let mut must = vec![
+        serde_json::json!({"key": "source_type", "match": {"value": "local_code"}}),
+        serde_json::json!({"key": "local_project_key", "match": {"value": project_key}}),
+        serde_json::json!({"key": "local_index_version", "match": {"value": crate::code_index::config::CODE_INDEX_VERSION}}),
+    ];
+    if let Some(prefix) = path_prefix {
+        must.push(serde_json::json!({"key": "code_path_prefixes", "match": {"value": prefix}}));
+    }
+    serde_json::json!({ "must": must })
+}
+
 #[cfg(test)]
 #[path = "filter_tests.rs"]
 mod tests;

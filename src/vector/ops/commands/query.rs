@@ -33,6 +33,33 @@ pub async fn query_hits(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<QueryHit>, QueryError> {
+    query_hits_with_options(
+        cfg,
+        query,
+        limit,
+        offset,
+        QueryHitOptions {
+            command: "query",
+            filter: None,
+            score_policy: query_score_policy(cfg),
+        },
+    )
+    .await
+}
+
+pub(crate) struct QueryHitOptions<'a> {
+    pub command: &'static str,
+    pub filter: Option<serde_json::Value>,
+    pub score_policy: CandidateScorePolicy<'a>,
+}
+
+pub(crate) async fn query_hits_with_options(
+    cfg: &Config,
+    query: &str,
+    limit: usize,
+    offset: usize,
+    options: QueryHitOptions<'_>,
+) -> Result<Vec<QueryHit>, QueryError> {
     let mut query_vectors =
         embed_retrieval_inputs(cfg, &[tei::EmbedInput::query(query)], "TEI embed for query")
             .await
@@ -44,15 +71,18 @@ pub async fn query_hits(
 
     let total = limit + offset;
     let fetch_limit = (total.max(1) * 16).min(1000);
-    let request = qdrant::VectorSearchRequest::from_query(cfg, &vector, query, fetch_limit)
+    let mut request = qdrant::VectorSearchRequest::from_query(cfg, &vector, query, fetch_limit)
         .map_err(|e| -> QueryError { e.to_string().into() })?;
+    if let Some(filter) = options.filter {
+        request = request.with_filter(filter);
+    }
     let hits = dispatch_vector_search_with_diagnostics(
         cfg,
         &request,
         query,
         VectorDispatchContext {
             stage: "query_vector_search_dispatch",
-            command: "query",
+            command: options.command,
             arm: "primary",
             fetch_limit: Some(fetch_limit),
         },
@@ -65,8 +95,8 @@ pub async fn query_hits(
     let build_policy = CandidateBuildPolicy {
         allow_low_signal: query_allows_low_signal(&query_tokens, query),
     };
-    let score_policy = query_score_policy(cfg);
-    let retrieval = build_typed_retrieval_result(hits, &query_tokens, &build_policy, &score_policy);
+    let retrieval =
+        build_typed_retrieval_result(hits, &query_tokens, &build_policy, &options.score_policy);
     if retrieval.retrieved_candidates.is_empty() || retrieval.reranked_candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -117,6 +147,7 @@ fn query_score_policy(cfg: &Config) -> CandidateScorePolicy<'_> {
         authoritative_boost: cfg.ask_authoritative_boost,
         product_authority_boost: 0.35,
         apply_code_search_adjustment: true,
+        force_code_intent: false,
         min_relevance_score: None,
         require_topical_overlap: true,
     }
