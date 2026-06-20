@@ -1,24 +1,35 @@
+use crate::code_index::config::validate_path_prefix;
+use crate::code_index::ensure::EnsureFreshOptions;
+use crate::code_index::{
+    CodeIndexIdentity, CodeSearchAllowedRoots, FreshnessWarning, ensure_fresh,
+};
 use crate::core::config::{Config, ConfigOverrides, ScrapeFormat};
 use crate::core::error::{ServiceError, diagnostics_from_error};
+use crate::services::context::ServiceContext;
 use crate::services::document::{
     decode_document_cursor_backend, is_stale, paginate_document, read_latest_stored_source,
 };
 use crate::services::events::{LogLevel, ServiceEvent, emit, synthesis_delta_handler_infallible};
 use crate::services::scrape as scrape_svc;
 use crate::services::types::{
-    AskResult, DocumentBackend, EvaluateResult, Pagination, QueryHit, QueryResult, RetrieveOptions,
+    AskResult, CodeSearchCaller, CodeSearchFreshness, CodeSearchOptions, CodeSearchResult,
+    DocumentBackend, EvaluateResult, Pagination, QueryHit, QueryResult, RetrieveOptions,
     RetrieveResult, ServiceRetrieveVariantError, SuggestResult, Suggestion,
 };
 use crate::vector::ops::commands::ask::{ask_result, ask_result_with_deltas};
 use crate::vector::ops::commands::discover_crawl_suggestions;
 use crate::vector::ops::commands::evaluate_result;
 use crate::vector::ops::commands::query_hits;
+use crate::vector::ops::commands::{CodeSearchVectorRequest, code_search_hits};
 use crate::vector::ops::qdrant::{DirectRetrieveResult, retrieve_result};
 use std::error::Error;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 const RETRIEVE_STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_CODE_SEARCH_QUERY_LEN_BYTES: usize = 64 * 1024;
 
 struct ResolvedDocument {
     backend: DocumentBackend,
@@ -159,6 +170,186 @@ pub async fn query(
             wrap_service_error(message, e.as_ref())
         })?;
     Ok(QueryResult { results })
+}
+
+/// Search one local git checkout after optionally refreshing its local-code vectors.
+#[must_use = "code_search returns a Result that should be handled"]
+pub async fn code_search(
+    ctx: &ServiceContext,
+    text: &str,
+    opts: CodeSearchOptions,
+) -> Result<CodeSearchResult, Box<dyn Error + Send + Sync>> {
+    if text.len() > MAX_CODE_SEARCH_QUERY_LEN_BYTES {
+        return Err(format!(
+            "code_search query exceeds {MAX_CODE_SEARCH_QUERY_LEN_BYTES}-byte cap (got {} bytes)",
+            text.len()
+        )
+        .into());
+    }
+
+    let path_prefix = opts
+        .path_prefix
+        .as_deref()
+        .map(validate_path_prefix)
+        .transpose()?
+        .flatten();
+    let root = resolve_code_search_root(opts.cwd.as_deref(), opts.caller)?;
+    let identity = code_search_identity(ctx.cfg(), root);
+
+    let freshness = if opts.ensure_fresh {
+        match ensure_fresh(ctx, &identity, EnsureFreshOptions::default()).await {
+            Ok(outcome) => code_search_freshness(
+                "fresh",
+                outcome.warning,
+                outcome.indexed_files,
+                outcome.removed_files,
+            ),
+            Err(err) => code_search_freshness(
+                "stale",
+                Some(FreshnessWarning::RefreshFailed {
+                    error: err.to_string(),
+                }),
+                0,
+                0,
+            ),
+        }
+    } else {
+        code_search_freshness("skipped", None, 0, 0)
+    };
+
+    let results = code_search_hits(
+        ctx.cfg(),
+        CodeSearchVectorRequest {
+            query: text,
+            limit: opts.limit.max(1),
+            offset: opts.offset,
+            project_key: &identity.project_key,
+            path_prefix: path_prefix.as_deref(),
+        },
+    )
+    .await
+    .map_err(|e| -> Box<dyn Error + Send + Sync> {
+        let message = format!(
+            "code_search vector query failed for {}: {e}",
+            text.chars().take(80).collect::<String>()
+        );
+        wrap_service_error(message, e.as_ref())
+    })?;
+
+    Ok(CodeSearchResult {
+        query: text.to_string(),
+        content_trust: "untrusted_local_code".to_string(),
+        results,
+        freshness,
+    })
+}
+
+fn code_search_freshness(
+    status: &str,
+    warning: Option<FreshnessWarning>,
+    indexed_files: usize,
+    removed_files: usize,
+) -> CodeSearchFreshness {
+    let status = if warning.is_some() { "stale" } else { status };
+    CodeSearchFreshness {
+        status: status.to_string(),
+        warning: warning.map(|warning| warning.message()),
+        indexed_files,
+        removed_files,
+    }
+}
+
+fn resolve_code_search_root(
+    cwd: Option<&Path>,
+    caller: CodeSearchCaller,
+) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
+    let cwd = match (caller, cwd) {
+        (CodeSearchCaller::Cli, Some(cwd)) => cwd.to_path_buf(),
+        (CodeSearchCaller::Cli, None) => std::env::current_dir()?,
+        (CodeSearchCaller::Mcp, Some(cwd)) => cwd.to_path_buf(),
+        (CodeSearchCaller::Mcp, None) => {
+            return Err("code_search MCP requests must provide cwd".into());
+        }
+    };
+    let canonical_cwd = std::fs::canonicalize(&cwd)
+        .map_err(|e| format!("resolve code_search cwd {}: {e}", cwd.display()))?;
+    let git_root = git_toplevel(&canonical_cwd)?;
+    reject_unsafe_code_root(&git_root)?;
+    if matches!(caller, CodeSearchCaller::Mcp) {
+        let allowed = CodeSearchAllowedRoots::from_env()?;
+        if !allowed.contains(&git_root) {
+            return Err(format!(
+                "code_search cwd {} is outside AXON_CODE_SEARCH_ALLOWED_ROOTS",
+                git_root.display()
+            )
+            .into());
+        }
+    }
+    Ok(git_root)
+}
+
+fn git_toplevel(cwd: &Path) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("run git rev-parse for {}: {e}", cwd.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "code_search cwd {} is not inside a git checkout",
+            cwd.display()
+        )
+        .into());
+    }
+    let root = String::from_utf8(output.stdout)
+        .map_err(|e| format!("git rev-parse output was not UTF-8: {e}"))?;
+    let root = root.trim();
+    if root.is_empty() {
+        return Err("git rev-parse returned an empty repository root".into());
+    }
+    Ok(std::fs::canonicalize(root)?)
+}
+
+fn reject_unsafe_code_root(root: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if root == Path::new("/") {
+        return Err("code_search refuses to index filesystem root".into());
+    }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
+        && root == home.as_path()
+    {
+        return Err("code_search refuses to index HOME directly".into());
+    }
+    Ok(())
+}
+
+fn code_search_identity(cfg: &Config, project_root: PathBuf) -> CodeIndexIdentity {
+    let origin = git_remote_origin(&project_root).unwrap_or_else(|| {
+        // This seed is private input to the UUID project key. Only the derived
+        // key is stored in Qdrant payloads; the absolute root remains SQLite-only.
+        format!("local-git:{}", project_root.display())
+    });
+    let embedder = if cfg.tei_url.trim().is_empty() {
+        "tei".to_string()
+    } else {
+        cfg.tei_url.clone()
+    };
+    CodeIndexIdentity::new(project_root, origin, &cfg.collection, &embedder)
+}
+
+fn git_remote_origin(project_root: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_root)
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let origin = String::from_utf8(output.stdout).ok()?;
+    let origin = origin.trim();
+    (!origin.is_empty()).then(|| format!("git:{origin}"))
 }
 
 /// Retrieve stored document chunks for a URL.

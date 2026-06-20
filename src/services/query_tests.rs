@@ -3,7 +3,8 @@ use crate::services::types::{
     AskExplainCandidate, AskExplainContext, AskExplainContextRendered, AskExplainContextSourceTier,
     AskExplainFilterDecisionKind, AskExplainFullDocFetchMode, AskExplainFullDocFetchSkipReason,
     AskExplainMode, AskExplainRenderedContextFormat, AskExplainScoreComponentStatus,
-    AskExplainScoreKind, AskExplainSelectionDecisionKind, AskTiming, CorpusHealthKind,
+    AskExplainScoreKind, AskExplainSelectionDecisionKind, AskTiming, CodeSearchFreshness,
+    CodeSearchResult, CorpusHealthKind,
 };
 use serde_json::json;
 
@@ -537,6 +538,26 @@ fn map_query_results_typed_nonempty() {
     assert_eq!(result.results[0].chunk_index, Some(2));
     assert_eq!(result.results[1].source, "b.com");
     assert_eq!(result.results[1].chunk_index, None);
+}
+
+#[test]
+fn code_search_result_marks_snippets_untrusted() {
+    let result = CodeSearchResult {
+        query: "find parser".to_string(),
+        content_trust: "untrusted_local_code".to_string(),
+        results: vec![],
+        freshness: CodeSearchFreshness {
+            status: "skipped".to_string(),
+            warning: None,
+            indexed_files: 0,
+            removed_files: 0,
+        },
+    };
+    let value = serde_json::to_value(result).unwrap();
+    assert_eq!(
+        value["content_trust"].as_str(),
+        Some("untrusted_local_code")
+    );
 }
 
 #[test]

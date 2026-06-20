@@ -5,7 +5,7 @@ pub(crate) mod manifest;
 pub(crate) mod store;
 
 pub(crate) use config::{CodeIndexIdentity, CodeSearchAllowedRoots};
-pub(crate) use ensure::{EnsureFreshOutcome, FreshnessWarning, ensure_fresh};
+pub(crate) use ensure::{FreshnessWarning, ensure_fresh};
 
 #[cfg(test)]
 #[path = "code_index/tests.rs"]

@@ -308,6 +308,7 @@ impl CodeIndexStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) async fn commit_manifest(
         &self,
         identity: &CodeIndexIdentity,
