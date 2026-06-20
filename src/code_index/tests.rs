@@ -56,3 +56,58 @@ fn path_prefix_rejects_absolute_parent_and_escape_segments() {
         Some("src/vector/".to_string())
     );
 }
+
+#[tokio::test]
+async fn empty_file_deletes_old_vectors_and_marks_current_hash() {
+    let dir = tempdir().unwrap();
+    tokio::fs::write(dir.path().join("lib.rs"), "")
+        .await
+        .unwrap();
+    let store = store::CodeIndexStore::open_in_memory().await.unwrap();
+    store.init_schema().await.unwrap();
+    let identity = CodeIndexIdentity::for_test(dir.path(), "origin:axon", "axon", "tei-test");
+    let manifest =
+        manifest::build_manifest(&store, &identity, manifest::ManifestOptions::default())
+            .await
+            .unwrap();
+    let diff = store.diff_manifest(&identity, &manifest).await.unwrap();
+
+    let deletes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    indexer::reindex_changed_files_for_test(
+        &store,
+        &identity,
+        &manifest,
+        &diff,
+        7,
+        deletes.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(deletes.lock().unwrap().as_slice(), &["lib.rs"]);
+    assert!(
+        !store
+            .lookup_file(&identity, "lib.rs")
+            .await
+            .unwrap()
+            .unwrap()
+            .pending
+    );
+}
+
+#[tokio::test]
+async fn concurrent_refresh_cannot_delete_newer_generation() {
+    let body = crate::vector::ops::qdrant::local_code_batch_delete_body_for_test(
+        "project-1",
+        41,
+        &["src/lib.rs".to_string()],
+    );
+    let must = body["filter"]["must"].as_array().unwrap();
+    assert!(
+        must.iter()
+            .any(|c| c["key"] == "local_generation" && c["match"]["value"] == 41)
+    );
+    assert!(
+        must.iter()
+            .any(|c| c["key"] == "local_index_version" && c["match"]["value"] == 1)
+    );
+}

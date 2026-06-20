@@ -289,6 +289,25 @@ impl CodeIndexStore {
         Ok(())
     }
 
+    pub(crate) async fn touch_last_checked(
+        &self,
+        identity: &CodeIndexIdentity,
+    ) -> anyhow::Result<()> {
+        self.upsert_project(identity).await?;
+        sqlx::query(
+            r#"
+            UPDATE axon_code_projects
+            SET last_checked_at_ms = ?
+            WHERE project_key = ?
+            "#,
+        )
+        .bind(now_ms())
+        .bind(&identity.project_key)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn commit_manifest(
         &self,
         identity: &CodeIndexIdentity,
