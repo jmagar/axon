@@ -485,7 +485,7 @@ fn resolve_crawl_memory_abort_percent(inputs: &LiteralInputs<'_>) -> Option<f64>
             .crawl_memory_abort_percent
             .unwrap_or(DEFAULT_CRAWL_MEMORY_ABORT_PERCENT),
     };
-    (percent > 0.0).then_some(percent.clamp(1.0, 100.0))
+    (percent.is_finite() && percent > 0.0).then_some(percent.clamp(1.0, 100.0))
 }
 
 fn resolve_tei_url(global: &GlobalArgs, toml: &TomlConfig) -> Result<String, String> {
