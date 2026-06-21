@@ -47,3 +47,71 @@ fn status_for_reports_signed_in_only_when_server_matches() {
     assert!(!none.signed_in);
     assert!(none.server_url.is_none());
 }
+
+#[test]
+fn credentials_from_token_clamps_huge_expires_in_and_trims_server_url() {
+    let token: crate::oauth::flow::TokenResponse = serde_json::from_str(
+        r#"{"access_token":"a","token_type":"Bearer","expires_in":18446744073709551615,"scope":"axon:read"}"#,
+    )
+    .unwrap();
+    let creds = credentials_from_token(
+        "c".to_string(),
+        "https://x/",
+        "https://x/token".to_string(),
+        token,
+        1000,
+    );
+    assert!(
+        creds.expires_at_unix > 1000,
+        "huge expires_in must not wrap negative"
+    );
+    assert_eq!(creds.server_url, "https://x", "trailing slash trimmed");
+    assert!(
+        creds.refresh_token.is_none(),
+        "absent refresh_token stays None"
+    );
+}
+
+#[test]
+fn classify_refresh_maps_each_result_to_the_right_outcome() {
+    let ok: crate::oauth::flow::TokenResponse = serde_json::from_str(
+        r#"{"access_token":"a","token_type":"Bearer","expires_in":3600,"scope":"s"}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        classify_refresh(
+            Ok(ok),
+            "c".to_string(),
+            "https://x",
+            "https://x/token".to_string(),
+            1000
+        ),
+        RefreshOutcome::Refreshed(_)
+    ));
+    assert!(matches!(
+        classify_refresh(
+            Err(crate::oauth::flow::TokenError {
+                rejected: true,
+                message: String::new()
+            }),
+            "c".to_string(),
+            "https://x",
+            "t".to_string(),
+            1000
+        ),
+        RefreshOutcome::Cleared
+    ));
+    assert!(matches!(
+        classify_refresh(
+            Err(crate::oauth::flow::TokenError {
+                rejected: false,
+                message: String::new()
+            }),
+            "c".to_string(),
+            "https://x",
+            "t".to_string(),
+            1000
+        ),
+        RefreshOutcome::Kept
+    ));
+}

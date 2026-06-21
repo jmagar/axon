@@ -191,9 +191,43 @@ async fn effective_access_token(
     refresh_locked(app, client, server_url, slot).await
 }
 
+/// The decision a `/token` refresh yields, separated from its side effects so it
+/// is unit-testable without a Tauri `AppHandle`.
+enum RefreshOutcome {
+    /// Success — persist, update the cache, and emit `oauth-changed`.
+    Refreshed(StoredCredentials),
+    /// Definitive grant rejection — wipe the session and emit `oauth-changed`.
+    Cleared,
+    /// Transient failure or timeout — keep the session untouched.
+    Kept,
+}
+
+/// Classify a refresh result into an outcome. Pure (no I/O, no clock).
+fn classify_refresh(
+    result: Result<flow::TokenResponse, flow::TokenError>,
+    client_id: String,
+    server_url: &str,
+    token_endpoint: String,
+    now_unix: i64,
+) -> RefreshOutcome {
+    match result {
+        Ok(token) => RefreshOutcome::Refreshed(credentials_from_token(
+            client_id,
+            server_url,
+            token_endpoint,
+            token,
+            now_unix,
+        )),
+        Err(err) if err.rejected => RefreshOutcome::Cleared,
+        Err(_) => RefreshOutcome::Kept,
+    }
+}
+
 /// Refresh the cached credentials under the held cache lock (single-flight),
-/// returning the new access token. A *rejected* refresh clears the dead session
-/// and emits `palette://oauth-changed`; a transient failure keeps it.
+/// returning the new access token. On success it persists + caches the new token
+/// and emits `palette://oauth-changed`; on a definitive grant rejection it clears
+/// the dead session and emits `palette://oauth-changed`; a transient failure or
+/// timeout keeps the session untouched (no emit).
 async fn refresh_locked(
     app: &AppHandle,
     client: &reqwest::Client,
@@ -213,27 +247,48 @@ async fn refresh_locked(
     };
     let token_endpoint = flow::require_secure_url(&token_endpoint).ok()?.to_string();
     let refresh = flow::refresh_access_token(client, &token_endpoint, &client_id, &refresh_token);
-    match tokio::time::timeout(REFRESH_TIMEOUT, refresh).await {
-        Ok(Ok(token)) => {
-            let refreshed = credentials_from_token(client_id, server_url, token_endpoint, token);
+    let result = match tokio::time::timeout(REFRESH_TIMEOUT, refresh).await {
+        Ok(r) => r,
+        Err(_) => Err(flow::TokenError {
+            rejected: false,
+            message: "token refresh timed out".to_string(),
+        }),
+    };
+    match classify_refresh(result, client_id, server_url, token_endpoint, now_unix()) {
+        RefreshOutcome::Refreshed(refreshed) => {
             let access = refreshed.access_token.expose().to_string();
-            if let Ok(path) = store::credentials_path(app) {
-                let _ = store::save(&path, &refreshed);
+            match store::credentials_path(app) {
+                Ok(path) => {
+                    if let Err(err) = store::save(&path, &refreshed) {
+                        eprintln!(
+                            "palette: refreshed OAuth token not persisted (will re-refresh next start): {err}"
+                        );
+                    }
+                }
+                Err(err) => eprintln!(
+                    "palette: cannot resolve oauth path to persist refreshed token: {err}"
+                ),
             }
             *slot = Some(refreshed);
             emit_oauth_changed(app);
             Some(access)
         }
-        Ok(Err(err)) if err.rejected => {
-            if let Ok(path) = store::credentials_path(app) {
-                let _ = store::clear(&path);
+        RefreshOutcome::Cleared => {
+            match store::credentials_path(app) {
+                Ok(path) => {
+                    if let Err(err) = store::clear(&path) {
+                        eprintln!("palette: failed to clear dead OAuth session from disk: {err}");
+                    }
+                }
+                Err(err) => {
+                    eprintln!("palette: cannot resolve oauth path to clear dead session: {err}")
+                }
             }
             *slot = None;
             emit_oauth_changed(app);
             None
         }
-        Ok(Err(_)) => None,
-        Err(_) => None, // refresh timed out — release the lock, keep the session
+        RefreshOutcome::Kept => None,
     }
 }
 
@@ -264,7 +319,7 @@ async fn force_refresh(
 }
 
 /// Send a bridge request with the resolved auth token; if the server answers
-/// 401 while an OAuth session exists, force a refresh and resend once. `make`
+/// 401 and a forced refresh yields a new token, resend once. `make`
 /// builds a fresh `RequestBuilder` (method/URL/headers/body) given the token to
 /// attach, so the request can be rebuilt for the retry.
 pub(crate) async fn send_with_reauth<F>(
@@ -356,6 +411,7 @@ async fn run_login(
         server_url,
         meta.token_endpoint,
         token,
+        now_unix(),
     ))
 }
 
@@ -364,6 +420,7 @@ fn credentials_from_token(
     server_url: &str,
     token_endpoint: String,
     token: flow::TokenResponse,
+    now_unix: i64,
 ) -> StoredCredentials {
     StoredCredentials {
         client_id,
@@ -371,7 +428,7 @@ fn credentials_from_token(
         refresh_token: token.refresh_token,
         token_endpoint,
         // Clamp so a malformed huge `expires_in` can't wrap negative (→ permanently expired).
-        expires_at_unix: now_unix().saturating_add(token.expires_in.min(i64::MAX as u64) as i64),
+        expires_at_unix: now_unix.saturating_add(token.expires_in.min(i64::MAX as u64) as i64),
         scope: token.scope,
         server_url: server_url.trim_end_matches('/').to_string(),
     }
