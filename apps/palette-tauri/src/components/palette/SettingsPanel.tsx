@@ -208,7 +208,11 @@ function AuthBlock() {
     let active = true;
     oauthStatus()
       .then((next) => active && setStatus(next))
-      .catch(() => active && setStatus(null));
+      .catch((err) => {
+        if (!active) return;
+        setStatus({ signedIn: false, scope: null, expiresAtUnix: null, serverUrl: null });
+        setError(err instanceof Error ? err.message : "Could not read sign-in status.");
+      });
     return () => {
       active = false;
     };
@@ -238,7 +242,7 @@ function AuthBlock() {
         <span>{view.detail}</span>
         {error && <span className="settings-error">{error}</span>}
       </div>
-      {status?.signedIn ? (
+      {view.tone === "success" ? (
         <Button size="sm" variant="neutral" disabled={busy} onClick={() => void run(oauthLogout)}>
           <KeyRound size={14} />
           {busy ? "Working…" : "Sign out"}
