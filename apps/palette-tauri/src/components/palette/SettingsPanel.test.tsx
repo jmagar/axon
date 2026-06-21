@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the OAuth client so the AuthBlock's effect resolves deterministically and
 // never reaches the real invoke seam during render tests.
-const oauthState = { value: { signedIn: false, scope: null, expiresAtUnix: null, serverUrl: null } };
+const oauthState: { value: OauthStatus } = {
+  value: { signedIn: false, scope: null, expiresAtUnix: null, serverUrl: null },
+};
 
 vi.mock("@/lib/oauthClient", async () => {
   const actual = await vi.importActual<typeof import("@/lib/oauthClient")>("@/lib/oauthClient");
@@ -27,6 +29,7 @@ vi.mock("@/lib/oauthClient", async () => {
 
 import { connectionFeedback, SettingsPanel } from "./SettingsPanel";
 import type { PaletteConfig } from "@/lib/axonClient";
+import type { OauthStatus } from "@/lib/oauthClient";
 
 const baseConfig: PaletteConfig = {
   serverUrl: "http://127.0.0.1:8001",
@@ -176,6 +179,29 @@ describe("SettingsPanel authentication block", () => {
     );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /sign in with google/i })).toBeInTheDocument(),
+    );
+  });
+
+  it("shows a Sign out button when signed in", async () => {
+    // Far-future expiry → describeOauthStatus tone "success" → "Sign out" shown.
+    oauthState.value = {
+      signedIn: true,
+      scope: "axon:read axon:write",
+      expiresAtUnix: 4102444800,
+      serverUrl: "https://axon.example.com",
+    };
+    render(
+      <SettingsPanel
+        configError={null}
+        draftConfig={authConfig}
+        shortcutOptions={["Ctrl+Shift+Space"]}
+        onChange={() => {}}
+        onClose={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument(),
     );
   });
 });

@@ -80,7 +80,7 @@ pub(crate) async fn axon_http_stream_request(
         .token
         .as_deref()
         .map(str::trim)
-        .filter(|token| !token.is_empty());
+        .filter(|t| !t.is_empty());
     let body = &request.body;
     let make = |token: Option<&str>| {
         let mut b = client

@@ -70,6 +70,7 @@ fn token_response_debug_redacts_tokens() {
 fn require_secure_url_allows_https_and_loopback_http_only() {
     assert!(require_secure_url("https://axon.example.com/token").is_ok());
     assert!(require_secure_url("http://127.0.0.1:8001/token").is_ok());
+    assert!(require_secure_url("http://[::1]:8001/token").is_ok());
     assert!(require_secure_url("http://localhost:8001/token").is_ok());
     assert!(require_secure_url("http://axon.example.com/token").is_err()); // cleartext non-loopback
     assert!(require_secure_url("file:///etc/passwd").is_err());

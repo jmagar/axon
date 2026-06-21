@@ -78,7 +78,15 @@ pub(crate) fn require_secure_url(raw: &str) -> Result<url::Url, String> {
     let url = url::Url::parse(raw).map_err(|err| format!("invalid OAuth URL `{raw}`: {err}"))?;
     match url.scheme() {
         "https" => Ok(url),
-        "http" if matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1")) => Ok(url),
+        // `host_str()` returns the bracketed form `[::1]` for IPv6 literals.
+        "http"
+            if matches!(
+                url.host_str(),
+                Some("127.0.0.1" | "localhost" | "::1" | "[::1]")
+            ) =>
+        {
+            Ok(url)
+        }
         _ => Err(format!(
             "refusing OAuth over an insecure URL `{raw}` — https is required for non-loopback hosts"
         )),

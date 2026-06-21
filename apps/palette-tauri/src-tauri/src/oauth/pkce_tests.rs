@@ -14,10 +14,10 @@ fn code_challenge_matches_rfc7636_test_vector() {
 fn generated_verifier_is_valid_pkce_shape() {
     let verifier = generate_code_verifier();
     // RFC 7636 §4.1: 43..=128 chars from the unreserved set.
-    assert!(
-        (43..=128).contains(&verifier.len()),
-        "verifier length {} out of range",
-        verifier.len()
+    assert_eq!(
+        verifier.len(),
+        43,
+        "32 bytes base64url-nopad is always 43 chars"
     );
     assert!(
         verifier
