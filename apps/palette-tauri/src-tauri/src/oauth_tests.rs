@@ -58,6 +58,7 @@ fn credentials_from_token_clamps_huge_expires_in_and_trims_server_url() {
         "c".to_string(),
         "https://x/",
         "https://x/token".to_string(),
+        None,
         token,
         1000,
     );
@@ -84,6 +85,7 @@ fn classify_refresh_maps_each_result_to_the_right_outcome() {
             "c".to_string(),
             "https://x",
             "https://x/token".to_string(),
+            None,
             1000
         ),
         RefreshOutcome::Refreshed(_)
@@ -97,6 +99,7 @@ fn classify_refresh_maps_each_result_to_the_right_outcome() {
             "c".to_string(),
             "https://x",
             "t".to_string(),
+            None,
             1000
         ),
         RefreshOutcome::Cleared
@@ -110,8 +113,50 @@ fn classify_refresh_maps_each_result_to_the_right_outcome() {
             "c".to_string(),
             "https://x",
             "t".to_string(),
+            None,
             1000
         ),
         RefreshOutcome::Kept
     ));
+}
+
+#[test]
+fn credentials_from_token_preserves_prior_refresh_token_when_omitted() {
+    // Response WITHOUT a refresh_token (provider reuses the existing one).
+    let token: crate::oauth::flow::TokenResponse = serde_json::from_str(
+        r#"{"access_token":"a","token_type":"Bearer","expires_in":3600,"scope":"s"}"#,
+    )
+    .unwrap();
+    let prior = Some(crate::oauth::secret::Secret::from("prior-refresh"));
+    let creds = credentials_from_token(
+        "c".to_string(),
+        "https://x",
+        "https://x/token".to_string(),
+        prior,
+        token,
+        1000,
+    );
+    assert_eq!(
+        creds.refresh_token.as_ref().map(|s| s.expose()),
+        Some("prior-refresh")
+    );
+
+    // Response WITH a refresh_token overrides the prior.
+    let token: crate::oauth::flow::TokenResponse = serde_json::from_str(
+        r#"{"access_token":"a","token_type":"Bearer","expires_in":3600,"refresh_token":"new-refresh","scope":"s"}"#,
+    )
+    .unwrap();
+    let prior = Some(crate::oauth::secret::Secret::from("prior-refresh"));
+    let creds = credentials_from_token(
+        "c".to_string(),
+        "https://x",
+        "https://x/token".to_string(),
+        prior,
+        token,
+        1000,
+    );
+    assert_eq!(
+        creds.refresh_token.as_ref().map(|s| s.expose()),
+        Some("new-refresh")
+    );
 }

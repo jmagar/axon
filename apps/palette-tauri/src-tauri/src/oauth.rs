@@ -10,14 +10,15 @@ pub(crate) mod callback_server;
 pub(crate) mod flow;
 pub(crate) mod pkce;
 pub(crate) mod secret;
+pub(crate) mod status;
 pub(crate) mod store;
 
 use std::time::Duration;
 
-use serde::Serialize;
 use tauri::AppHandle;
 
 use crate::axon_bridge::BridgeClient;
+use crate::oauth::status::{OauthStatus, status_for};
 use crate::oauth::store::StoredCredentials;
 use crate::{merged_settings, validate_saved_server_url};
 
@@ -63,48 +64,6 @@ impl OauthState {
 impl Default for OauthState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OauthStatus {
-    pub signed_in: bool,
-    pub scope: Option<String>,
-    pub expires_at_unix: Option<i64>,
-    pub server_url: Option<String>,
-}
-
-impl OauthStatus {
-    /// The "not signed in to anything" status.
-    fn signed_out() -> Self {
-        OauthStatus {
-            signed_in: false,
-            scope: None,
-            expires_at_unix: None,
-            server_url: None,
-        }
-    }
-}
-
-/// Build a status for the UI: signed in only when the stored credentials match
-/// the currently-configured server. On a server mismatch, `signed_in` is false
-/// but `server_url` carries the credential's server so the UI can explain it.
-pub(crate) fn status_for(creds: Option<&StoredCredentials>, current_server: &str) -> OauthStatus {
-    match creds {
-        Some(creds) if creds.matches_server(current_server) => OauthStatus {
-            signed_in: true,
-            scope: Some(creds.scope.clone()),
-            expires_at_unix: Some(creds.expires_at_unix),
-            server_url: Some(creds.server_url.clone()),
-        },
-        Some(creds) => OauthStatus {
-            signed_in: false,
-            scope: None,
-            expires_at_unix: None,
-            server_url: Some(creds.server_url.clone()),
-        },
-        None => OauthStatus::signed_out(),
     }
 }
 
@@ -221,6 +180,7 @@ fn classify_refresh(
     client_id: String,
     server_url: &str,
     token_endpoint: String,
+    prior_refresh_token: Option<crate::oauth::secret::Secret>,
     now_unix: i64,
 ) -> RefreshOutcome {
     match result {
@@ -228,6 +188,7 @@ fn classify_refresh(
             client_id,
             server_url,
             token_endpoint,
+            prior_refresh_token,
             token,
             now_unix,
         )),
@@ -257,10 +218,13 @@ async fn refresh_locked(
                     creds.client_id.clone(),
                     creds.token_endpoint.clone(),
                     rt.expose().to_string(),
+                    // Owned copy of the prior token so a refresh response that
+                    // omits refresh_token can reuse it (RFC 6749 §6).
+                    creds.refresh_token.clone(),
                 )
             })
         });
-    let Some((client_id, token_endpoint, refresh_token)) = snapshot else {
+    let Some((client_id, token_endpoint, refresh_token, prior_refresh_token)) = snapshot else {
         return RefreshResult::Kept;
     };
     let Ok(token_endpoint) = flow::require_secure_url(&token_endpoint) else {
@@ -275,7 +239,14 @@ async fn refresh_locked(
             message: "token refresh timed out".to_string(),
         }),
     };
-    match classify_refresh(result, client_id, server_url, token_endpoint, now_unix()) {
+    match classify_refresh(
+        result,
+        client_id,
+        server_url,
+        token_endpoint,
+        prior_refresh_token,
+        now_unix(),
+    ) {
         RefreshOutcome::Refreshed(refreshed) => {
             let access = refreshed.access_token.expose().to_string();
             with_credentials_path(app, "persist refreshed token", |path| {
@@ -449,6 +420,7 @@ async fn run_login(
         client_id,
         server_url,
         meta.token_endpoint,
+        None,
         token,
         now_unix(),
     ))
@@ -458,13 +430,16 @@ fn credentials_from_token(
     client_id: String,
     server_url: &str,
     token_endpoint: String,
+    prior_refresh_token: Option<crate::oauth::secret::Secret>,
     token: flow::TokenResponse,
     now_unix: i64,
 ) -> StoredCredentials {
     StoredCredentials {
         client_id,
         access_token: token.access_token,
-        refresh_token: token.refresh_token,
+        // RFC 6749 §6: a refresh response MAY omit refresh_token, meaning reuse
+        // the prior one. Falling through to None would break all later refreshes.
+        refresh_token: token.refresh_token.or(prior_refresh_token),
         token_endpoint,
         // Clamp so a malformed huge `expires_in` can't wrap negative (→ permanently expired).
         expires_at_unix: now_unix.saturating_add(token.expires_in.min(i64::MAX as u64) as i64),
