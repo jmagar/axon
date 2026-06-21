@@ -4044,3 +4044,20 @@ textarea {
 .palette-status {
   display: none;
 }
+
+.settings-auth-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--aurora-text-muted);
+}
+.settings-auth-status strong {
+  color: var(--aurora-text-primary);
+}
+.settings-auth-status[data-tone="success"] strong {
+  color: var(--aurora-success);
+}
+.settings-auth-status[data-tone="error"] strong {
+  color: var(--aurora-error);
+}
