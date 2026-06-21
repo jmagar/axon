@@ -397,8 +397,8 @@ fn populate_misc(
         .clamp(0, 86_400);
     cfg.max_job_attempts = parse_i64_env("AXON_MAX_JOB_ATTEMPTS")
         .or(inputs.toml.workers.max_job_attempts)
-        .unwrap_or(5)
-        .clamp(0, 1_000) as u32;
+        .map(|value| value.clamp(0, 1_000) as u32)
+        .unwrap_or(cfg.max_job_attempts);
     cfg.json_output = g.json;
     cfg.reclaimed_status_only = g.reclaimed;
     cfg.active_status_only = g.active;

@@ -178,6 +178,14 @@ pub async fn reclaim_stale_running_jobs_for_table_jobs(
         // crashes or hangs on every attempt cannot cycle forever. On any per-row
         // SQL error the `?` early-return drops `tx`, and the pool's
         // after_release hook rolls the whole sweep back.
+        //
+        // Dead-lettered rows are intentionally NOT added to `updated_rows` / the
+        // returned `ReclaimedJobs`. That set drives lane wakeups and local
+        // `CancellationToken` firing — neither of which a now-`failed` job needs:
+        // a terminal job will not be re-claimed, and a row is only reclaimable
+        // once its heartbeat has already stopped (its runner task, and thus the
+        // token's await point, is gone or wedged), so firing the local token
+        // would have no live observer.
         if max_attempts > 0 && *attempt_count >= max_attempts as i64 {
             dead_letter_stale_row(
                 tx.conn(),
@@ -208,6 +216,17 @@ pub async fn reclaim_stale_running_jobs_for_table_jobs(
         }
     }
     tx.commit().await?;
+    Ok(finalize_reclaimed_jobs(table, updated_rows))
+}
+
+/// Parse the re-queued rows into `ReclaimedJob`s (dropping any with a corrupt
+/// UUID) and log the sweep. Split out of
+/// `reclaim_stale_running_jobs_for_table_jobs` to keep that function under the
+/// line cap.
+fn finalize_reclaimed_jobs(
+    table: &str,
+    updated_rows: Vec<(String, Option<String>)>,
+) -> Vec<ReclaimedJob> {
     let jobs: Vec<ReclaimedJob> = updated_rows
         .into_iter()
         .filter_map(|(job_id, attempt_id)| match Uuid::parse_str(&job_id) {
@@ -218,8 +237,7 @@ pub async fn reclaim_stale_running_jobs_for_table_jobs(
             }
         })
         .collect();
-    let n = jobs.len();
-    if n > 0 {
+    if !jobs.is_empty() {
         for job in &jobs {
             tracing::warn!(
                 table,
@@ -230,11 +248,11 @@ pub async fn reclaim_stale_running_jobs_for_table_jobs(
         }
         tracing::info!(
             table,
-            reclaimed = n,
+            reclaimed = jobs.len(),
             "watchdog: reclaimed stale running jobs"
         );
     }
-    Ok(jobs)
+    jobs
 }
 
 /// Reset a single stale `running` row back to `pending` for another attempt.
