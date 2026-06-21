@@ -45,6 +45,9 @@ const ACQUIRE_WARN_THRESHOLD: Duration = Duration::from_secs(1);
 /// [`finish`](Self::finish). Dropping the guard without resolving it is safe —
 /// the pool's `after_release` hook rolls the transaction back — but the eager
 /// methods return the slot clean immediately and are always preferred.
+#[must_use = "an ImmediateTx must be settled with commit/rollback/finish (or \
+              deliberately dropped to roll back); ignoring it begins a transaction \
+              and silently discards its writes"]
 pub(crate) struct ImmediateTx {
     conn: PoolConnection<Sqlite>,
     /// `true` once `COMMIT`/`ROLLBACK` has run, so `Drop` stays quiet. An
@@ -79,6 +82,11 @@ impl ImmediateTx {
 
     /// Mutable access to the underlying connection for running statements inside
     /// the transaction.
+    ///
+    /// Run only DML through this handle — do **not** issue `COMMIT`/`ROLLBACK`/
+    /// `BEGIN`/`SAVEPOINT`. Settle the transaction via [`commit`](Self::commit),
+    /// [`rollback`](Self::rollback), or [`finish`](Self::finish) instead, so the
+    /// guard's `settled` bookkeeping and the `Drop` safety net stay accurate.
     pub(crate) fn conn(&mut self) -> &mut SqliteConnection {
         &mut self.conn
     }
@@ -100,12 +108,18 @@ impl ImmediateTx {
 
     /// Eagerly `ROLLBACK` (best-effort). Use on early returns that abort the
     /// transaction so the slot returns clean immediately instead of waiting for
-    /// the `after_release` hook. A "no transaction is active" error is harmless
-    /// and only logged.
+    /// the `after_release` hook. A "no transaction is active" error is the
+    /// expected no-op (the transaction already self-aborted) and is ignored.
     pub(crate) async fn rollback(mut self) {
         self.settled = true;
-        if let Err(e) = sqlx::query("ROLLBACK").execute(&mut *self.conn).await {
-            tracing::warn!(error = %e, "tx: ROLLBACK errored");
+        match sqlx::query("ROLLBACK").execute(&mut *self.conn).await {
+            Ok(_) => {}
+            // A self-aborted transaction (e.g. SQLite rolled it back on a
+            // constraint error) leaves nothing to roll back — the expected
+            // no-op, not a failure. Mirrors `store::rollback_on_release`.
+            Err(sqlx::Error::Database(db)) if db.message().contains("no transaction is active") => {
+            }
+            Err(e) => tracing::warn!(error = %e, "tx: ROLLBACK errored"),
         }
     }
 

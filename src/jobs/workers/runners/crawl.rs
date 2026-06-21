@@ -64,20 +64,9 @@ pub async fn run_crawl_job(
         secs: effective_cfg.crawl_job_timeout_secs,
     };
 
-    // Bound validation by the shared deadline: `validate_crawl_job_url` resolves
-    // DNS, so a hung lookup must not park the lane forever before the engine's
-    // own guard could take over.
-    match budget.deadline {
-        Some(dl) => {
-            match tokio::time::timeout_at(dl, validate_crawl_job_url(&url, cancel_token.as_ref()))
-                .await
-            {
-                Ok(inner) => inner?,
-                Err(_elapsed) => return Err(CrawlGuardError::Timeout(budget.secs).into_boxed()),
-            }
-        }
-        None => validate_crawl_job_url(&url, cancel_token.as_ref()).await?,
-    }
+    // Bound validation by the shared deadline so a hung DNS lookup cannot park
+    // the lane before the engine's own guard could take over.
+    validate_within_budget(&url, cancel_token.as_ref(), budget).await?;
 
     let job_output_dir = crate::services::crawl::predict_crawl_output_dir(
         &effective_cfg.output_dir,
@@ -226,6 +215,28 @@ async fn current_attempt_id(
         .fetch_optional(pool)
         .await
         .map(Option::flatten)
+}
+
+/// Run URL validation under the job's wall-clock `budget`. `validate_crawl_job_url`
+/// resolves DNS, so a hung lookup must not park the lane: when a deadline is set
+/// and elapses before validation returns, the crawl-timeout error is surfaced
+/// instead. Because `run_crawl_job` anchors the budget *before* calling this, a
+/// slow validation counts against `crawl_job_timeout_secs` rather than handing the
+/// engine a fresh full budget. A `None` deadline (timeout disabled) passes through.
+async fn validate_within_budget(
+    url: &str,
+    cancel_token: Option<&CancellationToken>,
+    budget: CrawlBudget,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match budget.deadline {
+        Some(dl) => {
+            match tokio::time::timeout_at(dl, validate_crawl_job_url(url, cancel_token)).await {
+                Ok(inner) => inner,
+                Err(_elapsed) => Err(CrawlGuardError::Timeout(budget.secs).into_boxed()),
+            }
+        }
+        None => validate_crawl_job_url(url, cancel_token).await,
+    }
 }
 
 async fn validate_crawl_job_url(

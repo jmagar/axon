@@ -199,9 +199,16 @@ fn routing_registers_no_v1_route_outside_inventory() {
         rest_route_inventory().iter().map(|r| r.path).collect();
 
     let mut registered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for marker in [".route(\"", ".nest(\""] {
+    for marker in [".route(", ".nest("] {
         for (idx, _) in source.match_indices(marker) {
-            let rest = &source[idx + marker.len()..];
+            // Tolerate rustfmt wrapping the path literal onto its own line
+            // (`.route(\n    "/v1/...",`) — skip whitespace/newlines before the
+            // opening quote. The old `.route("` literal match missed every
+            // multi-line registration, silently scanning only ~70% of routes.
+            let after = source[idx + marker.len()..].trim_start();
+            let Some(rest) = after.strip_prefix('"') else {
+                continue;
+            };
             if let Some(end) = rest.find('"') {
                 let path = &rest[..end];
                 if path.starts_with("/v1") {
@@ -209,6 +216,19 @@ fn routing_registers_no_v1_route_outside_inventory() {
                 }
             }
         }
+    }
+
+    // Self-test floor: the scanner MUST see the multi-line registrations, not
+    // silently regress to seeing nothing (which would turn this whole test into a
+    // no-op — the exact failure mode it exists to prevent). Both of these are
+    // registered multi-line in routing.rs today (`.nest("/v1/crawl", …)` and
+    // `.route("/v1/research/stream", …)`).
+    for must_see in ["/v1/crawl", "/v1/research/stream"] {
+        assert!(
+            registered.contains(must_see),
+            "route scanner missed `{must_see}` — the .route(/.nest( matcher is broken \
+             and this test would pass without inspecting real routes. Found: {registered:?}"
+        );
     }
 
     let missing: Vec<String> = registered

@@ -363,13 +363,29 @@ async fn reclaim_dead_letters_jobs_at_or_above_max_attempts() {
     .await
     .unwrap();
 
+    // Over the cap: attempted 4 times, cap is 3 → also dead-lettered (pins the
+    // `>=` guard against a future `==`-only regression).
+    let over_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO axon_crawl_jobs \
+         (id, status, url, config_json, created_at, updated_at, started_at, attempt_count) \
+         VALUES (?, 'running', 'https://over.example', '{}', ?, ?, ?, 4)",
+    )
+    .bind(&over_id)
+    .bind(stale_updated_at)
+    .bind(stale_updated_at)
+    .bind(stale_updated_at)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     let reclaimed = reclaim_stale_running_jobs_for_table(&pool, JobKind::Crawl, 5_000, 3)
         .await
         .expect("reclaim");
 
     assert_eq!(
         reclaimed, 1,
-        "only the under-cap job is re-queued; the dead-lettered one is not counted"
+        "only the under-cap job is re-queued; the two dead-lettered ones are not counted"
     );
 
     let (exhausted_status, exhausted_error, exhausted_finished): (
@@ -397,6 +413,32 @@ async fn reclaim_dead_letters_jobs_at_or_above_max_attempts() {
         "dead-lettered job must have finished_at set"
     );
 
+    // The operator-visible progress payload must reflect the terminal failure.
+    let exhausted_progress: Option<String> =
+        sqlx::query_scalar("SELECT progress_json FROM axon_crawl_jobs WHERE id = ?")
+            .bind(&exhausted_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let progress: serde_json::Value =
+        serde_json::from_str(exhausted_progress.as_deref().unwrap_or("null"))
+            .expect("progress_json should be valid JSON");
+    assert_eq!(
+        progress["phase"], "failed",
+        "dead-letter progress_json phase must be failed"
+    );
+    assert_eq!(progress["lifecycle_progress"], 1.0);
+
+    let over_status: String = sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id = ?")
+        .bind(&over_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        over_status, "failed",
+        "job above the cap (attempts > max) must also be dead-lettered"
+    );
+
     let retry_status: String =
         sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id = ?")
             .bind(&retry_id)
@@ -404,4 +446,41 @@ async fn reclaim_dead_letters_jobs_at_or_above_max_attempts() {
             .await
             .unwrap();
     assert_eq!(retry_status, "pending", "under-cap job must be re-queued");
+}
+
+/// `max_attempts = 0` disables the cap: even a job with a very high
+/// `attempt_count` must be re-queued, never dead-lettered.
+#[tokio::test]
+async fn reclaim_with_unlimited_attempts_never_dead_letters() {
+    let pool = open_sqlite_pool(":memory:").await.expect("pool");
+    let stale_updated_at = now_ms() - 10_000;
+
+    let id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO axon_crawl_jobs \
+         (id, status, url, config_json, created_at, updated_at, started_at, attempt_count) \
+         VALUES (?, 'running', 'https://many.example', '{}', ?, ?, ?, 99)",
+    )
+    .bind(&id)
+    .bind(stale_updated_at)
+    .bind(stale_updated_at)
+    .bind(stale_updated_at)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let reclaimed = reclaim_stale_running_jobs_for_table(&pool, JobKind::Crawl, 5_000, 0)
+        .await
+        .expect("reclaim");
+    assert_eq!(
+        reclaimed, 1,
+        "unlimited cap re-queues even a high-attempt job"
+    );
+
+    let status: String = sqlx::query_scalar("SELECT status FROM axon_crawl_jobs WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending", "max_attempts=0 must never dead-letter");
 }
