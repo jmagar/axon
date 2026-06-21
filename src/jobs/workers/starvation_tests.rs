@@ -7,7 +7,7 @@ use tokio::sync::Notify;
 
 use crate::core::config::Config;
 use crate::jobs::backend::JobPayload;
-use crate::jobs::ops::enqueue_job;
+use crate::jobs::ops::{claim_next_pending_for_attempt, enqueue_job};
 use crate::jobs::store::open_sqlite_pool;
 
 const EMBED_TABLE: &str = "axon_embed_jobs";
@@ -45,13 +45,16 @@ async fn set_created_at(pool: &SqlitePool, id: uuid::Uuid, created_at: i64) {
     .unwrap();
 }
 
-async fn set_status(pool: &SqlitePool, id: uuid::Uuid, status: &str) {
-    sqlx::query(&format!("UPDATE {EMBED_TABLE} SET status = ? WHERE id = ?"))
-        .bind(status)
-        .bind(id.to_string())
-        .execute(pool)
+/// Transition a freshly-enqueued embed job to `running` via the lifecycle claim
+/// path (rather than a raw status UPDATE), honoring the job-state contract.
+async fn claim_one_running(pool: &SqlitePool) -> uuid::Uuid {
+    let id = enqueue_pending_embed(pool).await;
+    let claimed = claim_next_pending_for_attempt(pool, JobKind::Embed)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("a pending embed job to claim");
+    assert_eq!(claimed.id, id, "claim should pick the only pending job");
+    id
 }
 
 #[tokio::test]
@@ -96,11 +99,11 @@ async fn fires_notify_for_the_starving_kind() {
 async fn no_alarm_when_a_job_of_the_kind_is_running() {
     let pool = open_sqlite_pool(":memory:").await.unwrap();
 
+    // A lane IS working: claim a job into `running` while it is the only pending
+    // row, then add an old pending job queued behind it.
+    claim_one_running(&pool).await;
     let pending = enqueue_pending_embed(&pool).await;
-    set_created_at(&pool, pending, now_ms() - 600_000).await; // old pending
-
-    let running = enqueue_pending_embed(&pool).await;
-    set_status(&pool, running, "running").await; // a lane IS working
+    set_created_at(&pool, pending, now_ms() - 600_000).await; // old pending behind a busy lane
 
     let alarms = detect_and_recover_starvation(&pool, &test_notifies(), 120_000).await;
     assert!(

@@ -20,12 +20,22 @@ use uuid::Uuid;
 /// production incident). Rolling back on release scrubs the slot first.
 ///
 /// A `ROLLBACK` with no active transaction errors in SQLite ("cannot rollback -
-/// no transaction is active") — that is the expected, harmless case and is
-/// ignored. Always returns `Ok(true)` to keep the connection in the pool.
+/// no transaction is active") — that is the expected, harmless case, so the
+/// connection is kept (`Ok(true)`). Any *other* rollback failure means the slot
+/// may still be poisoned, so it is evicted (`Ok(false)`) instead of returned to
+/// the idle queue: per sqlx 0.8 semantics only `Ok(true)` keeps the connection,
+/// while `Ok(false)`/`Err` close it and let a waiter open a fresh one.
 pub(crate) async fn rollback_on_release(conn: &mut SqliteConnection) -> Result<bool, sqlx::Error> {
-    // ROLLBACK with no active transaction returns an error in SQLite; ignore it.
-    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-    Ok(true)
+    match sqlx::query("ROLLBACK").execute(&mut *conn).await {
+        Ok(_) => Ok(true),
+        Err(sqlx::Error::Database(db)) if db.message().contains("no transaction is active") => {
+            Ok(true)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "store: after_release ROLLBACK failed; evicting connection");
+            Ok(false)
+        }
+    }
 }
 
 /// Open a SQLite pool, enable WAL mode, and run all migrations.
