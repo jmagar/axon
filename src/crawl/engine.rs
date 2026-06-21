@@ -65,7 +65,7 @@ pub(crate) fn crawl_subscribe_buffer_size(cfg: &Config) -> usize {
 }
 
 pub(crate) fn validate_crawl_memory_safety(cfg: &Config, start_url: &str) -> Result<(), String> {
-    if cfg.max_pages > 0 || has_explicit_scope(cfg) || cfg.allow_unbounded_broad_crawl {
+    if cfg.max_pages > 0 || has_effective_scope(cfg, start_url) || cfg.allow_unbounded_broad_crawl {
         return Ok(());
     }
 
@@ -74,8 +74,17 @@ pub(crate) fn validate_crawl_memory_safety(cfg: &Config, start_url: &str) -> Res
     ))
 }
 
-fn has_explicit_scope(cfg: &Config) -> bool {
-    !cfg.path_budgets.is_empty() || !cfg.url_whitelist.is_empty()
+/// Whether the crawl is bounded by something other than a page cap: an explicit
+/// path budget or URL whitelist, or the auto path-prefix scoping a deep start
+/// URL receives at crawl time. Auto-scoping confines the crawl to the start
+/// URL's path subtree (`derive_auto_whitelist_pattern`), so a deep-path
+/// `--max-pages 0` crawl is bounded just like an explicit whitelist — and the
+/// crawl memory guard backstops OOM within that subtree. Root (`/`) and
+/// single-segment paths are not auto-scoped and remain rejected when uncapped.
+fn has_effective_scope(cfg: &Config, start_url: &str) -> bool {
+    !cfg.path_budgets.is_empty()
+        || !cfg.url_whitelist.is_empty()
+        || url_utils::derive_auto_whitelist_pattern(start_url).is_some()
 }
 
 fn crawl_control_id(crawl_id: Option<&str>) -> String {

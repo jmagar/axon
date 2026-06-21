@@ -82,7 +82,7 @@ pub(super) async fn maybe_chrome_fallback(
         }
         Err(err) => {
             let err_msg = err.to_string();
-            if memory_guard::is_memory_abort_message(&err_msg) {
+            if chrome_fallback_error_propagates(&err_msg) {
                 spinner.finish(&format!("Chrome fallback aborted ({err_msg})"));
                 return Err(err);
             }
@@ -93,6 +93,19 @@ pub(super) async fn maybe_chrome_fallback(
         }
     }
 }
+
+/// Whether a failed Chrome fallback must propagate as an error (`true`) rather
+/// than being swallowed in favor of the HTTP result. A memory-guard abort has
+/// to fail the crawl loudly — masking it as "fell back to HTTP" would hide an
+/// OOM-avoidance shutdown; every other Chrome error is recoverable via the
+/// already-collected HTTP result.
+fn chrome_fallback_error_propagates(err_msg: &str) -> bool {
+    memory_guard::is_memory_abort_message(err_msg)
+}
+
+#[cfg(test)]
+#[path = "chrome_fallback_tests.rs"]
+mod tests;
 
 fn log_auto_switch_warning(start_url: &str, summary: &CrawlSummary) {
     let thin_ratio = if summary.pages_seen == 0 {

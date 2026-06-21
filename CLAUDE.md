@@ -136,8 +136,8 @@ All flags are `--global` (usable with any subcommand).
 | `--automation-script <PATH>` | path | — | JSON file mapping URL path prefixes → ordered Chrome web-automation steps (`click`/`click_all`/`scroll_x`/`scroll_y`/`infinite_scroll`/`wait`/`wait_for`/`wait_for_and_click`/`wait_for_navigation`/`fill`/`evaluate`/`screenshot`). Steps run against each matching page before capture. **Requires a Chrome render path** (`--render-mode chrome`/`auto-switch`); ignored with a warning on HTTP-only. See `src/crawl/automation.rs`. |
 
 Memory safety:
-- Crawl page bodies are capped at 4 MiB by default (`scrape.max-page-bytes` / `--max-page-bytes` can override).
-- Long-running crawls self-abort when Axon's RSS reaches `AXON_CRAWL_MEMORY_ABORT_PERCENT` of host RAM; default is `85`, and `0` disables the guard.
+- Crawl page bodies are capped at 4 MiB by default (set `scrape.max_page_bytes` in `~/.axon/config.toml` to override; `0` disables — there is no CLI flag).
+- Long-running crawls self-abort when Axon's RSS reaches `AXON_CRAWL_MEMORY_ABORT_PERCENT` of the host/cgroup memory limit (the lower of the two, so inside a container the denominator is the cgroup cap, not host RAM); default is `85`, and `0` disables the guard. Linux-only — the guard never trips on other platforms.
 
 #### Output
 

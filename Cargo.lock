@@ -3642,17 +3642,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
 dependencies = [
  "base64",
- "http-body-util",
- "hyper",
- "hyper-util",
  "indexmap",
- "ipnet",
  "metrics",
  "metrics-util",
  "quanta",
  "thiserror 1.0.69",
- "tokio",
- "tracing",
 ]
 
 [[package]]

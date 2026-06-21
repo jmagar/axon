@@ -241,14 +241,42 @@ fn permissive_skips_declaration_and_minified_files() {
 }
 
 #[test]
-fn json_yaml_chunks_are_capped_at_max() {
-    let many_keys: String = (0..100).map(|i| format!("key_{i}: value\n")).collect();
-    let chunks = chunk_file(&many_keys, "yaml");
+fn json_yaml_toml_chunks_are_capped_at_max() {
+    // ~210 KB of structured content → well over MAX text chunks, so the cap
+    // actually fires and reports a dropped tail (the prior 100-key fixture
+    // produced only ~2 chunks, making the `<= MAX` assertion vacuous).
+    let big: String = (0..10_000)
+        .map(|i| format!("key_{i}: value_{i}\n"))
+        .collect();
+    for ext in ["json", "yaml", "yml", "toml"] {
+        let (chunks, dropped) = chunk_file_reporting_cap(&big, ext);
+        assert_eq!(
+            chunks.len(),
+            MAX_JSON_YAML_CHUNKS,
+            "ext {ext} must cap at MAX, got {}",
+            chunks.len()
+        );
+        assert!(
+            dropped > 0,
+            "ext {ext} must report the dropped tail, got {dropped}"
+        );
+    }
+}
+
+#[test]
+fn chunk_cap_does_not_truncate_non_structured_exts() {
+    // The same over-MAX volume with a plain-text extension must NOT be capped —
+    // a regression that widened the cap to all extensions would fail here.
+    let big: String = (0..10_000)
+        .map(|i| format!("key_{i}: value_{i}\n"))
+        .collect();
+    let (chunks, dropped) = chunk_file_reporting_cap(&big, "txt");
     assert!(
-        chunks.len() <= MAX_JSON_YAML_CHUNKS,
-        "expected ≤{MAX_JSON_YAML_CHUNKS} chunks for large YAML, got {}",
+        chunks.len() > MAX_JSON_YAML_CHUNKS,
+        "plain text should exceed MAX, got {}",
         chunks.len()
     );
+    assert_eq!(dropped, 0, "plain text must never be capped");
 }
 
 #[test]
