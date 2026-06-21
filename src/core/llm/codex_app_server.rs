@@ -20,9 +20,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::task::JoinHandle;
 
-use crate::core::llm::headless::common::{
-    joined_prompt, read_bounded_stderr, redacted_stderr_tail,
-};
+use crate::core::llm::headless::common::{read_bounded_stderr, redacted_stderr_tail};
 use crate::core::llm::{CompletionRequest, CompletionResponse, LlmBackendConfig};
 use crate::core::logging::{log_info, log_warn};
 use protocol::{CodexStep, CodexStreamState};
@@ -78,14 +76,15 @@ where
         .ok_or("failed to open codex app-server stderr")?;
     let stderr_task = tokio::spawn(read_bounded_stderr(stderr));
 
-    let prompt = joined_prompt(req.system_prompt.as_deref(), &req.user_prompt);
     let model = req
         .model
         .clone()
         .or_else(|| req.backend.codex_model.clone());
     let mut state = CodexStreamState::new(
         model,
-        prompt,
+        req.system_prompt.clone(),
+        req.user_prompt.clone(),
+        req.effort.clone(),
         cwd.path().display().to_string(),
         env!("CARGO_PKG_VERSION"),
     );

@@ -232,6 +232,10 @@ pub struct CompletionRequest {
     pub model: Option<String>,
     pub stream: bool,
     pub backend: LlmBackendConfig,
+    /// Reasoning-effort hint for backends that support it (e.g. Codex app-server
+    /// `turn/start` `effort` param). `"low"` for summarize, `"high"` for
+    /// evaluate/judge. `None` lets the server apply its default.
+    pub effort: Option<String>,
 }
 
 impl CompletionRequest {
@@ -243,6 +247,7 @@ impl CompletionRequest {
             model: None,
             stream: false,
             backend: LlmBackendConfig::default(),
+            effort: None,
         }
     }
 
@@ -261,6 +266,12 @@ impl CompletionRequest {
     #[must_use]
     pub fn stream(mut self, stream: bool) -> Self {
         self.stream = stream;
+        self
+    }
+
+    #[must_use]
+    pub fn effort(mut self, effort: impl Into<String>) -> Self {
+        self.effort = Some(effort.into());
         self
     }
 
