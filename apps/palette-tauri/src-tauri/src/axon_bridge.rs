@@ -110,6 +110,7 @@ pub(crate) struct AxonArtifactResult {
 pub(crate) async fn axon_http_request(
     app: AppHandle,
     bridge: tauri::State<'_, BridgeClient>,
+    oauth_state: tauri::State<'_, crate::oauth::OauthState>,
     request: AxonHttpRequest,
 ) -> Result<AxonHttpResult, String> {
     let path = validate_axon_route(&request)?.to_string();
@@ -129,13 +130,15 @@ pub(crate) async fn axon_http_request(
         "application/json, text/plain;q=0.9, */*;q=0.5",
     );
 
-    if let Some(token) = settings
+    let static_token = settings
         .token
         .as_deref()
         .map(str::trim)
-        .filter(|t| !t.is_empty())
+        .filter(|t| !t.is_empty());
+    if let Some(token) =
+        crate::oauth::resolve_auth_token(&app, client, &base_url, static_token, &oauth_state).await
     {
-        builder = builder.bearer_auth(token).header("x-api-key", token);
+        builder = builder.bearer_auth(&token).header("x-api-key", &token);
     }
     if let Some(body) = request.body {
         builder = builder.json(&body);
@@ -163,6 +166,7 @@ pub(crate) async fn axon_http_request(
 pub(crate) async fn axon_artifact_request(
     app: AppHandle,
     bridge: tauri::State<'_, BridgeClient>,
+    oauth_state: tauri::State<'_, crate::oauth::OauthState>,
     relative_path: String,
 ) -> Result<AxonArtifactResult, String> {
     let settings = merged_settings(&app)?;
@@ -174,13 +178,15 @@ pub(crate) async fn axon_artifact_request(
         "image/png, image/jpeg, image/webp, image/gif, image/avif",
     );
 
-    if let Some(token) = settings
+    let static_token = settings
         .token
         .as_deref()
         .map(str::trim)
-        .filter(|t| !t.is_empty())
+        .filter(|t| !t.is_empty());
+    if let Some(token) =
+        crate::oauth::resolve_auth_token(&app, client, &base_url, static_token, &oauth_state).await
     {
-        request = request.bearer_auth(token).header("x-api-key", token);
+        request = request.bearer_auth(&token).header("x-api-key", &token);
     }
 
     let response = request.send().await.map_err(|err| err.to_string())?;

@@ -56,6 +56,7 @@ pub(crate) async fn axon_http_stream_request(
     app: AppHandle,
     window: tauri::Window,
     stream_client: tauri::State<'_, StreamClient>,
+    oauth_state: tauri::State<'_, crate::oauth::OauthState>,
     request: PaletteStreamRequest,
 ) -> Result<(), String> {
     if !matches!(request.path.as_str(), "/v1/ask/stream" | "/v1/chat/stream") {
@@ -74,18 +75,20 @@ pub(crate) async fn axon_http_stream_request(
         )
         .map_err(|err| err.to_string())?;
 
-    let mut builder = (*stream_client)
-        .client()
+    let client = (*stream_client).client();
+    let mut builder = client
         .post(url)
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .json(&request.body);
-    if let Some(token) = settings
+    let static_token = settings
         .token
         .as_deref()
         .map(str::trim)
-        .filter(|token| !token.is_empty())
+        .filter(|token| !token.is_empty());
+    if let Some(token) =
+        crate::oauth::resolve_auth_token(&app, client, &base_url, static_token, &oauth_state).await
     {
-        builder = builder.bearer_auth(token).header("x-api-key", token);
+        builder = builder.bearer_auth(&token).header("x-api-key", &token);
     }
 
     let response = builder.send().await.map_err(|err| err.to_string())?;

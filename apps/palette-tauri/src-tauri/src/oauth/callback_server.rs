@@ -18,6 +18,8 @@ const SUCCESS_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-
 
 pub(crate) struct CallbackListener {
     listener: TcpListener,
+    // Read in tests; in normal operation the port is consumed via `redirect_uri`.
+    #[allow(dead_code)]
     pub port: u16,
     pub redirect_uri: String,
 }
