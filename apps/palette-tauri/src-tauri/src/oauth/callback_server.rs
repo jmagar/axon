@@ -16,11 +16,12 @@ const SUCCESS_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-
      text-align:center;padding-top:4rem\"><h2>Signed in to Axon</h2>\
      <p>You can close this tab and return to the palette.</p></body></html>";
 
+const ERROR_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-serif;background:#07131c;color:#e6f4fb;\
+     text-align:center;padding-top:4rem\"><h2>Sign-in failed</h2>\
+     <p>Authorization was denied or could not complete. Return to the palette and try again.</p></body></html>";
+
 pub(crate) struct CallbackListener {
     listener: TcpListener,
-    // Read in tests; in normal operation the port is consumed via `redirect_uri`.
-    #[allow(dead_code)]
-    pub port: u16,
     pub redirect_uri: String,
 }
 
@@ -41,7 +42,6 @@ pub(crate) async fn bind() -> Result<CallbackListener, String> {
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
     Ok(CallbackListener {
         listener,
-        port,
         redirect_uri,
     })
 }
@@ -70,16 +70,22 @@ impl CallbackListener {
                 respond(&mut socket, "400 Bad Request", "Bad Request").await;
                 continue;
             };
+            // Only requests to the registered callback path bearing OUR state
+            // are the real callback. Anything else (favicon, a racing process
+            // with a wrong/absent state) is answered and ignored so it cannot
+            // abort the flow.
+            let path = target.split('?').next().unwrap_or(&target);
+            if path != "/callback" {
+                respond(&mut socket, "404 Not Found", "Not Found").await;
+                continue;
+            }
             let params = parse_callback_params(&target);
-            // Only a request bearing OUR state is the real callback. Anything
-            // else (favicon, a racing process with a wrong/absent state) is
-            // answered and ignored so it cannot abort the flow.
             if params.state.as_deref() != Some(expected_state) {
                 respond(&mut socket, "404 Not Found", "Not Found").await;
                 continue;
             }
             if let Some(error) = params.error {
-                respond(&mut socket, "400 Bad Request", SUCCESS_PAGE).await;
+                respond(&mut socket, "400 Bad Request", ERROR_PAGE).await;
                 return Err(format!("authorization was denied ({error})"));
             }
             if let Some(code) = params.code {

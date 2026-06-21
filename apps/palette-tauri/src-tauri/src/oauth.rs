@@ -2,8 +2,9 @@
 //!
 //! The full flow runs in the Rust shell because the webview CSP forbids
 //! outbound HTTP and there is no shell/deep-link capability. Credentials are
-//! cached in `OauthState` (Tauri-managed); refresh is single-flight under the
-//! cache lock.
+//! cached in `OauthState` (Tauri-managed): the credential-cache lock serializes
+//! token refresh (single-flight), while a separate guard serializes interactive
+//! logins.
 
 pub(crate) mod callback_server;
 pub(crate) mod flow;
@@ -64,6 +65,18 @@ pub(crate) struct OauthStatus {
     pub server_url: Option<String>,
 }
 
+impl OauthStatus {
+    /// The "not signed in to anything" status.
+    fn signed_out() -> Self {
+        OauthStatus {
+            signed_in: false,
+            scope: None,
+            expires_at_unix: None,
+            server_url: None,
+        }
+    }
+}
+
 /// Build a status for the UI: signed in only when the stored credentials match
 /// the currently-configured server. On a server mismatch, `signed_in` is false
 /// but `server_url` carries the credential's server so the UI can explain it.
@@ -81,12 +94,7 @@ pub(crate) fn status_for(creds: Option<&StoredCredentials>, current_server: &str
             expires_at_unix: None,
             server_url: Some(creds.server_url.clone()),
         },
-        None => OauthStatus {
-            signed_in: false,
-            scope: None,
-            expires_at_unix: None,
-            server_url: None,
-        },
+        None => OauthStatus::signed_out(),
     }
 }
 
@@ -121,12 +129,7 @@ pub(crate) async fn axon_oauth_logout(
     let path = store::credentials_path(&app)?;
     store::clear(&path)?;
     *oauth_state.creds.lock().await = CredCache::Loaded(None);
-    Ok(OauthStatus {
-        signed_in: false,
-        scope: None,
-        expires_at_unix: None,
-        server_url: None,
-    })
+    Ok(OauthStatus::signed_out())
 }
 
 #[tauri::command]
@@ -165,6 +168,11 @@ async fn effective_access_token(
     server_url: &str,
     state: &OauthState,
 ) -> Option<String> {
+    // Defense in depth: never hand an OAuth token to a cleartext non-loopback
+    // server (e.g. a hand-edited/migrated oauth.json with an http:// URL).
+    if flow::require_secure_url(server_url).is_err() {
+        return None;
+    }
     let mut cache = state.creds.lock().await;
     ensure_loaded(app, &mut cache);
     let CredCache::Loaded(slot) = &mut *cache else {

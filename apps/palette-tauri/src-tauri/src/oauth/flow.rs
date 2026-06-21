@@ -10,9 +10,6 @@ use serde::Deserialize;
 /// optional — a DCR-disabled server omits it.
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AuthServerMetadata {
-    // Parsed for completeness/round-trip but not used to drive the flow.
-    #[allow(dead_code)]
-    pub issuer: String,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     #[serde(default)]

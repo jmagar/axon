@@ -42,7 +42,7 @@ async fn send_request(port: u16, line: &str) {
 #[tokio::test]
 async fn await_code_returns_code_for_matching_state() {
     let listener = bind().await.unwrap();
-    let port = listener.port;
+    let port = listener.listener.local_addr().unwrap().port();
     assert_eq!(
         listener.redirect_uri,
         format!("http://127.0.0.1:{port}/callback")
@@ -64,7 +64,7 @@ async fn await_code_ignores_state_mismatch_and_resolves_on_later_match() {
     // A racing/wrong-state request must NOT abort the flow; the real callback
     // (correct state) arriving afterward still resolves the login.
     let listener = bind().await.unwrap();
-    let port = listener.port;
+    let port = listener.listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         send_request(port, "GET /callback?code=evil&state=wrong HTTP/1.1").await;
         send_request(port, "GET /favicon.ico HTTP/1.1").await;
@@ -80,7 +80,7 @@ async fn await_code_ignores_state_mismatch_and_resolves_on_later_match() {
 #[tokio::test]
 async fn await_code_returns_error_for_matching_state_denial() {
     let listener = bind().await.unwrap();
-    let port = listener.port;
+    let port = listener.listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         send_request(
             port,

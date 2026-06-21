@@ -2,7 +2,6 @@ use super::*;
 
 fn meta() -> AuthServerMetadata {
     AuthServerMetadata {
-        issuer: "https://axon.example.com".to_string(),
         authorization_endpoint: "https://axon.example.com/authorize".to_string(),
         token_endpoint: "https://axon.example.com/token".to_string(),
         registration_endpoint: Some("https://axon.example.com/register".to_string()),
