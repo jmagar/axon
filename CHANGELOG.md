@@ -9,6 +9,8 @@
 - Codex app-server backend: ephemeral threads, developer instructions, and a
   reasoning-effort hint (summarize requests run at `low`, the evaluate judge at
   `high`).
+- `axon doctor` surfaces a Codex capability probe (available models + rate-limit
+  headroom) when the configured LLM backend is `codex-app-server`.
 
 ### Changed
 - Release version bump.
