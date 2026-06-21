@@ -16,6 +16,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod axon_bridge;
+mod oauth;
 mod persistence;
 mod stream;
 mod window_events;
