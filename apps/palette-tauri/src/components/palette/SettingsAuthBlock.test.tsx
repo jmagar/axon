@@ -11,21 +11,23 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Capture the latest `palette://oauth-changed` callback the component registers.
-// Declared via vi.hoisted so the hoisted vi.mock factory can write to it while
-// the test body reads it.
+// Capture the latest `palette://oauth-changed` registration the hook makes —
+// both the event name and the callback. Declared via vi.hoisted so the hoisted
+// vi.mock factory can write to it while the test body reads it.
 const listenRef = vi.hoisted(() => ({
+  event: null as null | string,
   callback: null as null | ((event: unknown) => void),
 }));
 
-// Mock the invoke seam: the component only consumes `appWindow`. `listen`
-// records the callback and returns a thenable resolving to a no-op unlisten so
+// Mock the invoke seam: the hook only consumes `appWindow`. `listen` records the
+// event name + callback and returns a thenable resolving to a no-op unlisten so
 // the effect's cleanup stays callable. `invoke` is stubbed defensively.
 vi.mock("@/lib/invoke", () => ({
   isTauriRuntime: false,
   invoke: vi.fn(() => Promise.resolve(undefined)),
   appWindow: {
-    listen: (_event: string, cb: (event: unknown) => void) => {
+    listen: (event: string, cb: (event: unknown) => void) => {
+      listenRef.event = event;
       listenRef.callback = cb;
       return Promise.resolve(() => {});
     },
@@ -58,6 +60,7 @@ import { SettingsAuthBlock } from "./SettingsAuthBlock";
 import type { OauthStatus } from "@/lib/oauthClient";
 
 beforeEach(() => {
+  listenRef.event = null;
   listenRef.callback = null;
   oauthState.value = {
     signedIn: true,
@@ -81,8 +84,9 @@ describe("SettingsAuthBlock", () => {
       expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument(),
     );
 
-    // The component registered a listener for the oauth-changed event.
+    // The hook registered a listener for the oauth-changed event specifically.
     expect(listenRef.callback).toBeTypeOf("function");
+    expect(listenRef.event).toBe("palette://oauth-changed");
 
     // Underlying status flips to signed-out; firing the captured callback must
     // re-run load() and flip the button to "Sign in with Google".

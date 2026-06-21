@@ -46,6 +46,7 @@ vi.mock("@/lib/oauthClient", async () => {
 });
 
 import { AuthNotice } from "./AuthNotice";
+import { oauthStatus } from "@/lib/oauthClient";
 import type { OauthStatus } from "@/lib/oauthClient";
 
 beforeEach(() => {
@@ -87,9 +88,9 @@ describe("AuthNotice", () => {
     // Status remains signed-in; firing the event must not surface the banner.
     listenRef.callback?.({});
 
-    // Give the async status check a tick to resolve.
-    await Promise.resolve();
-    await Promise.resolve();
+    // Wait for the async status check to actually run, then assert the banner
+    // stayed hidden (rather than flushing a fixed number of microtasks).
+    await waitFor(() => expect(oauthStatus).toHaveBeenCalled());
     expect(screen.queryByText(/signed out of Axon/i)).not.toBeInTheDocument();
   });
 });
