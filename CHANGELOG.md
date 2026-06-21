@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.17.0] - 2026-06-21
+
+### Added
+- Worker-lane liveness safeguards: a panic in a job runner is caught and recorded
+  as a job failure instead of silently killing the lane; the job watchdog now runs
+  a starvation detector that loudly logs and re-kicks any queue holding pending
+  jobs with nothing running. New `worker_starvation_secs` (default 120) and
+  `crawl_job_timeout_secs` (default 7200) tuning knobs.
+
+### Fixed
+- Crawl worker lanes could silently stop claiming jobs — a runner panic, a leaked
+  SQLite transaction starving the connection pool, or a wedged crawl engine — with
+  no error logged, recovering only on restart. Added a connection-pool
+  ROLLBACK-on-release hook plus best-effort commit/rollback on the claim path, a
+  `pool.acquire()` slow-path warning, and the panic guard, starvation detector,
+  and per-job crawl timeout above.
+
 ## [5.16.6] - 2026-06-20
 
 ### Added
@@ -11,11 +28,6 @@
   `high`).
 - `axon doctor` surfaces a Codex capability probe (available models + rate-limit
   headroom) when the configured LLM backend is `codex-app-server`.
-- Worker-lane liveness safeguards: a panic in a job runner is caught and recorded
-  as a job failure instead of silently killing the lane; the job watchdog now
-  runs a starvation detector that loudly logs and re-kicks any queue holding
-  pending jobs with nothing running. New `worker_starvation_secs` (default 120)
-  and `crawl_job_timeout_secs` (default 7200) tuning knobs.
 
 ### Changed
 - Release version bump.
@@ -31,12 +43,6 @@
   bodies, broadcast buffering, and queued HTML-owning fallback tasks.
 - JSON/YAML/TOML files that exceed the per-file chunk cap now log a warning
   naming the file and the dropped chunk count instead of silently truncating.
-- Crawl worker lanes could silently stop claiming jobs — a runner panic, a leaked
-  SQLite transaction starving the connection pool, or a wedged crawl engine — with
-  no error logged, recovering only on restart. Added a connection-pool
-  ROLLBACK-on-release hook plus best-effort commit/rollback on the claim path, a
-  `pool.acquire()` slow-path warning, and the panic guard, starvation detector,
-  and per-job crawl timeout above.
 
 ## [5.16.5] - 2026-06-20
 
