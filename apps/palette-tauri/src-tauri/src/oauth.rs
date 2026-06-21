@@ -5,3 +5,4 @@
 //! for the pieces; the Tauri commands and bridge glue are added in later tasks.
 
 pub(crate) mod pkce;
+pub(crate) mod store;

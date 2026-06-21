@@ -427,7 +427,7 @@ pub(crate) fn write_axon_config_values(
 /// `OpenOptions::mode`, so it is never world-readable even momentarily (no
 /// umask window between `open` and a separate `chmod`).  On Windows no explicit
 /// permission change is applied; rely on the directory ACL to restrict access.
-fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let tmp = path.with_extension("tmp");
     {
         let mut opts = fs::OpenOptions::new();
