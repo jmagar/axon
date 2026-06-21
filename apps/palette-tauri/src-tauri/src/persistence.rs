@@ -421,32 +421,43 @@ pub(crate) fn write_axon_config_values(
     Ok(())
 }
 
-/// Write `data` to `path` atomically: write to `<path>.tmp`, then rename.
+/// Write `data` to `path` atomically: write to a per-write unique temp file,
+/// then rename.
+///
+/// The temp name carries a UUID so two concurrent writers of the same `path`
+/// (e.g. a login racing a refresh writing `oauth.json`) do not collide on a
+/// fixed `<path>.tmp`.  If any step fails the temp file is best-effort removed
+/// so unique temps don't accumulate on error.
 ///
 /// On Unix, the temp file is created with mode `0o600` atomically via
 /// `OpenOptions::mode`, so it is never world-readable even momentarily (no
 /// umask window between `open` and a separate `chmod`).  On Windows no explicit
 /// permission change is applied; rely on the directory ACL to restrict access.
 pub(crate) fn atomic_write(path: &Path, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let tmp = path.with_extension("tmp");
-    {
-        let mut opts = fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
-
-        #[cfg(unix)]
+    let tmp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    let write = || -> Result<(), Box<dyn std::error::Error>> {
         {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+
+            let mut file = opts.open(&tmp)?;
+
+            use std::io::Write;
+            file.write_all(data)?;
+            file.sync_all()?;
         }
-
-        let mut file = opts.open(&tmp)?;
-
-        use std::io::Write;
-        file.write_all(data)?;
-        file.sync_all()?;
-    }
-    fs::rename(&tmp, path)?;
-    Ok(())
+        fs::rename(&tmp, path)?;
+        Ok(())
+    };
+    write().inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
 }
 
 fn collect_toml_values(prefix: &str, item: &Item, values: &mut HashMap<String, serde_json::Value>) {

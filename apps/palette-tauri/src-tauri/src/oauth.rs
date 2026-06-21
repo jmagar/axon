@@ -26,6 +26,10 @@ use crate::{merged_settings, validate_saved_server_url};
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(240);
 /// Refresh the access token this many seconds before its stated expiry.
 const EXPIRY_SKEW_SECS: i64 = 60;
+/// Hard ceiling on a token refresh so a stalled `/token` can't hold the
+/// credential lock (and freeze all bridge calls) indefinitely — the stream
+/// client has no total request timeout.
+const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 const SCOPE: &str = "axon:read axon:write";
 
 /// Cached credentials for the current process. `Unloaded` until first access,
@@ -37,6 +41,11 @@ enum CredCache {
 
 /// Tauri-managed OAuth state: the credential cache (whose lock also serializes
 /// refresh — single-flight) and a guard that serializes interactive logins.
+///
+/// Known narrow race: an interactive login does NOT hold the cache lock during
+/// the ~240s browser flow, so in a rare ordering its freshly-saved credentials
+/// can be overwritten by a concurrently-completing refresh of the prior session;
+/// it is self-healing on the next refresh.
 pub(crate) struct OauthState {
     creds: tokio::sync::Mutex<CredCache>,
     login: tokio::sync::Mutex<()>,
@@ -203,17 +212,19 @@ async fn refresh_locked(
         )
     };
     let token_endpoint = flow::require_secure_url(&token_endpoint).ok()?.to_string();
-    match flow::refresh_access_token(client, &token_endpoint, &client_id, &refresh_token).await {
-        Ok(token) => {
+    let refresh = flow::refresh_access_token(client, &token_endpoint, &client_id, &refresh_token);
+    match tokio::time::timeout(REFRESH_TIMEOUT, refresh).await {
+        Ok(Ok(token)) => {
             let refreshed = credentials_from_token(client_id, server_url, token_endpoint, token);
             let access = refreshed.access_token.expose().to_string();
             if let Ok(path) = store::credentials_path(app) {
                 let _ = store::save(&path, &refreshed);
             }
             *slot = Some(refreshed);
+            emit_oauth_changed(app);
             Some(access)
         }
-        Err(err) if err.rejected => {
+        Ok(Err(err)) if err.rejected => {
             if let Ok(path) = store::credentials_path(app) {
                 let _ = store::clear(&path);
             }
@@ -221,7 +232,8 @@ async fn refresh_locked(
             emit_oauth_changed(app);
             None
         }
-        Err(_) => None,
+        Ok(Err(_)) => None,
+        Err(_) => None, // refresh timed out — release the lock, keep the session
     }
 }
 
@@ -358,7 +370,8 @@ fn credentials_from_token(
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         token_endpoint,
-        expires_at_unix: now_unix() + token.expires_in as i64,
+        // Clamp so a malformed huge `expires_in` can't wrap negative (→ permanently expired).
+        expires_at_unix: now_unix().saturating_add(token.expires_in.min(i64::MAX as u64) as i64),
         scope: token.scope,
         server_url: server_url.trim_end_matches('/').to_string(),
     }
