@@ -40,12 +40,28 @@ struct ClientRegistrationResponse {
     client_id: String,
 }
 
-/// Why a `/token` request failed. `rejected` (HTTP 4xx) means the server refused
-/// the grant — the refresh token is dead and the session should be cleared.
-/// Otherwise (network / 5xx / bad body) it is transient: keep the session.
+/// Why a `/token` request failed. `rejected` means a definitive grant rejection
+/// (400/401/403/410) — the refresh token is dead and the session should be
+/// cleared. Otherwise (network / 5xx / 429 rate-limit / bad body) it is
+/// transient: keep the session and retry later.
+#[derive(Debug)]
 pub(crate) struct TokenError {
     pub rejected: bool,
     pub message: String,
+}
+
+/// Whether a `/token` HTTP status is a definitive grant rejection (clear the
+/// session) rather than a transient failure. A 429 rate-limit or 408 is NOT a
+/// rejection — wiping a valid session on a transient burst would force a
+/// needless re-login.
+fn is_grant_rejection(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::BAD_REQUEST
+            | reqwest::StatusCode::UNAUTHORIZED
+            | reqwest::StatusCode::FORBIDDEN
+            | reqwest::StatusCode::GONE
+    )
 }
 
 pub(crate) fn discovery_url(base_url: &str) -> String {
@@ -214,7 +230,7 @@ async fn post_token_form(
         // Do NOT echo the response body — a non-standard server could reflect
         // submitted token material back in its error body.
         return Err(TokenError {
-            rejected: status.is_client_error(),
+            rejected: is_grant_rejection(status),
             message: format!("token endpoint returned HTTP {status}"),
         });
     }

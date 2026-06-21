@@ -124,3 +124,18 @@ fn token_forms_have_required_fields() {
     assert!(refresh.contains(&("refresh_token", "refresh-1".to_string())));
     assert!(refresh.contains(&("client_id", "client-123".to_string())));
 }
+
+#[test]
+fn grant_rejection_only_for_definitive_codes_not_transient_4xx() {
+    use reqwest::StatusCode;
+    // Definitive grant rejections → clear the session.
+    assert!(is_grant_rejection(StatusCode::BAD_REQUEST));
+    assert!(is_grant_rejection(StatusCode::UNAUTHORIZED));
+    assert!(is_grant_rejection(StatusCode::FORBIDDEN));
+    assert!(is_grant_rejection(StatusCode::GONE));
+    // Transient — must NOT wipe a valid OAuth session.
+    assert!(!is_grant_rejection(StatusCode::TOO_MANY_REQUESTS)); // 429
+    assert!(!is_grant_rejection(StatusCode::REQUEST_TIMEOUT)); // 408
+    assert!(!is_grant_rejection(StatusCode::INTERNAL_SERVER_ERROR)); // 500
+    assert!(!is_grant_rejection(StatusCode::SERVICE_UNAVAILABLE)); // 503
+}
