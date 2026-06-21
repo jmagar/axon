@@ -52,7 +52,32 @@ pub async fn run_crawl_job(
     // config snapshot carries it and every chunk records `seed_url` = start URL.
     effective_cfg.seed_url = Some(url.clone());
 
-    validate_crawl_job_url(&url, cancel_token.as_ref()).await?;
+    // Single wall-clock deadline for the whole job, anchored here at execution
+    // start (right after the job is claimed) — BEFORE URL validation — so a slow
+    // DNS lookup or connection setup during validation counts against
+    // `crawl_job_timeout_secs` instead of handing the engine a fresh full budget
+    // once validation finally returns. The same deadline bounds validation, the
+    // engine, and the sitemap backfill. `0` disables it.
+    let budget = CrawlBudget {
+        deadline: crawl_timeout_duration(effective_cfg.crawl_job_timeout_secs)
+            .map(|d| tokio::time::Instant::now() + d),
+        secs: effective_cfg.crawl_job_timeout_secs,
+    };
+
+    // Bound validation by the shared deadline: `validate_crawl_job_url` resolves
+    // DNS, so a hung lookup must not park the lane forever before the engine's
+    // own guard could take over.
+    match budget.deadline {
+        Some(dl) => {
+            match tokio::time::timeout_at(dl, validate_crawl_job_url(&url, cancel_token.as_ref()))
+                .await
+            {
+                Ok(inner) => inner?,
+                Err(_elapsed) => return Err(CrawlGuardError::Timeout(budget.secs).into_boxed()),
+            }
+        }
+        None => validate_crawl_job_url(&url, cancel_token.as_ref()).await?,
+    }
 
     let job_output_dir = crate::services::crawl::predict_crawl_output_dir(
         &effective_cfg.output_dir,
@@ -69,14 +94,6 @@ pub async fn run_crawl_job(
     let (progress_tx, progress_task) =
         spawn_crawl_progress_persister(pool, id, attempt_id, job_output_dir.clone());
     let id_str = id.to_string();
-    // Single wall-clock deadline shared by the engine and the sitemap backfill,
-    // so the whole post-validation crawl respects `crawl_job_timeout_secs`. `0`
-    // disables it.
-    let budget = CrawlBudget {
-        deadline: crawl_timeout_duration(effective_cfg.crawl_job_timeout_secs)
-            .map(|d| tokio::time::Instant::now() + d),
-        secs: effective_cfg.crawl_job_timeout_secs,
-    };
     let (mut summary, seen_urls) = run_crawl_engine_guarded(
         &effective_cfg,
         &url,
