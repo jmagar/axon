@@ -1,4 +1,7 @@
-use super::{backfill_enabled, build_crawl_result_json, merge_candidates, run_crawl_job};
+use super::{
+    backfill_enabled, build_crawl_result_json, crawl_timeout_duration, merge_candidates,
+    run_crawl_job, run_with_optional_timeout,
+};
 use crate::core::config::Config;
 use crate::crawl::engine::{AdaptiveCrawlSnapshot, CrawlDiagnostic, CrawlSummary};
 use crate::jobs::backend::JobPayload;
@@ -306,6 +309,114 @@ fn merge_candidates_never_drops_sitemap_urls() {
     for s in &sitemap {
         assert!(out.contains(s), "sitemap URL {s} must not be dropped");
     }
+}
+
+type BoxErr = Box<dyn std::error::Error + Send + Sync>;
+
+/// A future that outlives a tiny timeout returns the timeout `Err` produced by
+/// `on_timeout`, and the callback runs (it is where the spider-shutdown side
+/// effect lives in production). A real ~10ms timeout vs a 60s sleep keeps the
+/// test deterministic without the tokio `test-util` feature.
+#[tokio::test]
+async fn run_with_optional_timeout_elapses_on_slow_future() {
+    let on_timeout_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = on_timeout_called.clone();
+
+    let slow = async {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        Ok::<u32, BoxErr>(7)
+    };
+
+    let err = run_with_optional_timeout(
+        Some(std::time::Duration::from_millis(10)),
+        move || {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            BoxErr::from("timed out")
+        },
+        slow,
+    )
+    .await
+    .expect_err("slow future must time out");
+
+    assert!(
+        err.to_string().contains("timed out"),
+        "expected on_timeout error, got: {err}"
+    );
+    assert!(
+        on_timeout_called.load(std::sync::atomic::Ordering::SeqCst),
+        "on_timeout callback must run on elapse"
+    );
+}
+
+/// A fast future returns its `Ok` value even with a generous timeout, and the
+/// `on_timeout` callback never runs.
+#[tokio::test]
+async fn run_with_optional_timeout_returns_ok_for_fast_future() {
+    let on_timeout_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = on_timeout_called.clone();
+
+    let fast = async { Ok::<u32, BoxErr>(42) };
+    let value = run_with_optional_timeout(
+        Some(std::time::Duration::from_secs(3600)),
+        move || {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            BoxErr::from("should not fire")
+        },
+        fast,
+    )
+    .await
+    .expect("fast future returns Ok");
+
+    assert_eq!(value, 42);
+    assert!(
+        !on_timeout_called.load(std::sync::atomic::Ordering::SeqCst),
+        "on_timeout must not fire when the future completes in time"
+    );
+}
+
+/// `None` (the disabled case — derived from `crawl_job_timeout_secs == 0`)
+/// turns off the timeout entirely: a future that takes a little while still
+/// returns its `Ok` value, and `on_timeout` never runs even though no timeout
+/// guard wraps it.
+#[tokio::test]
+async fn run_with_optional_timeout_none_disables_timeout() {
+    let on_timeout_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = on_timeout_called.clone();
+
+    let slow_but_completes = async {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        Ok::<u32, BoxErr>(99)
+    };
+
+    let value = run_with_optional_timeout(
+        None,
+        move || {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            BoxErr::from("disabled — should not fire")
+        },
+        slow_but_completes,
+    )
+    .await
+    .expect("disabled timeout completes the future");
+
+    assert_eq!(value, 99);
+    assert!(
+        !on_timeout_called.load(std::sync::atomic::Ordering::SeqCst),
+        "on_timeout must not fire when the timeout is disabled (None)"
+    );
+}
+
+/// The `i64` seconds knob maps to an `Option<Duration>` the helper consumes:
+/// `0` disables (None), positive values enable, negatives are treated as
+/// disabled (defensive — a negative timeout is meaningless).
+#[test]
+fn crawl_timeout_duration_maps_seconds_to_option() {
+    assert_eq!(crawl_timeout_duration(0), None);
+    assert_eq!(
+        crawl_timeout_duration(7200),
+        Some(std::time::Duration::from_secs(7200))
+    );
+    assert_eq!(crawl_timeout_duration(-5), None);
 }
 
 /// The backfill gate is an OR, not an AND: with sitemaps disabled but llms.txt enabled,

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
@@ -63,30 +64,15 @@ pub async fn run_crawl_job(
     let (progress_tx, progress_task) =
         spawn_crawl_progress_persister(pool, id, attempt_id, job_output_dir.clone());
     let id_str = id.to_string();
-    let crawl_fut = async {
-        crate::crawl::engine::run_crawl_once(
-            &effective_cfg,
-            &url,
-            effective_cfg.render_mode,
-            &job_output_dir,
-            Some(progress_tx),
-            effective_cfg.discover_sitemaps,
-            Arc::new(HashMap::new()),
-            Some(id_str.as_str()),
-        )
-        .await
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })
-    };
-    let (mut summary, seen_urls) = match cancel_token.as_ref() {
-        Some(token) => tokio::select! {
-            _ = token.cancelled() => {
-                request_spider_crawl_shutdown(&id_str, &url).await;
-                return Err("crawl canceled".into());
-            }
-            r = crawl_fut => r?,
-        },
-        None => crawl_fut.await?,
-    };
+    let (mut summary, seen_urls) = run_crawl_engine_guarded(
+        &effective_cfg,
+        &url,
+        &id_str,
+        &job_output_dir,
+        progress_tx,
+        cancel_token.as_ref(),
+    )
+    .await?;
     if let Err(e) = progress_task.await {
         tracing::warn!(job_id = %id, error = %e, "crawl progress persister task failed");
     }
@@ -135,6 +121,76 @@ pub async fn run_crawl_job(
         embed_deferred.as_deref(),
         sitemap_backfill_error.as_deref(),
     )))
+}
+
+/// Run the crawl engine future under both the wall-clock timeout guard and the
+/// existing cancel-token `select!`. Returns the crawl summary + seen-URL set, or
+/// an `Err` on cancellation / timeout (after draining the active Spider control
+/// target in both cases). Extracted from `run_crawl_job` to keep that fn under
+/// the function-length cap.
+async fn run_crawl_engine_guarded(
+    effective_cfg: &Config,
+    url: &str,
+    id_str: &str,
+    job_output_dir: &std::path::Path,
+    progress_tx: tokio::sync::mpsc::Sender<crate::crawl::engine::CrawlSummary>,
+    cancel_token: Option<&CancellationToken>,
+) -> Result<
+    (
+        crate::crawl::engine::CrawlSummary,
+        std::collections::HashSet<String>,
+    ),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let engine_fut = async {
+        crate::crawl::engine::run_crawl_once(
+            effective_cfg,
+            url,
+            effective_cfg.render_mode,
+            job_output_dir,
+            Some(progress_tx),
+            effective_cfg.discover_sitemaps,
+            Arc::new(HashMap::new()),
+            Some(id_str),
+        )
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })
+    };
+    // Wall-clock guard: if the engine future wedges (spider/Chrome/network hang),
+    // abort it after `crawl_job_timeout_secs` so the single crawl lane returns to
+    // polling instead of parking forever behind a heartbeat. `0` disables it.
+    let timeout = crawl_timeout_duration(effective_cfg.crawl_job_timeout_secs);
+    let timeout_secs = effective_cfg.crawl_job_timeout_secs;
+    let crawl_fut = async {
+        match run_with_optional_timeout(
+            timeout,
+            || -> Box<dyn std::error::Error + Send + Sync> {
+                format!("crawl job exceeded crawl_job_timeout_secs ({timeout_secs}s) — aborted")
+                    .into()
+            },
+            engine_fut,
+        )
+        .await
+        {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                // Same drain as the cancel path: shut down the active Spider
+                // control target before failing the row.
+                request_spider_crawl_shutdown(id_str, url).await;
+                Err(e)
+            }
+        }
+    };
+    match cancel_token {
+        Some(token) => tokio::select! {
+            _ = token.cancelled() => {
+                request_spider_crawl_shutdown(id_str, url).await;
+                Err("crawl canceled".into())
+            }
+            r = crawl_fut => r,
+        },
+        None => crawl_fut.await,
+    }
 }
 
 async fn current_attempt_id(
@@ -316,6 +372,35 @@ async fn ensure_crawl_not_cancelled(
         return Err("crawl canceled".into());
     }
     Ok(())
+}
+
+/// Map the `crawl_job_timeout_secs` knob to an optional wall-clock budget.
+/// `0` (and any non-positive value, defensively) disables the guard.
+fn crawl_timeout_duration(timeout_secs: i64) -> Option<std::time::Duration> {
+    (timeout_secs > 0).then(|| std::time::Duration::from_secs(timeout_secs as u64))
+}
+
+/// Run `fut` under an optional wall-clock timeout. When `timeout` is `None`,
+/// `fut` runs unbounded and its result is returned verbatim. When `Some`, the
+/// future is wrapped in `tokio::time::timeout`; on elapse `on_timeout()` builds
+/// the error returned to the caller (in production it carries the abort
+/// message; the caller separately drains the Spider control target). A future
+/// that completes in time returns its own `Result` unchanged.
+async fn run_with_optional_timeout<T, E, F>(
+    timeout: Option<std::time::Duration>,
+    on_timeout: impl FnOnce() -> E,
+    fut: F,
+) -> Result<T, E>
+where
+    F: Future<Output = Result<T, E>>,
+{
+    match timeout {
+        Some(dur) => match tokio::time::timeout(dur, fut).await {
+            Ok(result) => result,
+            Err(_elapsed) => Err(on_timeout()),
+        },
+        None => fut.await,
+    }
 }
 
 async fn request_spider_crawl_shutdown(crawl_id: &str, url: &str) {
