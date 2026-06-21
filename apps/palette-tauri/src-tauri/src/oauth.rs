@@ -188,7 +188,10 @@ async fn effective_access_token(
     }
 
     // Expired — single-flight a refresh under the held lock.
-    refresh_locked(app, client, server_url, slot).await
+    match refresh_locked(app, client, server_url, slot).await {
+        RefreshResult::Refreshed(token) => Some(token),
+        RefreshResult::Cleared | RefreshResult::Kept => None,
+    }
 }
 
 /// The decision a `/token` refresh yields, separated from its side effects so it
@@ -199,6 +202,16 @@ enum RefreshOutcome {
     /// Definitive grant rejection — wipe the session and emit `oauth-changed`.
     Cleared,
     /// Transient failure or timeout — keep the session untouched.
+    Kept,
+}
+
+/// Outcome of a refresh attempt, surfaced to the bridge so a reactive 401 becomes a precise message.
+enum RefreshResult {
+    /// A fresh access token to retry the request with.
+    Refreshed(String),
+    /// The OAuth session was definitively revoked/expired and has been cleared.
+    Cleared,
+    /// No change — no OAuth session for this server, a transient failure, or a timeout.
     Kept,
 }
 
@@ -223,29 +236,37 @@ fn classify_refresh(
     }
 }
 
-/// Refresh the cached credentials under the held cache lock (single-flight),
-/// returning the new access token. On success it persists + caches the new token
-/// and emits `palette://oauth-changed`; on a definitive grant rejection it clears
-/// the dead session and emits `palette://oauth-changed`; a transient failure or
-/// timeout keeps the session untouched (no emit).
+/// Refresh the cached credentials under the held cache lock (single-flight).
+/// Both a successful refresh (new expiry) and a *rejected* refresh (dead session
+/// cleared) emit `palette://oauth-changed` so the UI re-syncs; a transient
+/// failure or timeout keeps the session and emits nothing. Returns whether a new
+/// token is available (`Refreshed`), the session was cleared (`Cleared`), or
+/// nothing changed (`Kept`).
 async fn refresh_locked(
     app: &AppHandle,
     client: &reqwest::Client,
     server_url: &str,
     slot: &mut Option<StoredCredentials>,
-) -> Option<String> {
-    let (client_id, token_endpoint, refresh_token) = {
-        let creds = slot.as_ref()?;
-        if !creds.matches_server(server_url) {
-            return None;
-        }
-        (
-            creds.client_id.clone(),
-            creds.token_endpoint.clone(),
-            creds.refresh_token.as_ref()?.expose().to_string(),
-        )
+) -> RefreshResult {
+    let snapshot = slot
+        .as_ref()
+        .filter(|creds| creds.matches_server(server_url))
+        .and_then(|creds| {
+            creds.refresh_token.as_ref().map(|rt| {
+                (
+                    creds.client_id.clone(),
+                    creds.token_endpoint.clone(),
+                    rt.expose().to_string(),
+                )
+            })
+        });
+    let Some((client_id, token_endpoint, refresh_token)) = snapshot else {
+        return RefreshResult::Kept;
     };
-    let token_endpoint = flow::require_secure_url(&token_endpoint).ok()?.to_string();
+    let Ok(token_endpoint) = flow::require_secure_url(&token_endpoint) else {
+        return RefreshResult::Kept;
+    };
+    let token_endpoint = token_endpoint.to_string();
     let refresh = flow::refresh_access_token(client, &token_endpoint, &client_id, &refresh_token);
     let result = match tokio::time::timeout(REFRESH_TIMEOUT, refresh).await {
         Ok(r) => r,
@@ -257,40 +278,30 @@ async fn refresh_locked(
     match classify_refresh(result, client_id, server_url, token_endpoint, now_unix()) {
         RefreshOutcome::Refreshed(refreshed) => {
             let access = refreshed.access_token.expose().to_string();
-            match store::credentials_path(app) {
-                Ok(path) => {
-                    if let Err(err) = store::save(&path, &refreshed) {
-                        crate::diag::warn(&format!(
-                            "refreshed OAuth token not persisted (will re-refresh next start): {err}"
-                        ));
-                    }
+            with_credentials_path(app, "persist refreshed token", |path| {
+                if let Err(err) = store::save(path, &refreshed) {
+                    crate::diag::warn(&format!(
+                        "refreshed OAuth token not persisted (will re-refresh next start): {err}"
+                    ));
                 }
-                Err(err) => crate::diag::warn(&format!(
-                    "cannot resolve oauth path to persist refreshed token: {err}"
-                )),
-            }
+            });
             *slot = Some(refreshed);
             emit_oauth_changed(app);
-            Some(access)
+            RefreshResult::Refreshed(access)
         }
         RefreshOutcome::Cleared => {
-            match store::credentials_path(app) {
-                Ok(path) => {
-                    if let Err(err) = store::clear(&path) {
-                        crate::diag::warn(&format!(
-                            "failed to clear dead OAuth session from disk: {err}"
-                        ));
-                    }
+            with_credentials_path(app, "clear dead session", |path| {
+                if let Err(err) = store::clear(path) {
+                    crate::diag::warn(&format!(
+                        "failed to clear dead OAuth session from disk: {err}"
+                    ));
                 }
-                Err(err) => crate::diag::warn(&format!(
-                    "cannot resolve oauth path to clear dead session: {err}"
-                )),
-            }
+            });
             *slot = None;
             emit_oauth_changed(app);
-            None
+            RefreshResult::Cleared
         }
-        RefreshOutcome::Kept => None,
+        RefreshOutcome::Kept => RefreshResult::Kept,
     }
 }
 
@@ -301,6 +312,15 @@ fn emit_oauth_changed(app: &AppHandle) {
     }
 }
 
+/// Resolve the credentials path and run `f` with it; log a context-tagged
+/// warning (e.g. "cannot resolve oauth path to {action}") if resolution fails.
+fn with_credentials_path(app: &AppHandle, action: &str, f: impl FnOnce(&std::path::Path)) {
+    match store::credentials_path(app) {
+        Ok(path) => f(&path),
+        Err(err) => crate::diag::warn(&format!("cannot resolve oauth path to {action}: {err}")),
+    }
+}
+
 /// Force a refresh regardless of apparent validity — used by the bridge on a 401
 /// (proactive expiry can miss clock skew or a server-side revocation).
 async fn force_refresh(
@@ -308,9 +328,9 @@ async fn force_refresh(
     client: &reqwest::Client,
     server_url: &str,
     state: &OauthState,
-) -> Option<String> {
+) -> RefreshResult {
     if flow::require_secure_url(server_url).is_err() {
-        return None;
+        return RefreshResult::Kept;
     }
     let mut cache = state.creds.lock().await;
     ensure_loaded(app, &mut cache);
@@ -341,13 +361,30 @@ where
         .send()
         .await
         .map_err(|err| err.to_string())?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED
-        && let Some(fresh) = force_refresh(app, client, server_url, state).await
-    {
-        return make(Some(&fresh))
-            .send()
-            .await
-            .map_err(|err| err.to_string());
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        match force_refresh(app, client, server_url, state).await {
+            RefreshResult::Refreshed(fresh) => {
+                return make(Some(&fresh))
+                    .send()
+                    .await
+                    .map_err(|err| err.to_string());
+            }
+            RefreshResult::Cleared => {
+                // Session revoked/expired and cleared: fall back to a static bearer
+                // token if configured, else tell the user (shown as the action error).
+                if let Some(static_token) = static_token {
+                    return make(Some(static_token))
+                        .send()
+                        .await
+                        .map_err(|err| err.to_string());
+                }
+                return Err(
+                    "Your Axon OAuth session expired or was revoked — sign in again in Settings."
+                        .to_string(),
+                );
+            }
+            RefreshResult::Kept => {}
+        }
     }
     Ok(response)
 }
