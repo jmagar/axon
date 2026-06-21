@@ -56,14 +56,14 @@ pub(crate) fn load(path: &Path) -> Option<StoredCredentials> {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
         Err(err) => {
-            eprintln!("palette: failed to read oauth credentials: {err}");
+            crate::diag::warn(&format!("failed to read oauth credentials: {err}"));
             return None;
         }
     };
     match serde_json::from_str(&contents) {
         Ok(creds) => Some(creds),
         Err(err) => {
-            eprintln!("palette: ignoring unparseable oauth credentials: {err}");
+            crate::diag::warn(&format!("ignoring unparseable oauth credentials: {err}"));
             None
         }
     }

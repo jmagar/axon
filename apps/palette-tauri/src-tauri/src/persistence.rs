@@ -111,7 +111,7 @@ pub(crate) fn read_settings_result(app: &AppHandle) -> Result<PartialPaletteSett
     let path = match settings_path(app) {
         Ok(p) => p,
         Err(err) => {
-            eprintln!("palette: {err}");
+            crate::diag::warn(&err.to_string());
             return Ok(PartialPaletteSettings::default());
         }
     };
@@ -196,10 +196,10 @@ pub(crate) fn read_default_env_entries() -> Vec<(String, String)> {
         Ok(c) => c,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Vec::new(),
         Err(err) => {
-            eprintln!(
-                "palette: failed to read Axon env file at {}: {err}",
+            crate::diag::warn(&format!(
+                "failed to read Axon env file at {}: {err}",
                 path.display()
-            );
+            ));
             return Vec::new();
         }
     };
@@ -346,20 +346,20 @@ pub(crate) fn read_default_config_values() -> HashMap<String, serde_json::Value>
         Ok(c) => c,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return HashMap::new(),
         Err(err) => {
-            eprintln!(
-                "palette: failed to read Axon config file at {}: {err}",
+            crate::diag::warn(&format!(
+                "failed to read Axon config file at {}: {err}",
                 path.display()
-            );
+            ));
             return HashMap::new();
         }
     };
     let doc = match contents.parse::<DocumentMut>() {
         Ok(d) => d,
         Err(err) => {
-            eprintln!(
-                "palette: failed to parse Axon config file at {}: {err}",
+            crate::diag::warn(&format!(
+                "failed to parse Axon config file at {}: {err}",
                 path.display()
-            );
+            ));
             return HashMap::new();
         }
     };

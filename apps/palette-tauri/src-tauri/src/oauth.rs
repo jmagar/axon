@@ -260,14 +260,14 @@ async fn refresh_locked(
             match store::credentials_path(app) {
                 Ok(path) => {
                     if let Err(err) = store::save(&path, &refreshed) {
-                        eprintln!(
-                            "palette: refreshed OAuth token not persisted (will re-refresh next start): {err}"
-                        );
+                        crate::diag::warn(&format!(
+                            "refreshed OAuth token not persisted (will re-refresh next start): {err}"
+                        ));
                     }
                 }
-                Err(err) => eprintln!(
-                    "palette: cannot resolve oauth path to persist refreshed token: {err}"
-                ),
+                Err(err) => crate::diag::warn(&format!(
+                    "cannot resolve oauth path to persist refreshed token: {err}"
+                )),
             }
             *slot = Some(refreshed);
             emit_oauth_changed(app);
@@ -277,12 +277,14 @@ async fn refresh_locked(
             match store::credentials_path(app) {
                 Ok(path) => {
                     if let Err(err) = store::clear(&path) {
-                        eprintln!("palette: failed to clear dead OAuth session from disk: {err}");
+                        crate::diag::warn(&format!(
+                            "failed to clear dead OAuth session from disk: {err}"
+                        ));
                     }
                 }
-                Err(err) => {
-                    eprintln!("palette: cannot resolve oauth path to clear dead session: {err}")
-                }
+                Err(err) => crate::diag::warn(&format!(
+                    "cannot resolve oauth path to clear dead session: {err}"
+                )),
             }
             *slot = None;
             emit_oauth_changed(app);
@@ -295,7 +297,7 @@ async fn refresh_locked(
 fn emit_oauth_changed(app: &AppHandle) {
     use tauri::Emitter;
     if let Err(err) = app.emit("palette://oauth-changed", ()) {
-        eprintln!("palette: failed to emit oauth-changed event: {err}");
+        crate::diag::warn(&format!("failed to emit oauth-changed event: {err}"));
     }
 }
 

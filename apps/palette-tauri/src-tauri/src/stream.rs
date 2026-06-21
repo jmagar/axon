@@ -130,7 +130,7 @@ pub(crate) async fn axon_http_stream_request(
                 message: message.clone(),
             },
         ) {
-            eprintln!("palette: failed to emit stream error event: {err}");
+            crate::diag::warn(&format!("failed to emit stream error event: {err}"));
         }
         return Err(message);
     }
@@ -187,7 +187,9 @@ fn handle_palette_sse_line(
             let text = match value.get("text").and_then(|t| t.as_str()) {
                 Some(t) => t,
                 None => {
-                    eprintln!("palette: delta SSE event missing 'text' field — data: {data}");
+                    crate::diag::warn(&format!(
+                        "delta SSE event missing 'text' field — data: {data}"
+                    ));
                     ""
                 }
             };
@@ -233,7 +235,7 @@ fn handle_palette_sse_line(
             Ok(true)
         }
         Some(unknown) => {
-            eprintln!("palette: unknown SSE event type '{unknown}' — ignoring");
+            crate::diag::warn(&format!("unknown SSE event type '{unknown}' — ignoring"));
             Ok(false)
         }
         None => Ok(false),
