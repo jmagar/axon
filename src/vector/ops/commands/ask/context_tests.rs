@@ -1300,14 +1300,16 @@ fn empty_rerank_both_modes_does_not_panic() {
 async fn empty_corpus_ask_returns_err_not_panic() {
     // Point at a fresh throwaway collection that has no indexed documents.
     // The ask path must return an Err (not panic) when retrieval finds nothing.
-    let mut cfg = Config::default();
-    cfg.collection = format!(
-        "axon_test_empty_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    );
+    let cfg = Config {
+        collection: format!(
+            "axon_test_empty_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        ),
+        ..Config::default()
+    };
     let result =
         crate::vector::ops::commands::ask::ask_result(&cfg, "what is the meaning of life").await;
     assert!(result.is_err(), "expected Err from empty corpus, got Ok");

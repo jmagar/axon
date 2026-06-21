@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,14 +12,20 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MemorySnapshot {
     pub(crate) rss_bytes: u64,
-    pub(crate) total_bytes: u64,
+    /// Total memory the guard measures RSS against. `NonZeroU64` makes a zero
+    /// denominator unrepresentable, so the percentage below can never divide by
+    /// zero — `linux_memory_snapshot` returns `None` rather than a zero total.
+    pub(crate) total_bytes: NonZeroU64,
 }
 
+/// Whether RSS has reached `abort_percent` of total memory.
+///
+/// `abort_percent` is assumed positive: the spawn path only calls this with a
+/// `Some(positive)` value, and the config layer clamps it to `1.0..=100.0` and
+/// maps non-positive/non-finite input to `None` — the single "disabled"
+/// encoding. `total_bytes` is `NonZeroU64`, so this never divides by zero.
 pub(crate) fn should_abort_for_usage(snapshot: MemorySnapshot, abort_percent: f64) -> bool {
-    if snapshot.total_bytes == 0 || abort_percent <= 0.0 {
-        return false;
-    }
-    let used_percent = (snapshot.rss_bytes as f64 / snapshot.total_bytes as f64) * 100.0;
+    let used_percent = (snapshot.rss_bytes as f64 / snapshot.total_bytes.get() as f64) * 100.0;
     used_percent >= abort_percent
 }
 
@@ -103,7 +110,9 @@ impl Drop for CrawlMemoryGuard {
 #[cfg(target_os = "linux")]
 fn linux_memory_snapshot() -> Option<MemorySnapshot> {
     let rss_bytes = read_status_rss_bytes()?;
-    let total_bytes = effective_memory_total_bytes()?;
+    // A zero total is meaningless and would make the percentage undefined;
+    // treat it as "no telemetry" so the guard simply retries.
+    let total_bytes = NonZeroU64::new(effective_memory_total_bytes()?)?;
     Some(MemorySnapshot {
         rss_bytes,
         total_bytes,

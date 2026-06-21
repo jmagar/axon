@@ -76,15 +76,8 @@ where
         .ok_or("failed to open codex app-server stderr")?;
     let stderr_task = tokio::spawn(read_bounded_stderr(stderr));
 
-    let model = req
-        .model
-        .clone()
-        .or_else(|| req.backend.codex_model.clone());
-    let mut state = CodexStreamState::new(
-        model,
-        req.system_prompt.clone(),
-        req.user_prompt.clone(),
-        req.effort.clone(),
+    let mut state = CodexStreamState::from_request(
+        &req,
         cwd.path().display().to_string(),
         env!("CARGO_PKG_VERSION"),
     );

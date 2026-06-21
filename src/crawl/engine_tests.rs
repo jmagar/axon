@@ -129,14 +129,31 @@ fn uncapped_root_domain_crawl_without_scope_is_rejected() {
 }
 
 #[test]
-fn uncapped_deep_path_crawl_without_scope_is_rejected() {
+fn uncapped_deep_path_crawl_is_allowed_via_auto_scope() {
+    // A deep start URL (≥2 path segments) is auto-scoped to its subtree at crawl
+    // time, which bounds the crawl just like an explicit whitelist — so an
+    // uncapped crawl of it is allowed (the memory guard backstops OOM within the
+    // subtree). Only root/single-segment uncapped crawls stay rejected.
     let mut cfg = default_cfg();
     cfg.max_pages = 0;
     cfg.path_budgets.clear();
     cfg.url_whitelist.clear();
 
-    let err = validate_crawl_memory_safety(&cfg, "https://developer.android.com/reference/kotlin")
-        .expect_err("uncapped unscoped crawl should be rejected even below root");
+    validate_crawl_memory_safety(&cfg, "https://developer.android.com/reference/kotlin")
+        .expect("deep-path uncapped crawl is bounded by auto-scope and should be allowed");
+}
+
+#[test]
+fn uncapped_single_segment_crawl_without_scope_is_rejected() {
+    // A single-segment path is NOT auto-scoped (too broad), so an uncapped crawl
+    // of it remains rejected.
+    let mut cfg = default_cfg();
+    cfg.max_pages = 0;
+    cfg.path_budgets.clear();
+    cfg.url_whitelist.clear();
+
+    let err = validate_crawl_memory_safety(&cfg, "https://developer.android.com/reference")
+        .expect_err("uncapped single-segment crawl should be rejected");
 
     assert!(err.contains("uncapped unscoped crawl"));
 }
@@ -207,11 +224,39 @@ async fn run_crawl_once_rejects_uncapped_broad_crawl_before_output_dirs() {
 fn crawl_memory_guard_trips_at_configured_ram_percent() {
     let snapshot = memory_guard::MemorySnapshot {
         rss_bytes: 900,
-        total_bytes: 1000,
+        total_bytes: std::num::NonZeroU64::new(1000).unwrap(),
     };
 
     assert!(memory_guard::should_abort_for_usage(snapshot, 85.0));
     assert!(!memory_guard::should_abort_for_usage(snapshot, 95.0));
+}
+
+#[test]
+fn crawl_memory_guard_threshold_is_inclusive() {
+    // Exactly at the threshold must trip (the comparison is `>=`).
+    let at = memory_guard::MemorySnapshot {
+        rss_bytes: 850,
+        total_bytes: std::num::NonZeroU64::new(1000).unwrap(),
+    };
+    assert!(memory_guard::should_abort_for_usage(at, 85.0));
+    // One byte below must not.
+    let below = memory_guard::MemorySnapshot {
+        rss_bytes: 849,
+        total_bytes: std::num::NonZeroU64::new(1000).unwrap(),
+    };
+    assert!(!memory_guard::should_abort_for_usage(below, 85.0));
+    // `total_bytes == 0` (divide-by-zero) is unrepresentable: `MemorySnapshot`
+    // holds a `NonZeroU64`, so the guard can never be constructed with it.
+}
+
+#[tokio::test]
+async fn crawl_memory_guard_disabled_never_trips() {
+    // `None` abort_percent is the single "disabled" encoding: no reason is ever
+    // recorded and stop() is a clean no-op.
+    let guard = memory_guard::CrawlMemoryGuard::spawn("job-1", "https://example.com", None);
+    assert!(guard.abort_reason().is_none());
+    guard.stop();
+    assert!(guard.abort_reason().is_none());
 }
 
 #[test]

@@ -14,7 +14,7 @@
 use serde_json::{Value, json};
 use std::error::Error as StdError;
 
-use crate::core::llm::{CompletionResponse, UsageSnapshot};
+use crate::core::llm::{CompletionRequest, CompletionResponse, ReasoningEffort, UsageSnapshot};
 
 type BoxError = Box<dyn StdError + Send + Sync>;
 
@@ -110,7 +110,7 @@ pub struct CodexStreamState {
     model: Option<String>,
     system_prompt: Option<String>,
     user_prompt: String,
-    effort: Option<String>,
+    effort: Option<ReasoningEffort>,
     cwd: String,
     version: String,
     thread_id: Option<String>,
@@ -126,7 +126,7 @@ impl CodexStreamState {
         model: Option<String>,
         system_prompt: Option<String>,
         user_prompt: impl Into<String>,
-        effort: Option<String>,
+        effort: Option<ReasoningEffort>,
         cwd: impl Into<String>,
         version: impl Into<String>,
     ) -> Self {
@@ -143,6 +143,31 @@ impl CodexStreamState {
             usage: None,
             last_error: None,
         }
+    }
+
+    /// Build the stream state from a [`CompletionRequest`], mapping each field
+    /// by name. Prefer this over [`CodexStreamState::new`] at call sites: `new`
+    /// takes several adjacent `Option<String>`/string args that are easy to
+    /// transpose silently, whereas this maps `req` field-by-field so the
+    /// compiler checks the wiring.
+    #[must_use]
+    pub fn from_request(
+        req: &CompletionRequest,
+        cwd: impl Into<String>,
+        version: impl Into<String>,
+    ) -> Self {
+        let model = req
+            .model
+            .clone()
+            .or_else(|| req.backend.codex_model.clone());
+        Self::new(
+            model,
+            req.system_prompt.clone(),
+            req.user_prompt.clone(),
+            req.effort,
+            cwd,
+            version,
+        )
     }
 
     /// The `initialize` line that kicks off the handshake.
@@ -205,7 +230,11 @@ impl CodexStreamState {
                     .and_then(Value::as_str)
                     .ok_or("codex thread/start response missing thread.id")?
                     .to_string();
-                let line = turn_start_line(&thread_id, &self.user_prompt, self.effort.as_deref());
+                let line = turn_start_line(
+                    &thread_id,
+                    &self.user_prompt,
+                    self.effort.map(ReasoningEffort::as_wire),
+                );
                 self.thread_id = Some(thread_id);
                 Ok(CodexStep::Send(vec![line]))
             }

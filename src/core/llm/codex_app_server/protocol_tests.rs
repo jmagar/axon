@@ -93,6 +93,30 @@ fn turn_start_carries_effort_when_set() {
 }
 
 #[test]
+fn reasoning_effort_wire_forms_are_stable() {
+    assert_eq!(ReasoningEffort::Low.as_wire(), "low");
+    assert_eq!(ReasoningEffort::Medium.as_wire(), "medium");
+    assert_eq!(ReasoningEffort::High.as_wire(), "high");
+}
+
+#[test]
+fn from_request_maps_fields_by_name() {
+    // Guards against silent positional transposition: each CompletionRequest
+    // field must land in the matching CodexStreamState field.
+    let req = CompletionRequest::new("user question")
+        .system_prompt("system instructions")
+        .effort(ReasoningEffort::High);
+    let state = CodexStreamState::from_request(&req, "/work/dir", "1.2.3");
+    assert_eq!(state.user_prompt, "user question");
+    assert_eq!(state.system_prompt.as_deref(), Some("system instructions"));
+    assert_eq!(state.effort, Some(ReasoningEffort::High));
+    assert_eq!(state.cwd, "/work/dir");
+    assert_eq!(state.version, "1.2.3");
+    // No model configured → resolution leaves it unset rather than inventing one.
+    assert_eq!(state.model, None);
+}
+
+#[test]
 fn turn_start_omits_effort_when_none() {
     let line = turn_start_line("thr_abc", "Do the thing.", None);
     let turn: Value = serde_json::from_str(&line).unwrap();
@@ -120,7 +144,7 @@ fn system_prompt_routed_to_developer_instructions_not_joined_prompt() {
         Some("gpt-5.5".to_string()),
         Some("Be concise.".to_string()),
         "What is 2+2?",
-        Some("medium".to_string()),
+        Some(ReasoningEffort::Medium),
         "/tmp/cwd",
         "9.9.9",
     );

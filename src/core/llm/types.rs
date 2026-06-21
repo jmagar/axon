@@ -225,6 +225,28 @@ impl SynthesisModelProfile {
     }
 }
 
+/// Reasoning-effort hint forwarded to backends that support it (currently the
+/// Codex app-server `turn/start` `effort` param). Making this an enum keeps an
+/// invalid value (e.g. a `"hgih"` typo) unrepresentable at the call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningEffort {
+    /// Wire form sent to the Codex app-server `effort` param.
+    #[must_use]
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionRequest {
     pub system_prompt: Option<String>,
@@ -232,10 +254,11 @@ pub struct CompletionRequest {
     pub model: Option<String>,
     pub stream: bool,
     pub backend: LlmBackendConfig,
-    /// Reasoning-effort hint for backends that support it (e.g. Codex app-server
-    /// `turn/start` `effort` param). `"low"` for summarize, `"high"` for
-    /// evaluate/judge. `None` lets the server apply its default.
-    pub effort: Option<String>,
+    /// Reasoning-effort hint for backends that support it (currently the Codex
+    /// app-server `turn/start` `effort` param). `summarize` requests use
+    /// [`ReasoningEffort::Low`]; the evaluate judge uses [`ReasoningEffort::High`].
+    /// `None` lets the backend apply its own default.
+    pub effort: Option<ReasoningEffort>,
 }
 
 impl CompletionRequest {
@@ -270,8 +293,8 @@ impl CompletionRequest {
     }
 
     #[must_use]
-    pub fn effort(mut self, effort: impl Into<String>) -> Self {
-        self.effort = Some(effort.into());
+    pub fn effort(mut self, effort: ReasoningEffort) -> Self {
+        self.effort = Some(effort);
         self
     }
 
