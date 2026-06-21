@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::core::logging::{log_done, log_info, log_warn};
 use crate::ingest::progress::PhaseReporter;
+use crate::vector::ops::input::select::{is_minified_asset_filename, is_ts_declaration_file};
 use crate::vector::ops::{SourceDocument, embed_prepared_docs, prepare_source_document};
 use anyhow::Result;
 use octocrab::Octocrab;
@@ -86,7 +87,7 @@ pub fn is_indexable_source_path(path: &str) -> bool {
 
     // Reject TypeScript declaration files and minified assets — compiler/bundler output.
     let filename_lower = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
-    if is_generated_declaration_file(&filename_lower) || is_minified_asset(&filename_lower) {
+    if is_ts_declaration_file(&filename_lower) || is_minified_asset_filename(&filename_lower) {
         return false;
     }
 
@@ -146,10 +147,7 @@ fn is_generated_bulk_path(path: &str) -> bool {
 
     // TypeScript declaration files (.d.ts, .d.mts, .d.cts) and minified assets
     // are compiler/bundler output — no useful semantic content for RAG.
-    if is_generated_declaration_file(filename) {
-        return true;
-    }
-    if is_minified_asset(filename) {
+    if is_ts_declaration_file(filename) || is_minified_asset_filename(filename) {
         return true;
     }
 
@@ -158,24 +156,6 @@ fn is_generated_bulk_path(path: &str) -> bool {
         || lower.starts_with("gen/")
         || lower.contains("/gen/");
     generated_segment && matches!(ext, "json" | "yaml" | "yml" | "ts" | "tsx" | "js" | "jsx")
-}
-
-/// Returns true for TypeScript declaration files that are compiler output, not source.
-/// Matches `*.d.ts`, `*.d.mts`, `*.d.cts` by checking for a `.d.` infix in the filename.
-pub(crate) fn is_generated_declaration_file(filename: &str) -> bool {
-    // filename is expected to be already lowercased (no allocation needed for comparison).
-    filename.ends_with(".d.ts") || filename.ends_with(".d.mts") || filename.ends_with(".d.cts")
-}
-
-/// Returns true for minified/bundled JavaScript or CSS assets.
-/// Matches `*.min.js`, `*.min.css`, and common bundler output patterns like
-/// `chunk-abc123.js` and `main.bundle.js`.
-pub(crate) fn is_minified_asset(filename: &str) -> bool {
-    filename.ends_with(".min.js")
-        || filename.ends_with(".min.mjs")
-        || filename.ends_with(".min.css")
-        || filename.ends_with(".bundle.js")
-        || filename.ends_with(".bundle.mjs")
 }
 
 /// Parse an "owner/repo" string into (owner, repo) parts.

@@ -214,6 +214,44 @@ fn chunk_file_handles_multibyte_content_without_panic() {
 }
 
 #[test]
+fn permissive_skips_declaration_and_minified_files() {
+    use crate::vector::ops::input::classify::path_extension;
+    // Verify the predicate logic that drives Permissive include_file decisions.
+    // Extension alone (`ts`, `js`, `css`) is not in BINARY_EXTENSIONS, so only
+    // is_generated_filename blocks these files under the Permissive policy.
+    let cases: &[(&str, bool)] = &[
+        ("index.d.ts", false),
+        ("types.d.mts", false),
+        ("app.min.js", false),
+        ("styles.min.css", false),
+        ("main.bundle.js", false),
+        ("index.ts", true),
+        ("styles.css", true),
+        ("app.js", true),
+    ];
+    for (name, expect_included) in cases {
+        let name_lower = name.to_ascii_lowercase();
+        let included = !select::is_binary_ext(path_extension(name))
+            && !select::is_generated_filename(&name_lower);
+        assert_eq!(
+            included, *expect_included,
+            "Permissive policy for '{name}': expected included={expect_included}, got {included}"
+        );
+    }
+}
+
+#[test]
+fn json_yaml_chunks_are_capped_at_max() {
+    let many_keys: String = (0..100).map(|i| format!("key_{i}: value\n")).collect();
+    let chunks = chunk_file(&many_keys, "yaml");
+    assert!(
+        chunks.len() <= MAX_JSON_YAML_CHUNKS,
+        "expected ≤{MAX_JSON_YAML_CHUNKS} chunks for large YAML, got {}",
+        chunks.len()
+    );
+}
+
+#[test]
 fn chunking_method_returns_prose_for_chunk_without_symbol() {
     use crate::vector::ops::input::code::{ChunkSource, CodeChunk};
     let chunk = CodeChunk {
