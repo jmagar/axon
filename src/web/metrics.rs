@@ -24,12 +24,10 @@ pub(super) async fn metrics_handler() -> Response {
         return (StatusCode::SERVICE_UNAVAILABLE, "metrics not initialized").into_response();
     };
     let body = handle.render();
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
-        )
-        .body(axum::body::Body::from(body))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    let mut response = (StatusCode::OK, body).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+    );
+    response
 }
