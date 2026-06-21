@@ -47,7 +47,7 @@ fn metadata_deserializes_ignoring_extra_fields_and_optional_registration() {
 fn token_response_deserializes_with_and_without_refresh() {
     let with = r#"{"access_token":"a","token_type":"Bearer","expires_in":3600,"refresh_token":"r","scope":"axon:read axon:write"}"#;
     let parsed: TokenResponse = serde_json::from_str(with).unwrap();
-    assert_eq!(parsed.refresh_token.as_deref(), Some("r"));
+    assert_eq!(parsed.refresh_token.as_ref().map(|s| s.expose()), Some("r"));
     assert_eq!(parsed.expires_in, 3600);
 
     let without = r#"{"access_token":"a","token_type":"Bearer","expires_in":3600,"scope":"axon:read axon:write"}"#;

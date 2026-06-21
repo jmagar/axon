@@ -76,28 +76,33 @@ pub(crate) async fn axon_http_stream_request(
         .map_err(|err| err.to_string())?;
 
     let client = (*stream_client).client();
-    let mut builder = client
-        .post(url)
-        .header(reqwest::header::ACCEPT, "text/event-stream")
-        .json(&request.body);
     let static_token = settings
         .token
         .as_deref()
         .map(str::trim)
         .filter(|token| !token.is_empty());
-    if let Some(token) =
-        crate::oauth::resolve_auth_token(&app, client, &base_url, static_token, &oauth_state).await
-    {
-        builder = builder.bearer_auth(&token).header("x-api-key", &token);
-    }
-
-    let response = builder.send().await.map_err(|err| err.to_string())?;
+    let body = &request.body;
+    let make = |token: Option<&str>| {
+        let mut b = client
+            .post(&url)
+            .header(reqwest::header::ACCEPT, "text/event-stream")
+            .json(body);
+        if let Some(t) = token {
+            b = b.bearer_auth(t).header("x-api-key", t);
+        }
+        b
+    };
+    let response =
+        crate::oauth::send_with_reauth(&app, client, &base_url, static_token, &oauth_state, make)
+            .await?;
     if !response.status().is_success() {
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .unwrap_or_else(|err| format!("<failed to read body: {err}>"));
+        let text = crate::axon_bridge::read_limited_text_body(
+            response,
+            crate::axon_bridge::MAX_ARTIFACT_ERROR_MESSAGE_BYTES,
+        )
+        .await
+        .unwrap_or_default();
         return Err(format!("stream request failed with HTTP {status}: {text}"));
     }
 

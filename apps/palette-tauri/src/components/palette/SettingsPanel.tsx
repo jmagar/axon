@@ -15,13 +15,13 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
+import { SettingsAuthBlock } from "@/components/palette/SettingsAuthBlock";
 import { MiniToggle, SecretInput, SelectInput, TextInput } from "@/components/palette/SettingsFields";
 import { Button } from "@/components/ui/aurora/button";
 import { createAxonClient, executeAction, type PaletteConfig, type PaletteResult } from "@/lib/axonClient";
 import { ACTIONS } from "@/lib/actions";
-import { describeOauthStatus, oauthLogin, oauthLogout, oauthStatus, type OauthStatus } from "@/lib/oauthClient";
 import {
   CONFIG_COUNT,
   CONFIG_DEFAULTS,
@@ -199,64 +199,6 @@ export function SettingsPanel({
   );
 }
 
-function AuthBlock() {
-  const [status, setStatus] = useState<OauthStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    oauthStatus()
-      .then((next) => active && setStatus(next))
-      .catch((err) => {
-        if (!active) return;
-        setStatus({ signedIn: false, scope: null, expiresAtUnix: null, serverUrl: null });
-        setError(err instanceof Error ? err.message : "Could not read sign-in status.");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const view = status
-    ? describeOauthStatus(status)
-    : { label: "Checking…", detail: "Reading saved credentials…", tone: "neutral" as const };
-
-  const run = async (action: () => Promise<OauthStatus>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setStatus(await action());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "OAuth request failed.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="settings-stack">
-      <span className="settings-section-label">Authentication</span>
-      <div className="settings-auth-status" data-tone={view.tone} aria-live="polite">
-        <strong>{view.label}</strong>
-        <span>{view.detail}</span>
-        {error && <span className="settings-error">{error}</span>}
-      </div>
-      {view.tone === "success" ? (
-        <Button size="sm" variant="neutral" disabled={busy} onClick={() => void run(oauthLogout)}>
-          <KeyRound size={14} />
-          {busy ? "Working…" : "Sign out"}
-        </Button>
-      ) : (
-        <Button size="sm" variant="aurora" disabled={busy} onClick={() => void run(oauthLogin)}>
-          <KeyRound size={14} />
-          {busy ? "Opening browser…" : "Sign in with Google"}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 function ConnectionPanel({
   draftConfig,
   shortcutOptions,
@@ -280,7 +222,7 @@ function ConnectionPanel({
           <TextInput value={draftConfig.collection} onChange={(value) => updateConfig("collection", value)} mono />
         </Field>
       </div>
-      <AuthBlock />
+      <SettingsAuthBlock />
       <div className="settings-stack">
         <span className="settings-section-label">Client</span>
         <Field label="Global shortcut" hint="press to record">

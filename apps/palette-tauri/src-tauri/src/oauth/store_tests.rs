@@ -4,8 +4,8 @@ use std::env;
 fn sample(server: &str, refresh: Option<&str>, expires_at: i64) -> StoredCredentials {
     StoredCredentials {
         client_id: "client-123".to_string(),
-        access_token: "access-abc".to_string(),
-        refresh_token: refresh.map(str::to_string),
+        access_token: "access-abc".into(),
+        refresh_token: refresh.map(Secret::from),
         token_endpoint: format!("{server}/token"),
         expires_at_unix: expires_at,
         scope: "axon:read axon:write".to_string(),
@@ -28,8 +28,11 @@ fn save_then_load_round_trips() {
     let loaded = load(&path).expect("credentials present after save");
 
     assert_eq!(loaded.client_id, "client-123");
-    assert_eq!(loaded.access_token, "access-abc");
-    assert_eq!(loaded.refresh_token.as_deref(), Some("refresh-xyz"));
+    assert_eq!(loaded.access_token.expose(), "access-abc");
+    assert_eq!(
+        loaded.refresh_token.as_ref().map(|s| s.expose()),
+        Some("refresh-xyz")
+    );
     assert_eq!(loaded.token_endpoint, "https://axon.example.com/token");
     assert_eq!(loaded.server_url, "https://axon.example.com");
     std::fs::remove_dir_all(&dir).ok();

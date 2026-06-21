@@ -4,7 +4,7 @@ use crate::oauth::store::StoredCredentials;
 fn creds(server: &str) -> StoredCredentials {
     StoredCredentials {
         client_id: "c".to_string(),
-        access_token: "a".to_string(),
+        access_token: "a".into(),
         refresh_token: None,
         token_endpoint: format!("{server}/token"),
         expires_at_unix: 4_102_444_800,

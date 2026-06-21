@@ -1,43 +1,29 @@
 //! Persistence for OAuth credentials, stored beside `settings.json` in the
 //! app config dir as `oauth.json` (mode 0o600). Holds a sensitive refresh
-//! token — the `Debug` impl is hand-written and redacted; never derive it.
+//! token — the token fields use `Secret`, which redacts itself in `Debug`, so
+//! the derived `Debug` is safe.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::oauth::secret::Secret;
+
 const CREDENTIALS_FILE: &str = "oauth.json";
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct StoredCredentials {
     pub client_id: String,
-    pub access_token: String,
+    pub access_token: Secret,
     #[serde(default)]
-    pub refresh_token: Option<String>,
+    pub refresh_token: Option<Secret>,
     /// The token endpoint discovered at login. Refresh posts here rather than
     /// reconstructing `{server_url}/token`, which breaks behind reverse proxies.
     pub token_endpoint: String,
     pub expires_at_unix: i64,
     pub scope: String,
     pub server_url: String,
-}
-
-impl std::fmt::Debug for StoredCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StoredCredentials")
-            .field("client_id", &self.client_id)
-            .field("access_token", &"<redacted>")
-            .field(
-                "refresh_token",
-                &self.refresh_token.as_ref().map(|_| "<redacted>"),
-            )
-            .field("token_endpoint", &self.token_endpoint)
-            .field("expires_at_unix", &self.expires_at_unix)
-            .field("scope", &self.scope)
-            .field("server_url", &self.server_url)
-            .finish()
-    }
 }
 
 impl StoredCredentials {

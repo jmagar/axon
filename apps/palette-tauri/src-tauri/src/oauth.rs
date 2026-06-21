@@ -9,6 +9,7 @@
 pub(crate) mod callback_server;
 pub(crate) mod flow;
 pub(crate) mod pkce;
+pub(crate) mod secret;
 pub(crate) mod store;
 
 use std::time::Duration;
@@ -147,19 +148,6 @@ pub(crate) async fn axon_oauth_status(
     Ok(status_for(slot.as_ref(), &server_url))
 }
 
-/// Resolve the token to attach to a bridge request: a valid OAuth access token
-/// for `server_url` (refreshing single-flight on expiry), else the static token.
-pub(crate) async fn resolve_auth_token(
-    app: &AppHandle,
-    client: &reqwest::Client,
-    server_url: &str,
-    static_token: Option<&str>,
-    state: &OauthState,
-) -> Option<String> {
-    let oauth = effective_access_token(app, client, server_url, state).await;
-    pick_token(oauth, static_token.map(str::to_string))
-}
-
 /// The cached OAuth access token for `server_url`, refreshed if expired. Holds
 /// the cache lock across any refresh so concurrent callers single-flight.
 async fn effective_access_token(
@@ -179,8 +167,31 @@ async fn effective_access_token(
         unreachable!("ensure_loaded sets Loaded")
     };
 
-    // Snapshot the fields needed before any await (ends the borrow on `slot`).
-    let (client_id, token_endpoint, refresh_token, access_token, valid) = {
+    // Fast path: valid cached token for this server, no refresh needed.
+    {
+        let creds = slot.as_ref()?;
+        if !creds.matches_server(server_url) {
+            return None;
+        }
+        if !creds.is_expired(now_unix(), EXPIRY_SKEW_SECS) {
+            return Some(creds.access_token.expose().to_string());
+        }
+    }
+
+    // Expired — single-flight a refresh under the held lock.
+    refresh_locked(app, client, server_url, slot).await
+}
+
+/// Refresh the cached credentials under the held cache lock (single-flight),
+/// returning the new access token. A *rejected* refresh clears the dead session
+/// and emits `palette://oauth-changed`; a transient failure keeps it.
+async fn refresh_locked(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    server_url: &str,
+    slot: &mut Option<StoredCredentials>,
+) -> Option<String> {
+    let (client_id, token_endpoint, refresh_token) = {
         let creds = slot.as_ref()?;
         if !creds.matches_server(server_url) {
             return None;
@@ -188,33 +199,88 @@ async fn effective_access_token(
         (
             creds.client_id.clone(),
             creds.token_endpoint.clone(),
-            creds.refresh_token.clone(),
-            creds.access_token.clone(),
-            !creds.is_expired(now_unix(), EXPIRY_SKEW_SECS),
+            creds.refresh_token.as_ref()?.expose().to_string(),
         )
     };
-    if valid {
-        return Some(access_token);
-    }
-
-    // Expired. Re-validate the stored endpoint, then single-flight a refresh.
-    let refresh_token = refresh_token?;
     let token_endpoint = flow::require_secure_url(&token_endpoint).ok()?.to_string();
     match flow::refresh_access_token(client, &token_endpoint, &client_id, &refresh_token).await {
         Ok(token) => {
             let refreshed = credentials_from_token(client_id, server_url, token_endpoint, token);
-            let access = refreshed.access_token.clone();
+            let access = refreshed.access_token.expose().to_string();
             if let Ok(path) = store::credentials_path(app) {
                 let _ = store::save(&path, &refreshed);
             }
             *slot = Some(refreshed);
             Some(access)
         }
-        Err(err) => {
-            eprintln!("palette: OAuth token refresh failed, falling back: {err}");
+        Err(err) if err.rejected => {
+            if let Ok(path) = store::credentials_path(app) {
+                let _ = store::clear(&path);
+            }
+            *slot = None;
+            emit_oauth_changed(app);
             None
         }
+        Err(_) => None,
     }
+}
+
+fn emit_oauth_changed(app: &AppHandle) {
+    use tauri::Emitter;
+    if let Err(err) = app.emit("palette://oauth-changed", ()) {
+        eprintln!("palette: failed to emit oauth-changed event: {err}");
+    }
+}
+
+/// Force a refresh regardless of apparent validity — used by the bridge on a 401
+/// (proactive expiry can miss clock skew or a server-side revocation).
+async fn force_refresh(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    server_url: &str,
+    state: &OauthState,
+) -> Option<String> {
+    if flow::require_secure_url(server_url).is_err() {
+        return None;
+    }
+    let mut cache = state.creds.lock().await;
+    ensure_loaded(app, &mut cache);
+    let CredCache::Loaded(slot) = &mut *cache else {
+        unreachable!("ensure_loaded sets Loaded")
+    };
+    refresh_locked(app, client, server_url, slot).await
+}
+
+/// Send a bridge request with the resolved auth token; if the server answers
+/// 401 while an OAuth session exists, force a refresh and resend once. `make`
+/// builds a fresh `RequestBuilder` (method/URL/headers/body) given the token to
+/// attach, so the request can be rebuilt for the retry.
+pub(crate) async fn send_with_reauth<F>(
+    app: &AppHandle,
+    client: &reqwest::Client,
+    server_url: &str,
+    static_token: Option<&str>,
+    state: &OauthState,
+    make: F,
+) -> Result<reqwest::Response, String>
+where
+    F: Fn(Option<&str>) -> reqwest::RequestBuilder,
+{
+    let oauth = effective_access_token(app, client, server_url, state).await;
+    let token = pick_token(oauth, static_token.map(str::to_string));
+    let response = make(token.as_deref())
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        && let Some(fresh) = force_refresh(app, client, server_url, state).await
+    {
+        return make(Some(&fresh))
+            .send()
+            .await
+            .map_err(|err| err.to_string());
+    }
+    Ok(response)
 }
 
 /// Run the browser-based authorization-code flow and return fresh credentials.

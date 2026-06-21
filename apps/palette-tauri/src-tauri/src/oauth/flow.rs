@@ -5,6 +5,8 @@
 
 use serde::Deserialize;
 
+use crate::oauth::secret::Secret;
+
 /// Subset of the RFC 8414 authorization-server metadata the client needs.
 /// Extra fields in the document are ignored. `registration_endpoint` is
 /// optional — a DCR-disabled server omits it.
@@ -17,35 +19,33 @@ pub(crate) struct AuthServerMetadata {
 }
 
 /// The `/token` success response (lab-auth omits `refresh_token` when the
-/// upstream IdP did not return one). `Debug` is redacted — never derive it.
-#[derive(Clone, Deserialize)]
+/// upstream IdP did not return one). Token fields use `Secret`, which redacts
+/// itself in `Debug`, so the derived `Debug` is safe.
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct TokenResponse {
-    pub access_token: String,
+    pub access_token: Secret,
+    // Part of the `/token` wire response but unused by the client; kept so the
+    // field deserializes. The derived `Debug` no longer reads it (the previous
+    // hand-written impl did), so silence dead-code here.
+    #[allow(dead_code)]
     pub token_type: String,
     pub expires_in: u64,
     #[serde(default)]
-    pub refresh_token: Option<String>,
+    pub refresh_token: Option<Secret>,
     pub scope: String,
-}
-
-impl std::fmt::Debug for TokenResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TokenResponse")
-            .field("access_token", &"<redacted>")
-            .field("token_type", &self.token_type)
-            .field("expires_in", &self.expires_in)
-            .field(
-                "refresh_token",
-                &self.refresh_token.as_ref().map(|_| "<redacted>"),
-            )
-            .field("scope", &self.scope)
-            .finish()
-    }
 }
 
 #[derive(Deserialize)]
 struct ClientRegistrationResponse {
     client_id: String,
+}
+
+/// Why a `/token` request failed. `rejected` (HTTP 4xx) means the server refused
+/// the grant — the refresh token is dead and the session should be cleared.
+/// Otherwise (network / 5xx / bad body) it is transient: keep the session.
+pub(crate) struct TokenError {
+    pub rejected: bool,
+    pub message: String,
 }
 
 pub(crate) fn discovery_url(base_url: &str) -> String {
@@ -178,6 +178,7 @@ pub(crate) async fn exchange_code(
         &authorization_code_form(code, client_id, redirect_uri, code_verifier),
     )
     .await
+    .map_err(|e| e.message)
 }
 
 pub(crate) async fn refresh_access_token(
@@ -185,7 +186,7 @@ pub(crate) async fn refresh_access_token(
     token_endpoint: &str,
     client_id: &str,
     refresh_token: &str,
-) -> Result<TokenResponse, String> {
+) -> Result<TokenResponse, TokenError> {
     post_token_form(
         client,
         token_endpoint,
@@ -198,22 +199,33 @@ async fn post_token_form(
     client: &reqwest::Client,
     token_endpoint: &str,
     form: &[(&'static str, String)],
-) -> Result<TokenResponse, String> {
+) -> Result<TokenResponse, TokenError> {
     let response = client
         .post(token_endpoint)
         .form(form)
         .send()
         .await
-        .map_err(|err| format!("token request failed: {err}"))?;
+        .map_err(|err| TokenError {
+            rejected: false,
+            message: format!("token request failed: {err}"),
+        })?;
     let status = response.status();
     if !status.is_success() {
         // Do NOT echo the response body — a non-standard server could reflect
         // submitted token material back in its error body.
-        return Err(format!("token endpoint returned HTTP {status}"));
+        return Err(TokenError {
+            rejected: status.is_client_error(),
+            message: format!("token endpoint returned HTTP {status}"),
+        });
     }
-    let text = response.text().await.map_err(|err| err.to_string())?;
-    serde_json::from_str(&text)
-        .map_err(|_| "token endpoint returned an invalid response".to_string())
+    let text = response.text().await.map_err(|err| TokenError {
+        rejected: false,
+        message: err.to_string(),
+    })?;
+    serde_json::from_str(&text).map_err(|_| TokenError {
+        rejected: false,
+        message: "token endpoint returned an invalid response".to_string(),
+    })
 }
 
 #[cfg(test)]
