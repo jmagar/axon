@@ -463,12 +463,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             set_blur_dismiss,
             axon_bridge::axon_http_request,
             axon_bridge::axon_artifact_request,
-            axon_http_stream_request
+            axon_http_stream_request,
+            oauth::axon_oauth_login,
+            oauth::axon_oauth_logout,
+            oauth::axon_oauth_status
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
         .manage(bridge_client)
         .manage(stream_client)
+        .manage(oauth::OauthState::new())
         .setup(|app| {
             if let Err(err) = install_tray(app) {
                 log_palette_warning("failed to install tray icon", err);
