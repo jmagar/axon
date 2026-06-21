@@ -1,0 +1,222 @@
+//! OAuth wire protocol: RFC 8414 discovery, RFC 7591 dynamic client
+//! registration, and the PKCE authorization-code + refresh token exchanges.
+//! Pure builders/validators are unit-tested; the async wrappers are thin
+//! reqwest calls. Token-bearing error strings never echo response bodies.
+
+use serde::Deserialize;
+
+/// Subset of the RFC 8414 authorization-server metadata the client needs.
+/// Extra fields in the document are ignored. `registration_endpoint` is
+/// optional — a DCR-disabled server omits it.
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct AuthServerMetadata {
+    pub issuer: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    #[serde(default)]
+    pub registration_endpoint: Option<String>,
+}
+
+/// The `/token` success response (lab-auth omits `refresh_token` when the
+/// upstream IdP did not return one). `Debug` is redacted — never derive it.
+#[derive(Clone, Deserialize)]
+pub(crate) struct TokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    pub scope: String,
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"<redacted>")
+            .field("token_type", &self.token_type)
+            .field("expires_in", &self.expires_in)
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("scope", &self.scope)
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
+struct ClientRegistrationResponse {
+    client_id: String,
+}
+
+pub(crate) fn discovery_url(base_url: &str) -> String {
+    format!(
+        "{}/.well-known/oauth-authorization-server",
+        base_url.trim_end_matches('/')
+    )
+}
+
+/// Reject any URL that is not `https`, or `http` on a loopback host. OAuth
+/// secrets (auth code, PKCE verifier, refresh token) must never traverse
+/// cleartext to a non-loopback host.
+pub(crate) fn require_secure_url(raw: &str) -> Result<url::Url, String> {
+    let url = url::Url::parse(raw).map_err(|err| format!("invalid OAuth URL `{raw}`: {err}"))?;
+    match url.scheme() {
+        "https" => Ok(url),
+        "http" if matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1")) => Ok(url),
+        _ => Err(format!(
+            "refusing OAuth over an insecure URL `{raw}` — https is required for non-loopback hosts"
+        )),
+    }
+}
+
+pub(crate) fn build_authorize_url(
+    meta: &AuthServerMetadata,
+    client_id: &str,
+    redirect_uri: &str,
+    scope: &str,
+    state: &str,
+    code_challenge: &str,
+) -> Result<String, String> {
+    let mut url = url::Url::parse(&meta.authorization_endpoint)
+        .map_err(|err| format!("invalid authorization_endpoint: {err}"))?;
+    url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", client_id)
+        .append_pair("redirect_uri", redirect_uri)
+        .append_pair("scope", scope)
+        .append_pair("state", state)
+        .append_pair("code_challenge", code_challenge)
+        .append_pair("code_challenge_method", "S256");
+    Ok(url.to_string())
+}
+
+pub(crate) fn registration_body(redirect_uri: &str) -> serde_json::Value {
+    serde_json::json!({ "redirect_uris": [redirect_uri] })
+}
+
+pub(crate) fn authorization_code_form(
+    code: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    code_verifier: &str,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("grant_type", "authorization_code".to_string()),
+        ("code", code.to_string()),
+        ("client_id", client_id.to_string()),
+        ("redirect_uri", redirect_uri.to_string()),
+        ("code_verifier", code_verifier.to_string()),
+    ]
+}
+
+pub(crate) fn refresh_form(client_id: &str, refresh_token: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("grant_type", "refresh_token".to_string()),
+        ("refresh_token", refresh_token.to_string()),
+        ("client_id", client_id.to_string()),
+    ]
+}
+
+pub(crate) async fn discover(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<AuthServerMetadata, String> {
+    let url = discovery_url(base_url);
+    let response = client
+        .get(&url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|err| format!("OAuth discovery request failed: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "OAuth discovery returned HTTP {} — is the server in OAuth mode (AXON_MCP_AUTH_MODE=oauth)?",
+            response.status()
+        ));
+    }
+    response
+        .json()
+        .await
+        .map_err(|err| format!("OAuth discovery returned an invalid document: {err}"))
+}
+
+pub(crate) async fn register_client(
+    client: &reqwest::Client,
+    registration_endpoint: &str,
+    redirect_uri: &str,
+) -> Result<String, String> {
+    let response = client
+        .post(registration_endpoint)
+        .json(&registration_body(redirect_uri))
+        .send()
+        .await
+        .map_err(|err| format!("client registration request failed: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "client registration returned HTTP {}",
+            response.status()
+        ));
+    }
+    let registered: ClientRegistrationResponse = response
+        .json()
+        .await
+        .map_err(|err| format!("client registration returned an invalid response: {err}"))?;
+    Ok(registered.client_id)
+}
+
+pub(crate) async fn exchange_code(
+    client: &reqwest::Client,
+    token_endpoint: &str,
+    code: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    code_verifier: &str,
+) -> Result<TokenResponse, String> {
+    post_token_form(
+        client,
+        token_endpoint,
+        &authorization_code_form(code, client_id, redirect_uri, code_verifier),
+    )
+    .await
+}
+
+pub(crate) async fn refresh_access_token(
+    client: &reqwest::Client,
+    token_endpoint: &str,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<TokenResponse, String> {
+    post_token_form(
+        client,
+        token_endpoint,
+        &refresh_form(client_id, refresh_token),
+    )
+    .await
+}
+
+async fn post_token_form(
+    client: &reqwest::Client,
+    token_endpoint: &str,
+    form: &[(&'static str, String)],
+) -> Result<TokenResponse, String> {
+    let response = client
+        .post(token_endpoint)
+        .form(form)
+        .send()
+        .await
+        .map_err(|err| format!("token request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        // Do NOT echo the response body — a non-standard server could reflect
+        // submitted token material back in its error body.
+        return Err(format!("token endpoint returned HTTP {status}"));
+    }
+    let text = response.text().await.map_err(|err| err.to_string())?;
+    serde_json::from_str(&text)
+        .map_err(|_| "token endpoint returned an invalid response".to_string())
+}
+
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod tests;
