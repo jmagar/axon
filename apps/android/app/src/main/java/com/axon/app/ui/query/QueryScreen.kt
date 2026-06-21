@@ -50,7 +50,6 @@ import tv.tootie.aurora.components.AuroraSeparator
 fun QueryScreen(vm: QueryViewModel = viewModel()) {
     val uiState by vm.uiState.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
-    val colors = AxonTheme.colors
 
     Column(
         modifier = Modifier

@@ -61,7 +61,6 @@ fun SearchWebScreen(vm: SearchWebViewModel = viewModel()) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val openDoc = LocalOpenDocument.current
     var input by remember { mutableStateOf("") }
-    val colors = AxonTheme.colors
 
     Column(
         modifier = Modifier
