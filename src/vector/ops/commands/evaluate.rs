@@ -5,7 +5,7 @@ mod streaming;
 use crate::core::config::Config;
 use crate::core::http::http_client;
 use crate::core::logging::log_warn;
-use crate::services::types::{
+use axon_api::{
     EvaluateCrawlEnqueueOutcome, EvaluateDiagnostics, EvaluateResult, EvaluateTiming, Suggestion,
 };
 use std::time::Instant;

@@ -1,5 +1,4 @@
 use crate::core::config::Config;
-use crate::services::types::QueryHit;
 use crate::vector::ops::commands::retrieval::{
     CandidateBuildPolicy, CandidateScorePolicy, RetrievedCandidate, VectorDispatchContext,
     build_typed_retrieval_result, candidates_only, dispatch_vector_search_with_diagnostics,
@@ -8,6 +7,7 @@ use crate::vector::ops::commands::retrieval::{
 use crate::vector::ops::qdrant::exclude_local_code_filter;
 use crate::vector::ops::source_display::display_source;
 use crate::vector::ops::{qdrant, ranking, tei};
+use axon_api::QueryHit;
 use std::error::Error;
 
 type QueryError = Box<dyn Error + Send + Sync>;

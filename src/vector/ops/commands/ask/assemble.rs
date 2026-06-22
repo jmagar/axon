@@ -3,9 +3,7 @@ use super::summarize_citation_validation;
 use super::timing::AskTiming;
 use crate::core::config::Config;
 use crate::core::logging::log_info;
-use crate::services::types::{
-    AskCitationValidation, AskDiagnostics, AskResult, AskTiming as WireAskTiming,
-};
+use axon_api::{AskCitationValidation, AskDiagnostics, AskResult, AskTiming as WireAskTiming};
 
 /// Build the final typed result for a completed ask (non-explain path).
 #[allow(clippy::too_many_arguments)]

@@ -2,7 +2,7 @@ use crate::core::ask_explain::{CorpusHealthDiagnostic, CorpusHealthKind};
 use crate::core::config::Config;
 use crate::core::llm;
 use crate::core::logging::{log_info, log_warn};
-use crate::services::types::AskResult;
+use axon_api::AskResult;
 
 mod assemble;
 mod context;

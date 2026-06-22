@@ -1,0 +1,10 @@
+[package]
+name = "axon-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.0"
+description = "Axon transport-neutral API contract and result DTOs shared across CLI, MCP, HTTP, and generated clients"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -1,8 +1,8 @@
 use crate::core::config::Config;
-use crate::services::types::QueryHit;
 use crate::vector::ops::commands::query::{QueryHitOptions, query_hits_with_options};
 use crate::vector::ops::commands::retrieval::CandidateScorePolicy;
 use crate::vector::ops::qdrant::build_local_project_code_filter;
+use axon_api::QueryHit;
 
 pub(crate) struct CodeSearchVectorRequest<'a> {
     pub query: &'a str,
