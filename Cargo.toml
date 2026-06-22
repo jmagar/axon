@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask"]
+members = ["xtask", "crates/axon-authz"]
 # apps/palette-tauri/src-tauri declares its own `[workspace]`, so it builds as a
 # standalone workspace and is not a member here.
 resolver = "2"
@@ -28,6 +28,7 @@ build = "build.rs"
 name = "axon"
 
 [dependencies]
+axon-authz = { path = "crates/axon-authz" }
 anyhow = "1"
 async-trait = "0.1"
 flate2 = "1"

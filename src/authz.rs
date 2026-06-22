@@ -1,18 +1,9 @@
-pub(crate) const AXON_READ_SCOPE: &str = "axon:read";
-pub(crate) const AXON_WRITE_SCOPE: &str = "axon:write";
-pub(crate) const AXON_FULL_ACCESS_SCOPE: &str = "axon:read axon:write";
+//! Compatibility shim: authz scope logic now lives in the `axon-authz` crate.
+//!
+//! Existing call sites reference `crate::authz::{scope_satisfies,
+//! AXON_READ_SCOPE, AXON_WRITE_SCOPE, AXON_FULL_ACCESS_SCOPE}`; this re-export
+//! keeps those paths valid after the extraction without a mass rename.
 
-pub(crate) fn scope_satisfies(scopes: &[String], required_scope: &str) -> bool {
-    if is_axon_scope(required_scope) {
-        return scopes.iter().any(|scope| is_axon_scope(scope));
-    }
-    scopes.iter().any(|scope| scope == required_scope)
-}
-
-fn is_axon_scope(scope: &str) -> bool {
-    matches!(scope, AXON_READ_SCOPE | AXON_WRITE_SCOPE)
-}
-
-#[path = "authz_tests.rs"]
-#[cfg(test)]
-mod tests;
+pub(crate) use axon_authz::{
+    AXON_FULL_ACCESS_SCOPE, AXON_READ_SCOPE, AXON_WRITE_SCOPE, scope_satisfies,
+};
