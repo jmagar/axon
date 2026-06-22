@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask", "crates/axon-authz", "crates/axon-api"]
+members = ["xtask", "crates/axon-authz", "crates/axon-api", "crates/axon-core"]
 # apps/palette-tauri/src-tauri declares its own `[workspace]`, so it builds as a
 # standalone workspace and is not a member here.
 resolver = "2"
@@ -30,6 +30,7 @@ name = "axon"
 [dependencies]
 axon-authz = { path = "crates/axon-authz" }
 axon-api = { path = "crates/axon-api" }
+axon-core = { path = "crates/axon-core" }
 anyhow = "1"
 async-trait = "0.1"
 flate2 = "1"
@@ -213,6 +214,7 @@ codegen-units = 16
 opt-level = 2
 
 [dev-dependencies]
+axon-core = { path = "crates/axon-core", features = ["test-util"] }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",
