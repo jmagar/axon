@@ -1,13 +1,7 @@
 use crate::core::http::build_client;
-
-pub fn with_path(base: &str, path: &str) -> String {
-    let trimmed = base.trim_end_matches('/');
-    if path.starts_with('/') {
-        format!("{trimmed}{path}")
-    } else {
-        format!("{trimmed}/{path}")
-    }
-}
+// `with_path` moved to `core::http`; re-exported so existing
+// `probe::with_path` call sites keep resolving.
+pub use crate::core::http::with_path;
 
 pub async fn probe_http(url: &str, paths: &[&str]) -> (bool, Option<String>) {
     if url.trim().is_empty() {

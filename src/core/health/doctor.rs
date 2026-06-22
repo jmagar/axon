@@ -1,7 +1,7 @@
 pub(crate) mod sqlite;
 
-use crate::cli::commands::probe::with_path;
 use crate::core::config::Config;
+use crate::core::http::with_path;
 use serde_json::Value;
 use std::error::Error;
 use std::future::Future;

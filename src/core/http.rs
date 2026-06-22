@@ -20,6 +20,7 @@ mod ssrf;
 #[path = "http_tests.rs"]
 mod tests;
 mod ua;
+mod url_path;
 
 // Re-export the full public API so downstream `use crate::core::http::*` continues to work.
 pub use antibot::{ChallengeDetection, detect_challenge};
@@ -40,5 +41,6 @@ pub(crate) use ssrf::{get_allow_loopback, set_allow_loopback};
 pub(crate) use ssrf::{ssrf_blacklist_compact_strings, ssrf_blacklist_patterns};
 pub use ssrf::{validate_url, validate_url_with_dns};
 pub use ua::{AXON_API_UA, DEFAULT_UA, axon_api_ua, axon_ua};
+pub use url_path::with_path;
 
 pub(crate) use cdp::cdp_discovery_url;

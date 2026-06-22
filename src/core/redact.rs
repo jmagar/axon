@@ -24,9 +24,9 @@
 //! degenerate runs (long benign padding like `xxxxxxxx…`, repeated filler) are
 //! left intact while genuinely random-looking tokens are redacted.
 //!
-//! For sensitive-*name* detection (header/field/file names), see
-//! [`crate::services::events::is_secret_like`]; this module covers secret
-//! *values* embedded in free text.
+//! This module also owns sensitive-*name* detection ([`is_secret_like`], for
+//! header/field/file names) in addition to redacting secret *values* embedded
+//! in free text — a single home for both halves of the S-L1 policy.
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -99,6 +99,45 @@ fn shannon_entropy_bits(s: &str) -> f64 {
             -p * p.log2()
         })
         .sum()
+}
+
+/// Returns `true` when `lower_name` (already lowercased by caller) looks like
+/// a secret key, credential file, or sensitive header/field name. Single source
+/// of truth for both embed path validation and error-body redaction.
+pub fn is_secret_like(lower_name: &str) -> bool {
+    // Private-key filenames
+    if lower_name == "id_rsa"
+        || lower_name == "id_dsa"
+        || lower_name == "id_ecdsa"
+        || lower_name == "id_ed25519"
+    {
+        return true;
+    }
+    // Extensions that commonly hold key material
+    if lower_name.ends_with(".pem") || lower_name.ends_with(".key") {
+        return true;
+    }
+    // Semantic keywords
+    if lower_name.contains("secret")
+        || lower_name.contains("credential")
+        || lower_name.contains("password")
+    {
+        return true;
+    }
+    // Token / API key patterns
+    if lower_name.contains("api_key")
+        || lower_name.contains("apikey")
+        || lower_name == "authorization"
+        || lower_name == "proxy-authorization"
+        || lower_name == "access_token"
+        || lower_name == "refresh_token"
+        || lower_name == "id_token"
+        || lower_name.ends_with("_token")
+        || lower_name.contains("token")
+    {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]

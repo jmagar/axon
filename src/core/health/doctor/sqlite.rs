@@ -1,6 +1,5 @@
 //! SQLite-runtime doctor report: SQLite + HTTP services only (no PG/Redis/AMQP probes).
 
-use crate::cli::commands::probe::with_path;
 use crate::core::config::Config;
 use crate::core::endpoints::{EndpointKind, resolve_host_endpoint};
 use crate::core::health::browser_diagnostics_pattern;
@@ -9,6 +8,7 @@ use crate::core::health::doctor::{
     tei_model_from_info, timed_probe,
 };
 use crate::core::http::internal_service_http_client;
+use crate::core::http::with_path;
 use serde_json::{Map, Value};
 use std::error::Error;
 use std::path::Path;
