@@ -11,6 +11,13 @@ const GEMINI_AUTH_FILES: &[&str] = &[
     "google_accounts.json",
 ];
 
+/// The axon-rag-synthesize skill file, embedded at compile time and written
+/// into the isolated Gemini HOME so Gemini CLI can discover and invoke it
+/// natively. Included directly here (rather than imported from the vector
+/// layer) so `core` does not depend on a downstream module.
+const SKILL_MD: &str =
+    include_str!("../../../../../plugins/axon/skills/axon-rag-synthesize/SKILL.md");
+
 /// Create an isolated Gemini HOME directory for headless invocation.
 ///
 /// Copies the user's OAuth credentials from `AXON_HEADLESS_GEMINI_HOME` (or
@@ -54,11 +61,8 @@ fn write_axon_rag_synthesize_skill(
     let skill_dir = gemini_dir.join("skills").join("axon-rag-synthesize");
     fs::create_dir_all(&skill_dir)
         .map_err(|err| format!("failed to create skill directory: {err}"))?;
-    fs::write(
-        skill_dir.join("SKILL.md"),
-        crate::vector::ops::commands::ask::synthesis_prompt::SKILL_MD,
-    )
-    .map_err(|err| format!("failed to write axon-rag-synthesize skill: {err}"))?;
+    fs::write(skill_dir.join("SKILL.md"), SKILL_MD)
+        .map_err(|err| format!("failed to write axon-rag-synthesize skill: {err}"))?;
     Ok(())
 }
 

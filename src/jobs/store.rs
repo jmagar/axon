@@ -270,3 +270,36 @@ pub(crate) fn now_ms() -> i64 {
 #[cfg(test)]
 #[path = "store_tests.rs"]
 mod tests;
+
+/// Count all pending jobs across the four job tables. Best-effort: returns 0
+/// if the DB file does not exist yet, cannot be opened, or a table is missing
+/// (fresh install before the first schema migration).
+///
+/// SAFETY: every table name below is a compile-time `&'static str` from a
+/// closed set; no caller-controlled value reaches the SQL string.
+pub async fn count_pending_jobs(sqlite_path: &std::path::Path) -> i64 {
+    if !sqlite_path.exists() {
+        return 0;
+    }
+    let path_str = sqlite_path.to_string_lossy();
+    let pool = match open_sqlite_pool(&path_str).await {
+        Ok(p) => p,
+        Err(_) => return 0,
+    };
+    let tables = [
+        "axon_crawl_jobs",
+        "axon_embed_jobs",
+        "axon_extract_jobs",
+        "axon_ingest_jobs",
+    ];
+    let mut total: i64 = 0;
+    for table in &tables {
+        let query = format!("SELECT COUNT(*) FROM {table} WHERE status='pending'");
+        let count: i64 = sqlx::query_scalar(&query)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+        total += count;
+    }
+    total
+}

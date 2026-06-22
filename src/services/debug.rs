@@ -6,7 +6,8 @@ use std::error::Error;
 
 #[must_use = "debug_report returns a Result that should be handled"]
 pub async fn debug_report(cfg: &Config, user_context: &str) -> Result<DebugResult, Box<dyn Error>> {
-    let doctor_report = build_doctor_report(cfg).await?;
+    let pending_jobs = crate::jobs::store::count_pending_jobs(&cfg.sqlite_path).await;
+    let doctor_report = build_doctor_report(cfg, pending_jobs).await?;
 
     let prompt = format!(
         "Analyze this Axon doctor report and provide actionable troubleshooting guidance.\n\

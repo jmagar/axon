@@ -203,8 +203,8 @@ impl DoctorReport {
     }
 }
 
-pub async fn build_doctor_report(cfg: &Config) -> Result<Value, Box<dyn Error>> {
-    sqlite::build(cfg).await
+pub async fn build_doctor_report(cfg: &Config, pending_jobs: i64) -> Result<Value, Box<dyn Error>> {
+    sqlite::build(cfg, pending_jobs).await
 }
 
 #[cfg(test)]

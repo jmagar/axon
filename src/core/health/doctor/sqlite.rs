@@ -11,11 +11,10 @@ use crate::core::http::internal_service_http_client;
 use crate::core::http::with_path;
 use serde_json::{Map, Value};
 use std::error::Error;
-use std::path::Path;
 use std::time::Duration;
 
 /// SQLite-runtime doctor: skip PG/Redis/AMQP probes, check SQLite file and HTTP services.
-pub(super) async fn build(cfg: &Config) -> Result<Value, Box<dyn Error>> {
+pub(super) async fn build(cfg: &Config, pending_jobs: i64) -> Result<Value, Box<dyn Error>> {
     let diagnostics = browser_diagnostics_pattern();
     // Run service probes, LLM round-trip, and (for Codex) capability probe
     // concurrently so none of the bounded probes serialise behind each other.
@@ -35,8 +34,6 @@ pub(super) async fn build(cfg: &Config) -> Result<Value, Box<dyn Error>> {
             }
         }
     );
-    let pending_jobs = count_pending_jobs(&cfg.sqlite_path).await;
-
     let sqlite_path = cfg.sqlite_path.display().to_string();
     let sqlite_exists = cfg.sqlite_path.exists();
     let gemini_probe = probe_gemini_headless(cfg);
@@ -474,35 +471,5 @@ async fn probe_collection_info(
     }
 }
 
-/// Count all pending jobs across the four job tables. Best-effort: returns 0
-/// if the DB file does not exist yet, cannot be opened, or a table is missing
-/// (fresh install before the first schema migration).
-///
-/// SAFETY: every table name below is a compile-time `&'static str` from a
-/// closed set; no caller-controlled value reaches the SQL string.
-async fn count_pending_jobs(sqlite_path: &Path) -> i64 {
-    if !sqlite_path.exists() {
-        return 0;
-    }
-    let path_str = sqlite_path.to_string_lossy();
-    let pool = match crate::jobs::store::open_sqlite_pool(&path_str).await {
-        Ok(p) => p,
-        Err(_) => return 0,
-    };
-    let tables = [
-        "axon_crawl_jobs",
-        "axon_embed_jobs",
-        "axon_extract_jobs",
-        "axon_ingest_jobs",
-    ];
-    let mut total: i64 = 0;
-    for table in &tables {
-        let query = format!("SELECT COUNT(*) FROM {table} WHERE status='pending'");
-        let count: i64 = sqlx::query_scalar(&query)
-            .fetch_one(&pool)
-            .await
-            .unwrap_or(0);
-        total += count;
-    }
-    total
-}
+// `count_pending_jobs` moved to `jobs::store::count_pending_jobs`; the doctor
+// now receives the count as a parameter so `core` no longer depends on `jobs`.
