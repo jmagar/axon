@@ -60,14 +60,7 @@ pub struct ExtractJobResult {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExtractSyncResult {
-    pub summary: serde_json::Value,
-    pub summary_path: String,
-    pub items_path: String,
-    pub total_items: usize,
-    pub duration_ms: u128,
-}
+pub use axon_api::job_dto::ExtractSyncResult;
 
 // ── Migrate ─────────────────────────────────────────────────────────────────
 
@@ -81,10 +74,7 @@ pub struct MigrateResult {
 
 // ── Ingest / screenshot ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct IngestResult {
-    pub payload: serde_json::Value,
-}
+pub use axon_api::job_dto::IngestResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IngestStartResult {

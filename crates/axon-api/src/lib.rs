@@ -16,6 +16,7 @@ pub mod contract;
 pub mod diff;
 pub mod explain;
 pub mod ingest;
+pub mod job_dto;
 pub mod result;
 
 pub use explain::*;

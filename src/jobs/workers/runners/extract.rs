@@ -58,7 +58,7 @@ pub async fn run_extract_job(
 }
 
 fn build_extract_job_result_json(
-    result: &crate::services::types::ExtractSyncResult,
+    result: &axon_api::job_dto::ExtractSyncResult,
 ) -> serde_json::Value {
     let mut payload = result.summary.clone();
     if let Some(object) = payload.as_object_mut() {

@@ -10,7 +10,7 @@ use crate::jobs::config_snapshot::decode_ingest_job_config;
 use crate::jobs::ingest::IngestSource;
 use crate::jobs::ingest::types::{source_type_label, target_label};
 use crate::jobs::ops::update_progress_json_for_attempt;
-use crate::services::types::IngestResult;
+use axon_api::job_dto::IngestResult;
 
 use super::JobResult;
 
