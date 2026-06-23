@@ -1,13 +1,2 @@
-pub mod classify;
-pub mod generic_git;
-pub mod git_files;
-pub mod git_payload;
-pub mod gitea;
-pub mod github;
-pub mod gitlab;
-pub mod progress;
-pub mod reddit;
-pub mod rss;
-pub mod sessions;
-pub mod subprocess;
-pub mod youtube;
+//! Compatibility shim: source ingestion now lives in the `axon-ingest` crate.
+pub use axon_ingest::*;
