@@ -59,7 +59,7 @@ pub struct ScrapedDoc {
 }
 ```
 
-`extractor_name` + `extractor_version` flow through to the Qdrant payload (`payload_schema_version = 8`, see `src/vector/CLAUDE.md` — Payload schema versioning). Bumping `extractor_version` forces points with that extractor name to be re-embedded on next crawl.
+`extractor_name` + `extractor_version` flow through to the Qdrant payload (`payload_schema_version = 8`, see `crates/axon-vector/src/CLAUDE.md` — Payload schema versioning). Bumping `extractor_version` forces points with that extractor name to be re-embedded on next crawl.
 
 ## auto_dispatch Flag
 
@@ -73,7 +73,7 @@ pub struct ScrapedDoc {
 
 ## Integration With `scrape`
 
-The services layer wires this in `src/services/scrape.rs`:
+The services layer wires this in `crates/axon-services/src/scrape.rs`:
 
 ```rust
 if cfg.enable_verticals {
@@ -107,7 +107,7 @@ The MCP `vertical_scrape` action exposes the catalog but does NOT run extraction
 - `subaction=capabilities` → returns metadata for a single extractor
 - `subaction=run` → **removed**; redirects to `action=scrape url=<url>` (which auto-routes via `dispatch_by_url`)
 
-See `src/mcp/server/handlers_vertical_scrape.rs` for the redirect message.
+See `crates/axon-mcp/src/server/handlers_vertical_scrape.rs` for the redirect message.
 
 ## Testing
 

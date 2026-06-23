@@ -47,12 +47,12 @@ cli/
     ├── watch.rs                  # Watch definition and run management
     ├── crawl/
     │   ├── subcommands.rs        # Job lifecycle routing: status/cancel/errors/list/cleanup/clear/worker/recover/audit/diff
-    │   ├── runtime.rs            # Thin shim — delegates to src/crawl/engine::resolve_cdp_ws_url
-    │   ├── sync_crawl.rs         # Thin shim — sync-crawl logic lives in src/services/crawl_sync.rs
+    │   ├── runtime.rs            # Thin shim — delegates to crates/axon-crawl/src/engine::resolve_cdp_ws_url
+    │   ├── sync_crawl.rs         # Thin shim — sync-crawl logic lives in crates/axon-services/src/crawl_sync.rs
     │   ├── runtime_migration_tests.rs
     │   ├── sync_backfill_migration_tests.rs
     │   ├── sync_crawl_migration_tests.rs
-    │   └── audit.rs              # Thin shim — delegates to src/services/crawl/audit
+    │   └── audit.rs              # Thin shim — delegates to crates/axon-services/src/crawl/audit
     ├── screenshot/
     │   ├── screenshot_migration_tests.rs
     │   └── util.rs               # Filename generation, require_chrome()
@@ -162,9 +162,9 @@ Current guard list:
 
 All `handle_job_*` functions accept `T: JobStatus + Serialize` — new job types must implement both.
 
-### `src/core/ui.rs` — UI helpers
+### `crates/axon-core/src/ui.rs` — UI helpers
 
-`confirm_destructive(cfg, prompt)` lives in `src/core/ui.rs` (not in the CLI common modules). It returns `Ok(true)` if `cfg.yes` is set OR if stdout is not a TTY.
+`confirm_destructive(cfg, prompt)` lives in `crates/axon-core/src/ui.rs` (not in the CLI common modules). It returns `Ok(true)` if `cfg.yes` is set OR if stdout is not a TTY.
 
 ## `commands/job_contracts.rs` — Stable Output Types
 
@@ -210,7 +210,7 @@ if cfg.json_output {
 
 JSON output is always **pretty-printed** (`to_string_pretty`). Use types from `job_contracts.rs` for job responses; use `serde_json::json!()` for simple ad-hoc responses.
 
-Human output uses `primary()`, `accent()`, `muted()`, `symbol_for_status()`, `status_text()` from `src/core/ui`.
+Human output uses `primary()`, `accent()`, `muted()`, `symbol_for_status()`, `status_text()` from `crates/axon-core/src/ui`.
 
 ## Confirmation Prompts
 
@@ -226,11 +226,11 @@ if !confirm_destructive(cfg, "This will delete all jobs. Continue?")? {
 
 ## `crawl/runtime.rs` — Chrome Bootstrap (thin shim)
 
-`src/cli/commands/crawl/runtime.rs` is a small (≈1 KB) shim that delegates to the shared engine resolver `src/crawl/engine::resolve_cdp_ws_url`. All real resolution logic (Docker host rewrite, `/json/version` discovery, `ws://` shortcut, retries) lives in the crawl engine. Always call the bootstrap entry point once before Chrome-mode crawls so each worker doesn't probe independently.
+`crates/axon-cli/src/commands/crawl/runtime.rs` is a small (≈1 KB) shim that delegates to the shared engine resolver `crates/axon-crawl/src/engine::resolve_cdp_ws_url`. All real resolution logic (Docker host rewrite, `/json/version` discovery, `ws://` shortcut, retries) lives in the crawl engine. Always call the bootstrap entry point once before Chrome-mode crawls so each worker doesn't probe independently.
 
 ## `crawl/sync_crawl.rs` — Synchronous Crawl (thin shim)
 
-`src/cli/commands/crawl/sync_crawl.rs` is a thin shim. The synchronous crawl logic — 24-hour disk cache, sitemap-only mode, HTTP→Chrome fallback, sitemap backfill — lives in `src/services/crawl_sync.rs`. The shim exists so the CLI handler can stay tiny and the same logic can be reused by other entry points.
+`crates/axon-cli/src/commands/crawl/sync_crawl.rs` is a thin shim. The synchronous crawl logic — 24-hour disk cache, sitemap-only mode, HTTP→Chrome fallback, sitemap backfill — lives in `crates/axon-services/src/crawl_sync.rs`. The shim exists so the CLI handler can stay tiny and the same logic can be reused by other entry points.
 
 ## Testing
 
@@ -247,8 +247,8 @@ Tests are in `common.rs` (pure functions) and `job_contracts.rs` (serialization)
 
 1. Create `commands/<name>.rs` with `pub async fn run_<name>(cfg: &Config) -> Result<(), Box<dyn Error>>`
 2. Add `pub mod <name>;` and `pub use <name>::run_<name>;` to `commands.rs`
-3. Add `CommandKind::<Name>` variant to `src/core/config/types/enums.rs`
-4. Add field(s) to `Config` in `src/core/config/types/config.rs` and `Config::default()` in `config_impls.rs`
+3. Add `CommandKind::<Name>` variant to `crates/axon-core/src/config/types/enums.rs`
+4. Add field(s) to `Config` in `crates/axon-core/src/config/types/config.rs` and `Config::default()` in `config_impls.rs`
 5. Add flag(s) to `GlobalArgs` or a new command-specific `Args` struct in `config/cli/`
 6. Add the parse logic to `config/parse/build_config.rs`
 7. Add match arm to `lib.rs::run_once()`

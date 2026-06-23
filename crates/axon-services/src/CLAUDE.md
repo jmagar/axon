@@ -1,7 +1,7 @@
 # src/services — Typed Service Layer
 Last Modified: 2026-06-13
 
-The contract boundary between all entry points (CLI commands, MCP handlers, web routes) and the underlying business logic crates (`vector`, `jobs`, `crawl`, `ingest`). Every external caller goes through a service function — no entry point calls `src/vector/ops/*` directly.
+The contract boundary between all entry points (CLI commands, MCP handlers, web routes) and the underlying business logic crates (`vector`, `jobs`, `crawl`, `ingest`). Every external caller goes through a service function — no entry point calls `crates/axon-vector/src/ops/*` directly.
 
 ## Module Layout
 
@@ -40,7 +40,7 @@ services/
 │   ├── contracts.rs        # External-facing service contract types
 │   ├── service.rs          # Re-export glue for domain-specific service result modules
 │   └── service/            # Result contracts by domain (query, content, system, lifecycle, ...)
-└── watch.rs                # CRUD shim — actual scheduler runtime lives in src/jobs/watch.rs
+└── watch.rs                # CRUD shim — actual scheduler runtime lives in crates/axon-jobs/src/watch.rs
 ```
 
 ## `ServiceContext` — The Entry Point
@@ -102,7 +102,7 @@ CLI fire-and-forget contexts must use `new()`. Spawning workers in a short-lived
 
 ## Architecture Contract
 
-**Rule:** CLI handlers, MCP handlers, and web API routes call **service functions only** — never raw `src/vector/ops/*` or `src/jobs/*` functions directly.
+**Rule:** CLI handlers, MCP handlers, and web API routes call **service functions only** — never raw `crates/axon-vector/src/ops/*` or `crates/axon-jobs/src/*` functions directly.
 
 ```
 CLI handler (run_ask)
@@ -148,7 +148,7 @@ re-exported through `types/service.rs` for compatibility:
 | `ResearchResult` | `search::research` |
 
 When adding a new typed result, put it in the matching domain module under
-`src/services/types/service/` (for example `query.rs`, `content.rs`,
+`crates/axon-services/src/types/service/` (for example `query.rs`, `content.rs`,
 `system.rs`, or `lifecycle.rs`) and re-export it from `types/service.rs`.
 Create a new small domain module when no existing module owns the contract.
 
@@ -197,10 +197,10 @@ Pass `None` for `tx` in CLI commands that don't need streaming progress. `emit()
 
 **Backpressure:** `emit()` uses `.send().await` — it blocks if the channel is full. Use a channel size that matches expected burst rate (default 32 for ask/research streaming).
 
-## LLM Backend (`src/core/llm/`)
+## LLM Backend (`crates/axon-core/src/llm/`)
 
 The typed completion facade no longer lives under `services/` — it is now
-`crate::core::llm` (`src/core/llm.rs` + `src/core/llm/{types,concurrency,headless,openai_compat}.rs`).
+`crate::core::llm` (`crates/axon-core/src/llm.rs` + `crates/axon-core/src/llm/{types,concurrency,headless,openai_compat}.rs`).
 It is consumed by the service layer (ask synthesis, evaluate, suggest, research
 summaries, extract fallback, debug) but is not itself a service module.
 
@@ -251,14 +251,14 @@ pub async fn query(ctx: &ServiceContext, text: &str, ...) -> Result<QueryResult,
 
 ## Adding a New Service Function
 
-1. Add the function to the appropriate `src/services/<name>.rs` — signature takes `&ServiceContext`
-2. Add a typed result struct to the appropriate `src/services/types/service/<domain>.rs` module and re-export it from `src/services/types/service.rs`
-3. Call from the CLI handler in `src/cli/commands/<name>.rs` — receives `&ServiceContext`
-4. Call from the MCP handler in `src/mcp/server/handlers_*.rs` — receives `&ServiceContext`
+1. Add the function to the appropriate `crates/axon-services/src/<name>.rs` — signature takes `&ServiceContext`
+2. Add a typed result struct to the appropriate `crates/axon-services/src/types/service/<domain>.rs` module and re-export it from `crates/axon-services/src/types/service.rs`
+3. Call from the CLI handler in `crates/axon-cli/src/commands/<name>.rs` — receives `&ServiceContext`
+4. Call from the MCP handler in `crates/axon-mcp/src/server/handlers_*.rs` — receives `&ServiceContext`
 5. If the feature is unavailable in the current runtime, return an appropriate error
 6. Add mapping helpers and unit tests for pure logic (no live services needed)
 7. Never print, log, or serialize inside the service function — return the typed result
 
 ## `watch.rs` and `events.rs` — Live Streaming
 
-`src/services/watch.rs` is a thin CRUD layer (~2 KB) that exposes watch definition + run lookups to CLI, MCP, and HTTP callers. The actual scheduler runtime lives in `src/jobs/watch.rs` (SQLite-backed, in-process). Streaming is plumbed through `ServiceEvent` so callers can forward progress without putting logging or serialization inside the service function.
+`crates/axon-services/src/watch.rs` is a thin CRUD layer (~2 KB) that exposes watch definition + run lookups to CLI, MCP, and HTTP callers. The actual scheduler runtime lives in `crates/axon-jobs/src/watch.rs` (SQLite-backed, in-process). Streaming is plumbed through `ServiceEvent` so callers can forward progress without putting logging or serialization inside the service function.

@@ -12,7 +12,7 @@ Last Modified: 2026-05-16
 ## Module Layout
 
 ```
-src/mcp.rs           # Crate-root re-export shim (sibling to src/mcp/)
+src/mcp.rs           # Crate-root re-export shim (sibling to crates/axon-mcp/src/)
 mcp/
 ├── auth.rs                     # AuthPolicy, lab-auth OAuth/JWT, static bearer, x-api-key normalization
 ├── cors.rs                     # CORS middleware for the HTTP transport
@@ -41,16 +41,16 @@ mcp/
     └── status_dashboard.html       # MCP App resource for `ui://axon/status-dashboard`
 ```
 
-There is no `src/mcp/config.rs`. The `load_mcp_config()` helper that used to live here was removed when the MCP server adopted the unified `build_config()` path. MCP auth policy lives in `auth.rs`; OAuth state is created through `lab_auth::state::AuthState` when `AXON_MCP_AUTH_MODE=oauth`.
+There is no `crates/axon-mcp/src/config.rs`. The `load_mcp_config()` helper that used to live here was removed when the MCP server adopted the unified `build_config()` path. MCP auth policy lives in `auth.rs`; OAuth state is created through `lab_auth::state::AuthState` when `AXON_MCP_AUTH_MODE=oauth`.
 
 ## Source-of-Truth References
 - Wire contract schema doc: `docs/reference/mcp/tool-schema.md`
 - MCP runtime/design doc: `docs/reference/mcp/overview.md`
-- Tool request/response types: `src/mcp/schema.rs`
-- Tool router and dispatch: `src/mcp/server.rs`
-- Handler implementations: `src/mcp/server/handlers_*.rs`
-- Runtime config: threaded in via `build_config()` from `src/core/config/parse/build_config.rs` (no dedicated MCP config loader)
-- Auth policy: `src/mcp/auth.rs` + `src/mcp/server/http.rs`
+- Tool request/response types: `crates/axon-mcp/src/schema.rs`
+- Tool router and dispatch: `crates/axon-mcp/src/server.rs`
+- Handler implementations: `crates/axon-mcp/src/server/handlers_*.rs`
+- Runtime config: threaded in via `build_config()` from `crates/axon-core/src/config/parse/build_config.rs` (no dedicated MCP config loader)
+- Auth policy: `crates/axon-mcp/src/auth.rs` + `crates/axon-mcp/src/server/http.rs`
 
 If documentation and code diverge, update both in the same change.
 
@@ -111,35 +111,35 @@ This pattern is mandatory. Do not add separate MCP tools for each operation.
 - `subaction=capabilities` — returns metadata for a single extractor (by `extractor` param)
 - `subaction=run` — **removed**. Returns `invalid_params` with a redirect message: use `action=scrape url=<url>` instead — `services::scrape::scrape` calls `dispatch_by_url()` before the generic HTTP path when `cfg.enable_verticals` is true (default), so extractors fire automatically.
 
-This split means clients that want to discover what URL patterns Axon supports query `vertical_scrape:list`, then call `scrape` against any URL. See `src/extract/CLAUDE.md` for the framework, and `src/mcp/server/handlers_vertical_scrape.rs:1-9` for the rationale.
+This split means clients that want to discover what URL patterns Axon supports query `vertical_scrape:list`, then call `scrape` against any URL. See `crates/axon-extract/src/CLAUDE.md` for the framework, and `crates/axon-mcp/src/server/handlers_vertical_scrape.rs:1-9` for the rationale.
 
 ## Current Action Map
 
 ### `crawl`
 - `start`, `status`, `cancel`, `list`, `cleanup`, `clear`, `recover`
-- Integration: `src/jobs/crawl.rs`
+- Integration: `crates/axon-jobs/src/crawl.rs`
 
 ### `extract`
 - `start`, `status`, `cancel`, `list`, `cleanup`, `clear`, `recover`
-- Integration: `src/jobs/extract.rs`
+- Integration: `crates/axon-jobs/src/extract.rs`
 
 ### `embed`
 - `start`, `status`, `cancel`, `list`, `cleanup`, `clear`, `recover`
-- Integration: `src/jobs/embed.rs`
+- Integration: `crates/axon-jobs/src/embed.rs`
 
 ### `ingest`
 - `start`, `status`, `cancel`, `list`, `cleanup`, `clear`, `recover`
-- Integration: `src/jobs/ingest.rs`
+- Integration: `crates/axon-jobs/src/ingest.rs`
 - Supported `source_type` values: `github`, `gitlab`, `gitea`, `git`, `reddit`, `youtube`, `rss`, `sessions`
-- MCP request validation and `IngestSource` construction factored into `src/services/ingest/request.rs` (`source_from_mcp_request`)
+- MCP request validation and `IngestSource` construction factored into `crates/axon-services/src/ingest/request.rs` (`source_from_mcp_request`)
 
 ### `ask`
 - Direct action (no subaction)
-- Integration: `src/vector/ops/commands/ask/`
+- Integration: `crates/axon-vector/src/ops/commands/ask/`
 
 ### `summarize`
 - Direct action (no subaction)
-- Integration: `src/services/summarize.rs` + configured LLM backend
+- Integration: `crates/axon-services/src/summarize.rs` + configured LLM backend
 
 ### `research`
 - Direct action (no subaction)
@@ -147,17 +147,17 @@ This split means clients that want to discover what URL patterns Axon supports q
 
 ### `screenshot`
 - Direct action (no subaction)
-- Integration: `src/cli/commands/screenshot/`
+- Integration: `crates/axon-cli/src/commands/screenshot/`
 
 ### `status`
 - Direct action (no subaction)
 - Integration: job queue status across all job types
 
 ### `query` / `retrieve`
-- Integration: `src/vector/ops/tei.rs`, `src/vector/ops/qdrant/*`
+- Integration: `crates/axon-vector/src/ops/tei.rs`, `crates/axon-vector/src/ops/qdrant/*`
 
 ### `search` / `map` / `scrape`
-- Integration: `src/core/http.rs`, `src/core/content.rs`, `src/crawl/engine.rs`, `spider_agent`
+- Integration: `crates/axon-core/src/http.rs`, `crates/axon-core/src/content.rs`, `crates/axon-crawl/src/engine.rs`, `spider_agent`
 
 ### `doctor` / `domains` / `sources` / `stats`
 - Integration: lightweight probes + qdrant endpoints
@@ -198,7 +198,7 @@ Default response behavior is artifact-first:
 
 ## Configuration Model
 
-MCP config is threaded in directly via `build_config()` from `src/core/config/parse/build_config.rs`. There is no `load_mcp_config()` function — it was removed when config was unified (commit `54244286`). The MCP server reads the standard `Config` struct like every other command.
+MCP config is threaded in directly via `build_config()` from `crates/axon-core/src/config/parse/build_config.rs`. There is no `load_mcp_config()` function — it was removed when config was unified (commit `54244286`). The MCP server reads the standard `Config` struct like every other command.
 
 Expected runtime model:
 - `axon mcp` runs inside the same stack environment as workers.
@@ -206,7 +206,7 @@ Expected runtime model:
 
 ## `ServiceContext` Wiring
 
-All MCP action handlers receive a `&ServiceContext` (from `src/services/context.rs`) constructed once at server startup:
+All MCP action handlers receive a `&ServiceContext` (from `crates/axon-services/src/context.rs`) constructed once at server startup:
 
 ```rust
 // In handler dispatch

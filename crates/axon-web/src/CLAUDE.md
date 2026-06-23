@@ -49,7 +49,7 @@ Only two things leave the module:
 pub(crate) use server::{PanelRuntimeState, router};
 ```
 
-Callers (`src/cli/commands/serve.rs`) construct `PanelRuntimeState::initialize(host, port)` once, then pass it plus the shared `ServiceContext` to `router(cfg, panel, service_context, auth_policy)`.
+Callers (`crates/axon-cli/src/commands/serve.rs`) construct `PanelRuntimeState::initialize(host, port)` once, then pass it plus the shared `ServiceContext` to `router(cfg, panel, service_context, auth_policy)`.
 
 ## Route Tree
 
@@ -67,7 +67,7 @@ Bodies are capped: `ASK_BODY_LIMIT` for `/v1/ask`, `128 KiB` for all other REST 
 ## Critical Patterns
 
 ### Services-First Contract
-Every handler takes `State<(AppState, Arc<Config>)>` (or extension equivalent) and **delegates to `ServiceContext` methods**. No handler reads from Qdrant, spawns workers, or formats JSON beyond the wire shape — the service layer owns all of that. If you find yourself reaching for `qdrant_client` or `sqlx` inside a handler, the work belongs in `src/services/`.
+Every handler takes `State<(AppState, Arc<Config>)>` (or extension equivalent) and **delegates to `ServiceContext` methods**. No handler reads from Qdrant, spawns workers, or formats JSON beyond the wire shape — the service layer owns all of that. If you find yourself reaching for `qdrant_client` or `sqlx` inside a handler, the work belongs in `crates/axon-services/src/`.
 
 ### Auth Scope Enforcement
 `protect_routes()` in `routing.rs` wraps each subrouter with `build_auth_layer()` (lab-auth) plus a scope check (`require_read_scope` or `require_write_scope`). If `build_auth_layer()` returns `None` (loopback dev, no token configured), the router falls back to `block_loopback_destructive_request` — a hard 401 on POST/DELETE for crawl/embed/extract/ingest/dedupe/watch. **Never bypass this guard** by adding a write route outside the `write_routes` subrouter; the loopback fallback only sees routes wrapped through `protect_routes(..., ScopeRequirement::Write)`.

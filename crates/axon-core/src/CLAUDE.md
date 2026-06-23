@@ -93,14 +93,14 @@ The central state object. Populated once by `into_config()` and passed as `&Conf
 | HTTP server | `mcp_http_host` / `mcp_http_port` (default `127.0.0.1:8001`) |
 | Job runtime | SQLite-backed in-process jobs. `sqlite_path: PathBuf` defaults to `$AXON_DATA_DIR/jobs.db` → `~/.axon/jobs.db`. `axon_data_base_dir()` defaults to `~/.axon` — flat layout, no nested `axon/` subdir |
 
-**Debug redacts secrets:** `Config`'s `fmt::Debug` redacts credential fields (`github_token`, `gitlab_token`, `gitea_token`, `reddit_client_id`, `reddit_client_secret`, `tavily_api_key`) with `[REDACTED]`. Sub-configs in `src/core/config/types/subconfigs.rs` redact their own legacy `pg_url`/`redis_url`/`amqp_url` fields independently.
+**Debug redacts secrets:** `Config`'s `fmt::Debug` redacts credential fields (`github_token`, `gitlab_token`, `gitea_token`, `reddit_client_id`, `reddit_client_secret`, `tavily_api_key`) with `[REDACTED]`. Sub-configs in `crates/axon-core/src/config/types/subconfigs.rs` redact their own legacy `pg_url`/`redis_url`/`amqp_url` fields independently.
 
 ## CommandKind Enum (`config/types/enums.rs`)
 
-40 variants (verify against `src/core/config/types/enums.rs:5-45`):
+40 variants (verify against `crates/axon-core/src/config/types/enums.rs:5-45`):
 `Scrape`, `Crawl`, `Watch`, `Monitor`, `Map`, `Endpoints`, `Extract`, `Search`, `Embed`, `Brand`, `Debug`, `Diff`, `Doctor`, `Query`, `Retrieve`, `Ask`, `Summarize`, `Evaluate`, `Train`, `Suggest`, `Sources`, `Domains`, `Stats`, `Status`, `Dedupe`, `Refresh`, `Ingest`, `Sessions`, `Research`, `Screenshot`, `Completions`, `Mcp`, `Serve`, `Preflight`, `Smoke`, `Compose`, `Setup`, `Migrate`, `Config`, `Sync`.
 
-The legacy `Github`, `Reddit`, `Youtube` variants were removed: GitHub/Reddit/YouTube are now subtypes routed through `CommandKind::Ingest` and the auto-classifier in `src/ingest/classify.rs`. (The `Stack` variant was renamed `Compose`.)
+The legacy `Github`, `Reddit`, `Youtube` variants were removed: GitHub/Reddit/YouTube are now subtypes routed through `CommandKind::Ingest` and the auto-classifier in `crates/axon-ingest/src/classify.rs`. (The `Stack` variant was renamed `Compose`.)
 
 Other enums: `RenderMode` (Http/Chrome/AutoSwitch), `ScrapeFormat` (Markdown/Html/RawHtml/Json), `PerformanceProfile` (HighStable/Extreme/Balanced/Max), `RedditSort` (Hot/Top/New/Rising), `RedditTime` (Hour/Day/Week/Month/Year/All)
 

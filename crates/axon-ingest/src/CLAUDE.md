@@ -55,7 +55,7 @@ ingest/
   - Must have ≥2 path segments (host + at minimum `group/project`) — rejects bare group URLs
 - **5 sequential phases** run by `ingest_gitlab()`:
   1. **metadata** — repo description, visibility, stars, forks
-  2. **files** — `git clone --depth=1` subprocess; reuses `is_indexable_doc_path` and `is_indexable_source_path` from `src/ingest/github`; token injected as `Authorization: Basic base64("oauth2:<token>")`; requires `git` in PATH
+  2. **files** — `git clone --depth=1` subprocess; reuses `is_indexable_doc_path` and `is_indexable_source_path` from `crates/axon-ingest/src/github`; token injected as `Authorization: Basic base64("oauth2:<token>")`; requires `git` in PATH
   3. **issues** — paginated REST via `/projects/:id/issues`, sorted by `updated_at desc`; skipped if `issues_enabled == false`
   4. **merge_requests** — paginated REST via `/projects/:id/merge_requests`, sorted by `updated_at desc`; skipped if `merge_requests_enabled == false`
   5. **wiki** — fetched with `with_content=1` via `/projects/:id/wikis`; skipped if `wiki_enabled == false`
@@ -86,7 +86,7 @@ ingest/
 - Files are ingested via `clone_repo()` (`git clone --depth=1` subprocess), then walked and embedded — requires `git` in PATH/container
 - `wiki.rs` runs `git clone --depth=1` as a subprocess — requires `git` in PATH/container. Non-zero exit = no wiki = `Ok(0)` (not an error)
 - **Metadata**: `github/meta.rs` builds canonical `git_*` and `code_*` payload fields via `GitHubPayloadParams` and `build_github_payload()`. GitHub no longer emits `gh_*` duplicates in payload schema v7. Includes repo-level (`git_repo_*`), file-level (`code_file_*`, `code_line_*`, `code_chunking_method`), symbol-level (`symbol_*`), and issue/PR-level (`git_number`, `git_state`, `git_author`, labels, merge/draft fields) metadata.
-- **File classification**: `classify_file_type()` in `src/vector/ops/input/classify.rs` tags each file as `test`/`config`/`doc`/`source` — stored in `code_file_type`
+- **File classification**: `classify_file_type()` in `crates/axon-vector/src/ops/input/classify.rs` tags each file as `test`/`config`/`doc`/`source` — stored in `code_file_type`
 - **Failure semantics**: repo metadata, issues, PRs, wiki pages, and file batches all fail on `docs_failed`. The top-level GitHub tally returns an error if any subtask fails instead of counting that subtask as zero.
 
 ### Reddit (`reddit.rs` + `reddit/`)
@@ -111,7 +111,7 @@ ingest/
 ### Sessions (`sessions/`)
 - Parses exported conversation files from Claude (`.jsonl`), Codex (`.jsonl`), and Gemini (`.json`)
 - Each parser (`claude.rs`, `codex.rs`, `gemini.rs`) extracts message pairs into flat text chunks
-- Called by `src/cli/commands/sessions.rs`; async submissions use the SQLite job runtime, while `--wait true` runs through the services ingest path with in-process workers
+- Called by `crates/axon-cli/src/commands/sessions.rs`; async submissions use the SQLite job runtime, while `--wait true` runs through the services ingest path with in-process workers
 
 ## Testing
 
@@ -188,7 +188,7 @@ summary.require_success("new ingest source embed")?;
 `axon_ingest_jobs` differs from other job tables:
 - Uses `source_type TEXT` (`github`/`reddit`/`youtube`/`sessions`) + `target TEXT` (repo name, subreddit, video URL, session target)
 - Does **NOT** have `url` or `urls_json` columns
-- Ingest worker lifecycle is owned by the SQLite worker subsystem (`src/jobs/workers.rs`); the legacy `worker_lane.rs` was removed with the old queue runtime. `AXON_INGEST_LANES` is wired through config and clamped to 1-16.
+- Ingest worker lifecycle is owned by the SQLite worker subsystem (`crates/axon-jobs/src/workers.rs`); the legacy `worker_lane.rs` was removed with the old queue runtime. `AXON_INGEST_LANES` is wired through config and clamped to 1-16.
 
 ## Known Gaps
 
@@ -197,7 +197,7 @@ summary.require_success("new ingest source embed")?;
 | YouTube age-restricted / private videos | `yt-dlp` exits non-zero; after retry, the current video fails and playlist ingestion stops. No friendly message. |
 | YouTube manual captions | Only `--write-auto-sub` is passed; `--write-subs` (manual captions) is not requested. Videos with manual but no auto-generated captions will fail. |
 | GitHub file stream resilience | `flush_batch` errors and `docs_failed` are counted and returned through the file-ingest stats; top-level GitHub ingest fails if any file batch failed. Batch timeout: 120s. |
-| Ingest job hang detection | Per-job heartbeat (30s touch, `src/jobs/workers/heartbeat.rs`) + periodic watchdog (60s sweep, `src/jobs/workers.rs`) reclaim jobs whose `updated_at` exceeds `watchdog_stale_timeout_secs + watchdog_confirm_secs` (default 360s). Reclaimed rows are reset to `pending` (not `failed`). |
+| Ingest job hang detection | Per-job heartbeat (30s touch, `crates/axon-jobs/src/workers/heartbeat.rs`) + periodic watchdog (60s sweep, `crates/axon-jobs/src/workers.rs`) reclaim jobs whose `updated_at` exceeds `watchdog_stale_timeout_secs + watchdog_confirm_secs` (default 360s). Reclaimed rows are reset to `pending` (not `failed`). |
 
 ## yt-dlp Requirement
 
@@ -208,8 +208,8 @@ No such file or directory (os error 2)
 Install: `pip install yt-dlp` or `brew install yt-dlp`. Verify: `yt-dlp --version`.
 
 ## Adding a New Ingest Source
-1. Add parser in `src/ingest/<source>.rs`
-2. Extend `classify_target()` in `src/ingest/classify.rs` to recognize the new source
-3. Add a per-source variant in the relevant ingest service entry point (`src/services/ingest.rs`)
-4. Add `source_type` variant handling in the SQLite ingest worker (`src/jobs/workers.rs` and the ingest payload schema)
+1. Add parser in `crates/axon-ingest/src/<source>.rs`
+2. Extend `classify_target()` in `crates/axon-ingest/src/classify.rs` to recognize the new source
+3. Add a per-source variant in the relevant ingest service entry point (`crates/axon-services/src/ingest.rs`)
+4. Add `source_type` variant handling in the SQLite ingest worker (`crates/axon-jobs/src/workers.rs` and the ingest payload schema)
 5. Add env vars to `.env.example`
