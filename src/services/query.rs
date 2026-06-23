@@ -230,6 +230,16 @@ pub async fn code_search(
     })
 }
 
+/// Extract the SQLite pool backing the code index from the service runtime.
+/// Code-index functions take the raw pool (not `ServiceContext`) so they live
+/// below the services layer without a dependency cycle.
+fn code_index_pool(ctx: &ServiceContext) -> Result<sqlx::SqlitePool, Box<dyn Error + Send + Sync>> {
+    ctx.jobs
+        .sqlite_pool()
+        .map(|pool| pool.as_ref().clone())
+        .ok_or_else(|| "code search requires a SQLite service runtime".into())
+}
+
 async fn resolve_code_search_freshness(
     ctx: &ServiceContext,
     identity: &CodeIndexIdentity,
@@ -239,7 +249,21 @@ async fn resolve_code_search_freshness(
         return code_search_freshness("skipped", None, 0, 0);
     }
 
-    match ensure_fresh(ctx, identity, EnsureFreshOptions::default()).await {
+    let pool = match code_index_pool(ctx) {
+        Ok(pool) => pool,
+        Err(err) => {
+            return code_search_freshness(
+                "stale",
+                Some(FreshnessWarning::Failed {
+                    error: err.to_string(),
+                }),
+                0,
+                0,
+            );
+        }
+    };
+
+    match ensure_fresh(ctx.cfg(), pool, identity, EnsureFreshOptions::default()).await {
         Ok(outcome) => code_search_freshness(
             "fresh",
             outcome.warning,
@@ -261,7 +285,7 @@ async fn code_search_committed_generation(
     ctx: &ServiceContext,
     identity: &CodeIndexIdentity,
 ) -> Result<Option<i64>, Box<dyn Error + Send + Sync>> {
-    let store = CodeIndexStore::open_for_context(ctx).await?;
+    let store = CodeIndexStore::open_for_pool(code_index_pool(ctx)?).await?;
     let generation = store.committed_generation(identity).await?.unwrap_or(0);
     Ok((generation > 0).then_some(generation))
 }

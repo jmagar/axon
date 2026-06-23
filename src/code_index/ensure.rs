@@ -9,7 +9,7 @@ use crate::code_index::config::{CodeIndexIdentity, freshness_ttl, reindex_timeou
 use crate::code_index::indexer::{ReindexSummary, reindex_changed_files, retry_cleanup_debt};
 use crate::code_index::manifest::{ManifestOptions, build_manifest};
 use crate::code_index::store::CodeIndexStore;
-use crate::services::context::ServiceContext;
+use axon_core::config::Config;
 
 static FRESH_UNTIL: LazyLock<DashMap<String, Instant>> = LazyLock::new(DashMap::new);
 static SINGLE_FLIGHT: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
@@ -47,7 +47,8 @@ impl Default for EnsureFreshOptions {
 }
 
 pub(crate) async fn ensure_fresh(
-    ctx: &ServiceContext,
+    cfg: &Config,
+    pool: sqlx::SqlitePool,
     identity: &CodeIndexIdentity,
     options: EnsureFreshOptions,
 ) -> anyhow::Result<EnsureFreshOutcome> {
@@ -79,7 +80,7 @@ pub(crate) async fn ensure_fresh(
         });
     }
 
-    let store = CodeIndexStore::open_for_context(ctx).await?;
+    let store = CodeIndexStore::open_for_pool(pool).await?;
     let owner = format!("{}:{}", std::process::id(), uuid::Uuid::new_v4());
     let lease_ms = options
         .reindex_timeout
@@ -94,7 +95,7 @@ pub(crate) async fn ensure_fresh(
         });
     }
 
-    let result = refresh_under_lease(ctx, &store, identity, &options).await;
+    let result = refresh_under_lease(cfg, &store, identity, &options).await;
     let release_result = store.release_lease(identity, &owner).await;
     if let Err(err) = release_result {
         tracing::warn!(error = %err, "code-search freshness lease release failed");
@@ -134,21 +135,21 @@ enum RefreshError {
 }
 
 async fn refresh_under_lease(
-    ctx: &ServiceContext,
+    cfg: &Config,
     store: &CodeIndexStore,
     identity: &CodeIndexIdentity,
     options: &EnsureFreshOptions,
 ) -> Result<ReindexSummary, RefreshError> {
     tokio::time::timeout(
         options.reindex_timeout,
-        refresh_under_lease_inner(ctx, store, identity, options),
+        refresh_under_lease_inner(cfg, store, identity, options),
     )
     .await
     .map_err(|_| RefreshError::TimedOut)?
 }
 
 async fn refresh_under_lease_inner(
-    ctx: &ServiceContext,
+    cfg: &Config,
     store: &CodeIndexStore,
     identity: &CodeIndexIdentity,
     options: &EnsureFreshOptions,
@@ -161,7 +162,7 @@ async fn refresh_under_lease_inner(
         .await
         .map_err(|err| RefreshError::Failed(err.to_string()))?;
     if diff.is_empty() {
-        retry_cleanup_debt(ctx.cfg(), store, identity)
+        retry_cleanup_debt(cfg, store, identity)
             .await
             .map_err(|err| RefreshError::Failed(err.to_string()))?;
         store
@@ -171,7 +172,7 @@ async fn refresh_under_lease_inner(
         return Ok(ReindexSummary::default());
     }
 
-    reindex_changed_files(ctx.cfg(), store, identity, &manifest, &diff)
+    reindex_changed_files(cfg, store, identity, &manifest, &diff)
         .await
         .map_err(|err| RefreshError::Failed(err.to_string()))
 }

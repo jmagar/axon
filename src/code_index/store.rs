@@ -38,14 +38,7 @@ pub(crate) struct StoredFile {
 }
 
 impl CodeIndexStore {
-    pub(crate) async fn open_for_context(
-        ctx: &crate::services::context::ServiceContext,
-    ) -> anyhow::Result<Self> {
-        let pool = ctx
-            .jobs
-            .sqlite_pool()
-            .map(|pool| pool.as_ref().clone())
-            .ok_or_else(|| anyhow::anyhow!("code search requires a SQLite service runtime"))?;
+    pub(crate) async fn open_for_pool(pool: SqlitePool) -> anyhow::Result<Self> {
         let store = Self { pool };
         store.init_schema().await?;
         Ok(store)
