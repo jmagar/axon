@@ -1,5 +1,5 @@
-use crate::mcp::schema::AxonRequest;
 use crate::services::types::supported_routes;
+use axon_api::mcp_schema::AxonRequest;
 use serde::{Deserialize, Serialize};
 
 pub const CLIENT_SERVER_SCHEMA_VERSION: &str = "client-server.v1";

@@ -18,6 +18,7 @@ pub mod explain;
 pub mod ingest;
 pub mod job_dto;
 pub mod job_status;
+pub mod mcp_schema;
 pub mod result;
 pub mod service_job;
 

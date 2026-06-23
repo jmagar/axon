@@ -3,7 +3,7 @@ use super::client_contract::{
     RestCrawlRequest, RestExtractRequest, RestIngestRequest, RestMemoryRequest,
 };
 use crate::core::config::RenderMode;
-use crate::mcp::schema::{IngestRequest, MemoryRequest, MemorySubaction};
+use axon_api::mcp_schema::{IngestRequest, MemoryRequest, MemorySubaction};
 
 #[test]
 fn extract_request_defaults_to_auto_mode() {

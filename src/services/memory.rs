@@ -10,7 +10,6 @@ use crate::core::config::{Config, ConfigOverrides};
 use crate::core::logging::log_warn;
 use crate::ingest::sessions::redact_session_text;
 use crate::jobs::store::now_ms;
-use crate::mcp::schema::{MemoryEdgeType, MemoryNodeType, MemoryRequest, MemorySubaction};
 use crate::services::context::ServiceContext;
 use crate::services::types::ClientActionError;
 use crate::vector::ops::qdrant::{
@@ -19,6 +18,7 @@ use crate::vector::ops::qdrant::{
 use crate::vector::ops::sparse::compute_sparse_vector;
 use crate::vector::ops::tei::{EmbedInput, embed_prepared_docs, tei_embed_typed};
 use crate::vector::ops::{SourceDocument, prepare_source_document};
+use axon_api::mcp_schema::{MemoryEdgeType, MemoryNodeType, MemoryRequest, MemorySubaction};
 
 mod context_format;
 mod runtime_metadata;

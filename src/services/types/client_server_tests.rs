@@ -1,5 +1,5 @@
 use super::*;
-use crate::mcp::schema::{AxonRequest, StatusRequest};
+use axon_api::mcp_schema::{AxonRequest, StatusRequest};
 use std::path::Path;
 
 #[test]

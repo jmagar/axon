@@ -1,10 +1,5 @@
 use crate::core::config::{Config, ConfigOverrides};
 use crate::core::content::url_to_filename;
-use crate::mcp::schema::{
-    CrawlRequest, CrawlSubaction, EmbedRequest, EmbedSubaction, EndpointsRequest, ExtractRequest,
-    ExtractSubaction, IngestRequest, IngestSubaction, ScrapeRequest, ScreenshotRequest,
-    SummarizeRequest,
-};
 use crate::services::context::ServiceContext;
 use crate::services::crawl as crawl_svc;
 use crate::services::embed as embed_svc;
@@ -15,6 +10,11 @@ use crate::services::scrape as scrape_svc;
 use crate::services::screenshot as screenshot_svc;
 use crate::services::summarize as summarize_svc;
 use crate::services::types::ClientActionError;
+use axon_api::mcp_schema::{
+    CrawlRequest, CrawlSubaction, EmbedRequest, EmbedSubaction, EndpointsRequest, ExtractRequest,
+    ExtractSubaction, IngestRequest, IngestSubaction, ScrapeRequest, ScreenshotRequest,
+    SummarizeRequest,
+};
 use uuid::Uuid;
 
 use super::super::internal_error;

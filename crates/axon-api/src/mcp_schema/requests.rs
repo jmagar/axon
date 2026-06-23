@@ -1,4 +1,3 @@
-use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -9,7 +9,7 @@ pub struct RestSessionsIngestOptions {
     pub project: Option<String>,
 }
 
-impl From<RestSessionsIngestOptions> for crate::mcp::schema::SessionsIngestOptions {
+impl From<RestSessionsIngestOptions> for axon_api::mcp_schema::SessionsIngestOptions {
     fn from(value: RestSessionsIngestOptions) -> Self {
         Self {
             claude: value.claude,

@@ -3,11 +3,11 @@
 use super::super::internal_error;
 use super::helpers::map_render_mode;
 use crate::core::config::ConfigOverrides;
-use crate::mcp::schema::{BrandRequest, DiffRequest};
 use crate::services::brand as brand_svc;
 use crate::services::context::ServiceContext;
 use crate::services::diff as diff_svc;
 use crate::services::types::ClientActionError;
+use axon_api::mcp_schema::{BrandRequest, DiffRequest};
 
 pub async fn dispatch_diff(
     service_context: &ServiceContext,

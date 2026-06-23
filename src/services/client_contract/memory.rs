@@ -51,7 +51,7 @@ pub struct RestMemoryRequest {
     pub token_budget: Option<usize>,
 }
 
-impl From<RestMemorySubaction> for crate::mcp::schema::MemorySubaction {
+impl From<RestMemorySubaction> for axon_api::mcp_schema::MemorySubaction {
     fn from(value: RestMemorySubaction) -> Self {
         match value {
             RestMemorySubaction::Remember => Self::Remember,
@@ -65,7 +65,7 @@ impl From<RestMemorySubaction> for crate::mcp::schema::MemorySubaction {
     }
 }
 
-impl From<RestMemoryNodeType> for crate::mcp::schema::MemoryNodeType {
+impl From<RestMemoryNodeType> for axon_api::mcp_schema::MemoryNodeType {
     fn from(value: RestMemoryNodeType) -> Self {
         match value {
             RestMemoryNodeType::Decision => Self::Decision,
@@ -77,7 +77,7 @@ impl From<RestMemoryNodeType> for crate::mcp::schema::MemoryNodeType {
     }
 }
 
-impl From<RestMemoryEdgeType> for crate::mcp::schema::MemoryEdgeType {
+impl From<RestMemoryEdgeType> for axon_api::mcp_schema::MemoryEdgeType {
     fn from(value: RestMemoryEdgeType) -> Self {
         match value {
             RestMemoryEdgeType::RelatesTo => Self::RelatesTo,
@@ -86,7 +86,7 @@ impl From<RestMemoryEdgeType> for crate::mcp::schema::MemoryEdgeType {
     }
 }
 
-impl From<RestMemoryRequest> for crate::mcp::schema::MemoryRequest {
+impl From<RestMemoryRequest> for axon_api::mcp_schema::MemoryRequest {
     fn from(req: RestMemoryRequest) -> Self {
         Self {
             subaction: req.subaction.map(Into::into),

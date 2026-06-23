@@ -1,7 +1,7 @@
 use crate::core::config::{Config, ConfigOverrides, RenderMode, ScrapeFormat};
-use crate::mcp::schema::{CrawlRequest, IngestRequest, McpRenderMode, McpScrapeFormat};
 use crate::services::ingest as ingest_svc;
 use crate::services::types::ClientActionError;
+use axon_api::mcp_schema::{CrawlRequest, IngestRequest, McpRenderMode, McpScrapeFormat};
 
 pub(super) fn parse_ingest_source(
     req: &IngestRequest,

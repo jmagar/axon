@@ -276,7 +276,7 @@ pub struct RestIngestRequest {
     pub sessions: Option<RestSessionsIngestOptions>,
 }
 
-impl From<RestIngestSourceType> for crate::mcp::schema::IngestSourceType {
+impl From<RestIngestSourceType> for axon_api::mcp_schema::IngestSourceType {
     fn from(value: RestIngestSourceType) -> Self {
         match value {
             RestIngestSourceType::Github => Self::Github,
@@ -291,7 +291,7 @@ impl From<RestIngestSourceType> for crate::mcp::schema::IngestSourceType {
     }
 }
 
-impl From<RestIngestRequest> for crate::mcp::schema::IngestRequest {
+impl From<RestIngestRequest> for axon_api::mcp_schema::IngestRequest {
     fn from(req: RestIngestRequest) -> Self {
         Self {
             source_type: Some(req.source_type.into()),

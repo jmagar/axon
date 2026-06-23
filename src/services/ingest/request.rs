@@ -3,10 +3,10 @@ use crate::ingest;
 use crate::jobs::ingest::IngestSource;
 
 pub fn source_from_mcp_request(
-    req: &crate::mcp::schema::IngestRequest,
+    req: &axon_api::mcp_schema::IngestRequest,
     cfg: &Config,
 ) -> Result<IngestSource, String> {
-    use crate::mcp::schema::IngestSourceType;
+    use axon_api::mcp_schema::IngestSourceType;
 
     let source_type = req
         .source_type
@@ -165,7 +165,7 @@ fn validate_rss_ingest_target(target: &str) -> Result<(), String> {
 }
 
 fn required_ingest_target(
-    req: &crate::mcp::schema::IngestRequest,
+    req: &axon_api::mcp_schema::IngestRequest,
     field: &'static str,
 ) -> Result<String, String> {
     let Some(value) = req

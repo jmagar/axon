@@ -1,4 +1,3 @@
-use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
 use super::requests::{McpRenderMode, ResponseMode, SearchTimeRange};

@@ -21,13 +21,13 @@ pub(crate) fn collect_unique_urls(url: Option<String>, urls: Option<Vec<String>>
     out
 }
 
-use crate::mcp::schema::{
-    AxonRequest, CrawlSubaction, EmbedSubaction, ExtractSubaction, IngestSubaction,
-    MemorySubaction, SetupMode, WatchSubaction,
-};
 use crate::services::context::ServiceContext;
 use crate::services::system;
 use crate::services::types::ClientActionError;
+use axon_api::mcp_schema::{
+    AxonRequest, CrawlSubaction, EmbedSubaction, ExtractSubaction, IngestSubaction,
+    MemorySubaction, SetupMode, WatchSubaction,
+};
 
 pub async fn dispatch_action(
     service_context: &ServiceContext,
