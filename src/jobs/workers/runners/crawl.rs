@@ -68,16 +68,10 @@ pub async fn run_crawl_job(
     // the lane before the engine's own guard could take over.
     validate_within_budget(&url, cancel_token.as_ref(), budget).await?;
 
-    let job_output_dir = crate::services::crawl::predict_crawl_output_dir(
-        &effective_cfg.output_dir,
-        &url,
-        &id.to_string(),
-    );
-    let caller_output_dir = crate::services::crawl::predict_crawl_output_dir(
-        &caller_cfg.output_dir,
-        &url,
-        &id.to_string(),
-    );
+    let job_output_dir =
+        axon_crawl::predict_crawl_output_dir(&effective_cfg.output_dir, &url, &id.to_string());
+    let caller_output_dir =
+        axon_crawl::predict_crawl_output_dir(&caller_cfg.output_dir, &url, &id.to_string());
 
     let attempt_id = current_attempt_id(pool, id, "axon_crawl_jobs").await?;
     let (progress_tx, progress_task) =

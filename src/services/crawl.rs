@@ -1,5 +1,4 @@
 use crate::core::config::Config;
-use crate::core::content::url_to_domain;
 use crate::core::http::validate_url;
 use crate::jobs::backend::JobKind;
 use crate::jobs::config_snapshot::config_snapshot_json;
@@ -34,12 +33,7 @@ fn predict_audit_report_path(output_dir: &Path, url: &str) -> PathBuf {
         .join(format!("{slug}-diff-report.json"))
 }
 
-pub fn predict_crawl_output_dir(base_output_dir: &Path, url: &str, job_id: &str) -> PathBuf {
-    base_output_dir
-        .join("domains")
-        .join(url_to_domain(url))
-        .join(job_id)
-}
+pub use axon_crawl::predict_crawl_output_dir;
 
 pub fn predict_crawl_output_paths(output_dir: &Path, url: &str) -> Vec<String> {
     vec![
