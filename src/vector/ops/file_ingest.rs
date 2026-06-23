@@ -11,13 +11,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow as anyhow_err};
 
 use crate::core::logging::log_warn;
-use crate::ingest::github::{is_indexable_doc_path, is_indexable_source_path};
 use crate::vector::ops::input::classify::path_extension;
 use crate::vector::ops::input::select;
 use crate::vector::ops::input::{
     chunk_markdown_with_offsets, chunk_text_with_offsets,
     code::{ChunkSource, CodeChunk, chunk_code_chunks},
 };
+use crate::vector::ops::input::{is_indexable_doc_path, is_indexable_source_path};
 
 /// Which files a directory walk should yield.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

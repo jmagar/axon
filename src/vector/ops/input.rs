@@ -1,6 +1,9 @@
 pub mod classify;
 pub mod code;
+mod indexable;
 pub mod select;
+
+pub use indexable::{is_indexable_doc_path, is_indexable_source_path};
 
 use crate::core::http::normalize_url;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
