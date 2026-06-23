@@ -4,7 +4,7 @@
 use crate::core::config::Config;
 use crate::core::llm::{self, CompletionRequest};
 use crate::jobs::store::now_ms;
-use crate::services::types::DiffResult;
+use axon_api::diff::DiffResult;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 

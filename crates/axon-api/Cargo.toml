@@ -8,3 +8,4 @@ license = "MIT"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
