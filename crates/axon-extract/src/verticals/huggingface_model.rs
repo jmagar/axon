@@ -3,10 +3,10 @@
 //! Matches huggingface.co/{org}/{model} (2-segment path, not datasets/ or spaces/).
 //! Uses the HuggingFace Hub API. Optional HF_TOKEN env var for higher rate limits.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 #[cfg(test)]
 #[path = "huggingface_model_tests.rs"]
@@ -62,7 +62,7 @@ async fn fetch_model_card(model_id: &str) -> Option<String> {
     let readme_url = format!("https://huggingface.co/{model_id}/raw/main/README.md");
     let mut req = client
         .get(&readme_url)
-        .header("User-Agent", crate::core::http::axon_api_ua());
+        .header("User-Agent", axon_core::http::axon_api_ua());
     if let Ok(token) = std::env::var("HF_TOKEN")
         && !token.is_empty()
     {

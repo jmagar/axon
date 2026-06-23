@@ -3,10 +3,10 @@
 //! Matches dev.to/{username}/{slug} and fetches article data from the
 //! dev.to API. No authentication required for public articles.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 #[cfg(test)]
 #[path = "dev_to_tests.rs"]

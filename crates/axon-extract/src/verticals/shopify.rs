@@ -3,10 +3,10 @@
 //! Matches any URL with /products/{handle} on a Shopify-looking host.
 //! Uses the public /products/{handle}.json endpoint — no authentication needed.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 #[cfg(test)]
 #[path = "shopify_tests.rs"]

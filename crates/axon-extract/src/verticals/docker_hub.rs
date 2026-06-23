@@ -3,10 +3,10 @@
 //! Matches hub.docker.com/r/{namespace}/{repo} (community images) and
 //! hub.docker.com/_/{repo} (official images). Uses the Docker Hub v2 API.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 #[cfg(test)]
 #[path = "docker_hub_tests.rs"]

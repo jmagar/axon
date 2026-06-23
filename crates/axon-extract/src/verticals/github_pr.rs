@@ -1,22 +1,21 @@
-//! GitHub Issues vertical extractor via GitHub REST API.
+//! GitHub Pull Requests vertical extractor via GitHub REST API.
 //!
-//! Matches github.com/{owner}/{repo}/issues/{number} URLs.
+//! Matches github.com/{owner}/{repo}/pull/{number} URLs.
 //! Uses GITHUB_TOKEN when available.
-//! If the URL is actually a pull request, returns VerticalUnsupportedUrl.
 //!
 //! auto_dispatch: true
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
-use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
+use axon_ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
-    name: "github_issue",
-    label: "GitHub Issue",
-    description: "Fetches GitHub issue metadata and body from api.github.com.",
-    url_patterns: &["https://github.com/{owner}/{repo}/issues/{number}"],
+    name: "github_pr",
+    label: "GitHub Pull Request",
+    description: "Fetches GitHub pull request metadata and description from api.github.com.",
+    url_patterns: &["https://github.com/{owner}/{repo}/pull/{number}"],
     auto_dispatch: true,
 };
 
@@ -34,8 +33,8 @@ pub fn matches(url: &str) -> bool {
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
-    // Exactly 4 segments: owner / repo / issues / number
-    segs.len() == 4 && segs[2] == "issues" && segs[3].parse::<u64>().is_ok()
+    // Exactly 4 segments: owner / repo / pull / number
+    segs.len() == 4 && segs[2] == "pull" && segs[3].parse::<u64>().is_ok()
 }
 
 fn github_auth_header() -> Option<String> {
@@ -53,7 +52,7 @@ fn parse_url_parts(url: &str) -> Option<(String, String, u64)> {
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
-    if segs.len() == 4 && segs[2] == "issues" {
+    if segs.len() == 4 && segs[2] == "pull" {
         let owner = segs[0].to_string();
         let repo = segs[1].to_string();
         let number = segs[3].parse::<u64>().ok()?;
@@ -69,7 +68,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
             url: url.to_string(),
         })?;
 
-    let api_url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{number}");
+    let api_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{number}");
     let client = http_client().map_err(|_| VerticalError::VerticalTargetUnavailable {
         vertical: INFO.name,
         status: 0,
@@ -125,14 +124,6 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
                 status,
             })?;
 
-    // If the API response has a `pull_request` key, this is a PR — wrong extractor
-    if data.get("pull_request").is_some() {
-        return Err(VerticalError::VerticalUnsupportedUrl {
-            vertical: INFO.name,
-            url: url.to_string(),
-        });
-    }
-
     build_scraped_doc(url, &owner, &repo, number, &data)
 }
 
@@ -140,21 +131,34 @@ fn build_extra(
     owner: &str,
     repo: &str,
     number: u64,
-    state: &str,
-    author: &str,
-    labels: &[&str],
-    created_at: &str,
+    data: &serde_json::Value,
 ) -> serde_json::Value {
+    let state = data["state"].as_str().unwrap_or("");
+    let merged_at = data["merged_at"].as_str().unwrap_or("");
+    let author = data["user"]["login"].as_str().unwrap_or("");
+    let labels: Vec<String> = data["labels"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|l| l["name"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let pr_state = if state == "closed" && !merged_at.is_empty() {
+        "merged"
+    } else {
+        state
+    };
     build_git_payload(&GitPayload {
         provider: "github".to_string(),
         host: "github.com".to_string(),
         owner: Some(owner.to_string()),
         repo: repo.to_string(),
-        content_kind: ContentKind::Issue,
-        state: if state.is_empty() {
+        content_kind: ContentKind::Pr,
+        state: if pr_state.is_empty() {
             None
         } else {
-            Some(state.to_string())
+            Some(pr_state.to_string())
         },
         number: Some(number),
         author: if author.is_empty() {
@@ -162,12 +166,17 @@ fn build_extra(
         } else {
             Some(author.to_string())
         },
-        labels: labels.iter().map(|s| s.to_string()).collect(),
-        created_at: if created_at.is_empty() {
+        labels,
+        is_draft: Some(data["draft"].as_bool().unwrap_or(false)),
+        merged_at: if merged_at.is_empty() {
             None
         } else {
-            Some(created_at.to_string())
+            Some(merged_at.to_string())
         },
+        created_at: data["created_at"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
         ..Default::default()
     })
 }
@@ -179,14 +188,23 @@ fn build_scraped_doc(
     number: u64,
     data: &serde_json::Value,
 ) -> Result<ScrapedDoc, VerticalError> {
-    let issue_title = data["title"].as_str().unwrap_or("Untitled").to_string();
-    let title = format!("{owner}/{repo}#{number}: {issue_title}");
+    let pr_title = data["title"].as_str().unwrap_or("Untitled").to_string();
+    let title = format!("{owner}/{repo}#{number}: {pr_title}");
     let body = data["body"].as_str().unwrap_or("");
     let body_truncated: String = body.chars().take(8000).collect();
     let state = data["state"].as_str().unwrap_or("unknown");
+    let draft = data["draft"].as_bool().unwrap_or(false);
+    let merged = data["merged"].as_bool().unwrap_or(false);
+    let merged_at = data["merged_at"].as_str().unwrap_or("");
     let author = data["user"]["login"].as_str().unwrap_or("unknown");
+    let head_ref = data["head"]["ref"].as_str().unwrap_or("");
+    let base_ref = data["base"]["ref"].as_str().unwrap_or("");
+    let additions = data["additions"].as_u64().unwrap_or(0);
+    let deletions = data["deletions"].as_u64().unwrap_or(0);
+    let changed_files = data["changed_files"].as_u64().unwrap_or(0);
+    let commits = data["commits"].as_u64().unwrap_or(0);
     let comments = data["comments"].as_u64().unwrap_or(0);
-    let created_at = data["created_at"].as_str().unwrap_or("");
+    let review_comments = data["review_comments"].as_u64().unwrap_or(0);
     let html_url = data["html_url"].as_str().unwrap_or(url);
 
     let labels: Vec<&str> = data["labels"]
@@ -194,28 +212,33 @@ fn build_scraped_doc(
         .map(|a| a.iter().filter_map(|l| l["name"].as_str()).collect())
         .unwrap_or_default();
 
-    let assignees: Vec<&str> = data["assignees"]
-        .as_array()
-        .map(|a| a.iter().filter_map(|u| u["login"].as_str()).collect())
-        .unwrap_or_default();
-
-    let milestone = data["milestone"]["title"].as_str().unwrap_or("");
+    let mut state_desc = state.to_string();
+    if draft {
+        state_desc.push_str(" [DRAFT]");
+    }
+    if merged {
+        state_desc.push_str(" [MERGED]");
+    }
 
     let mut md = format!("# {title}\n\n");
+    md.push_str(&format!("**State:** {state_desc} | **Author:** {author}\n"));
+    if !base_ref.is_empty() || !head_ref.is_empty() {
+        md.push_str(&format!("**Base:** {base_ref} ← **Head:** {head_ref}\n"));
+    }
     md.push_str(&format!(
-        "**State:** {state} | **Author:** {author} | **Comments:** {comments} | **Created:** {created_at}\n"
+        "**Changes:** +{additions}/-{deletions} in {changed_files} files, {commits} commits\n"
+    ));
+    md.push_str(&format!(
+        "**Reviews:** {review_comments} | **Comments:** {comments}\n"
     ));
     if !labels.is_empty() {
         md.push_str(&format!("**Labels:** {}\n", labels.join(", ")));
     }
-    if !assignees.is_empty() {
-        md.push_str(&format!("**Assignees:** {}\n", assignees.join(", ")));
-    }
-    if !milestone.is_empty() {
-        md.push_str(&format!("**Milestone:** {milestone}\n"));
+    if merged && !merged_at.is_empty() {
+        md.push_str(&format!("**Merged at:** {merged_at}\n"));
     }
     if !body_truncated.is_empty() {
-        md.push_str("\n## Body\n\n");
+        md.push_str("\n## Description\n\n");
         md.push_str(&body_truncated);
         md.push('\n');
     }
@@ -223,17 +246,22 @@ fn build_scraped_doc(
 
     let structured = serde_json::json!({
         "number": number,
-        "title": issue_title,
+        "title": pr_title,
         "state": state,
+        "draft": draft,
+        "merged": merged,
         "author": author,
+        "head_ref": head_ref,
+        "base_ref": base_ref,
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": changed_files,
+        "commits": commits,
         "labels": labels,
-        "assignees": assignees,
-        "comments": comments,
-        "created_at": created_at,
         "html_url": html_url,
     });
 
-    let extra = build_extra(owner, repo, number, state, author, &labels, created_at);
+    let extra = build_extra(owner, repo, number, data);
 
     Ok(ScrapedDoc {
         url: url.to_string(),
@@ -248,5 +276,5 @@ fn build_scraped_doc(
 }
 
 #[cfg(test)]
-#[path = "github_issue_tests.rs"]
+#[path = "github_pr_tests.rs"]
 mod tests;

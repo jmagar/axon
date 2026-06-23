@@ -3,11 +3,11 @@
 //! Matches github.com/{owner}/{repo}/releases and /releases/tag/{tag}.
 //! Fetches release metadata from the GitHub REST API.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
-use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
+use axon_ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "github_release",

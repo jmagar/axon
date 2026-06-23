@@ -17,11 +17,11 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
-use crate::ingest::reddit::meta::build_reddit_post_extra_payload;
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
+use axon_ingest::reddit::meta::build_reddit_post_extra_payload;
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "reddit",

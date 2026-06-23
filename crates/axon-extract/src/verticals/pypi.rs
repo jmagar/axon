@@ -3,10 +3,10 @@
 //! Matches pypi.org/project/{name} or /project/{name}/{version} and fetches
 //! metadata from the PyPI JSON API. No authentication required.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "pypi",

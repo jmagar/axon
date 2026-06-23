@@ -11,10 +11,10 @@
 //! `fetch_rustdoc_docs()` is `pub(super)` so `crates_io.rs` can call it
 //! without duplicating the logic.
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "docs_rs",

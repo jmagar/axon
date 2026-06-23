@@ -5,15 +5,15 @@
 //! static singleton from `core::http` — SSRF-guarded, pooled, never
 //! re-created per call.
 
-use crate::core::config::Config;
-use crate::core::http::{axon_api_ua, axon_ua};
+use axon_core::config::Config;
+use axon_core::http::{axon_api_ua, axon_ua};
 use std::sync::Arc;
 
 /// Narrowed view over `ServiceContext` for vertical extractors.
 ///
 /// Contains exactly what an extractor needs: config (for credentials,
 /// timeouts, collection names) and nothing else. Extractors MUST NOT
-/// perform raw HTTP fetches — use `http_client()` from `crate::core::http`
+/// perform raw HTTP fetches — use `http_client()` from `axon_core::http`
 /// inside the extractor, which goes through the SSRF guard.
 #[derive(Clone)]
 pub struct VerticalContext {
@@ -40,13 +40,5 @@ impl VerticalContext {
             .user_agent
             .as_deref()
             .unwrap_or_else(|| axon_api_ua())
-    }
-}
-
-impl From<&crate::services::context::ServiceContext> for VerticalContext {
-    fn from(ctx: &crate::services::context::ServiceContext) -> Self {
-        Self {
-            cfg: Arc::clone(&ctx.cfg),
-        }
     }
 }

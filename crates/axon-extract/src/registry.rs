@@ -10,10 +10,10 @@
 //! has a corresponding arm in `dispatch_by_name()`, preventing the common
 //! "added extractor to catalog but forgot the dispatch arm" bug.
 
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
-use crate::extract::verticals;
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use crate::verticals;
 
 /// The full extractor catalog in auto-dispatch priority order.
 ///

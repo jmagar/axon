@@ -5,11 +5,11 @@
 
 use base64::Engine;
 
-use crate::core::http::http_client;
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
-use crate::ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::http::http_client;
+use axon_ingest::git_payload::{ContentKind, GitPayload, build_git_payload};
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "github_repo",
@@ -75,7 +75,7 @@ async fn fetch_readme(owner: &str, repo: &str) -> Option<String> {
     let readme_url = format!("https://api.github.com/repos/{owner}/{repo}/readme");
     let mut req = client
         .get(&readme_url)
-        .header("User-Agent", crate::core::http::axon_api_ua())
+        .header("User-Agent", axon_core::http::axon_api_ua())
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
     if let Some(auth) = github_auth_header() {

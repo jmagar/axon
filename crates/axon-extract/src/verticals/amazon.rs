@@ -6,13 +6,13 @@
 //! Uses Chrome rendering when configured, falls back to plain reqwest.
 //! Returns VerticalBlockedAntibot when the response signals an antibot challenge.
 
-use crate::core::config::RenderMode;
-use crate::core::error::ServiceTaxonomyError;
-use crate::core::http::http_client;
-use crate::crawl::scrape::{build_scrape_website, fetch_single_page};
-use crate::extract::context::VerticalContext;
-use crate::extract::error::VerticalError;
-use crate::extract::types::{ExtractorInfo, ScrapedDoc};
+use crate::context::VerticalContext;
+use crate::error::VerticalError;
+use crate::types::{ExtractorInfo, ScrapedDoc};
+use axon_core::config::RenderMode;
+use axon_core::error::ServiceTaxonomyError;
+use axon_core::http::http_client;
+use axon_crawl::scrape::{build_scrape_website, fetch_single_page};
 
 pub const INFO: ExtractorInfo = ExtractorInfo {
     name: "amazon",
@@ -64,7 +64,7 @@ pub async fn extract(url: &str, ctx: &VerticalContext) -> Result<ScrapedDoc, Ver
     if is_blocked {
         return Err(ServiceTaxonomyError::VerticalBlockedAntibot {
             vertical: INFO.name,
-            vendor: crate::core::error::ChallengeVendor::Other("amazon-bot"),
+            vendor: axon_core::error::ChallengeVendor::Other("amazon-bot"),
         });
     }
 
@@ -103,7 +103,7 @@ async fn fetch_via_chrome(url: &str, ctx: &VerticalContext) -> Result<String, Ve
     match page.status_code {
         403 | 503 => Err(ServiceTaxonomyError::VerticalBlockedAntibot {
             vertical: INFO.name,
-            vendor: crate::core::error::ChallengeVendor::Other("amazon-bot"),
+            vendor: axon_core::error::ChallengeVendor::Other("amazon-bot"),
         }),
         404 => Err(VerticalError::VerticalTargetNotFound {
             vertical: INFO.name,
@@ -144,7 +144,7 @@ async fn fetch_via_reqwest(url: &str, ctx: &VerticalContext) -> Result<String, V
         403 | 503 => {
             return Err(ServiceTaxonomyError::VerticalBlockedAntibot {
                 vertical: INFO.name,
-                vendor: crate::core::error::ChallengeVendor::Other("amazon-bot"),
+                vendor: axon_core::error::ChallengeVendor::Other("amazon-bot"),
             });
         }
         404 => {

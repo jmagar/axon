@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::ingest::reddit::meta::build_reddit_post_extra_payload as build_extra;
+use axon_ingest::reddit::meta::build_reddit_post_extra_payload as build_extra;
 
 #[test]
 fn build_extra_all_fields_present() {

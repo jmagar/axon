@@ -2,4 +2,4 @@
 //! vertical extractors can produce. Callers map these to
 //! `ServiceTaxonomyError` for MCP/CLI surfaces.
 
-pub use crate::core::error::ServiceTaxonomyError as VerticalError;
+pub use axon_core::error::ServiceTaxonomyError as VerticalError;
