@@ -113,7 +113,7 @@ async fn execute_prepared_sessions_ingest(
     }
     let request: crate::ingest::sessions::IngestSessionsPreparedRequest =
         serde_json::from_str(&payload_json)?;
-    let fut = crate::services::ingest::ingest_sessions_prepared_with_progress(
+    let fut = axon_ingest::orchestrate::ingest_sessions_prepared_with_progress(
         cfg,
         request,
         None,
@@ -157,7 +157,7 @@ async fn execute_ingest_source(
                 progress_tx,
                 cancel_token,
                 |c, t, tx| async move {
-                    crate::services::ingest::ingest_gitlab_with_progress(&c, &t, None, Some(tx))
+                    axon_ingest::orchestrate::ingest_gitlab_with_progress(&c, &t, None, Some(tx))
                         .await
                 },
             )
@@ -174,7 +174,7 @@ async fn execute_ingest_source(
                 progress_tx,
                 cancel_token,
                 |c, t, tx| async move {
-                    crate::services::ingest::ingest_gitea_with_progress(&c, &t, None, Some(tx))
+                    axon_ingest::orchestrate::ingest_gitea_with_progress(&c, &t, None, Some(tx))
                         .await
                 },
             )
@@ -191,7 +191,7 @@ async fn execute_ingest_source(
                 progress_tx,
                 cancel_token,
                 |c, t, tx| async move {
-                    crate::services::ingest::ingest_generic_git_with_progress(
+                    axon_ingest::orchestrate::ingest_generic_git_with_progress(
                         &c,
                         &t,
                         None,
@@ -206,7 +206,7 @@ async fn execute_ingest_source(
             let options = cancel_token
                 .map(crate::ingest::reddit::RedditIngestOptions::with_cancel_token)
                 .unwrap_or_default();
-            crate::services::ingest::ingest_reddit_with_progress_and_options(
+            axon_ingest::orchestrate::ingest_reddit_with_progress_and_options(
                 cfg,
                 &target,
                 None,
@@ -217,7 +217,7 @@ async fn execute_ingest_source(
             .map_err(lift_err)
         }
         IngestSource::Youtube { target } => {
-            let fut = crate::services::ingest::ingest_youtube_with_progress(
+            let fut = axon_ingest::orchestrate::ingest_youtube_with_progress(
                 cfg,
                 &target,
                 None,
@@ -226,7 +226,7 @@ async fn execute_ingest_source(
             cancelable(fut, cancel_token.as_ref()).await
         }
         IngestSource::Rss { target } => {
-            let fut = crate::services::ingest::ingest_rss_with_progress(
+            let fut = axon_ingest::orchestrate::ingest_rss_with_progress(
                 cfg,
                 &target,
                 None,
@@ -245,7 +245,7 @@ async fn execute_ingest_source(
             sessions_cfg.sessions_codex = sessions_codex;
             sessions_cfg.sessions_gemini = sessions_gemini;
             sessions_cfg.sessions_project = sessions_project;
-            let fut = crate::services::ingest::ingest_sessions_with_progress(
+            let fut = axon_ingest::orchestrate::ingest_sessions_with_progress(
                 &sessions_cfg,
                 None,
                 Some(progress_tx),
@@ -272,7 +272,7 @@ async fn run_github_ingest(
     )?;
     let mut github_cfg = cfg.clone();
     github_cfg.github_include_source = include_source;
-    let fut = crate::services::ingest::ingest_github_with_progress(
+    let fut = axon_ingest::orchestrate::ingest_github_with_progress(
         &github_cfg,
         &owner,
         &repo_name,

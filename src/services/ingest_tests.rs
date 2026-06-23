@@ -1,5 +1,6 @@
 use super::*;
 use crate::core::config::Config;
+use crate::ingest;
 use crate::jobs::backend::{BackendResult, JobKind, JobPayload, JobSidecarPayload};
 use crate::jobs::config_snapshot::decode_ingest_job_config;
 use crate::mcp::schema::{IngestRequest, IngestSourceType};

@@ -5,6 +5,7 @@ pub mod git_payload;
 pub mod gitea;
 pub mod github;
 pub mod gitlab;
+pub mod orchestrate;
 pub mod progress;
 pub mod reddit;
 pub mod rss;

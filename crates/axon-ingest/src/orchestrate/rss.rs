@@ -2,17 +2,16 @@
 //!
 //! Split out of `src/services/ingest.rs` to keep that module under the
 //! repository's 500-line file cap. Re-exported from the parent module so the
-//! public API (`services::ingest::ingest_rss[_with_progress]`) is unchanged.
+//! public API (`services::crate::ingest_rss[_with_progress]`) is unchanged.
 
 use std::error::Error;
 
 use tokio::sync::mpsc;
 
-use crate::core::config::Config;
-use crate::ingest;
-use crate::ingest::progress::PhaseReporter;
-use crate::services::events::{LogLevel, ServiceEvent, emit};
-use crate::services::types::IngestResult;
+use crate::progress::PhaseReporter;
+use axon_api::job_dto::IngestResult;
+use axon_core::config::Config;
+use axon_core::events::{LogLevel, ServiceEvent, emit};
 
 use super::{ingest_payload, map_ingest_result};
 
@@ -47,7 +46,7 @@ pub async fn ingest_rss_with_progress(
     .await;
 
     let reporter = PhaseReporter::new(progress_tx);
-    let chunks = ingest::rss::ingest_rss(cfg, url, &reporter)
+    let chunks = crate::rss::ingest_rss(cfg, url, &reporter)
         .await
         .map_err(|e| -> Box<dyn Error> { format!("rss ingest failed for {url}: {e:#}").into() })?;
 

@@ -2,11 +2,10 @@ use std::error::Error;
 
 use tokio::sync::mpsc;
 
-use crate::core::config::Config;
-use crate::ingest;
-use crate::ingest::progress::PhaseReporter;
-use crate::services::events::{LogLevel, ServiceEvent, emit};
-use crate::services::types::IngestResult;
+use crate::progress::PhaseReporter;
+use axon_api::job_dto::IngestResult;
+use axon_core::config::Config;
+use axon_core::events::{LogLevel, ServiceEvent, emit};
 
 use super::{ingest_payload, map_ingest_result};
 
@@ -25,7 +24,7 @@ pub async fn ingest_gitea_with_progress(
         },
     )
     .await;
-    let chunks = ingest::gitea::ingest_gitea(
+    let chunks = crate::gitea::ingest_gitea(
         cfg,
         target,
         cfg.github_include_source,
@@ -63,7 +62,7 @@ pub async fn ingest_generic_git_with_progress(
         },
     )
     .await;
-    let chunks = ingest::generic_git::ingest_generic_git(
+    let chunks = crate::generic_git::ingest_generic_git(
         cfg,
         target,
         cfg.github_include_source,
