@@ -1,5 +1,5 @@
 use super::write_extract_summary;
-use crate::core::config::Config;
+use axon_core::config::Config;
 
 #[tokio::test]
 async fn extract_summary_preserves_explicit_output_outside_output_dir() {

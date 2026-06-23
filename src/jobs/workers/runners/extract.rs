@@ -43,7 +43,7 @@ pub async fn run_extract_job(
     }
 
     let prompt = effective_cfg.query.clone().unwrap_or_default();
-    let extract_fut = crate::services::extract::extract_sync(&effective_cfg, &urls, &prompt);
+    let extract_fut = axon_extract::sync::extract_sync(&effective_cfg, &urls, &prompt);
     let result = match cancel_token.as_ref() {
         Some(token) => tokio::select! {
             _ = token.cancelled() => return Err("extract canceled".into()),

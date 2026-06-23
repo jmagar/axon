@@ -29,6 +29,7 @@
 mod context;
 mod error;
 mod registry;
+pub mod sync;
 mod types;
 mod verticals;
 
