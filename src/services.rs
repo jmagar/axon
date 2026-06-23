@@ -35,8 +35,6 @@ pub mod types;
 pub mod watch;
 
 #[cfg(test)]
-#[path = "services/artifacts_tests.rs"]
-mod artifacts_tests;
 #[cfg(test)]
 #[path = "services/client_contract_tests.rs"]
 mod client_contract_tests;

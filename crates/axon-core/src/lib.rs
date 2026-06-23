@@ -1,3 +1,4 @@
+pub mod artifacts;
 pub mod ask_explain;
 pub mod binary_status;
 pub mod config;

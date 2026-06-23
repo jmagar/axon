@@ -1,4 +1,4 @@
-use super::artifacts::{
+use super::{
     ArtifactHandle, ArtifactKind, atomic_write_explicit, atomic_write_under,
     write_configured_output, write_managed_output,
 };
