@@ -1,6 +1,5 @@
-pub mod automation;
-pub mod chrome_bootstrap;
-pub mod engine;
-pub mod manifest;
-pub mod scrape;
-pub mod screenshot;
+//! Compatibility shim: the crawl engine now lives in the `axon-crawl` crate.
+//!
+//! `pub use axon_crawl::*` re-exports the full public surface so every existing
+//! `crate::crawl::X` call site keeps resolving without a downstream rename.
+pub use axon_crawl::*;
