@@ -5,24 +5,24 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
-use crate::code_index::config::{CodeIndexIdentity, freshness_ttl, reindex_timeout};
-use crate::code_index::indexer::{ReindexSummary, reindex_changed_files, retry_cleanup_debt};
-use crate::code_index::manifest::{ManifestOptions, build_manifest};
-use crate::code_index::store::CodeIndexStore;
+use crate::config::{CodeIndexIdentity, freshness_ttl, reindex_timeout};
+use crate::indexer::{ReindexSummary, reindex_changed_files, retry_cleanup_debt};
+use crate::manifest::{ManifestOptions, build_manifest};
+use crate::store::CodeIndexStore;
 use axon_core::config::Config;
 
 static FRESH_UNTIL: LazyLock<DashMap<String, Instant>> = LazyLock::new(DashMap::new);
 static SINGLE_FLIGHT: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EnsureFreshOutcome {
+pub struct EnsureFreshOutcome {
     pub indexed_files: usize,
     pub removed_files: usize,
     pub warning: Option<FreshnessWarning>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FreshnessWarning {
+pub enum FreshnessWarning {
     TimedOut { timeout_ms: u64 },
     Failed { error: String },
     AlreadyRunning,
@@ -30,7 +30,7 @@ pub(crate) enum FreshnessWarning {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct EnsureFreshOptions {
+pub struct EnsureFreshOptions {
     pub freshness_ttl: Duration,
     pub reindex_timeout: Duration,
     pub manifest_options: ManifestOptions,
@@ -46,7 +46,7 @@ impl Default for EnsureFreshOptions {
     }
 }
 
-pub(crate) async fn ensure_fresh(
+pub async fn ensure_fresh(
     cfg: &Config,
     pool: sqlx::SqlitePool,
     identity: &CodeIndexIdentity,
@@ -178,7 +178,7 @@ async fn refresh_under_lease_inner(
 }
 
 impl FreshnessWarning {
-    pub(crate) fn message(&self) -> String {
+    pub fn message(&self) -> String {
         match self {
             Self::TimedOut { timeout_ms } => {
                 format!("refresh timed out after {timeout_ms}ms; stale index used")

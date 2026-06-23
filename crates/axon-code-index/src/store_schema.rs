@@ -1,6 +1,6 @@
 use sqlx::Row;
 
-use crate::code_index::store::CodeIndexStore;
+use crate::store::CodeIndexStore;
 
 impl CodeIndexStore {
     pub(crate) async fn init_schema(&self) -> anyhow::Result<()> {

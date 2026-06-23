@@ -1,13 +1,13 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::code_index::config::{
+use crate::config::{
     CodeIndexIdentity, DEFAULT_CHANGED_FILE_BATCH_SIZE, max_indexed_file_bytes, u64_env,
 };
-use crate::code_index::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
-use crate::code_index::store::CodeIndexStore;
-use crate::core::config::Config;
-use crate::vector::ops::{
+use crate::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
+use crate::store::CodeIndexStore;
+use axon_core::config::Config;
+use axon_vector::ops::{
     SourceDocument, SourceOrigin, embed_prepared_docs, prepare_source_document,
 };
 
@@ -102,7 +102,7 @@ async fn prepare_local_code_doc(
     identity: &CodeIndexIdentity,
     entry: &FileManifestEntry,
     generation: i64,
-) -> anyhow::Result<Option<crate::vector::ops::PreparedDoc>> {
+) -> anyhow::Result<Option<axon_vector::ops::PreparedDoc>> {
     let path = identity.project_root.join(&entry.relative_path);
     let metadata = tokio::fs::metadata(&path).await?;
     if metadata.len() > max_indexed_file_bytes() {
@@ -184,7 +184,7 @@ async fn cleanup_debt(
             continue;
         }
         if let Some(cfg) = cfg {
-            crate::vector::ops::qdrant::qdrant_delete_local_code_files_for_generation(
+            axon_vector::ops::qdrant::qdrant_delete_local_code_files_for_generation(
                 cfg,
                 &identity.project_key,
                 generation,

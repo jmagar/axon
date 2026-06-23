@@ -1,11 +1,11 @@
-use crate::code_index::config::{CodeIndexIdentity, max_indexed_file_bytes};
-use crate::code_index::store::CodeIndexStore;
-use crate::vector::ops::file_ingest::{SelectionPolicy, collect_files};
+use crate::config::{CodeIndexIdentity, max_indexed_file_bytes};
+use crate::store::CodeIndexStore;
+use axon_vector::ops::file_ingest::{SelectionPolicy, collect_files};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ManifestOptions {
+pub struct ManifestOptions {
     pub max_file_bytes: u64,
 }
 

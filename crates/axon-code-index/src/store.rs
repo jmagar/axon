@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use sqlx::{Row, SqlitePool};
 
-use crate::code_index::config::CodeIndexIdentity;
-use crate::code_index::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
+use crate::config::CodeIndexIdentity;
+use crate::manifest::{FileDiff, FileManifestEntry, ManifestSnapshot};
 
 // Project-level root/status metadata substrate (bead o9y1.1). The read/write
 // store APIs are intentionally landed ahead of their consumers (root-hash
@@ -24,7 +24,7 @@ pub(crate) struct ProjectMetadata {
 }
 
 #[derive(Clone)]
-pub(crate) struct CodeIndexStore {
+pub struct CodeIndexStore {
     pub(super) pool: SqlitePool,
 }
 
@@ -38,7 +38,7 @@ pub(crate) struct StoredFile {
 }
 
 impl CodeIndexStore {
-    pub(crate) async fn open_for_pool(pool: SqlitePool) -> anyhow::Result<Self> {
+    pub async fn open_for_pool(pool: SqlitePool) -> anyhow::Result<Self> {
         let store = Self { pool };
         store.init_schema().await?;
         Ok(store)
@@ -46,7 +46,7 @@ impl CodeIndexStore {
 
     #[cfg(test)]
     pub(crate) async fn open_in_memory() -> anyhow::Result<Self> {
-        let pool = crate::jobs::store::open_sqlite_pool(":memory:").await?;
+        let pool = axon_jobs::store::open_sqlite_pool(":memory:").await?;
         Ok(Self { pool })
     }
 
@@ -193,7 +193,7 @@ impl CodeIndexStore {
         Ok(next)
     }
 
-    pub(crate) async fn committed_generation(
+    pub async fn committed_generation(
         &self,
         identity: &CodeIndexIdentity,
     ) -> anyhow::Result<Option<i64>> {

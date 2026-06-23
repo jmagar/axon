@@ -1,13 +1,4 @@
-pub(crate) mod config;
-pub(crate) mod ensure;
-pub(crate) mod indexer;
-pub(crate) mod manifest;
-pub(crate) mod store;
-mod store_schema;
-
-pub(crate) use config::{CodeIndexIdentity, CodeSearchAllowedRoots};
-pub(crate) use ensure::{FreshnessWarning, ensure_fresh};
-
-#[cfg(test)]
-#[path = "code_index_tests.rs"]
-mod tests;
+//! Compatibility shim: the local-code semantic index now lives in the
+//! `axon-code-index` crate. Re-exported so existing `crate::code_index::*`
+//! call sites resolve unchanged.
+pub use axon_code_index::*;

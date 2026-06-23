@@ -50,7 +50,7 @@ pub(crate) fn u64_env(name: &str, fallback: u64, unit: &'static str) -> u64 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CodeIndexIdentity {
+pub struct CodeIndexIdentity {
     pub project_root: PathBuf,
     pub project_key: String,
     pub project_display: String,
@@ -60,7 +60,7 @@ pub(crate) struct CodeIndexIdentity {
 }
 
 impl CodeIndexIdentity {
-    pub(crate) fn new(
+    pub fn new(
         project_root: PathBuf,
         project_origin: String,
         collection: &str,
@@ -93,12 +93,12 @@ impl CodeIndexIdentity {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct CodeSearchAllowedRoots {
+pub struct CodeSearchAllowedRoots {
     roots: Vec<PathBuf>,
 }
 
 impl CodeSearchAllowedRoots {
-    pub(crate) fn from_env() -> anyhow::Result<Self> {
+    pub fn from_env() -> anyhow::Result<Self> {
         let raw = std::env::var("AXON_CODE_SEARCH_ALLOWED_ROOTS").unwrap_or_default();
         Self::from_root_strings(
             raw.split([':', ','])
@@ -115,7 +115,7 @@ impl CodeSearchAllowedRoots {
         Ok(Self { roots })
     }
 
-    pub(crate) fn contains(&self, path: &Path) -> bool {
+    pub fn contains(&self, path: &Path) -> bool {
         self.roots.iter().any(|root| path.starts_with(root))
     }
 }
@@ -143,7 +143,7 @@ impl CodeSearchAllowedRoots {
     }
 }
 
-pub(crate) fn validate_path_prefix(prefix: &str) -> anyhow::Result<Option<String>> {
+pub fn validate_path_prefix(prefix: &str) -> anyhow::Result<Option<String>> {
     let trimmed = prefix.trim();
     if trimmed.is_empty() {
         return Ok(None);
