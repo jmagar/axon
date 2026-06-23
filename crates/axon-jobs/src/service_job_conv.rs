@@ -3,6 +3,14 @@
 //! These live here (not in `axon-api`) because the source job types are local
 //! to `axon-jobs`; the orphan rule permits `impl From<LocalJob> for ServiceJob`
 //! here, and this keeps `axon-api` free of any dependency on the job structs.
+//!
+//! NOTE — these conversions are the **lossy/legacy** construction path: the
+//! per-`*Job` structs carry no attempt/reclaim metadata, so the resulting
+//! `ServiceJob` zeroes `attempt_count` and leaves `active_attempt_id` /
+//! `last_reclaimed_at` / `last_reclaimed_reason` unset. The authoritative,
+//! full-fidelity path that hydrates those fields from the DB row is
+//! `service_job_from_row` in `query.rs`; the service runtime uses that for
+//! `job_status`/`list_jobs`. Prefer it whenever reclaim/attempt data matters.
 
 use axon_api::service_job::ServiceJob;
 

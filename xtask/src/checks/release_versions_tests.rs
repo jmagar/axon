@@ -100,6 +100,52 @@ version = "5.19.0"
 }
 
 #[test]
+fn read_workspace_package_version_present_and_absent() {
+    let with = r#"[workspace.package]
+version = "5.19.0"
+
+[package]
+name = "axon"
+version = "5.19.0"
+"#;
+    assert_eq!(
+        read_workspace_package_version(with).expect("parse"),
+        Some("5.19.0".to_owned())
+    );
+    let without = r#"[package]
+name = "axon-palette-tauri"
+version = "5.10.2"
+"#;
+    assert_eq!(
+        read_workspace_package_version(without).expect("parse"),
+        None
+    );
+}
+
+#[test]
+fn workspace_package_version_must_equal_product_version() {
+    let temp = TempDir::new().expect("tempdir");
+    let manifest = |ws: &str, pkg: &str| {
+        format!(
+            "[workspace.package]\nversion = \"{ws}\"\n\n[package]\nname = \"axon\"\nversion = \"{pkg}\"\n"
+        )
+    };
+    let path = temp.path().join("Cargo.toml");
+
+    fs::write(&path, manifest("5.19.0", "5.19.0")).unwrap();
+    check_workspace_package_version(temp.path(), "5.19.0").expect("matching versions pass");
+
+    fs::write(&path, manifest("5.18.0", "5.19.0")).unwrap();
+    let err = check_workspace_package_version(temp.path(), "5.19.0")
+        .expect_err("drifted workspace version must fail");
+    assert!(err.to_string().contains("[workspace.package] version"));
+
+    // No [workspace.package] table → guard is a no-op.
+    fs::write(&path, "[package]\nname = \"axon\"\nversion = \"5.19.0\"\n").unwrap();
+    check_workspace_package_version(temp.path(), "5.19.0").expect("no workspace table is a no-op");
+}
+
+#[test]
 fn cargo_package_version_bump_handles_version_before_name() {
     let content = r#"
 [package]
