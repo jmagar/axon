@@ -48,7 +48,7 @@ use crate::services::context::ServiceContext;
 use crate::services::system;
 use common::{internal_error, invalid_params};
 use handler_meta::STATUS_DASHBOARD_URI;
-pub use http::run_unified_server;
+pub use http::mcp_http_router;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     handler::server::wrapper::Parameters,

@@ -7,14 +7,19 @@ pub async fn run_mcp(cfg: &Config) -> Result<(), Box<dyn Error>> {
     match cfg.mcp_transport {
         McpTransport::Stdio => crate::mcp::run_stdio_server(cfg.clone()).await,
         McpTransport::Http => {
-            crate::mcp::run_unified_server(cfg.clone(), &cfg.mcp_http_host, cfg.mcp_http_port).await
+            crate::cli::commands::run_unified_server(
+                cfg.clone(),
+                &cfg.mcp_http_host,
+                cfg.mcp_http_port,
+            )
+            .await
         }
         McpTransport::Both => {
             let host = cfg.mcp_http_host.clone();
             let port = cfg.mcp_http_port;
             tokio::try_join!(
                 crate::mcp::run_stdio_server(cfg.clone()),
-                crate::mcp::run_unified_server(cfg.clone(), &host, port),
+                crate::cli::commands::run_unified_server(cfg.clone(), &host, port),
             )?;
             Ok(())
         }

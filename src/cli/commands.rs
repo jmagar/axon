@@ -45,6 +45,7 @@ pub mod suggest;
 pub mod summarize;
 pub mod sync;
 pub mod train;
+pub mod unified_server;
 pub mod update;
 pub mod watch;
 
@@ -92,6 +93,7 @@ pub use suggest::run_suggest;
 pub use summarize::run_summarize;
 pub use sync::run_sync;
 pub use train::run_train;
+pub use unified_server::run_unified_server;
 pub use update::run_update;
 pub use watch::run_watch;
 
