@@ -21,8 +21,6 @@ use super::command_dispatch::DispatchOutput;
 use crate::logging::log_warn;
 use std::env;
 
-pub(crate) const DEFAULT_CRAWL_MAX_PAGES: u32 = 2_000;
-
 /// Inputs required by the assemblers below. Shared so each helper takes a
 /// single tuple rather than five separate parameters.
 pub(super) struct LiteralInputs<'a> {
@@ -83,13 +81,13 @@ fn populate_identity_and_crawl(cfg: &mut Config, inputs: &LiteralInputs<'_>) {
     cfg.purge_prefix = inputs.dispatched.purge_prefix;
     cfg.purge_dry_run = inputs.dispatched.purge_dry_run;
     cfg.doctor_diagnose = inputs.dispatched.doctor_diagnose;
-    // `extract` defaults to the exact single-page path when omitted. `crawl`
-    // defaults to a bounded site crawl so accidental origin seeds cannot build
-    // unbounded in-memory frontiers; explicit `--max-pages 0` keeps the shared
-    // uncapped crawl semantics for intentional deep crawls.
+    // `extract` defaults to the exact single-page path when omitted. The crawl
+    // page-cap default + ceiling are NOT resolved here — that policy lives in the
+    // services layer (`axon_services::crawl::resolve_crawl_max_pages`) so the CLI,
+    // MCP, and HTTP transports all behave identically. `0` means "unspecified" and
+    // the services layer fills in the default; this transport stays a thin shim.
     cfg.max_pages = match (inputs.dispatched.command, g.max_pages) {
         (CommandKind::Extract, None) => 1,
-        (CommandKind::Crawl, None) => DEFAULT_CRAWL_MAX_PAGES,
         (_, max_pages) => max_pages.unwrap_or(0),
     };
     cfg.max_depth = g.max_depth;

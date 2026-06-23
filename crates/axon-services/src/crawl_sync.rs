@@ -40,6 +40,9 @@ pub async fn crawl_sync(cfg: &Config, start_url: &str) -> Result<CrawlSyncResult
         output_dir: cfg.output_dir.join("domains").join(&domain).join("sync"),
         ..cfg.clone()
     };
+    // Same services-layer page-cap policy as the async path — keep them identical.
+    sync_cfg.max_pages =
+        crate::crawl::resolve_crawl_max_pages(cfg.max_pages, cfg.allow_unbounded_broad_crawl);
     let cfg = &mut sync_cfg;
 
     let manifest_path = cfg.output_dir.join("manifest.jsonl");

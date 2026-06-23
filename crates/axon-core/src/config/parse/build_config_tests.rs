@@ -97,10 +97,11 @@ fn extract_and_crawl_defaults_are_bounded_but_explicit_zero_stays_uncapped() {
 
             let default_crawl = into_config_via_args(&["crawl", "https://example.com"])
                 .expect("crawl config should parse");
-            assert_eq!(
-                default_crawl.max_pages,
-                super::config_literal::DEFAULT_CRAWL_MAX_PAGES
-            );
+            // The crawl page-cap default no longer lives in the parse layer — `0`
+            // is the "unspecified" sentinel and the services layer
+            // (`axon_services::crawl::resolve_crawl_max_pages`) fills in the
+            // default, so CLI/MCP/HTTP all behave identically.
+            assert_eq!(default_crawl.max_pages, 0);
             assert_eq!(
                 default_crawl.max_page_bytes,
                 Some(crate::config::types::DEFAULT_MAX_PAGE_BYTES)

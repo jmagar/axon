@@ -88,7 +88,10 @@ struct CoverageStatus {
 impl CoverageStatus {
     fn summary(&self) -> &'static str {
         match (self.status, self.reason) {
-            ("partial", Some("max_pages_limit")) => "max pages hit",
+            ("partial", Some("max_pages_limit")) => {
+                "stopped at the max-pages limit — more pages were available; \
+                 re-run with a higher max-pages or a tighter scope to continue"
+            }
             ("partial", _) => "partial",
             ("complete_or_exhausted", _) => "complete",
             _ => self.status,

@@ -18,6 +18,44 @@ use uuid::Uuid;
 
 pub use axon_jobs::crawl::CrawlJob;
 
+// ── Crawl bounds: the ONE place crawl page-cap policy lives ───────────────────
+//
+// Default page cap *and* hard ceiling, applied here in the services layer so
+// every transport (CLI, MCP, HTTP) gets identical behavior. Transports are thin
+// shims: they pass the raw requested value (`max_pages == 0` means "unspecified",
+// the `Config` default) and never resolve defaults or caps themselves. This is
+// why `axon crawl <url>` and the MCP `crawl` action now behave identically.
+pub const DEFAULT_CRAWL_MAX_PAGES: u32 = 5_000;
+
+/// Resolve the effective crawl page cap from a raw requested value.
+///
+/// - `0` (unspecified) → [`DEFAULT_CRAWL_MAX_PAGES`]
+/// - greater than the cap → clamped to [`DEFAULT_CRAWL_MAX_PAGES`]
+/// - otherwise the requested value unchanged
+///
+/// `allow_unbounded` is the operator escape hatch
+/// (`AXON_ALLOW_UNBOUNDED_BROAD_CRAWL`): it passes the request through untouched,
+/// including `0` for an intentional uncapped deep crawl.
+pub fn resolve_crawl_max_pages(requested: u32, allow_unbounded: bool) -> u32 {
+    if allow_unbounded {
+        return requested;
+    }
+    match requested {
+        0 => DEFAULT_CRAWL_MAX_PAGES,
+        n if n > DEFAULT_CRAWL_MAX_PAGES => DEFAULT_CRAWL_MAX_PAGES,
+        n => n,
+    }
+}
+
+/// Return a crawl-effective copy of `cfg` with the page cap resolved. Both the
+/// async and sync crawl entry points run config through this so the page-cap
+/// default cannot diverge by transport.
+pub fn apply_crawl_defaults(cfg: &Config) -> Config {
+    let mut effective = cfg.clone();
+    effective.max_pages = resolve_crawl_max_pages(cfg.max_pages, cfg.allow_unbounded_broad_crawl);
+    effective
+}
+
 // --- Pure mapping helpers (no I/O, testable without live services) ---
 
 fn predict_audit_report_path(output_dir: &Path, url: &str) -> PathBuf {
@@ -203,6 +241,10 @@ pub async fn crawl_start_with_context(
         return Err("No URLs provided for crawl".into());
     }
 
+    // Resolve crawl page-cap policy HERE (services layer) so the enqueued job
+    // snapshot carries the effective cap regardless of which transport called us.
+    let effective = apply_crawl_defaults(cfg);
+
     let mut jobs = Vec::with_capacity(urls.len());
     for url in urls {
         validate_url(url).map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
@@ -210,7 +252,7 @@ pub async fn crawl_start_with_context(
             .jobs
             .enqueue(axon_jobs::backend::JobPayload::Crawl {
                 url: url.clone(),
-                config_json: config_snapshot_json(cfg)?,
+                config_json: config_snapshot_json(&effective)?,
             })
             .await
             .map_err(|e| -> Box<dyn Error> { e })?;

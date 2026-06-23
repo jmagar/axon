@@ -461,3 +461,36 @@ fn map_crawl_job_result_derives_handles_from_result_json_paths() {
         "domains/docs.rs/job-456/markdown"
     );
 }
+
+#[test]
+fn resolve_crawl_max_pages_default_and_cap() {
+    use super::{DEFAULT_CRAWL_MAX_PAGES, resolve_crawl_max_pages};
+    // unspecified (0) → default
+    assert_eq!(resolve_crawl_max_pages(0, false), DEFAULT_CRAWL_MAX_PAGES);
+    // within bounds → unchanged
+    assert_eq!(resolve_crawl_max_pages(120, false), 120);
+    assert_eq!(
+        resolve_crawl_max_pages(DEFAULT_CRAWL_MAX_PAGES, false),
+        DEFAULT_CRAWL_MAX_PAGES
+    );
+    // over the cap → clamped
+    assert_eq!(
+        resolve_crawl_max_pages(50_000, false),
+        DEFAULT_CRAWL_MAX_PAGES
+    );
+    // operator override passes through untouched, including 0 (uncapped)
+    assert_eq!(resolve_crawl_max_pages(0, true), 0);
+    assert_eq!(resolve_crawl_max_pages(50_000, true), 50_000);
+}
+
+#[test]
+fn cli_and_mcp_crawl_resolve_to_the_same_cap() {
+    // Both transports pass max_pages == 0 when the user omits it; the services
+    // layer is the single place that turns that into the default. This is the
+    // regression guard for the "CLI defaults to 2000, MCP to 0" divergence.
+    use super::resolve_crawl_max_pages;
+    let cli_unset = resolve_crawl_max_pages(0, false);
+    let mcp_unset = resolve_crawl_max_pages(0, false);
+    assert_eq!(cli_unset, mcp_unset);
+    assert_eq!(cli_unset, super::DEFAULT_CRAWL_MAX_PAGES);
+}
