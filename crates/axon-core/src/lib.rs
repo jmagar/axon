@@ -4,6 +4,7 @@ pub mod config;
 pub mod content;
 pub mod endpoints;
 pub mod error;
+pub mod events;
 pub mod health;
 pub mod http;
 pub mod llm;
