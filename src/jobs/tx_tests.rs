@@ -1,5 +1,5 @@
 use super::*;
-use crate::jobs::store::rollback_on_release;
+use axon_core::sqlite::rollback_on_release;
 use sqlx::sqlite::SqlitePoolOptions;
 
 /// Single-slot in-memory pool wired with the same `after_release` ROLLBACK hook

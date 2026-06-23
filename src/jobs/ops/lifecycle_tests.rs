@@ -1,5 +1,6 @@
 use super::*;
-use crate::jobs::store::{now_ms, rollback_on_release};
+use crate::jobs::store::now_ms;
+use axon_core::sqlite::rollback_on_release;
 use sqlx::sqlite::SqlitePoolOptions;
 
 /// Build a single-connection in-memory pool that carries the production

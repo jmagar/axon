@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
-pub(crate) const CODE_INDEX_VERSION: u32 = 1;
+pub(crate) use axon_core::CODE_INDEX_VERSION;
 pub(crate) const DEFAULT_FRESHNESS_TTL: Duration = Duration::from_secs(30);
 pub(crate) const DEFAULT_REINDEX_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const DEFAULT_CHANGED_FILE_BATCH_SIZE: usize = 50;

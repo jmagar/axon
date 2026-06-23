@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::jobs::store::open_sqlite_pool;
+use axon_core::sqlite::open_pool;
 use sqlx::SqlitePool;
 
 const ESTIMATED_CHARS_PER_CHUNK: f64 = 2000.0;
@@ -47,7 +47,7 @@ pub(super) struct JobMetrics {
 /// stats failure cannot make `axon stats` fail.
 pub(super) async fn collect_job_metrics(cfg: &Config) -> JobMetrics {
     let path = cfg.sqlite_path.to_string_lossy().to_string();
-    let pool = match open_sqlite_pool(&path).await {
+    let pool = match open_pool(&path).await {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(error = %e, sqlite_path = %path, "stats: failed to open SQLite pool");

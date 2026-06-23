@@ -475,7 +475,7 @@ fn local_code_batch_delete_body(
             "must": [
                 {"key": "source_type", "match": {"value": "local_code"}},
                 {"key": "local_project_key", "match": {"value": project_key}},
-                {"key": "local_index_version", "match": {"value": crate::code_index::config::CODE_INDEX_VERSION}},
+                {"key": "local_index_version", "match": {"value": axon_core::CODE_INDEX_VERSION}},
                 {"key": "local_generation", "match": {"value": generation}}
             ],
             "should": paths.iter().map(|path| {

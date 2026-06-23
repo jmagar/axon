@@ -194,7 +194,7 @@ pub(crate) fn build_local_project_code_filter(
     let mut must = vec![
         serde_json::json!({"key": "source_type", "match": {"value": "local_code"}}),
         serde_json::json!({"key": "local_project_key", "match": {"value": project_key}}),
-        serde_json::json!({"key": "local_index_version", "match": {"value": crate::code_index::config::CODE_INDEX_VERSION}}),
+        serde_json::json!({"key": "local_index_version", "match": {"value": axon_core::CODE_INDEX_VERSION}}),
         serde_json::json!({"key": "local_generation", "match": {"value": generation}}),
     ];
     if let Some(prefix) = path_prefix {

@@ -1,5 +1,7 @@
 use super::*;
 use crate::jobs::backend::JobKind;
+use axon_core::sqlite::rollback_on_release;
+use sqlx::sqlite::SqlitePoolOptions;
 use uuid::Uuid;
 
 /// A dangling `BEGIN IMMEDIATE` left on a connection that is dropped back into
