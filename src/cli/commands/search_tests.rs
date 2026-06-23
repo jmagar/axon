@@ -49,10 +49,11 @@ fn parse_search_time_range_rejects_unknown_values() {
 #[tokio::test]
 async fn run_search_rejects_empty_tavily_key() {
     // run_search bails before touching service_context when the key is empty,
-    // so we can use the search_crawl test helpers directly.
-    use crate::services::search_crawl::tests::make_noop_ctx;
+    // so any constructible context works here.
     let cfg = make_search_cfg("", "rust async");
-    let ctx = make_noop_ctx();
+    let ctx = ServiceContext::new(std::sync::Arc::new(cfg.clone()))
+        .await
+        .unwrap();
     let err = run_search(&cfg, &ctx).await.unwrap_err();
     assert!(
         err.to_string().contains("TAVILY_API_KEY"),
