@@ -1,6 +1,5 @@
 #![recursion_limit = "512"]
 
-pub(crate) mod authz;
 pub mod cli;
 pub mod core;
 pub mod crawl;
