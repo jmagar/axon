@@ -30,6 +30,7 @@ fn reads_component_manifest() {
                 "release.yml",
                 &[
                     "src".to_owned(),
+                    "crates".to_owned(),
                     "Cargo.toml".to_owned(),
                     "Cargo.lock".to_owned(),
                     "build.rs".to_owned(),
@@ -75,6 +76,27 @@ version = "1.2.3"
         read_cargo_package_version(content, Some("axon")).expect("version"),
         "1.2.3"
     );
+}
+
+#[test]
+fn cargo_package_version_bump_also_bumps_workspace_package() {
+    // The root manifest carries both `[package] axon` and `[workspace.package]`
+    // (inherited by every extracted crate). A cli bump must move both so every
+    // crate's CARGO_PKG_VERSION tracks the product version.
+    let content = r#"[workspace]
+members = ["crates/axon-core"]
+
+[workspace.package]
+version = "5.19.0"
+
+[package]
+name = "axon"
+version = "5.19.0"
+"#;
+    let updated =
+        replace_cargo_package_version(content, Some("axon"), "5.20.0").expect("replace version");
+    assert_eq!(updated.matches(r#"version = "5.20.0""#).count(), 2);
+    assert!(!updated.contains(r#"version = "5.19.0""#));
 }
 
 #[test]
@@ -1008,6 +1030,7 @@ version = "0.1.0"
             r#"{"name":"axon"}"#,
         );
         write(&self.path("src/lib.rs"), "pub fn original() {}\n");
+        write(&self.path("crates/.keep"), "");
         write(&self.path("build.rs"), "");
         write(&self.path("migrations/.keep"), "");
         write(&self.path("rust-toolchain.toml"), "");

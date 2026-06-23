@@ -1,6 +1,6 @@
 [package]
 name = "axon-api"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version = "1.94.0"
 description = "Axon transport-neutral API contract and result DTOs shared across CLI, MCP, HTTP, and generated clients"

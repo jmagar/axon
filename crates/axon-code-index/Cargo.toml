@@ -1,6 +1,6 @@
 [package]
 name = "axon-code-index"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version = "1.94.0"
 description = "Axon local-code semantic index: git-checkout manifest, freshness leasing, incremental reindex into Qdrant"

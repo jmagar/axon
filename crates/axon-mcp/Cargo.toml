@@ -1,6 +1,6 @@
 [package]
 name = "axon-mcp"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version = "1.94.0"
 description = "Axon MCP server: single action/subaction-routed tool over rmcp stdio + streamable HTTP, lab-auth OAuth/bearer"

@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "axon-api"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "chrono",
  "percent-encoding",
@@ -496,11 +496,11 @@ dependencies = [
 
 [[package]]
 name = "axon-authz"
-version = "0.1.0"
+version = "5.19.0"
 
 [[package]]
 name = "axon-cli"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "axon-code-index"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "axon-core"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "axon-crawl"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "axon-extract"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "axon-ingest"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "axon-jobs"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1164,7 +1164,7 @@ dependencies = [
 
 [[package]]
 name = "axon-mcp"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1264,7 +1264,7 @@ dependencies = [
 
 [[package]]
 name = "axon-services"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1362,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "axon-vector"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "axon-web"
-version = "0.1.0"
+version = "5.19.0"
 dependencies = [
  "anyhow",
  "async-trait",

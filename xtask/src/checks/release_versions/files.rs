@@ -297,18 +297,29 @@ pub(super) fn replace_cargo_package_version(
 ) -> ReleaseResult<String> {
     read_cargo_package_version(content, package)?;
     let mut in_package = false;
+    // The root manifest also carries `[workspace.package] version`, inherited by
+    // every extracted crate via `version.workspace = true`. Bump it in lockstep
+    // with `[package]` so the workspace version — and therefore every crate's
+    // `CARGO_PKG_VERSION` — tracks the product version. Crate manifests without a
+    // `[workspace.package]` table are unaffected.
+    let mut in_workspace_package = false;
     let mut replaced = false;
     let mut output = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed == "[package]" {
             in_package = true;
-        } else if in_package && trimmed.starts_with('[') {
+            in_workspace_package = false;
+        } else if trimmed == "[workspace.package]" {
+            in_workspace_package = true;
             in_package = false;
+        } else if trimmed.starts_with('[') {
+            in_package = false;
+            in_workspace_package = false;
         }
 
         let mut next_line = line.to_owned();
-        if in_package
+        if (in_package || in_workspace_package)
             && trimmed.starts_with("version")
             && extract_toml_string_assignment(trimmed).is_some()
         {
