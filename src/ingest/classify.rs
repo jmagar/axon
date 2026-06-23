@@ -1,4 +1,4 @@
-use crate::jobs::ingest::IngestSource;
+use axon_api::ingest::IngestSource;
 use reqwest::Url;
 use std::error::Error;
 

@@ -13,6 +13,7 @@
 //! request DTOs fold in as bead `axon_rust-23dw.2` continues.
 
 pub mod explain;
+pub mod ingest;
 pub mod result;
 
 pub use explain::*;

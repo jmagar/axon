@@ -4,50 +4,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-/// Discriminates which ingest source a job targets.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "source_type", rename_all = "lowercase")]
-pub enum IngestSource {
-    Github {
-        repo: String,
-        include_source: bool,
-    },
-    Gitlab {
-        target: String,
-        include_source: bool,
-    },
-    Gitea {
-        target: String,
-        include_source: bool,
-    },
-    GenericGit {
-        target: String,
-        include_source: bool,
-    },
-    Reddit {
-        target: String,
-    },
-    Youtube {
-        target: String,
-    },
-    Rss {
-        target: String,
-    },
-    Sessions {
-        sessions_claude: bool,
-        sessions_codex: bool,
-        sessions_gemini: bool,
-        sessions_project: Option<String>,
-    },
-    #[serde(rename = "prepared_sessions")]
-    PreparedSessions {},
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IngestJobConfig {
-    pub source: IngestSource,
-    pub collection: String,
-}
+// The transport-neutral ingest-source DTOs moved to `axon_api::ingest`;
+// re-exported here so existing `crate::jobs::ingest::*` call sites resolve.
+pub use axon_api::ingest::{
+    IngestJobConfig, IngestSource, RE_INGESTABLE_SOURCE_TYPES, source_type_label, target_label,
+};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct IngestJob {
@@ -80,69 +41,5 @@ impl IngestJob {
             "canceled" => Some(JobStatus::Canceled),
             _ => None,
         }
-    }
-}
-
-/// `source_type` values (see [`source_type_label`]) whose `(source_type,
-/// target)` pair fully identifies the job's work — the stored target / payload
-/// `seed_url` round-trips through `services::ingest::classify_target` into a
-/// re-runnable job. Sessions are excluded: their content arrives via a sidecar
-/// payload, not the target string. This is the single source of truth for
-/// `axon refresh` origin classification — extend it when adding a provider.
-pub const RE_INGESTABLE_SOURCE_TYPES: &[&str] = &[
-    "github", "gitlab", "gitea", "git", "reddit", "youtube", "rss",
-];
-
-pub(crate) fn source_type_label(source: &IngestSource) -> &'static str {
-    match source {
-        IngestSource::Github { .. } => "github",
-        IngestSource::Gitlab { .. } => "gitlab",
-        IngestSource::Gitea { .. } => "gitea",
-        IngestSource::GenericGit { .. } => "git",
-        IngestSource::Reddit { .. } => "reddit",
-        IngestSource::Youtube { .. } => "youtube",
-        IngestSource::Rss { .. } => "rss",
-        IngestSource::Sessions { .. } => "sessions",
-        IngestSource::PreparedSessions { .. } => "prepared_sessions",
-    }
-}
-
-pub(crate) fn target_label(source: &IngestSource) -> String {
-    match source {
-        IngestSource::Github { repo, .. } => repo.clone(),
-        IngestSource::Gitlab { target, .. } => target.clone(),
-        IngestSource::Gitea { target, .. } => target.clone(),
-        IngestSource::GenericGit { target, .. } => target.clone(),
-        IngestSource::Reddit { target } => target.clone(),
-        IngestSource::Youtube { target } => target.clone(),
-        IngestSource::Rss { target } => target.clone(),
-        IngestSource::Sessions {
-            sessions_claude,
-            sessions_codex,
-            sessions_gemini,
-            sessions_project,
-        } => {
-            let all = !sessions_claude && !sessions_codex && !sessions_gemini;
-            let label = if all {
-                "all".to_string()
-            } else {
-                let mut parts = vec![];
-                if *sessions_claude {
-                    parts.push("claude");
-                }
-                if *sessions_codex {
-                    parts.push("codex");
-                }
-                if *sessions_gemini {
-                    parts.push("gemini");
-                }
-                parts.join(",")
-            };
-            match sessions_project {
-                Some(proj) => format!("{label}:{proj}"),
-                None => label,
-            }
-        }
-        IngestSource::PreparedSessions { .. } => "prepared_sessions".to_string(),
     }
 }
