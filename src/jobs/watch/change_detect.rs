@@ -40,7 +40,7 @@ impl WatchFetcher for LiveFetcher {
         conditional_probe(url, etag, lm).await
     }
     async fn scrape_url(&self, cfg: &Config, url: &str) -> Result<ScrapeResult, String> {
-        crate::services::scrape::scrape(cfg, url, None)
+        axon_extract::scrape::scrape(cfg, url, None)
             .await
             .map_err(|e| format!("scrape failed: {e}"))
     }
