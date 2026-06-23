@@ -6,15 +6,15 @@ type FileSpec = (&'static str, &'static [(&'static str, &'static str)]);
 
 const FILE_SPECS: &[FileSpec] = &[
     (
-        "src/cli/commands/mcp.rs",
+        "crates/axon-cli/src/commands/mcp.rs",
         &[
             (
                 "run_unified_server(",
-                "ERROR: MCP CLI must support unified HTTP transport in src/cli/commands/mcp.rs",
+                "ERROR: MCP CLI must support unified HTTP transport in crates/axon-cli/src/commands/mcp.rs",
             ),
             (
                 "run_stdio_server(",
-                "ERROR: MCP CLI must support stdio transport in src/cli/commands/mcp.rs",
+                "ERROR: MCP CLI must support stdio transport in crates/axon-cli/src/commands/mcp.rs",
             ),
             // Match the actual McpTransport::Both match arm shape, not a bare "Both"
             // substring. The bare token would be satisfied by a comment, an unrelated
@@ -22,7 +22,7 @@ const FILE_SPECS: &[FileSpec] = &[
             (
                 "McpTransport::Both =>",
                 "ERROR: MCP CLI must support both transports concurrently \
-                 (`McpTransport::Both =>` arm) in src/cli/commands/mcp.rs",
+                 (`McpTransport::Both =>` arm) in crates/axon-cli/src/commands/mcp.rs",
             ),
         ],
     ),
