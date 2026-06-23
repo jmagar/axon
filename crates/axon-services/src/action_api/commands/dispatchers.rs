@@ -7,6 +7,7 @@ use crate::ingest as ingest_svc;
 use crate::scrape as scrape_svc;
 use crate::screenshot as screenshot_svc;
 use crate::summarize as summarize_svc;
+use crate::transport;
 use crate::types::ClientActionError;
 use axon_api::mcp_schema::{
     CrawlRequest, CrawlSubaction, EmbedRequest, EmbedSubaction, EndpointsRequest, ExtractRequest,
@@ -83,14 +84,7 @@ pub async fn dispatch_crawl(
             }))
         }
         CrawlSubaction::List => {
-            let limit = match req.limit {
-                Some(limit) => limit.clamp(1, 500),
-                None => 20,
-            };
-            let offset = match req.offset {
-                Some(offset) => offset.min(i64::MAX as usize) as i64,
-                None => 0,
-            };
+            let (limit, offset) = transport::job_list_pagination(req.limit, req.offset);
             let result = crawl_svc::crawl_list(service_context, limit, offset)
                 .await
                 .map_err(internal_error)?;
@@ -215,12 +209,16 @@ pub async fn dispatch_embed(
             let input = req.input.ok_or_else(|| {
                 ClientActionError::new("invalid_request", "input is required", false, None)
             })?;
+            let cfg = service_context.cfg.apply_overrides(&ConfigOverrides {
+                collection: req.collection,
+                ..ConfigOverrides::default()
+            });
             let outcome = embed_svc::embed_start_with_context(
-                service_context.cfg.as_ref(),
+                &cfg,
                 &input,
                 service_context,
                 None,
-                None,
+                req.source_type.as_deref(),
             )
             .await
             .map_err(internal_error)?;

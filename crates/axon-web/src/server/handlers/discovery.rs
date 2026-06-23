@@ -1,6 +1,6 @@
 use axon_core::config::Config;
 use axon_services as services;
-use axon_services::types::Pagination;
+use axon_services::transport;
 use axum::{
     Json,
     extract::{Query, State},
@@ -21,19 +21,12 @@ pub(crate) struct PaginationQuery {
 }
 
 impl PaginationQuery {
-    pub(crate) fn pagination(&self, default_limit: usize) -> Pagination {
-        self.pagination_with_max(default_limit, 500)
+    pub(crate) fn pagination(&self) -> axon_services::types::Pagination {
+        transport::discovery_pagination(self.limit, self.offset)
     }
 
-    pub(crate) fn domain_sources_pagination(&self, default_limit: usize) -> Pagination {
-        self.pagination_with_max(default_limit, 10_000)
-    }
-
-    fn pagination_with_max(&self, default_limit: usize, max_limit: usize) -> Pagination {
-        Pagination {
-            limit: self.limit.unwrap_or(default_limit).clamp(1, max_limit),
-            offset: self.offset.unwrap_or(0),
-        }
+    pub(crate) fn domain_sources_pagination(&self) -> axon_services::types::Pagination {
+        transport::domain_sources_pagination(self.limit, self.offset)
     }
 }
 
@@ -55,7 +48,7 @@ pub(crate) async fn sources(
         return services::system::sources_for_domain(
             &cfg,
             domain,
-            query.domain_sources_pagination(100),
+            query.domain_sources_pagination(),
             query.cursor.as_deref(),
         )
         .await
@@ -65,7 +58,7 @@ pub(crate) async fn sources(
         .map(Json)
         .map_err(HttpError::from_box);
     }
-    services::system::sources(&cfg, query.pagination(100))
+    services::system::sources(&cfg, query.pagination())
         .await
         .and_then(|result| {
             serde_json::to_value(result).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })
@@ -98,7 +91,7 @@ pub(crate) async fn domains(
             .map(Json)
             .map_err(HttpError::from_box);
     }
-    services::system::domains(&cfg, query.pagination(100))
+    services::system::domains(&cfg, query.pagination())
         .await
         .and_then(|result| {
             serde_json::to_value(result).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })
@@ -174,7 +167,7 @@ mod tests {
             cursor: None,
         };
 
-        let pagination = query.pagination(100);
+        let pagination = query.pagination();
 
         assert_eq!(pagination.limit, 500);
         assert_eq!(pagination.offset, 3);
@@ -189,7 +182,7 @@ mod tests {
             cursor: None,
         };
 
-        let pagination = query.domain_sources_pagination(100);
+        let pagination = query.domain_sources_pagination();
 
         assert_eq!(pagination.limit, 10_000);
         assert_eq!(pagination.offset, 0);

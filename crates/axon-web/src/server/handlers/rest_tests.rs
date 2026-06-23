@@ -143,7 +143,16 @@ async fn v1_scrape_embed_true_runs_service_preparation_and_upsert() {
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "unexpected scrape response: {}",
+        String::from_utf8_lossy(&body)
+    );
     assert_eq!(
         upsert.calls_async().await,
         1,

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn apply_ask_overrides_clamps_request_tuning() {
-    let mut cfg = Config::default();
+    let cfg = Config::default();
     let req = AskRequestBody {
         query: "test".to_string(),
         ask_chunk_limit: Some(1),
@@ -18,7 +18,7 @@ fn apply_ask_overrides_clamps_request_tuning() {
         ..AskRequestBody::default()
     };
 
-    apply_ask_overrides(&mut cfg, &req);
+    let cfg = apply_ask_overrides(&cfg, ask_transport_overrides(&req));
 
     assert_eq!(cfg.ask_chunk_limit, 3);
     assert_eq!(cfg.ask_full_docs, 20);
@@ -35,14 +35,14 @@ fn apply_ask_overrides_clamps_request_tuning() {
 
 #[test]
 fn apply_ask_overrides_marks_full_docs_as_explicit() {
-    let mut cfg = Config::default();
+    let cfg = Config::default();
     let req = AskRequestBody {
         query: "test".to_string(),
         ask_full_docs: Some(2),
         ..AskRequestBody::default()
     };
 
-    apply_ask_overrides(&mut cfg, &req);
+    let cfg = apply_ask_overrides(&cfg, ask_transport_overrides(&req));
 
     assert_eq!(cfg.ask_full_docs, 2);
     assert!(cfg.ask_full_docs_explicit);

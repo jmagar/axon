@@ -142,28 +142,11 @@ fn chunk_text_whitespace_only_short_returns_single_chunk() {
 }
 
 #[test]
-#[serial_test::serial]
-#[allow(unsafe_code)]
-fn chunk_text_respects_runtime_chunk_size_override() {
-    let saved_max = std::env::var("AXON_MARKDOWN_CHUNK_MAX_CHARS").ok();
-    let saved_overlap = std::env::var("AXON_CHUNK_OVERLAP_CHARS").ok();
-    unsafe {
-        std::env::set_var("AXON_MARKDOWN_CHUNK_MAX_CHARS", "512");
-        std::env::set_var("AXON_CHUNK_OVERLAP_CHARS", "64");
-    }
-
-    let chunks = chunk_text(&make_text(1200));
-
-    unsafe {
-        match saved_max {
-            Some(value) => std::env::set_var("AXON_MARKDOWN_CHUNK_MAX_CHARS", value),
-            None => std::env::remove_var("AXON_MARKDOWN_CHUNK_MAX_CHARS"),
-        }
-        match saved_overlap {
-            Some(value) => std::env::set_var("AXON_CHUNK_OVERLAP_CHARS", value),
-            None => std::env::remove_var("AXON_CHUNK_OVERLAP_CHARS"),
-        }
-    }
+fn chunk_text_respects_explicit_chunk_size_override() {
+    let chunks = chunk_text_with_offsets_for_limits(&make_text(1200), 512, 64)
+        .into_iter()
+        .map(|(_, chunk)| chunk)
+        .collect::<Vec<_>>();
 
     assert!(chunks.len() >= 3, "512-char chunks should split 1200 chars");
     assert!(

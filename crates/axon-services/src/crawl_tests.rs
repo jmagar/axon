@@ -25,6 +25,9 @@ struct CrawlWithDependentEmbedRuntime {
     embed_job_id: Uuid,
     wait_calls: Mutex<Vec<(Uuid, JobKind)>>,
 }
+struct CapturingRuntime {
+    payloads: Mutex<Vec<JobPayload>>,
+}
 
 /// Generate a complete `#[async_trait] impl ServiceJobRuntime for $t` with all
 /// no-op shared methods plus caller-supplied `wait_for_job` and `job_errors` bodies.
@@ -131,6 +134,94 @@ impl_noop_runtime_for!(
     Ok("canceled".to_string()),
     Ok(Some("user canceled".to_string()))
 );
+
+#[async_trait]
+impl ServiceJobRuntime for CapturingRuntime {
+    fn mode_name(&self) -> &'static str {
+        "test"
+    }
+
+    async fn enqueue(&self, payload: JobPayload) -> BackendResult<Uuid> {
+        self.payloads.lock().unwrap().push(payload);
+        Ok(Uuid::new_v4())
+    }
+
+    async fn has_active_jobs(&self, _kind: JobKind) -> BackendResult<bool> {
+        Ok(false)
+    }
+
+    async fn list_jobs(
+        &self,
+        _kind: JobKind,
+        _limit: i64,
+        _offset: i64,
+    ) -> Result<Vec<ServiceJob>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![])
+    }
+
+    async fn job_status(
+        &self,
+        _kind: JobKind,
+        _id: Uuid,
+    ) -> Result<Option<ServiceJob>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(None)
+    }
+
+    async fn cancel_job(
+        &self,
+        _kind: JobKind,
+        _id: Uuid,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(false)
+    }
+
+    async fn cleanup_jobs(
+        &self,
+        _kind: JobKind,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(0)
+    }
+
+    async fn clear_jobs(
+        &self,
+        _kind: JobKind,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(0)
+    }
+
+    async fn recover_jobs(
+        &self,
+        _kind: JobKind,
+        _stale_threshold_ms: i64,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(0)
+    }
+
+    async fn count_jobs(
+        &self,
+        _kind: JobKind,
+    ) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(0)
+    }
+
+    async fn count_jobs_by_status(
+        &self,
+        _kind: JobKind,
+    ) -> Result<
+        std::collections::HashMap<axon_jobs::status::JobStatus, i64>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        Ok(std::collections::HashMap::new())
+    }
+
+    async fn wait_for_job(&self, _id: Uuid, _kind: JobKind) -> BackendResult<String> {
+        Ok("completed".to_string())
+    }
+
+    async fn job_errors(&self, _id: Uuid, _kind: JobKind) -> BackendResult<Option<String>> {
+        Ok(None)
+    }
+}
 
 #[async_trait]
 impl ServiceJobRuntime for CrawlWithDependentEmbedRuntime {
@@ -267,15 +358,15 @@ fn map_crawl_start_result_includes_predicted_output_paths() {
     );
     assert_eq!(result.predicted_artifact_handles.len(), 3);
     assert_eq!(
-        result.predicted_artifact_handles[0].relative_path,
+        result.predicted_artifact_handles[0].relative_path(),
         "domains/docs.rs/job-123/manifest.jsonl"
     );
     assert_eq!(
-        result.predicted_artifact_handles[0].job_id.as_deref(),
+        result.predicted_artifact_handles[0].job_id(),
         Some("job-123")
     );
     assert_eq!(
-        result.predicted_artifact_handles[0].url.as_deref(),
+        result.predicted_artifact_handles[0].url(),
         Some("https://docs.rs")
     );
     assert_eq!(result.jobs.len(), 1);
@@ -424,17 +515,11 @@ fn map_crawl_job_result_preserves_output_files() {
     );
     assert_eq!(result.output_file_handles.len(), 2);
     assert_eq!(
-        result.output_file_handles[0].relative_path,
+        result.output_file_handles[0].relative_path(),
         "manifest.jsonl"
     );
-    assert_eq!(
-        result.output_file_handles[0].job_id.as_deref(),
-        Some("job-123")
-    );
-    assert_eq!(
-        result.output_file_handles[0].url.as_deref(),
-        Some("https://docs.rs")
-    );
+    assert_eq!(result.output_file_handles[0].job_id(), Some("job-123"));
+    assert_eq!(result.output_file_handles[0].url(), Some("https://docs.rs"));
 }
 
 #[test]
@@ -453,11 +538,11 @@ fn map_crawl_job_result_derives_handles_from_result_json_paths() {
 
     assert_eq!(result.output_file_handles.len(), 2);
     assert_eq!(
-        result.output_file_handles[0].relative_path,
+        result.output_file_handles[0].relative_path(),
         "domains/docs.rs/job-456/manifest.jsonl"
     );
     assert_eq!(
-        result.output_file_handles[1].relative_path,
+        result.output_file_handles[1].relative_path(),
         "domains/docs.rs/job-456/markdown"
     );
 }
@@ -483,14 +568,40 @@ fn resolve_crawl_max_pages_default_and_cap() {
     assert_eq!(resolve_crawl_max_pages(50_000, true), 50_000);
 }
 
-#[test]
-fn cli_and_mcp_crawl_resolve_to_the_same_cap() {
-    // Both transports pass max_pages == 0 when the user omits it; the services
-    // layer is the single place that turns that into the default. This is the
-    // regression guard for the "CLI defaults to 2000, MCP to 0" divergence.
-    use super::resolve_crawl_max_pages;
-    let cli_unset = resolve_crawl_max_pages(0, false);
-    let mcp_unset = resolve_crawl_max_pages(0, false);
-    assert_eq!(cli_unset, mcp_unset);
-    assert_eq!(cli_unset, super::DEFAULT_CRAWL_MAX_PAGES);
+#[tokio::test]
+async fn crawl_start_snapshots_effective_max_pages_at_enqueue_boundary()
+-> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn captured_max_pages(
+        requested: u32,
+        allow_unbounded: bool,
+    ) -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
+        let mut cfg = test_config("https://docs.rs");
+        cfg.max_pages = requested;
+        cfg.allow_unbounded_broad_crawl = allow_unbounded;
+        let runtime = Arc::new(CapturingRuntime {
+            payloads: Mutex::new(Vec::new()),
+        });
+        let ctx = ServiceContext::from_runtime(Arc::new(cfg.clone()), runtime.clone());
+
+        crawl_start_with_context(&cfg, &[cfg.start_url.clone()], &ctx, None)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let payloads = runtime.payloads.lock().unwrap();
+        let [JobPayload::Crawl { config_json, .. }] = payloads.as_slice() else {
+            panic!("expected exactly one captured crawl payload");
+        };
+        let snapshot: serde_json::Value =
+            serde_json::from_str(config_json).expect("config_json is valid JSON");
+        Ok(snapshot
+            .pointer("/config/max_pages")
+            .and_then(serde_json::Value::as_u64)
+            .expect("crawl snapshot has max_pages") as u32)
+    }
+
+    assert_eq!(captured_max_pages(0, false).await?, 5_000);
+    assert_eq!(captured_max_pages(50_000, false).await?, 5_000);
+    assert_eq!(captured_max_pages(0, true).await?, 0);
+    assert_eq!(captured_max_pages(50_000, true).await?, 50_000);
+    Ok(())
 }

@@ -6,6 +6,10 @@ use axon_services::client_contract::{
     RestExtractRequest as ExtractStartRequest, RestIngestRequest as IngestStartRequest,
 };
 use axon_services::context::ServiceContext;
+use axon_services::transport::{
+    CrawlTransportOverrides, ExtractTransportOverrides, apply_crawl_overrides,
+    apply_extract_overrides,
+};
 use axum::{
     Json, Router,
     extract::State,
@@ -99,26 +103,24 @@ pub(crate) async fn start_crawl(
     }
     validate_forwarded_headers(&req.headers)?;
     validate_ssrf_urls(&req.urls)?;
-    let cfg = cfg.apply_overrides(&ConfigOverrides {
-        max_pages: req.max_pages,
-        max_depth: req.max_depth,
-        include_subdomains: req.include_subdomains,
-        respect_robots: req.respect_robots,
-        discover_sitemaps: req.discover_sitemaps,
-        sitemap_since_days: req.sitemap_since_days,
-        max_sitemaps: req.max_sitemaps,
-        discover_llms_txt: req.discover_llms_txt,
-        max_llms_txt_urls: req.max_llms_txt_urls,
-        render_mode: req.render_mode,
-        delay_ms: req.delay_ms,
-        collection: req.collection,
-        custom_headers: if req.headers.is_empty() {
-            None
-        } else {
-            Some(req.headers)
+    let cfg = apply_crawl_overrides(
+        &cfg,
+        &CrawlTransportOverrides {
+            max_pages: req.max_pages,
+            max_depth: req.max_depth,
+            include_subdomains: req.include_subdomains,
+            respect_robots: req.respect_robots,
+            discover_sitemaps: req.discover_sitemaps,
+            sitemap_since_days: req.sitemap_since_days,
+            max_sitemaps: req.max_sitemaps,
+            discover_llms_txt: req.discover_llms_txt,
+            max_llms_txt_urls: req.max_llms_txt_urls,
+            render_mode: req.render_mode,
+            delay_ms: req.delay_ms,
+            collection: req.collection,
+            headers: req.headers,
         },
-        ..ConfigOverrides::default()
-    });
+    );
     super::rag::validate_collection_name(&cfg.collection)?;
     let outcome =
         services::crawl::crawl_start_with_context(&cfg, &req.urls, &state.service_context, None)
@@ -208,19 +210,17 @@ pub(crate) async fn start_extract(
         ));
     }
     validate_ssrf_urls(&req.urls)?;
-    let cfg = cfg.apply_overrides(&ConfigOverrides {
-        query: Some(req.prompt.clone()),
-        max_pages: req.max_pages,
-        render_mode: req.render_mode,
-        embed: req.embed,
-        collection: req.collection,
-        custom_headers: if req.headers.is_empty() {
-            None
-        } else {
-            Some(req.headers)
+    let cfg = apply_extract_overrides(
+        &cfg,
+        &ExtractTransportOverrides {
+            prompt: req.prompt.clone(),
+            max_pages: req.max_pages,
+            render_mode: req.render_mode,
+            embed: req.embed,
+            collection: req.collection,
+            headers: req.headers,
         },
-        ..ConfigOverrides::default()
-    });
+    );
     super::rag::validate_collection_name(&cfg.collection)?;
     let outcome = services::extract::extract_start_with_context(
         &cfg,

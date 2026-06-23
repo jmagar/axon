@@ -1,9 +1,11 @@
 use super::client_contract::{
     ClientCrawlRequest, ClientExtractMode, ClientExtractRequest, ClientRoutePreference,
     RestCrawlRequest, RestExtractRequest, RestIngestRequest, RestMemoryRequest,
+    rest_route_contracts,
 };
 use axon_api::mcp_schema::{IngestRequest, MemoryRequest, MemorySubaction};
 use axon_core::config::RenderMode;
+use std::collections::BTreeSet;
 
 #[test]
 fn extract_request_defaults_to_auto_mode() {
@@ -121,4 +123,32 @@ fn crawl_request_deserializes_missing_transport_fields_as_defaults() {
 
     assert!(req.headers.is_empty());
     assert_eq!(req.route_preference, ClientRoutePreference::Default);
+}
+
+#[test]
+fn rest_route_contract_fields_match_openapi_schema_properties() {
+    let openapi: serde_json::Value =
+        serde_json::from_str(include_str!("../../../apps/web/openapi/axon.json"))
+            .expect("parse generated OpenAPI");
+
+    for contract in rest_route_contracts() {
+        let properties = openapi
+            .pointer(&format!(
+                "/components/schemas/{}/properties",
+                contract.schema_name
+            ))
+            .and_then(serde_json::Value::as_object)
+            .unwrap_or_else(|| panic!("OpenAPI schema {} has properties", contract.schema_name));
+        let openapi_fields = properties
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let contract_fields = contract.fields.iter().copied().collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            contract_fields, openapi_fields,
+            "{} {} must list the same fields as OpenAPI schema {}",
+            contract.method, contract.path, contract.schema_name
+        );
+    }
 }

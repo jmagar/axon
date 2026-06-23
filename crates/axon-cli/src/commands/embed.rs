@@ -25,7 +25,8 @@ pub(crate) fn render_embed_list(
     all_jobs: Vec<axon_services::types::ServiceJob>,
     total: i64,
 ) -> Result<(), Box<dyn Error>> {
-    let result = axon_services::types::JobListResult::new(all_jobs, total, 50, 0);
+    let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+    let result = axon_services::types::JobListResult::new(all_jobs, total, limit, offset);
     let empty_crawl_map = std::collections::HashMap::new();
     handle_job_list_with_rows(
         cfg,
@@ -227,7 +228,8 @@ async fn handle_embed_list(
     cfg: &Config,
     service_context: &ServiceContext,
 ) -> Result<(), Box<dyn Error>> {
-    let all_jobs = job_service::list_jobs(service_context, JobKind::Embed, 50, 0).await?;
+    let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+    let all_jobs = job_service::list_jobs(service_context, JobKind::Embed, limit, offset).await?;
     let total = all_jobs.len() as i64;
     render_embed_list(cfg, all_jobs, total)
 }

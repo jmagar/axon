@@ -77,9 +77,9 @@ pub async fn write_json_artifact(
         url,
     )
     .await?;
-    let relative_path = handle.relative_path.clone();
-    let display_path = handle.display_path.clone();
-    let kind = handle.kind.clone();
+    let relative_path = handle.relative_path().to_string();
+    let display_path = handle.display_path().to_string();
+    let kind = handle.kind().to_string();
 
     Ok(serde_json::json!({
         "artifact_handle": handle,

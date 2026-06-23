@@ -180,7 +180,7 @@ pub fn validate_resolved_ips(
 /// IPv4-mapped IPv6 addresses. Extracted as a named function (not a closure)
 /// so the IPv4-mapped branch can recurse into the IPv4 checks.
 fn check_ip(ip: IpAddr) -> Result<(), HttpError> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     {
         if ip.is_loopback() && ALLOW_LOOPBACK.with(|c| c.get()) {
             return Ok(());

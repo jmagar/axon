@@ -333,12 +333,18 @@ impl StdError for ServiceTaxonomyError {}
 /// envelope; falls back to `internal_error` mapping when no taxonomy variant
 /// is present.
 pub fn taxonomy_from_error(err: &(dyn StdError + 'static)) -> Option<ServiceTaxonomyError> {
+    const MAX_CHAIN_DEPTH: usize = 16;
     let mut cursor = Some(err);
+    let mut depth = 0;
     while let Some(current) = cursor {
         if let Some(tax) = current.downcast_ref::<ServiceTaxonomyError>() {
             return Some(tax.clone());
         }
+        if depth >= MAX_CHAIN_DEPTH {
+            break;
+        }
         cursor = current.source();
+        depth += 1;
     }
     None
 }

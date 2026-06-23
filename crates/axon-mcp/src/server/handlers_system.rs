@@ -6,6 +6,7 @@ use crate::schema::{
     StatusRequest,
 };
 use axon_services::system;
+use axon_services::transport;
 use rmcp::ErrorData;
 use serde_json::Value;
 
@@ -82,7 +83,7 @@ impl AxonMcpServer {
         &self,
         req: DomainsRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let pagination = to_pagination(req.limit, req.offset, 25);
+        let pagination = to_pagination(req.limit, req.offset, transport::DISCOVERY_PAGE_DEFAULT);
         let response_mode = req.response_mode;
         if let Some(domain) = req.domain.as_deref() {
             let result = system::domain_indexed(self.cfg.as_ref(), domain)
@@ -126,9 +127,9 @@ impl AxonMcpServer {
         &self,
         req: SourcesRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let pagination = to_pagination(req.limit, req.offset, 25);
         let response_mode = req.response_mode;
         if let Some(domain) = req.domain.as_deref() {
+            let pagination = transport::domain_sources_pagination(req.limit, req.offset);
             let result = system::sources_for_domain(
                 self.cfg.as_ref(),
                 domain,
@@ -149,16 +150,12 @@ impl AxonMcpServer {
             )
             .await;
         }
+        let pagination = to_pagination(req.limit, req.offset, transport::DISCOVERY_PAGE_DEFAULT);
         let result = system::sources(self.cfg.as_ref(), pagination)
             .await
             .map_err(|e| logged_internal_error("sources", e.as_ref()))?;
-        let payload = serde_json::json!({
-            "count": result.count,
-            "limit": result.limit,
-            "offset": result.offset,
-            // Chunk counts are available in SourcesResult but excluded from the wire response.
-            "urls": result.urls.iter().map(|(url, _chunks)| url).collect::<Vec<_>>(),
-        });
+        let payload =
+            serde_json::to_value(result).map_err(|e| logged_internal_error("sources", &e))?;
         respond_with_mode(
             "sources",
             "sources",

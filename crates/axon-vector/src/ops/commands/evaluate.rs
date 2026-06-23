@@ -145,7 +145,7 @@ pub async fn evaluate_result(cfg: &Config) -> Result<EvaluateResult, String> {
         context_chars,
         retrieval_ab: derived.evaluate_retrieval_ab,
     };
-    let (analysis_answer, analysis_elapsed_ms) = run_analysis(&derived, client, &judge_ctx).await;
+    let (analysis_answer, analysis_elapsed_ms) = run_analysis(&derived, client, &judge_ctx).await?;
     let crawl_suggestions = if rag_underperformed(&analysis_answer) {
         let focus = build_suggestion_focus(&query, &analysis_answer);
         discover_crawl_suggestions(&derived, &focus, 5)

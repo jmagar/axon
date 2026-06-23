@@ -96,6 +96,7 @@ proptest! {
 proptest! {
     /// Calling `chunk_text` twice with the same input must produce identical output.
     #[test]
+    #[serial_test::serial]
     fn chunk_text_is_deterministic(
         s in ".{0,5000}",
     ) {

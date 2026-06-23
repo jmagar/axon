@@ -1,5 +1,8 @@
-use super::{validate_mcp_collection, validate_mcp_embed_input_with_config};
-use axon_core::config::Config;
+use super::{
+    apply_extract_overrides, validate_mcp_collection, validate_mcp_embed_input_with_config,
+};
+use crate::schema::{ExtractRequest, McpRenderMode};
+use axon_core::config::{Config, RenderMode};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -111,9 +114,29 @@ fn mcp_embed_rejects_symlink_inputs() {
     assert!(validate_mcp_embed_input_with_config(&cfg, &link.to_string_lossy()).is_err());
 }
 
+#[test]
+fn mcp_extract_overrides_preserve_render_mode_and_embed() {
+    let cfg = Config::default_minimal();
+    let req = ExtractRequest {
+        render_mode: Some(McpRenderMode::Chrome),
+        embed: Some(false),
+        prompt: Some("extract prices".to_string()),
+        max_pages: Some(17),
+        ..ExtractRequest::default()
+    };
+
+    let cfg = apply_extract_overrides(&cfg, &req);
+
+    assert_eq!(cfg.render_mode, RenderMode::Chrome);
+    assert!(!cfg.embed);
+    assert_eq!(cfg.query.as_deref(), Some("extract prices"));
+    assert_eq!(cfg.max_pages, 17);
+}
+
 // --- logged_internal_error ---
 
 use super::logged_internal_error;
+use axon_core::error::ServiceTaxonomyError;
 use std::error::Error as StdError;
 use std::fmt;
 
@@ -198,4 +221,19 @@ fn logged_internal_error_terminates_on_self_referential_source() {
     // proves termination.
     let err = logged_internal_error("retrieve 'x'", &CyclicErr);
     assert_eq!(&*err.message, "retrieve 'x' failed: cyclic");
+}
+
+#[test]
+fn logged_internal_error_surfaces_service_taxonomy_data() {
+    let err = ServiceTaxonomyError::VerticalAuthMissing {
+        vertical: "github_repo",
+    };
+    let data = logged_internal_error("scrape", &err)
+        .data
+        .expect("taxonomy data");
+
+    assert_eq!(data["error"]["code"], "vertical_auth_missing");
+    assert_eq!(data["error"]["retriable"], false);
+    assert_eq!(data["error"]["source"], "github_repo");
+    assert_eq!(data["error"]["details"]["vertical"], "github_repo");
 }

@@ -20,9 +20,9 @@ fn map_screenshot_result_preserves_artifact_handle() {
     .expect("screenshot payload");
 
     let handle = result.artifact_handle.expect("artifact handle");
-    assert_eq!(handle.relative_path, "screenshots/shot.png");
-    assert_eq!(handle.kind, "screenshot");
-    assert_eq!(handle.url.as_deref(), Some("https://example.com"));
+    assert_eq!(handle.relative_path(), "screenshots/shot.png");
+    assert_eq!(handle.kind(), "screenshot");
+    assert_eq!(handle.url(), Some("https://example.com"));
 }
 
 #[test]

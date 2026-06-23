@@ -103,8 +103,14 @@ pub async fn v1_ask_stream(
 
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(SSE_EVENT_BUFFER);
     let disconnected = Arc::new(AtomicBool::new(false));
-    let mut req_cfg = (*cfg).clone();
-    super::ask::apply_ask_overrides(&mut req_cfg, &req);
+    let mut req_cfg = axon_services::transport::apply_ask_overrides(
+        &cfg,
+        super::ask::ask_transport_overrides(&req),
+    );
+    if let Err(reason) = axon_core::config::validate_collection_name(&req_cfg.collection) {
+        return HttpError::bad_request(format!("invalid collection name: {reason}"))
+            .into_response();
+    }
     req_cfg.ask_stream = true;
     req_cfg.json_output = false;
 

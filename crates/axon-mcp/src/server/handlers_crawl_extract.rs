@@ -1,12 +1,12 @@
 use super::AxonMcpServer;
 use super::common::{
-    InlineHint, apply_crawl_overrides, invalid_params, logged_internal_error, parse_job_id,
-    parse_limit, parse_offset, respond_with_mode, validate_mcp_urls,
+    InlineHint, apply_crawl_overrides, apply_extract_overrides, invalid_params,
+    logged_internal_error, parse_job_id, respond_with_mode, validate_mcp_urls,
 };
 use crate::schema::{
     AxonToolResponse, CrawlRequest, CrawlSubaction, ExtractRequest, ExtractSubaction, ResponseMode,
 };
-use axon_core::config::{Config, ConfigOverrides};
+use axon_core::config::Config;
 use axon_services::crawl as crawl_svc;
 use axon_services::extract as extract_svc;
 use rmcp::ErrorData;
@@ -64,19 +64,14 @@ impl AxonMcpServer {
         offset: Option<usize>,
         response_mode: Option<ResponseMode>,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit(limit, 20);
-        let offset = parse_offset(offset);
+        let (limit, offset) = axon_services::transport::job_list_pagination(limit, offset);
         let service_context = self
             .service_context_for(cfg.clone())
             .await
             .map_err(|e| logged_internal_error("crawl.list.context", e.as_ref()))?;
-        let jobs = crawl_svc::crawl_list(
-            &service_context,
-            limit,
-            i64::try_from(offset).unwrap_or(i64::MAX),
-        )
-        .await
-        .map_err(|e| logged_internal_error("crawl.list", e.as_ref()))?;
+        let jobs = crawl_svc::crawl_list(&service_context, limit, offset)
+            .await
+            .map_err(|e| logged_internal_error("crawl.list", e.as_ref()))?;
         respond_with_mode(
             "crawl",
             "list",
@@ -90,20 +85,16 @@ impl AxonMcpServer {
 
     async fn handle_extract_start(
         &self,
-        urls: Option<Vec<String>>,
-        prompt: Option<String>,
-        max_pages: Option<u32>,
+        req: ExtractRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let urls = urls.ok_or_else(|| invalid_params("urls is required for extract.start"))?;
+        let cfg = apply_extract_overrides(self.cfg.as_ref(), &req);
+        let urls = req
+            .urls
+            .ok_or_else(|| invalid_params("urls is required for extract.start"))?;
         if urls.is_empty() {
             return Err(invalid_params("urls cannot be empty"));
         }
         validate_mcp_urls(&urls)?;
-        let cfg = self.cfg.apply_overrides(&ConfigOverrides {
-            query: Some(prompt),
-            max_pages,
-            ..ConfigOverrides::default()
-        });
         let service_context = self
             .base_service_context()
             .await
@@ -130,19 +121,14 @@ impl AxonMcpServer {
         offset: Option<usize>,
         response_mode: Option<ResponseMode>,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit(limit, 20);
-        let offset = parse_offset(offset);
+        let (limit, offset) = axon_services::transport::job_list_pagination(limit, offset);
         let service_context = self
             .base_service_context()
             .await
             .map_err(|e| logged_internal_error("extract.list.context", e.as_ref()))?;
-        let jobs = extract_svc::extract_list(
-            service_context.as_ref(),
-            limit,
-            i64::try_from(offset).unwrap_or(i64::MAX),
-        )
-        .await
-        .map_err(|e| logged_internal_error("extract.list", e.as_ref()))?;
+        let jobs = extract_svc::extract_list(service_context.as_ref(), limit, offset)
+            .await
+            .map_err(|e| logged_internal_error("extract.list", e.as_ref()))?;
         respond_with_mode(
             "extract",
             "list",
@@ -259,10 +245,7 @@ impl AxonMcpServer {
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = req.response_mode;
         match req.subaction.unwrap_or(ExtractSubaction::Start) {
-            ExtractSubaction::Start => {
-                self.handle_extract_start(req.urls, req.prompt, req.max_pages)
-                    .await
-            }
+            ExtractSubaction::Start => self.handle_extract_start(req).await,
             ExtractSubaction::Status => {
                 let id = parse_job_id(req.job_id.as_deref())?;
                 let service_context = self

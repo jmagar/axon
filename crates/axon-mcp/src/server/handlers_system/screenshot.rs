@@ -97,8 +97,8 @@ impl AxonMcpServer {
         )
         .await?;
 
-        let relative_path = artifact_handle.relative_path.clone();
-        let display_path = artifact_handle.display_path.clone();
+        let relative_path = artifact_handle.relative_path().to_string();
+        let display_path = artifact_handle.display_path().to_string();
         let payload = serde_json::json!({
             "url": shot.url,
             "path": relative_path,

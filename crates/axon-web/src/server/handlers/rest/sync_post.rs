@@ -19,9 +19,7 @@ use super::types::{
 };
 use axon_services::query as query_svc;
 use axon_services::search as search_svc;
-use axon_services::types::{
-    MapOptions, Pagination, RetrieveOptions, SearchOptions, ServiceTimeRange,
-};
+use axon_services::transport;
 use axon_services::{map as map_svc, scrape as scrape_svc, summarize as summarize_svc};
 use axum::{
     Json,
@@ -29,9 +27,6 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-
-const DEFAULT_LIMIT: usize = 10;
-const MAX_LIMIT: usize = 1000;
 
 fn embed_scrape_doc_sync(
     cfg: &axon_core::config::Config,
@@ -51,26 +46,10 @@ fn embed_scrape_doc_sync(
     })
 }
 
-fn pagination(limit: Option<usize>, offset: Option<usize>) -> Pagination {
-    Pagination {
-        limit: limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
-        offset: offset.unwrap_or(0),
-    }
-}
-
 #[allow(clippy::result_large_err)] // Err is an Axum Response we just return as-is.
-fn parse_time_range(value: &str) -> Result<ServiceTimeRange, Response> {
-    match value.to_ascii_lowercase().as_str() {
-        "day" => Ok(ServiceTimeRange::Day),
-        "week" => Ok(ServiceTimeRange::Week),
-        "month" => Ok(ServiceTimeRange::Month),
-        "year" => Ok(ServiceTimeRange::Year),
-        other => Err(rest_error(
-            StatusCode::BAD_REQUEST,
-            "bad_request",
-            format!("invalid time_range: {other}; expected day|week|month|year"),
-        )),
-    }
+fn parse_time_range(value: &str) -> Result<axon_services::types::ServiceTimeRange, Response> {
+    transport::parse_service_time_range(value)
+        .map_err(|message| rest_error(StatusCode::BAD_REQUEST, "bad_request", message))
 }
 
 #[allow(clippy::result_large_err)] // Err is an Axum Response we just return as-is.
@@ -92,8 +71,18 @@ pub(crate) async fn v1_query(
     if let Err(r) = require_field(&req.query, "query") {
         return r;
     }
-    let opts = pagination(req.limit, req.offset);
-    match query_svc::query(state.cfg.as_ref(), &req.query, opts).await {
+    let cfg = match super::super::rag::with_query_overrides(
+        state.cfg.as_ref(),
+        req.collection,
+        req.since,
+        req.before,
+        req.hybrid_search,
+    ) {
+        Ok(cfg) => cfg,
+        Err(err) => return err.into_response(),
+    };
+    let opts = transport::pagination(req.limit, req.offset, cfg.search_limit);
+    match query_svc::query(&cfg, &req.query, opts).await {
         Ok(result) => Json(result).into_response(),
         Err(err) => map_service_error(err.as_ref()),
     }
@@ -106,12 +95,18 @@ pub(crate) async fn v1_retrieve(
     if let Err(r) = require_field(&req.url, "url") {
         return r;
     }
-    let opts = RetrieveOptions {
-        max_points: req.max_points,
-        cursor: req.cursor,
-        token_budget: req.token_budget,
+    let cfg = match super::super::rag::with_query_overrides(
+        state.cfg.as_ref(),
+        req.collection,
+        req.since,
+        req.before,
+        None,
+    ) {
+        Ok(cfg) => cfg,
+        Err(err) => return err.into_response(),
     };
-    match query_svc::retrieve(state.cfg.as_ref(), &req.url, opts).await {
+    let opts = transport::retrieve_options(req.max_points, req.cursor, req.token_budget);
+    match query_svc::retrieve(&cfg, &req.url, opts).await {
         Ok(result) => Json(result).into_response(),
         Err(err) => map_service_error(&*err),
     }
@@ -121,7 +116,12 @@ pub(crate) async fn v1_suggest(
     State(state): State<RestState>,
     Json(req): Json<SuggestBody>,
 ) -> Response {
-    match query_svc::suggest(state.cfg.as_ref(), req.focus.as_deref()).await {
+    let cfg = match super::super::rag::with_collection_override(state.cfg.as_ref(), req.collection)
+    {
+        Ok(cfg) => cfg,
+        Err(err) => return err.into_response(),
+    };
+    match query_svc::suggest(&cfg, req.focus.as_deref()).await {
         Ok(result) => Json(result).into_response(),
         Err(err) => map_service_error(err.as_ref()),
     }
@@ -131,10 +131,7 @@ pub(crate) async fn v1_map(State(state): State<RestState>, Json(req): Json<MapBo
     if let Err(r) = require_field(&req.url, "url") {
         return r;
     }
-    let opts = MapOptions {
-        limit: req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
-        offset: req.offset.unwrap_or(0),
-    };
+    let opts = transport::map_options(req.limit, req.offset);
     match map_svc::discover(state.cfg.as_ref(), &req.url, opts, None).await {
         Ok(result) => Json(result).into_response(),
         Err(err) => map_service_error(err.as_ref()),
@@ -160,11 +157,7 @@ pub(crate) async fn v1_search(
         },
         None => None,
     };
-    let opts = SearchOptions {
-        limit: req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
-        offset: req.offset.unwrap_or(0),
-        time_range,
-    };
+    let opts = transport::search_options(req.limit, req.offset, time_range, state.cfg.search_limit);
     match search_svc::search(state.cfg.as_ref(), &req.query, opts, None).await {
         Ok(result) => Json(serde_json::json!({ "results": result.results })).into_response(),
         Err(err) => map_service_error(err.as_ref()),
@@ -185,11 +178,7 @@ pub(crate) async fn v1_research(
         },
         None => None,
     };
-    let opts = SearchOptions {
-        limit: req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
-        offset: req.offset.unwrap_or(0),
-        time_range,
-    };
+    let opts = transport::search_options(req.limit, req.offset, time_range, state.cfg.search_limit);
     let service_context = match state.service_context().await {
         Ok(context) => context,
         Err(err) => return map_service_error(err.as_ref()),

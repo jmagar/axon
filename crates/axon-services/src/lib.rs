@@ -31,6 +31,7 @@ pub mod setup;
 pub mod summarize;
 pub mod sync;
 pub mod system;
+pub mod transport;
 pub mod types;
 pub mod watch;
 

@@ -66,10 +66,21 @@ pub fn chunk_text(text: &str) -> Vec<String> {
 /// content.
 #[must_use]
 pub fn chunk_text_with_offsets(text: &str) -> Vec<(usize, String)> {
-    use std::collections::VecDeque;
-
     let chunk_max = markdown_chunk_max_chars();
     let overlap = chunk_overlap_chars(chunk_max);
+    chunk_text_with_offsets_for_limits(text, chunk_max, overlap)
+}
+
+#[must_use]
+fn chunk_text_with_offsets_for_limits(
+    text: &str,
+    chunk_max: usize,
+    overlap: usize,
+) -> Vec<(usize, String)> {
+    use std::collections::VecDeque;
+
+    let chunk_max = chunk_max.max(1);
+    let overlap = overlap.min(chunk_max.saturating_sub(1));
     // Step size between consecutive chunk starts (non-overlapping advance).
     let step = chunk_max - overlap;
 

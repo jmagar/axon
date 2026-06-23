@@ -803,11 +803,11 @@ pub async fn evaluate(
     evaluate_result(&derived)
         .await
         .map_err(|e| -> Box<dyn Error + Send + Sync> {
-            format!(
+            let message = format!(
                 "evaluate failed for {}: {e}",
                 question.chars().take(80).collect::<String>()
-            )
-            .into()
+            );
+            Box::new(ServiceError::new(message))
         })
 }
 

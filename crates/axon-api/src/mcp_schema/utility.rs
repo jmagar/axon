@@ -12,7 +12,7 @@ pub struct ResearchRequest {
     pub response_mode: Option<ResponseMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AskRequest {
     pub query: Option<String>,
@@ -31,6 +31,18 @@ pub struct AskRequest {
     /// Per-request hybrid search override. `false` forces dense-only retrieval
     /// (skips BM42 sparse + RRF). When unset, falls back to server config.
     pub hybrid_search: Option<bool>,
+    pub ask_chunk_limit: Option<usize>,
+    pub ask_full_docs: Option<usize>,
+    pub ask_max_context_chars: Option<usize>,
+    pub ask_hybrid_candidates: Option<usize>,
+    pub ask_min_relevance_score: Option<f64>,
+    pub ask_doc_chunk_limit: Option<usize>,
+    pub ask_doc_fetch_concurrency: Option<usize>,
+    pub ask_backfill_chunks: Option<usize>,
+    pub ask_candidate_limit: Option<usize>,
+    pub ask_min_citations_nontrivial: Option<usize>,
+    pub ask_authoritative_domains: Option<Vec<String>>,
+    pub ask_authoritative_boost: Option<f64>,
     pub response_mode: Option<ResponseMode>,
 }
 

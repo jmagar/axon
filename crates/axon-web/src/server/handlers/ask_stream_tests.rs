@@ -28,6 +28,17 @@ async fn ask_stream_rejects_explain_mode() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn ask_stream_rejects_invalid_collection_before_sse() {
+    let response = super::v1_ask_stream_test_response(serde_json::json!({
+        "query": "why?",
+        "collection": "../secret"
+    }))
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 #[test]
 fn ask_stream_output_channel_is_bounded() {
     let (tx, _rx) = mpsc::channel::<Result<Event, Infallible>>(super::sse_event_buffer_for_tests());

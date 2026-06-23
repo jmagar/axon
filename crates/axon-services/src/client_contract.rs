@@ -121,6 +121,9 @@ pub struct RestQueryRequest {
     pub collection: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub since: Option<String>,
+    pub before: Option<String>,
+    pub hybrid_search: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
@@ -128,6 +131,8 @@ pub struct RestQueryRequest {
 pub struct RestRetrieveRequest {
     pub url: String,
     pub collection: Option<String>,
+    pub since: Option<String>,
+    pub before: Option<String>,
     pub max_points: Option<usize>,
     pub cursor: Option<String>,
     pub token_budget: Option<usize>,
@@ -138,6 +143,11 @@ pub struct RestRetrieveRequest {
 pub struct RestEvaluateRequest {
     pub question: String,
     pub collection: Option<String>,
+    pub diagnostics: Option<bool>,
+    pub retrieval_ab: Option<bool>,
+    pub since: Option<String>,
+    pub before: Option<String>,
+    pub hybrid_search: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
@@ -462,6 +472,9 @@ impl From<ClientQueryRequest> for RestQueryRequest {
             collection: req.collection,
             limit: req.limit,
             offset: req.offset,
+            since: None,
+            before: None,
+            hybrid_search: None,
         }
     }
 }
@@ -481,6 +494,8 @@ impl From<ClientRetrieveRequest> for RestRetrieveRequest {
         Self {
             url: req.url,
             collection: None,
+            since: None,
+            before: None,
             max_points: req.max_points,
             cursor: req.cursor,
             token_budget: req.token_budget,

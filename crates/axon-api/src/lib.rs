@@ -24,3 +24,6 @@ pub mod service_job;
 
 pub use explain::*;
 pub use result::*;
+
+#[cfg(test)]
+mod contract_tests;

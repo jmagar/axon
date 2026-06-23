@@ -31,19 +31,13 @@ const DEFAULT_CACHE_TTL_SECS: u64 = 60 * 60;
 /// Returns a typed result with aggregate stats. Intermediate progress is
 /// emitted via Spinners (stderr) and structured logging.
 pub async fn crawl_sync(cfg: &Config, start_url: &str) -> Result<CrawlSyncResult, Box<dyn Error>> {
+    let mut sync_cfg = crawl_sync_effective_config(cfg, start_url);
     if cfg.sitemap_only {
-        return run_sitemap_only_crawl(cfg, start_url).await;
+        return run_sitemap_only_crawl(&sync_cfg, start_url).await;
     }
 
-    let domain = url_to_domain(start_url);
-    let mut sync_cfg = Config {
-        output_dir: cfg.output_dir.join("domains").join(&domain).join("sync"),
-        ..cfg.clone()
-    };
-    // Same services-layer page-cap policy as the async path — keep them identical.
-    sync_cfg.max_pages =
-        crate::crawl::resolve_crawl_max_pages(cfg.max_pages, cfg.allow_unbounded_broad_crawl);
     let cfg = &mut sync_cfg;
+    let domain = url_to_domain(start_url);
 
     let manifest_path = cfg.output_dir.join("manifest.jsonl");
     let previous_manifest = Arc::new(if cfg.cache {
@@ -103,6 +97,19 @@ pub async fn crawl_sync(cfg: &Config, start_url: &str) -> Result<CrawlSyncResult
         elapsed_ms: final_summary.elapsed_ms,
         cache_hit: false,
     })
+}
+
+fn crawl_sync_effective_config(cfg: &Config, start_url: &str) -> Config {
+    let domain = url_to_domain(start_url);
+    let mut sync_cfg = Config {
+        output_dir: cfg.output_dir.join("domains").join(&domain).join("sync"),
+        ..cfg.clone()
+    };
+    // Same services-layer page-cap policy as the async path — keep them identical,
+    // including sitemap-only sync crawls.
+    sync_cfg.max_pages =
+        crate::crawl::resolve_crawl_max_pages(cfg.max_pages, cfg.allow_unbounded_broad_crawl);
+    sync_cfg
 }
 
 // ─── cache ─────────────────────────────────────────────────────────────────

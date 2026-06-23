@@ -99,7 +99,7 @@ fn artifact_handle_from_path_refuses_outside_root() {
 
     let handle = ArtifactHandle::try_from_path("json", root, inside, 10, Some(1), None, None)
         .expect("inside root");
-    assert_eq!(handle.relative_path, "scrape/page.json");
+    assert_eq!(handle.relative_path(), "scrape/page.json");
 
     assert!(
         ArtifactHandle::try_from_path("json", root, outside, 10, Some(1), None, None).is_none()

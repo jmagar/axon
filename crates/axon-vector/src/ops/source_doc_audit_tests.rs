@@ -3,13 +3,17 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn source_doc_audit_forbids_manual_chunking_in_adapters() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut files = collect_files(&root.join("src/ingest"));
-    files.push(root.join("src/cli/commands/scrape.rs"));
-    files.push(root.join("src/services/memory.rs"));
-    files.push(root.join("src/services/scrape.rs"));
-    files.push(root.join("src/vector/ops/tei/prepare.rs"));
-    files.push(root.join("src/web/server/handlers/rest/sync_post.rs"));
+    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = crate_root
+        .parent()
+        .and_then(Path::parent)
+        .expect("axon-vector lives under crates/");
+    let mut files = collect_files(&workspace_root.join("crates/axon-ingest/src"));
+    files.push(workspace_root.join("crates/axon-cli/src/commands/scrape.rs"));
+    files.push(workspace_root.join("crates/axon-services/src/memory.rs"));
+    files.push(workspace_root.join("crates/axon-services/src/scrape.rs"));
+    files.push(workspace_root.join("crates/axon-vector/src/ops/tei/prepare.rs"));
+    files.push(workspace_root.join("crates/axon-web/src/server/handlers/rest/sync_post.rs"));
 
     let forbidden = [
         "use crate::ops::{chunk_text",

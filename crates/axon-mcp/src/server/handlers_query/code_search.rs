@@ -3,11 +3,12 @@
 use crate::schema::{AxonToolResponse, CodeSearchRequest};
 use crate::server::AxonMcpServer;
 use crate::server::common::{
-    InlineHint, internal_error, invalid_params, logged_internal_error, parse_offset,
-    respond_with_mode, slugify, validate_mcp_collection,
+    InlineHint, internal_error, invalid_params, logged_internal_error, respond_with_mode, slugify,
+    validate_mcp_collection,
 };
 use axon_core::config::ConfigOverrides;
 use axon_services::query as query_svc;
+use axon_services::transport;
 use axon_services::types::{CodeSearchCaller, CodeSearchOptions};
 use rmcp::ErrorData;
 use std::path::PathBuf;
@@ -23,8 +24,7 @@ impl AxonMcpServer {
         let cwd = req
             .cwd
             .ok_or_else(|| invalid_params("cwd is required for code_search MCP requests"))?;
-        let limit = req.limit.unwrap_or(self.cfg.search_limit).clamp(1, 500);
-        let offset = parse_offset(req.offset);
+        let pagination = transport::pagination(req.limit, req.offset, self.cfg.search_limit);
         let response_mode = req.response_mode;
         let collection = req
             .collection
@@ -44,8 +44,8 @@ impl AxonMcpServer {
             &ctx,
             &query,
             CodeSearchOptions {
-                limit,
-                offset,
+                limit: pagination.limit,
+                offset: pagination.offset,
                 cwd: Some(PathBuf::from(cwd)),
                 path_prefix: req.path_prefix,
                 ensure_fresh: !req.no_freshness.unwrap_or(false),

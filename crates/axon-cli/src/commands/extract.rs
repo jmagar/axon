@@ -127,9 +127,11 @@ async fn maybe_handle_extract_subcommand(
             handle_job_errors(cfg, job, id, "extract")?;
         }
         "list" => {
-            let jobs = job_service::list_jobs(service_context, JobKind::Extract, 50, 0).await?;
+            let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+            let jobs =
+                job_service::list_jobs(service_context, JobKind::Extract, limit, offset).await?;
             let total = jobs.len() as i64;
-            let result = JobListResult::new(jobs, total, 50, 0);
+            let result = JobListResult::new(jobs, total, limit, offset);
             render_extract_list(cfg, &result)?;
         }
         "cleanup" => {

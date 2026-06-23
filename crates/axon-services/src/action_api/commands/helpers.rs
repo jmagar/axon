@@ -1,7 +1,7 @@
 use crate::ingest as ingest_svc;
 use crate::types::ClientActionError;
 use axon_api::mcp_schema::{CrawlRequest, IngestRequest, McpRenderMode, McpScrapeFormat};
-use axon_core::config::{Config, ConfigOverrides, RenderMode, ScrapeFormat};
+use axon_core::config::{Config, RenderMode, ScrapeFormat};
 
 pub(super) fn parse_ingest_source(
     req: &IngestRequest,
@@ -12,19 +12,24 @@ pub(super) fn parse_ingest_source(
 }
 
 pub(super) fn apply_crawl_overrides(cfg: &Config, req: &CrawlRequest) -> Config {
-    cfg.apply_overrides(&ConfigOverrides {
-        max_pages: req.max_pages,
-        max_depth: req.max_depth,
-        include_subdomains: req.include_subdomains,
-        respect_robots: req.respect_robots,
-        discover_sitemaps: req.discover_sitemaps,
-        sitemap_since_days: req.sitemap_since_days,
-        discover_llms_txt: req.discover_llms_txt,
-        max_llms_txt_urls: req.max_llms_txt_urls,
-        render_mode: req.render_mode.map(map_render_mode),
-        delay_ms: req.delay_ms,
-        ..ConfigOverrides::default()
-    })
+    crate::transport::apply_crawl_overrides(
+        cfg,
+        &crate::transport::CrawlTransportOverrides {
+            max_pages: req.max_pages,
+            max_depth: req.max_depth,
+            include_subdomains: req.include_subdomains,
+            respect_robots: req.respect_robots,
+            discover_sitemaps: req.discover_sitemaps,
+            max_sitemaps: req.max_sitemaps,
+            sitemap_since_days: req.sitemap_since_days,
+            discover_llms_txt: req.discover_llms_txt,
+            max_llms_txt_urls: req.max_llms_txt_urls,
+            render_mode: req.render_mode.map(map_render_mode),
+            delay_ms: req.delay_ms,
+            collection: None,
+            headers: Vec::new(),
+        },
+    )
 }
 
 pub(super) fn map_render_mode(mode: McpRenderMode) -> RenderMode {

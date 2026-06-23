@@ -193,7 +193,7 @@ pub(crate) async fn research_stream(
         Ok(query) => query.to_string(),
         Err(err) => return err.into_response(),
     };
-    let opts = match search_options(req.limit, req.offset, req.time_range.as_deref()) {
+    let opts = match search_options(&cfg, req.limit, req.offset, req.time_range.as_deref()) {
         Ok(opts) => opts,
         Err(err) => return err.into_response(),
     };

@@ -68,12 +68,9 @@ pub(super) async fn run_baseline_answer(
             fallback
         }
         Err(e2) => {
-            log_warn(&format!(
-                "evaluate: both streaming and non-streaming baseline failed: {e2}"
+            return Err(format!(
+                "evaluate baseline failed after streaming and non-streaming attempts: streaming={stream_error}; fallback={e2}",
             ));
-            String::from(
-                "(baseline unavailable — both streaming and non-streaming LLM calls failed)",
-            )
         }
     };
     Ok((answer, started.elapsed().as_millis()))
@@ -83,12 +80,12 @@ pub(super) async fn run_analysis(
     cfg: &Config,
     client: &reqwest::Client,
     judge_ctx: &JudgeContext<'_>,
-) -> (String, u128) {
+) -> Result<(String, u128), String> {
     let started = Instant::now();
     let print_tokens =
         !cfg.json_output && cfg.evaluate_responses_mode != EvaluateResponsesMode::Events;
     let stream_error = match judge_llm_streaming(cfg, client, judge_ctx, print_tokens).await {
-        Ok(answer) => return (answer, started.elapsed().as_millis()),
+        Ok(answer) => return Ok((answer, started.elapsed().as_millis())),
         Err(err) => err.to_string(),
     };
     log_warn(&format!(
@@ -102,13 +99,12 @@ pub(super) async fn run_analysis(
             fallback
         }
         Err(e2) => {
-            log_warn(&format!(
-                "evaluate: both streaming and non-streaming judge failed: {e2}"
+            return Err(format!(
+                "evaluate judge failed after streaming and non-streaming attempts: streaming={stream_error}; fallback={e2}",
             ));
-            String::from("(judge unavailable — both streaming and non-streaming LLM calls failed)")
         }
     };
-    (answer, started.elapsed().as_millis())
+    Ok((answer, started.elapsed().as_millis()))
 }
 
 /// Build the two parallel answer futures and return the token receiver channel.

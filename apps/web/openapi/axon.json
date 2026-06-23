@@ -6157,14 +6157,44 @@
           "question"
         ],
         "properties": {
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "collection": {
             "type": [
               "string",
               "null"
             ]
           },
+          "diagnostics": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hybrid_search": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "question": {
             "type": "string"
+          },
+          "retrieval_ab": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -6474,9 +6504,21 @@
           "query"
         ],
         "properties": {
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "collection": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "hybrid_search": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -6496,6 +6538,12 @@
           },
           "query": {
             "type": "string"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -6538,6 +6586,12 @@
           "url"
         ],
         "properties": {
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "collection": {
             "type": [
               "string",
@@ -6556,6 +6610,12 @@
               "null"
             ],
             "minimum": 0
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "token_budget": {
             "type": [

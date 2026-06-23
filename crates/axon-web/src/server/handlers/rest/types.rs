@@ -16,12 +16,24 @@ pub(crate) struct QueryBody {
     pub limit: Option<usize>,
     #[serde(default)]
     pub offset: Option<usize>,
+    #[serde(default)]
+    pub since: Option<String>,
+    #[serde(default)]
+    pub before: Option<String>,
+    #[serde(default)]
+    pub hybrid_search: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RetrieveBody {
     pub url: String,
+    #[serde(default)]
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub since: Option<String>,
+    #[serde(default)]
+    pub before: Option<String>,
     #[serde(default)]
     pub max_points: Option<usize>,
     #[serde(default)]
@@ -35,6 +47,8 @@ pub(crate) struct RetrieveBody {
 pub(crate) struct SuggestBody {
     #[serde(default)]
     pub focus: Option<String>,
+    #[serde(default)]
+    pub collection: Option<String>,
 }
 
 #[derive(Deserialize, Default)]

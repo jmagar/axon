@@ -1,8 +1,11 @@
-use crate::schema::{CrawlRequest, McpRenderMode, McpScrapeFormat, SearchTimeRange};
-use axon_core::config::{Config, ConfigOverrides, RenderMode, ScrapeFormat};
-use axon_services::types::{
-    MapOptions, Pagination, RetrieveOptions, SearchOptions, ServiceTimeRange,
+use crate::schema::{
+    CrawlRequest, ExtractRequest, McpRenderMode, McpScrapeFormat, SearchTimeRange,
 };
+use axon_core::config::Config;
+use axon_core::config::{RenderMode, ScrapeFormat};
+use axon_core::error::taxonomy_from_error;
+use axon_services::transport;
+use axon_services::types::ServiceTimeRange;
 use rmcp::ErrorData;
 use uuid::Uuid;
 
@@ -60,7 +63,8 @@ pub(super) fn logged_internal_error(
         depth += 1;
     }
     tracing::error!("{context}: {chain}");
-    ErrorData::internal_error(format!("{context} failed: {e}"), None)
+    let data = taxonomy_from_error(e).map(|taxonomy| taxonomy.to_mcp_envelope());
+    ErrorData::internal_error(format!("{context} failed: {e}"), data)
 }
 
 // --- URL validation wrappers ---
@@ -102,12 +106,82 @@ pub(super) fn parse_job_id(job_id: Option<&str>) -> Result<Uuid, ErrorData> {
     Uuid::parse_str(raw).map_err(|e| invalid_params(format!("invalid job_id: {e}")))
 }
 
-pub(super) fn parse_limit(limit: Option<i64>, default: i64) -> i64 {
-    limit.unwrap_or(default).clamp(1, 500)
+pub use transport::{pagination as to_pagination, retrieve_options as to_retrieve_options};
+
+pub fn to_service_time_range(value: SearchTimeRange) -> ServiceTimeRange {
+    match value {
+        SearchTimeRange::Day => ServiceTimeRange::Day,
+        SearchTimeRange::Week => ServiceTimeRange::Week,
+        SearchTimeRange::Month => ServiceTimeRange::Month,
+        SearchTimeRange::Year => ServiceTimeRange::Year,
+    }
 }
 
-pub(super) fn parse_offset(offset: Option<usize>) -> usize {
-    offset.unwrap_or(0)
+pub fn to_search_options(
+    limit: Option<usize>,
+    offset: Option<usize>,
+    time_range: Option<SearchTimeRange>,
+    default_limit: usize,
+) -> axon_services::types::SearchOptions {
+    transport::search_options(
+        limit,
+        offset,
+        time_range.map(to_service_time_range),
+        default_limit,
+    )
+}
+
+pub(super) fn map_render_mode(mode: McpRenderMode) -> RenderMode {
+    match mode {
+        McpRenderMode::Http => RenderMode::Http,
+        McpRenderMode::Chrome => RenderMode::Chrome,
+        McpRenderMode::AutoSwitch => RenderMode::AutoSwitch,
+    }
+}
+
+pub(super) fn map_scrape_format(format: McpScrapeFormat) -> ScrapeFormat {
+    match format {
+        McpScrapeFormat::Markdown => ScrapeFormat::Markdown,
+        McpScrapeFormat::Html => ScrapeFormat::Html,
+        McpScrapeFormat::RawHtml => ScrapeFormat::RawHtml,
+        McpScrapeFormat::Json => ScrapeFormat::Json,
+        McpScrapeFormat::Llm => ScrapeFormat::Llm,
+    }
+}
+
+pub(super) fn apply_crawl_overrides(cfg: &Config, req: &CrawlRequest) -> Config {
+    transport::apply_crawl_overrides(
+        cfg,
+        &transport::CrawlTransportOverrides {
+            max_pages: req.max_pages,
+            max_depth: req.max_depth,
+            include_subdomains: req.include_subdomains,
+            respect_robots: req.respect_robots,
+            discover_sitemaps: req.discover_sitemaps,
+            max_sitemaps: req.max_sitemaps,
+            sitemap_since_days: req.sitemap_since_days,
+            discover_llms_txt: req.discover_llms_txt,
+            max_llms_txt_urls: req.max_llms_txt_urls,
+            render_mode: req.render_mode.map(map_render_mode),
+            delay_ms: req.delay_ms,
+            collection: None,
+            headers: Vec::new(),
+        },
+    )
+}
+
+pub(super) fn apply_extract_overrides(cfg: &Config, req: &ExtractRequest) -> Config {
+    transport::apply_extract_overrides(
+        cfg,
+        &transport::ExtractTransportOverrides {
+            prompt: req.prompt.clone(),
+            max_pages: req.max_pages,
+            render_mode: req.render_mode.map(map_render_mode),
+            embed: req.embed,
+            collection: None,
+            headers: Vec::new(),
+        },
+    )
 }
 
 // --- General-purpose slug utility (used by query handlers for artifact stems) ---
@@ -149,99 +223,16 @@ pub(super) fn slugify(value: &str, max_len: usize) -> String {
     }
 }
 
-// --- Crawl config helpers ---
-
-pub(super) fn apply_crawl_overrides(cfg: &Config, req: &CrawlRequest) -> Config {
-    cfg.apply_overrides(&ConfigOverrides {
-        max_pages: req.max_pages,
-        max_depth: req.max_depth,
-        include_subdomains: req.include_subdomains,
-        respect_robots: req.respect_robots,
-        discover_sitemaps: req.discover_sitemaps,
-        sitemap_since_days: req.sitemap_since_days,
-        discover_llms_txt: req.discover_llms_txt,
-        max_llms_txt_urls: req.max_llms_txt_urls,
-        render_mode: req.render_mode.map(map_render_mode),
-        delay_ms: req.delay_ms,
-        ..ConfigOverrides::default()
-    })
-}
-
-pub(super) fn map_render_mode(mode: McpRenderMode) -> RenderMode {
-    match mode {
-        McpRenderMode::Http => RenderMode::Http,
-        McpRenderMode::Chrome => RenderMode::Chrome,
-        McpRenderMode::AutoSwitch => RenderMode::AutoSwitch,
-    }
-}
-
-pub(super) fn map_scrape_format(f: McpScrapeFormat) -> ScrapeFormat {
-    match f {
-        McpScrapeFormat::Markdown => ScrapeFormat::Markdown,
-        McpScrapeFormat::Html => ScrapeFormat::Html,
-        McpScrapeFormat::RawHtml => ScrapeFormat::RawHtml,
-        McpScrapeFormat::Json => ScrapeFormat::Json,
-        McpScrapeFormat::Llm => ScrapeFormat::Llm,
-    }
-}
-
 // --- Pagination helpers ---
-
-/// Map MCP limit/offset params to service `Pagination`, clamping limit to [1, 500].
-/// `default` is used when `limit` is `None`; callers should pass `cfg.search_limit`.
-pub fn to_pagination(limit: Option<usize>, offset: Option<usize>, default: usize) -> Pagination {
-    Pagination {
-        limit: limit.unwrap_or(default).clamp(1, 500),
-        offset: offset.unwrap_or(0),
-    }
-}
 
 /// Map MCP limit/offset params to service `MapOptions`.
 /// `limit=0` (or `None`) means "no limit" — matches the CLI default.
 /// Any positive value is honored as-is (no upper clamp) so callers can request large sets.
-pub fn to_map_options(limit: Option<usize>, offset: Option<usize>) -> MapOptions {
-    MapOptions {
-        limit: limit.unwrap_or(0),
-        offset: offset.unwrap_or(0),
-    }
-}
-
-/// Map MCP retrieve params to service `RetrieveOptions`.
-pub fn to_retrieve_options(
-    max_points: Option<usize>,
-    cursor: Option<String>,
-    token_budget: Option<usize>,
-) -> RetrieveOptions {
-    RetrieveOptions {
-        max_points,
-        cursor,
-        token_budget: token_budget.map(|budget| budget.clamp(1, 50_000)),
-    }
-}
-
-/// Map MCP `SearchTimeRange` enum to service `ServiceTimeRange`.
-pub fn to_service_time_range(tr: SearchTimeRange) -> ServiceTimeRange {
-    match tr {
-        SearchTimeRange::Day => ServiceTimeRange::Day,
-        SearchTimeRange::Week => ServiceTimeRange::Week,
-        SearchTimeRange::Month => ServiceTimeRange::Month,
-        SearchTimeRange::Year => ServiceTimeRange::Year,
-    }
-}
-
-/// Map MCP search params to service `SearchOptions`.
-/// `default` is used when `limit` is `None`; callers should pass `cfg.search_limit`.
-pub fn to_search_options(
+pub fn to_map_options(
     limit: Option<usize>,
     offset: Option<usize>,
-    time_range: Option<SearchTimeRange>,
-    default: usize,
-) -> SearchOptions {
-    SearchOptions {
-        limit: limit.unwrap_or(default).clamp(1, 500),
-        offset: offset.unwrap_or(0),
-        time_range: time_range.map(to_service_time_range),
-    }
+) -> axon_services::types::MapOptions {
+    transport::map_options(limit, offset)
 }
 
 #[cfg(test)]

@@ -7,7 +7,8 @@ use axon_services::client_contract::{
     RestScreenshotRequest as ScreenshotRequest, RestSearchRequest as SearchRequest,
     RestSummarizeRequest as SummarizeRequest,
 };
-use axon_services::types::{MapOptions, SearchOptions, ServiceTimeRange};
+use axon_services::transport;
+use axon_services::types::SearchOptions;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Deserialize;
 use serde_json::json;
@@ -279,13 +280,14 @@ pub(crate) async fn search(
         &cfg,
         &state.service_context,
         query,
-        search_options(req.limit, req.offset, req.time_range.as_deref())?,
+        search_options(&cfg, req.limit, req.offset, req.time_range.as_deref())?,
     )
     .await
     .map_err(HttpError::from_box)?;
     Ok(Json(json!({
         "results": result.results,
         "crawl_jobs": result.crawl_jobs,
+        "crawl_jobs_rejected": result.crawl_rejected,
         "crawl_rejected": result.crawl_rejected,
         "auto_crawl_status": result.auto_crawl_status,
     })))
@@ -307,7 +309,7 @@ pub(crate) async fn research(
     Json(req): Json<ResearchRequest>,
 ) -> Result<Json<services::types::ResearchResult>, HttpError> {
     let query = required_text(&req.query, "query")?.to_string();
-    let opts = search_options(req.limit, req.offset, req.time_range.as_deref())?;
+    let opts = search_options(&cfg, req.limit, req.offset, req.time_range.as_deref())?;
     let service_context = Arc::clone(&state.service_context);
     tokio::time::timeout(
         Duration::from_secs(35),
@@ -394,35 +396,26 @@ fn validate_forwarded_headers(headers: &[String]) -> Result<(), HttpError> {
     axon_core::http::validate_custom_header_policy(headers).map_err(HttpError::bad_request)
 }
 
-fn map_options(limit: Option<usize>, offset: Option<usize>) -> MapOptions {
-    MapOptions {
-        limit: limit.unwrap_or(0),
-        offset: offset.unwrap_or(0),
-    }
+fn map_options(limit: Option<usize>, offset: Option<usize>) -> axon_services::types::MapOptions {
+    transport::map_options(limit, offset)
 }
 
 pub(super) fn search_options(
+    cfg: &Config,
     limit: Option<usize>,
     offset: Option<usize>,
     time_range: Option<&str>,
 ) -> Result<SearchOptions, HttpError> {
-    Ok(SearchOptions {
-        limit: limit.unwrap_or(10).clamp(1, 100),
-        offset: offset.unwrap_or(0),
-        time_range: time_range.map(parse_time_range).transpose()?,
-    })
-}
-
-fn parse_time_range(value: &str) -> Result<ServiceTimeRange, HttpError> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "day" => Ok(ServiceTimeRange::Day),
-        "week" => Ok(ServiceTimeRange::Week),
-        "month" => Ok(ServiceTimeRange::Month),
-        "year" => Ok(ServiceTimeRange::Year),
-        _ => Err(HttpError::bad_request(
-            "time_range must be one of: day, week, month, year",
-        )),
-    }
+    let time_range = time_range
+        .map(transport::parse_service_time_range)
+        .transpose()
+        .map_err(HttpError::bad_request)?;
+    Ok(transport::search_options(
+        limit,
+        offset,
+        time_range,
+        cfg.search_limit,
+    ))
 }
 
 fn parse_viewport(

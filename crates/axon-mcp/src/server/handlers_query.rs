@@ -67,27 +67,28 @@ impl AxonMcpServer {
         validate_mcp_url(&url)?;
         let response_mode = req.response_mode;
         let map_opts = to_map_options(req.limit, req.offset);
-        let (limit, offset) = (map_opts.limit, map_opts.offset);
         let result = map_svc::discover(self.cfg.as_ref(), &url, map_opts, None)
             .await
             .map_err(|e| logged_internal_error(&format!("map '{url}'"), e.as_ref()))?;
-        // The service already applied offset/limit pagination.
-        // `result.total` is the pre-pagination count; `result.urls` is the page slice.
-        let total_urls = result.total;
         respond_with_mode(
             "map",
             "map",
             response_mode,
             &format!("map-{}", slugify(&url, 56)),
             serde_json::json!({
-                "url": url,
-                "pages_seen": result.pages_seen,
-                "elapsed_ms": result.elapsed_ms,
-                "thin_pages": result.thin_pages,
-                "limit": limit,
-                "offset": offset,
-                "total_urls": total_urls,
+                "url": result.url,
                 "urls": result.urls,
+                "mapped_urls": result.returned_url_count,
+                "total": result.total,
+                "total_urls": result.total,
+                "limit": map_opts.limit,
+                "offset": map_opts.offset,
+                "sitemap_urls": result.sitemap_urls,
+                "pages_seen": result.pages_seen,
+                "thin_pages": result.thin_pages,
+                "elapsed_ms": result.elapsed_ms,
+                "map_source": result.map_source,
+                "warning": result.warning,
             }),
             InlineHint::Default,
         )
@@ -233,22 +234,15 @@ impl AxonMcpServer {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| format!("build evaluate runtime: {e}"))?;
-            runtime.block_on(async {
-                query_svc::evaluate(&cfg, &query_for_task)
-                    .await
-                    .map_err(|e| e.to_string())
-            })
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+            runtime.block_on(async { query_svc::evaluate(&cfg, &query_for_task).await })
         })
         .await
         .map_err(|e| {
             tracing::error!("join evaluate task: {e}");
             internal_error(format!("evaluate '{query}' failed"))
         })?
-        .map_err(|e| {
-            tracing::error!("evaluate '{query}': {e}");
-            internal_error(format!("evaluate '{query}' failed"))
-        })?;
+        .map_err(|e| logged_internal_error(&format!("evaluate '{query}'"), e.as_ref()))?;
 
         respond_with_mode(
             "evaluate",
@@ -404,15 +398,29 @@ impl AxonMcpServer {
             .as_deref()
             .map(validate_mcp_collection)
             .transpose()?;
-        let cfg = self.cfg.apply_overrides(&ConfigOverrides {
-            ask_diagnostics: req.diagnostics,
-            ask_explain: req.explain,
-            collection,
-            since: req.since,
-            before: req.before,
-            hybrid_search_enabled: req.hybrid_search,
-            ..ConfigOverrides::default()
-        });
+        let cfg = axon_services::transport::apply_ask_overrides(
+            self.cfg.as_ref(),
+            axon_services::transport::AskTransportOverrides {
+                collection,
+                since: req.since,
+                before: req.before,
+                diagnostics: req.diagnostics,
+                explain: req.explain,
+                hybrid_search: req.hybrid_search,
+                ask_chunk_limit: req.ask_chunk_limit,
+                ask_full_docs: req.ask_full_docs,
+                ask_max_context_chars: req.ask_max_context_chars,
+                ask_hybrid_candidates: req.ask_hybrid_candidates,
+                ask_min_relevance_score: req.ask_min_relevance_score,
+                ask_doc_chunk_limit: req.ask_doc_chunk_limit,
+                ask_doc_fetch_concurrency: req.ask_doc_fetch_concurrency,
+                ask_backfill_chunks: req.ask_backfill_chunks,
+                ask_candidate_limit: req.ask_candidate_limit,
+                ask_min_citations_nontrivial: req.ask_min_citations_nontrivial,
+                ask_authoritative_domains: req.ask_authoritative_domains,
+                ask_authoritative_boost: req.ask_authoritative_boost,
+            },
+        );
 
         let result = query_svc::ask(&cfg, &query, None)
             .await

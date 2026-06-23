@@ -3,8 +3,8 @@
 use crate::schema::{AxonToolResponse, QueryRequest};
 use crate::server::AxonMcpServer;
 use crate::server::common::{
-    InlineHint, internal_error, invalid_params, logged_internal_error, parse_offset,
-    respond_with_mode, slugify, to_pagination, validate_mcp_collection,
+    InlineHint, internal_error, invalid_params, logged_internal_error, respond_with_mode, slugify,
+    to_pagination, validate_mcp_collection,
 };
 use axon_core::config::ConfigOverrides;
 use axon_services::query as query_svc;
@@ -18,10 +18,8 @@ impl AxonMcpServer {
         let query = req
             .query
             .ok_or_else(|| invalid_params("query is required for query"))?;
-        let limit = req.limit.unwrap_or(self.cfg.search_limit).clamp(1, 500);
-        let offset = parse_offset(req.offset);
         let response_mode = req.response_mode;
-        let pagination = to_pagination(Some(limit), Some(offset), self.cfg.search_limit);
+        let pagination = to_pagination(req.limit, req.offset, self.cfg.search_limit);
 
         let collection = req
             .collection
@@ -47,8 +45,8 @@ impl AxonMcpServer {
             &format!("query-{}", slugify(&query, 56)),
             serde_json::json!({
                 "query": query,
-                "limit": limit,
-                "offset": offset,
+                "limit": pagination.limit,
+                "offset": pagination.offset,
                 "results": serde_json::to_value(&result.results).map_err(|e| internal_error(format!("serialize query results: {e}")))?,
             }),
             InlineHint::Default,

@@ -55,7 +55,9 @@ pub async fn maybe_handle_ingest_subcommand(
             } else {
                 None
             };
-            let jobs = job_service::list_ingest_jobs(service_context, source_filter, 50, 0).await?;
+            let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+            let jobs = job_service::list_ingest_jobs(service_context, source_filter, limit, offset)
+                .await?;
             let total = jobs.len() as i64;
             render_ingest_list(cfg, jobs, total, cmd_name)?;
         }
@@ -174,7 +176,8 @@ pub(crate) fn render_ingest_list(
     total: i64,
     cmd_name: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let result = axon_services::types::JobListResult::new(all_jobs, total, 50, 0);
+    let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+    let result = axon_services::types::JobListResult::new(all_jobs, total, limit, offset);
     let (command_name, empty_msg) = if cmd_name == "sessions" {
         ("Sessions", "No sessions jobs found.")
     } else {

@@ -12,7 +12,7 @@ fn write_all_required(root: &Path) {
     )
     .unwrap();
 
-    let cli_cfg = root.join("src/core/config/cli.rs");
+    let cli_cfg = root.join("crates/axon-core/src/config/cli.rs");
     fs::create_dir_all(cli_cfg.parent().unwrap()).unwrap();
     fs::write(
         &cli_cfg,
@@ -20,7 +20,7 @@ fn write_all_required(root: &Path) {
     )
     .unwrap();
 
-    let build_cfg = root.join("src/core/config/parse/build_config/config_literal.rs");
+    let build_cfg = root.join("crates/axon-core/src/config/parse/build_config/config_literal.rs");
     fs::create_dir_all(build_cfg.parent().unwrap()).unwrap();
     fs::write(
         &build_cfg,
@@ -28,7 +28,7 @@ fn write_all_required(root: &Path) {
     )
     .unwrap();
 
-    let helpers = root.join("src/core/config/parse/helpers.rs");
+    let helpers = root.join("crates/axon-core/src/config/parse/helpers.rs");
     fs::create_dir_all(helpers.parent().unwrap()).unwrap();
     fs::write(&helpers, "// reads AXON_MCP_TRANSPORT env var\n").unwrap();
 }
@@ -78,9 +78,9 @@ fn pattern_table_is_canonical() {
         paths,
         vec![
             "crates/axon-cli/src/commands/mcp.rs",
-            "src/core/config/cli.rs",
-            "src/core/config/parse/build_config/config_literal.rs",
-            "src/core/config/parse/helpers.rs",
+            "crates/axon-core/src/config/cli.rs",
+            "crates/axon-core/src/config/parse/build_config/config_literal.rs",
+            "crates/axon-core/src/config/parse/helpers.rs",
         ]
     );
 

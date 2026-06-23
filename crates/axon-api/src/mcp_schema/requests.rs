@@ -25,6 +25,7 @@ pub struct CrawlRequest {
     pub include_subdomains: Option<bool>,
     pub respect_robots: Option<bool>,
     pub discover_sitemaps: Option<bool>,
+    pub max_sitemaps: Option<usize>,
     pub sitemap_since_days: Option<u32>,
     pub discover_llms_txt: Option<bool>,
     pub max_llms_txt_urls: Option<usize>,
@@ -94,6 +95,9 @@ pub enum ExtractSubaction {
 pub struct EmbedRequest {
     pub subaction: Option<EmbedSubaction>,
     pub input: Option<String>,
+    pub source_type: Option<String>,
+    /// Qdrant collection to write to. Defaults to the server's configured collection.
+    pub collection: Option<String>,
     pub job_id: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<usize>,

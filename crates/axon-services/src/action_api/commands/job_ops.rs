@@ -35,8 +35,7 @@ pub(super) async fn job_list(
     limit: Option<i64>,
     offset: Option<usize>,
 ) -> Result<serde_json::Value, ClientActionError> {
-    let limit = limit.unwrap_or(20).clamp(1, 500);
-    let offset = offset.unwrap_or(0).min(i64::MAX as usize) as i64;
+    let (limit, offset) = crate::transport::job_list_pagination(limit, offset);
     let jobs = job_svc::list_jobs(service_context, kind, limit, offset)
         .await
         .map_err(|err| ClientActionError::new("internal", err.to_string(), true, None))?;

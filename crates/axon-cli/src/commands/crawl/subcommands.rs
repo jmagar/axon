@@ -374,7 +374,8 @@ pub(crate) fn render_list_subcommand(
     all_jobs: Vec<ServiceJob>,
     total: i64,
 ) -> Result<(), Box<dyn Error>> {
-    let result = axon_services::types::JobListResult::new(all_jobs, total, 50, 0);
+    let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+    let result = axon_services::types::JobListResult::new(all_jobs, total, limit, offset);
     handle_job_list_with_rows(
         cfg,
         &result,
@@ -399,7 +400,8 @@ async fn handle_list_subcommand(
     cfg: &Config,
     service_context: &ServiceContext,
 ) -> Result<(), Box<dyn Error>> {
-    let all_jobs = job_service::list_jobs(service_context, JobKind::Crawl, 50, 0).await?;
+    let (limit, offset) = axon_services::transport::job_list_pagination(None, None);
+    let all_jobs = job_service::list_jobs(service_context, JobKind::Crawl, limit, offset).await?;
     let total = all_jobs.len() as i64;
     render_list_subcommand(cfg, all_jobs, total)
 }

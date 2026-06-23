@@ -144,7 +144,10 @@ mod tests {
 
         assert_eq!(coverage.status, "partial");
         assert_eq!(coverage.reason, Some("max_pages_limit"));
-        assert_eq!(coverage.summary(), "max pages hit");
+        assert_eq!(
+            coverage.summary(),
+            "stopped at the max-pages limit — more pages were available; re-run with a higher max-pages or a tighter scope to continue"
+        );
     }
 
     #[test]

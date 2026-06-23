@@ -204,6 +204,24 @@ fn taxonomy_ignores_untyped_operational_errors() {
 }
 
 #[test]
+fn taxonomy_from_error_terminates_on_self_referential_source() {
+    #[derive(Debug)]
+    struct CyclicErr;
+    impl std::fmt::Display for CyclicErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("cyclic")
+        }
+    }
+    impl StdError for CyclicErr {
+        fn source(&self) -> Option<&(dyn StdError + 'static)> {
+            Some(self)
+        }
+    }
+
+    assert!(taxonomy_from_error(&CyclicErr).is_none());
+}
+
+#[test]
 fn challenge_vendor_round_trip_strings() {
     assert_eq!(ChallengeVendor::Cloudflare.as_str(), "cloudflare");
     assert_eq!(ChallengeVendor::DataDome.as_str(), "datadome");

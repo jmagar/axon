@@ -1,7 +1,7 @@
 use super::AxonMcpServer;
 use super::common::{
-    InlineHint, invalid_params, logged_internal_error, parse_job_id, parse_limit, parse_offset,
-    respond_with_mode, validate_mcp_embed_input_with_config,
+    InlineHint, invalid_params, logged_internal_error, parse_job_id, respond_with_mode,
+    validate_mcp_collection, validate_mcp_embed_input_with_config,
 };
 use crate::schema::{
     AxonToolResponse, EmbedRequest, EmbedSubaction, IngestRequest, IngestSubaction, ResponseMode,
@@ -20,15 +20,27 @@ impl AxonMcpServer {
     async fn handle_embed_start(
         &self,
         input: Option<String>,
+        source_type: Option<String>,
+        collection: Option<String>,
     ) -> Result<AxonToolResponse, ErrorData> {
         let input = input.ok_or_else(|| invalid_params("input is required for embed.start"))?;
         let input = validate_mcp_embed_input_with_config(self.cfg.as_ref(), &input)?;
+        let collection = collection
+            .as_deref()
+            .map(validate_mcp_collection)
+            .transpose()?;
+        let cfg = self
+            .cfg
+            .apply_overrides(&axon_core::config::ConfigOverrides {
+                collection,
+                ..axon_core::config::ConfigOverrides::default()
+            });
         let service_context = self
-            .base_service_context()
+            .service_context_for(cfg.clone())
             .await
             .map_err(|e| logged_internal_error("embed.start.context", e.as_ref()))?;
         let outcome =
-            embed_start_with_context(self.cfg.as_ref(), &input, &service_context, None, None)
+            embed_start_with_context(&cfg, &input, &service_context, None, source_type.as_deref())
                 .await
                 .map_err(|e| logged_internal_error("embed.start", e.as_ref()))?;
         Ok(AxonToolResponse::ok(
@@ -44,19 +56,14 @@ impl AxonMcpServer {
         offset: Option<usize>,
         response_mode: Option<ResponseMode>,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit(limit, 20);
-        let offset = parse_offset(offset);
+        let (limit, offset) = axon_services::transport::job_list_pagination(limit, offset);
         let service_context = self
             .base_service_context()
             .await
             .map_err(|e| logged_internal_error("embed.list.context", e.as_ref()))?;
-        let jobs = embed_list(
-            service_context.as_ref(),
-            limit,
-            i64::try_from(offset).unwrap_or(i64::MAX),
-        )
-        .await
-        .map_err(|e| logged_internal_error("embed.list", e.as_ref()))?;
+        let jobs = embed_list(service_context.as_ref(), limit, offset)
+            .await
+            .map_err(|e| logged_internal_error("embed.list", e.as_ref()))?;
         respond_with_mode(
             "embed",
             "list",
@@ -74,7 +81,10 @@ impl AxonMcpServer {
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = req.response_mode;
         match req.subaction.unwrap_or(EmbedSubaction::Start) {
-            EmbedSubaction::Start => self.handle_embed_start(req.input).await,
+            EmbedSubaction::Start => {
+                self.handle_embed_start(req.input, req.source_type, req.collection)
+                    .await
+            }
             EmbedSubaction::Status => {
                 let id = parse_job_id(req.job_id.as_deref())?;
                 let service_context = self
@@ -180,14 +190,12 @@ impl AxonMcpServer {
         offset: Option<usize>,
         response_mode: Option<ResponseMode>,
     ) -> Result<AxonToolResponse, ErrorData> {
-        let limit = parse_limit(limit, 20);
-        let offset = parse_offset(offset);
+        let (limit, offset) = axon_services::transport::job_list_pagination(limit, offset);
         let service_context = self
             .base_service_context()
             .await
             .map_err(|e| logged_internal_error("ingest.list.context", e.as_ref()))?;
-        let offset_i64 = i64::try_from(offset).unwrap_or(i64::MAX);
-        let result = ingest_list(service_context.as_ref(), limit, offset_i64)
+        let result = ingest_list(service_context.as_ref(), limit, offset)
             .await
             .map_err(|e| logged_internal_error("ingest.list", e.as_ref()))?;
         // Derive truncation from page fullness — avoids a separate count query

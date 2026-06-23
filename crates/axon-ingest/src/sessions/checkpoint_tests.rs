@@ -1,13 +1,14 @@
 use super::*;
 use crate::sessions::watch::validate::{SessionProvider, ValidatedSessionPath};
 use axon_core::sqlite::open_pool as open_sqlite_pool;
+use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 
 #[tokio::test]
 async fn checkpoint_skips_unchanged_file_and_records_success() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let path = temp.path().join(".codex/sessions/session.jsonl");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "first").unwrap();
@@ -28,7 +29,7 @@ async fn checkpoint_skips_unchanged_file_and_records_success() {
 async fn checkpoint_uses_stored_content_hash_even_when_metadata_matches() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let path = temp.path().join(".codex/sessions/session.jsonl");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "aaaa").unwrap();
@@ -61,7 +62,7 @@ async fn checkpoint_uses_stored_content_hash_even_when_metadata_matches() {
 async fn remote_accepted_checkpoint_skips_duplicate_upload_on_rescan() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let path = temp.path().join(".codex/sessions/session.jsonl");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "unchanged remote session").unwrap();
@@ -90,7 +91,7 @@ async fn remote_accepted_checkpoint_skips_duplicate_upload_on_rescan() {
 async fn checkpoint_updates_metadata_when_content_hash_is_unchanged() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let path = temp.path().join(".codex/sessions/session.jsonl");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "same").unwrap();
@@ -120,7 +121,7 @@ async fn checkpoint_updates_metadata_when_content_hash_is_unchanged() {
 async fn checkpoint_batch_lookup_returns_records_by_path_hash() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let root = temp.path().join(".codex/sessions");
     std::fs::create_dir_all(&root).unwrap();
     let paths = [root.join("one.jsonl"), root.join("two.jsonl")];
@@ -145,7 +146,7 @@ async fn checkpoint_batch_lookup_returns_records_by_path_hash() {
 async fn checkpoint_records_and_lists_errors() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let path = temp.path().join(".claude/projects/-tmp-axon/bad.jsonl");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "{bad").unwrap();
@@ -167,7 +168,7 @@ async fn checkpoint_records_and_lists_errors() {
 async fn session_watch_status_counts_checkpoints_and_errors() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("jobs.db");
-    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    let pool = test_pool(&db_path).await;
     let good = temp.path().join(".codex/sessions/good.jsonl");
     let bad = temp.path().join(".claude/projects/-tmp-axon/bad.jsonl");
     std::fs::create_dir_all(good.parent().unwrap()).unwrap();
@@ -209,6 +210,27 @@ fn test_validated_codex_path(path: &Path) -> ValidatedSessionPath {
 
 fn test_validated_claude_path(path: &Path) -> ValidatedSessionPath {
     test_validated_path(path, SessionProvider::Claude)
+}
+
+async fn test_pool(db_path: &Path) -> SqlitePool {
+    let pool = open_sqlite_pool(&db_path.to_string_lossy()).await.unwrap();
+    apply_test_migrations(&pool).await;
+    pool
+}
+
+async fn apply_test_migrations(pool: &SqlitePool) {
+    for migration in [
+        include_str!("../../../axon-jobs/src/migrations/0010_create_session_watch_tables.sql"),
+        include_str!(
+            "../../../axon-jobs/src/migrations/0011_add_session_watch_checkpoint_state.sql"
+        ),
+    ] {
+        for statement in migration.split(';').map(str::trim) {
+            if !statement.is_empty() {
+                sqlx::query(statement).execute(pool).await.unwrap();
+            }
+        }
+    }
 }
 
 fn test_validated_path(path: &Path, provider: SessionProvider) -> ValidatedSessionPath {

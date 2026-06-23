@@ -57,8 +57,8 @@ pub(crate) async fn list_jobs(
     Extension(state): Extension<JobLifecycleState>,
     Query(query): Query<JobListQuery>,
 ) -> Result<Json<serde_json::Value>, HttpError> {
-    let limit = query.limit.unwrap_or(20).clamp(1, 500);
-    let offset = query.offset.unwrap_or(0).max(0);
+    let (limit, offset) =
+        services::transport::job_list_pagination_signed(query.limit, query.offset);
     let jobs = services::jobs::list_jobs(&state.service_context, state.kind, limit, offset)
         .await
         .map_err(HttpError::from_box)?;

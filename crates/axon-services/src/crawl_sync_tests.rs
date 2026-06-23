@@ -1,4 +1,4 @@
-use crate::crawl_sync::chrome_fallback::plan_chrome_fallback;
+use crate::crawl_sync::{chrome_fallback::plan_chrome_fallback, crawl_sync_effective_config};
 use axon_core::config::{Config, ScrapeFormat};
 use axon_crawl::engine::CrawlSummary;
 
@@ -85,4 +85,32 @@ fn llm_format_zero_pages_fallback_plan_unchanged() {
         plan_chrome_fallback(&cfg, &summary),
         plan_chrome_fallback(&cfg_md, &summary)
     );
+}
+
+#[test]
+fn sitemap_only_sync_crawl_uses_effective_page_cap() {
+    let cfg = Config {
+        sitemap_only: true,
+        max_pages: 0,
+        ..Config::default_minimal()
+    };
+
+    let effective = crawl_sync_effective_config(&cfg, "https://docs.rs/std");
+
+    assert_eq!(effective.max_pages, crate::crawl::DEFAULT_CRAWL_MAX_PAGES);
+    assert!(effective.output_dir.ends_with("domains/docs.rs/sync"));
+}
+
+#[test]
+fn sitemap_only_sync_crawl_preserves_unbounded_operator_override() {
+    let cfg = Config {
+        sitemap_only: true,
+        max_pages: 50_000,
+        allow_unbounded_broad_crawl: true,
+        ..Config::default_minimal()
+    };
+
+    let effective = crawl_sync_effective_config(&cfg, "https://docs.rs/std");
+
+    assert_eq!(effective.max_pages, 50_000);
 }

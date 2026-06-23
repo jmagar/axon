@@ -246,6 +246,7 @@ async fn services_action_api_dispatches_crawl_list_lifecycle() {
             include_subdomains: None,
             respect_robots: None,
             discover_sitemaps: None,
+            max_sitemaps: None,
             sitemap_since_days: None,
             discover_llms_txt: None,
             max_llms_txt_urls: None,
@@ -318,6 +319,7 @@ fn req_ask() -> AxonRequest {
         before: None,
         hybrid_search: None,
         response_mode: None,
+        ..AskRequest::default()
     })
 }
 
@@ -551,6 +553,7 @@ fn required_scope_uses_secure_defaults_and_promotes_llm_actions() {
             before: None,
             hybrid_search: None,
             response_mode: None,
+            ..AskRequest::default()
         })),
         Some("axon:write")
     );
