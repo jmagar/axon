@@ -377,6 +377,13 @@ fn push_var(vars: &mut Vec<(String, String)>, key: &str, value: &str) {
 
 // ── Legacy static-token helpers (test-only; production uses lab_auth::AuthLayer) ──
 
+/// Reads the static MCP bearer token (`AXON_MCP_HTTP_TOKEN`) from the process
+/// environment.
+///
+/// `pub` only so the web crate's REST auth layer can share the same source of
+/// truth; `#[doc(hidden)]` keeps this secret-reading helper out of the published
+/// API surface. Do not expose its return value to clients or logs.
+#[doc(hidden)]
 pub fn configured_mcp_http_token() -> Option<String> {
     std::env::var("AXON_MCP_HTTP_TOKEN")
         .ok()
