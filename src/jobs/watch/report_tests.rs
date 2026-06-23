@@ -1,7 +1,7 @@
 use super::*;
 use crate::jobs::store::open_sqlite_pool;
 use crate::jobs::watch::{WatchDefCreate, create_watch_def_with_pool, create_watch_run_with_pool};
-use crate::services::types::{DiffResult, DiffStatus, LinkEntry};
+use axon_api::diff::{DiffResult, DiffStatus, LinkEntry};
 use chrono::Utc;
 use tempfile::NamedTempFile;
 

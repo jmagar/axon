@@ -1,5 +1,6 @@
 use super::*;
-use crate::services::types::{DiffResult, DiffStatus, LinkEntry, ScrapeResult};
+use axon_api::diff::{DiffResult, DiffStatus, LinkEntry};
+use axon_api::job_dto::ScrapeResult;
 use std::sync::{Arc, Mutex};
 
 fn diff(status: DiffStatus, links: usize, word_delta: i64) -> DiffResult {

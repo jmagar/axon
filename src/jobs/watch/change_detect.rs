@@ -1,7 +1,7 @@
 //! Detect whether one watched URL changed and persist its new snapshot.
 //!
 //! Flow: conditional probe (304 = unchanged) → scrape → normalize + ignore
-//! filter → fast-equal hash skip → reuse `services::diff::compute_diff` →
+//! filter → fast-equal hash skip → reuse `axon_api::diff::compute_diff` →
 //! threshold. First-seen is forced Changed (seed). DB read errors preserve the
 //! existing row (no phantom upsert); transient probe/scrape errors stamp
 //! `last_checked_at` only.
