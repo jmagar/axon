@@ -9,6 +9,7 @@ pub mod ingest;
 pub mod ops;
 pub mod query;
 pub mod runtime;
+pub mod service_job_conv;
 pub mod status;
 pub mod store;
 pub(crate) mod tx;

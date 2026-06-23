@@ -477,11 +477,14 @@ dependencies = [
 name = "axon-api"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "percent-encoding",
  "serde",
  "serde_json",
  "similar",
+ "tracing",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]

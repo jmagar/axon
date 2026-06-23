@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::jobs::backend::{JobKind, JobStatusRow, JobSummary};
 use crate::jobs::status::JobStatus;
 use crate::jobs::tx::ImmediateTx;
-use crate::services::types::ServiceJob;
+use axon_api::service_job::ServiceJob;
 
 use super::store::now_ms;
 

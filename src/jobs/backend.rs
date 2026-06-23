@@ -128,8 +128,8 @@ pub type BackendResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Low-level job persistence interface implemented by [`SqliteJobBackend`].
 ///
 /// **Note:** The canonical abstraction consumed by all callers (CLI, MCP, web) is
-/// [`ServiceJobRuntime`](crate::services::runtime::ServiceJobRuntime), which
-/// returns the richer [`ServiceJob`](crate::services::types::ServiceJob) type.
+/// `ServiceJobRuntime` (in `axon-services`), which
+/// returns the richer [`ServiceJob`](axon_api::service_job::ServiceJob) type.
 /// In practice, only `enqueue`, `wait_for_job`, and `job_errors` are delegated through
 /// this trait by the service runtime layer; the remaining methods (`list_jobs`,
 /// `job_status`, `cancel_job`, `cleanup_jobs`, `clear_jobs`) are bypassed —
