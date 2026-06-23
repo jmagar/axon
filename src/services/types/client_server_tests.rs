@@ -1,5 +1,6 @@
 use super::*;
 use crate::mcp::schema::{AxonRequest, StatusRequest};
+use std::path::Path;
 
 #[test]
 fn client_server_envelope_serializes_nested_axon_request() {
