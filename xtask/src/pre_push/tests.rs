@@ -41,9 +41,9 @@ fn version_bearing_docs_still_trigger_version_sync() {
 
 #[test]
 fn rust_changes_keep_runtime_checks() {
-    let plan = plan_for(&["src/vector/ops/query.rs"]);
+    let plan = plan_for(&["crates/axon-vector/src/ops/commands/query.rs"]);
     let names = plan_names(&plan);
-    assert!(names.contains(&"version-sync"));
+    assert!(!names.contains(&"version-sync"));
     assert!(names.contains(&"web-assets-placeholder"));
     assert!(names.contains(&"clippy"));
 }

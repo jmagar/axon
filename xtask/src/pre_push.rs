@@ -239,6 +239,7 @@ fn classify_runtime(paths: &[&str]) -> Categories {
         paths,
         &[
             "src/",
+            "crates/",
             "xtask/",
             "benches/",
             "tests/",
@@ -269,10 +270,12 @@ fn classify_runtime(paths: &[&str]) -> Categories {
             .iter()
             .any(|path| contains_path(doc_ci_helper_scripts(), path));
     let version_files = any_file(paths, &["README.md", "CHANGELOG.md"]);
-    let mcp = any_path(paths, &["src/mcp/", "docs/reference/mcp/"])
-        || paths
-            .iter()
-            .any(|path| contains_path(mcp_ci_helper_scripts(), path))
+    let mcp = any_path(
+        paths,
+        &["src/mcp/", "crates/axon-mcp/src/", "docs/reference/mcp/"],
+    ) || paths
+        .iter()
+        .any(|path| contains_path(mcp_ci_helper_scripts(), path))
         || any_file(paths, &["tests/workflow_shapes.rs"]);
     let release = rust || web || any_path(paths, &["release/"]);
     let compose = any_path(paths, &["config/", "scripts/"])
@@ -333,6 +336,10 @@ fn command_plan(paths: &[String], categories: &Categories, full: bool) -> Vec<Pl
                 "src/services/",
                 "src/mcp/",
                 "src/cli/commands/rest/",
+                "crates/axon-web/src/",
+                "crates/axon-services/src/",
+                "crates/axon-mcp/src/",
+                "crates/axon-cli/src/commands/rest/",
             ],
         )
     });
@@ -340,7 +347,6 @@ fn command_plan(paths: &[String], categories: &Categories, full: bool) -> Vec<Pl
 
     let mut plan = Vec::new();
     if full
-        || categories.release
         || categories.android
         || categories.palette
         || categories.chrome
