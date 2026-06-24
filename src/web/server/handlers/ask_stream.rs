@@ -50,6 +50,11 @@ enum AskStreamEvent {
     Meta {
         phase: &'static str,
     },
+    Activity {
+        kind: String,
+        label: String,
+        detail: Option<String>,
+    },
     Delta {
         text: String,
     },
@@ -131,14 +136,49 @@ pub async fn v1_ask_stream(
                 if delta_disconnected.load(Ordering::Relaxed) {
                     return;
                 }
-                if let ServiceEvent::SynthesisDelta { text } = event
-                    && delta_tx
-                        .send(Ok(sse_json("delta", &AskStreamEvent::Delta { text })))
-                        .await
-                        .is_err()
-                {
-                    delta_disconnected.store(true, Ordering::Relaxed);
-                    return;
+                match event {
+                    ServiceEvent::SynthesisDelta { text } => {
+                        if delta_tx
+                            .send(Ok(sse_json("delta", &AskStreamEvent::Delta { text })))
+                            .await
+                            .is_err()
+                        {
+                            delta_disconnected.store(true, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+                    ServiceEvent::Activity { kind, label, detail } => {
+                        if delta_tx
+                            .send(Ok(sse_json(
+                                "activity",
+                                &AskStreamEvent::Activity { kind, label, detail },
+                            )))
+                            .await
+                            .is_err()
+                        {
+                            delta_disconnected.store(true, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+                    ServiceEvent::Log { level, message } => {
+                        if level == crate::services::events::LogLevel::Info
+                            && delta_tx
+                                .send(Ok(sse_json(
+                                    "activity",
+                                    &AskStreamEvent::Activity {
+                                        kind: "thinking".to_string(),
+                                        label: message,
+                                        detail: None,
+                                    },
+                                )))
+                                .await
+                                .is_err()
+                        {
+                            delta_disconnected.store(true, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+                    ServiceEvent::EditorWrite { .. } => {}
                 }
             }
         });

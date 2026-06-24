@@ -2,6 +2,9 @@ use crate::cli::commands::resolve_input_text;
 use crate::core::config::Config;
 use crate::core::logging::log_info;
 use crate::core::ui::{accent, muted, primary};
+use crate::services::code_search_watch::{
+    StdoutCodeSearchWatchEventSink, run_code_search_watch as run_code_search_watch_service,
+};
 use crate::services::context::ServiceContext;
 use crate::services::query as query_svc;
 use crate::services::types::{CodeSearchCaller, CodeSearchOptions};
@@ -78,4 +81,18 @@ pub async fn run_code_search(
     }
 
     Ok(())
+}
+
+pub async fn run_code_search_watch(
+    cfg: &Config,
+    service_context: &ServiceContext,
+) -> Result<(), Box<dyn Error>> {
+    let options = cfg
+        .code_search_watch
+        .clone()
+        .ok_or("code-search-watch requires watcher options")?;
+    let sink = StdoutCodeSearchWatchEventSink { json: options.json };
+    run_code_search_watch_service(service_context, options, &sink)
+        .await
+        .map_err(|err| -> Box<dyn Error> { err.to_string().into() })
 }

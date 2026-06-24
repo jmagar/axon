@@ -1,7 +1,9 @@
 use crate::core::config::Config;
 use crate::core::logging::{log_done, log_info, log_warn};
 use crate::ingest::progress::PhaseReporter;
-use crate::vector::ops::input::select::{is_minified_asset_filename, is_ts_declaration_file};
+use crate::vector::ops::input::select::{
+    has_pruned_component, is_minified_asset_filename, is_ts_declaration_file,
+};
 use crate::vector::ops::{SourceDocument, embed_prepared_docs, prepare_source_document};
 use anyhow::Result;
 use octocrab::Octocrab;
@@ -46,33 +48,9 @@ pub struct GitHubTarget {
 /// Returns true if a file path should be indexed when --include-source is set.
 /// Excludes lock files, generated files, binaries, and non-code files.
 pub fn is_indexable_source_path(path: &str) -> bool {
-    // Reject build artifact and tool cache directories.
-    // Each entry includes both the bare prefix ("target/") and the
-    // slash-prefixed form ("/target/") so we can check with starts_with
-    // and contains without any per-call format! allocations.
-    static EXCLUDED_PREFIXES: &[(&str, &str)] = &[
-        ("target/", "/target/"),
-        ("node_modules/", "/node_modules/"),
-        ("dist/", "/dist/"),
-        ("build/", "/build/"),
-        ("out/", "/out/"),
-        ("coverage/", "/coverage/"),
-        ("vendor/", "/vendor/"),
-        (".gradle/", "/.gradle/"),
-        (".terraform/", "/.terraform/"),
-        (".next/", "/.next/"),
-        (".nuxt/", "/.nuxt/"),
-        ("venv/", "/venv/"),
-        (".venv/", "/.venv/"),
-        ("env/", "/env/"),
-        ("__pycache__/", "/__pycache__/"),
-        (".pytest_cache/", "/.pytest_cache/"),
-        (".mypy_cache/", "/.mypy_cache/"),
-    ];
-    if EXCLUDED_PREFIXES
-        .iter()
-        .any(|(prefix, inner)| path.starts_with(prefix) || path.contains(inner))
-    {
+    // Reject build artifact and tool cache directories through the same shared
+    // path-component policy used by local file ingestion.
+    if has_pruned_component(path) {
         return false;
     }
 
@@ -80,13 +58,20 @@ pub fn is_indexable_source_path(path: &str) -> bool {
         return false;
     }
 
-    // Reject lock files by name suffix
-    if path.ends_with(".lock") || path.ends_with("-lock.json") || path.ends_with(".lock.json") {
+    // Reject TypeScript declaration files and minified assets — compiler/bundler output.
+    let filename_lower = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    let path_lower = path.to_ascii_lowercase();
+    // Reject lock files by name suffix.
+    if path_lower.ends_with(".lock")
+        || path_lower.ends_with("-lock.json")
+        || path_lower.ends_with(".lock.json")
+        || path_lower.ends_with("-lock.yaml")
+        || path_lower.ends_with("-lock.yml")
+        || matches!(filename_lower.as_str(), "bun.lockb" | "uv.lock")
+    {
         return false;
     }
 
-    // Reject TypeScript declaration files and minified assets — compiler/bundler output.
-    let filename_lower = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
     if is_ts_declaration_file(&filename_lower) || is_minified_asset_filename(&filename_lower) {
         return false;
     }

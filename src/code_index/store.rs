@@ -89,6 +89,7 @@ impl CodeIndexStore {
         manifest: &ManifestSnapshot,
     ) -> anyhow::Result<FileDiff> {
         let stored = self.files_for_project(identity).await?;
+        let committed_generation = self.committed_generation(identity).await?.unwrap_or(0);
         let manifest_paths = manifest
             .files
             .iter()
@@ -101,6 +102,7 @@ impl CodeIndexStore {
                 None => diff.added.push(entry.clone()),
                 Some(file)
                     if file.pending
+                        || file.indexed_generation > committed_generation
                         || entry.hash.as_deref() != Some(file.hash.as_str())
                         || entry.size_bytes != file.size_bytes
                         || entry.mtime_ns != file.mtime_ns =>
@@ -118,6 +120,47 @@ impl CodeIndexStore {
         }
         diff.removed.sort();
         Ok(diff)
+    }
+
+    pub(crate) async fn completed_uncommitted_generation(
+        &self,
+        identity: &CodeIndexIdentity,
+        manifest: &ManifestSnapshot,
+    ) -> anyhow::Result<Option<i64>> {
+        let stored = self.files_for_project(identity).await?;
+        let committed_generation = self.committed_generation(identity).await?.unwrap_or(0);
+        let manifest_paths = manifest
+            .files
+            .iter()
+            .map(|entry| entry.relative_path.as_str())
+            .collect::<HashSet<_>>();
+        if stored
+            .keys()
+            .any(|path| !manifest_paths.contains(path.as_str()))
+        {
+            return Ok(None);
+        }
+
+        let mut candidate = None;
+        for entry in &manifest.files {
+            let Some(file) = stored.get(&entry.relative_path) else {
+                return Ok(None);
+            };
+            if file.pending
+                || file.indexed_generation <= committed_generation
+                || entry.hash.as_deref() != Some(file.hash.as_str())
+                || entry.size_bytes != file.size_bytes
+                || entry.mtime_ns != file.mtime_ns
+            {
+                return Ok(None);
+            }
+            match candidate {
+                Some(generation) if generation != file.indexed_generation => return Ok(None),
+                Some(_) => {}
+                None => candidate = Some(file.indexed_generation),
+            }
+        }
+        Ok(candidate)
     }
 
     pub(crate) async fn acquire_lease(
