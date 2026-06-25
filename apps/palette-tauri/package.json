@@ -14,6 +14,8 @@
     "typecheck": "tsc --noEmit",
     "vite:dev": "vite --host 127.0.0.1",
     "vite:build": "vite build",
+    "qa:switcher": "labby gateway code exec --file scripts/qa-switcher-open.js",
+    "qa:ask-stream": "python scripts/qa-ask-stream-transition.py",
     "fixture:operation-results": "vite --host 127.0.0.1 --open '/?fixture=operation-results'",
     "lint": "biome lint .",
     "format": "biome format --write . && biome check --write .",
