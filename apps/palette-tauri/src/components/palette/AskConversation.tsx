@@ -67,7 +67,7 @@ function ActivityIcon({ activity }: { activity: AskActivity }) {
 function ActivityTrail({ activities, pending }: { activities?: AskActivity[]; pending?: boolean }) {
   if (!activities?.length) return null;
   return (
-    <div className="ask-activity" aria-label={pending ? "Agent activity" : "Agent activity summary"}>
+    <section className="ask-activity" aria-label={pending ? "Agent activity" : "Agent activity summary"}>
       {activities.map((activity) => (
         <div key={activity.id} className={`ask-activity-row ask-activity-${activity.kind ?? "thinking"}`}>
           <ActivityIcon activity={activity} />
@@ -77,7 +77,7 @@ function ActivityTrail({ activities, pending }: { activities?: AskActivity[]; pe
           </span>
         </div>
       ))}
-    </div>
+    </section>
   );
 }
 

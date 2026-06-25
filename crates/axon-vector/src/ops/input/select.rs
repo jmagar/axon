@@ -84,7 +84,7 @@ pub fn is_pruned_dir(name: &str) -> bool {
 /// Returns true when a slash- or backslash-separated path contains a pruned
 /// directory component.
 pub fn has_pruned_component(path: &str) -> bool {
-    path.split(|ch| ch == '/' || ch == '\\').any(is_pruned_dir)
+    path.split(['/', '\\']).any(is_pruned_dir)
 }
 
 /// Returns true if a file with this extension is binary/non-text and should be

@@ -134,7 +134,10 @@ async fn forward_service_event(
             )
             .await
         }
-        ServiceEvent::Log { level, message } if level == LogLevel::Info => {
+        ServiceEvent::Log {
+            level: LogLevel::Info,
+            message,
+        } => {
             send_stream_event(
                 tx,
                 disconnected,
