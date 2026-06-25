@@ -8,7 +8,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACTIONS } from "@/lib/actions";
+import { ACTION_REGISTRY, type StructuredViewKey } from "@/lib/actionRegistry";
 import { buildHelpRun } from "@/lib/actionHelp";
+import { OPERATION_RESULT_FIXTURE_CASES } from "./OperationResultFixture";
 import { hasStructuredOperationView, OperationResultView, sanitizeReaderMarkdown } from "./OperationResultView";
 
 const mockLoadArtifactObjectUrl = vi.hoisted(() => vi.fn());
@@ -245,6 +247,24 @@ describe("OperationResultView routing", () => {
     for (const subcommand of structured) {
       expect(hasStructuredOperationView(subcommand), subcommand).toBe(true);
     }
+  });
+});
+
+describe("OperationResultFixture coverage", () => {
+  it("has one representative case for every structured view key", () => {
+    const expected = new Set<StructuredViewKey>();
+    for (const behavior of Object.values(ACTION_REGISTRY)) {
+      if (behavior.structuredView) expected.add(behavior.structuredView);
+    }
+
+    const actual = new Set<StructuredViewKey>();
+    for (const item of OPERATION_RESULT_FIXTURE_CASES) {
+      const key = ACTION_REGISTRY[item.action.subcommand].structuredView;
+      if (key) actual.add(key);
+    }
+
+    expect(actual).toEqual(expected);
+    expect(OPERATION_RESULT_FIXTURE_CASES).toHaveLength(25);
   });
 });
 

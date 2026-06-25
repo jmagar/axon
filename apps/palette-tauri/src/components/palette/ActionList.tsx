@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/aurora/button";
 import { Kbd } from "@/components/ui/aurora/kbd";
 import { ScrollArea } from "@/components/ui/aurora/scroll-area";
 import { acceptsDirectUrl, type PaletteAction } from "@/lib/actions";
+import { actionGuard } from "@/lib/actionGuard";
 import { isAsyncAction } from "@/lib/actionHelp";
 import { actionDisplayMeta } from "@/lib/actionMeta";
 import { looksLikeUrl, type ParsedCommand } from "@/lib/paletteView";
@@ -84,6 +85,7 @@ export function ActionList({ filtered, selected, setSelected, parsed, onSubmit, 
                 </div>
                 {group.items.map(({ action, index }) => {
                   const meta = actionDisplayMeta(action);
+                  const guard = actionGuard(action);
                   const selectedRow = index === selected;
                   // A11Y-C1 — the `.action-row-main` button IS the listbox option
                   // (role="option"); the `.action-row` is a presentation container so
@@ -132,8 +134,15 @@ export function ActionList({ filtered, selected, setSelected, parsed, onSubmit, 
                               {isAsyncAction(action) ? (
                                 <span className="action-async">ASYNC</span>
                               ) : null}
+                              {guard ? (
+                                <span className={`action-guard-badge action-guard-badge-${guard.tone}`}>
+                                  {guard.label}
+                                </span>
+                              ) : null}
                             </span>
-                            <span className="action-description">{action.description}</span>
+                            <span className={selectedRow && guard ? "action-description action-guard-note" : "action-description"}>
+                              {selectedRow && guard ? guard.message : action.description}
+                            </span>
                           </span>
                         </Button>
                         {/* Secondary row affordances are a pointer convenience that
@@ -155,7 +164,9 @@ export function ActionList({ filtered, selected, setSelected, parsed, onSubmit, 
                               >
                                 ?
                               </Button>
-                              <span className="action-run-pill">Run <Kbd unstyled>↵</Kbd></span>
+                              <span className={guard ? `action-run-pill action-run-pill-${guard.tone}` : "action-run-pill"}>
+                                {guard ? guard.label : "Run"} <Kbd unstyled>↵</Kbd>
+                              </span>
                             </>
                           ) : (
                             <Kbd unstyled>{action.subcommand}</Kbd>

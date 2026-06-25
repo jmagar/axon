@@ -10,6 +10,7 @@ import path from "node:path";
 // client bundle. Set AXON_DEV_SERVER + AXON_DEV_TOKEN when starting the dev server.
 const devServer = process.env.AXON_DEV_SERVER ?? "http://127.0.0.1:8001";
 const devToken = process.env.AXON_DEV_TOKEN ?? "";
+const devServerOrigin = new URL(devServer).origin;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -23,6 +24,8 @@ export default defineConfig({
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("origin", devServerOrigin);
+            proxyReq.setHeader("referer", `${devServerOrigin}/`);
             if (devToken) {
               proxyReq.setHeader("authorization", `Bearer ${devToken}`);
               proxyReq.setHeader("x-api-key", devToken);

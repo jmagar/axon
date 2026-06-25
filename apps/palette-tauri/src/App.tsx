@@ -18,6 +18,13 @@ import {
   type PaletteAction,
   actionMatches,
 } from "@/lib/actions";
+import {
+  actionConfirmationArmed,
+  actionConfirmationMessage,
+  actionNeedsConfirmation,
+  confirmationFor,
+  type PendingActionConfirmation,
+} from "@/lib/actionGuard";
 import { buildHelpRun, helpAction } from "@/lib/actionHelp";
 import { currentOutputTarget } from "@/lib/appHelpers";
 import { type PaletteConfig, createAxonClient } from "@/lib/axonClient";
@@ -65,6 +72,7 @@ export default function App() {
   const [run, setRun] = useState<RunState>({ kind: "idle" });
   const [copied, setCopied] = useState(false);
   const [shownTick, setShownTick] = useState(0);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(null);
 
   const modeAction = modeOf(view);
   const settingsOpen = isSettingsOpen(view);
@@ -164,6 +172,10 @@ export default function App() {
   const suggestedAction = filtered[selectedIndex];
   const active = modeAction ?? suggestedAction;
   const activeArgument = active ? argumentFor(active, modeAction, parsed, query) : "";
+  const confirmationArmed = active
+    ? actionConfirmationArmed(pendingConfirmation, active, activeArgument)
+    : false;
+  const guardMessage = active ? actionConfirmationMessage(active, confirmationArmed) : "";
   const validation = active ? validationMessage(active, activeArgument) : "No matching action";
   const canRunLocalAction = active?.kind === "local";
   const jobMinimized = run.kind === "job" && run.minimized;
@@ -257,11 +269,34 @@ export default function App() {
   }
 
   function switchActionMode(action: PaletteAction) {
+    if (action.argMode === "none") {
+      setQuery("");
+      setSelected(0);
+      setRun({ kind: "idle" });
+      requestSubmit(action, "");
+      return;
+    }
     dispatchView({ type: "switchMode", action });
-    if (action.argMode === "none") setQuery("");
     setSelected(0);
     setRun({ kind: "idle" });
     focusInput(true);
+  }
+
+  function requestSubmit(action: PaletteAction, argumentOverride?: string) {
+    const argument = argumentOverride ?? argumentFor(action, modeAction, parsed, query);
+    if (actionNeedsConfirmation(action) && !actionConfirmationArmed(pendingConfirmation, action, argument)) {
+      setPendingConfirmation(confirmationFor(action, argument));
+      if (modeAction?.subcommand !== action.subcommand) {
+        dispatchView({ type: "enterMode", action });
+        setQuery(parsed.invoked?.subcommand === action.subcommand ? parsed.arg : argument);
+        setSelected(0);
+        setRun({ kind: "idle" });
+        focusInput(true);
+      }
+      return;
+    }
+    setPendingConfirmation(null);
+    void submit(action, argumentOverride);
   }
 
   function showHelpFor(action?: PaletteAction, unknownTarget?: string) {
@@ -315,13 +350,13 @@ export default function App() {
       if (!modeAction && !parsed.invoked && active.argMode !== "none" && !looksLikeUrl(parsed.search)) {
         enterActionMode(active);
       } else {
-        void submit(active);
+        requestSubmit(active);
       }
     } else if (event.key === "Tab") {
       event.preventDefault();
       if (!active) return;
       // No-input actions run immediately rather than entering an empty arg mode.
-      if (active.argMode === "none") void submit(active);
+      if (active.argMode === "none") requestSubmit(active);
       else enterActionMode(active);
     }
   }
@@ -343,7 +378,7 @@ export default function App() {
   }
 
   // P-M2 — stable callbacks for the memoized children (CommandBar/OutputPanel).
-  const onSubmitAction = useCallback((action: PaletteAction) => void submit(action), [submit]);
+  const onSubmitAction = useCallback((action: PaletteAction) => requestSubmit(action), [pendingConfirmation, modeAction, parsed, query, submit]);
   const onReset = useCallback(() => {
     setQuery("");
     setRun({ kind: "idle" });
@@ -401,6 +436,7 @@ export default function App() {
         settingsOpen={settingsOpen}
         showBackButton={showBackButton}
         submitDisabled={submitDisabled}
+        guardMessage={guardMessage}
         validation={validation}
         onBack={goBackToBrowse}
         onHelp={showHelpFor}
@@ -447,7 +483,7 @@ export default function App() {
             selected={selected}
             setSelected={setSelected}
             parsed={parsed}
-            onSubmit={(action) => void submit(action)}
+            onSubmit={requestSubmit}
             onEnterMode={enterActionMode}
             onHelp={showHelpFor}
           />

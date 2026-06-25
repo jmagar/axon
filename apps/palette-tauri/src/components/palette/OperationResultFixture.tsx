@@ -15,12 +15,17 @@
 // (include the edge cases you care about: empty arrays, long strings, missing fields).
 import { OutputPanel } from "@/components/palette/OutputPanel";
 import { ACTIONS, type PaletteAction } from "@/lib/actions";
+import { buildHelpRun } from "@/lib/actionHelp";
 import type { RunState } from "@/lib/runState";
 
 const noop = () => {};
+type FixtureRunState = Extract<RunState, { result: unknown }>;
 
-export function OperationResultFixture() {
-  const cases: Array<{ title: string; action: PaletteAction; run: Extract<RunState, { kind: "success" | "error" }> }> = [
+export const OPERATION_RESULT_FIXTURE_CASES: Array<{
+  title: string;
+  action: PaletteAction;
+  run: FixtureRunState;
+}> = [
     {
       title: "Structured Error",
       action: actionFor("crawl-status"),
@@ -38,6 +43,11 @@ export function OperationResultFixture() {
           payload: { kind: "missing_param", message: "id must be a UUID", param: "job_id" },
         },
       },
+    },
+    {
+      title: "Help Detail",
+      action: actionFor("help"),
+      run: buildHelpRun(actionFor("scrape")),
     },
     {
       title: "Scrape Reader",
@@ -63,6 +73,14 @@ export function OperationResultFixture() {
       },
     },
     {
+      title: "Map URLs",
+      action: actionFor("map"),
+      run: successRun("Map completed", "https://example.com", "code", "/v1/map", {
+        urls: ["https://example.com/docs", "https://example.com/docs/api"],
+        count: 2,
+      }),
+    },
+    {
       title: "Retrieve Empty",
       action: actionFor("retrieve"),
       run: {
@@ -79,6 +97,30 @@ export function OperationResultFixture() {
           payload: { url: "https://example.com/missing", chunks: [] },
         },
       },
+    },
+    {
+      title: "Suggested URLs",
+      action: actionFor("suggest"),
+      run: successRun("Suggest completed", "palette", "markdown", "/v1/suggest", {
+        suggestions: [
+          { title: "Tauri docs", url: "https://tauri.app/start/", reason: "Desktop shell reference." },
+          { title: "React docs", url: "https://react.dev/reference/react", reason: "Component model reference." },
+        ],
+      }),
+    },
+    {
+      title: "Sources List",
+      action: actionFor("sources"),
+      run: successRun("Sources completed", "collection axon", "code", "/v1/sources", {
+        urls: ["https://github.com/jmagar/axon", "https://docs.rs/tauri"],
+      }),
+    },
+    {
+      title: "Domains List",
+      action: actionFor("domains"),
+      run: successRun("Domains completed", "collection axon", "code", "/v1/domains", {
+        domains: [{ domain: "github.com", count: 128 }, { domain: "docs.rs", count: 42 }],
+      }),
     },
     {
       title: "Search Results",
@@ -159,30 +201,29 @@ export function OperationResultFixture() {
       },
     },
     {
-      title: "Ask Code Answer",
-      action: actionFor("ask"),
-      run: {
-        kind: "success",
-        title: "Ask completed",
-        subtitle: "session id",
-        prompt: "How do I resume a Claude Code session from JSON output?",
-        text: [
-          "Read the `session_id` field from structured output, then pass it back with `--resume`.",
-          "",
-          "```bash",
-          "session_id=$(claude -p \"Start a review\" --output-format json | jq -r '.session_id')",
-          "claude -p \"Continue that review\" --resume \"$session_id\"",
-          "```",
-        ].join("\n"),
-        outputKind: "markdown",
-        result: {
-          ok: true,
-          status: 200,
-          method: "POST",
-          path: "/v1/ask",
-          payload: {},
-        },
-      },
+      title: "Crawl Job",
+      action: actionFor("crawl"),
+      run: jobRun("crawl", "crawl-job-1234567890"),
+    },
+    {
+      title: "Embed Job",
+      action: actionFor("embed"),
+      run: jobRun("embed", "embed-job-1234567890"),
+    },
+    {
+      title: "Extract Job",
+      action: actionFor("extract"),
+      run: jobRun("extract", "extract-job-1234567890"),
+    },
+    {
+      title: "Ingest Job",
+      action: actionFor("ingest"),
+      run: jobRun("ingest", "ingest-job-1234567890"),
+    },
+    {
+      title: "Prepared Sessions Job",
+      action: actionFor("ingest-sessions-prepared"),
+      run: jobRun("ingest-sessions-prepared", "sessions-job-1234567890", "ingest"),
     },
     {
       title: "Query Matches",
@@ -221,6 +262,34 @@ export function OperationResultFixture() {
       },
     },
     {
+      title: "Endpoint Discovery",
+      action: actionFor("endpoints"),
+      run: successRun("Endpoints completed", "https://example.com/app", "markdown", "/v1/endpoints", {
+        total: 2,
+        endpoints: ["https://example.com/api/search", "https://example.com/rpc"],
+      }),
+    },
+    {
+      title: "Brand Identity",
+      action: actionFor("brand"),
+      run: successRun("Brand completed", "https://aurora.tootie.tv", "markdown", "/v1/brand", {
+        name: "Aurora",
+        colors: [{ hex: "#29b6f6", usage: "primary" }, { hex: "#f9a8c4", usage: "secondary" }],
+        fonts: ["Manrope", "JetBrains Mono"],
+      }),
+    },
+    {
+      title: "URL Diff",
+      action: actionFor("diff"),
+      run: successRun("Diff completed", "two URLs", "markdown", "/v1/diff", {
+        status: "changed",
+        url_a: "https://example.com/a",
+        url_b: "https://example.com/b",
+        word_count_delta: 18,
+        metadata_changes: [{ field: "title", old: "Old docs", new: "New docs" }],
+      }),
+    },
+    {
       title: "Doctor Degraded",
       action: actionFor("doctor"),
       run: {
@@ -246,30 +315,13 @@ export function OperationResultFixture() {
       },
     },
     {
-      title: "Long Error Body",
-      action: actionFor("scrape"),
-      run: {
-        kind: "error",
-        title: "Scrape failed",
-        subtitle: "https://example.com/very-long-error",
-        text:
-          "The upstream page returned a long proxy error while Axon was trying to scrape it. The palette should keep this readable, preserve the route metadata, and avoid letting the message stretch the entire panel sideways.",
-        outputKind: "code",
-        result: {
-          ok: false,
-          status: 502,
-          method: "POST",
-          path: "/v1/scrape",
-          payload: {
-            kind: "upstream_error",
-            url: "https://example.com/very-long-error",
-            request_id: "req_01jz5p1f4x0fh8a6z9nk2kx7qa",
-            message:
-              "The upstream page returned a long proxy error while Axon was trying to scrape it. The palette should keep this readable, preserve the route metadata, and avoid letting the message stretch the entire panel sideways.",
-            hint: "Retry later or run the scrape through Chrome render mode.",
-          },
-        },
-      },
+      title: "Dedupe Report",
+      action: actionFor("dedupe"),
+      run: successRun("Dedupe completed", "collection axon", "code", "/v1/dedupe", {
+        collection: "axon",
+        scanned: 100,
+        removed: 4,
+      }),
     },
     {
       title: "Screenshot Preview",
@@ -295,6 +347,32 @@ export function OperationResultFixture() {
       },
     },
     {
+      title: "Watch Created",
+      action: actionFor("watch-create"),
+      run: successRun(
+        "Watch created",
+        "https://example.com/docs",
+        "code",
+        "/v1/watch",
+        {
+          name: "example.com",
+          watch_id: "watch-1",
+          every_seconds: 3600,
+          enabled: true,
+        },
+        "POST",
+      ),
+    },
+    {
+      title: "Watch Run",
+      action: actionFor("watch-run"),
+      run: successRun("Watch run completed", "watch-1", "code", "/v1/watch/watch-1/run", {
+        name: "Docs watch",
+        watch_id: "watch-1",
+        artifacts: [{ id: "artifact-1", kind: "url-change" }],
+      }),
+    },
+    {
       title: "Watch Empty",
       action: actionFor("watch-list"),
       run: {
@@ -314,6 +392,8 @@ export function OperationResultFixture() {
     },
   ];
 
+export function OperationResultFixture() {
+  const cases = OPERATION_RESULT_FIXTURE_CASES;
   return (
     <main className="operation-fixture">
       <header className="operation-fixture-header">
@@ -348,6 +428,42 @@ function actionFor(subcommand: string): PaletteAction {
   const action = ACTIONS.find((item) => item.subcommand === subcommand);
   if (!action) throw new Error(`missing fixture action: ${subcommand}`);
   return action;
+}
+
+function successRun(
+  title: string,
+  subtitle: string,
+  outputKind: "markdown" | "code",
+  path: string,
+  payload: Record<string, unknown>,
+  method: "GET" | "POST" | "DELETE" = path.includes("/v1/sources") || path.includes("/v1/domains") || path === "/v1/watch" ? "GET" : "POST",
+): FixtureRunState {
+  return {
+    kind: "success",
+    title,
+    subtitle,
+    text: JSON.stringify(payload, null, 2),
+    outputKind,
+    result: {
+      ok: true,
+      status: 200,
+      method,
+      path,
+      payload,
+    },
+  };
+}
+
+function jobRun(
+  subcommand: string,
+  jobId: string,
+  family = subcommand,
+): FixtureRunState {
+  return successRun(`${family} job queued`, jobId, "code", `/v1/${family}`, {
+    execution_mode: "async",
+    result: { job_id: jobId, status: "queued" },
+    status_url: `/v1/${family}/${jobId}`,
+  });
 }
 
 function previewImage(): string {

@@ -33,6 +33,22 @@ function Harness() {
   );
 }
 
+function GuardHarness() {
+  const [selected, setSelected] = useState(0);
+  const guarded = ACTIONS.filter((action) => action.subcommand === "dedupe");
+  return (
+    <ActionList
+      filtered={guarded}
+      selected={selected}
+      setSelected={setSelected}
+      parsed={parseCommand("")}
+      onSubmit={onSubmit}
+      onEnterMode={onEnterMode}
+      onHelp={onHelp}
+    />
+  );
+}
+
 // The per-row help control is a pointer affordance kept out of the listbox a11y
 // tree (its `.action-meta` wrapper is aria-hidden), so role queries must opt into
 // hidden elements; its onClick still fires on mouse activation.
@@ -94,4 +110,11 @@ it("enters argument mode on row click for an action that needs input", async () 
   expect(onEnterMode).toHaveBeenCalledTimes(1);
   expect(onEnterMode.mock.calls[0][0].subcommand).toBe("scrape");
   expect(onSubmit).not.toHaveBeenCalled();
+});
+
+it("shows a confirmation affordance for guarded actions before Run", () => {
+  render(<GuardHarness />);
+
+  expect(screen.getAllByText("Confirm").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText(/Review before running/i)).toBeInTheDocument();
 });

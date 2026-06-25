@@ -25,6 +25,7 @@ interface PaletteCommandBarProps {
   settingsOpen: boolean;
   showBackButton: boolean;
   submitDisabled: boolean;
+  guardMessage: string;
   validation: string;
   onBack: () => void;
   onHelp: (action?: PaletteAction, unknownTarget?: string) => void;
@@ -49,6 +50,10 @@ function endpointStatusLabel(tone: string, endpointLabel: string): string {
   }
 }
 
+function sentenceCase(value: string): string {
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
+}
+
 export function PaletteCommandBar({
   active,
   activeDescendantId,
@@ -63,6 +68,7 @@ export function PaletteCommandBar({
   settingsOpen,
   showBackButton,
   submitDisabled,
+  guardMessage,
   validation,
   onBack,
   onHelp,
@@ -101,6 +107,7 @@ export function PaletteCommandBar({
   // aria-describedby (not just a `title` tooltip). The id is referenced only when
   // there is an active validation message so AT does not announce an empty node.
   const validationId = "command-validation";
+  const guardId = "command-guard-message";
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: command-bar is a layout container; double-click toggles window chrome, not an interactive widget
@@ -184,6 +191,7 @@ export function PaletteCommandBar({
                 {switcherActions.map((action) => {
                   const Icon = actionIcon(action.subcommand);
                   const meta = actionDisplayMeta(action);
+                  const descriptor = sentenceCase(`${meta.input} to ${meta.output}`);
                   return (
                     <Button
                       variant="plain"
@@ -200,7 +208,7 @@ export function PaletteCommandBar({
                       <Icon size={15} strokeWidth={1.85} aria-hidden="true" />
                       <span>
                         <strong>{meta.label}</strong>
-                        <small>{meta.input} to {meta.output}</small>
+                        <small>{descriptor}</small>
                       </span>
                       <Kbd unstyled>{action.subcommand}</Kbd>
                     </Button>
@@ -224,7 +232,7 @@ export function PaletteCommandBar({
           aria-controls={listboxOpen ? "palette-action-list" : undefined}
           aria-activedescendant={listboxOpen ? activeDescendantId : undefined}
           aria-autocomplete="list"
-          aria-describedby={validation ? validationId : undefined}
+          aria-describedby={validation ? validationId : guardMessage ? guardId : undefined}
           aria-label={modeAction ? `${modeAction.label} argument` : "Axon command"}
         />
         {validation && (
@@ -232,6 +240,11 @@ export function PaletteCommandBar({
             {validation}
           </span>
         )}
+        {!validation && guardMessage ? (
+          <span id={guardId} className="command-guard-message" role="status" title={guardMessage}>
+            {guardMessage}
+          </span>
+        ) : null}
       </div>
       <Button
         variant="plain"
