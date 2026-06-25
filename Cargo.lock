@@ -377,74 +377,393 @@ dependencies = [
 
 [[package]]
 name = "axon"
-version = "5.16.1"
+version = "6.0.1"
+dependencies = [
+ "async-trait",
+ "axon-cli",
+ "axon-core",
+ "axon-jobs",
+ "axon-mcp",
+ "axon-services",
+ "axon-vector",
+ "axon-web",
+ "chrono",
+ "criterion",
+ "dotenvy",
+ "httpmock",
+ "proptest",
+ "reqwest 0.13.4",
+ "rmcp",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "axon-api"
+version = "6.0.1"
+dependencies = [
+ "chrono",
+ "percent-encoding",
+ "schemars",
+ "serde",
+ "serde_json",
+ "similar",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "axon-authz"
+version = "6.0.1"
+
+[[package]]
+name = "axon-cli"
+version = "6.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axon-core",
+ "axon-crawl",
+ "axon-extract",
+ "axon-ingest",
+ "axon-jobs",
+ "axon-mcp",
+ "axon-services",
+ "axon-vector",
+ "axon-web",
  "axum",
- "base64",
  "chrono",
  "clap",
  "clap_complete",
+ "console",
+ "flate2",
+ "futures-util",
+ "hex",
+ "httpmock",
+ "indicatif",
+ "metrics",
+ "proptest",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "spider",
+ "sqlx",
+ "tar",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "axon-code-index"
+version = "6.0.1"
+dependencies = [
+ "anyhow",
+ "axon-core",
+ "axon-jobs",
+ "axon-vector",
+ "chrono",
+ "dashmap",
+ "hex",
+ "httpmock",
+ "percent-encoding",
+ "proptest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "axon-core"
+version = "6.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axon-api",
+ "chrono",
+ "clap",
  "comfy-table",
  "console",
- "criterion",
  "dashmap",
  "dialoguer",
- "dotenvy",
- "feed-rs",
- "flate2",
- "futures",
  "futures-util",
  "hex",
  "html5gum",
  "httpmock",
  "indicatif",
- "lab-auth",
  "libc",
- "mime_guess",
- "moka",
- "notify",
- "octocrab",
- "once_cell",
- "percent-encoding",
  "proptest",
- "psl",
  "pulldown-cmark",
- "rand 0.10.1",
- "rand_core 0.9.5",
- "reflink-copy",
  "regex",
  "reqwest 0.13.4",
- "rmcp",
- "rust-embed",
- "rustls",
- "scraper",
  "serde",
  "serde_json",
  "serial_test",
  "sha2 0.11.0",
- "similar",
  "spider",
- "spider_agent",
  "spider_transformations",
  "sqlx",
- "ssh2-config",
- "streaming-iterator",
- "subtle",
  "supports-hyperlinks",
- "tar",
  "tempfile",
- "text-splitter",
  "thiserror 2.0.18",
  "tokio",
- "tokio-tungstenite",
- "tokio-util",
  "toml 1.1.2+spec-1.1.0",
- "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "axon-crawl"
+version = "6.0.1"
+dependencies = [
+ "axon-core",
+ "base64",
+ "chrono",
+ "futures-util",
+ "hex",
+ "httpmock",
+ "proptest",
+ "pulldown-cmark",
+ "reflink-copy",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "spider",
+ "spider_transformations",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "axon-extract"
+version = "6.0.1"
+dependencies = [
+ "axon-api",
+ "axon-core",
+ "axon-crawl",
+ "axon-ingest",
+ "base64",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "httpmock",
+ "proptest",
+ "regex",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "axon-ingest"
+version = "6.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axon-api",
+ "axon-core",
+ "axon-vector",
+ "base64",
+ "chrono",
+ "feed-rs",
+ "futures-util",
+ "hex",
+ "httpmock",
+ "indicatif",
+ "notify",
+ "octocrab",
+ "proptest",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "spider",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "axon-jobs"
+version = "6.0.1"
+dependencies = [
+ "async-trait",
+ "axon-api",
+ "axon-core",
+ "axon-crawl",
+ "axon-extract",
+ "axon-ingest",
+ "axon-vector",
+ "chrono",
+ "dashmap",
+ "futures",
+ "hex",
+ "httpmock",
+ "notify",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "spider",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "axon-mcp"
+version = "6.0.1"
+dependencies = [
+ "axon-api",
+ "axon-authz",
+ "axon-core",
+ "axon-extract",
+ "axon-jobs",
+ "axon-services",
+ "axon-vector",
+ "axum",
+ "chrono",
+ "hex",
+ "httpmock",
+ "lab-auth",
+ "proptest",
+ "reqwest 0.13.4",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "axon-services"
+version = "6.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axon-api",
+ "axon-code-index",
+ "axon-core",
+ "axon-crawl",
+ "axon-extract",
+ "axon-ingest",
+ "axon-jobs",
+ "axon-vector",
+ "base64",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "httpmock",
+ "indicatif",
+ "libc",
+ "metrics",
+ "notify",
+ "proptest",
+ "psl",
+ "rand_core 0.9.5",
+ "regex",
+ "reqwest 0.13.4",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "spider",
+ "spider_agent",
+ "sqlx",
+ "ssh2-config",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "toml 1.1.2+spec-1.1.0",
+ "toml_edit",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "axon-vector"
+version = "6.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axon-api",
+ "axon-core",
+ "chrono",
+ "futures-util",
+ "httpmock",
+ "moka",
+ "proptest",
+ "pulldown-cmark",
+ "rand 0.10.1",
+ "regex",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "spider",
+ "sqlx",
+ "streaming-iterator",
+ "tempfile",
+ "text-splitter",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
+ "tracing",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-go",
@@ -457,11 +776,48 @@ dependencies = [
  "tree-sitter-typescript",
  "tree-sitter-yaml",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "axon-web"
+version = "6.0.1"
+dependencies = [
+ "async-trait",
+ "axon-authz",
+ "axon-core",
+ "axon-ingest",
+ "axon-jobs",
+ "axon-mcp",
+ "axon-services",
+ "axon-vector",
+ "axum",
+ "base64",
+ "futures-util",
+ "httpmock",
+ "lab-auth",
+ "libc",
+ "metrics-exporter-prometheus",
+ "mime_guess",
+ "percent-encoding",
+ "proptest",
+ "rand_core 0.9.5",
+ "reqwest 0.13.4",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sqlx",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
- "zip",
 ]
 
 [[package]]
@@ -3624,6 +3980,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
+name = "metrics"
+version = "0.24.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89550ee9f79e88fef3119de263694973a8adb26c21d75322164fb8c493039fe2"
+dependencies = [
+ "portable-atomic",
+ "rapidhash",
+]
+
+[[package]]
+name = "metrics-exporter-prometheus"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
+dependencies = [
+ "base64",
+ "indexmap",
+ "metrics",
+ "metrics-util",
+ "quanta",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "metrics-util"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8496cc523d1f94c1385dd8f0f0c2c480b2b8aeccb5b7e4485ad6365523ae376"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+ "hashbrown 0.15.5",
+ "metrics",
+ "quanta",
+ "rand 0.9.4",
+ "rand_xoshiro",
+ "sketches-ddsketch",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4579,6 +4975,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
+name = "quanta"
+version = "0.12.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3ab5a9d756f0d97bdc89019bd2e4ea098cf9cde50ee7564dde6b81ccc8f06c7"
+dependencies = [
+ "crossbeam-utils",
+ "libc",
+ "once_cell",
+ "raw-cpuid",
+ "wasi",
+ "web-sys",
+ "winapi",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4627,9 +5038,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -4784,6 +5195,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rand_xoshiro"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
+dependencies = [
+ "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rapidhash"
+version = "4.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e48930979c155e2f33aa36ab3119b5ee81332beb6482199a8ecd6029b80b59"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "498cd0dc59d73224351ee52a95fee0f1a617a2eae0e7d9d720cc622c73a54186"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -5864,6 +6302,12 @@ dependencies = [
  "url",
  "xml-rs",
 ]
+
+[[package]]
+name = "sketches-ddsketch"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c6f73aeb92d671e0cc4dca167e59b2deb6387c375391bc99ee743f326994a2b"
 
 [[package]]
 name = "slab"
@@ -8390,6 +8834,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axon-web",
  "clap",
  "dotenvy",
  "regex",
@@ -8397,6 +8842,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "walkdir",

@@ -18,18 +18,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.TravelExplore
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +32,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -48,22 +42,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.axon.app.data.repository.JobFamily
 import com.axon.app.data.repository.JobUi
-import com.axon.app.data.repository.RecentJob
 import com.axon.app.data.repository.WatchUi
-import com.axon.app.ui.common.humanizeJsonFragmentText
 import com.axon.app.ui.common.rememberRevealState
 import com.axon.app.ui.common.revealOnce
 import com.axon.app.ui.theme.AxonTheme
 import com.axon.app.ui.theme.tint
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.longOrNull
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun JobsScreen(vm: JobsOverviewViewModel = viewModel()) {
@@ -77,79 +60,118 @@ fun JobsScreen(vm: JobsOverviewViewModel = viewModel()) {
     val watches by vm.watches.collectAsStateWithLifecycle()
     val error by vm.errorMessage.collectAsStateWithLifecycle()
     var drill by remember { mutableStateOf<JobDrill?>(null) }
+    var selectedJobRef by remember { mutableStateOf<JobRef?>(null) }
+    var crawledPages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var crawledPagesLoading by remember { mutableStateOf(false) }
+    var crawledPagesError by remember { mutableStateOf<String?>(null) }
     val overviewRows = jobOverviewRows(jobsByKind, watches)
     val reveal = rememberRevealState()
+    val selectedJob = selectedJobRef?.let { ref ->
+        jobsByKind[ref.kind].orEmpty().firstOrNull { it.id == ref.id }
+    }
+    val selectedCrawlManifestPath = remember(selectedJob?.id, selectedJob?.resultJson) {
+        crawlManifestArtifactPath(selectedJob?.resultJson)
+    }
+
+    LaunchedEffect(selectedJob?.id, selectedCrawlManifestPath) {
+        val job = selectedJob
+        crawledPages = emptyList()
+        crawledPagesError = null
+        crawledPagesLoading = job?.kind == JobFamily.Crawl
+        if (job?.kind == JobFamily.Crawl) {
+            vm.crawledPagesFor(job).fold(
+                onSuccess = { pages -> crawledPages = pages },
+                onFailure = { error -> crawledPagesError = error.message ?: "Unable to load crawl manifest" },
+            )
+            crawledPagesLoading = false
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .widthIn(max = 460.dp)
-                .padding(top = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp),
-        ) {
-            when (val selected = drill) {
-                null -> {
-                    item { SectionLabel("Jobs") }
-                    if (error != null && active.isEmpty() && jobsByKind.isEmpty()) {
-                        item { JobsErrorCard(error.orEmpty()) }
-                    }
-                    itemsIndexed(overviewRows, key = { _, row -> row.key }) { index, row ->
-                        JobOverviewRow(
-                            row = row,
-                            modifier = Modifier
-                                .animateItem()
-                                .revealOnce(reveal, row.key, index),
-                            onClick = { drill = row.drill },
-                        )
-                    }
-                }
-                is JobDrill.Kind -> {
-                    val jobs = jobsByKind[selected.kind].orEmpty()
-                    val visibleJobs = jobs.take(25)
-                    item {
-                        DrillHeader(
-                            title = selected.kind.drillTitle(),
-                            detail = if (jobs.size > visibleJobs.size) "${visibleJobs.size}/${jobs.size}" else "${jobs.size}",
-                            onBack = { drill = null },
-                        )
-                    }
-                    if (jobs.isEmpty()) {
-                        item { EmptyJobsCard("No ${selected.kind.label().lowercase()} jobs", "New ${selected.kind.label().lowercase()} submissions appear here.") }
-                    } else {
-                        itemsIndexed(visibleJobs, key = { _, job -> "${selected.kind}-${job.id}" }) { index, job ->
-                            JobDrillRow(
-                                job,
+        if (selectedJob != null) {
+            JobDetailScreen(
+                job = selectedJob,
+                crawledPages = crawledPages,
+                crawledPagesLoading = crawledPagesLoading,
+                crawledPagesError = crawledPagesError,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp)
+                    .padding(start = 6.dp, top = 10.dp, end = 6.dp),
+                onBack = { selectedJobRef = null },
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp)
+                    .padding(start = 6.dp, top = 10.dp, end = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (val selected = drill) {
+                    null -> {
+                        item { SectionLabel("Jobs") }
+                        if (error != null && active.isEmpty() && jobsByKind.isEmpty()) {
+                            item { JobsErrorCard(error.orEmpty()) }
+                        }
+                        itemsIndexed(overviewRows, key = { _, row -> row.key }) { index, row ->
+                            JobOverviewRow(
+                                row = row,
                                 modifier = Modifier
                                     .animateItem()
-                                    .revealOnce(reveal, "${selected.kind}-${job.id}", index),
+                                    .revealOnce(reveal, row.key, index),
+                                onClick = { drill = row.drill },
                             )
                         }
-                        if (jobs.size > visibleJobs.size) {
-                            item {
-                                MoreJobsHint(remaining = jobs.size - visibleJobs.size)
+                    }
+                    is JobDrill.Kind -> {
+                        val jobs = jobsByKind[selected.kind].orEmpty()
+                        val visibleJobs = jobs.take(25)
+                        item {
+                            DrillHeader(
+                                title = selected.kind.drillTitle(),
+                                detail = if (jobs.size > visibleJobs.size) "${visibleJobs.size}/${jobs.size}" else "${jobs.size}",
+                                onBack = { drill = null },
+                            )
+                        }
+                        if (jobs.isEmpty()) {
+                            item { EmptyJobsCard("No ${selected.kind.label().lowercase()} jobs", "New ${selected.kind.label().lowercase()} submissions appear here.") }
+                        } else {
+                            itemsIndexed(visibleJobs, key = { _, job -> "${selected.kind}-${job.id}" }) { index, job ->
+                                JobDrillRow(
+                                    job,
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .revealOnce(reveal, "${selected.kind}-${job.id}", index),
+                                    onClick = { selectedJobRef = JobRef(selected.kind, job.id) },
+                                )
+                            }
+                            if (jobs.size > visibleJobs.size) {
+                                item {
+                                    MoreJobsHint(remaining = jobs.size - visibleJobs.size)
+                                }
                             }
                         }
                     }
-                }
-                JobDrill.Watches -> {
-                    item {
-                        DrillHeader(
-                            title = "Watches",
-                            detail = "${watches.size} ${if (watches.size == 1) "job" else "jobs"}",
-                            onBack = { drill = null },
-                        )
-                    }
-                    if (watches.isEmpty()) {
-                        item { EmptyJobsCard("No watches", "Recurring URL change detectors appear here.") }
-                    } else {
-                        itemsIndexed(watches, key = { _, watch -> watch.id }) { index, watch ->
-                            WatchDrillRow(
-                                watch,
-                                modifier = Modifier
-                                    .animateItem()
-                                    .revealOnce(reveal, watch.id, index),
+                    JobDrill.Watches -> {
+                        item {
+                            DrillHeader(
+                                title = "Watches",
+                                detail = "${watches.size} ${if (watches.size == 1) "job" else "jobs"}",
+                                onBack = { drill = null },
                             )
+                        }
+                        if (watches.isEmpty()) {
+                            item { EmptyJobsCard("No watches", "Recurring URL change detectors appear here.") }
+                        } else {
+                            itemsIndexed(watches, key = { _, watch -> watch.id }) { index, watch ->
+                                WatchDrillRow(
+                                    watch,
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .revealOnce(reveal, watch.id, index),
+                                )
+                            }
                         }
                     }
                 }
@@ -162,6 +184,8 @@ private sealed interface JobDrill {
     data class Kind(val kind: JobFamily) : JobDrill
     data object Watches : JobDrill
 }
+
+private data class JobRef(val kind: JobFamily, val id: String)
 
 private data class JobOverviewRowModel(
     val key: String,
@@ -183,27 +207,28 @@ private fun jobOverviewRows(
     val colors = AxonTheme.colors
     fun row(kind: JobFamily): JobOverviewRowModel {
         val jobs = jobsByKind[kind].orEmpty()
-        val runningCount = jobs.count { it.status.lowercase() in setOf("pending", "running", "processing") }
+        val activeJobs = jobs.filter { isActiveJobStatus(it.status) }
+        val runningCount = activeJobs.size
         val failedCount = jobs.count { it.status.lowercase() in setOf("failed", "error") }
-        val running = jobs.firstOrNull { it.status.lowercase() in setOf("pending", "running", "processing") }
+        val running = activeJobs.firstOrNull()
         val representative = running ?: jobs.firstOrNull()
+        val aggregateProgress = aggregateProgressForJobs(activeJobs)
         return JobOverviewRowModel(
             key = kind.name,
             title = kind.drillTitle(),
             detail = representative?.let { job ->
-                val suffix = if (running == null && job.status.lowercase() in setOf("done", "completed", "success")) {
-                    "latest · ${jobProgressLabel(job)}"
-                } else {
-                    jobProgressLabel(job)
+                val suffix = when {
+                    activeJobs.size > 1 -> "${activeJobs.size} active ${kind.drillTitle().lowercase()} · avg ${((aggregateProgress ?: 0f) * 100).toInt()}%"
+                    running != null -> jobProgressLabel(job)
+                    job.status.lowercase() in setOf("done", "completed", "success") -> "latest · ${jobProgressLabel(job)}"
+                    else -> jobProgressLabel(job)
                 }
                 "${shortTarget(jobDisplayTarget(job))} · $suffix"
             }
                 ?: "No ${kind.label().lowercase()} jobs",
             runningCount = runningCount,
             failedCount = failedCount,
-            progress = representative
-                ?.takeIf { it.status.lowercase() !in setOf("idle", "pending") || running != null }
-                ?.let { progressForJob(it) },
+            progress = aggregateProgress,
             icon = iconForKind(kind),
             tone = when (kind) {
                 JobFamily.Crawl -> colors.accentPrimary
@@ -237,25 +262,26 @@ private fun jobOverviewRows(
 private fun JobOverviewRow(row: JobOverviewRowModel, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = AxonTheme.colors
     val shape = RoundedCornerShape(8.dp)
+    val quiet = row.runningCount == 0 && row.failedCount == 0 && row.progress == null
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.control.copy(alpha = 0.06f), shape)
-            .border(1.dp, colors.borderDefault.copy(alpha = 0.12f), shape)
+            .background(colors.control.copy(alpha = if (quiet) 0.018f else 0.07f), shape)
+            .border(1.dp, colors.borderDefault.copy(alpha = if (quiet) 0.04f else 0.14f), shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 17.dp, vertical = 16.dp),
+            .padding(horizontal = if (quiet) 18.dp else 20.dp, vertical = if (quiet) 13.dp else 20.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (quiet) 13.dp else 15.dp),
     ) {
-        Icon(row.icon, contentDescription = null, tint = colors.tint(row.tone, 78, colors.textPrimary), modifier = Modifier.size(20.dp))
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(row.icon, contentDescription = null, tint = colors.tint(row.tone, 78, colors.textPrimary), modifier = Modifier.size(if (quiet) 22.dp else 24.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (quiet) 4.dp else 9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     row.title,
                     color = colors.textPrimary,
-                    fontSize = 14.2.sp,
-                    lineHeight = 18.8.sp,
+                    fontSize = if (quiet) 15.sp else 16.sp,
+                    lineHeight = if (quiet) 19.5.sp else 21.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = AxonTheme.fonts.body,
                     maxLines = 1,
@@ -268,14 +294,14 @@ private fun JobOverviewRow(row: JobOverviewRowModel, modifier: Modifier = Modifi
             Text(
                 row.detail,
                 color = colors.textMuted.copy(alpha = 0.82f),
-                fontSize = 11.5.sp,
-                lineHeight = 15.2.sp,
+                fontSize = if (quiet) 12.4.sp else 13.2.sp,
+                lineHeight = if (quiet) 16.sp else 18.sp,
                 fontFamily = AxonTheme.fonts.mono,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             row.progress?.let { progress ->
-                ProgressBar(progress, row.tone, modifier = Modifier.width(132.dp))
+                ProgressBar(progress, row.tone, modifier = Modifier.width(156.dp))
             }
         }
         Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = colors.textMuted.copy(alpha = 0.76f), modifier = Modifier.size(18.dp))
@@ -294,8 +320,8 @@ private fun StatusCount(count: Int, tone: Color) {
         Text(
             count.toString(),
             color = if (count > 0) colors.tint(tone, 75, colors.textPrimary) else colors.textMuted,
-            fontSize = 10.2.sp,
-            lineHeight = 12.8.sp,
+            fontSize = 11.2.sp,
+            lineHeight = 14.sp,
             fontFamily = AxonTheme.fonts.mono,
         )
     }
@@ -306,44 +332,8 @@ private fun FailedCount(count: Int) {
     Text(
         "$count×",
         color = AxonTheme.colors.error,
-        fontSize = 10.2.sp,
-        lineHeight = 12.8.sp,
+        fontSize = 11.2.sp,
+        lineHeight = 14.sp,
         fontFamily = AxonTheme.fonts.mono,
     )
-}
-
-@Composable
-private fun DrillHeader(title: String, detail: String, onBack: () -> Unit) {
-    val colors = AxonTheme.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(50.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(colors.control.copy(alpha = 0.04f), RoundedCornerShape(9.dp))
-            .border(1.dp, colors.borderDefault.copy(alpha = 0.08f), RoundedCornerShape(9.dp))
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Icon(
-            Icons.AutoMirrored.Rounded.ArrowBack,
-            contentDescription = "Back",
-            tint = colors.textMuted,
-            modifier = Modifier
-                .size(26.dp)
-                .clickable(onClick = onBack)
-                .padding(6.dp),
-        )
-        Text(
-            title,
-            color = colors.textPrimary,
-            fontSize = 13.sp,
-            lineHeight = 17.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = AxonTheme.fonts.display,
-            modifier = Modifier.weight(1f),
-        )
-        Text(detail, color = colors.textMuted.copy(alpha = 0.76f), fontSize = 10.9.sp, lineHeight = 13.8.sp, fontFamily = AxonTheme.fonts.mono)
-    }
 }

@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.axon.app.data.local.AskHistoryEntry
 import com.axon.app.data.local.Session
+import com.axon.app.ui.common.AppNoticeBanner
+import com.axon.app.ui.common.NoticeTone
 import com.axon.app.ui.common.rememberRevealState
 import com.axon.app.ui.common.revealOnce
 import com.axon.app.ui.theme.AxonTheme
@@ -59,18 +64,24 @@ fun SessionsDrawerContent(
 ) {
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val recentAsks by vm.recentAsks.collectAsStateWithLifecycle()
+    val syncError by vm.error.collectAsStateWithLifecycle()
     val reveal = rememberRevealState()
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier
-                .fillMaxWidth(0.86f)
-                .widthIn(max = 372.dp)
-                .padding(top = 15.dp),
+                .fillMaxWidth()
+                .widthIn(max = 460.dp)
+                .padding(start = 6.dp, top = 10.dp, end = 6.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             item {
                 NewSessionRow(onClick = { onSelect("new") })
+            }
+            syncError?.let { message ->
+                item {
+                    SessionSyncErrorRow(message)
+                }
             }
             when {
                 sessions.isNotEmpty() -> {
@@ -105,6 +116,15 @@ fun SessionsDrawerContent(
             }
         }
     }
+}
+
+@Composable
+private fun SessionSyncErrorRow(message: String) {
+    AppNoticeBanner(
+        message = message,
+        tone = NoticeTone.Warn,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -239,6 +259,20 @@ private fun SessionRow(
                 .clip(RoundedCornerShape(8.dp))
                 .background(colors.control.copy(alpha = 0.075f))
                 .border(1.dp, colors.borderDefault.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(
+                            label = if (session.pinnedAt == null) "Pin session" else "Unpin session",
+                        ) {
+                            if (session.pinnedAt == null) onPin() else onUnpin()
+                            true
+                        },
+                        CustomAccessibilityAction(label = "Delete session") {
+                            onDelete()
+                            true
+                        },
+                    )
+                }
                 .combinedClickable(
                     onClick = onSelect,
                     onLongClick = { showMenu = true },
@@ -250,7 +284,7 @@ private fun SessionRow(
                 if (session.pinnedAt != null) {
                     Icon(
                         imageVector = Icons.Rounded.BookmarkAdded,
-                        contentDescription = null,
+                        contentDescription = "Pinned",
                         tint = colors.accentStrong.copy(alpha = 0.78f),
                         modifier = Modifier.size(12.dp),
                     )
@@ -265,6 +299,26 @@ private fun SessionRow(
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.BookmarkAdded,
+                    contentDescription = if (session.pinnedAt == null) "Pin session" else "Unpin session",
+                    tint = if (session.pinnedAt == null) colors.textMuted.copy(alpha = 0.58f) else colors.accentStrong,
+                    modifier = Modifier
+                        .size(25.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { if (session.pinnedAt == null) onPin() else onUnpin() }
+                        .padding(6.dp),
+                )
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = "Delete session",
+                    tint = colors.textMuted.copy(alpha = 0.58f),
+                    modifier = Modifier
+                        .size(25.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onDelete() }
+                        .padding(6.dp),
                 )
                 Text(
                     relativeTime(session.updatedAt),

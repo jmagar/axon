@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["healthz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["readyz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/artifacts": {
         parameters: {
             query?: never;
@@ -118,6 +150,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["v1_chat_stream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["collections_openapi_marker"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -588,6 +636,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mobile/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mobile_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mobile/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_mobile_session"];
+        put: operations["upsert_mobile_session"];
+        post?: never;
+        delete: operations["delete_mobile_session"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/query": {
         parameters: {
             query?: never;
@@ -868,6 +948,9 @@ export interface components {
         DedupeRequest: {
             collection?: string | null;
         };
+        DeleteMobileSessionResponse: {
+            ok: boolean;
+        };
         DiffResult: {
             links_added: components["schemas"]["LinkEntry"][];
             links_removed: components["schemas"]["LinkEntry"][];
@@ -982,6 +1065,53 @@ export interface components {
             new?: string | null;
             old?: string | null;
         };
+        MobileChatItem: {
+            kind: string;
+            payload?: Record<string, never>;
+            text?: string | null;
+            /** Format: int64 */
+            timestamp: number;
+        };
+        MobileSession: {
+            /** Format: int64 */
+            created_at: number;
+            first_message_preview: string;
+            id: string;
+            /** Format: int32 */
+            injected_op_count: number;
+            items?: components["schemas"]["MobileChatItem"][];
+            /** Format: int64 */
+            pinned_at?: number | null;
+            title: string;
+            /** Format: int32 */
+            turn_count: number;
+            /** Format: int64 */
+            updated_at: number;
+        };
+        MobileSessionDetailResponse: {
+            session: components["schemas"]["MobileSession"];
+        };
+        MobileSessionListResponse: {
+            sessions: components["schemas"]["MobileSessionSummary"][];
+        };
+        MobileSessionSummary: {
+            /** Format: int64 */
+            created_at: number;
+            first_message_preview: string;
+            id: string;
+            /** Format: int32 */
+            injected_op_count: number;
+            /** Format: int64 */
+            pinned_at?: number | null;
+            title: string;
+            /** Format: int32 */
+            turn_count: number;
+            /** Format: int64 */
+            updated_at: number;
+        };
+        PanelCollectionsResponse: {
+            collections: string[];
+        };
         PreparedSessionDoc: {
             extra?: unknown;
             session_date?: string | null;
@@ -993,6 +1123,11 @@ export interface components {
             text: string;
             title?: string | null;
             url: string;
+        };
+        ReadinessBody: {
+            ok: boolean;
+            qdrant: string;
+            tei: string;
         };
         /** @enum {string} */
         RenderMode: "http" | "chrome" | "auto-switch";
@@ -1060,8 +1195,13 @@ export interface components {
             source_type?: string | null;
         };
         RestEvaluateRequest: {
+            before?: string | null;
             collection?: string | null;
+            diagnostics?: boolean | null;
+            hybrid_search?: boolean | null;
             question: string;
+            retrieval_ab?: boolean | null;
+            since?: string | null;
         };
         /** @enum {string} */
         RestExtractMode: "auto";
@@ -1116,10 +1256,13 @@ export interface components {
         /** @enum {string} */
         RestMemorySubaction: "remember" | "list" | "search" | "show" | "link" | "supersede" | "context";
         RestQueryRequest: {
+            before?: string | null;
             collection?: string | null;
+            hybrid_search?: boolean | null;
             limit?: number | null;
             offset?: number | null;
             query: string;
+            since?: string | null;
         };
         RestResearchRequest: {
             limit?: number | null;
@@ -1128,9 +1271,11 @@ export interface components {
             time_range?: string | null;
         };
         RestRetrieveRequest: {
+            before?: string | null;
             collection?: string | null;
             cursor?: string | null;
             max_points?: number | null;
+            since?: string | null;
             token_budget?: number | null;
             url: string;
         };
@@ -1228,6 +1373,13 @@ export interface components {
             supported_routes: string[];
             version: string;
         };
+        UpsertMobileSessionRequest: {
+            session: components["schemas"]["MobileSession"];
+        };
+        UpsertMobileSessionResponse: {
+            ok: boolean;
+            session: components["schemas"]["MobileSession"];
+        };
         WatchDefCreateRequest: {
             enabled?: boolean | null;
             /** Format: int64 */
@@ -1247,6 +1399,55 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    healthz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Axon process is alive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    readyz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Qdrant and TEI dependencies are ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessBody"];
+                };
+            };
+            /** @description One or more dependencies are not ready */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessBody"];
+                };
+            };
+        };
+    };
     serve_artifact_query: {
         parameters: {
             query: {
@@ -1660,6 +1861,53 @@ export interface operations {
             };
             /** @description Chat request exceeds limits */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    collections_openapi_marker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available Qdrant collection names */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PanelCollectionsResponse"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authenticated token lacks Axon access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Qdrant collections request failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3421,6 +3669,216 @@ export interface operations {
             };
         };
     };
+    list_mobile_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mobile chat sessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileSessionListResponse"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authenticated token lacks Axon access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Session store error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_mobile_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Mobile session id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mobile chat session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileSessionDetailResponse"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authenticated token lacks Axon access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upsert_mobile_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Mobile session id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertMobileSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Upserted mobile chat session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpsertMobileSessionResponse"];
+                };
+            };
+            /** @description Invalid session payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authenticated token lacks Axon access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Stale mobile session update */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_mobile_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Mobile session id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted mobile chat session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteMobileSessionResponse"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authenticated token lacks Axon access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Session store error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     query: {
         parameters: {
             query?: never;
@@ -4011,6 +4469,15 @@ export interface operations {
             };
             /** @description Authenticated token lacks Axon access */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Upstream LLM or search provider rate limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

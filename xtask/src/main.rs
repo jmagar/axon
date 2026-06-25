@@ -25,11 +25,21 @@ enum Command {
     CheckClaudeSymlinks,
     /// Fail if any symlink in the worktree points to a non-existent target.
     CheckBrokenSymlinks,
+    /// Verify SQLite job migrations are append-only and checksum-pinned.
+    CheckSqliteMigrations,
+    /// Regenerate the SQLite job migration checksum manifest after adding a migration.
+    UpdateSqliteMigrationChecksums,
     /// Scan staged files for secrets and credentials.
     CheckSecrets,
     /// Compatibility check for the CLI component's version-bearing files.
     /// The full multi-component gate is `check-release-versions`.
     CheckVersionSync,
+    /// Regenerate and verify all tracked OpenAPI artifacts.
+    CheckOpenapiDrift,
+    /// Verify Android's handwritten /v1 client routes are present in OpenAPI.
+    CheckAndroidApiContract,
+    /// Run the path-aware local pre-push router.
+    PrePush(pre_push::PrePushArgs),
     /// Verify all releasable components have valid versions and changed shipping paths have bumps.
     CheckReleaseVersions {
         #[arg(long)]
@@ -52,11 +62,22 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Bump all version-bearing files for one component.
+    /// Bump all version-bearing files for one component. Level is auto-derived
+    /// from conventional commits (via git-cliff) when omitted.
     BumpVersion {
         component: String,
         #[arg(value_enum)]
-        level: checks::release_versions::BumpLevel,
+        level: Option<checks::release_versions::BumpLevel>,
+        /// Skip git-cliff changelog generation (stamp an empty heading instead).
+        #[arg(long)]
+        skip_changelog: bool,
+    },
+    /// Regenerate a component's full changelog from scoped git history.
+    RegenChangelog {
+        component: String,
+        /// Output path for the changelog file.
+        #[arg(long)]
+        output: String,
     },
     /// Benchmark embedding a local corpus through axon, TEI, and Qdrant.
     BenchEmbed {
@@ -94,8 +115,13 @@ fn main() -> Result<()> {
         Command::CheckUnwraps => checks::unwraps::check(&root),
         Command::CheckClaudeSymlinks => checks::claude_symlinks::check(&root),
         Command::CheckBrokenSymlinks => checks::broken_symlinks::check(&root),
+        Command::CheckSqliteMigrations => checks::sqlite_migrations::check(&root),
+        Command::UpdateSqliteMigrationChecksums => checks::sqlite_migrations::update(&root),
         Command::CheckSecrets => checks::secrets::check(&root),
         Command::CheckVersionSync => checks::version_sync::check(&root),
+        Command::CheckOpenapiDrift => checks::openapi_drift::check(&root),
+        Command::CheckAndroidApiContract => checks::android_api_contract::check(&root),
+        Command::PrePush(args) => pre_push::run(&root, args),
         Command::CheckReleaseVersions {
             base,
             head,
@@ -118,9 +144,19 @@ fn main() -> Result<()> {
             checks::release_versions::print_plans(&plans, json)?;
             Ok(())
         }
-        Command::BumpVersion { component, level } => {
-            Ok(checks::release_versions::bump(&root, &component, level)?)
-        }
+        Command::BumpVersion {
+            component,
+            level,
+            skip_changelog,
+        } => Ok(checks::release_versions::bump(
+            &root,
+            &component,
+            level,
+            skip_changelog,
+        )?),
+        Command::RegenChangelog { component, output } => Ok(
+            checks::release_versions::regen_changelog(&root, &component, &output)?,
+        ),
         Command::BenchEmbed {
             corpus,
             axon_bin,
@@ -146,3 +182,4 @@ fn main() -> Result<()> {
 
 mod bench_embed;
 mod checks;
+mod pre_push;

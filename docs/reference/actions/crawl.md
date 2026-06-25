@@ -58,7 +58,7 @@ All global flags apply. Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wait <bool>` | `false` | `false`: enqueue crawl jobs and return. `true`: run crawl inline and block. |
-| `--max-pages <n>` | `0` | Page cap (`0` = uncapped). |
+| `--max-pages <n>` | `2000` | Page cap. Set `0` explicitly for uncapped. |
 | `--max-depth <n>` | `10` | Maximum crawl depth. |
 | `--render-mode <mode>` | `auto-switch` | `http`, `chrome`, `auto-switch`. |
 | `--include-subdomains <bool>` | `false` | Include subdomains under the same parent domain. |
@@ -76,6 +76,17 @@ auto-embedding the crawl output, so sitemap-added pages are visible to the
 dependent embed job. Use `--wait true` to wait for the submitted crawl and its
 explicit dependent embed job, if one is created. Pass `--skip-embed` to crawl
 without indexing the output.
+
+Uncapped crawls (`--max-pages 0`) of a root or single-segment path (e.g.
+`https://site/` or `https://site/docs`) are rejected unless you also provide an
+explicit `--budget` or `--url-whitelist` scope. A deeper start URL (≥2 path
+segments) is auto-scoped to its path subtree, so an uncapped crawl of it is
+allowed and bounded to that subtree. Set `AXON_ALLOW_UNBOUNDED_BROAD_CRAWL=true`
+only for intentional dangerous runs of an unscoped root.
+During any crawl, Axon asks Spider to shut down if process RSS reaches
+`AXON_CRAWL_MEMORY_ABORT_PERCENT` of the host/cgroup memory limit — the lower of
+the two, so inside a container the denominator is the cgroup cap, not host RAM
+(default `85`; `0` disables). Linux-only: the guard never trips on other platforms.
 
 ## Examples
 

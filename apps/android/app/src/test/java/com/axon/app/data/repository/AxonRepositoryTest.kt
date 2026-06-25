@@ -63,55 +63,55 @@ class AxonRepositoryTest {
         server.shutdown()
     }
 
-    // ── withToken guard ───────────────────────────────────────────────────────
+    // ── withAuth guard ───────────────────────────────────────────────────────
 
     /**
-     * The `withToken` helper is private+inline. We exercise it by constructing
+     * The `withAuth` helper is private+inline. We exercise it by constructing
      * a repository whose client has no token and asserting every public suspend
      * function returns failure with the expected message.
      */
     @Test
-    fun `ask returns failure with no-token message when client has no token`() = runBlocking {
+    fun `ask returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.ask("what is axon?")
         assertTrue(result.isFailure)
         val msg = result.exceptionOrNull()?.message.orEmpty()
         assertTrue(
-            "expected no-token message, got: $msg",
-            msg.contains("No API token configured"),
+            "expected no-auth message, got: $msg",
+            msg.contains("Axon is not authenticated"),
         )
     }
 
     @Test
-    fun `query returns failure with no-token message when client has no token`() = runBlocking {
+    fun `query returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.query("axon")
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("No API token configured"))
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Axon is not authenticated"))
     }
 
     @Test
-    fun `sources returns failure with no-token message when client has no token`() = runBlocking {
+    fun `sources returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.sources()
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("No API token configured"))
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Axon is not authenticated"))
     }
 
     @Test
-    fun `scrape returns failure with no-token message when client has no token`() = runBlocking {
+    fun `scrape returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.scrape("https://example.com")
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("No API token configured"))
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Axon is not authenticated"))
     }
 
     @Test
-    fun `crawlSubmit returns failure with no-token message when client has no token`() = runBlocking {
+    fun `crawlSubmit returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.crawlSubmit("https://example.com")
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("No API token configured"))
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Axon is not authenticated"))
     }
 
     // ── ask happy path ────────────────────────────────────────────────────────
@@ -202,6 +202,29 @@ class AxonRepositoryTest {
         val result = repo.sources()
         assertTrue(result.isSuccess)
         assertTrue(result.getOrThrow().isEmpty())
+    }
+
+    @Test
+    fun `sources forwards domain and cursor query parameters`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"count":0,"limit":50,"offset":0,"urls":[]}""")
+                .addHeader("Content-Type", "application/json"),
+        )
+
+        val result = repo.sources(
+            limit = 10_000,
+            offset = 25,
+            domain = "docs.example.com",
+            cursor = "https://docs.example.com/page?x=1",
+        )
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals(
+            "/v1/sources?limit=10000&offset=25&domain=docs.example.com&cursor=https%3A%2F%2Fdocs.example.com%2Fpage%3Fx%3D1",
+            request.path,
+        )
     }
 
     // ── crawlStatus ───────────────────────────────────────────────────────────
@@ -328,11 +351,11 @@ class AxonRepositoryTest {
         )
         repo.retrieve("https://c.com")
         val request = server.takeRequest()
-        // Default DEFAULT_RETRIEVE_TOKEN_BUDGET = 64_000 — verify it lands on the wire.
+        // Default DEFAULT_RETRIEVE_TOKEN_BUDGET matches the server's inline document default.
         val body = request.body.readUtf8()
         assertTrue(
-            "expected token_budget=64000 in body, got: $body",
-            body.contains("\"token_budget\":64000") || body.contains("\"token_budget\": 64000"),
+            "expected token_budget=10000 in body, got: $body",
+            body.contains("\"token_budget\":10000") || body.contains("\"token_budget\": 10000"),
         )
     }
 
@@ -365,11 +388,26 @@ class AxonRepositoryTest {
     }
 
     @Test
-    fun `retrieve returns failure with no-token message when client has no token`() = runBlocking {
+    fun `retrieve returns failure with no-auth message when client has no token`() = runBlocking {
         val emptyRepo = repoWithNoToken()
         val result = emptyRepo.retrieve("https://x.com")
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("No API token configured"))
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Axon is not authenticated"))
+    }
+
+    @Test
+    fun `domainIndexed forwards exact domain query URL`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"domain":"docs.example.com","indexed":true}""")
+                .addHeader("Content-Type", "application/json"),
+        )
+
+        val result = repo.domainIndexed("docs.example.com")
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals("/v1/domains?domain=docs.example.com", request.path)
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

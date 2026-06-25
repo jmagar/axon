@@ -23,7 +23,6 @@ fun AuroraStatusDot(state: DotState, size: Dp = 7.dp, modifier: Modifier = Modif
         tone = dotTone(state),
         modifier = modifier,
         label = null,
-        dotOnly = true,
         dotSize = size,
         pulse = state == DotState.Running,
     )

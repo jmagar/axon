@@ -134,7 +134,9 @@ fun AskScreen(
     }
 
     LaunchedEffect(chatItems.size) {
-        if (chatItems.isNotEmpty()) listState.animateScrollToItem(chatItems.size - 1)
+        if (chatItems.isNotEmpty()) {
+            listState.animateScrollToItem(chatItems.lastIndex, Int.MAX_VALUE / 2)
+        }
     }
     // Follow the streamed answer as it grows, pinned to the bottom unless the
     // user has scrolled away to read earlier turns.
@@ -155,9 +157,9 @@ fun AskScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
-                        .fillMaxWidth(0.90f)
-                        .widthIn(max = 366.dp),
-                    contentPadding = PaddingValues(start = 8.dp, top = 12.dp, end = 8.dp, bottom = 132.dp),
+                        .fillMaxWidth()
+                        .widthIn(max = 460.dp),
+                    contentPadding = PaddingValues(start = 6.dp, top = 12.dp, end = 6.dp, bottom = 148.dp),
                 ) {
                     when {
                         chatItems.isNotEmpty() -> {
@@ -174,7 +176,7 @@ fun AskScreen(
                                     is ChatItem.AxonMsg -> prev !is ChatItem.AxonMsg
                                     else -> true
                                 }
-                                val topGap = if (index == 0) 0.dp else if (isSenderStart) 11.dp else 4.dp
+                                val topGap = if (index == 0) 0.dp else if (isSenderStart) 14.dp else 6.dp
                                 // New bubbles fade + slide in once; streaming
                                 // updates reuse the stable key so they don't replay.
                                 Box(
@@ -256,7 +258,7 @@ fun AskScreen(
                     value = input,
                     onValueChange = { input = it },
                     loading = uiState is AskUiState.Loading || uiState is AskUiState.Streaming,
-                    placeholder = if (mode == ConversationMode.Chat) "Chat with Axon…" else "Ask a follow-up…",
+                    placeholder = if (chatItems.isEmpty() && historyPreview.isEmpty()) "Ask Axon…" else if (mode == ConversationMode.Chat) "Chat with Axon…" else "Ask a follow-up…",
                     mode = mode,
                     onModeChange = vm::setMode,
                     attachments = attachments,
@@ -264,11 +266,11 @@ fun AskScreen(
                     onRemoveAttachment = { idx -> attachments = attachments.filterIndexed { i, _ -> i != idx } },
                     onStop = { vm.stopGeneration() },
                     modifier = Modifier
-                        .fillMaxWidth(0.92f)
-                        .widthIn(max = 420.dp)
+                        .fillMaxWidth()
+                        .widthIn(max = 460.dp)
                         .imePadding()
                         .navigationBarsPadding()
-                        .padding(horizontal = 0.dp, vertical = 9.dp),
+                        .padding(horizontal = 6.dp, vertical = 12.dp),
                     onSend = {
                         vm.ask(input, attachment = combinedAttachmentText(attachments))
                         input = ""

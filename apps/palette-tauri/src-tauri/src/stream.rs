@@ -41,6 +41,12 @@ enum PaletteStreamEvent {
         request_id: String,
         text: String,
     },
+    Activity {
+        request_id: String,
+        label: String,
+        detail: Option<String>,
+        kind: Option<String>,
+    },
     Done {
         request_id: String,
         answer: Option<String>,
@@ -56,6 +62,7 @@ pub(crate) async fn axon_http_stream_request(
     app: AppHandle,
     window: tauri::Window,
     stream_client: tauri::State<'_, StreamClient>,
+    oauth_state: tauri::State<'_, crate::oauth::OauthState>,
     request: PaletteStreamRequest,
 ) -> Result<(), String> {
     if !matches!(request.path.as_str(), "/v1/ask/stream" | "/v1/chat/stream") {
@@ -74,27 +81,34 @@ pub(crate) async fn axon_http_stream_request(
         )
         .map_err(|err| err.to_string())?;
 
-    let mut builder = (*stream_client)
-        .client()
-        .post(url)
-        .header(reqwest::header::ACCEPT, "text/event-stream")
-        .json(&request.body);
-    if let Some(token) = settings
+    let client = (*stream_client).client();
+    let static_token = settings
         .token
         .as_deref()
         .map(str::trim)
-        .filter(|token| !token.is_empty())
-    {
-        builder = builder.bearer_auth(token).header("x-api-key", token);
-    }
-
-    let response = builder.send().await.map_err(|err| err.to_string())?;
+        .filter(|t| !t.is_empty());
+    let body = &request.body;
+    let make = |token: Option<&str>| {
+        let mut b = client
+            .post(&url)
+            .header(reqwest::header::ACCEPT, "text/event-stream")
+            .json(body);
+        if let Some(t) = token {
+            b = b.bearer_auth(t).header("x-api-key", t);
+        }
+        b
+    };
+    let response =
+        crate::oauth::send_with_reauth(&app, client, &base_url, static_token, &oauth_state, make)
+            .await?;
     if !response.status().is_success() {
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .unwrap_or_else(|err| format!("<failed to read body: {err}>"));
+        let text = crate::axon_bridge::read_limited_text_body(
+            response,
+            crate::axon_bridge::MAX_ARTIFACT_ERROR_MESSAGE_BYTES,
+        )
+        .await
+        .unwrap_or_default();
         return Err(format!("stream request failed with HTTP {status}: {text}"));
     }
 
@@ -122,7 +136,7 @@ pub(crate) async fn axon_http_stream_request(
                 message: message.clone(),
             },
         ) {
-            eprintln!("palette: failed to emit stream error event: {err}");
+            crate::diag::warn(&format!("failed to emit stream error event: {err}"));
         }
         return Err(message);
     }
@@ -179,7 +193,9 @@ fn handle_palette_sse_line(
             let text = match value.get("text").and_then(|t| t.as_str()) {
                 Some(t) => t,
                 None => {
-                    eprintln!("palette: delta SSE event missing 'text' field — data: {data}");
+                    crate::diag::warn(&format!(
+                        "delta SSE event missing 'text' field — data: {data}"
+                    ));
                     ""
                 }
             };
@@ -189,6 +205,51 @@ fn handle_palette_sse_line(
                     PaletteStreamEvent::Delta {
                         request_id: request_id.to_string(),
                         text: text.to_string(),
+                    },
+                )
+                .map_err(|err| err.to_string())?;
+            Ok(false)
+        }
+        Some("meta") => {
+            let phase = value
+                .get("phase")
+                .and_then(|phase| phase.as_str())
+                .unwrap_or("working");
+            window
+                .emit(
+                    "palette://stream",
+                    PaletteStreamEvent::Activity {
+                        request_id: request_id.to_string(),
+                        label: sentence_label(phase),
+                        detail: None,
+                        kind: Some("thinking".to_string()),
+                    },
+                )
+                .map_err(|err| err.to_string())?;
+            Ok(false)
+        }
+        Some("activity") => {
+            let label = value
+                .get("label")
+                .and_then(|label| label.as_str())
+                .unwrap_or("Working")
+                .to_string();
+            let detail = value
+                .get("detail")
+                .and_then(|detail| detail.as_str())
+                .map(str::to_string);
+            let kind = value
+                .get("kind")
+                .and_then(|kind| kind.as_str())
+                .map(str::to_string);
+            window
+                .emit(
+                    "palette://stream",
+                    PaletteStreamEvent::Activity {
+                        request_id: request_id.to_string(),
+                        label,
+                        detail,
+                        kind,
                     },
                 )
                 .map_err(|err| err.to_string())?;
@@ -225,11 +286,33 @@ fn handle_palette_sse_line(
             Ok(true)
         }
         Some(unknown) => {
-            eprintln!("palette: unknown SSE event type '{unknown}' — ignoring");
+            crate::diag::warn(&format!("unknown SSE event type '{unknown}' — ignoring"));
             Ok(false)
         }
         None => Ok(false),
     }
+}
+
+fn sentence_label(value: &str) -> String {
+    let mut words = value
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return "Working".to_string();
+    }
+    let first = words.remove(0);
+    let mut label = String::new();
+    let mut chars = first.chars();
+    if let Some(ch) = chars.next() {
+        label.extend(ch.to_uppercase());
+        label.push_str(chars.as_str());
+    }
+    for word in words {
+        label.push(' ');
+        label.push_str(word);
+    }
+    label
 }
 
 fn done_answer_from_value(value: &serde_json::Value) -> Option<String> {

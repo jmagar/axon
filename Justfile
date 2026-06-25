@@ -45,7 +45,10 @@ web-build:
 
 web-check:
     cd apps/web && npm run lint
-    cd apps/web && npm run openapi:check
+    cargo xtask check-openapi-drift
+
+openapi-check:
+    cargo xtask check-openapi-drift
 
 # Package the Chrome extension into dist/axon-page-scraper-<version>.zip
 package-extension:
@@ -59,6 +62,11 @@ fmt-check:
 
 clippy:
     {{rust_dev_env}}; cargo clippy --all-targets --locked -- -D warnings
+
+# Fail on unused crate dependencies (keeps per-crate manifests honest after the
+# workspace extraction). Graceful no-op when cargo-machete is not installed.
+machete:
+    @if command -v cargo-machete >/dev/null 2>&1; then cargo machete; else echo "skip: cargo-machete not installed (cargo install cargo-machete)"; fi
 
 build:
     {{rust_dev_env}}; CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}" cargo build --profile {{local_release_profile}} --locked
@@ -90,10 +98,18 @@ link-bin profile=local_release_profile:
       echo "$profile binary not found at $AXON_BIN — run 'just build' first" >&2
       exit 1
     fi
+    variant="$profile"
+    if [ "$profile" = "release-fast" ]; then
+      variant="fast-release"
+    fi
+    mkdir -p bin
+    cp -f "$AXON_BIN" "bin/axon-$variant"
+    chmod 755 "bin/axon-$variant"
     mkdir -p ~/.local/bin
     ln -sf "$AXON_BIN" ~/.local/bin/axon
     systemctl --user restart axon-mcp 2>/dev/null || true
     echo "axon → $AXON_BIN"
+    echo "artifact → bin/axon-$variant"
 
 install:
     {{rust_dev_env}}; CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-16}" cargo build --profile {{local_release_profile}} --locked
@@ -289,6 +305,7 @@ verify:
     just web-check
     just fmt-check
     just clippy
+    just machete
     just check
     just test
 

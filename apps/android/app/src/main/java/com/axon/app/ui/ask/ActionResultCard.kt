@@ -40,7 +40,7 @@ fun ActionResultCard(
     val colors = AxonTheme.colors
     val tone = colors.toneOf(if (item.op.isAsync) AxonTone.Orange else AxonTone.Cyan)
     val shape = RoundedCornerShape(10.dp)
-    val bodyText = humanizeJsonFragmentText(item.body)
+    val bodyText = compactActionResultBody(humanizeJsonFragmentText(item.body))
 
     Column(
         modifier = modifier
@@ -67,16 +67,22 @@ fun ActionResultCard(
                 Icon(item.op.icon, contentDescription = null, tint = tone.fg.copy(alpha = 0.90f), modifier = Modifier.size(18.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    item.op.label,
-                    color = colors.textPrimary.copy(alpha = 0.92f),
-                    fontSize = 16.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = AxonTheme.fonts.display,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Text(
+                        item.op.label,
+                        color = colors.textPrimary.copy(alpha = 0.92f),
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = AxonTheme.fonts.display,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    ResultStatusPill(item.status)
+                }
                 Text(
                     item.endpoint,
                     color = colors.textMuted.copy(alpha = 0.58f),
@@ -87,7 +93,6 @@ fun ActionResultCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            ResultStatusPill(item.status)
         }
 
         FlowRow(
@@ -104,9 +109,51 @@ fun ActionResultCard(
             fontSize = 13.sp,
             lineHeight = 18.6.sp,
             fontFamily = AxonTheme.fonts.body,
-            maxLines = 10,
+            maxLines = ACTION_RESULT_BODY_MAX_LINES,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+private const val ACTION_RESULT_BODY_MAX_LINES = 4
+private const val ACTION_RESULT_BODY_MAX_CHARS = 140
+
+internal fun compactActionResultBody(
+    text: String,
+    maxLines: Int = ACTION_RESULT_BODY_MAX_LINES,
+    maxChars: Int = ACTION_RESULT_BODY_MAX_CHARS,
+): String {
+    val normalized = text.trim()
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+    if (normalized.isBlank()) return normalized
+
+    var truncated = false
+    val lineLimited = normalized
+        .lines()
+        .let { lines ->
+            if (lines.size > maxLines) {
+                truncated = true
+                lines.take(maxLines).joinToString("\n")
+            } else {
+                normalized
+            }
+        }
+    val charLimited = if (lineLimited.length > maxChars) {
+        truncated = true
+        val cut = lineLimited
+            .take(maxChars)
+            .replace(Regex("\\s+\\S*$"), "")
+            .ifBlank { lineLimited.take(maxChars) }
+        cut.trimEnd()
+    } else {
+        lineLimited.trimEnd()
+    }
+
+    return if (truncated) {
+        "$charLimited\n...truncated in chat"
+    } else {
+        charLimited
     }
 }
 
@@ -124,17 +171,15 @@ private fun ResultStatusPill(status: String) {
         ResultStatusKind.Warning -> Icons.Rounded.Pending
         ResultStatusKind.Error -> Icons.Rounded.Error
     }
-    Row(
+    Box(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(colors.tint(tintColor, 8, colors.panelStrong))
             .border(1.dp, colors.tint(tintColor, 18, colors.panelStrong), RoundedCornerShape(999.dp))
-            .padding(horizontal = 9.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+            .size(22.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tintColor.copy(alpha = 0.86f), modifier = Modifier.size(12.dp))
-        Text(status, color = tintColor.copy(alpha = 0.90f), fontSize = 10.6.sp, fontWeight = FontWeight.SemiBold, fontFamily = AxonTheme.fonts.mono)
+        Icon(icon, contentDescription = status, tint = tintColor.copy(alpha = 0.90f), modifier = Modifier.size(13.dp))
     }
 }
 

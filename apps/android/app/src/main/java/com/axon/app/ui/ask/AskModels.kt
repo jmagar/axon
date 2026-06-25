@@ -15,6 +15,10 @@ internal const val MAX_FOLLOW_UP_TURNS = 6
 internal const val STREAM_UI_FLUSH_MS = 50L
 private const val CHAT_PREVIEW_CHARS = 2_000
 internal const val HIT_SNIPPET_CHARS = 220
+internal const val COMPACT_HIT_LIMIT = 2
+internal const val COMPACT_HIT_TITLE_CHARS = 92
+internal const val COMPACT_HIT_URL_CHARS = 88
+internal const val COMPACT_HIT_SNIPPET_CHARS = 110
 
 /**
  * Build the effective query for the server by prepending the last
@@ -29,11 +33,46 @@ internal fun buildFollowUpQuery(prior: List<AskTurn>, question: String): String 
     return "$rendered\n\n$question"
 }
 
+internal fun operationContextQuestion(opLabel: String): String =
+    "Axon mobile operation: $opLabel"
+
+internal fun operationContextAnswer(
+    opLabel: String,
+    target: String,
+    status: String,
+    endpoint: String,
+    jobId: String? = null,
+    summary: String? = null,
+    detail: String? = null,
+): String {
+    val lines = mutableListOf(
+        "Operation: $opLabel",
+        "Target: $target",
+        "Status: $status",
+        "Endpoint: $endpoint",
+        "Agent instruction: This content/job was produced by Axon. When answering follow-up questions about it, use the Axon knowledge base and load the axon or axon:using-axon skill if available.",
+    )
+    jobId?.takeIf { it.isNotBlank() }?.let { lines += "Job ID: $it" }
+    summary?.takeIf { it.isNotBlank() }?.let { lines += "Summary: $it" }
+    detail?.takeIf { it.isNotBlank() }?.let { lines += "Detail: $it" }
+    return lines.joinToString("\n")
+}
+
 internal fun resolvedDoneAnswer(doneAnswer: String, accumulatedAnswer: String): String =
     doneAnswer.ifBlank { accumulatedAnswer }
 
 internal fun previewText(value: String, limit: Int = CHAT_PREVIEW_CHARS): String =
     if (value.length <= limit) value else value.take(limit).trimEnd() + "\n\n…truncated in chat"
+
+internal fun compactSingleLine(value: String, limit: Int): String {
+    val oneLine = value.trim().replace(Regex("\\s+"), " ")
+    if (oneLine.length <= limit) return oneLine
+    val cut = oneLine.take(limit).trimEnd()
+    val wordBoundaryCut = cut.substringBeforeLast(" ", missingDelimiterValue = cut)
+        .takeIf { it.length >= limit / 2 }
+        ?: cut
+    return wordBoundaryCut + "..."
+}
 
 sealed interface AskUiState {
     data object Idle : AskUiState
@@ -87,7 +126,7 @@ sealed interface ChatItem {
         val pageCount: Int? = null,
         val chunkCount: Int? = null,
         val status: String = "202 Accepted",
-        val endpoint: String = "POST /v1/actions",
+        val endpoint: String = "POST /v1/{operation}",
         val detail: String = "Job submitted. Track it from Jobs.",
     ) : ChatItem
 }

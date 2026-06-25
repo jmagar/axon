@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -30,32 +31,30 @@ import androidx.compose.ui.unit.sp
 import com.axon.app.data.repository.JobUi
 import com.axon.app.data.repository.RecentJob
 import com.axon.app.data.repository.WatchUi
+import com.axon.app.ui.common.AppNoticeBanner
+import com.axon.app.ui.common.NoticeTone
 import com.axon.app.ui.common.humanizeJsonFragmentText
 import com.axon.app.ui.theme.AxonTheme
 import com.axon.app.ui.theme.tint
-import tv.tootie.aurora.components.AuroraProgress
-import tv.tootie.aurora.components.AuroraProgressSize
-import tv.tootie.aurora.components.AuroraProgressVariant
-import tv.tootie.aurora.components.AuroraStatusIndicator
-import tv.tootie.aurora.components.AuroraStatusTone
 
 @Composable
-internal fun JobDrillRow(job: JobUi, modifier: Modifier = Modifier) {
+internal fun JobDrillRow(job: JobUi, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val colors = AxonTheme.colors
     val tone = jobTone(job.kind)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 18.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            AuroraStatusIndicator(tone = statusIndicatorTone(job.status), dotOnly = true, dotSize = 7.dp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(8.dp).background(statusTone(job.status, tone), RoundedCornerShape(999.dp)))
             Text(
                 shortTarget(jobDisplayTarget(job)),
                 color = colors.textPrimary,
-                fontSize = 12.4.sp,
-                lineHeight = 15.8.sp,
+                fontSize = 13.2.sp,
+                lineHeight = 17.sp,
                 fontFamily = AxonTheme.fonts.mono,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -64,34 +63,37 @@ internal fun JobDrillRow(job: JobUi, modifier: Modifier = Modifier) {
             Text(
                 statusLabel(job.status),
                 color = colors.textMuted.copy(alpha = 0.84f),
-                fontSize = 10.2.sp,
-                lineHeight = 12.8.sp,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
                 fontFamily = AxonTheme.fonts.mono,
             )
         }
-        if (job.status.lowercase() !in setOf("idle")) {
-            ProgressBar(progressForJob(job), tone, modifier = Modifier.width(166.dp).padding(start = 14.dp))
+        if (isActiveJobStatus(job.status) || isCompletedJobStatus(job.status)) {
+            ProgressBar(progressForJob(job), tone, modifier = Modifier.width(184.dp).padding(start = 16.dp))
+        }
+        coverageSummary(job)?.let { summary ->
+            CoverageChip(summary, tone, modifier = Modifier.padding(start = 16.dp))
         }
         Text(
             jobProgressLabel(job),
             color = colors.textMuted.copy(alpha = 0.78f),
-            fontSize = 10.5.sp,
-            lineHeight = 13.4.sp,
+            fontSize = 11.4.sp,
+            lineHeight = 15.sp,
             fontFamily = AxonTheme.fonts.mono,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 14.dp),
+            modifier = Modifier.padding(start = 16.dp),
         )
         job.errorText?.takeIf { it.isNotBlank() }?.let { error ->
             Text(
                 humanizeJsonFragmentText(error),
                 color = colors.error,
-                fontSize = 10.5.sp,
-                lineHeight = 13.4.sp,
+                fontSize = 11.4.sp,
+                lineHeight = 15.sp,
                 fontFamily = AxonTheme.fonts.body,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 14.dp),
+                modifier = Modifier.padding(start = 16.dp),
             )
         }
         Box(
@@ -135,11 +137,7 @@ internal fun WatchDrillRow(watch: WatchUi, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AuroraStatusIndicator(
-                tone = if (watch.enabled) AuroraStatusTone.Online else AuroraStatusTone.Offline,
-                dotOnly = true,
-                dotSize = 8.dp,
-            )
+            Box(Modifier.size(8.dp).background(tone, RoundedCornerShape(999.dp)))
             Text(
                 watch.name,
                 color = colors.textPrimary,
@@ -241,7 +239,10 @@ internal fun ActiveJobCard(job: JobUi) {
             RunningDots(tone)
         }
 
-        ProgressBar(progressForStatus(job.status), tone)
+        ProgressBar(progressForJob(job), tone)
+        coverageSummary(job)?.let { summary ->
+            CoverageChip(summary, tone)
+        }
 
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(
@@ -251,13 +252,33 @@ internal fun ActiveJobCard(job: JobUi) {
                 fontFamily = AxonTheme.fonts.mono,
             )
             Text(
-                "${(progressForStatus(job.status) * 100).toInt()}%",
+                pagesCrawledMetric(job) ?: "${(progressForJob(job) * 100).toInt()}%",
                 color = colors.textMuted,
                 fontSize = 11.sp,
                 fontFamily = AxonTheme.fonts.mono,
             )
         }
     }
+}
+
+@Composable
+internal fun CoverageChip(text: String, tone: Color, modifier: Modifier = Modifier) {
+    val colors = AxonTheme.colors
+    Text(
+        text,
+        color = colors.tint(tone, 86, colors.textPrimary),
+        fontSize = 10.6.sp,
+        lineHeight = 13.sp,
+        fontFamily = AxonTheme.fonts.body,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(colors.tint(tone, 13, colors.control), RoundedCornerShape(999.dp))
+            .border(1.dp, colors.tint(tone, 28, colors.control), RoundedCornerShape(999.dp))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -325,7 +346,11 @@ internal fun JobIconTile(icon: ImageVector, tone: Color, size: Int = 38) {
 internal fun RunningDots(tone: Color) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(3) {
-            AuroraStatusIndicator(tone = AuroraStatusTone.Syncing, dotOnly = true, dotSize = 5.dp)
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .background(tone, RoundedCornerShape(999.dp)),
+            )
         }
     }
 }
@@ -337,34 +362,22 @@ internal fun ProgressBar(progress: Float, tone: Color) {
 
 @Composable
 internal fun ProgressBar(progress: Float, tone: Color, modifier: Modifier) {
-    AuroraProgress(
-        value = progress.coerceIn(0f, 1f),
-        variant = progressVariantForTone(tone),
-        size = AuroraProgressSize.Compact,
-        modifier = modifier,
-        trackColor = AxonTheme.colors.borderDefault.copy(alpha = 0.28f),
-    )
-}
-
-@Composable
-private fun progressVariantForTone(tone: Color): AuroraProgressVariant {
     val colors = AxonTheme.colors
-    return when (tone) {
-        colors.success -> AuroraProgressVariant.Success
-        colors.warn -> AuroraProgressVariant.Warn
-        colors.error -> AuroraProgressVariant.Error
-        colors.accentPink -> AuroraProgressVariant.Rose
-        else -> AuroraProgressVariant.Default
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = modifier
+            .height(3.dp)
+            .background(colors.borderDefault.copy(alpha = 0.28f), shape)
+            .padding(0.7.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress.coerceIn(0.02f, 1f))
+                .height(2.dp)
+                .clip(shape)
+                .background(Brush.horizontalGradient(listOf(AxonTheme.colors.tint(tone, 55, colors.pageBg), tone))),
+        )
     }
-}
-
-private fun statusIndicatorTone(status: String): AuroraStatusTone = when (status.lowercase()) {
-    "pending", "queued" -> AuroraStatusTone.Queued
-    "running", "processing", "in_progress" -> AuroraStatusTone.Syncing
-    "done", "completed", "success", "succeeded" -> AuroraStatusTone.Online
-    "failed", "error" -> AuroraStatusTone.Error
-    "cancelled", "canceled", "idle" -> AuroraStatusTone.Offline
-    else -> AuroraStatusTone.Degraded
 }
 
 @Composable
@@ -373,9 +386,9 @@ internal fun EmptyJobsCard(title: String, subtitle: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.control, RoundedCornerShape(13.dp))
-            .border(1.dp, colors.borderDefault, RoundedCornerShape(13.dp))
-            .padding(16.dp),
+            .background(colors.control.copy(alpha = 0.025f), RoundedCornerShape(9.dp))
+            .border(1.dp, colors.borderDefault.copy(alpha = 0.07f), RoundedCornerShape(9.dp))
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Text(title, color = colors.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = AxonTheme.fonts.display)
@@ -385,16 +398,9 @@ internal fun EmptyJobsCard(title: String, subtitle: String) {
 
 @Composable
 internal fun JobsErrorCard(message: String) {
-    val colors = AxonTheme.colors
-    Text(
-        humanizeJsonFragmentText(message),
-        color = colors.error,
-        fontSize = 12.sp,
-        fontFamily = AxonTheme.fonts.body,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.control, RoundedCornerShape(13.dp))
-            .border(1.dp, colors.error.copy(alpha = 0.45f), RoundedCornerShape(13.dp))
-            .padding(13.dp),
+    AppNoticeBanner(
+        message = humanizeJsonFragmentText(message),
+        tone = NoticeTone.Error,
+        modifier = Modifier.fillMaxWidth(),
     )
 }

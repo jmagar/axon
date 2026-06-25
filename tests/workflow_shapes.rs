@@ -154,7 +154,7 @@ fn ci_runs_release_version_gate_before_merge() {
 #[test]
 fn ci_xtask_compiling_jobs_checkout_release_manifest() {
     let workflow = include_str!("../.github/workflows/ci.yml");
-    for job_name in ["check", "msrv", "clippy", "test", "windows-check"] {
+    for job_name in ["clippy", "test", "windows-check"] {
         let job = workflow_job_block(workflow, job_name);
         if job.contains("cargo check --workspace --all-targets")
             || job.contains("cargo clippy --workspace --all-targets")
@@ -177,6 +177,122 @@ fn ci_xtask_compiling_jobs_checkout_release_manifest() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn windows_xtask_check_avoids_duplicate_repository_scans() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    let job = workflow_job_block(workflow, "windows-check");
+
+    assert!(
+        job.contains("timeout-minutes: 40"),
+        "windows-check must have a bounded timeout because Windows runners can hang on repo scans"
+    );
+    assert!(
+        job.contains("cargo check -p xtask --locked")
+            && job.contains("cargo test -p xtask --locked")
+            && job.contains("cargo xtask check-mcp-http"),
+        "windows-check should keep the Windows-specific xtask compile/test coverage"
+    );
+    assert!(
+        !job.contains("cargo xtask check-no-mod-rs"),
+        "check-no-mod-rs already runs in the Linux no-mod-rs job and has hung on Windows"
+    );
+}
+
+#[test]
+fn rest_api_parity_checkout_covers_openapi_drift_inputs() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    let job = workflow_job_block(workflow, "rest-api-parity");
+
+    assert!(
+        job.contains("cargo xtask check-openapi-drift"),
+        "rest-api-parity must run the generated OpenAPI drift guard"
+    );
+
+    for path in ["apps/web", "apps/palette-tauri", "apps/android"] {
+        assert!(
+            sparse_checkout_covers(job, path),
+            "rest-api-parity runs check-openapi-drift and must checkout {path}"
+        );
+    }
+}
+
+#[test]
+fn ci_runs_android_generated_openapi_client_tests() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    let job = workflow_job_block(workflow, "android-openapi-client");
+
+    assert!(
+        sparse_checkout_covers(job, "apps/android"),
+        "android OpenAPI client verification must checkout apps/android"
+    );
+    assert!(
+        sparse_checkout_covers(job, "apps/web/openapi"),
+        "android OpenAPI client verification must checkout the generated OpenAPI spec"
+    );
+    assert!(
+        job.contains(":app:verifyOpenApiGeneratedClient"),
+        "CI must run the Android generated OpenAPI client verification task"
+    );
+    assert!(
+        workflow.contains(
+            "AURORA_REF: ${{ vars.AURORA_REF || '8748eb6434b3bbe4c75f25bfff71950b7efc051b' }}"
+        ) && job.contains("repository: ${{ env.AURORA_REPO }}")
+            && job.contains("ref: ${{ env.AURORA_REF }}")
+            && job.contains("AXON_AURORA_ANDROID_PATH"),
+        "android OpenAPI client verification must pin and provide the Aurora composite build path"
+    );
+}
+
+#[test]
+fn android_ci_setup_does_not_install_unused_emulator_packages() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    let setup = workflow
+        .split("      - name: Set up Android SDK")
+        .nth(1)
+        .and_then(|rest| rest.split("      - name: Run Android unit tests").next())
+        .expect("android SDK setup block exists");
+
+    assert!(
+        setup.contains("uses: android-actions/setup-android@v3"),
+        "android job must set up SDK licenses/tooling before Gradle runs"
+    );
+    assert!(
+        setup.contains("packages: \"\""),
+        "android job should not install default tools/emulator packages for unit/lint/APK builds"
+    );
+    assert!(
+        !setup.contains("connected")
+            && !setup.contains("sdkmanager emulator")
+            && !setup.contains("avdmanager"),
+        "android job should not require emulator setup unless connected tests are added"
+    );
+}
+
+#[test]
+fn lefthook_pre_push_uses_path_aware_router() {
+    let lefthook = include_str!("../lefthook.yml");
+    let pre_push = lefthook
+        .split("pre-push:")
+        .nth(1)
+        .expect("pre-push section exists");
+
+    assert!(
+        pre_push.contains("cargo xtask pre-push"),
+        "pre-push should delegate to the path-aware router"
+    );
+    for always_on_heavy_command in [
+        "npm --prefix apps/web run build",
+        "cargo xtask check-openapi-drift",
+        "cargo clippy --workspace --all-targets",
+        "cargo nextest run --workspace",
+    ] {
+        assert!(
+            !pre_push.contains(always_on_heavy_command),
+            "{always_on_heavy_command} must be selected by cargo xtask pre-push, not always run by lefthook"
+        );
     }
 }
 
@@ -232,6 +348,130 @@ fn auto_tag_uses_validated_xtask_release_plan() {
             "auto-tag CI polling must constrain {required}"
         );
     }
+}
+
+#[test]
+fn ci_has_changed_path_classifier_and_stable_gate() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    assert!(
+        workflow.contains("changes:"),
+        "CI must define a changes job"
+    );
+    assert!(
+        workflow.contains("scripts/ci/changed_paths.py"),
+        "CI must use the tested changed path classifier"
+    );
+    assert!(workflow.contains("ci-gate:"), "CI must expose ci-gate");
+    assert!(
+        !workflow.contains("production-gate:"),
+        "production-gate should be replaced by ci-gate so branch protection has one clear required check"
+    );
+}
+
+#[test]
+fn ci_gate_covers_expensive_and_contract_jobs() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    let gate = workflow_job_block(workflow, "ci-gate");
+    for job in [
+        "mcp-transport-modes",
+        "version-sync",
+        "aurora-primitive-inventory",
+        "android",
+        "android-openapi-client",
+        "no-mod-rs",
+        "toml-fmt",
+        "lefthook-pre-commit-speed",
+        "palette-tauri",
+        "windows-check",
+        "windows-build",
+        "shell-completions-smoke",
+        "web-panel",
+        "mcp-schema-doc-sync",
+        "rest-api-parity",
+        "mcp-oauth-smoke",
+        "advisory-lock-policy",
+        "ban-skip-validation",
+        "monolith",
+        "fmt",
+        "clippy",
+        "test",
+        "security",
+        "mcp-smoke",
+        "rag-changes",
+        "live-rag-pr",
+        "release",
+        "release-smoke",
+    ] {
+        assert!(
+            gate.contains(&format!("- {job}")),
+            "ci-gate must need {job}"
+        );
+        assert!(
+            gate.contains(&format!("require_success_or_skipped {job}")),
+            "ci-gate must verify {job}"
+        );
+    }
+}
+
+#[test]
+fn compose_and_docker_workflows_use_changed_path_classifier() {
+    let compose = include_str!("../.github/workflows/compose-smoke.yml");
+    let docker = include_str!("../.github/workflows/docker-image.yml");
+    assert!(compose.contains("scripts/ci/changed_paths.py"));
+    assert!(compose.contains("AXON_CHANGED_PATHS"));
+    assert!(compose.contains("github.event.pull_request.base.sha"));
+    assert!(compose.contains("git show \"${{ github.event.pull_request.base.sha }}:$classifier\""));
+    assert!(compose.contains("python3 \"$AXON_CHANGED_PATHS\""));
+    assert!(compose.contains("needs.changes.outputs.compose == 'true'"));
+    assert!(compose.contains("needs.changes.outputs.docker == 'true'"));
+    assert!(compose.contains("compose-smoke-gate:"));
+    assert!(compose.contains("require_success_or_intentional_skip compose-config"));
+    assert!(compose.contains("require_success_or_intentional_skip image-build-smoke"));
+    assert!(docker.contains("scripts/ci/changed_paths.py"));
+    assert!(docker.contains("AXON_CHANGED_PATHS"));
+    assert!(docker.contains("python3 \"$AXON_CHANGED_PATHS\""));
+    assert!(docker.contains("needs.changes.outputs.docker == 'true'"));
+    assert!(docker.contains("startsWith(github.ref, 'refs/tags/v')"));
+}
+
+#[test]
+fn codeql_workflow_routes_language_matrix_by_changed_paths() {
+    let workflow = include_str!("../.github/workflows/codeql.yml");
+    assert!(workflow.contains("scripts/ci/changed_paths.py"));
+    assert!(workflow.contains("AXON_CHANGED_PATHS"));
+    assert!(workflow.contains("github.event.pull_request.base.sha"));
+    assert!(
+        workflow.contains("git show \"${{ github.event.pull_request.base.sha }}:$classifier\"")
+    );
+    assert!(workflow.contains("args.output.write_text"));
+    assert!(workflow.contains("python3 \"$AXON_CHANGED_PATHS\""));
+    assert!(
+        !workflow.contains("source changed-paths.out"),
+        "CodeQL must not source classifier output as shell"
+    );
+    assert!(workflow.contains("codeql_actions"));
+    assert!(workflow.contains("codeql_javascript_typescript"));
+    assert!(workflow.contains("codeql_python"));
+    assert!(workflow.contains("codeql_rust"));
+    assert!(workflow.contains("codeql_java_kotlin"));
+    assert!(workflow.contains("fromJson(needs.changes.outputs.matrix)"));
+    assert!(workflow.contains("codeql-gate:"));
+    assert!(workflow.contains("require_success_or_skipped analyze"));
+}
+
+#[test]
+fn ci_workflow_runs_changed_path_classifier_from_trusted_base_when_available() {
+    let workflow = include_str!("../.github/workflows/ci.yml");
+    assert!(workflow.contains("AXON_CHANGED_PATHS"));
+    assert!(workflow.contains("github.event.pull_request.base.sha"));
+    assert!(
+        workflow.contains("git show \"${{ github.event.pull_request.base.sha }}:$classifier\"")
+    );
+    assert!(workflow.contains("python3 \"$AXON_CHANGED_PATHS\""));
+    assert!(
+        !workflow.contains("python3 scripts/ci/changed_paths.py"),
+        "CI should call the prepared trusted classifier path"
+    );
 }
 
 fn workflow_job_block<'a>(workflow: &'a str, job_name: &str) -> &'a str {

@@ -13,13 +13,28 @@ import com.axon.app.data.repository.JobUi
 import com.axon.app.ui.theme.AxonTheme
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+internal val ACTIVE_JOB_STATUSES = setOf("pending", "queued", "running", "processing", "in_progress")
+internal val COMPLETED_JOB_STATUSES = setOf("done", "completed", "success", "succeeded")
+
+internal fun isActiveJobStatus(status: String): Boolean =
+    status.lowercase() in ACTIVE_JOB_STATUSES
+
+internal fun isCompletedJobStatus(status: String): Boolean =
+    status.lowercase() in COMPLETED_JOB_STATUSES
+
+internal fun shouldShowJobDetailProgress(status: String): Boolean =
+    isActiveJobStatus(status) || isCompletedJobStatus(status)
 
 internal fun jobDisplayTarget(job: JobUi): String =
     job.url ?: job.target ?: job.id.take(12)
@@ -33,33 +48,221 @@ internal fun progressForStatus(status: String): Float = when (status.lowercase()
 }
 
 internal fun progressForJob(job: JobUi): Float {
-    val fromResult = progressFromResult(job.resultJson)
-    return fromResult ?: progressForStatus(job.status)
+    if (isCompletedJobStatus(job.status)) return 1f
+    val fromProgress = lifecycleProgressFromProgress(job.progressJson)
+    return fromProgress
+        ?: lifecycleProgressFromCounters(job.progressJson)
+        ?: progressForStatus(job.status)
 }
 
-internal fun progressFromResult(result: JsonElement?): Float? {
+internal fun progressForJobDetail(job: JobUi): Float =
+    if (isCompletedJobStatus(job.status)) 1f else progressForJob(job)
+
+internal fun aggregateProgressForJobs(jobs: List<JobUi>): Float? {
+    var count = 0
+    var sum = 0f
+    for (job in jobs) {
+        if (!isActiveJobStatus(job.status)) continue
+        sum += progressForJob(job)
+        count++
+    }
+    if (count == 0) return null
+    return (sum / count).coerceIn(0.02f, 1f)
+}
+
+internal fun crawledPageUrlsFromResult(result: JsonElement?): List<String> {
+    val obj = result as? JsonObject ?: return emptyList()
+    val urls = linkedSetOf<String>()
+    fun visit(key: String?, element: JsonElement) {
+        when (element) {
+            is JsonArray -> {
+                if (key in crawlPageArrayKeys) {
+                    element.forEach { child -> pageUrlFromElement(child)?.let(urls::add) }
+                }
+            }
+            is JsonObject -> element.forEach { (childKey, child) -> visit(childKey, child) }
+            is JsonPrimitive -> Unit
+        }
+    }
+    visit(null, obj)
+    return urls.toList()
+}
+
+internal fun crawlManifestArtifactPath(result: JsonElement?): String? {
     val obj = result as? JsonObject ?: return null
-    val done = firstMetric(obj, "done", "fetched", "pages_crawled", "pages", "processed", "completed")
-    val total = firstMetric(obj, "total", "queued", "page_count", "pages_total", "expected", "count")
-    if (done == null || total == null || total <= 0L) return null
-    return (done.toFloat() / total.toFloat()).coerceIn(0.02f, 1f)
+    crawlManifestPathFromHandles(obj)?.let { return it }
+    val rawPath = firstString(obj, "manifest_path", "manifest", "output_dir", "worker_output_dir", "output_path", "worker_output_path")
+        ?: return null
+    return normalizeArtifactManifestPath(rawPath)
 }
 
-internal fun firstMetric(obj: JsonObject, vararg keys: String): Long? {
+internal fun parseCrawlManifestUrls(manifestJsonl: String): List<String> =
+    manifestJsonl
+        .lineSequence()
+        .mapNotNull { line ->
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) return@mapNotNull null
+            runCatching {
+                Json.parseToJsonElement(trimmed)
+                    .jsonObject["url"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.takeIf { it.isHttpUrl() }
+            }.getOrNull()
+        }
+        .distinct()
+        .toList()
+
+internal fun lifecycleProgressFromProgress(progress: JsonElement?): Float? {
+    val obj = progress as? JsonObject ?: return null
+    val value = obj["lifecycle_progress"]
+        ?.let { primitiveFloat(it) }
+        ?: obj["progress"]
+            ?.let { primitiveFloat(it) }
+        ?: return null
+    return if (value <= 0f) 0f else value.coerceIn(0.02f, 1f)
+}
+
+internal fun lifecycleProgressFromCounters(progress: JsonElement?): Float? {
+    val obj = progress as? JsonObject ?: return null
+    ratioMetric(obj, "pages_crawled", "pages_discovered")?.let { return it }
+    ratioMetric(obj, "docs_embedded", "docs_total")?.let { return it }
+    ratioMetric(obj, "docs_completed", "docs_total")?.let { return it }
+    ratioMetric(obj, "files_done", "files_total")?.let { return it }
+    ratioMetric(obj, "videos_done", "videos_total")?.let { return it }
+    ratioMetric(obj, "tasks_done", "tasks_total")?.let { return it }
+    return null
+}
+
+internal fun coverageSummary(job: JobUi): String? {
+    val result = job.resultJson as? JsonObject ?: return null
+    val summary = topLevelString(result, "coverage_summary")
+    val rawStatus = topLevelString(result, "coverage_status")?.lowercase()
+    val rawReason = topLevelString(result, "coverage_reason")?.lowercase()
+    val errors = topLevelMetric(result, "error_pages", "errors") ?: 0L
+    return when {
+        rawReason in MAX_PAGE_LIMIT_REASONS -> "max pages hit"
+        rawStatus in COMPLETE_COVERAGE_STATUSES -> {
+            if (errors > 0) "complete · $errors errors" else summary ?: "complete"
+        }
+        rawStatus == "partial" -> if (errors > 0) "partial · $errors errors" else "partial"
+        rawStatus == "failed" -> "failed"
+        errors > 0 -> "$errors errors"
+        else -> summary
+    }
+}
+
+internal fun pagesCrawledMetric(job: JobUi): String? {
+    val value = (job.progressJson as? JsonObject)?.let {
+        topLevelMetric(it, "pages_crawled", "pages_seen", "pages_processed")
+    } ?: (job.resultJson as? JsonObject)?.let {
+        topLevelMetric(it, "pages_crawled", "pages_seen", "pages_processed", "md_created")
+    } ?: return null
+    return "%,d %s".format(value, if (value == 1L) "page" else "pages")
+}
+
+internal fun primitiveLong(element: JsonElement): Long? =
+    (element as? JsonPrimitive)?.longOrNull
+
+internal fun primitiveFloat(element: JsonElement): Float? =
+    (element as? JsonPrimitive)?.contentOrNull?.toFloatOrNull()
+
+private fun topLevelMetric(obj: JsonObject, vararg keys: String): Long? {
     for (key in keys) {
         val value = obj[key]?.let { primitiveLong(it) }
-        if (value != null) return value
-    }
-    for ((_, child) in obj) {
-        val nested = child as? JsonObject ?: continue
-        val value = firstMetric(nested, *keys)
         if (value != null) return value
     }
     return null
 }
 
-internal fun primitiveLong(element: JsonElement): Long? =
-    (element as? JsonPrimitive)?.longOrNull
+private fun ratioMetric(obj: JsonObject, doneKey: String, totalKey: String): Float? {
+    val done = topLevelMetric(obj, doneKey) ?: return null
+    val total = topLevelMetric(obj, totalKey) ?: return null
+    if (total <= 0L) return null
+    if (done <= 0L) return 0f
+    return (done.toFloat() / total.toFloat()).coerceIn(0.02f, 0.98f)
+}
+
+private val crawlPageArrayKeys = setOf(
+    "urls",
+    "pages",
+    "page_urls",
+    "crawled_urls",
+    "crawled_pages",
+    "visited_urls",
+    "visited_pages",
+    "documents",
+    "events",
+    "diagnostics",
+)
+
+private val MAX_PAGE_LIMIT_REASONS = setOf("max_pages_limit", "max_pages", "page_limit")
+private val COMPLETE_COVERAGE_STATUSES = setOf("complete", "completed", "complete_or_exhausted", "exhausted")
+
+private fun pageUrlFromElement(element: JsonElement): String? =
+    when (element) {
+        is JsonPrimitive -> element.contentOrNull?.takeIf { it.isHttpUrl() }
+        is JsonObject -> firstString(element, "url", "href", "source_url")?.takeIf { it.isHttpUrl() }
+        else -> null
+    }
+
+private fun crawlManifestPathFromHandles(obj: JsonObject): String? {
+    val handles = obj["predicted_artifact_handles"] as? JsonArray ?: obj["artifact_handles"] as? JsonArray ?: return null
+    return handles
+        .mapNotNull { handle ->
+            val handleObj = handle as? JsonObject ?: return@mapNotNull null
+            firstString(handleObj, "relative_path", "path")?.takeIf { it.endsWith("manifest.jsonl") }
+        }
+        .firstOrNull()
+        ?.let(::normalizeArtifactManifestPath)
+}
+
+private fun firstString(obj: JsonObject, vararg keys: String): String? {
+    for (key in keys) {
+        val value = obj[key]
+        if (value is JsonPrimitive) {
+            val content = value.contentOrNull?.takeIf { it.isNotBlank() }
+            if (content != null) return content
+        }
+    }
+    for ((_, child) in obj) {
+        val nested = child as? JsonObject ?: continue
+        val value = firstString(nested, *keys)
+        if (value != null) return value
+    }
+    return null
+}
+
+private fun topLevelString(obj: JsonObject, vararg keys: String): String? {
+    for (key in keys) {
+        val value = obj[key]
+        if (value is JsonPrimitive) {
+            val content = value.contentOrNull?.takeIf { it.isNotBlank() }
+            if (content != null) return content
+        }
+    }
+    return null
+}
+
+private fun normalizeArtifactManifestPath(rawPath: String): String? {
+    val normalized = rawPath.replace('\\', '/').trim().trimEnd('/')
+    val manifestPath = when {
+        normalized.endsWith("manifest.jsonl") -> normalized
+        normalized.endsWith("/markdown") -> normalized.removeSuffix("/markdown") + "/manifest.jsonl"
+        else -> "$normalized/manifest.jsonl"
+    }
+    val relative = when {
+        "/output/" in manifestPath -> manifestPath.substringAfterLast("/output/")
+        ".axon/output/" in manifestPath -> manifestPath.substringAfterLast(".axon/output/")
+        manifestPath.startsWith("/") -> return null
+        else -> manifestPath
+    }
+    return relative
+        .takeIf { it.isNotBlank() && !it.contains("..") && it.endsWith("manifest.jsonl") }
+}
+
+private fun String.isHttpUrl(): Boolean =
+    startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
 @Composable
 internal fun jobTone(kind: JobFamily?): Color = when (kind) {
@@ -106,7 +309,7 @@ internal fun shortTarget(target: String): String =
 
 internal fun jobProgressLabel(job: JobUi): String =
     listOfNotNull(
-        resultMetricSummary(job.resultJson) ?: fallbackJobDetail(job),
+        pagesCrawledMetric(job) ?: resultMetricSummary(job.resultJson) ?: fallbackJobDetail(job),
         "job ${job.id.take(8)}",
     ).joinToString(" · ")
 

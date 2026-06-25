@@ -64,7 +64,13 @@ export async function invoke<T = unknown>(
     case "hide_palette":
     case "show_palette":
     case "resize_palette":
+    case "set_blur_dismiss":
       return undefined as T;
+    case "axon_oauth_status":
+    case "axon_oauth_logout":
+      return { signedIn: false, scope: null, expiresAtUnix: null, serverUrl: null } as T;
+    case "axon_oauth_login":
+      throw new Error("OAuth login is only available in the desktop app");
     default:
       throw new Error(`${command} is only available in the Tauri runtime`);
   }

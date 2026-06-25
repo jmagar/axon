@@ -23,20 +23,93 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # On PRs, cancel superseded runs so the strict-up-to-date re-run treadmill
+  # doesn't pile up 30-min runs. Never cancel on main/schedule.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUSTC_WRAPPER: ""
+  AURORA_REPO: ${{ vars.AURORA_REPO || 'jmagar/aurora-design-system' }}
+  AURORA_REF: ${{ vars.AURORA_REF || '8748eb6434b3bbe4c75f25bfff71950b7efc051b' }}
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.classify.outputs.all }}
+      docs: ${{ steps.classify.outputs.docs }}
+      workflow: ${{ steps.classify.outputs.workflow }}
+      rust: ${{ steps.classify.outputs.rust }}
+      web: ${{ steps.classify.outputs.web }}
+      android: ${{ steps.classify.outputs.android }}
+      palette: ${{ steps.classify.outputs.palette }}
+      chrome: ${{ steps.classify.outputs.chrome }}
+      docker: ${{ steps.classify.outputs.docker }}
+      compose: ${{ steps.classify.outputs.compose }}
+      mcp: ${{ steps.classify.outputs.mcp }}
+      security: ${{ steps.classify.outputs.security }}
+      release: ${{ steps.classify.outputs.release }}
+      version_files: ${{ steps.classify.outputs.version_files }}
+      openapi: ${{ steps.classify.outputs.openapi }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Prepare trusted changed path classifier
+        run: |
+          set -euo pipefail
+          classifier="scripts/ci/changed_paths.py"
+          trusted="/tmp/axon-changed-paths.py"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            if ! git show "${{ github.event.pull_request.base.sha }}:$classifier" > "$trusted" 2>/dev/null; then
+              cat > "$trusted" <<'PY'
+          #!/usr/bin/env python3
+          import argparse
+          from pathlib import Path
+          keys = "all docs workflow rust web android palette chrome docker compose mcp security release version_files openapi codeql_actions codeql_javascript_typescript codeql_python codeql_rust codeql_java_kotlin".split()
+          parser = argparse.ArgumentParser()
+          parser.add_argument("--event", required=True)
+          parser.add_argument("--output", type=Path, required=True)
+          parser.add_argument("--write-changed-files", type=Path)
+          args, _ = parser.parse_known_args()
+          if args.write_changed_files:
+              args.write_changed_files.write_text("")
+          args.output.write_text("".join(f"{key}=true\n" for key in keys))
+          for key in keys:
+              print(f"{key}=true")
+          PY
+            fi
+          else
+            cp "$classifier" "$trusted"
+          fi
+          chmod +x "$trusted"
+          echo "AXON_CHANGED_PATHS=$trusted" >> "$GITHUB_ENV"
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 "$AXON_CHANGED_PATHS" --event "$EVENT_NAME" --output "$GITHUB_OUTPUT" --write-changed-files changed-files.txt
+
   mcp-transport-modes:
     name: mcp-transport-modes
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.mcp == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -58,18 +131,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: xtask
+      - name: create web assets placeholder
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Enforce MCP CLI transport mode support
         run: cargo xtask check-mcp-http
 
   version-sync:
     name: version-sync
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.release == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' || needs.changes.outputs.chrome == 'true' || needs.changes.outputs.version_files == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -91,12 +171,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: xtask
+      - name: create web assets placeholder
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Verify release versions for changed shipping components
         run: cargo xtask check-release-versions --base origin/main --head HEAD --mode pr
 
   aurora-primitive-inventory:
     name: aurora-primitive-inventory
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' || needs.changes.outputs.docs == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,14 +194,134 @@ jobs:
       - name: Check Aurora primitive inventory guard
         run: python3 scripts/check_aurora_primitive_inventory.py
 
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.android == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Checkout Aurora design system
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          repository: ${{ env.AURORA_REPO }}
+          ref: ${{ env.AURORA_REF }}
+          path: .aurora-design-system
+          token: ${{ secrets.AURORA_TOKEN || github.token }}
+
+      - name: Export Aurora path
+        run: echo "AXON_AURORA_ANDROID_PATH=$GITHUB_WORKSPACE/.aurora-design-system/android" >> "$GITHUB_ENV"
+
+      - name: Set up pnpm for Aurora token generation
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - name: Set up Node for Aurora token generation
+        uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+          cache-dependency-path: .aurora-design-system/pnpm-lock.yaml
+
+      - name: Install Aurora token dependencies
+        working-directory: .aurora-design-system
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # The Gradle build uses the hosted runner SDK; installing the legacy
+          # `tools` package pulls the emulator and has failed on corrupt
+          # downloads before tests even start.
+          packages: ""
+
+      - name: Run Android unit tests, lint, and APK builds
+        run: >
+          apps/android/gradlew -p apps/android
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:copyDebugApkToRepoBin
+          :app:copyReleaseApkToRepoBin
+          --no-daemon --stacktrace
+
+      - name: Verify Android APK artifacts
+        run: |
+          test -s bin/axon-android-debug.apk
+          test -s bin/axon-android-release.apk
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: axon-android-apks
+          path: |
+            bin/axon-android-debug.apk
+            bin/axon-android-release.apk
+          if-no-files-found: error
+
+  android-openapi-client:
+    name: android-openapi-client
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.openapi == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            apps/web/openapi
+            apps/android
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          repository: ${{ env.AURORA_REPO }}
+          ref: ${{ env.AURORA_REF }}
+          path: aurora-design-system
+          token: ${{ secrets.AURORA_TOKEN || github.token }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+          cache-dependency-path: aurora-design-system/pnpm-lock.yaml
+      - name: Install Aurora token dependencies
+        working-directory: aurora-design-system
+        run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Verify generated Android OpenAPI client
+        env:
+          AXON_AURORA_ANDROID_PATH: ${{ github.workspace }}/aurora-design-system/android
+        run: apps/android/gradlew -p apps/android :app:verifyOpenApiGeneratedClient --no-daemon --stacktrace
+
   no-mod-rs:
     name: no-mod-rs
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -137,12 +343,57 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: xtask
+      - name: create web assets placeholder
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: Enforce modern Rust module style (no mod.rs)
         run: cargo xtask check-no-mod-rs
+
+  sqlite-migrations:
+    name: sqlite-migrations
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            src
+            crates
+            xtask
+            benches
+            apps/web
+            apps/palette-tauri
+            apps/android
+            apps/chrome-extension
+            assets
+            plugins
+            docs
+            migrations
+            .github
+            tests
+            scripts
+            config
+            release
+            vendor
+            .cargo
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: xtask
+      - name: create web assets placeholder
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
+      - name: Verify SQLite migration checksum manifest
+        run: cargo xtask check-sqlite-migrations
 
   toml-fmt:
     name: toml-fmt
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.release == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -160,9 +411,11 @@ jobs:
             rust-toolchain.toml
             docs/reference/env-matrix.toml
             src
+            crates
             xtask
             benches
             apps/web
+            apps/palette-tauri
             plugins
             docs
             .github
@@ -189,6 +442,8 @@ jobs:
   lefthook-pre-commit-speed:
     name: lefthook pre-commit speed guard
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.workflow == 'true' || needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
       - name: enforce pre-commit stays fast
@@ -197,6 +452,8 @@ jobs:
   palette-tauri:
     name: palette-tauri
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.palette == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -236,7 +493,8 @@ jobs:
       - name: Install palette dependencies
         run: pnpm --dir apps/palette-tauri install --frozen-lockfile
       # CI-L1: these steps deliberately mirror `pnpm verify`
-      # (lint → test → typecheck → vite:build) plus the cargo gates below.
+      # (lint → test → check:api → typecheck → vite:build) plus the cargo
+      # gates below.
       # If you change the `verify` script in apps/palette-tauri/package.json,
       # update these steps to stay in sync (and vice versa).
       - name: Palette lint (Biome)
@@ -271,10 +529,20 @@ jobs:
       # palette-release.yml *after* the palette-v* tag is published.
       - name: Tauri build (no bundle)
         run: pnpm --dir apps/palette-tauri exec tauri build --no-bundle
+      - name: Copy Tauri artifact to bin
+        run: |
+          node apps/palette-tauri/scripts/copy-artifacts.mjs
+          test -s bin/axon-palette-release
 
   windows-check:
     name: windows-check (xtask only)
     runs-on: windows-latest
+    # `cargo check -p xtask` transitively compiles axon (bench_embed dep); on a
+    # cold Windows cache this lands right at the old 25-min cap (observed
+    # 25m08s — a timeout despite all real steps passing). Give it headroom.
+    timeout-minutes: 40
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -283,6 +551,7 @@ jobs:
           # fingerprinting the root build script.
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -304,12 +573,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: xtask-windows
+      - name: create web assets placeholder
+        shell: bash
+        run: |
+          mkdir -p apps/web/out
+          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
       - name: cargo check -p xtask
         run: cargo check -p xtask --locked
       - name: cargo test -p xtask
         run: cargo test -p xtask --locked
-      - name: cargo xtask check-no-mod-rs
-        run: cargo xtask check-no-mod-rs
       - name: cargo xtask check-mcp-http
         run: cargo xtask check-mcp-http
 
@@ -331,6 +603,8 @@ jobs:
     # src/core/paths_tests.rs and was confirmed passing on Windows 11 against
     # this cross-compiled binary.
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' }}
     env:
       CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
       CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
@@ -343,6 +617,7 @@ jobs:
           # fingerprinting the root build script.
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             assets
@@ -390,14 +665,18 @@ jobs:
   shell-completions-smoke:
     name: shell-completions-smoke
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
+            apps/palette-tauri
             plugins
             docs
             .github
@@ -423,6 +702,8 @@ jobs:
   web-panel:
     name: web-panel
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.web == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -443,6 +724,8 @@ jobs:
   mcp-schema-doc-sync:
     name: mcp-schema-doc-sync
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.mcp == 'true' }}
     steps:
       - uses: actions/checkout@v5
       - name: Restore schema doc for drift comparison
@@ -453,14 +736,19 @@ jobs:
   rest-api-parity:
     name: rest-api-parity
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
+            apps/palette-tauri
+            apps/android
             plugins
             docs
             .github
@@ -484,6 +772,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -497,11 +788,13 @@ jobs:
       - name: Workflow shape contracts
         run: cargo test --locked --test workflow_shapes
       - name: OpenAPI and generated client sync
-        run: npm --prefix apps/web run openapi:check
+        run: cargo xtask check-openapi-drift
 
   mcp-oauth-smoke:
     name: mcp-oauth-smoke
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.mcp == 'true' }}
     env:
       # TEI_URL must be set to pass startup validation even though TEI is not
       # actually running — this test exercises only the auth layer (/mcp 401).
@@ -512,6 +805,7 @@ jobs:
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -539,11 +833,14 @@ jobs:
   advisory-lock-policy:
     name: advisory-lock-policy
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -581,11 +878,14 @@ jobs:
   ban-skip-validation:
     name: ban-skip-validation
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -612,12 +912,15 @@ jobs:
   monolith:
     name: monolith
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -675,11 +978,14 @@ jobs:
   fmt:
     name: fmt
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -699,91 +1005,22 @@ jobs:
       - name: cargo fmt check
         run: cargo fmt --all -- --check
 
-  check:
-    name: check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            migrations
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: |
-          mkdir -p apps/web/out
-          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
-      - name: cargo check (warnings are errors)
-        env:
-          RUSTFLAGS: -D warnings
-        run: cargo check --workspace --all-targets --locked --features test-helpers
-
-  msrv:
-    name: msrv
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          # Cone mode keeps root-level files such as `.gitignore` available.
-          # Non-cone sparse checkouts can make older Cargo/gix fail while
-          # fingerprinting the root build script.
-          sparse-checkout: |
-            src
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            migrations
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-      - name: create web assets placeholder
-        run: |
-          mkdir -p apps/web/out
-          echo "AXON_ALLOW_FALLBACK_WEB_ASSETS=1" >> "$GITHUB_ENV"
-      - name: cargo check (MSRV)
-        run: cargo check --workspace --all-targets --locked --features test-helpers
-
+  # `check` and `msrv` were removed: both ran `cargo check --workspace
+  # --all-targets --locked --features test-helpers` (byte-identical, and the
+  # 1.94.0 pin was silently overridden to rust-toolchain.toml's channel, so
+  # `msrv` validated nothing). `clippy -D warnings` is a strict superset of
+  # `cargo check -D warnings`, so the `clippy` job below covers them.
   clippy:
     name: clippy
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -806,6 +1043,13 @@ jobs:
           toolchain: 1.94.0
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Shared with `test` (same toolchain + features, no RUSTFLAGS) and
+          # warmed from main, so PRs restore a hot dep cache instead of each job
+          # recompiling the workspace. `clippy -D warnings` also denies rustc
+          # warnings, so this job subsumes the removed `check`/`msrv` jobs.
+          shared-key: rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -816,6 +1060,8 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     env:
       # Match the 8 MiB runtime thread stack from main.rs — deep scrape/extract
       # async chains overflow the 2 MiB rustc-test-harness default
@@ -834,6 +1080,7 @@ jobs:
             docker-compose.prod.yaml
             docker-compose.yaml
             src
+            crates
             xtask
             benches
             apps/web
@@ -859,6 +1106,11 @@ jobs:
         with:
           tool: cargo-nextest
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Shared with `clippy` (same toolchain + features, no RUSTFLAGS);
+          # warmed from main.
+          shared-key: rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -884,6 +1136,7 @@ jobs:
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -918,6 +1171,7 @@ jobs:
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -999,6 +1253,7 @@ jobs:
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -1068,11 +1323,14 @@ jobs:
   security:
     name: security
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.security == 'true' }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -1108,13 +1366,15 @@ jobs:
   mcp-smoke:
     name: mcp-smoke
     runs-on: ubuntu-latest
-    needs: [release]
+    needs: [changes, release]
+    if: ${{ needs.release.result == 'success' && (needs.changes.outputs.mcp == 'true' || needs.changes.outputs.rust == 'true') }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src
+            crates
             xtask
             benches
             apps/web
@@ -1287,12 +1547,20 @@ jobs:
   release:
     name: release
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.release == 'true' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Release-profile artifacts (distinct from the debug `rust` cache);
+          # warmed from main so the PR release build + serialized mcp-smoke start
+          # sooner.
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -1314,7 +1582,8 @@ jobs:
   release-smoke:
     name: release-smoke
     runs-on: ubuntu-latest
-    needs: [release]
+    needs: [changes, release]
+    if: ${{ needs.release.result == 'success' }}
     steps:
       - uses: actions/download-artifact@v5
         with:
@@ -1325,37 +1594,80 @@ jobs:
           chmod +x ./target/release/axon
           ./target/release/axon --help
 
-  production-gate:
-    name: production-gate
+  ci-gate:
+    name: ci-gate
     runs-on: ubuntu-latest
     if: always()
     needs:
-      - monolith
-      - no-mod-rs
+      - changes
+      - mcp-transport-modes
       - version-sync
       - aurora-primitive-inventory
+      - android
+      - android-openapi-client
+      - no-mod-rs
+      - sqlite-migrations
+      - toml-fmt
+      - lefthook-pre-commit-speed
+      - palette-tauri
+      - windows-check
+      - windows-build
+      - shell-completions-smoke
+      - web-panel
+      - mcp-schema-doc-sync
+      - rest-api-parity
+      - mcp-oauth-smoke
+      - advisory-lock-policy
+      - ban-skip-validation
+      - monolith
       - fmt
-      - check
       - clippy
       - test
-      - web-panel
-      - palette-tauri
       - security
+      - mcp-smoke
+      - rag-changes
+      - live-rag-pr
       - release
       - release-smoke
     steps:
-      - name: verify all required jobs passed
+      - name: verify required jobs passed or were intentionally skipped
         run: |
-          test "${{ needs.monolith.result }}" = "success"
-          test "${{ needs.no-mod-rs.result }}" = "success"
-          test "${{ needs.version-sync.result }}" = "success"
-          test "${{ needs.aurora-primitive-inventory.result }}" = "success"
-          test "${{ needs.fmt.result }}" = "success"
-          test "${{ needs.check.result }}" = "success"
-          test "${{ needs.clippy.result }}" = "success"
-          test "${{ needs.test.result }}" = "success"
-          test "${{ needs.web-panel.result }}" = "success"
-          test "${{ needs.palette-tauri.result }}" = "success"
-          test "${{ needs.security.result }}" = "success"
-          test "${{ needs.release.result }}" = "success"
-          test "${{ needs.release-smoke.result }}" = "success"
+          set -euo pipefail
+          require_success_or_skipped() {
+            local name="$1"
+            local result="$2"
+            case "$result" in
+              success|skipped) printf '%s=%s\n' "$name" "$result" ;;
+              *) echo "::error::$name concluded $result" >&2; exit 1 ;;
+            esac
+          }
+          require_success_or_skipped changes "${{ needs.changes.result }}"
+          require_success_or_skipped mcp-transport-modes "${{ needs.mcp-transport-modes.result }}"
+          require_success_or_skipped version-sync "${{ needs.version-sync.result }}"
+          require_success_or_skipped aurora-primitive-inventory "${{ needs.aurora-primitive-inventory.result }}"
+          require_success_or_skipped android "${{ needs.android.result }}"
+          require_success_or_skipped android-openapi-client "${{ needs.android-openapi-client.result }}"
+          require_success_or_skipped no-mod-rs "${{ needs.no-mod-rs.result }}"
+          require_success_or_skipped sqlite-migrations "${{ needs.sqlite-migrations.result }}"
+          require_success_or_skipped toml-fmt "${{ needs.toml-fmt.result }}"
+          require_success_or_skipped lefthook-pre-commit-speed "${{ needs.lefthook-pre-commit-speed.result }}"
+          require_success_or_skipped palette-tauri "${{ needs.palette-tauri.result }}"
+          require_success_or_skipped windows-check "${{ needs.windows-check.result }}"
+          require_success_or_skipped windows-build "${{ needs.windows-build.result }}"
+          require_success_or_skipped shell-completions-smoke "${{ needs.shell-completions-smoke.result }}"
+          require_success_or_skipped web-panel "${{ needs.web-panel.result }}"
+          require_success_or_skipped mcp-schema-doc-sync "${{ needs.mcp-schema-doc-sync.result }}"
+          require_success_or_skipped rest-api-parity "${{ needs.rest-api-parity.result }}"
+          require_success_or_skipped mcp-oauth-smoke "${{ needs.mcp-oauth-smoke.result }}"
+          require_success_or_skipped advisory-lock-policy "${{ needs.advisory-lock-policy.result }}"
+          require_success_or_skipped ban-skip-validation "${{ needs.ban-skip-validation.result }}"
+          require_success_or_skipped monolith "${{ needs.monolith.result }}"
+          require_success_or_skipped fmt "${{ needs.fmt.result }}"
+          require_success_or_skipped clippy "${{ needs.clippy.result }}"
+          require_success_or_skipped test "${{ needs.test.result }}"
+          require_success_or_skipped security "${{ needs.security.result }}"
+          require_success_or_skipped mcp-smoke "${{ needs.mcp-smoke.result }}"
+          require_success_or_skipped rag-changes "${{ needs.rag-changes.result }}"
+          require_success_or_skipped live-rag-pr "${{ needs.live-rag-pr.result }}"
+          require_success_or_skipped release "${{ needs.release.result }}"
+          require_success_or_skipped release-smoke "${{ needs.release-smoke.result }}"

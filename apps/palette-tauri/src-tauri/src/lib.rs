@@ -16,6 +16,8 @@ use tauri::{
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod axon_bridge;
+mod diag;
+mod oauth;
 mod persistence;
 mod stream;
 mod window_events;
@@ -64,7 +66,7 @@ struct BlurDismiss(AtomicBool);
 struct ActiveShortcut(Mutex<Option<String>>);
 
 fn log_palette_warning(context: &str, err: impl Display) {
-    eprintln!("axon palette: {context}: {err}");
+    crate::diag::warn(&format!("{context}: {err}"));
 }
 
 #[tauri::command]
@@ -124,7 +126,7 @@ fn show_palette(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn resize_palette(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn resize_palette(app: AppHandle, width: f64, height: f64, shadow: bool) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
@@ -136,6 +138,8 @@ fn resize_palette(app: AppHandle, width: f64, height: f64) -> Result<(), String>
     window
         .set_size(Size::Logical(LogicalSize { width, height }))
         .map_err(|err| err.to_string())?;
+    // Per-view native shadow toggle (see useWindowChrome.ts for the policy).
+    let _ = window.set_shadow(shadow);
     window.center().map_err(|err| err.to_string())
 }
 
@@ -168,7 +172,7 @@ fn merged_settings_or_default(app: &AppHandle) -> PaletteSettings {
     match merged_settings(app) {
         Ok(settings) => settings,
         Err(err) => {
-            eprintln!("{err}");
+            crate::diag::warn(&err.to_string());
             default_settings(&read_default_env_entries())
         }
     }
@@ -317,7 +321,9 @@ fn register_configured_shortcut(app: &AppHandle, settings: &PaletteSettings) -> 
         if let Some(old_label) = guard.take().filter(|l| l != &new_label) {
             let old_shortcut = shortcut_for_label(&old_label);
             if let Err(err) = app.global_shortcut().unregister(old_shortcut) {
-                eprintln!("palette: failed to unregister old shortcut '{old_label}': {err}");
+                crate::diag::warn(&format!(
+                    "failed to unregister old shortcut '{old_label}': {err}"
+                ));
             }
         }
         app.global_shortcut()
@@ -345,10 +351,13 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
     }
     window
         .set_size(Size::Logical(LogicalSize {
-            width: 680.0,
-            height: 56.0,
+            // Compact launcher — matches COMPACT in useWindowChrome.ts (bar + inset).
+            width: 720.0,
+            height: 92.0,
         }))
         .map_err(|err| err.to_string())?;
+    // Compact floats a CSS-glowing bar; keep the native shadow off (JS re-asserts).
+    let _ = window.set_shadow(false);
     window.center().map_err(|err| err.to_string())?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
@@ -462,12 +471,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             set_blur_dismiss,
             axon_bridge::axon_http_request,
             axon_bridge::axon_artifact_request,
-            axon_http_stream_request
+            axon_http_stream_request,
+            oauth::axon_oauth_login,
+            oauth::axon_oauth_logout,
+            oauth::axon_oauth_status
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
         .manage(bridge_client)
         .manage(stream_client)
+        .manage(oauth::OauthState::new())
         .setup(|app| {
             if let Err(err) = install_tray(app) {
                 log_palette_warning("failed to install tray icon", err);

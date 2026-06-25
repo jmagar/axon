@@ -227,6 +227,66 @@ compatibility = "advanced"
 reason = "SQLite queue path override."
 
 [[env]]
+key = "AXON_CODE_SEARCH_ALLOWED_ROOTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = true
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Server-side allowlist for MCP code-search cwd roots; security boundary remains process env in v1."
+
+[[env]]
+key = "AXON_CODE_SEARCH_FRESHNESS_TTL_SECS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Local code-search freshness TTL in seconds; env-backed v1 tuning."
+
+[[env]]
+key = "AXON_CODE_SEARCH_REINDEX_TIMEOUT_SECS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Foreground code-search refresh timeout in seconds; env-backed v1 tuning."
+
+[[env]]
+key = "AXON_CODE_SEARCH_MAX_FILE_BYTES"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Maximum local source file size indexed by code-search; env-backed v1 tuning."
+
+[[env]]
+key = "AXON_CODE_SEARCH_CHANGED_FILE_BATCH_SIZE"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "docs"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Changed-file embedding batch size for code-search freshness; env-backed v1 tuning."
+
+[[env]]
 key = "AXON_MCP_HTTP_PUBLISH"
 classification = "compose-env"
 runtime_placement = "compose-interpolation"
@@ -309,6 +369,30 @@ container_allowed = false
 toml_destination = ""
 compatibility = "advanced"
 reason = "Host-side cargo rustc wrapper switch used by wrapper tests to bypass sccache."
+
+[[env]]
+key = "AXON_ARTIFACT_BIN_DIR"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side build-script and wrapper test override for copied binary artifact destinations; not Axon runtime config."
+
+[[env]]
+key = "AXON_AURORA_ANDROID_PATH"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["tests"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Test-only override used by workflow shape guards to locate the sibling Aurora Android project."
 
 [[env]]
 key = "GEMINI_FLASH_MODEL"
@@ -611,6 +695,18 @@ compatibility = "canonical"
 reason = "Max concurrent Codex app-server child completions. Defaults lower because each completion spawns a child process."
 
 [[env]]
+key = "AXON_CODEX_POOL_IDLE_TTL_SECS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "env-template"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Idle TTL (seconds) before the Codex app-server pool discards an unused child on next checkout. 0 disables TTL eviction."
+
+[[env]]
 key = "AXON_CODEX_LOAD_USER_CONFIG"
 classification = "keep-env"
 runtime_placement = "both"
@@ -693,6 +789,30 @@ container_allowed = false
 toml_destination = "scrape.batch-timeout-secs"
 compatibility = "warn-env-override"
 reason = "End-to-end timeout for one service-level scrape batch."
+
+[[env]]
+key = "AXON_ALLOW_UNBOUNDED_BROAD_CRAWL"
+classification = "move-toml"
+runtime_placement = "not-runtime"
+surfaces = ["src", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = "scrape.allow-unbounded-broad-crawl"
+compatibility = "warn-env-override"
+reason = "Explicit operator override for uncapped broad-domain crawl guardrails."
+
+[[env]]
+key = "AXON_CRAWL_MEMORY_ABORT_PERCENT"
+classification = "move-toml"
+runtime_placement = "not-runtime"
+surfaces = ["src", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = "scrape.crawl-memory-abort-percent"
+compatibility = "warn-env-override"
+reason = "RSS percent of host/cgroup memory that aborts long-running crawls."
 
 [[env]]
 key = "AXON_INGEST_LANES"
@@ -2315,6 +2435,42 @@ compatibility = "canonical"
 reason = "Non-secret tuning knob; migrate to config.toml. Kept in env until a typed config.toml field is wired."
 
 [[env]]
+key = "AXON_WORKER_STARVATION_SECS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Non-secret worker-liveness tuning knob (starvation detector threshold); also settable via config.toml (workers.worker-starvation-secs)."
+
+[[env]]
+key = "AXON_CRAWL_JOB_TIMEOUT_SECS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Non-secret per-crawl-job wall-clock timeout knob; also settable via config.toml (workers.crawl-job-timeout-secs)."
+
+[[env]]
+key = "AXON_MAX_JOB_ATTEMPTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Non-secret worker-liveness tuning knob (max reclaim attempts before a stale job is dead-lettered); also settable via config.toml (workers.max-job-attempts)."
+
+[[env]]
 key = "AXON_WEB_ALLOWED_ORIGINS"
 classification = "trusted-operator-bootstrap"
 runtime_placement = "host-only"
@@ -3189,3 +3345,315 @@ container_allowed = true
 toml_destination = ""
 compatibility = "canonical"
 reason = "Qdrant int8 quantization always-in-RAM toggle (memory vs latency for the quantized vectors). Non-secret tuning knob; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_TEI_MAX_IN_FLIGHT_INPUTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "env-template", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Process-wide cap for chunk inputs concurrently submitted to TEI. Non-secret throughput tuning; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_MARKDOWN_CHUNK_MIN_CHARS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "env-template", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Minimum target markdown chunk size. Non-secret chunking tuning; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_MARKDOWN_CHUNK_MAX_CHARS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "env-template", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Maximum prose/markdown chunk size. Non-secret chunking tuning; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_CHUNK_OVERLAP_CHARS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "env-template", "docs", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "Adjacent prose/markdown chunk overlap. Non-secret chunking tuning; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_OPENAI_EMBEDDING_MODEL"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "OpenAI-compatible embedding model override. Runtime selector; kept in env until a typed config.toml field is wired."
+
+[[env]]
+key = "AXON_OPENAI_EMBED_MAX_CLIENT_BATCH_SIZE"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "OpenAI-compatible embedding request batch-size cap. Non-secret throughput tuning."
+
+[[env]]
+key = "AXON_OPENAI_EMBED_MAX_CONCURRENT"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "OpenAI-compatible embedding request concurrency cap. Non-secret throughput tuning."
+
+[[env]]
+key = "AXON_OPENAI_EMBED_MAX_IN_FLIGHT_INPUTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "OpenAI-compatible embedding process-wide in-flight input cap. Non-secret throughput tuning."
+
+[[env]]
+key = "AXON_OPENAI_EMBED_POOL_MAX_INPUTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src", "config-example"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "canonical"
+reason = "OpenAI-compatible embedding input pool size before client sub-batching. Non-secret throughput tuning."
+
+[[env]]
+key = "OPENAI_EMBED_CONCURRENCY"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "legacy-alias"
+reason = "Legacy alias for OpenAI-compatible embedding request concurrency."
+
+[[env]]
+key = "OPENAI_EMBED_IN_FLIGHT_INPUTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "legacy-alias"
+reason = "Legacy alias for OpenAI-compatible embedding in-flight input cap."
+
+[[env]]
+key = "OPENAI_EMBED_IN_FLIGHT_INPUT_LIMIT"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "legacy-alias"
+reason = "Legacy alias for OpenAI-compatible embedding in-flight input cap."
+
+[[env]]
+key = "TEI_IN_FLIGHT_INPUTS"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "legacy-alias"
+reason = "Legacy alias for AXON_TEI_MAX_IN_FLIGHT_INPUTS."
+
+[[env]]
+key = "TEI_IN_FLIGHT_INPUT_LIMIT"
+classification = "keep-env"
+runtime_placement = "both"
+surfaces = ["src"]
+secret = false
+url_or_path = false
+container_allowed = true
+toml_destination = ""
+compatibility = "legacy-alias"
+reason = "Legacy alias for AXON_TEI_MAX_IN_FLIGHT_INPUTS."
+
+[[env]]
+key = "AXON_AGENT_OS_EXPECTED_FINAL_URL"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS harness variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_AGENT_OS_HOST_IP"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS harness variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_AGENT_OS_SQLITE_NAME"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS harness variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_AGENT_OS_STAGING_PORT"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS harness variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_AGENT_OS_TARGET_URL"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS harness variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_EXPECTED_FINAL_URL"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_HOST_BASE"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_PHASE"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_RELEASE_TAG"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_SQLITE_NAME"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = false
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "AXON_SCRIPT_TARGET_URL"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Chrome-extension Agent OS helper-script variable; not Axon runtime config."
+
+[[env]]
+key = "HF_HOME"
+classification = "external/test-only"
+runtime_placement = "not-runtime"
+surfaces = ["scripts"]
+secret = false
+url_or_path = true
+container_allowed = false
+toml_destination = ""
+compatibility = "advanced"
+reason = "Host-side embedding experiment cache override used by scripts; not Axon runtime config."

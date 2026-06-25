@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -26,10 +27,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
@@ -41,10 +44,6 @@ import com.axon.app.ui.theme.AxonTheme
 import com.axon.app.ui.theme.AxonTone
 import com.axon.app.ui.theme.tint
 import com.axon.app.ui.theme.toneOf
-import tv.tootie.aurora.components.AuroraIconButton
-import tv.tootie.aurora.components.AuroraIconButtonSize
-import tv.tootie.aurora.components.AuroraIconButtonVariant
-import tv.tootie.aurora.components.AuroraTextField
 
 @Composable
 fun FabOpInputCard(
@@ -54,12 +53,13 @@ fun FabOpInputCard(
     modifier: Modifier = Modifier,
 ) {
     var input by remember { mutableStateOf("") }
+    var broadActionConfirmed by remember(op) { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val colors = AxonTheme.colors
     val tone = colors.toneOf(if (op.isAsync) AxonTone.Orange else AxonTone.Cyan)
-    val canSend = input.isNotBlank()
+    val canSend = fabInputCanSubmit(op, input, broadActionConfirmed)
 
     LaunchedEffect(op) {
         input = ""
@@ -82,7 +82,7 @@ fun FabOpInputCard(
 
     fun submitIfReady() {
         val normalized = normalizeFabInput(op, input)
-        if (normalized.isNotBlank()) onSubmit(normalized)
+        if (canSend) onSubmit(normalized)
     }
 
     Box(
@@ -150,46 +150,127 @@ fun FabOpInputCard(
 
                 Row(
                     modifier = Modifier
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.control.copy(alpha = 0.80f), RoundedCornerShape(10.dp))
+                        .border(1.dp, colors.tint(tone.base, 22, colors.control), RoundedCornerShape(10.dp))
                         .clickable(remember { MutableInteractionSource() }, indication = null) {
                             focusRequester.requestFocus()
                             keyboardController?.show()
-                        },
+                        }
+                        .padding(start = 10.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    AuroraTextField(
+                    BasicTextField(
                         value = input,
-                        onValueChange = { input = it },
+                        onValueChange = {
+                            input = it
+                            broadActionConfirmed = false
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(focusRequester),
                         singleLine = true,
-                        compact = true,
-                        placeholder = op.placeholder,
-                        contentDescription = "${op.label} input",
+                        textStyle = TextStyle(
+                            color = colors.textPrimary,
+                            fontSize = 12.6.sp,
+                            fontFamily = if (op == FabOp.Query || op == FabOp.Research || op == FabOp.Search) AxonTheme.fonts.body else AxonTheme.fonts.mono,
+                        ),
+                        cursorBrush = SolidColor(tone.base),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { submitIfReady() }),
+                        keyboardActions = KeyboardActions(onSend = {
+                            submitIfReady()
+                        }),
+                        decorationBox = { inner ->
+                            if (input.isBlank()) Text(op.placeholder, fontSize = 12.6.sp, color = colors.textMuted.copy(alpha = 0.56f), fontFamily = AxonTheme.fonts.body)
+                            inner()
+                        },
                     )
 
-                    AuroraIconButton(
-                        onClick = {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .pressScale {
                                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 val text = cm.primaryClip?.getItemAt(0)?.text?.toString()
-                                if (text != null) input = text
-                        },
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = "Paste",
-                        size = AuroraIconButtonSize.Compact,
-                    )
+                                if (text != null) {
+                                    input = text
+                                    broadActionConfirmed = false
+                                }
+                            }
+                            .background(Color.Transparent, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = "Paste", tint = colors.textMuted.copy(alpha = 0.54f), modifier = Modifier.size(13.dp))
+                    }
 
-                    AuroraIconButton(
-                        onClick = ::submitIfReady,
-                        imageVector = Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = "Send",
-                        enabled = canSend,
-                        variant = AuroraIconButtonVariant.Filled,
-                        size = AuroraIconButtonSize.Compact,
+                    val sendBgAlpha by animateFloatAsState(
+                        targetValue = if (canSend) 0.90f else 0.34f,
+                        animationSpec = tween(durationMillis = 160),
+                        label = "fab-send-alpha",
                     )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .pressScale(enabled = canSend) {
+                                submitIfReady()
+                            }
+                            .background(tone.base.copy(alpha = sendBgAlpha), RoundedCornerShape(9.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = "Send",
+                            tint = colors.onAccentFg.copy(alpha = if (canSend) 1f else 0.55f),
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
+
+                op.broadActionConfirmationLabel()?.let { label ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pressScale {
+                                broadActionConfirmed = !broadActionConfirmed
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(15.dp)
+                                .background(
+                                    if (broadActionConfirmed) tone.base.copy(alpha = 0.92f) else Color.Transparent,
+                                    RoundedCornerShape(4.dp),
+                                )
+                                .border(
+                                    1.dp,
+                                    colors.tint(tone.base, 28, colors.panelStrong).copy(alpha = 0.82f),
+                                    RoundedCornerShape(4.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (broadActionConfirmed) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = colors.onAccentFg,
+                                    modifier = Modifier.size(11.dp),
+                                )
+                            }
+                        }
+                        Text(
+                            label,
+                            fontSize = 9.8.sp,
+                            color = colors.textMuted.copy(alpha = 0.82f),
+                            fontFamily = AxonTheme.fonts.mono,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -202,7 +283,11 @@ fun FabOpInputCard(
                         Text("operations", fontSize = 10.4.sp, color = colors.textMuted.copy(alpha = 0.74f), fontFamily = AxonTheme.fonts.body)
                     }
                     Text(
-                        "enter to send · tap outside to cancel",
+                        if (op.broadActionConfirmationLabel() != null && !broadActionConfirmed) {
+                            "confirm options to send · tap outside to cancel"
+                        } else {
+                            "enter to send · tap outside to cancel"
+                        },
                         fontSize = 9.4.sp,
                         color = colors.textMuted.copy(alpha = 0.64f),
                         fontFamily = AxonTheme.fonts.mono,
@@ -220,6 +305,15 @@ internal fun normalizeFabInput(op: FabOp, input: String): String {
     val trimmed = input.trim()
     if (trimmed.isBlank()) return ""
     return if (op.expectsUrl() && !trimmed.contains("://")) "https://$trimmed" else trimmed
+}
+
+internal fun fabInputCanSubmit(
+    op: FabOp,
+    input: String,
+    broadActionConfirmed: Boolean,
+): Boolean {
+    val normalized = normalizeFabInput(op, input)
+    return normalized.isNotBlank() && (op.broadActionConfirmationLabel() == null || broadActionConfirmed)
 }
 
 private fun FabOp.expectsUrl(): Boolean = when (this) {
@@ -248,4 +342,10 @@ private fun FabOp.shortDescription(): String = when (this) {
     FabOp.Summarize -> "Summarize a document"
     FabOp.Crawl -> "Async multi-page crawl"
     FabOp.Ingest -> "Import repo, reddit, or media"
+}
+
+internal fun FabOp.broadActionConfirmationLabel(): String? = when (this) {
+    FabOp.Crawl -> "Run with current crawl defaults/options"
+    FabOp.Ingest -> "Run with current ingest defaults/options"
+    else -> null
 }

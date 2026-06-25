@@ -49,7 +49,7 @@ class AskScreenHelpersTest {
                     op = FabOp.Scrape,
                     target = "https://example.com",
                     status = "200",
-                    endpoint = "POST /v1/actions",
+                    endpoint = "POST /v1/{operation}",
                     summary = "ok",
                     body = "{}",
                 ),
@@ -59,5 +59,21 @@ class AskScreenHelpersTest {
             1,
             chatSenderSide(ChatItem.Injection(op = FabOp.Scrape, target = "https://example.com")),
         )
+    }
+
+    @Test
+    fun `compactSingleLine collapses whitespace and trims long hit text`() {
+        val text = compactSingleLine(
+            "A title\nwith   spacing and a very long tail that should be shortened",
+            limit = 28,
+        )
+
+        assertEquals("A title with spacing and a...", text)
+    }
+
+    @Test
+    fun `compactHitCountNote reports hidden results`() {
+        assertEquals("", compactHitCountNote(COMPACT_HIT_LIMIT))
+        assertEquals("\n\nShowing 2 of 5 results.", compactHitCountNote(5))
     }
 }

@@ -5,6 +5,163 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.1] - 2026-06-25
+
+### Changed
+
+- Split palette integration monoliths
+
+### Fixed
+
+- Harden SQLite IOERR diagnostics and recovery reporting.
+
+## [6.0.0] - 2026-06-23
+
+### Added
+
+- Replace codex app-server spawn-per-completion with persistent process pool
+- Add project metadata read/write to store
+- Move page-cap policy to the services layer; unify CLI/MCP/HTTP at a 5k default+cap
+
+### Changed
+
+- Extract axon-authz micro-crate (epic axon_rust-23dw)
+- Seed axon-api crate, break vector<->services cycle (epic axon_rust-23dw)
+- Remove 2 of 4 core upward deps (epic axon_rust-23dw.3)
+- Make src/core import-clean (epic axon_rust-23dw.3)
+- Extract axon-core crate (epic axon_rust-23dw.3)
+- Break vector->ingest cycle 2 (epic axon_rust-23dw)
+- Extract axon-crawl crate (epic axon_rust-23dw.10)
+- Break vector->jobs and vector<->code_index edges (epic axon_rust-23dw)
+- Extract axon-vector crate (epic axon_rust-23dw.5-8)
+- Move IngestSource DTOs to axon-api, break ingest<->jobs (epic axon_rust-23dw)
+- Extract axon-ingest crate (epic axon_rust-23dw.12)
+- Extract axon-extract crate (epic axon_rust-23dw.9)
+- Move diff DTOs to axon-api (epic axon_rust-23dw .11 prep)
+- Move ArtifactHandle to axon-api::contract (epic .2/.11 prep)
+- Move ScrapeResult/IngestResult/ExtractSyncResult to axon-api (epic .11)
+- Move ServiceEvent/emit/progress channel to axon-core::events (epic .11 enabler)
+- Move ingest orchestration to axon-ingest::orchestrate (epic .11)
+- Move predict_crawl_output_dir to axon-crawl (epic .11)
+- Move compute_diff/extract_links_from_payload to axon-api::diff (epic .11)
+- Move services::artifacts to axon-core::artifacts (epic .11 prep)
+- Move extract_sync to axon-extract::sync (epic .11)
+- Move single-URL scrape to axon-extract::scrape, break jobs/watch->services edge (epic .11)
+- Move ServiceJob + JobStatus to axon-api, sever last jobs->services edge (epic .11)
+- Repoint final watch test DTOs to axon-api, src/jobs now fully services-free (epic .11)
+- Extract axon-jobs crate (epic axon_rust-23dw)
+- Invert ServiceContext->cfg+pool, break code_index<->services cycle (epic axon_rust-23dw)
+- Extract axon-code-index crate (epic axon_rust-23dw)
+- Move mcp::schema DTOs to axon-api::mcp_schema, break services->mcp cycle3 (epic axon_rust-23dw)
+- Extract axon-services crate (epic axon_rust-23dw)
+- Relocate unified-server bootstrap to cli, break mcp<->web cycle (epic axon_rust-23dw)
+- Extract axon-mcp crate (epic axon_rust-23dw)
+- Extract axon-web crate (epic axon_rust-23dw)
+- Extract axon-cli crate, root becomes thin binary (epic axon_rust-23dw)
+- Trim 735 unused crate deps (cargo machete); narrow service_job_conv; doc-hide token reader (lavra review)
+
+### Fixed
+
+- Inherit product version across workspace crates; bump syncs [workspace.package] (epic axon_rust-23dw.17)
+- Enforce [workspace.package]==[package] version + guard half-bumps; doc lossy ServiceJob From impls (PR review)
+
+## [5.19.0] - 2026-06-22
+
+### Added
+
+- Replace codex app-server spawn-per-completion with persistent process pool
+- Add project metadata read/write to store
+
+## [5.18.0] - 2026-06-21
+
+### Added
+- `AXON_MAX_JOB_ATTEMPTS` (default 5, `0` = unlimited): the job watchdog now
+  dead-letters a stale `running` job — marking it `failed` — once it has been
+  reclaimed that many times, instead of re-queueing it forever. Bounds a job that
+  crashes or hangs on every attempt from cycling running→pending indefinitely.
+
+### Changed
+- Hardened the SQLite job runtime against connection-pool poisoning: a single
+  `ImmediateTx` RAII guard now owns every `BEGIN IMMEDIATE` transaction (enqueue,
+  claim, reclaim, cleanup), so an early `?` return or a panic can no longer leave
+  a connection in the pool mid-transaction and starve the worker lanes. Replaces
+  four duplicated commit/rollback implementations.
+
+### Fixed
+- Crawl jobs now anchor their wall-clock timeout at job claim (before URL
+  validation) and bound the DNS-resolving validation step by the same deadline,
+  so a slow or hung lookup counts against `crawl_job_timeout_secs` instead of
+  parking the worker lane until the process is restarted.
+
+## [5.17.0] - 2026-06-21
+
+### Added
+- Worker-lane liveness safeguards: a panic in a job runner is caught and recorded
+  as a job failure instead of silently killing the lane; the job watchdog now runs
+  a starvation detector that loudly logs and re-kicks any queue holding pending
+  jobs with nothing running. New `worker_starvation_secs` (default 120) and
+  `crawl_job_timeout_secs` (default 7200) tuning knobs.
+
+### Fixed
+- Crawl worker lanes could silently stop claiming jobs — a runner panic, a leaked
+  SQLite transaction starving the connection pool, or a wedged crawl engine — with
+  no error logged, recovering only on restart. Added a connection-pool
+  ROLLBACK-on-release hook plus best-effort commit/rollback on the claim path, a
+  `pool.acquire()` slow-path warning, and the panic guard, starvation detector,
+  and per-job crawl timeout above.
+
+## [5.16.6] - 2026-06-20
+
+### Added
+- Prometheus `/metrics` endpoint on the unified server (`axon serve`/`axon mcp`),
+  exposing ask-path request, latency, and retrieval metrics. Unauthenticated,
+  like the `/healthz` and `/readyz` probes.
+- Codex app-server backend: ephemeral threads, developer instructions, and a
+  reasoning-effort hint (summarize requests run at `low`, the evaluate judge at
+  `high`).
+- `axon doctor` surfaces a Codex capability probe (available models + rate-limit
+  headroom) when the configured LLM backend is `codex-app-server`.
+
+### Changed
+- Release version bump.
+- Crawl page bodies are now capped at 4 MiB by default (previously unlimited);
+  pages over the cap are skipped. Set `scrape.max_page_bytes = 0` in
+  `~/.axon/config.toml` to restore unlimited.
+- Uncapped crawls (`--max-pages 0`) of a deep (≥2 path-segment) start URL are
+  now allowed — they auto-scope to the path subtree. Only uncapped root or
+  single-segment crawls remain rejected.
+
+### Fixed
+- Added crawl memory guardrails for unscoped uncapped crawls, oversized page
+  bodies, broadcast buffering, and queued HTML-owning fallback tasks.
+- JSON/YAML/TOML files that exceed the per-file chunk cap now log a warning
+  naming the file and the dropped chunk count instead of silently truncating.
+
+## [5.16.5] - 2026-06-20
+
+### Changed
+- Release version bump.
+
+## [5.16.4] - 2026-06-20
+
+### Changed
+- Release version bump.
+
+## [5.16.3] - 2026-06-20
+
+### Changed
+- Release version bump.
+
+## [5.16.2] - 2026-06-18
+
+### Changed
+- Release version bump.
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [5.16.1] - 2026-06-16
 
 ### Changed

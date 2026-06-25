@@ -1,5 +1,5 @@
-use axon::cli::commands::monitor::{JobMonitorState, detect_job_events};
-use axon::services::types::ServiceJob;
+use axon_cli::commands::monitor::{JobMonitorState, detect_job_events};
+use axon_services::types::ServiceJob;
 use chrono::{TimeZone, Utc};
 use serde_json::json;
 use uuid::Uuid;
@@ -17,6 +17,7 @@ fn job(id: Uuid, status: &str, target: &str, result_json: serde_json::Value) -> 
         source_type: None,
         target: Some(target.to_string()),
         urls_json: None,
+        progress_json: None,
         result_json: Some(result_json),
         config_json: None,
         attempt_count: 1,

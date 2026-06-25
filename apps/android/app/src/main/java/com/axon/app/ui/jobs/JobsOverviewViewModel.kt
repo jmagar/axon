@@ -19,8 +19,6 @@ import kotlinx.coroutines.launch
 
 private const val OVERVIEW_TAG = "JobsOverviewVM"
 private const val OVERVIEW_POLL_MS = 30_000L
-private val ACTIVE_STATUSES = setOf("pending", "running", "processing")
-
 /** Lightweight job-overview ViewModel for the drawer. Polling is active only while visible. */
 class JobsOverviewViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as AxonApp).container
@@ -56,6 +54,17 @@ class JobsOverviewViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { refreshNow() }
     }
 
+    suspend fun crawledPagesFor(job: JobUi): Result<List<String>> {
+        if (job.kind != JobFamily.Crawl) return Result.success(emptyList())
+        val inline = crawledPageUrlsFromResult(job.resultJson)
+        if (inline.isNotEmpty()) return Result.success(inline)
+        val manifestPath = crawlManifestArtifactPath(job.resultJson)
+            ?: return Result.success(emptyList())
+        return repo.artifactText(manifestPath).map { manifest ->
+            parseCrawlManifestUrls(manifest)
+        }
+    }
+
     private suspend fun refreshNow() {
         refreshCoordinator.refresh {
             loadOverview()
@@ -73,7 +82,7 @@ class JobsOverviewViewModel(app: Application) : AndroidViewModel(app) {
             repo.listJobs(kind).fold(
                 onSuccess = { jobs ->
                     byKind[kind] = jobs
-                    all += jobs.filter { it.status in ACTIVE_STATUSES }
+                    all += jobs.filter { isActiveJobStatus(it.status) }
                 },
                 onFailure = { e ->
                     failures++
@@ -84,7 +93,7 @@ class JobsOverviewViewModel(app: Application) : AndroidViewModel(app) {
                         .map { it.toFallbackJob(kind) }
                     if (fallback.isNotEmpty()) {
                         byKind[kind] = fallback
-                        all += fallback.filter { it.status in ACTIVE_STATUSES }
+                        all += fallback.filter { isActiveJobStatus(it.status) }
                     }
                 },
             )
@@ -110,6 +119,5 @@ class JobsOverviewViewModel(app: Application) : AndroidViewModel(app) {
             target = target,
             errorText = null,
             resultJson = null,
-            finishedAt = null,
         )
 }

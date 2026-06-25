@@ -30,6 +30,7 @@ fn reads_component_manifest() {
                 "release.yml",
                 &[
                     "src".to_owned(),
+                    "crates".to_owned(),
                     "Cargo.toml".to_owned(),
                     "Cargo.lock".to_owned(),
                     "build.rs".to_owned(),
@@ -75,6 +76,73 @@ version = "1.2.3"
         read_cargo_package_version(content, Some("axon")).expect("version"),
         "1.2.3"
     );
+}
+
+#[test]
+fn cargo_package_version_bump_also_bumps_workspace_package() {
+    // The root manifest carries both `[package] axon` and `[workspace.package]`
+    // (inherited by every extracted crate). A cli bump must move both so every
+    // crate's CARGO_PKG_VERSION tracks the product version.
+    let content = r#"[workspace]
+members = ["crates/axon-core"]
+
+[workspace.package]
+version = "5.19.0"
+
+[package]
+name = "axon"
+version = "5.19.0"
+"#;
+    let updated =
+        replace_cargo_package_version(content, Some("axon"), "5.20.0").expect("replace version");
+    assert_eq!(updated.matches(r#"version = "5.20.0""#).count(), 2);
+    assert!(!updated.contains(r#"version = "5.19.0""#));
+}
+
+#[test]
+fn read_workspace_package_version_present_and_absent() {
+    let with = r#"[workspace.package]
+version = "5.19.0"
+
+[package]
+name = "axon"
+version = "5.19.0"
+"#;
+    assert_eq!(
+        read_workspace_package_version(with).expect("parse"),
+        Some("5.19.0".to_owned())
+    );
+    let without = r#"[package]
+name = "axon-palette-tauri"
+version = "5.10.2"
+"#;
+    assert_eq!(
+        read_workspace_package_version(without).expect("parse"),
+        None
+    );
+}
+
+#[test]
+fn workspace_package_version_must_equal_product_version() {
+    let temp = TempDir::new().expect("tempdir");
+    let manifest = |ws: &str, pkg: &str| {
+        format!(
+            "[workspace.package]\nversion = \"{ws}\"\n\n[package]\nname = \"axon\"\nversion = \"{pkg}\"\n"
+        )
+    };
+    let path = temp.path().join("Cargo.toml");
+
+    fs::write(&path, manifest("5.19.0", "5.19.0")).unwrap();
+    check_workspace_package_version(temp.path(), "5.19.0").expect("matching versions pass");
+
+    fs::write(&path, manifest("5.18.0", "5.19.0")).unwrap();
+    let err = check_workspace_package_version(temp.path(), "5.19.0")
+        .expect_err("drifted workspace version must fail");
+    assert!(err.to_string().contains("[workspace.package] version"));
+
+    // No [workspace.package] table → guard is a no-op.
+    fs::write(&path, "[package]\nname = \"axon\"\nversion = \"5.19.0\"\n").unwrap();
+    check_workspace_package_version(temp.path(), "5.19.0").expect("no workspace table is a no-op");
 }
 
 #[test]
@@ -209,6 +277,19 @@ fn gradle_version_code_bump_rejects_cap() {
     let error = increment_gradle_version_code("versionCode = 2100000000\n")
         .expect_err("cap cannot be bumped");
     assert!(error.to_string().contains("between 1 and"));
+}
+
+#[test]
+fn suggested_level_hint_renders_or_is_empty() {
+    assert_eq!(
+        suggested_level_hint(Some(BumpLevel::Minor)),
+        " (suggested bump: minor)"
+    );
+    assert_eq!(
+        suggested_level_hint(Some(BumpLevel::Major)),
+        " (suggested bump: major)"
+    );
+    assert_eq!(suggested_level_hint(None), "");
 }
 
 #[test]
@@ -603,6 +684,11 @@ fn android_change_allows_version_code_increase() {
 "#,
     )
     .unwrap();
+    fs::write(
+        fixture.path("apps/android/CHANGELOG.md"),
+        "# Changelog\n\n## [1.3.3]\n",
+    )
+    .unwrap();
     fixture.git(&["add", "apps/android/app/build.gradle.kts"]);
     fixture.git(&["commit", "-m", "bump android version"]);
 
@@ -735,7 +821,7 @@ fn main_mode_android_version_code_compares_against_latest_tag() {
 #[test]
 fn bump_cli_updates_source_manifests_and_lockfiles() {
     let fixture = Fixture::new();
-    bump(fixture.root(), "cli", BumpLevel::Patch).unwrap();
+    bump(fixture.root(), "cli", Some(BumpLevel::Patch), true).unwrap();
 
     assert!(
         fs::read_to_string(fixture.path("Cargo.toml"))
@@ -785,7 +871,7 @@ fn bump_cli_updates_source_manifests_and_lockfiles() {
 #[test]
 fn bump_android_updates_version_name_and_code() {
     let fixture = Fixture::new();
-    bump(fixture.root(), "android", BumpLevel::Patch).unwrap();
+    bump(fixture.root(), "android", Some(BumpLevel::Patch), true).unwrap();
     let content = fs::read_to_string(fixture.path("apps/android/app/build.gradle.kts")).unwrap();
     assert_eq!(read_gradle_version_name(&content).unwrap(), "1.3.3");
     assert_eq!(read_gradle_version_code(&content).unwrap(), 7);
@@ -794,7 +880,7 @@ fn bump_android_updates_version_name_and_code() {
 #[test]
 fn bump_palette_updates_source_manifests_and_lockfile() {
     let fixture = Fixture::new();
-    bump(fixture.root(), "palette", BumpLevel::Minor).unwrap();
+    bump(fixture.root(), "palette", Some(BumpLevel::Minor), true).unwrap();
 
     assert_eq!(
         read_json_version(
@@ -990,6 +1076,7 @@ version = "0.1.0"
             r#"{"name":"axon"}"#,
         );
         write(&self.path("src/lib.rs"), "pub fn original() {}\n");
+        write(&self.path("crates/.keep"), "");
         write(&self.path("build.rs"), "");
         write(&self.path("migrations/.keep"), "");
         write(&self.path("rust-toolchain.toml"), "");
@@ -1032,6 +1119,20 @@ version = "5.10.2"
         write(
             &self.path("apps/chrome-extension/manifest.json"),
             r#"{"manifest_version":3,"version":"0.2.0"}"#,
+        );
+        // Per-component changelogs (headings match each version_source above) so
+        // the copied manifest's changelog_heading entries validate and pass parity.
+        write(
+            &self.path("apps/palette-tauri/CHANGELOG.md"),
+            "# Changelog\n\n## [5.10.2]\n",
+        );
+        write(
+            &self.path("apps/android/CHANGELOG.md"),
+            "# Changelog\n\n## [1.3.2]\n",
+        );
+        write(
+            &self.path("apps/chrome-extension/CHANGELOG.md"),
+            "# Changelog\n\n## [0.2.0]\n",
         );
         write(&self.path("assets/.keep"), "");
     }

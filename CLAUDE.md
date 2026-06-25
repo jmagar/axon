@@ -3,6 +3,15 @@ Last Modified: 2026-06-11
 
 Web crawl, scrape, extract, embed, and query — all in one binary backed by a self-hosted RAG stack.
 
+## Long-Lived Branches
+
+- `marketplace-no-mcp` is an intentional long-lived marketplace variant branch,
+  not stale cleanup. It keeps Axon's plugin/skill surface available while
+  removing bundled MCP server registration for environments where Axon is
+  already connected through the Labby gateway.
+- Do not merge `marketplace-no-mcp` into `main` by default, and do not delete it
+  as stale unless Jacob explicitly retires the no-MCP marketplace variant.
+
 ## Quick Start
 
 > **SQLite/in-process jobs are the runtime.** axon requires only Qdrant and TEI. Jobs are stored in SQLite and workers run in-process inside the same tokio runtime.
@@ -51,6 +60,8 @@ MCP docs:
 | `embed [input]` | Embed file/dir/URL into Qdrant | Yes (default) |
 | `memory <sub>` | Persistent agent memory: `remember`, `search`, `show`, `link`, `supersede`, `context` backed by Qdrant content + SQLite metadata/edges | No |
 | `query <text>` | Semantic vector search | No |
+| `code-search <text>` | Local Git checkout semantic code search with foreground freshness | No |
+| `code-search-watch` | Host-local watcher that refreshes code-search indexes for Git repos under a workspace/project directory | No |
 | `retrieve <url>` | Fetch stored document chunks from Qdrant | No |
 | `ask <question>` | RAG: search + LLM answer. | No |
 | `summarize <url>...` | Scrape URL content and summarize it with the configured LLM | No |
@@ -63,6 +74,7 @@ MCP docs:
 | `sources` | List all indexed URLs + chunk counts | No |
 | `domains` | List indexed domains + stats | No |
 | `stats` | Qdrant collection stats | No |
+| `purge <url>` | Delete indexed Qdrant points by URL/seed URL. Use `--prefix` for a whole docs subtree/origin and `--dry-run` to preview matches. Alias: `delete-url`. | No |
 | `status` | Show async job queue status | No |
 | `doctor` | Diagnose service connectivity | No |
 | `debug` | Run doctor + LLM-assisted troubleshooting | No |
@@ -106,7 +118,7 @@ All flags are `--global` (usable with any subcommand).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--max-pages <n>` | u32 | `0` | Page cap for crawl (0 = uncapped, default). |
+| `--max-pages <n>` | u32 | `2000` for `crawl`, `1` for omitted `extract` | Page cap. Set `0` explicitly for an uncapped crawl. Uncapped crawls require an explicit `--budget`/`--url-whitelist` scope or `AXON_ALLOW_UNBOUNDED_BROAD_CRAWL=true`. |
 | `--max-depth <n>` | usize | `10` | Maximum crawl depth from start URL. |
 | `--budget <PATH=N>` | string | — | Per-path page cap (repeatable), e.g. `--budget /blog=100 --budget '*=1000'`. `*` applies to all paths. Unset = no budget. Wired to spider's `with_budget`. |
 | `--etag-conditional` | flag | `false` | Conditional re-crawl: seed spider's ETag cache from a persisted `etag.json` sidecar so unchanged pages return 304 and are reused from the previous run instead of re-fetched. Independent of `--cache`. 304 skips are reconciled back into the manifest as `changed=false` entries, gated on spider's visited set so deleted/undiscovered pages are not resurrected. |
@@ -123,6 +135,10 @@ All flags are `--global` (usable with any subcommand).
 | `--header <HEADER>` | string | — | Custom HTTP header in `Key: Value` format. Repeatable (`--header "Auth: Bearer ..." --header "X-Custom: val"`). Applied to crawl, scrape, extract, and Chrome re-fetch paths. |
 | `--warc <PATH>` | path | — | Write every fetched page of a crawl to a WARC 1.1 archive at this path. HTTP and Chrome render paths both archive (spider `warc` feature). Crawl path only; round-trips through the crawl job config snapshot. |
 | `--automation-script <PATH>` | path | — | JSON file mapping URL path prefixes → ordered Chrome web-automation steps (`click`/`click_all`/`scroll_x`/`scroll_y`/`infinite_scroll`/`wait`/`wait_for`/`wait_for_and_click`/`wait_for_navigation`/`fill`/`evaluate`/`screenshot`). Steps run against each matching page before capture. **Requires a Chrome render path** (`--render-mode chrome`/`auto-switch`); ignored with a warning on HTTP-only. See `src/crawl/automation.rs`. |
+
+Memory safety:
+- Crawl page bodies are capped at 4 MiB by default (set `scrape.max_page_bytes` in `~/.axon/config.toml` to override; `0` disables — there is no CLI flag).
+- Long-running crawls self-abort when Axon's RSS reaches `AXON_CRAWL_MEMORY_ABORT_PERCENT` of the host/cgroup memory limit (the lower of the two, so inside a container the denominator is the cgroup cap, not host RAM); default is `85`, and `0` disables the guard. Linux-only — the guard never trips on other platforms.
 
 #### Output
 
@@ -165,45 +181,69 @@ All flags are `--global` (usable with any subcommand).
 
 Canonical architecture and data-flow diagrams live in `docs/architecture/overview.md`.
 
-High-level subsystem map:
+### Workspace layout (Rust crates)
+
+The product is a Cargo workspace of 13 library/adapter crates under `crates/`,
+consumed by the thin `axon` binary at the repo root (`src/main.rs` +
+`src/lib.rs`, which re-exports `axon_cli::run`). Each crate keeps its module
+guide in `crates/<crate>/src/CLAUDE.md`. All crates inherit the product version
+via `[workspace.package] version` (so `CARGO_PKG_VERSION` tracks releases).
+
+Dependency layering (lower → higher; no cycles):
+
+```
+axon-api      (transport-neutral DTOs: results, diff, mcp_schema, job_dto, service_job, job_status)
+axon-authz    (scope checking)
+   ↓
+axon-core     (config, http/SSRF, content/chunking, llm, paths, artifacts, events, redact)
+   ↓
+axon-crawl · axon-vector · axon-ingest · axon-extract · axon-code-index
+   ↓
+axon-jobs     (SQLite job runtime + in-process workers; constructs axon_api::ServiceJob)
+   ↓
+axon-services (typed service-first entry points; the only API CLI/MCP/web call)
+   ↓
+axon-mcp · axon-web   (siblings; the unified `serve` bootstrap lives in axon-cli)
+   ↓
+axon-cli      (argv dispatch + all command handlers)
+   ↓
+axon (binary) (main.rs + build.rs web-asset embed)
+```
+
+High-level subsystem map (paths are `crates/<crate>/src/...`):
 
 - Entrypoint and dispatch:
-  - `main.rs` loads environment and calls `axon::run()`
-  - `lib.rs` owns `run`/`run_once` and command dispatch
+  - `src/main.rs` loads environment and calls `axon::run()` (re-exports `axon_cli::run`)
+  - `crates/axon-cli/src/lib.rs` owns `run`/`run_once` and command dispatch
 - Command + config:
-  - `src/cli/*` command handlers
-  - `src/core/config/{cli,parse,types}.rs` flag/env parsing and runtime config resolution
+  - `crates/axon-cli/src/commands/*` command handlers
+  - `crates/axon-core/src/config/{cli,parse,types}.rs` flag/env parsing and runtime config resolution
 - Crawl + content:
-  - `src/crawl/engine.rs` (collector pipeline runs antibot detect, structured-data pass, DOM ladder before commit)
-  - `src/core/http.rs` and `src/core/content.rs` (including `extract_ladder.rs` retry strategy)
+  - `crates/axon-crawl/src/engine.rs` (collector pipeline runs antibot detect, structured-data pass, DOM ladder before commit)
+  - `crates/axon-core/src/http.rs` and `crates/axon-core/src/content.rs` (including `extract_ladder.rs` retry strategy)
 - Vertical extractors:
-  - `src/extract/` — per-site extractor framework (registry + 13 verticals: github_repo, pypi, npm, crates_io, reddit, etc.) — see `src/extract/CLAUDE.md`
+  - `crates/axon-extract/src/` — per-site extractor framework (registry + verticals) + `scrape`/`sync` — see `crates/axon-extract/src/CLAUDE.md`
   - Auto-routed from `services::scrape::scrape` via `dispatch_by_url()` when `cfg.enable_verticals = true` (default on)
 - Async jobs:
-  - `src/jobs/runtime.rs` + `src/jobs/` (SQLite-backed enqueue/query/store/cancel)
-  - `src/jobs/workers.rs` + `src/jobs/workers/runners/{crawl,embed,extract,ingest}.rs` (in-process worker lanes)
-  - `src/jobs/{crawl,embed,extract,ingest}.rs` (per-family job payload + dispatch helpers)
-  - `src/jobs/crawl/sitemap.rs` (sitemap helpers; the former `processor`/`repo`/`watchdog`/`worker`/`runtime` files were consolidated into `src/jobs/workers.rs` + `workers/runners/`)
-  - `src/jobs/watch.rs` (recurring task scheduler — list/create/run-now/history + `lease_due_watches`)
-  - `src/jobs/workers/watch_scheduler.rs` (in-process loop that auto-fires due watches)
-  - `src/jobs/backend.rs` (`JobBackend` trait + `SqliteJobBackend` only)
-  - job states in `src/jobs/status.rs`
+  - `crates/axon-jobs/src/runtime.rs` + the crate (SQLite-backed enqueue/query/store/cancel)
+  - `crates/axon-jobs/src/workers.rs` + `workers/runners/{crawl,embed,extract,ingest}.rs` (in-process worker lanes)
+  - `crates/axon-jobs/src/{crawl,embed,extract,ingest}.rs` (per-family job payload + dispatch helpers)
+  - `crates/axon-jobs/src/watch.rs` (recurring task scheduler) + `workers/watch_scheduler.rs`
+  - `crates/axon-jobs/src/backend.rs` (`JobBackend` trait + `SqliteJobBackend`); `JobStatus`/`ServiceJob` now live in `axon-api`
+  - migrations in `crates/axon-jobs/src/migrations`
 - Vector + RAG:
-  - `src/vector/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
-  - Hybrid search: new collections use named `dense` + `bm42` sparse vectors with Reciprocal Rank Fusion (RRF) via Qdrant `/query` when hybrid search is active; falls back to dense-only when the sparse query is empty or hybrid is disabled. Legacy collections use dense-only. See `src/vector/CLAUDE.md`.
-- Services layer (services-first contract) — see `src/services/CLAUDE.md`:
-  - `src/services/` — typed entry points consumed by both CLI handlers and MCP/web routes
-  - CLI commands call `src/services::{query,retrieve,ask,summarize,sources,domains,stats,system}` — **not** raw `run_*_native()` functions (those public call-site entry points are removed from the API surface; callers must go through the services layer)
-  - Each service function returns a typed result struct (defined in `src/services/types/service.rs`) — no raw JSON printing or stdout side-effects
-  - MCP handlers and web routes call the same service functions, mapping typed results to wire format
-  - Gemini headless LLM completions live in `src/core/llm/` — used by ask synthesis, summarize, research, evaluate, suggest, debug, and extract fallback
+  - `crates/axon-vector/src/ops/*` (TEI embedding, Qdrant upsert/search, ask/evaluate/query)
+  - Hybrid search: new collections use named `dense` + `bm42` sparse vectors with RRF. See `crates/axon-vector/src/CLAUDE.md`.
+- Services layer (services-first contract) — see `crates/axon-services/src/CLAUDE.md`:
+  - `crates/axon-services/src/` — typed entry points consumed by CLI handlers and MCP/web routes
+  - Each service function returns a typed result struct — no raw JSON printing or stdout side-effects
+  - Gemini headless LLM completions live in `crates/axon-core/src/llm/`
 - MCP server:
-  - `src/mcp/` (schema, server routing, handler modules, config)
+  - `crates/axon-mcp/src/` (server routing, handler modules, auth); wire-contract DTOs in `axon-api::mcp_schema`
   - Single `axon` tool with `action`/`subaction` routing
 - HTTP server (`axon serve`):
-  - `src/web/` — Axum router, auth, health, first-run + stack panel UI, security headers
-  - `src/web/server/` — server bootstrap; `src/web/actions/` — `/v1/actions` handlers
-  - Shares the `ServiceContext` from `src/services/context.rs`; see `src/web/CLAUDE.md`
+  - `crates/axon-web/src/` — Axum router, auth, health, first-run + stack panel UI, security headers
+  - The unified web+MCP `serve` bootstrap (`run_unified_server`) lives in `crates/axon-cli/src/commands/unified_server.rs` (the only layer depending on both web and mcp)
 
 ## Infrastructure
 
@@ -478,7 +518,7 @@ Reads files via `read_inputs()`/`collect_embed_files()` in `src/vector/ops/tei/p
 `qdrant_delete_stale_repo_file_urls` (run after a full-source GitHub ingest) filters on `git_provider`/`git_owner`/`git_repo`/`git_content_kind` — payload fields that exist only on chunks indexed at payload schema v7 (5.5.0) or later. File chunks indexed **before** v7 never match the filter: files deleted upstream keep their pre-v7 chunks in the index until the repo's URLs are re-indexed at v7+ (one full re-ingest upserts over live URLs by deterministic point ID and makes subsequent cleanups authoritative). Same-target ingest jobs are serialized at claim time (`src/jobs/ops/lifecycle.rs`) so one job's cleanup cannot race a concurrent ingest of the same repo.
 
 ### `seed_url` origin tracking (distinct from `url`)
-Every chunk payload carries `seed_url` — the **origin** that started its acquisition — alongside the chunk's own page `url`. It is stamped once in `src/vector/ops/tei/pipeline.rs` from `cfg.seed_url`, which the job runners set: the crawl runner (`jobs/workers/runners/crawl.rs`) sets it to the crawl start URL (propagated to the downstream embed job via the config snapshot); the ingest runner (`jobs/workers/runners/ingest.rs`) and sync ingest set it to the re-ingestable target (`owner/repo`, `r/rust`, …). When `cfg.seed_url` is unset (direct `embed`/`scrape`), the pipeline falls back to the doc's own `url`. `seed_url` is an indexed keyword (faceted) and bumped `PAYLOAD_SCHEMA_VERSION` to **7** (current value — see `src/vector/ops/qdrant/utils.rs` doc-comment). To add an origin-bearing path, set `cfg.seed_url` before embedding — do **not** thread it through the ~28 `PreparedDoc` builders. `axon refresh` facets on this field to re-enqueue origins; chunks indexed before 5.2.0 lack it and are invisible to refresh until re-indexed.
+Every chunk payload carries `seed_url` — the **origin** that started its acquisition — alongside the chunk's own page `url`. It is stamped once in `src/vector/ops/tei/pipeline.rs` from `cfg.seed_url`, which the job runners set: the crawl runner (`jobs/workers/runners/crawl.rs`) sets it to the crawl start URL (propagated to the downstream embed job via the config snapshot); the ingest runner (`jobs/workers/runners/ingest.rs`) and sync ingest set it to the re-ingestable target (`owner/repo`, `r/rust`, …). When `cfg.seed_url` is unset (direct `embed`/`scrape`), the pipeline falls back to the doc's own `url`. `seed_url` is an indexed keyword (faceted), introduced at payload schema **v5** (the current `PAYLOAD_SCHEMA_VERSION` is **8** — see `src/vector/ops/qdrant/utils.rs` doc-comment for the full version history). To add an origin-bearing path, set `cfg.seed_url` before embedding — do **not** thread it through the ~28 `PreparedDoc` builders. `axon refresh` facets on this field to re-enqueue origins; chunks indexed before 5.2.0 lack it and are invisible to refresh until re-indexed.
 
 ### Thin page filtering
 Pages with fewer than `--min-markdown-chars` (default: 200) are flagged as thin. If `--drop-thin-markdown true` (default), thin pages are skipped — not saved to disk or embedded.
@@ -527,12 +567,7 @@ New crawl job submissions check the count of pending jobs before inserting. If t
 When crawling a URL with ≥2 path segments and no explicit `--url-whitelist`, the crawl is automatically scoped to the directory subtree of the start URL via a derived whitelist regex. For example, crawling `https://ai.google.dev/api/python/google/generativeai/GenerativeModel` auto-scopes to `^https?://ai\.google\.dev/api/python/google/generativeai(/|$)`. Root paths (`/`) and single-segment paths (`/docs`) are not scoped — they're already broad enough. Pass `--url-whitelist <pattern>` to override auto-scoping.
 
 ### Adding fields to `Config` struct
-When adding a new non-`Option` field to `Config` in `src/core/config/types/config.rs`, you **must** also update the inline `Config { .. }` struct literals used in test helpers:
-- `src/cli/commands/research.rs`
-- `src/cli/commands/search.rs`
-- Any `make_test_config()` helpers in `src/jobs/common/`
-
-These are struct literals — the compiler will fail if a new field is missing, but only at test compilation time, not `cargo check`.
+When adding a new non-`Option` field to `Config` in `src/core/config/types/config.rs`, add it (with a default) to `Config::default()` in `src/core/config/types/config_impls.rs` — that is the **single source of truth**. Test helpers build on it via `Config::test_default()` (which spreads `..Default::default()`), so they do **not** need updating when a field is added. If the field is env/TOML-configurable, also wire it in `src/core/config/parse/build_config/config_literal.rs` (and the TOML struct in `parse/toml_config.rs`). The whole-`Config` struct literals the old guidance pointed at no longer exist — adding a field compiles cleanly because every test path goes through `Config::default()`/`test_default()`.
 
 ## Performance Profiles
 
@@ -820,11 +855,17 @@ git tag chrome-ext-vX.Y.Z && git push origin chrome-ext-vX.Y.Z  # chrome
 ### Version bumping rules
 
 **Bump ONLY the component(s) whose shipping code you changed** — versions are
-independent per component. Bump type is determined by the commit message prefix:
+independent per component. Bump type is determined by the commit message prefix
+(auto-derived by `cargo xtask bump-version`, via git-cliff + `cliff.toml`):
 
 - `feat!:` or `BREAKING CHANGE` → **major** (X+1.0.0)
 - `feat` or `feat(...)` → **minor** (X.Y+1.0)
 - Everything else (`fix`, `chore`, `refactor`, `test`, `docs`, etc.) → **patch** (X.Y.Z+1)
+
+`cargo xtask bump-version <component>` derives the level from the conventional
+commits touching that component's shipping paths since its last tag; pass an
+explicit `patch|minor|major` to override. It bumps from `max(version_source,
+latest tag)` so a worktree that lags `main` cannot collide with an existing tag.
 
 **CLI component — all of these MUST move together (Cargo.toml is the source of truth):**
 - `Cargo.toml` — `version = "X.Y.Z"` in `[package]` (Cargo.lock follows on next build)
@@ -843,10 +884,20 @@ independent per component. Bump type is determined by the commit message prefix:
 `just validate-plugin` (part of `just verify`) hard-fails on it; the plugin is
 versioned by the marketplace, not the manifest.
 
-CHANGELOG.md must have an entry for every CLI version bump.
+**Changelogs are generated, not hand-stamped.** Each component has its own
+`CHANGELOG.md` (`CHANGELOG.md`, `apps/palette-tauri/CHANGELOG.md`,
+`apps/android/CHANGELOG.md`, `apps/chrome-extension/CHANGELOG.md`). `bump-version`
+prepends a real section via git-cliff, scoped to the component's shipping paths +
+tag prefix (config in `cliff.toml`). **`git-cliff` must be installed where you run
+`bump-version`** (`mise use -g git-cliff`); the CI gate
+(`check-release-versions`) does **not** require it. Use `--skip-changelog` to fall
+back to an empty heading in an emergency, or
+`cargo xtask regen-changelog <component> --output <path>` to rebuild a changelog
+from full history. **Editing a `CHANGELOG.md` never triggers a release** — change
+detection ignores it, so documenting a release can't recursively cut another.
 
-Use `cargo xtask bump-version <component> patch|minor|major` to bump every
-version-bearing file for one component. The PR gate is:
+Use `cargo xtask bump-version <component> [patch|minor|major]` to bump every
+version-bearing file for one component (level optional — see above). The PR gate is:
 
 ```bash
 cargo xtask check-release-versions --base origin/main --head HEAD --mode pr
