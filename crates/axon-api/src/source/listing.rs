@@ -13,8 +13,11 @@ use super::stage::{ManifestItem, StageCounts};
 #[serde(deny_unknown_fields)]
 pub struct Page<T> {
     pub items: Vec<T>,
+    pub limit: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]

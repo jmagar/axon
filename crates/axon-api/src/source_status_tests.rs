@@ -158,7 +158,9 @@ fn watch_and_listing_dtos_are_contract_shaped() {
     };
     let page = Page {
         items: vec![summary],
+        limit: 50,
         next_cursor: None,
+        total: Some(1),
     };
 
     let value = serde_json::to_value(&request).expect("watch request");
@@ -216,11 +218,15 @@ fn source_job_and_watch_management_dtos_round_trip() {
         latest_generation: Some(SourceGenerationId::from("gen_2")),
         items: Page {
             items: Vec::new(),
+            limit: 50,
             next_cursor: None,
+            total: Some(0),
         },
         documents: Page {
             items: Vec::new(),
+            limit: 50,
             next_cursor: None,
+            total: Some(0),
         },
         graph_refs: Vec::new(),
         metadata: MetadataMap::default(),
@@ -253,7 +259,9 @@ fn source_job_and_watch_management_dtos_round_trip() {
         progress: None,
         events: Page {
             items: vec![job_event],
+            limit: 50,
             next_cursor: None,
+            total: Some(1),
         },
         artifacts: Vec::new(),
         metadata: MetadataMap::default(),
