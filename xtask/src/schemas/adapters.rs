@@ -46,90 +46,9 @@ fn schema_bundle(inputs: &[SourceInput], adapters: Vec<Value>) -> Value {
         "description": "Generated route-time adapter scope and capability registry.",
         "type": "object",
         "required": ["x-axon"],
-        "properties": {
-            "x-axon": {
-                "type": "object",
-                "required": [
-                    "contract_version",
-                    "generated_by",
-                    "owner_crates",
-                    "source_inputs",
-                    "clean_break",
-                    "registry_status",
-                    "adapters"
-                ],
-                "properties": {
-                    "contract_version": { "type": "string" },
-                    "generated_by": { "const": "cargo xtask schemas adapters" },
-                    "owner_crates": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "source_inputs": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    },
-                    "clean_break": { "const": true },
-                    "registry_status": { "type": "string" },
-                    "adapters": {
-                        "type": "array",
-                        "items": { "$ref": "#/$defs/AdapterCapability" }
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
+        "properties": envelope_properties(),
         "additionalProperties": false,
-        "$defs": {
-            "AdapterCapability": {
-                "type": "object",
-                "required": [
-                    "name",
-                    "version",
-                    "source_kind",
-                    "default_scope",
-                    "supported_scopes",
-                    "watch_supported",
-                    "refresh_supported"
-                ],
-                "properties": {
-                    "name": { "type": "string" },
-                    "version": { "type": "string" },
-                    "source_kind": { "type": "string" },
-                    "default_scope": { "type": "string" },
-                    "supported_scopes": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "safety_class": { "type": "string" },
-                    "execution_affinity": { "type": "string" },
-                    "provider_requirements": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    },
-                    "credential_requirements": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    },
-                    "option_schema_id": { "type": "string" },
-                    "allowed_option_keys": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "chunking_hints": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    },
-                    "parser_hints": {
-                        "type": "array",
-                        "items": { "type": "object" }
-                    },
-                    "watch_supported": { "type": "boolean" },
-                    "refresh_supported": { "type": "boolean" }
-                },
-                "additionalProperties": true
-            }
-        },
+        "$defs": adapter_defs(),
         "x-axon": {
             "contract_version": "2026-06-30",
             "generated_by": "cargo xtask schemas adapters",
@@ -139,6 +58,99 @@ fn schema_bundle(inputs: &[SourceInput], adapters: Vec<Value>) -> Value {
             "registry_status": "route-time implemented subset",
             "adapters": adapters
         }
+    })
+}
+
+fn envelope_properties() -> Value {
+    json!({
+        "x-axon": {
+            "type": "object",
+            "required": [
+                "contract_version",
+                "generated_by",
+                "owner_crates",
+                "source_inputs",
+                "clean_break",
+                "registry_status",
+                "adapters"
+            ],
+            "properties": {
+                "contract_version": { "type": "string" },
+                "generated_by": { "const": "cargo xtask schemas adapters" },
+                "owner_crates": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "source_inputs": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                },
+                "clean_break": { "const": true },
+                "registry_status": { "type": "string" },
+                "adapters": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/AdapterCapability" }
+                }
+            },
+            "additionalProperties": false
+        }
+    })
+}
+
+fn adapter_defs() -> Value {
+    json!({
+        "AdapterCapability": {
+            "type": "object",
+            "required": [
+                "name",
+                "version",
+                "source_kind",
+                "default_scope",
+                "supported_scopes",
+                "watch_supported",
+                "refresh_supported"
+            ],
+            "properties": adapter_properties(),
+            "additionalProperties": true
+        }
+    })
+}
+
+fn adapter_properties() -> Value {
+    json!({
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "source_kind": { "type": "string" },
+        "default_scope": { "type": "string" },
+        "supported_scopes": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "safety_class": { "type": "string" },
+        "execution_affinity": { "type": "string" },
+        "provider_requirements": {
+            "type": "array",
+            "items": { "type": "object" }
+        },
+        "credential_requirements": {
+            "type": "array",
+            "items": { "type": "object" }
+        },
+        "option_schema_id": { "type": "string" },
+        "allowed_option_keys": {
+            "type": "array",
+            "items": { "type": "string" }
+        },
+        "chunking_hints": {
+            "type": "array",
+            "items": { "type": "object" }
+        },
+        "parser_hints": {
+            "type": "array",
+            "items": { "type": "object" }
+        },
+        "watch_supported": { "type": "boolean" },
+        "refresh_supported": { "type": "boolean" }
     })
 }
 
