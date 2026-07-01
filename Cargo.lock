@@ -923,6 +923,7 @@ dependencies = [
  "axon-core",
  "axon-document",
  "axon-source-ledger",
+ "axon-vectors",
  "chrono",
  "futures-util",
  "httpmock",
