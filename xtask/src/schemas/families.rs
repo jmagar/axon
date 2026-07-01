@@ -294,7 +294,7 @@ fn cli_spec() -> FamilySpec {
         title: "AxonCliSchema",
         owner_crates: &["axon-cli", "axon-api"],
         source_paths: &[
-            "crates/axon-cli/src/lib.rs",
+            "crates/axon-cli/src",
             "docs/pipeline-unification/surfaces/command-contract.md",
         ],
         json_path: "docs/reference/cli/commands.json",
@@ -310,7 +310,7 @@ fn openapi_spec() -> FamilySpec {
         title: "AxonOpenApiSchema",
         owner_crates: &["axon-web", "axon-api"],
         source_paths: &[
-            "crates/axon-web/src/lib.rs",
+            "crates/axon-web/src",
             "docs/pipeline-unification/surfaces/rest-contract.md",
         ],
         json_path: "docs/reference/rest/openapi.json",
@@ -326,7 +326,7 @@ fn mcp_spec() -> FamilySpec {
         title: "AxonMcpToolSchema",
         owner_crates: &["axon-mcp", "axon-api"],
         source_paths: &[
-            "crates/axon-mcp/src/lib.rs",
+            "crates/axon-mcp/src",
             "docs/pipeline-unification/surfaces/tool-contract.md",
         ],
         json_path: "docs/reference/mcp/tool-schema.json",
@@ -342,7 +342,7 @@ fn config_spec() -> FamilySpec {
         title: "AxonConfigSchema",
         owner_crates: &["axon-core"],
         source_paths: &[
-            "crates/axon-core/src/config/types.rs",
+            "crates/axon-core/src/config",
             "docs/pipeline-unification/configuration/config-contract.md",
         ],
         json_path: "docs/reference/config/config.schema.json",
@@ -358,7 +358,7 @@ fn events_spec() -> FamilySpec {
         title: "AxonEventSchema",
         owner_crates: &["axon-observe"],
         source_paths: &[
-            "crates/axon-observe/src/lib.rs",
+            "crates/axon-observe/src",
             "docs/pipeline-unification/runtime/observability-contract.md",
         ],
         json_path: "docs/reference/runtime/events.schema.json",
