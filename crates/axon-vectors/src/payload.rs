@@ -295,6 +295,7 @@ fn forbidden_string_value(value: &str) -> bool {
         .iter()
         .any(|fragment| normalized.contains(fragment))
         || raw_dotenv_assignment(value)
+        || bare_secret_token(value)
         || home_credential_path(&normalized)
         || raw_html_blob(&normalized)
         || normalized.contains("adapter_response")
@@ -317,6 +318,24 @@ fn raw_dotenv_assignment(value: &str) -> bool {
                 .next()
                 .is_some_and(|ch| ch.is_ascii_uppercase() || ch == '_')
     })
+}
+
+fn bare_secret_token(value: &str) -> bool {
+    let trimmed = value.trim();
+    BARE_SECRET_TOKEN_PREFIXES
+        .iter()
+        .any(|prefix| bare_secret_token_with_prefix(trimmed, prefix))
+}
+
+fn bare_secret_token_with_prefix(value: &str, prefix: &str) -> bool {
+    let Some(rest) = value.strip_prefix(prefix) else {
+        return false;
+    };
+    let secret_chars = rest
+        .chars()
+        .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+        .count();
+    secret_chars >= 20
 }
 
 fn home_credential_path(normalized: &str) -> bool {
@@ -418,6 +437,17 @@ const FORBIDDEN_VALUE_FRAGMENTS: &[&str] = &[
     "refresh_token=",
     "secret_key=",
     "token=",
+];
+
+const BARE_SECRET_TOKEN_PREFIXES: &[&str] = &[
+    "sk-",
+    "sk_",
+    "sk-proj-",
+    "ghp_",
+    "github_pat_",
+    "xoxb-",
+    "xoxp-",
+    "glpat-",
 ];
 
 const HOME_CREDENTIAL_PATH_FRAGMENTS: &[&str] = &[

@@ -161,6 +161,12 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
                 field: "source_range.adapter_response".to_string(),
             },
         ),
+        (
+            "forbidden_bare_api_key_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "web_title".to_string(),
+            },
+        ),
     ];
 
     for (name, expected) in cases {
