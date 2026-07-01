@@ -2,6 +2,10 @@ pub(crate) fn is_youtube_host(host: &str) -> bool {
     host == "youtube.com" || host.ends_with(".youtube.com")
 }
 
+pub(crate) fn is_github_host(host: &str) -> bool {
+    host == "github.com" || host.ends_with(".github.com")
+}
+
 pub(crate) fn is_gitlab_host(host: &str) -> bool {
     host == "gitlab.com" || host.ends_with(".gitlab.com") || host.starts_with("gitlab.")
 }

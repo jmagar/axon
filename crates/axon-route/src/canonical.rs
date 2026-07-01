@@ -1,8 +1,9 @@
 //! Lexical source normalization and source-family detection.
 
-use crate::provider_host::{is_gitea_host, is_gitlab_host, is_youtube_host};
+use crate::provider_host::{is_gitea_host, is_github_host, is_gitlab_host, is_youtube_host};
+use crate::query::{normalized_query, sensitive_query_warnings};
 use axon_api::{Severity, SourceKind, SourceScope, SourceWarning};
-use url::{Url, form_urlencoded};
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanonicalSource {
@@ -127,6 +128,9 @@ fn canonical_feed(raw: &str) -> Option<CanonicalSource> {
         .or_else(|| raw.strip_prefix("feed:"))
         .or_else(|| raw.strip_prefix("atom:"))?;
     let url = normalized_url(feed_url)?;
+    if !is_http_url(&url) {
+        return None;
+    }
     let mut source = basic(
         format!("feed://{}{}", host_port(&url)?, clean_path(&url)),
         SourceKind::Feed,
@@ -260,8 +264,19 @@ fn canonical_gitea(raw: &str) -> Option<CanonicalSource> {
 
 fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
+    if !is_http_url(&url) {
+        return None;
+    }
     let path = repo_path(&url)?;
     if !path.ends_with(".git") {
+        return None;
+    }
+    let repo = path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".git"))
+        .unwrap_or_default();
+    if repo.is_empty() {
         return None;
     }
     let mut source = basic(
@@ -274,7 +289,7 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
         SourceKind::Git,
         SourceScope::Repo,
         "git",
-        path.rsplit('/').next().unwrap_or(&path),
+        repo,
         "resolved as generic Git repository source",
     );
     source.warnings.extend(sensitive_query_warnings(&url));
@@ -283,6 +298,9 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
 
 fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
+    if !is_http_url(&url) {
+        return None;
+    }
     if is_malformed_provider_url(&url) {
         return None;
     }
@@ -324,6 +342,10 @@ fn normalized_url(raw: &str) -> Option<Url> {
     Some(url)
 }
 
+fn is_http_url(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+}
+
 fn clean_path(url: &Url) -> String {
     let path = if url.path().is_empty() {
         "/"
@@ -344,90 +366,6 @@ fn host_port(url: &Url) -> Option<String> {
         Some(port) => format!("{host}:{port}"),
         None => host.to_string(),
     })
-}
-
-struct QueryNormalization {
-    query: String,
-    warnings: Vec<SourceWarning>,
-}
-
-fn normalized_query(url: &Url) -> QueryNormalization {
-    let mut kept = Vec::new();
-    let mut redacted = false;
-    for (key, value) in url.query_pairs() {
-        let key = key.to_string();
-        let value = value.to_string();
-        if is_tracking_param(&key) {
-            continue;
-        }
-        if is_sensitive_param(&key) {
-            redacted = true;
-            kept.push((key, "REDACTED".to_string()));
-        } else {
-            kept.push((key, value));
-        }
-    }
-    kept.sort();
-
-    let query = if kept.is_empty() {
-        String::new()
-    } else {
-        let mut serializer = form_urlencoded::Serializer::new(String::new());
-        for (key, value) in kept {
-            serializer.append_pair(&key, &value);
-        }
-        format!("?{}", serializer.finish())
-    };
-
-    let warnings = if redacted {
-        vec![warning(
-            "source.query.sensitive_redacted",
-            "sensitive query parameter values were redacted in canonical URI",
-        )]
-    } else {
-        Vec::new()
-    };
-
-    QueryNormalization { query, warnings }
-}
-
-fn is_tracking_param(key: &str) -> bool {
-    let key = key.to_ascii_lowercase();
-    key.starts_with("utm_")
-        || matches!(
-            key.as_str(),
-            "fbclid" | "gclid" | "msclkid" | "mc_cid" | "mc_eid" | "igshid"
-        )
-}
-
-pub(crate) fn sensitive_query_warnings(url: &Url) -> Vec<SourceWarning> {
-    if url.query_pairs().any(|(key, _)| is_sensitive_param(&key)) {
-        vec![warning(
-            "source.query.sensitive_redacted",
-            "sensitive query parameter values were redacted in canonical URI",
-        )]
-    } else {
-        Vec::new()
-    }
-}
-
-fn is_sensitive_param(key: &str) -> bool {
-    let key = key.to_ascii_lowercase();
-    key.contains("token")
-        || key.contains("secret")
-        || key.contains("password")
-        || key.contains("signature")
-        || key.contains("credential")
-        || key == "access_key"
-        || key == "awsaccesskeyid"
-        || key.starts_with("x-amz-")
-        || key == "sig"
-        || key == "jwt"
-        || key == "key"
-        || key == "api_key"
-        || key == "apikey"
-        || key == "auth"
-        || key == "authorization"
 }
 
 fn repo_path(url: &Url) -> Option<String> {
@@ -461,6 +399,10 @@ fn is_malformed_provider_url(url: &Url) -> bool {
     let Some(host) = url.host_str().map(|host| host.trim_start_matches("www.")) else {
         return false;
     };
+    malformed_youtube_url(host, url) || malformed_github_url(host, url)
+}
+
+fn malformed_youtube_url(host: &str, url: &Url) -> bool {
     (host == "youtu.be" && url.path().trim_start_matches('/').is_empty())
         || (is_youtube_host(host)
             && url.path() == "/watch"
@@ -468,6 +410,18 @@ fn is_malformed_provider_url(url: &Url) -> bool {
                 .query_pairs()
                 .find(|(key, _)| key == "v")
                 .is_some_and(|(_, value)| value.trim().is_empty()))
+}
+
+fn malformed_github_url(host: &str, url: &Url) -> bool {
+    if !is_github_host(host) {
+        return false;
+    }
+    let parts = url
+        .path()
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    parts.get(1).is_some_and(|repo| *repo == ".git")
 }
 
 fn basic(

@@ -92,7 +92,9 @@ impl AdapterRegistry {
     pub fn from_adapters(mut adapters: Vec<AdapterDefinition>) -> Self {
         for adapter in &mut adapters {
             if let Some(minimum) = minimum_safety_class(adapter.source_kind) {
-                adapter.safety_class = minimum;
+                if safety_rank(adapter.safety_class) < safety_rank(minimum) {
+                    adapter.safety_class = minimum;
+                }
             }
             if !adapter.supported_scopes.contains(&adapter.default_scope) {
                 adapter.supported_scopes.push(adapter.default_scope);
@@ -178,5 +180,14 @@ fn minimum_safety_class(source_kind: SourceKind) -> Option<SafetyClass> {
             Some(safety_class(source_kind))
         }
         _ => None,
+    }
+}
+
+fn safety_rank(safety_class: SafetyClass) -> u8 {
+    match safety_class {
+        SafetyClass::PublicNetwork => 0,
+        SafetyClass::AuthenticatedNetwork => 1,
+        SafetyClass::LocalFilesystem => 2,
+        SafetyClass::ToolExecution => 3,
     }
 }

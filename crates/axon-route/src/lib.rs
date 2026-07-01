@@ -7,6 +7,7 @@ pub mod capability;
 mod github;
 pub mod local_path;
 mod provider_host;
+mod query;
 pub mod resolver;
 pub mod router;
 pub mod scope;

@@ -26,6 +26,9 @@ pub(crate) fn canonical_github(raw: &str) -> Option<CanonicalSource> {
     }
     let owner = parts[0];
     let repo = trim_git_suffix(parts[1]);
+    if repo.is_empty() {
+        return None;
+    }
     let repo_uri = format!("github://{owner}/{repo}");
     let (canonical_uri, scope, reason) = github_subpath(&repo_uri, &parts[2..]).unwrap_or((
         repo_uri,
@@ -50,7 +53,7 @@ pub(crate) fn canonical_github(raw: &str) -> Option<CanonicalSource> {
     if let Ok(url) = url::Url::parse(raw) {
         source
             .warnings
-            .extend(crate::canonical::sensitive_query_warnings(&url));
+            .extend(crate::query::sensitive_query_warnings(&url));
     }
     Some(source)
 }

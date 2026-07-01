@@ -171,6 +171,8 @@ fn resolver_rejects_empty_source_identifiers() {
         "crates:",
         "pypi:",
         "docker:",
+        "https://github.com/jmagar/.git",
+        "ftp://example.com/docs",
     ];
 
     for source in invalid {

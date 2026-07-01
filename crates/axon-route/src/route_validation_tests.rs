@@ -154,6 +154,24 @@ fn router_enforces_minimum_tool_safety_class_from_registry() {
 }
 
 #[test]
+fn router_preserves_stricter_safety_class_than_source_minimum() {
+    let registry = AdapterRegistry::from_adapters(vec![
+        crate::AdapterDefinition::new("local", "1", SourceKind::Local, SourceScope::Directory)
+            .with_safety_class(SafetyClass::ToolExecution),
+    ]);
+    let resolver = SourceResolver::new(InMemoryAuthorityRegistry::default(), registry.clone());
+    let router = SourceRouter::new(registry);
+    let request = SourceRequest::local_path("/tmp/axon-route-local-tool", true);
+    let resolved = resolver.resolve(&request).expect("local resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("stricter local tool execution is still denied");
+
+    assert_eq!(err.code.0, "route.tool_execution.denied");
+}
+
+#[test]
 fn router_selects_adapters_deterministically() {
     let registry = AdapterRegistry::from_adapters(vec![
         crate::AdapterDefinition::new("zeta", "1", SourceKind::Web, SourceScope::Site)
