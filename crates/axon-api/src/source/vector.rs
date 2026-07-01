@@ -43,7 +43,7 @@ pub struct EmbeddingResult {
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingVector {
     pub chunk_id: ChunkId,
-    pub dense: Vec<f32>,
+    pub values: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -52,7 +52,7 @@ pub struct ProviderUsage {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub requests: u64,
-    pub elapsed_ms: u64,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -63,8 +63,6 @@ pub struct VectorPointBatch {
     pub points: Vec<VectorPoint>,
     pub model: String,
     pub dimensions: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sparse_vectors: Option<Vec<SparseVector>>,
     pub payload_indexes: Vec<PayloadIndexSpec>,
 }
 
@@ -73,20 +71,37 @@ pub struct VectorPointBatch {
 pub struct VectorPoint {
     pub point_id: String,
     pub chunk_id: ChunkId,
-    pub dense: Vec<f32>,
+    pub vector: Vec<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sparse_vector: Option<SparseVector>,
     pub payload: MetadataMap,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SparseVector {
+    pub chunk_id: ChunkId,
     pub indices: Vec<u32>,
     pub values: Vec<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PayloadIndexSpec {
     pub field_name: String,
-    pub field_schema: String,
+    pub field_schema: PayloadFieldSchema,
+    pub required_for_filters: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PayloadFieldSchema {
+    Keyword,
+    Integer,
+    Float,
+    Bool,
+    Datetime,
+    Text,
+    Uuid,
+    Geo,
 }

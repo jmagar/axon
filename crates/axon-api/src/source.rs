@@ -11,6 +11,7 @@ pub mod graph;
 pub mod ids;
 pub mod lifecycle;
 pub mod stage;
+pub mod state;
 pub mod vector;
 
 pub use common::*;
@@ -20,6 +21,7 @@ pub use graph::*;
 pub use ids::*;
 pub use lifecycle::*;
 pub use stage::*;
+pub use state::*;
 pub use vector::*;
 
 #[cfg(test)]

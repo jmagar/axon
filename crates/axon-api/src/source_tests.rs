@@ -154,3 +154,91 @@ fn source_document_and_prepared_document_carry_generation_identity() {
     assert_eq!(prepared.source_item_key, SourceItemKey::from("README.md"));
     assert_eq!(prepared.generation, SourceGenerationId::from("gen_0001"));
 }
+
+#[test]
+fn vector_payload_uses_contract_field_names() {
+    let batch = VectorPointBatch {
+        batch_id: BatchId(Uuid::new_v4()),
+        collection: "axon".to_string(),
+        points: vec![VectorPoint {
+            point_id: "point_1".to_string(),
+            chunk_id: ChunkId::from("chunk_1"),
+            vector: vec![0.1, 0.2],
+            sparse_vector: Some(SparseVector {
+                chunk_id: ChunkId::from("chunk_1"),
+                indices: vec![1, 4],
+                values: vec![0.3, 0.7],
+            }),
+            payload: MetadataMap::new(),
+        }],
+        model: "Qwen3-Embedding-0.6B".to_string(),
+        dimensions: 2,
+        payload_indexes: vec![PayloadIndexSpec {
+            field_name: "source_id".to_string(),
+            field_schema: PayloadFieldSchema::Keyword,
+            required_for_filters: true,
+        }],
+    };
+
+    let value = serde_json::to_value(&batch).expect("vector point batch");
+    assert_eq!(value["points"][0]["vector"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        value["points"][0]["sparse_vector"]["indices"],
+        json!([1, 4])
+    );
+    assert_eq!(value["payload_indexes"][0]["field_schema"], "keyword");
+    assert!(value.get("sparse_vectors").is_none());
+}
+
+#[test]
+fn source_generation_and_cleanup_debt_round_trip() {
+    let generation = SourceGeneration {
+        source_id: SourceId::from("src_local_workspace"),
+        generation: SourceGenerationId::from("gen_0002"),
+        status: LifecycleStatus::Running,
+        created_at: Utc::now(),
+        published_at: None,
+        item_counts: ItemCounts {
+            added: 1,
+            modified: 2,
+            removed: 0,
+            unchanged: 4,
+            failed: 0,
+        },
+        document_counts: DocumentCounts {
+            discovered: 7,
+            prepared: 3,
+            embedded: 3,
+            published: 0,
+            failed: 0,
+        },
+        cleanup_debt: vec![CleanupDebtId::from("debt_1")],
+        previous_generation: Some(SourceGenerationId::from("gen_0001")),
+    };
+    let debt = CleanupDebt {
+        debt_id: CleanupDebtId::from("debt_1"),
+        job_id: JobId(Uuid::new_v4()),
+        source_id: generation.source_id.clone(),
+        generation: Some(generation.generation.clone()),
+        kind: CleanupDebtKind::VectorDelete,
+        selector: CleanupSelector::Generation {
+            generation: SourceGenerationId::from("gen_0001"),
+        },
+        status: LifecycleStatus::Pending,
+        created_at: Utc::now(),
+        attempts: 0,
+        last_error: None,
+        next_retry_at: None,
+        completed_at: None,
+    };
+
+    assert_eq!(
+        serde_json::from_value::<SourceGeneration>(serde_json::to_value(&generation).unwrap())
+            .unwrap(),
+        generation
+    );
+    assert_eq!(
+        serde_json::from_value::<CleanupDebt>(serde_json::to_value(&debt).unwrap()).unwrap(),
+        debt
+    );
+}
