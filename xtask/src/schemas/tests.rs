@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::*;
@@ -153,6 +154,47 @@ fn check_passes_after_generation_and_fails_after_stale_artifact() {
     std::fs::write(path, content).unwrap();
 
     let err = check(tmp.path()).expect_err("stale artifact should fail");
+    assert!(
+        err.to_string()
+            .contains("docs/reference/api/schemas.json differs")
+    );
+}
+
+#[test]
+fn check_mode_does_not_write_existing_artifacts() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let path = tmp.path().join("docs/reference/api/schemas.json");
+    let before = std::fs::read_to_string(&path).unwrap();
+    check(tmp.path()).unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+
+    assert_eq!(after, before);
+}
+
+#[test]
+fn source_input_checksum_matches_fixture_and_drifts_when_source_changes() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let content =
+        std::fs::read_to_string(tmp.path().join("docs/reference/api/schemas.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let inputs = value["x-axon"]["source_inputs"].as_array().unwrap();
+    let source = inputs
+        .iter()
+        .find(|input| input["path"] == "crates/axon-api/src/source.rs")
+        .unwrap();
+    let expected = format!("{:x}", Sha256::digest(b"fixture"));
+    assert_eq!(source["sha256"], expected);
+
+    write_fixture(
+        tmp.path(),
+        "crates/axon-api/src/source.rs",
+        "changed fixture",
+    );
+    let err = check(tmp.path()).expect_err("source-input checksum drift should fail");
     assert!(
         err.to_string()
             .contains("docs/reference/api/schemas.json differs")

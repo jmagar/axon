@@ -227,7 +227,7 @@ fn generated_header(family: &str) -> String {
 }
 
 fn json_string(value: &Value) -> Result<String> {
-    let mut content = serde_json::to_string_pretty(value)?;
+    let mut content = serde_json::to_string(value)?;
     content.push('\n');
     Ok(content)
 }
