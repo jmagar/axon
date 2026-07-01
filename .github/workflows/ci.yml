@@ -777,11 +777,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: xtask
       - name: Enforce generated pipeline schema artifacts are in sync
-        run: cargo xtask schemas generate --check
+        run: cargo run --manifest-path xtask/Cargo.toml --no-default-features -- schemas generate --check
 
   rest-api-parity:
     name: rest-api-parity
