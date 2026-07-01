@@ -9234,6 +9234,7 @@ dependencies = [
  "axon-api",
  "axon-error",
  "axon-route",
+ "axon-vectors",
  "axon-web",
  "clap",
  "dotenvy",

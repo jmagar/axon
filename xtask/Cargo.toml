@@ -28,4 +28,5 @@ default = ["openapi-drift"]
 openapi-drift = ["dep:axon-web"]
 
 [dev-dependencies]
+axon-vectors = { path = "../crates/axon-vectors" }
 tempfile = "3"

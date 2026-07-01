@@ -10,6 +10,7 @@ use axon_core::logging::log_warn;
 mod document_bridge;
 mod ledger;
 mod support;
+#[cfg(test)]
 mod target_payload;
 
 use document_bridge::prepare_atomic_source;
@@ -19,6 +20,7 @@ use support::{
     LineIndex, base_chunk_metadata, chunk_metadata, domain_for_origin, domain_from_web_url,
     file_locator, insert_missing_or_null,
 };
+#[cfg(test)]
 pub(in crate::ops) use target_payload::target_vector_payload_for_chunk;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

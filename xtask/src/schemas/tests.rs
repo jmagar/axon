@@ -110,30 +110,6 @@ fn payload_required_fields_from_source() -> Vec<String> {
     )
 }
 
-fn payload_shared_fields_from_source() -> Vec<String> {
-    parse_string_const_array(
-        &workspace_file("crates/axon-vectors/src/payload.rs"),
-        "SHARED_FIELDS",
-    )
-}
-
-fn payload_source_family_registry_from_source() -> Vec<(String, Vec<String>)> {
-    let source = workspace_file("crates/axon-vectors/src/payload.rs");
-    let family_re = Regex::new(r#"(?s)\(\s*"([^"]+)"\s*,\s*&\[(.*?)\]\[\.\.\]\s*,\s*\)"#).unwrap();
-    let field_re = Regex::new(r#""([^"]+)""#).unwrap();
-    family_re
-        .captures_iter(&source)
-        .map(|capture| {
-            let family = capture[1].to_string();
-            let fields = field_re
-                .captures_iter(&capture[2])
-                .map(|field| field[1].to_string())
-                .collect::<Vec<_>>();
-            (family, fields)
-        })
-        .collect()
-}
-
 fn parse_string_const_array(source: &str, const_name: &str) -> Vec<String> {
     let re = Regex::new(&format!(
         r#"(?s)const\s+{const_name}:\s*&\[\s*&str\s*\]\s*=\s*&\[(.*?)\];"#
@@ -399,11 +375,7 @@ fn generated_vector_payload_examples_validate_against_the_builder_registry() {
         tmp.path(),
         "docs/reference/sources/vector-payload.schema.json",
     );
-    let shared = payload_shared_fields_from_source();
     let required = payload_required_fields_from_source();
-    let registry = payload_source_family_registry_from_source()
-        .into_iter()
-        .collect::<std::collections::BTreeMap<_, _>>();
     let examples = value["x-axon"]["examples"].as_array().unwrap();
 
     assert!(!examples.is_empty(), "payload examples should be emitted");
@@ -416,17 +388,10 @@ fn generated_vector_payload_examples_validate_against_the_builder_registry() {
                 "example for {family} missing required field {field}"
             );
         }
-        for field in object.keys() {
-            if shared.contains(field) {
-                continue;
-            }
-            assert!(
-                registry
-                    .get(family)
-                    .is_some_and(|allowed| allowed.contains(field)),
-                "example field {field} is not registered for {family}"
-            );
-        }
+        let metadata = axon_api::source::MetadataMap(object.clone().into_iter().collect());
+        axon_vectors::payload::VectorPayloadBuilder::new(metadata)
+            .build()
+            .unwrap_or_else(|err| panic!("example for {family} must validate: {err}"));
     }
 }
 
