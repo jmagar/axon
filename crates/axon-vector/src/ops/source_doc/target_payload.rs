@@ -159,24 +159,45 @@ fn insert_target_code_field(
 }
 
 fn target_safe_locator(locator: &str) -> String {
-    if !locator.contains("/home/") {
+    let (path, fragment) = locator.split_once('#').unwrap_or((locator, ""));
+    let safe_path = target_safe_uri(path);
+    if safe_path == path {
         return locator.to_string();
     }
-    let (path, fragment) = locator.split_once('#').unwrap_or((locator, ""));
-    let file_name = path.rsplit('/').next().unwrap_or("local-file");
     if fragment.is_empty() {
-        format!("file://local/{file_name}")
+        safe_path
     } else {
-        format!("file://local/{file_name}#{fragment}")
+        format!("{safe_path}#{fragment}")
     }
 }
 
 fn target_safe_uri(uri: &str) -> String {
-    if !uri.contains("/home/") {
-        return uri.to_string();
+    if let Some(path) = uri.strip_prefix("file://") {
+        return target_safe_path_uri(path);
     }
-    let file_name = uri.rsplit('/').next().unwrap_or("local-file");
+    if looks_like_absolute_path(uri) {
+        return target_safe_path_uri(uri);
+    }
+    uri.to_string()
+}
+
+fn target_safe_path_uri(path: &str) -> String {
+    let file_name = path
+        .rsplit(['/', '\\'])
+        .find(|segment| !segment.is_empty())
+        .unwrap_or("local-file");
     format!("file://local/{file_name}")
+}
+
+fn looks_like_absolute_path(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.starts_with('/')
+        || value.starts_with('~')
+        || value.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/'))
 }
 
 fn fnv1a64(value: &str) -> String {

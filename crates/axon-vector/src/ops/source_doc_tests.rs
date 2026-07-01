@@ -247,6 +247,30 @@ async fn target_payload_bridge_does_not_copy_absolute_local_paths() {
 }
 
 #[tokio::test]
+async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
+    let source = SourceDocument::try_new_file(
+        SourceOrigin::LocalFile,
+        "file:///tmp/axon/src/lib.rs".to_string(),
+        "/tmp/axon/src/lib.rs".to_string(),
+        "rs".to_string(),
+        "pub fn temp_local() {}\n".repeat(80),
+        "local_code",
+        Some("/tmp/axon/src/lib.rs".to_string()),
+        Some(serde_json::json!({
+            "code_language": "rust"
+        })),
+    )
+    .expect("source doc");
+
+    let prepared = prepare_source_document(source).await.expect("prepared doc");
+    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let serialized = serde_json::to_string(&payload).unwrap();
+
+    assert!(!serialized.contains("/tmp/axon"));
+    assert_eq!(payload["source_item_key"], "file://local/lib.rs");
+}
+
+#[tokio::test]
 async fn markdown_file_source_marks_chunks_as_markdown_not_code() {
     let source = SourceDocument::try_new_file(
         SourceOrigin::GitFile,
