@@ -25,6 +25,7 @@ fn prepared_document_and_embeddings_build_validated_points() {
     assert_eq!(batch.points[0].payload["source_id"], "src-web");
     assert_eq!(batch.points[0].payload["source_generation"], 7);
     assert_eq!(batch.points[0].payload["chunk_id"], "chunk-web-1");
+    assert_eq!(batch.points[0].payload["chunk_text"], "chunk-web-1 content");
     assert!(batch.points[0].payload["source_range"].is_object());
     assert_eq!(batch.payload_indexes.len(), 3);
 }
@@ -191,6 +192,24 @@ fn dimensions_mismatch_fails() {
             chunk_id: Some(ChunkId::new("chunk-web-1")),
             expected: 3,
             actual: 2
+        }
+    );
+}
+
+#[test]
+fn negative_source_generation_fails_before_payload_build() {
+    let mut document = test_prepared_document();
+    document.generation = SourceGenerationId::new("-1");
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert_eq!(
+        err,
+        VectorPointBatchBuildError::InvalidGeneration {
+            generation: SourceGenerationId::new("-1")
         }
     );
 }

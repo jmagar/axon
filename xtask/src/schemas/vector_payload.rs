@@ -13,6 +13,17 @@ use axon_vectors::payload::{
     VECTOR_SOURCE_FAMILY_FIELDS, VECTOR_VISIBILITY_VALUES,
 };
 
+const VECTOR_API_DTOS: &[&str] = &[
+    "EmbeddingBatch",
+    "EmbeddingInput",
+    "VectorPointBatch",
+    "VectorPoint",
+    "PayloadIndexSpec",
+    "CollectionSpec",
+    "VectorSearchRequest",
+    "VectorSearchResult",
+];
+
 pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
     let registry = VectorPayloadRegistry::load(root)?;
     let inputs = source_inputs(
@@ -41,34 +52,17 @@ pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
 }
 
 struct VectorPayloadRegistry {
-    required_fields: Vec<String>,
-    shared_fields: Vec<String>,
-    source_families: Vec<SourceFamilySpec>,
-}
-
-struct SourceFamilySpec {
-    name: String,
-    fields: Vec<String>,
+    required_fields: &'static [&'static str],
+    shared_fields: &'static [&'static str],
+    source_families: &'static [(&'static str, &'static [&'static str])],
 }
 
 impl VectorPayloadRegistry {
     fn load(_root: &Path) -> Result<Self> {
         Ok(Self {
-            required_fields: VECTOR_REQUIRED_FIELDS
-                .iter()
-                .map(|field| (*field).to_string())
-                .collect(),
-            shared_fields: VECTOR_SHARED_FIELDS
-                .iter()
-                .map(|field| (*field).to_string())
-                .collect(),
-            source_families: VECTOR_SOURCE_FAMILY_FIELDS
-                .iter()
-                .map(|(name, fields)| SourceFamilySpec {
-                    name: (*name).to_string(),
-                    fields: fields.iter().map(|field| (*field).to_string()).collect(),
-                })
-                .collect(),
+            required_fields: VECTOR_REQUIRED_FIELDS,
+            shared_fields: VECTOR_SHARED_FIELDS,
+            source_families: VECTOR_SOURCE_FAMILY_FIELDS,
         })
     }
 }
@@ -99,28 +93,19 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
             "source_specific_families": registry_families_json(registry),
             "index_plan": index_plan(),
             "examples": payload_examples(registry),
-            "api_dtos": [
-                "EmbeddingBatch",
-                "EmbeddingInput",
-                "VectorPointBatch",
-                "VectorPoint",
-                "PayloadIndexSpec",
-                "CollectionSpec",
-                "VectorSearchRequest",
-                "VectorSearchResult"
-            ]
+            "api_dtos": VECTOR_API_DTOS
         }
     })
 }
 
 fn schema_properties(registry: &VectorPayloadRegistry) -> Value {
     let mut properties = Map::new();
-    for field in &registry.shared_fields {
-        properties.insert(field.clone(), shared_field_schema(field));
+    for field in registry.shared_fields {
+        properties.insert((*field).to_string(), shared_field_schema(field));
     }
-    for family in &registry.source_families {
-        for field in &family.fields {
-            properties.insert(field.clone(), source_specific_field_schema(field));
+    for (_, fields) in registry.source_families {
+        for field in *fields {
+            properties.insert((*field).to_string(), source_specific_field_schema(field));
         }
     }
     Value::Object(properties)
@@ -176,10 +161,10 @@ fn registry_families_json(registry: &VectorPayloadRegistry) -> Vec<Value> {
     registry
         .source_families
         .iter()
-        .map(|family| {
+        .map(|(family, fields)| {
             json!({
-                "source_family": family.name,
-                "fields": family.fields,
+                "source_family": family,
+                "fields": fields,
             })
         })
         .collect()
@@ -211,28 +196,28 @@ fn payload_examples(registry: &VectorPayloadRegistry) -> Vec<Value> {
     registry
         .source_families
         .iter()
-        .map(|family| {
+        .map(|(family, fields)| {
             let mut payload = BTreeMap::<String, Value>::new();
-            for field in &registry.required_fields {
-                payload.insert(field.clone(), required_example_value(field, &family.name));
+            for field in registry.required_fields {
+                payload.insert((*field).to_string(), required_example_value(field, family));
             }
-            payload.insert("source_family".to_string(), json!(family.name));
+            payload.insert("source_family".to_string(), json!(family));
             payload.insert(
                 "source_item_key".to_string(),
-                json!(format!("{}-item", family.name)),
+                json!(format!("{family}-item")),
             );
             payload.insert(
                 "chunk_key".to_string(),
-                json!(format!("{}-chunk-key", family.name)),
+                json!(format!("{family}-chunk-key")),
             );
             payload.insert(
                 "content_hash".to_string(),
-                json!(format!("sha256:{}hash", family.name)),
+                json!(format!("sha256:{family}hash")),
             );
-            for field in &family.fields {
+            for field in *fields {
                 payload.insert(
-                    field.clone(),
-                    source_specific_example_value(field, &family.name),
+                    (*field).to_string(),
+                    source_specific_example_value(field, family),
                 );
             }
             serde_json::to_value(payload).expect("example payload should serialize")
@@ -322,7 +307,7 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
         "# vector-payload Schema Reference\n\nGenerated by `cargo xtask schemas vector-payload`.\n\n",
     );
     out.push_str("## Required Fields\n\n| Field | Type |\n|---|---|\n");
-    for field in &registry.required_fields {
+    for field in registry.required_fields {
         out.push_str(&format!(
             "| `{field}` | `{}` |\n",
             display_type(&shared_field_schema(field))
@@ -330,12 +315,8 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
     }
 
     out.push_str("\n## Source-Specific Families\n\n| Family | Fields |\n|---|---|\n");
-    for family in &registry.source_families {
-        out.push_str(&format!(
-            "| `{}` | `{}` |\n",
-            family.name,
-            family.fields.join("`, `")
-        ));
+    for (family, fields) in registry.source_families {
+        out.push_str(&format!("| `{}` | `{}` |\n", family, fields.join("`, `")));
     }
 
     out.push_str("\n## Qdrant Index Plan\n\n| Field | Schema |\n|---|---|\n");
@@ -350,16 +331,7 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
     out.push_str("\n## API DTO Coverage\n\n");
     out.push_str("Vector payload docs are paired with the DTO definitions in `docs/reference/api/schemas.json`.\n\n");
     out.push_str("| DTO |\n|---|\n");
-    for dto in [
-        "EmbeddingBatch",
-        "EmbeddingInput",
-        "VectorPointBatch",
-        "VectorPoint",
-        "PayloadIndexSpec",
-        "CollectionSpec",
-        "VectorSearchRequest",
-        "VectorSearchResult",
-    ] {
+    for dto in VECTOR_API_DTOS {
         out.push_str(&format!("| `{dto}` |\n"));
     }
 

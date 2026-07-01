@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::LazyLock;
 
-use axon_api::source::MetadataMap;
+use axon_api::source::{ChunkLocator, MetadataMap, SourceRange};
 
 use crate::payload_redaction::{forbidden_field_name, validate_forbidden_value};
 
@@ -21,28 +22,14 @@ pub struct VectorPayloadBuilder {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VectorPayloadValidationError {
-    MissingRequiredField {
-        field: String,
-    },
-    ForbiddenField {
-        field: String,
-    },
-    ForbiddenValue {
-        field: String,
-    },
-    UnknownSourceSpecificField {
-        source_family: String,
-        field: String,
-    },
-    InvalidGeneration {
-        field: String,
-    },
-    InvalidVisibility {
-        value: String,
-    },
-    InvalidFieldShape {
-        field: String,
-    },
+    MissingRequiredField { field: String },
+    ForbiddenField { field: String },
+    ForbiddenValue { field: String },
+    UnknownSourceSpecificField { field: String },
+    InvalidGeneration { field: String },
+    InvalidSourceFamily,
+    InvalidVisibility,
+    InvalidFieldShape { field: String },
 }
 
 impl fmt::Display for VectorPayloadValidationError {
@@ -57,19 +44,20 @@ impl fmt::Display for VectorPayloadValidationError {
             Self::ForbiddenValue { field } => {
                 write!(f, "forbidden vector payload value under `{field}`")
             }
-            Self::UnknownSourceSpecificField {
-                source_family,
-                field,
-            } => write!(
-                f,
-                "unknown vector payload field `{field}` for source family `{source_family}`"
-            ),
+            Self::UnknownSourceSpecificField { field } => {
+                write!(
+                    f,
+                    "unknown vector payload field `{field}` for source family"
+                )
+            }
             Self::InvalidGeneration { field } => {
-                write!(f, "vector payload field `{field}` must be an integer")
+                write!(
+                    f,
+                    "vector payload field `{field}` must be a non-negative integer"
+                )
             }
-            Self::InvalidVisibility { value } => {
-                write!(f, "invalid vector payload visibility `{value}`")
-            }
+            Self::InvalidSourceFamily => write!(f, "invalid vector payload source_family"),
+            Self::InvalidVisibility => write!(f, "invalid vector payload visibility"),
             Self::InvalidFieldShape { field } => {
                 write!(f, "invalid vector payload field shape `{field}`")
             }
@@ -104,13 +92,16 @@ impl SourceSpecificFieldRegistry {
     }
 }
 
-pub fn source_specific_field_registry() -> SourceSpecificFieldRegistry {
-    SourceSpecificFieldRegistry::new(VECTOR_SOURCE_FAMILY_FIELDS.iter().copied())
+pub fn source_specific_field_registry() -> &'static SourceSpecificFieldRegistry {
+    &DEFAULT_SOURCE_SPECIFIC_FIELD_REGISTRY
 }
+
+static DEFAULT_SOURCE_SPECIFIC_FIELD_REGISTRY: LazyLock<SourceSpecificFieldRegistry> =
+    LazyLock::new(|| SourceSpecificFieldRegistry::new(VECTOR_SOURCE_FAMILY_FIELDS.iter().copied()));
 
 impl VectorPayload {
     pub fn try_from_metadata(metadata: MetadataMap) -> Result<Self, VectorPayloadValidationError> {
-        Self::try_from_metadata_with_registry(metadata, &source_specific_field_registry())
+        Self::try_from_metadata_with_registry(metadata, source_specific_field_registry())
     }
 
     pub fn try_from_metadata_with_registry(
@@ -120,6 +111,7 @@ impl VectorPayload {
         validate_required_fields(&metadata)?;
         validate_forbidden_fields(&metadata)?;
         validate_generations(&metadata)?;
+        validate_source_family(&metadata)?;
         validate_visibility(&metadata)?;
         validate_shapes(&metadata)?;
         validate_known_fields(&metadata, registry)?;
@@ -177,13 +169,29 @@ fn validate_forbidden_fields(metadata: &MetadataMap) -> Result<(), VectorPayload
 
 fn validate_generations(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
     for field in ["source_generation", "committed_generation"] {
-        if !metadata.get(field).is_some_and(|value| value.is_i64()) {
+        if !metadata
+            .get(field)
+            .and_then(|value| value.as_i64())
+            .is_some_and(|value| value >= 0)
+        {
             return Err(VectorPayloadValidationError::InvalidGeneration {
                 field: field.to_string(),
             });
         }
     }
     Ok(())
+}
+
+fn validate_source_family(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
+    let value = metadata
+        .get("source_family")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    if VECTOR_SOURCE_FAMILIES.contains(&value) {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidSourceFamily)
+    }
 }
 
 fn validate_visibility(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
@@ -194,9 +202,7 @@ fn validate_visibility(metadata: &MetadataMap) -> Result<(), VectorPayloadValida
     if VECTOR_VISIBILITY_VALUES.contains(&value) {
         Ok(())
     } else {
-        Err(VectorPayloadValidationError::InvalidVisibility {
-            value: value.to_string(),
-        })
+        Err(VectorPayloadValidationError::InvalidVisibility)
     }
 }
 
@@ -204,6 +210,7 @@ fn validate_shapes(metadata: &MetadataMap) -> Result<(), VectorPayloadValidation
     for field in [
         "payload_contract_version",
         "collection",
+        "source_family",
         "source_id",
         "document_id",
         "chunk_id",
@@ -218,31 +225,66 @@ fn validate_shapes(metadata: &MetadataMap) -> Result<(), VectorPayloadValidation
     }
     require_positive_integer(metadata, "embedding_dimensions")?;
 
-    let locator = metadata
-        .get("chunk_locator")
-        .and_then(|value| value.as_object())
-        .ok_or_else(|| VectorPayloadValidationError::InvalidFieldShape {
+    let locator: ChunkLocator =
+        serde_json::from_value(metadata.get("chunk_locator").cloned().ok_or_else(|| {
+            VectorPayloadValidationError::InvalidFieldShape {
+                field: "chunk_locator".to_string(),
+            }
+        })?)
+        .map_err(|_| VectorPayloadValidationError::InvalidFieldShape {
             field: "chunk_locator".to_string(),
         })?;
-    let canonical_uri = locator
-        .get("canonical_uri")
-        .and_then(|value| value.as_str())
-        .unwrap_or_default()
-        .trim();
-    if canonical_uri.is_empty() {
+    if locator.canonical_uri.trim().is_empty() {
         return Err(VectorPayloadValidationError::InvalidFieldShape {
             field: "chunk_locator.canonical_uri".to_string(),
         });
     }
-    if !metadata
-        .get("source_range")
-        .is_some_and(|value| value.as_object().is_some())
-    {
-        return Err(VectorPayloadValidationError::InvalidFieldShape {
+    validate_source_range_shape(&locator.range, "chunk_locator.range")?;
+
+    let range: SourceRange =
+        serde_json::from_value(metadata.get("source_range").cloned().ok_or_else(|| {
+            VectorPayloadValidationError::InvalidFieldShape {
+                field: "source_range".to_string(),
+            }
+        })?)
+        .map_err(|_| VectorPayloadValidationError::InvalidFieldShape {
             field: "source_range".to_string(),
-        });
-    }
+        })?;
+    validate_source_range_shape(&range, "source_range")?;
     Ok(())
+}
+
+fn validate_source_range_shape(
+    range: &SourceRange,
+    field: &str,
+) -> Result<(), VectorPayloadValidationError> {
+    if range.line_start.is_some()
+        || range.line_end.is_some()
+        || range.byte_start.is_some()
+        || range.byte_end.is_some()
+        || range.char_start.is_some()
+        || range.char_end.is_some()
+        || range.time_start_ms.is_some()
+        || range.time_end_ms.is_some()
+        || range.csv_row.is_some()
+        || non_empty(range.dom_selector.as_deref())
+        || non_empty(range.json_pointer.as_deref())
+        || non_empty(range.yaml_path.as_deref())
+        || non_empty(range.xml_xpath.as_deref())
+        || non_empty(range.session_turn_id.as_deref())
+        || non_empty(range.turn_start.as_deref())
+        || non_empty(range.turn_end.as_deref())
+    {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: field.to_string(),
+        })
+    }
+}
+
+fn non_empty(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
 }
 
 fn require_non_empty_string(
@@ -295,7 +337,6 @@ fn validate_known_fields(
             continue;
         }
         return Err(VectorPayloadValidationError::UnknownSourceSpecificField {
-            source_family: source_family.to_string(),
             field: field.clone(),
         });
     }
@@ -305,6 +346,7 @@ fn validate_known_fields(
 pub const VECTOR_REQUIRED_FIELDS: &[&str] = &[
     "payload_contract_version",
     "collection",
+    "source_family",
     "source_id",
     "source_generation",
     "document_id",
@@ -378,6 +420,7 @@ pub const VECTOR_SHARED_FIELDS: &[&str] = &[
     "chunk_id",
     "chunk_key",
     "content_hash",
+    "chunk_text",
     "content_kind",
     "chunk_locator",
     "source_range",

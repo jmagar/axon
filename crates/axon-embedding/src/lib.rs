@@ -21,3 +21,7 @@ mod provider_tests;
 #[cfg(test)]
 #[path = "reservation_compat_tests.rs"]
 mod reservation_compat_tests;
+
+#[cfg(test)]
+#[path = "capability_tests.rs"]
+mod capability_tests;

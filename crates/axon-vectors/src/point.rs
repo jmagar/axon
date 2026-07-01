@@ -74,7 +74,11 @@ impl fmt::Display for VectorPointBatchBuildError {
                 }
             }
             Self::InvalidGeneration { generation } => {
-                write!(f, "source generation `{}` is not numeric", generation.0)
+                write!(
+                    f,
+                    "source generation `{}` is not a non-negative integer",
+                    generation.0
+                )
             }
             Self::Payload { chunk_id, source } => {
                 write!(
@@ -226,6 +230,7 @@ fn build_payload(
     metadata.insert("committed_generation".to_string(), json!(source_generation));
     metadata.insert("document_id".to_string(), json!(document.document_id.0));
     metadata.insert("chunk_id".to_string(), json!(chunk.chunk_id.0));
+    metadata.insert("chunk_text".to_string(), json!(chunk.content));
     metadata.insert(
         "chunk_locator".to_string(),
         chunk_locator_json(&chunk.chunk_locator),
@@ -273,12 +278,20 @@ fn insert_default_string(metadata: &mut MetadataMap, field: &str, value: &str) {
 }
 
 fn parse_generation(generation: &SourceGenerationId) -> Result<i64, VectorPointBatchBuildError> {
-    generation
-        .0
-        .parse()
-        .map_err(|_| VectorPointBatchBuildError::InvalidGeneration {
+    let parsed =
+        generation
+            .0
+            .parse::<i64>()
+            .map_err(|_| VectorPointBatchBuildError::InvalidGeneration {
+                generation: generation.clone(),
+            })?;
+    if parsed >= 0 {
+        Ok(parsed)
+    } else {
+        Err(VectorPointBatchBuildError::InvalidGeneration {
             generation: generation.clone(),
         })
+    }
 }
 
 fn stable_point_id(

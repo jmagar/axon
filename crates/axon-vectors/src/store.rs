@@ -286,7 +286,7 @@ impl VectorStore for FakeVectorStore {
                 document_id: payload_string(&point.payload, "document_id").map(DocumentId::new),
                 source_id: payload_string(&point.payload, "source_id").map(SourceId::new),
                 source_item_key: None,
-                text: None,
+                text: payload_string(&point.payload, "chunk_text"),
                 payload: point.payload.clone(),
             })
             .collect::<Vec<_>>();

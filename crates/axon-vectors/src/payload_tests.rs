@@ -2,8 +2,8 @@ use axon_api::source::MetadataMap;
 use serde_json::Value;
 
 use crate::payload::{
-    SourceSpecificFieldRegistry, VECTOR_VISIBILITY_VALUES, VectorPayload, VectorPayloadBuilder,
-    VectorPayloadValidationError, source_specific_field_registry,
+    SourceSpecificFieldRegistry, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES, VectorPayload,
+    VectorPayloadBuilder, VectorPayloadValidationError, source_specific_field_registry,
 };
 
 fn fixture(name: &str) -> MetadataMap {
@@ -22,29 +22,6 @@ fn fixture(name: &str) -> MetadataMap {
     )
 }
 
-fn required_fields() -> [&'static str; 18] {
-    [
-        "payload_contract_version",
-        "collection",
-        "source_id",
-        "source_generation",
-        "document_id",
-        "chunk_id",
-        "chunk_locator",
-        "source_range",
-        "visibility",
-        "redaction_status",
-        "job_id",
-        "document_status",
-        "embedding_model",
-        "embedding_dimensions",
-        "embedding_provider",
-        "embedding_profile",
-        "embedded_at",
-        "committed_generation",
-    ]
-}
-
 #[test]
 fn valid_payload_fixtures_pass_required_field_and_registry_validation() {
     for name in [
@@ -56,9 +33,9 @@ fn valid_payload_fixtures_pass_required_field_and_registry_validation() {
     ] {
         let payload = VectorPayload::try_from_metadata(fixture(name))
             .unwrap_or_else(|err| panic!("{name} should validate: {err:?}"));
-        for field in required_fields() {
+        for field in VECTOR_REQUIRED_FIELDS {
             assert!(
-                payload.metadata().contains_key(field),
+                payload.metadata().contains_key(*field),
                 "{name} missing {field}"
             );
         }
@@ -115,14 +92,17 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
         (
             "unknown_source_field.invalid.json",
             VectorPayloadValidationError::UnknownSourceSpecificField {
-                source_family: "web".to_string(),
                 field: "web_canonical_url".to_string(),
             },
         ),
         (
             "bad_visibility.invalid.json",
-            VectorPayloadValidationError::InvalidVisibility {
-                value: "world".to_string(),
+            VectorPayloadValidationError::InvalidVisibility,
+        ),
+        (
+            "missing_source_family.invalid.json",
+            VectorPayloadValidationError::MissingRequiredField {
+                field: "source_family".to_string(),
             },
         ),
         (
@@ -182,22 +162,8 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
     ];
 
     for (name, expected) in cases {
-        let err = VectorPayload::try_from_metadata(fixture(name))
-            .unwrap_err_or_else(|payload| panic!("{name} unexpectedly validated: {payload:?}"));
+        let err = VectorPayload::try_from_metadata(fixture(name)).unwrap_err();
         assert_eq!(err, expected, "{name}");
-    }
-}
-
-trait UnwrapErrOrElse<T, E> {
-    fn unwrap_err_or_else<F: FnOnce(T) -> E>(self, op: F) -> E;
-}
-
-impl<T, E> UnwrapErrOrElse<T, E> for Result<T, E> {
-    fn unwrap_err_or_else<F: FnOnce(T) -> E>(self, op: F) -> E {
-        match self {
-            Ok(value) => op(value),
-            Err(err) => err,
-        }
     }
 }
 
@@ -222,13 +188,8 @@ fn payload_builder_runs_the_same_validation_as_direct_payload_construction() {
 
     let err = VectorPayloadBuilder::new(fixture("bad_visibility.invalid.json"))
         .build()
-        .unwrap_err_or_else(|payload| panic!("bad visibility unexpectedly built: {payload:?}"));
-    assert_eq!(
-        err,
-        VectorPayloadValidationError::InvalidVisibility {
-            value: "world".to_string()
-        }
-    );
+        .unwrap_err();
+    assert_eq!(err, VectorPayloadValidationError::InvalidVisibility);
 }
 
 #[test]
@@ -243,14 +204,8 @@ fn visibility_values_match_the_canonical_vector_payload_enum() {
 
     let mut private = fixture("web.valid.json");
     private.insert("visibility".to_string(), serde_json::json!("private"));
-    let err = VectorPayload::try_from_metadata(private)
-        .unwrap_err_or_else(|payload| panic!("private visibility validated: {payload:?}"));
-    assert_eq!(
-        err,
-        VectorPayloadValidationError::InvalidVisibility {
-            value: "private".to_string()
-        }
-    );
+    let err = VectorPayload::try_from_metadata(private).unwrap_err();
+    assert_eq!(err, VectorPayloadValidationError::InvalidVisibility);
 }
 
 #[test]
@@ -261,8 +216,7 @@ fn typed_payload_fields_reject_legacy_string_shapes() {
         serde_json::json!("https://example.com/docs#intro"),
     );
 
-    let err = VectorPayload::try_from_metadata(metadata)
-        .unwrap_err_or_else(|payload| panic!("string chunk locator validated: {payload:?}"));
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
 
     assert_eq!(
         err,
@@ -286,13 +240,76 @@ fn typed_chunk_locator_values_reject_local_paths() {
         }),
     );
 
-    let err = VectorPayload::try_from_metadata(metadata)
-        .unwrap_err_or_else(|payload| panic!("local path locator validated: {payload:?}"));
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
 
     assert_eq!(
         err,
         VectorPayloadValidationError::ForbiddenValue {
             field: "chunk_locator.canonical_uri".to_string()
+        }
+    );
+}
+
+#[test]
+fn invalid_discriminators_are_not_echoed_in_error_messages() {
+    let raw_visibility = "customer-alpha-supervalue-12345";
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert("visibility".to_string(), serde_json::json!(raw_visibility));
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+    assert_eq!(err, VectorPayloadValidationError::InvalidVisibility);
+    assert!(!err.to_string().contains(raw_visibility));
+
+    let raw_family = "customer-alpha-family-12345";
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert("source_family".to_string(), serde_json::json!(raw_family));
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+    assert_eq!(err, VectorPayloadValidationError::InvalidSourceFamily);
+    assert!(!err.to_string().contains(raw_family));
+}
+
+#[test]
+fn source_generation_fields_must_be_non_negative_integers() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert("source_generation".to_string(), serde_json::json!(-1));
+
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidGeneration {
+            field: "source_generation".to_string()
+        }
+    );
+}
+
+#[test]
+fn typed_payload_fields_reject_incomplete_locator_and_empty_ranges() {
+    let mut empty_range = fixture("web.valid.json");
+    empty_range.insert("source_range".to_string(), serde_json::json!({}));
+    let err = VectorPayload::try_from_metadata(empty_range).unwrap_err();
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidFieldShape {
+            field: "source_range".to_string()
+        }
+    );
+
+    let mut incomplete_locator = fixture("web.valid.json");
+    incomplete_locator.insert(
+        "chunk_locator".to_string(),
+        serde_json::json!({
+            "canonical_uri": "https://example.com/docs#intro",
+            "path": "https://example.com/docs#intro",
+            "heading_path": [],
+            "symbol": null,
+            "range": {}
+        }),
+    );
+    let err = VectorPayload::try_from_metadata(incomplete_locator).unwrap_err();
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidFieldShape {
+            field: "chunk_locator.range".to_string()
         }
     );
 }

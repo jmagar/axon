@@ -1,4 +1,5 @@
 use axon_api::source::{MetadataMap, VectorPointBatch, VectorSearchRequest};
+use serde_json::json;
 
 use crate::point::VectorPointBatchBuilder;
 use crate::store::{FakeVectorMode, FakeVectorStore, VectorStore};
@@ -45,4 +46,23 @@ async fn fake_vector_store_can_simulate_partial_failure_and_slow_write() {
     let written = slow.upsert(batch()).await.unwrap();
     assert_eq!(written.points_written, 2);
     assert_eq!(slow.calls().await, vec!["ensure_collection", "upsert"]);
+}
+
+#[tokio::test]
+async fn fake_vector_store_invalid_payload_errors_do_not_echo_raw_discriminators() {
+    let raw_visibility = "customer-alpha-supervalue-12345";
+    let store = FakeVectorStore::new("fake-vector");
+    store
+        .ensure_collection(test_collection_spec(3))
+        .await
+        .unwrap();
+    let mut batch = batch();
+    batch.points[0]
+        .payload
+        .insert("visibility".to_string(), json!(raw_visibility));
+
+    let err = store.upsert(batch).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_payload");
+    assert!(!err.message.contains(raw_visibility));
 }

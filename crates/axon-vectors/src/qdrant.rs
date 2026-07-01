@@ -5,9 +5,11 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use axon_api::source::*;
 use qdrant_client::qdrant::{
-    CreateCollection, CreateFieldIndexCollection, FieldCondition, FieldType, Filter, Match,
-    PointStruct, SparseVectorConfig as QdrantSparseVectorConfig, SparseVectorParams, Value,
-    VectorParams, VectorParamsMap, Vectors, VectorsConfig, condition, r#match, vectors_config,
+    CreateCollection, CreateFieldIndexCollection, DenseVector, FieldCondition, FieldType, Filter,
+    Match, NamedVectors, PointStruct, SparseVector as QdrantSparseVector,
+    SparseVectorConfig as QdrantSparseVectorConfig, SparseVectorParams, Value,
+    Vector as QdrantVector, VectorParams, VectorParamsMap, Vectors, VectorsConfig, condition,
+    r#match, vector, vectors, vectors_config,
 };
 
 use crate::store::{Result, VectorStore};
@@ -189,17 +191,21 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Result<Option<Filter>> {
         .flat_map(|(field, value)| field_conditions(field, value))
         .collect::<Vec<_>>();
     if let Some(generation) = &request.generation {
-        let value = generation
-            .0
-            .parse::<i64>()
-            .map(serde_json::Value::from)
-            .map_err(|_| {
-                ApiError::new(
-                    "vector.invalid_generation",
-                    axon_error::ErrorStage::Retrieving,
-                    "source_generation filters must be numeric",
-                )
-            })?;
+        let generation = generation.0.parse::<i64>().map_err(|_| {
+            ApiError::new(
+                "vector.invalid_generation",
+                axon_error::ErrorStage::Retrieving,
+                "source_generation filters must be non-negative integers",
+            )
+        })?;
+        if generation < 0 {
+            return Err(ApiError::new(
+                "vector.invalid_generation",
+                axon_error::ErrorStage::Retrieving,
+                "source_generation filters must be non-negative integers",
+            ));
+        }
+        let value = serde_json::Value::from(generation);
         conditions.push(field_condition("source_generation", &value));
     }
     Ok((!conditions.is_empty()).then_some(Filter {
@@ -216,7 +222,21 @@ pub fn qdrant_upsert_points(spec: &CollectionSpec, batch: &VectorPointBatch) -> 
         .iter()
         .map(|point| {
             let mut named = HashMap::new();
-            named.insert(spec.dense.name.clone(), point.vector.clone());
+            named.insert(
+                spec.dense.name.clone(),
+                qdrant_dense_vector(point.vector.clone()),
+            );
+            if let (Some(sparse_spec), Some(sparse_vector)) =
+                (spec.sparse.as_ref(), point.sparse_vector.as_ref())
+            {
+                named.insert(
+                    sparse_spec.name.clone(),
+                    qdrant_sparse_vector(
+                        sparse_vector.indices.clone(),
+                        sparse_vector.values.clone(),
+                    ),
+                );
+            }
             PointStruct {
                 id: Some(point.point_id.0.as_str().into()),
                 payload: point
@@ -224,10 +244,37 @@ pub fn qdrant_upsert_points(spec: &CollectionSpec, batch: &VectorPointBatch) -> 
                     .iter()
                     .map(|(field, value)| (field.clone(), json_to_qdrant_value(value)))
                     .collect(),
-                vectors: Some(Vectors::from(named)),
+                vectors: Some(Vectors {
+                    vectors_options: Some(vectors::VectorsOptions::Vectors(NamedVectors {
+                        vectors: named,
+                    })),
+                }),
             }
         })
         .collect()
+}
+
+#[allow(deprecated)]
+fn qdrant_dense_vector(data: Vec<f32>) -> QdrantVector {
+    QdrantVector {
+        data: Vec::new(),
+        indices: None,
+        vectors_count: None,
+        vector: Some(vector::Vector::Dense(DenseVector { data })),
+    }
+}
+
+#[allow(deprecated)]
+fn qdrant_sparse_vector(indices: Vec<u32>, values: Vec<f32>) -> QdrantVector {
+    QdrantVector {
+        data: Vec::new(),
+        indices: None,
+        vectors_count: None,
+        vector: Some(vector::Vector::Sparse(QdrantSparseVector {
+            indices,
+            values,
+        })),
+    }
 }
 
 fn field_conditions(

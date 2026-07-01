@@ -156,6 +156,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "point-other-source",
                     "chunk-other-source",
                     &[1.0, 0.0, 0.0, 0.0],
+                    "Other source chunk body",
                     PointFilters {
                         source_id: "src-other",
                         generation: 7,
@@ -167,6 +168,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "point-other-generation",
                     "chunk-other-generation",
                     &[1.0, 0.0, 0.0, 0.0],
+                    "Other generation chunk body",
                     PointFilters {
                         source_id: "src-docs",
                         generation: 8,
@@ -178,6 +180,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "point-other-visibility",
                     "chunk-other-visibility",
                     &[1.0, 0.0, 0.0, 0.0],
+                    "Other visibility chunk body",
                     PointFilters {
                         source_id: "src-docs",
                         generation: 7,
@@ -199,6 +202,9 @@ async fn retrieval_applies_all_namespace_filters() {
         .collect::<Vec<_>>();
 
     assert_eq!(chunk_ids, vec!["chunk-docs", "chunk-guides"]);
+    assert!(result.context.text.contains("Docs chunk body"));
+    assert!(result.context.text.contains("Guides chunk body"));
+    assert!(!result.context.text.contains("Summary chunk body"));
 }
 
 #[test]
@@ -383,13 +389,14 @@ fn point_in_namespace(
     point_id: &str,
     chunk_id: &str,
     vector: &[f32],
-    _text: &str,
+    text: &str,
     namespace: &str,
 ) -> VectorPoint {
     point_with_filters(
         point_id,
         chunk_id,
         vector,
+        text,
         PointFilters {
             source_id: "src-docs",
             generation: 7,
@@ -410,6 +417,7 @@ fn point_with_filters(
     point_id: &str,
     chunk_id: &str,
     vector: &[f32],
+    text: &str,
     filters: PointFilters<'_>,
 ) -> VectorPoint {
     let mut payload = MetadataMap::new();
@@ -458,6 +466,7 @@ fn point_with_filters(
     payload.insert("embedded_at".to_string(), json!("2026-07-01T00:00:00Z"));
     payload.insert("vector_namespace".to_string(), json!(filters.namespace));
     payload.insert("content_kind".to_string(), json!("markdown"));
+    payload.insert("chunk_text".to_string(), json!(text));
 
     VectorPoint {
         point_id: VectorPointId::new(point_id),

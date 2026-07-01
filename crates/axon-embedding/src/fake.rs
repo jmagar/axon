@@ -88,6 +88,13 @@ impl FakeEmbeddingProvider {
         }) {
             state.health = health;
         }
+        if self.dimensions == 0 {
+            state.health = HealthStatus::Unavailable;
+            state.last_error = Some(self.error(
+                "provider.invalid_dimensions",
+                "embedding provider dimensions must be greater than zero",
+            ));
+        }
         state
     }
 }
@@ -158,7 +165,11 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
             cooldown_until: state.cooldown_until,
             last_error: state.last_error,
             reservation_policy: embedding_reservation_policy(true, QueuePolicy::Priority, 1),
-            reservation_state: embedding_reservation_state(2),
+            reservation_state: embedding_reservation_state(if self.dimensions == 0 {
+                0
+            } else {
+                2
+            }),
             cost_class: ProviderCostClass::Internal,
             degraded_modes: Vec::new(),
             fake_overrides_supported: true,

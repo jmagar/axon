@@ -296,6 +296,9 @@
     "chunk_locator": {
       "$ref": "#/$defs/ChunkLocator"
     },
+    "chunk_text": {
+      "type": "string"
+    },
     "code_file_type": {
       "type": "string"
     },
@@ -471,6 +474,7 @@
   "required": [
     "payload_contract_version",
     "collection",
+    "source_family",
     "source_id",
     "source_generation",
     "document_id",
@@ -1000,12 +1004,12 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:0b2a62d2a54f7089343d58d5b3aa91eea018390c864e643dc725778a5522da64",
+        "checksum": "sha256:4a788b3a8099b835c1a5af7a0c32545bd5b2cd3375a92165439db3ff602def50",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:55aa05b226b190b1455d17d1535f77e0847ce881d12dc754bf4170f8ed7d99b0",
+        "checksum": "sha256:e2b4ecfdb17afc76e9486e4f5721afa2ac9c159d329d53ef7fc26d8f68eaa1dc",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },
