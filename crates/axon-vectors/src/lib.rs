@@ -18,3 +18,7 @@ pub const CRATE_NAME: &str = "axon-vectors";
 #[cfg(test)]
 #[path = "store_tests.rs"]
 mod store_tests;
+
+#[cfg(test)]
+#[path = "payload_tests.rs"]
+mod payload_tests;
