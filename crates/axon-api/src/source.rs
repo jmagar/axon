@@ -11,8 +11,10 @@ pub mod enums;
 pub mod graph;
 pub mod ids;
 pub mod lifecycle;
+pub mod listing;
 pub mod stage;
 pub mod state;
+pub mod status;
 pub mod vector;
 
 pub use capability::*;
@@ -22,10 +24,16 @@ pub use enums::*;
 pub use graph::*;
 pub use ids::*;
 pub use lifecycle::*;
+pub use listing::*;
 pub use stage::*;
 pub use state::*;
+pub use status::*;
 pub use vector::*;
 
 #[cfg(test)]
 #[path = "source_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "source_status_tests.rs"]
+mod status_tests;

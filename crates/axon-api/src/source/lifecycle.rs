@@ -218,12 +218,26 @@ pub struct PollDescriptor {
 pub struct WatchResult {
     pub watch_id: WatchId,
     pub source_id: SourceId,
-    pub status: LifecycleStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_run_at: Option<Timestamp>,
+    pub canonical_uri: String,
+    pub adapter: AdapterRef,
+    pub scope: SourceScope,
+    pub enabled: bool,
+    pub schedule: WatchSchedule,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<JobDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_job: Option<JobDescriptor>,
     pub warnings: Vec<SourceWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchSchedule {
+    pub every_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
