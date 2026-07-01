@@ -38,16 +38,17 @@ fn source_input(root: &Path, rel_path: PathBuf) -> Result<SourceInput> {
             .with_context(|| format!("failed to read schema source input {}", rel_path.display()))?
     };
     let digest = format!("{:x}", Sha256::digest(&bytes));
+    let normalized_path = normalize_path(&rel_path);
     Ok(SourceInput {
-        kind: source_input_kind(&rel_path, path.is_dir()),
-        path: rel_path.to_string_lossy().to_string(),
+        kind: source_input_kind(&normalized_path, path.is_dir()),
+        path: normalized_path,
         checksum: format!("sha256:{digest}"),
     })
 }
 
-fn source_input_kind(path: &Path, is_dir: bool) -> SourceInputKind {
-    let path = path.to_string_lossy();
-    if path.contains("/migrations") && is_dir {
+pub(super) fn source_input_kind(path: &str, is_dir: bool) -> SourceInputKind {
+    let path = path.replace('\\', "/");
+    if path.split('/').any(|component| component == "migrations") && is_dir {
         SourceInputKind::SqlMigrationDirectory
     } else if is_dir {
         SourceInputKind::RustDirectory
@@ -56,6 +57,10 @@ fn source_input_kind(path: &Path, is_dir: bool) -> SourceInputKind {
     } else {
         SourceInputKind::RustModule
     }
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn directory_bytes(root: &Path, rel_path: &Path) -> Result<Vec<u8>> {

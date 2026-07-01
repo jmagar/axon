@@ -223,13 +223,18 @@ pub fn check_enum_projection_drift(artifacts: &[SchemaArtifact]) -> Result<()> {
     else {
         return Ok(());
     };
+    let doc: serde_json::Value = serde_json::from_str(&api.content)?;
 
     for (name, values) in CANONICAL_ENUMS {
-        if !api.content.contains(&format!("\"{name}\"")) {
-            bail!("api schema is missing canonical enum {name}");
-        }
+        let enum_values = doc
+            .pointer(&format!("/$defs/enums/{name}/enum"))
+            .and_then(|value| value.as_array())
+            .ok_or_else(|| anyhow::anyhow!("api schema is missing canonical enum {name}"))?;
         for value in *values {
-            if !api.content.contains(&format!("\"{value}\"")) {
+            if !enum_values
+                .iter()
+                .any(|enum_value| enum_value.as_str() == Some(value))
+            {
                 bail!("api schema enum {name} is missing value {value}");
             }
         }

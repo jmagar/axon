@@ -1,6 +1,7 @@
 mod artifact;
 mod families;
 mod registry;
+mod schema_json;
 mod source_input;
 
 use std::path::{Path, PathBuf};
@@ -109,19 +110,19 @@ impl SchemaFamily {
 pub fn run(root: &Path, args: SchemasArgs) -> Result<()> {
     match args.command {
         SchemaCommand::Generate(args) => run_families(root, selected_families(args.family), &args),
-        SchemaCommand::Api(args) => run_families(root, vec![SchemaFamily::Api], &args),
-        SchemaCommand::Cli(args) => run_families(root, vec![SchemaFamily::Cli], &args),
-        SchemaCommand::Openapi(args) => run_families(root, vec![SchemaFamily::Openapi], &args),
-        SchemaCommand::Mcp(args) => run_families(root, vec![SchemaFamily::Mcp], &args),
-        SchemaCommand::Config(args) => run_families(root, vec![SchemaFamily::Config], &args),
-        SchemaCommand::Events(args) => run_families(root, vec![SchemaFamily::Events], &args),
-        SchemaCommand::Errors(args) => run_families(root, vec![SchemaFamily::Errors], &args),
-        SchemaCommand::Database(args) => run_families(root, vec![SchemaFamily::Database], &args),
-        SchemaCommand::Graph(args) => run_families(root, vec![SchemaFamily::Graph], &args),
+        SchemaCommand::Api(args) => run_single_family(root, SchemaFamily::Api, &args),
+        SchemaCommand::Cli(args) => run_single_family(root, SchemaFamily::Cli, &args),
+        SchemaCommand::Openapi(args) => run_single_family(root, SchemaFamily::Openapi, &args),
+        SchemaCommand::Mcp(args) => run_single_family(root, SchemaFamily::Mcp, &args),
+        SchemaCommand::Config(args) => run_single_family(root, SchemaFamily::Config, &args),
+        SchemaCommand::Events(args) => run_single_family(root, SchemaFamily::Events, &args),
+        SchemaCommand::Errors(args) => run_single_family(root, SchemaFamily::Errors, &args),
+        SchemaCommand::Database(args) => run_single_family(root, SchemaFamily::Database, &args),
+        SchemaCommand::Graph(args) => run_single_family(root, SchemaFamily::Graph, &args),
         SchemaCommand::VectorPayload(args) => {
-            run_families(root, vec![SchemaFamily::VectorPayload], &args)
+            run_single_family(root, SchemaFamily::VectorPayload, &args)
         }
-        SchemaCommand::Providers(args) => run_families(root, vec![SchemaFamily::Providers], &args),
+        SchemaCommand::Providers(args) => run_single_family(root, SchemaFamily::Providers, &args),
     }
 }
 
@@ -129,27 +130,53 @@ fn selected_families(family: Option<SchemaFamily>) -> Vec<SchemaFamily> {
     family.map_or_else(all_families, |family| vec![family])
 }
 
+fn run_single_family(root: &Path, family: SchemaFamily, args: &SchemaGenerateArgs) -> Result<()> {
+    if args.family.is_some() {
+        bail!("--family is only valid with aggregate `schemas generate`");
+    }
+    run_families(root, vec![family], args)
+}
+
 fn run_families(root: &Path, families: Vec<SchemaFamily>, args: &SchemaGenerateArgs) -> Result<()> {
     if args.update_fixtures && std::env::var_os("CI").is_some() {
         bail!("--update-fixtures is forbidden in CI");
+    }
+    if args.print && args.json {
+        bail!("--print and --json are mutually exclusive because both write stdout");
     }
 
     let mut reports = Vec::new();
     for family in families {
         let artifacts = generator_for(family).generate(root)?;
-        registry::check_removed_surface_drift(&artifacts)?;
-        registry::check_enum_projection_drift(&artifacts)?;
+        let mut structural_drift = Vec::new();
+        if let Err(err) = registry::check_removed_surface_drift(&artifacts) {
+            structural_drift.push(err.to_string());
+        }
+        if let Err(err) = registry::check_enum_projection_drift(&artifacts) {
+            structural_drift.push(err.to_string());
+        }
         if args.print {
             print_artifacts(&artifacts);
-            reports.push(FamilyReport::ok(family, artifacts.len()));
+            reports.push(FamilyReport::from_drift(
+                family,
+                artifacts.len(),
+                structural_drift,
+            ));
             continue;
         }
         if args.check {
-            let drift = collect_drift(root, &artifacts)?;
+            let mut drift = collect_drift(root, &artifacts)?;
+            drift.extend(structural_drift);
             reports.push(FamilyReport::from_drift(family, artifacts.len(), drift));
-        } else {
+        } else if structural_drift.is_empty() {
             write_artifacts(root, &artifacts)?;
             reports.push(FamilyReport::ok(family, artifacts.len()));
+        } else {
+            reports.push(FamilyReport::from_drift(
+                family,
+                artifacts.len(),
+                structural_drift,
+            ));
         }
     }
 

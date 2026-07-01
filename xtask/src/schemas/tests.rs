@@ -155,15 +155,14 @@ fn check_passes_after_generation_and_fails_after_stale_artifact() {
     generate(tmp.path()).unwrap();
     check(tmp.path()).unwrap();
 
-    let path = tmp.path().join("docs/reference/api/schemas.json");
-    let mut content = std::fs::read_to_string(&path).unwrap();
-    content.push_str("\n");
-    std::fs::write(path, content).unwrap();
-
-    let err = check(tmp.path()).expect_err("stale artifact should fail");
-    assert!(
-        err.to_string()
-            .contains("docs/reference/api/schemas.json differs")
+    assert_stale_after(
+        tmp.path(),
+        |path| {
+            let mut content = std::fs::read_to_string(path).unwrap();
+            content.push_str("\n");
+            std::fs::write(path, content).unwrap();
+        },
+        "docs/reference/api/schemas.json differs",
     );
 }
 
@@ -267,24 +266,159 @@ fn json_report_shape_marks_stale_family_as_failed() {
 fn json_check_mode_still_reports_stale_artifact_error() {
     let tmp = fixture_repo();
     generate(tmp.path()).unwrap();
-    let path = tmp.path().join("docs/reference/api/schemas.json");
-    std::fs::write(path, "{}\n").unwrap();
+    assert_stale_after_with_args(
+        tmp.path(),
+        |path| std::fs::write(path, "{}\n").unwrap(),
+        SchemaGenerateArgs {
+            check: true,
+            json: true,
+            ..SchemaGenerateArgs::default()
+        },
+        "docs/reference/api/schemas.json differs",
+    );
+}
 
+#[test]
+fn print_and_json_are_mutually_exclusive() {
+    let tmp = fixture_repo();
     let err = run(
         tmp.path(),
         SchemasArgs {
             command: SchemaCommand::Generate(SchemaGenerateArgs {
-                check: true,
+                print: true,
                 json: true,
                 ..SchemaGenerateArgs::default()
             }),
         },
     )
-    .expect_err("stale json check should still fail");
+    .expect_err("print plus json should fail");
 
-    assert!(err.to_string().contains("schema artifacts are stale"));
     assert!(
         err.to_string()
-            .contains("docs/reference/api/schemas.json differs")
+            .contains("--print and --json are mutually exclusive")
     );
+}
+
+#[test]
+fn single_family_subcommands_reject_family_filter() {
+    let tmp = fixture_repo();
+    let err = run(
+        tmp.path(),
+        SchemasArgs {
+            command: SchemaCommand::Api(SchemaGenerateArgs {
+                family: Some(SchemaFamily::Cli),
+                ..SchemaGenerateArgs::default()
+            }),
+        },
+    )
+    .expect_err("fixed family subcommands should reject --family");
+
+    assert!(err.to_string().contains("--family is only valid"));
+}
+
+#[test]
+fn config_and_env_schema_artifacts_have_distinct_identity() {
+    let tmp = fixture_repo();
+    run(
+        tmp.path(),
+        SchemasArgs {
+            command: SchemaCommand::Config(SchemaGenerateArgs::default()),
+        },
+    )
+    .unwrap();
+
+    let config: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tmp.path().join("docs/reference/config/config.schema.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let env: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tmp.path().join("docs/reference/config/env.schema.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        config["$id"],
+        "https://axon.local/schemas/config/config.schema.json"
+    );
+    assert_eq!(
+        env["$id"],
+        "https://axon.local/schemas/config/env.schema.json"
+    );
+    assert_ne!(config["title"], env["title"]);
+}
+
+#[test]
+fn enum_projection_drift_is_scoped_to_each_enum_array() {
+    let mut enums = serde_json::Map::new();
+    for (name, values) in registry::CANONICAL_ENUMS {
+        let values = values
+            .iter()
+            .copied()
+            .filter(|value| !(*name == "SourceKind" && *value == "web"))
+            .collect::<Vec<_>>();
+        enums.insert((*name).to_string(), serde_json::json!({ "enum": values }));
+    }
+    let artifact = artifact::SchemaArtifact::new(
+        "docs/reference/api/schemas.json",
+        serde_json::json!({
+            "$defs": { "enums": enums },
+            "description": "the word web appears outside SourceKind"
+        })
+        .to_string(),
+    );
+
+    let err = registry::check_enum_projection_drift(&[artifact])
+        .expect_err("missing enum value should fail even when value appears elsewhere");
+    assert!(err.to_string().contains("SourceKind"));
+    assert!(err.to_string().contains("web"));
+}
+
+#[test]
+fn migration_source_input_kind_uses_normalized_path_components() {
+    assert_eq!(
+        source_input::source_input_kind("crates/axon-jobs/src/migrations", true),
+        source_input::SourceInputKind::SqlMigrationDirectory
+    );
+    assert_eq!(
+        source_input::source_input_kind("crates\\axon-jobs\\src\\migrations", true),
+        source_input::SourceInputKind::SqlMigrationDirectory
+    );
+    assert_eq!(
+        source_input::source_input_kind("crates/axon-jobs/src/notmigrations", true),
+        source_input::SourceInputKind::RustDirectory
+    );
+}
+
+fn assert_stale_after(root: &Path, mutate: impl FnOnce(&Path), expected_error_substring: &str) {
+    assert_stale_after_with_args(
+        root,
+        mutate,
+        SchemaGenerateArgs {
+            check: true,
+            ..SchemaGenerateArgs::default()
+        },
+        expected_error_substring,
+    );
+}
+
+fn assert_stale_after_with_args(
+    root: &Path,
+    mutate: impl FnOnce(&Path),
+    args: SchemaGenerateArgs,
+    expected_error_substring: &str,
+) {
+    let path = root.join("docs/reference/api/schemas.json");
+    mutate(&path);
+
+    let err = run(
+        root,
+        SchemasArgs {
+            command: SchemaCommand::Generate(args),
+        },
+    )
+    .expect_err("stale artifact should fail");
+
+    assert!(err.to_string().contains("schema artifacts are stale"));
+    assert!(err.to_string().contains(expected_error_substring));
 }
