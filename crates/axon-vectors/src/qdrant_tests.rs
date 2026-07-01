@@ -175,6 +175,41 @@ fn array_filter_values_convert_to_qdrant_should_groups() {
 }
 
 #[test]
+fn empty_array_filter_values_convert_to_match_none_qdrant_filter() {
+    let request = VectorSearchRequest {
+        collection: "axon-test".to_string(),
+        query: "docs".to_string(),
+        limit: 10,
+        dense_vector: None,
+        sparse_vector: None,
+        filters: MetadataMap(
+            [("vector_namespace".to_string(), json!([]))]
+                .into_iter()
+                .collect(),
+        ),
+        hybrid: None,
+        generation: None,
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    };
+
+    let filter = qdrant_filter(&request).unwrap();
+    assert_eq!(filter.must.len(), 1);
+    let condition::ConditionOneOf::Field(field) = filter.must[0].condition_one_of.as_ref().unwrap()
+    else {
+        panic!("expected match-none field condition");
+    };
+    assert_eq!(field.key, "__axon_match_none");
+    assert!(matches!(
+        field
+            .r#match
+            .as_ref()
+            .and_then(|value| value.match_value.as_ref()),
+        Some(r#match::MatchValue::Keyword(value)) if value == "__never__"
+    ));
+}
+
+#[test]
 fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields() {
     let mut spec = test_collection_spec(3);
     spec.dense.name = "dense_docs".to_string();

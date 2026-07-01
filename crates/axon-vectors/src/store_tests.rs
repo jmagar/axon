@@ -249,6 +249,12 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
         .collect::<Vec<_>>();
     assert_eq!(point_ids, vec!["point-a", "point-b", "point-c"]);
 
+    let result = store
+        .search(search(filter("vector_namespace", json!([]))))
+        .await
+        .unwrap();
+    assert!(result.results.is_empty());
+
     let mut request = search(MetadataMap::new());
     request.generation = Some(SourceGenerationId::new("7"));
     let result = store.search(request).await.unwrap();

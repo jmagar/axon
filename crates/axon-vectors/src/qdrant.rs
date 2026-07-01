@@ -231,6 +231,12 @@ fn field_conditions(
     let Some(values) = value.as_array() else {
         return vec![field_condition(field, value)];
     };
+    if values.is_empty() {
+        return vec![field_condition(
+            "__axon_match_none",
+            &serde_json::json!("__never__"),
+        )];
+    }
     if values.len() == 1 {
         return vec![field_condition(field, &values[0])];
     }
