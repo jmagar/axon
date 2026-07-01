@@ -591,6 +591,7 @@ dependencies = [
  "async-trait",
  "axon-api",
  "axon-error",
+ "axon-observe",
  "tokio",
  "uuid",
 ]
@@ -781,6 +782,11 @@ dependencies = [
 [[package]]
 name = "axon-observe"
 version = "6.2.1"
+dependencies = [
+ "axon-api",
+ "axon-error",
+ "tokio",
+]
 
 [[package]]
 name = "axon-parse"

@@ -7,3 +7,8 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+axon-api = { path = "../axon-api" }
+axon-error = { path = "../axon-error" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
