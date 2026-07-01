@@ -6,6 +6,10 @@ use async_trait::async_trait;
 use axon_api::source::*;
 use tokio::sync::Mutex;
 
+use crate::capability::{
+    EmbeddingCapabilityConfig, ProviderCapabilityConfig, embedding_capability,
+    embedding_provider_capability, embedding_reservation_policy, embedding_reservation_state,
+};
 use crate::provider::{EmbeddingProvider, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +94,13 @@ impl FakeEmbeddingProvider {
 #[async_trait]
 impl EmbeddingProvider for FakeEmbeddingProvider {
     async fn embed(&self, batch: EmbeddingBatch) -> Result<EmbeddingResult> {
+        if self.dimensions == 0 {
+            return Err(self.error(
+                "provider.invalid_dimensions",
+                "embedding provider dimensions must be greater than zero",
+            ));
+        }
+
         self.calls.lock().await.push(batch.clone());
         match self.mode {
             FakeEmbeddingMode::Success => {}
@@ -130,11 +141,9 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
         let state = self.capability_state();
-        Ok(ProviderCapability {
+        Ok(embedding_provider_capability(ProviderCapabilityConfig {
             provider_id: self.provider_id.clone(),
-            provider_kind: ProviderKind::Embedding,
             implementation: "fake".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
             health: state.health,
             limits: ProviderLimits {
                 max_concurrency: Some(2),
@@ -146,44 +155,22 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
             features: vec!["deterministic".to_string(), "call_recording".to_string()],
             cooldown_until: state.cooldown_until,
             last_error: state.last_error,
-            reservation_policy: ReservationPolicy {
-                supports_reservations: true,
-                queue_policy: QueuePolicy::Priority,
-                interactive_reserve: 1,
-                cooldown_after_failures: 1,
-                cooldown_secs: 30,
-                retry_backoff_ms: Some(100),
-            },
-            reservation_state: ReservationStateSnapshot {
-                queued: 0,
-                active: 0,
-                available_units: 2,
-                oldest_queued_ms: None,
-                priority_breakdown: Default::default(),
-                states: vec![ReservationState::Granted],
-            },
+            reservation_policy: embedding_reservation_policy(true, QueuePolicy::Priority, 1),
+            reservation_state: embedding_reservation_state(2),
             cost_class: ProviderCostClass::Internal,
             degraded_modes: Vec::new(),
             fake_overrides_supported: true,
-            embedding: Some(EmbeddingProviderCapability {
+            embedding: embedding_capability(EmbeddingCapabilityConfig {
                 model_id: "fake-embedding".to_string(),
                 dimensions: self.dimensions,
                 max_input_tokens: 8192,
                 max_batch_tokens: 65_536,
                 instruction_support: InstructionSupport::QueryAndDocument,
                 sparse_output: false,
-                batch_limits: BatchLimits {
-                    max_items: 128,
-                    max_tokens: 65_536,
-                    max_bytes: None,
-                },
+                max_batch_items: 128,
+                max_batch_bytes: None,
             }),
-            llm: None,
-            vector_store: None,
-            fetch: None,
-            render: None,
-            credential: None,
-        })
+        }))
     }
 }
 
