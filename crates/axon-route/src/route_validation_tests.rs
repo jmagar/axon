@@ -61,6 +61,7 @@ fn router_reports_credentials_required_by_adapter() {
             .iter()
             .any(|requirement| requirement.required)
     );
+    assert_eq!(route.safety_class, SafetyClass::AuthenticatedNetwork);
 }
 
 #[test]
@@ -98,6 +99,25 @@ fn router_allows_tool_execution_with_trusted_policy() {
 
     assert_eq!(route.adapter.name, "cli");
     assert_eq!(route.safety_class, SafetyClass::ToolExecution);
+    assert_eq!(route.parser_hints[0].parser_id, "cli_tool");
+}
+
+#[test]
+fn router_uses_api_style_parser_ids_for_mcp_tools() {
+    let resolver = resolver();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let request = SourceRequest::new("mcp:context7/resolve-library-id");
+    let resolved = resolver.resolve(&request).expect("mcp source resolves");
+
+    let route = router
+        .route_with_policy(
+            &request,
+            resolved,
+            RouteSecurityPolicy::trusted_tool_execution(),
+        )
+        .expect("trusted policy allows mcp route");
+
+    assert_eq!(route.parser_hints[0].parser_id, "mcp_tool");
 }
 
 #[test]

@@ -57,10 +57,7 @@ impl SourceResolver {
             display_name: canonical.display_name,
             candidate_adapters: candidates.clone(),
             default_scope: request.scope.unwrap_or(canonical.default_scope),
-            available_scopes: candidates
-                .first()
-                .map(|candidate| candidate.supported_scopes.clone())
-                .unwrap_or_default(),
+            available_scopes: union_available_scopes(&candidates),
             authority,
             confidence,
             reason: canonical.reason,
@@ -77,7 +74,9 @@ impl SourceResolver {
         match authority_record {
             Some(record) => {
                 self.validate_authority_record(record)?;
-                let scope = request.scope.unwrap_or(SourceScope::Docs);
+                let scope = request
+                    .scope
+                    .unwrap_or_else(|| default_scope_for_authority_record(record));
                 let canonical_uri = record
                     .entrypoints
                     .iter()
@@ -187,6 +186,7 @@ fn uri_matches_kind(uri: &str, kind: SourceKind) -> bool {
                 || uri.starts_with("gitea://")
                 || uri.starts_with("git+http://")
                 || uri.starts_with("git+https://")
+                || git_provider_url(uri)
         }
         SourceKind::Registry => uri.starts_with("pkg://") || uri.starts_with("docker://"),
         SourceKind::Feed => uri.starts_with("feed://"),
@@ -198,6 +198,65 @@ fn uri_matches_kind(uri: &str, kind: SourceKind) -> bool {
         SourceKind::Memory => uri.starts_with("memory://"),
         SourceKind::Upload => uri.starts_with("upload://"),
     }
+}
+
+fn union_available_scopes(candidates: &[AdapterCandidate]) -> Vec<SourceScope> {
+    let mut scopes = Vec::new();
+    for candidate in candidates {
+        for scope in &candidate.supported_scopes {
+            if !scopes.contains(scope) {
+                scopes.push(*scope);
+            }
+        }
+    }
+    scopes
+}
+
+fn default_scope_for_authority_record(record: &crate::authority::AuthorityRecord) -> SourceScope {
+    record
+        .entrypoints
+        .first()
+        .map(|(scope, _)| *scope)
+        .unwrap_or_else(|| default_scope_for_kind(record.source_kind))
+}
+
+fn default_scope_for_kind(source_kind: SourceKind) -> SourceScope {
+    match source_kind {
+        SourceKind::Web => SourceScope::Site,
+        SourceKind::Local => SourceScope::Directory,
+        SourceKind::Git => SourceScope::Repo,
+        SourceKind::Registry => SourceScope::Package,
+        SourceKind::Feed => SourceScope::Feed,
+        SourceKind::Reddit => SourceScope::Subreddit,
+        SourceKind::Youtube => SourceScope::Video,
+        SourceKind::Session => SourceScope::Thread,
+        SourceKind::CliTool | SourceKind::McpTool => SourceScope::Tool,
+        SourceKind::Memory => SourceScope::Thread,
+        SourceKind::Upload => SourceScope::File,
+    }
+}
+
+fn git_provider_url(uri: &str) -> bool {
+    let Ok(url) = url::Url::parse(uri) else {
+        return false;
+    };
+    let Some(host) = url.host_str().map(|host| host.trim_start_matches("www.")) else {
+        return false;
+    };
+    host == "github.com"
+        || host.ends_with(".github.com")
+        || host == "gitlab.com"
+        || host.ends_with(".gitlab.com")
+        || host.starts_with("gitlab.")
+        || host == "codeberg.org"
+        || host.ends_with(".codeberg.org")
+        || host == "gitea.com"
+        || host.ends_with(".gitea.com")
+        || host == "forgejo.org"
+        || host.ends_with(".forgejo.org")
+        || host.starts_with("gitea.")
+        || host.starts_with("forgejo.")
+        || url.path().trim_end_matches('/').ends_with(".git")
 }
 
 fn public_requested_uri(request: &SourceRequest, canonical: &canonical::CanonicalSource) -> String {

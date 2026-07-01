@@ -6,6 +6,7 @@ pub mod canonical;
 pub mod capability;
 mod github;
 pub mod local_path;
+mod provider_host;
 pub mod resolver;
 pub mod router;
 pub mod scope;

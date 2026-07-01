@@ -138,6 +138,32 @@ impl SourceRouter {
                 .with_context("adapter", name.to_string())
                 .with_context("source_kind", format!("{:?}", source.source_kind)));
             }
+            let Some(candidate) = source
+                .candidate_adapters
+                .iter()
+                .find(|candidate| candidate.adapter.name == name)
+            else {
+                return Err(ApiError::new(
+                    "route.adapter.unsupported_source",
+                    ErrorStage::Routing,
+                    "requested adapter was not produced by source resolution",
+                )
+                .with_context("adapter", name.to_string())
+                .with_context("canonical_uri", source.canonical_uri.clone()));
+            };
+            let has_provider_specific_candidate = source
+                .candidate_adapters
+                .iter()
+                .any(|candidate| candidate.confidence >= 1.0);
+            if has_provider_specific_candidate && candidate.confidence < 1.0 {
+                return Err(ApiError::new(
+                    "route.adapter.unsupported_source",
+                    ErrorStage::Routing,
+                    "requested adapter does not match resolved provider family",
+                )
+                .with_context("adapter", name.to_string())
+                .with_context("canonical_uri", source.canonical_uri.clone()));
+            }
             return Ok(adapter);
         }
 
@@ -220,10 +246,27 @@ fn chunking_hints(source_kind: SourceKind) -> Vec<ChunkHint> {
 
 fn parser_hints(source_kind: SourceKind) -> Vec<ParserHint> {
     vec![ParserHint {
-        parser_id: format!("{source_kind:?}").to_ascii_lowercase(),
+        parser_id: source_kind_key(source_kind).to_string(),
         reason: "route default parser".to_string(),
         options: Default::default(),
     }]
+}
+
+fn source_kind_key(source_kind: SourceKind) -> &'static str {
+    match source_kind {
+        SourceKind::Web => "web",
+        SourceKind::Local => "local",
+        SourceKind::Git => "git",
+        SourceKind::Registry => "registry",
+        SourceKind::Feed => "feed",
+        SourceKind::Reddit => "reddit",
+        SourceKind::Youtube => "youtube",
+        SourceKind::Session => "session",
+        SourceKind::CliTool => "cli_tool",
+        SourceKind::McpTool => "mcp_tool",
+        SourceKind::Memory => "memory",
+        SourceKind::Upload => "upload",
+    }
 }
 
 fn graph_fact_kinds(source_kind: SourceKind) -> Vec<String> {

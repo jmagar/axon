@@ -1,5 +1,6 @@
 //! Lexical source normalization and source-family detection.
 
+use crate::provider_host::{is_gitea_host, is_gitlab_host, is_youtube_host};
 use axon_api::{Severity, SourceKind, SourceScope, SourceWarning};
 use url::{Url, form_urlencoded};
 
@@ -63,6 +64,9 @@ fn canonical_local(raw: &str, requested_scope: Option<SourceScope>) -> Option<Ca
 fn canonical_mcp(raw: &str) -> Option<CanonicalSource> {
     let rest = raw.strip_prefix("mcp:")?;
     let (server, tool) = rest.split_once('/')?;
+    if server.trim().is_empty() || tool.trim().is_empty() {
+        return None;
+    }
     Some(basic(
         format!("mcp://{server}/tools/{tool}"),
         SourceKind::McpTool,
@@ -89,6 +93,9 @@ fn canonical_cli(raw: &str) -> Option<CanonicalSource> {
 fn canonical_session(raw: &str) -> Option<CanonicalSource> {
     let rest = raw.strip_prefix("session:")?;
     let (provider, session_id) = rest.split_once(':')?;
+    if provider.trim().is_empty() || session_id.trim().is_empty() {
+        return None;
+    }
     Some(basic(
         format!("session://{provider}/{session_id}"),
         SourceKind::Session,
@@ -120,14 +127,16 @@ fn canonical_feed(raw: &str) -> Option<CanonicalSource> {
         .or_else(|| raw.strip_prefix("feed:"))
         .or_else(|| raw.strip_prefix("atom:"))?;
     let url = normalized_url(feed_url)?;
-    Some(basic(
+    let mut source = basic(
         format!("feed://{}{}", host_port(&url)?, clean_path(&url)),
         SourceKind::Feed,
         SourceScope::Feed,
         "feed",
         url.host_str()?,
         "resolved as feed source",
-    ))
+    );
+    source.warnings.extend(sensitive_query_warnings(&url));
+    Some(source)
 }
 
 fn canonical_reddit(raw: &str) -> Option<CanonicalSource> {
@@ -137,6 +146,9 @@ fn canonical_reddit(raw: &str) -> Option<CanonicalSource> {
         .or_else(|| raw.strip_prefix("https://reddit.com/r/"))
         .or_else(|| raw.strip_prefix("https://www.reddit.com/r/"))?;
     let name = subreddit.split('/').next()?.trim();
+    if name.is_empty() {
+        return None;
+    }
     Some(basic(
         format!("reddit://r/{name}"),
         SourceKind::Reddit,
@@ -152,10 +164,16 @@ fn canonical_youtube(raw: &str) -> Option<CanonicalSource> {
     let host = url.host_str()?.trim_start_matches("www.");
     if host == "youtu.be" {
         let id = url.path().trim_start_matches('/');
+        if id.is_empty() {
+            return None;
+        }
         return Some(youtube_video(id));
     }
     if is_youtube_host(host) && url.path() == "/watch" {
         let id = url.query_pairs().find(|(key, _)| key == "v")?.1;
+        if id.trim().is_empty() {
+            return None;
+        }
         return Some(youtube_video(&id));
     }
     None
@@ -178,6 +196,10 @@ fn canonical_registry(raw: &str) -> Option<CanonicalSource> {
         "crates" | "npm" | "pypi" | "docker" => registry,
         _ => return None,
     };
+    let package = package.trim();
+    if package.is_empty() {
+        return None;
+    }
     let package = if adapter == "pypi" {
         package.to_ascii_lowercase()
     } else {
@@ -205,14 +227,16 @@ fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
         return None;
     }
     let path = repo_path(&url)?;
-    Some(basic(
+    let mut source = basic(
         format!("gitlab://{}/{path}", host_port(&url)?),
         SourceKind::Git,
         SourceScope::Repo,
         "gitlab",
         path.rsplit('/').next().unwrap_or(&path),
         "resolved as GitLab repository source",
-    ))
+    );
+    source.warnings.extend(sensitive_query_warnings(&url));
+    Some(source)
 }
 
 fn canonical_gitea(raw: &str) -> Option<CanonicalSource> {
@@ -222,14 +246,16 @@ fn canonical_gitea(raw: &str) -> Option<CanonicalSource> {
         return None;
     }
     let path = repo_path(&url)?;
-    Some(basic(
+    let mut source = basic(
         format!("gitea://{}/{path}", host_port(&url)?),
         SourceKind::Git,
         SourceScope::Repo,
         "gitea",
         path.rsplit('/').next().unwrap_or(&path),
         "resolved as Gitea/Forgejo repository source",
-    ))
+    );
+    source.warnings.extend(sensitive_query_warnings(&url));
+    Some(source)
 }
 
 fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
@@ -238,7 +264,7 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
     if !path.ends_with(".git") {
         return None;
     }
-    Some(basic(
+    let mut source = basic(
         format!(
             "git+{}://{}{}",
             url.scheme(),
@@ -250,11 +276,16 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
         "git",
         path.rsplit('/').next().unwrap_or(&path),
         "resolved as generic Git repository source",
-    ))
+    );
+    source.warnings.extend(sensitive_query_warnings(&url));
+    Some(source)
 }
 
 fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
+    if is_malformed_provider_url(&url) {
+        return None;
+    }
     let query = normalized_query(&url);
     let mut source = basic(
         format!(
@@ -369,6 +400,17 @@ fn is_tracking_param(key: &str) -> bool {
         )
 }
 
+pub(crate) fn sensitive_query_warnings(url: &Url) -> Vec<SourceWarning> {
+    if url.query_pairs().any(|(key, _)| is_sensitive_param(&key)) {
+        vec![warning(
+            "source.query.sensitive_redacted",
+            "sensitive query parameter values were redacted in canonical URI",
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
 fn is_sensitive_param(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     key.contains("token")
@@ -376,6 +418,9 @@ fn is_sensitive_param(key: &str) -> bool {
         || key.contains("password")
         || key.contains("signature")
         || key.contains("credential")
+        || key == "access_key"
+        || key == "awsaccesskeyid"
+        || key.starts_with("x-amz-")
         || key == "sig"
         || key == "jwt"
         || key == "key"
@@ -412,21 +457,17 @@ fn collapse_duplicate_slashes(path: &str) -> String {
     collapsed
 }
 
-fn is_youtube_host(host: &str) -> bool {
-    host == "youtube.com" || host.ends_with(".youtube.com")
-}
-
-fn is_gitlab_host(host: &str) -> bool {
-    host == "gitlab.com" || host.ends_with(".gitlab.com")
-}
-
-fn is_gitea_host(host: &str) -> bool {
-    host == "codeberg.org"
-        || host.ends_with(".codeberg.org")
-        || host == "gitea.com"
-        || host.ends_with(".gitea.com")
-        || host == "forgejo.org"
-        || host.ends_with(".forgejo.org")
+fn is_malformed_provider_url(url: &Url) -> bool {
+    let Some(host) = url.host_str().map(|host| host.trim_start_matches("www.")) else {
+        return false;
+    };
+    (host == "youtu.be" && url.path().trim_start_matches('/').is_empty())
+        || (is_youtube_host(host)
+            && url.path() == "/watch"
+            && url
+                .query_pairs()
+                .find(|(key, _)| key == "v")
+                .is_some_and(|(_, value)| value.trim().is_empty()))
 }
 
 fn basic(

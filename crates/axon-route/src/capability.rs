@@ -141,6 +141,7 @@ impl AdapterRegistry {
             AdapterDefinition::new("reddit", "1", SourceKind::Reddit, SourceScope::Subreddit)
                 .with_scope(SourceScope::Thread)
                 .with_scope(SourceScope::Comment)
+                .with_safety_class(SafetyClass::AuthenticatedNetwork)
                 .with_credential(
                     CredentialKind::ApiKey,
                     "Reddit API credentials are required before acquisition",

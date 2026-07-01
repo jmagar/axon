@@ -37,10 +37,12 @@ fn normalize_path_components(path: &Path) -> String {
             other => normalized.push(other.as_os_str()),
         }
     }
-    normalized
-        .to_string_lossy()
-        .trim_end_matches('/')
-        .to_string()
+    let rendered = normalized.to_string_lossy().to_string();
+    if rendered == "/" {
+        rendered
+    } else {
+        rendered.trim_end_matches('/').to_string()
+    }
 }
 
 fn contains_only_parent_dirs(path: &Path) -> bool {

@@ -10,12 +10,13 @@ pub(crate) fn canonical_github(raw: &str) -> Option<CanonicalSource> {
         .or_else(|| raw.strip_prefix("http://github.com/"))
         .or_else(|| raw.strip_prefix("github.com/"))
         .or_else(|| {
-            if raw.contains("://") || raw.contains('.') {
+            if raw.contains("://") || raw.contains('.') || raw.contains(':') {
                 None
             } else {
                 Some(raw)
             }
         })?;
+    let path = path.split(['?', '#']).next().unwrap_or(path);
     let parts = path
         .split('/')
         .filter(|part| !part.is_empty())
@@ -45,6 +46,11 @@ pub(crate) fn canonical_github(raw: &str) -> Option<CanonicalSource> {
             "source.inferred.github_shorthand",
             "source interpreted as GitHub owner/repo shorthand",
         ));
+    }
+    if let Ok(url) = url::Url::parse(raw) {
+        source
+            .warnings
+            .extend(crate::canonical::sensitive_query_warnings(&url));
     }
     Some(source)
 }

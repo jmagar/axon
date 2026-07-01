@@ -1,4 +1,4 @@
-use axon_api::{AuthorityLevel, SourceKind, SourceRequest};
+use axon_api::{AuthorityLevel, SourceKind, SourceRequest, SourceScope};
 
 use crate::{AdapterRegistry, AuthorityRecord, InMemoryAuthorityRegistry, SourceResolver};
 
@@ -117,14 +117,105 @@ fn resolver_does_not_classify_spoofed_provider_hosts() {
 fn resolver_redacts_common_signed_url_query_params() {
     let resolved = resolver()
         .resolve(&SourceRequest::new(
-            "https://example.com/file?X-Amz-Signature=abc&sig=def&jwt=ghi&q=rust",
+            "https://example.com/file?X-Amz-Signature=abc&sig=def&jwt=ghi&q=rust&access_key=key&AWSAccessKeyId=id&X-Amz-Credential=cred",
         ))
         .expect("signed URL resolves");
 
     assert_eq!(
         resolved.canonical_uri,
-        "https://example.com/file?X-Amz-Signature=REDACTED&jwt=REDACTED&q=rust&sig=REDACTED"
+        "https://example.com/file?AWSAccessKeyId=REDACTED&X-Amz-Credential=REDACTED&X-Amz-Signature=REDACTED&access_key=REDACTED&jwt=REDACTED&q=rust&sig=REDACTED"
     );
+}
+
+#[test]
+fn resolver_suppresses_query_secrets_for_git_provider_urls() {
+    let resolved = resolver()
+        .resolve(&SourceRequest::new(
+            "https://gitlab.com/group/repo?AWSAccessKeyId=id&X-Amz-Credential=cred",
+        ))
+        .expect("gitlab URL resolves");
+
+    assert_eq!(resolved.canonical_uri, "gitlab://gitlab.com/group/repo");
+    assert_eq!(resolved.requested_uri, resolved.canonical_uri);
+    assert!(!resolved.requested_uri.contains("AWSAccessKeyId"));
+    assert!(
+        resolved
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "source.query.sensitive_redacted")
+    );
+}
+
+#[test]
+fn source_id_uses_stable_source_kind_spelling() {
+    let id = crate::source_id::source_id(SourceKind::CliTool, "cli://rg");
+    let expected = format!(
+        "src_{}",
+        &crate::source_id::stable_hash("cli_tool:cli://rg:v1")[..16]
+    );
+
+    assert_eq!(id.0, expected);
+}
+
+#[test]
+fn resolver_rejects_empty_source_identifiers() {
+    let resolver = resolver();
+    let invalid = [
+        "mcp:/tool",
+        "mcp:server/",
+        "session:claude:",
+        "r/",
+        "https://youtu.be/",
+        "https://youtube.com/watch?v=",
+        "npm:",
+        "crates:",
+        "pypi:",
+        "docker:",
+    ];
+
+    for source in invalid {
+        let err = match resolver.resolve(&SourceRequest::new(source)) {
+            Ok(resolved) => panic!("{source} should be rejected, got {resolved:?}"),
+            Err(err) => err,
+        };
+        assert_eq!(err.code.0, "source.resolve.unsupported", "{source}");
+    }
+}
+
+#[test]
+fn resolver_preserves_root_local_path_identity() {
+    assert_eq!(crate::local_path::normalize_local_path("/"), "/");
+
+    let root = resolver()
+        .resolve(&SourceRequest::local_path("/", true))
+        .expect("root path resolves");
+
+    assert!(root.canonical_uri.starts_with("local://lp_"));
+    assert_ne!(root.display_name, "");
+}
+
+#[test]
+fn resolver_classifies_prefixed_self_hosted_git_providers() {
+    let resolver = resolver();
+    let gitlab = resolver
+        .resolve(&SourceRequest::new("https://gitlab.example.com/org/repo"))
+        .expect("self-hosted gitlab resolves");
+    let gitea = resolver
+        .resolve(&SourceRequest::new("https://gitea.example.com/org/repo"))
+        .expect("self-hosted gitea resolves");
+    let forgejo = resolver
+        .resolve(&SourceRequest::new("https://forgejo.example.com/org/repo"))
+        .expect("self-hosted forgejo resolves");
+
+    assert_eq!(gitlab.canonical_uri, "gitlab://gitlab.example.com/org/repo");
+    assert_eq!(gitlab.candidate_adapters[0].adapter.name, "gitlab");
+    assert_eq!(gitea.canonical_uri, "gitea://gitea.example.com/org/repo");
+    assert_eq!(gitea.candidate_adapters[0].adapter.name, "gitea");
+    assert_eq!(
+        forgejo.canonical_uri,
+        "gitea://forgejo.example.com/org/repo"
+    );
+    assert_eq!(forgejo.candidate_adapters[0].adapter.name, "gitea");
 }
 
 #[test]
@@ -158,6 +249,71 @@ fn authority_aliases_preserve_provider_specific_adapter_hints() {
 
     assert_eq!(github.candidate_adapters[0].adapter.name, "github");
     assert_eq!(pypi.candidate_adapters[0].adapter.name, "pypi");
+}
+
+#[test]
+fn authority_alias_matching_is_scheme_case_insensitive() {
+    let resolver = SourceResolver::new(
+        InMemoryAuthorityRegistry::from_records(vec![
+            AuthorityRecord::new(
+                "auth_shadcn_docs",
+                "https://ui.shadcn.com/docs",
+                SourceKind::Web,
+                AuthorityLevel::Official,
+            )
+            .with_alias("https://ui.shadcn.com/docs"),
+        ]),
+        AdapterRegistry::target_defaults(),
+    );
+
+    let resolved = resolver
+        .resolve(&SourceRequest::new("HTTPS://UI.SHADCN.COM/DOCS/"))
+        .expect("uppercase scheme alias resolves");
+
+    assert_eq!(resolved.authority, AuthorityLevel::Official);
+    assert_eq!(resolved.canonical_uri, "https://ui.shadcn.com/docs");
+}
+
+#[test]
+fn authority_records_derive_default_scope_from_entrypoints() {
+    let resolver = SourceResolver::new(
+        InMemoryAuthorityRegistry::from_records(vec![
+            AuthorityRecord::new(
+                "auth_axon_repo",
+                "github://jmagar/axon",
+                SourceKind::Git,
+                AuthorityLevel::Official,
+            )
+            .with_alias("axon-source")
+            .with_entrypoint(SourceScope::Repo, "github://jmagar/axon"),
+        ]),
+        AdapterRegistry::target_defaults(),
+    );
+
+    let resolved = resolver
+        .resolve(&SourceRequest::new("axon-source"))
+        .expect("authority resolves");
+
+    assert_eq!(resolved.default_scope, SourceScope::Repo);
+    assert_eq!(resolved.canonical_uri, "github://jmagar/axon");
+}
+
+#[test]
+fn resolver_unions_available_scopes_from_all_candidate_adapters() {
+    let registry = AdapterRegistry::from_adapters(vec![
+        crate::AdapterDefinition::new("alpha-web", "1", SourceKind::Web, SourceScope::Site),
+        crate::AdapterDefinition::new("beta-web", "1", SourceKind::Web, SourceScope::Page)
+            .with_scope(SourceScope::Map),
+    ]);
+    let resolver = SourceResolver::new(InMemoryAuthorityRegistry::default(), registry);
+
+    let resolved = resolver
+        .resolve(&SourceRequest::new("example.com"))
+        .expect("web resolves");
+
+    assert!(resolved.available_scopes.contains(&SourceScope::Site));
+    assert!(resolved.available_scopes.contains(&SourceScope::Page));
+    assert!(resolved.available_scopes.contains(&SourceScope::Map));
 }
 
 #[test]

@@ -374,6 +374,22 @@ fn router_rejects_adapter_that_does_not_support_source_kind() {
 }
 
 #[test]
+fn router_rejects_explicit_adapter_outside_resolved_provider_family() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("https://github.com/jmagar/axon");
+    request.adapter = Some("git".to_string());
+    let resolved = resolver.resolve(&request).expect("github source resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("generic git adapter is not the resolved github provider");
+
+    assert_eq!(err.code.0, "route.adapter.unsupported_source");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
 fn router_routes_map_as_first_class_scope() {
     let resolver = resolver_with_authority();
     let router = SourceRouter::new(AdapterRegistry::target_defaults());

@@ -1,6 +1,7 @@
 //! Authority and alias records used during source resolution.
 
 use axon_api::{AuthorityLevel, SourceKind, SourceScope};
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthorityRecord {
@@ -24,7 +25,7 @@ impl AuthorityRecord {
         let canonical_uri = canonical_uri.into();
         Self {
             authority_id: authority_id.into(),
-            adapter_hint: adapter_hint_for_uri(&canonical_uri),
+            adapter_hint: adapter_hint_for_uri(&canonical_uri, source_kind),
             canonical_uri,
             source_kind,
             authority,
@@ -60,7 +61,7 @@ pub struct InMemoryAuthorityRegistry {
     records: Vec<AuthorityRecord>,
 }
 
-fn adapter_hint_for_uri(uri: &str) -> Option<String> {
+fn adapter_hint_for_uri(uri: &str, source_kind: SourceKind) -> Option<String> {
     let hint = if uri.starts_with("github://") {
         "github"
     } else if uri.starts_with("gitlab://") {
@@ -89,6 +90,10 @@ fn adapter_hint_for_uri(uri: &str) -> Option<String> {
         "cli"
     } else if uri.starts_with("mcp://") {
         "mcp"
+    } else if source_kind == SourceKind::Git
+        && (uri.starts_with("http://") || uri.starts_with("https://"))
+    {
+        adapter_hint_for_http_uri(uri)?
     } else if uri.starts_with("http://") || uri.starts_with("https://") {
         "web"
     } else {
@@ -119,10 +124,35 @@ impl InMemoryAuthorityRegistry {
 }
 
 fn normalize_alias(value: &str) -> String {
-    value
-        .trim()
+    let lower = value.trim().to_ascii_lowercase();
+    lower
+        .as_str()
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_end_matches('/')
-        .to_ascii_lowercase()
+        .to_string()
+}
+
+fn adapter_hint_for_http_uri(uri: &str) -> Option<&'static str> {
+    let url = Url::parse(uri).ok()?;
+    let host = url.host_str()?.trim_start_matches("www.");
+    if host == "github.com" || host.ends_with(".github.com") {
+        Some("github")
+    } else if host == "gitlab.com" || host.ends_with(".gitlab.com") || host.starts_with("gitlab.") {
+        Some("gitlab")
+    } else if host == "codeberg.org"
+        || host.ends_with(".codeberg.org")
+        || host == "gitea.com"
+        || host.ends_with(".gitea.com")
+        || host == "forgejo.org"
+        || host.ends_with(".forgejo.org")
+        || host.starts_with("gitea.")
+        || host.starts_with("forgejo.")
+    {
+        Some("gitea")
+    } else if url.path().trim_end_matches('/').ends_with(".git") {
+        Some("git")
+    } else {
+        Some("web")
+    }
 }
