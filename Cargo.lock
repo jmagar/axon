@@ -409,6 +409,7 @@ version = "6.2.1"
 dependencies = [
  "async-trait",
  "axon-api",
+ "axon-error",
  "tokio",
 ]
 
