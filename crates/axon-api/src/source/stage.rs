@@ -5,6 +5,7 @@ use super::common::*;
 use super::enums::*;
 use super::graph::*;
 use super::ids::*;
+use super::vector::ProviderUsage;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -141,6 +142,86 @@ pub struct SourceEnrichment {
     pub chunk_hints: Vec<ChunkHint>,
     pub graph_candidates: Vec<GraphCandidate>,
     pub artifacts: Vec<ArtifactRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizationResult {
+    pub header: StageResultHeader,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<SourceId>,
+    pub decision: SecurityDecision,
+    pub caller: CallerContext,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LeaseResult {
+    pub header: StageResultHeader,
+    pub lease_key: String,
+    pub acquired: bool,
+    pub owner: String,
+    pub expires_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ParseResult {
+    pub header: StageResultHeader,
+    pub document_id: DocumentId,
+    pub facts: Vec<SourceParseFacts>,
+    pub graph_candidates: Vec<GraphCandidate>,
+    pub parser_id: String,
+    pub parser_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GraphWriteResult {
+    pub header: StageResultHeader,
+    pub source_id: SourceId,
+    pub candidates_seen: u64,
+    pub nodes_upserted: u64,
+    pub edges_upserted: u64,
+    pub evidence_records: u64,
+    pub warnings: Vec<SourceWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VectorStoreWriteResult {
+    pub header: StageResultHeader,
+    pub collection: String,
+    pub points_attempted: u64,
+    pub points_written: u64,
+    pub payload_indexes_created: Vec<String>,
+    pub usage: ProviderUsage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PublishGenerationResult {
+    pub header: StageResultHeader,
+    pub source_id: SourceId,
+    pub generation: SourceGenerationId,
+    pub published_at: Timestamp,
+    pub document_count: u64,
+    pub chunk_count: u64,
+    pub vector_point_count: u64,
+    pub cleanup_debt: Vec<CleanupDebtId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CleanupDebtResult {
+    pub header: StageResultHeader,
+    pub debt_id: CleanupDebtId,
+    pub kind: CleanupDebtKind,
+    pub status: LifecycleStatus,
+    pub items_attempted: u64,
+    pub items_cleaned: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_retry_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

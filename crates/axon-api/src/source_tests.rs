@@ -156,6 +156,92 @@ fn stage_execution_result_wraps_payload_with_required_header() {
 }
 
 #[test]
+fn concrete_stage_results_round_trip() {
+    let header = StageResultHeader {
+        job_id: JobId(Uuid::new_v4()),
+        stage_id: StageId(Uuid::new_v4()),
+        phase: PipelinePhase::Authorizing,
+        status: LifecycleStatus::Completed,
+        started_at: Utc::now(),
+        completed_at: Some(Utc::now()),
+        counts: StageCounts {
+            items_total: None,
+            items_done: 0,
+            documents_total: None,
+            documents_done: 0,
+            chunks_total: None,
+            chunks_done: 0,
+            bytes_total: None,
+            bytes_done: 0,
+        },
+        warnings: Vec::new(),
+        error: None,
+    };
+    let auth = AuthorizationResult {
+        header: header.clone(),
+        source_id: Some(SourceId::from("src_local")),
+        decision: SecurityDecision {
+            allowed: true,
+            scope: "source:write".to_string(),
+            reason: "test caller".to_string(),
+            redactions: Vec::new(),
+            warnings: Vec::new(),
+        },
+        caller: CallerContext {
+            actor: Some("cli".to_string()),
+            transport: TransportKind::Cli,
+            scopes: vec!["source:write".to_string()],
+            visibility_ceiling: Visibility::Internal,
+        },
+    };
+    let write = VectorStoreWriteResult {
+        header: StageResultHeader {
+            phase: PipelinePhase::Upserting,
+            ..header.clone()
+        },
+        collection: "axon".to_string(),
+        points_attempted: 2,
+        points_written: 2,
+        payload_indexes_created: vec!["source_id".to_string()],
+        usage: ProviderUsage {
+            input_tokens: Some(100),
+            output_tokens: None,
+            requests: 1,
+            duration_ms: 42,
+        },
+    };
+    let publish = PublishGenerationResult {
+        header: StageResultHeader {
+            phase: PipelinePhase::Publishing,
+            ..header
+        },
+        source_id: SourceId::from("src_local"),
+        generation: SourceGenerationId::from("gen_0002"),
+        published_at: Utc::now(),
+        document_count: 1,
+        chunk_count: 2,
+        vector_point_count: 2,
+        cleanup_debt: vec![CleanupDebtId::from("debt_1")],
+    };
+
+    assert_eq!(
+        serde_json::from_value::<AuthorizationResult>(serde_json::to_value(&auth).unwrap())
+            .unwrap(),
+        auth
+    );
+    assert_eq!(
+        serde_json::from_value::<VectorStoreWriteResult>(serde_json::to_value(&write).unwrap())
+            .unwrap(),
+        write
+    );
+    assert_eq!(
+        serde_json::from_value::<PublishGenerationResult>(serde_json::to_value(&publish).unwrap())
+            .unwrap(),
+        publish
+    );
+}
+
+#[test]
 fn source_document_and_prepared_document_carry_generation_identity() {
     let doc = SourceDocument {
         document_id: DocumentId::from("doc_local_readme"),

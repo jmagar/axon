@@ -303,3 +303,33 @@ pub struct SourceCounts {
     pub vector_points_total: u64,
     pub bytes_total: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityDecision {
+    pub allowed: bool,
+    pub scope: String,
+    pub reason: String,
+    pub redactions: Vec<String>,
+    pub warnings: Vec<SourceWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CallerContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    pub transport: TransportKind,
+    pub scopes: Vec<String>,
+    pub visibility_ceiling: Visibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportKind {
+    Cli,
+    Rest,
+    Mcp,
+    Watch,
+    Job,
+}
