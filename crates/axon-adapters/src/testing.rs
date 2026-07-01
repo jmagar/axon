@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::adapter::{Result, SourceAdapter};
 use crate::capability::AdapterCapability;
+use crate::manifest::item_identity;
 
 #[derive(Debug, Clone)]
 pub struct FakeSourceAdapter {
@@ -75,10 +76,15 @@ impl SourceAdapter for FakeSourceAdapter {
 
         let mut manifest_items = Vec::new();
         for item in &self.items {
+            let identity = item_identity(
+                plan.route.source.source_kind,
+                &plan.route.source.canonical_uri,
+                &item.key.0,
+            )?;
             let manifest_item = ManifestItem {
                 source_id: plan.route.source.source_id.clone(),
-                source_item_key: item.key.clone(),
-                canonical_uri: item_uri(&plan.route.source.canonical_uri, &item.key.0),
+                source_item_key: identity.source_item_key,
+                canonical_uri: identity.canonical_uri,
                 item_kind: item_kind(plan.route.source.source_kind),
                 content_kind: Some(item.content_kind),
                 display_path: Some(item.key.0.clone()),
@@ -256,14 +262,6 @@ fn source_defaults(name: &str) -> (SourceKind, SourceScope) {
         "upload" => (SourceKind::Upload, SourceScope::File),
         _ => (SourceKind::Registry, SourceScope::Package),
     }
-}
-
-fn item_uri(base: &str, key: &str) -> String {
-    format!(
-        "{}/{}",
-        base.trim_end_matches('/'),
-        key.trim_start_matches('/')
-    )
 }
 
 fn item_kind(source_kind: SourceKind) -> ItemKind {

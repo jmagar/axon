@@ -32,3 +32,7 @@ pub const CRATE_NAME: &str = "axon-adapters";
 #[cfg(test)]
 #[path = "adapter_tests.rs"]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "manifest_tests.rs"]
+mod manifest_tests;
