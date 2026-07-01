@@ -108,6 +108,17 @@ fn item_identity_redacts_absolute_local_paths_from_public_keys() {
 }
 
 #[test]
+fn item_identity_keeps_absolute_local_paths_distinct_after_redaction() {
+    let first = item_identity(SourceKind::Local, "local://lp_test", "/tmp/a/config.toml").unwrap();
+    let second = item_identity(SourceKind::Local, "local://lp_test", "/tmp/b/config.toml").unwrap();
+
+    assert_ne!(first.source_item_key, second.source_item_key);
+    assert_ne!(first.canonical_uri, second.canonical_uri);
+    assert!(!first.source_item_key.0.starts_with('/'));
+    assert!(!second.source_item_key.0.starts_with('/'));
+}
+
+#[test]
 fn item_identity_rejects_empty_keys() {
     let err = item_identity(SourceKind::Web, "https://example.com/docs", "   ")
         .expect_err("empty item keys are invalid");

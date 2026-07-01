@@ -124,28 +124,34 @@ impl SourceAdapter for FakeSourceAdapter {
             .chain(diff.modified.iter())
             .cloned()
             .collect::<Vec<_>>();
-        let fetched_items = manifest_items
-            .iter()
-            .map(|manifest_item| {
-                let content = self
-                    .items
-                    .iter()
-                    .find(|item| item.key == manifest_item.source_item_key)
-                    .map(|item| item.content.clone())
-                    .unwrap_or_default();
-                AcquiredSourceItem {
-                    manifest_item: manifest_item.clone(),
-                    fetch_status: LifecycleStatus::Completed,
-                    content_ref: ContentRef::InlineText { text: content },
-                    raw_artifact_id: None,
-                    headers: RedactedHeaders {
-                        headers: Vec::new(),
-                    },
-                    fetched_at: timestamp(),
-                    metadata: MetadataMap::new(),
-                }
-            })
-            .collect::<Vec<_>>();
+        let mut fetched_items = Vec::new();
+        for manifest_item in &manifest_items {
+            let content = self
+                .items
+                .iter()
+                .find_map(|item| {
+                    let identity = item_identity(
+                        plan.route.source.source_kind,
+                        &plan.route.source.canonical_uri,
+                        &item.key.0,
+                    )
+                    .ok()?;
+                    (identity.source_item_key == manifest_item.source_item_key)
+                        .then(|| item.content.clone())
+                })
+                .unwrap_or_default();
+            fetched_items.push(AcquiredSourceItem {
+                manifest_item: manifest_item.clone(),
+                fetch_status: LifecycleStatus::Completed,
+                content_ref: ContentRef::InlineText { text: content },
+                raw_artifact_id: None,
+                headers: RedactedHeaders {
+                    headers: Vec::new(),
+                },
+                fetched_at: timestamp(),
+                metadata: MetadataMap::new(),
+            });
+        }
 
         let manifest = SourceManifest {
             source_id: plan.route.source.source_id.clone(),

@@ -16,12 +16,21 @@ impl SourceAdapterRegistry {
     where
         A: SourceAdapter + 'static,
     {
-        let mut adapters = adapters
-            .into_iter()
-            .map(|adapter| Arc::new(adapter) as Arc<dyn SourceAdapter>)
-            .collect::<Vec<_>>();
+        Self::from_arc_adapters(
+            adapters
+                .into_iter()
+                .map(|adapter| Arc::new(adapter) as Arc<dyn SourceAdapter>)
+                .collect(),
+        )
+    }
+
+    pub fn from_arc_adapters(mut adapters: Vec<Arc<dyn SourceAdapter>>) -> Self {
         adapters.sort_by(|left, right| left.name().cmp(right.name()));
         Self { adapters }
+    }
+
+    pub fn from_boxed_adapters(adapters: Vec<Box<dyn SourceAdapter>>) -> Self {
+        Self::from_arc_adapters(adapters.into_iter().map(Arc::from).collect())
     }
 
     pub fn adapter_for(&self, route: &RoutePlan) -> Option<Arc<dyn SourceAdapter>> {

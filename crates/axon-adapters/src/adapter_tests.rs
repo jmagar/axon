@@ -94,6 +94,64 @@ async fn source_adapter_registry_routes_by_selected_adapter_and_reports_capabili
     assert!(capability.refresh_supported);
 }
 
+#[tokio::test]
+async fn source_adapter_registry_accepts_mixed_trait_objects() {
+    let local = FakeSourceAdapter::new(AdapterRef {
+        name: "local".to_string(),
+        version: "test".to_string(),
+    });
+    let web = FakeSourceAdapter::new(AdapterRef {
+        name: "web".to_string(),
+        version: "test".to_string(),
+    });
+    let registry = SourceAdapterRegistry::from_arc_adapters(vec![
+        std::sync::Arc::new(local) as std::sync::Arc<dyn SourceAdapter>,
+        std::sync::Arc::new(web) as std::sync::Arc<dyn SourceAdapter>,
+    ]);
+
+    assert!(
+        registry
+            .adapter_for(&route_plan(
+                "local",
+                SourceKind::Local,
+                SourceScope::Directory
+            ))
+            .is_some()
+    );
+    assert!(
+        registry
+            .adapter_for(&route_plan("web", SourceKind::Web, SourceScope::Site))
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn fake_source_adapter_preserves_content_for_normalized_absolute_item_keys() {
+    let route = route_plan("local", SourceKind::Local, SourceScope::Directory);
+    let adapter = FakeSourceAdapter::new(route.adapter.clone()).with_item(
+        "/home/jmagar/workspace/axon/src/main.rs",
+        ContentKind::Code,
+        "fn main() {}",
+    );
+    let plan = source_plan(route);
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    assert_eq!(
+        manifest.items[0].source_item_key,
+        SourceItemKey::from("src/main.rs")
+    );
+
+    let diff = manifest_diff(&plan, manifest.items);
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+
+    assert_eq!(
+        acquisition.fetched_items[0].content_ref,
+        ContentRef::InlineText {
+            text: "fn main() {}".to_string()
+        }
+    );
+}
+
 #[test]
 fn adapter_capability_rejects_unsupported_scope_before_acquisition() {
     let capability = AdapterCapability::new(

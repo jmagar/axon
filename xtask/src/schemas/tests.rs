@@ -161,6 +161,31 @@ fn generated_adapter_docs_include_route_time_registry() {
 }
 
 #[test]
+fn generated_adapter_schema_models_registry_payload() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let content = std::fs::read_to_string(
+        tmp.path()
+            .join("docs/reference/sources/adapter-scopes.json"),
+    )
+    .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let properties = value["properties"].as_object().unwrap();
+    let x_axon = properties["x-axon"].as_object().unwrap();
+    let x_axon_properties = x_axon["properties"].as_object().unwrap();
+    let adapters = x_axon_properties["adapters"].as_object().unwrap();
+
+    assert_eq!(value["required"][0], "x-axon");
+    assert_eq!(adapters["type"], "array");
+    assert_eq!(adapters["items"]["$ref"], "#/$defs/AdapterCapability");
+    assert_eq!(
+        value["$defs"]["AdapterCapability"]["properties"]["supported_scopes"]["items"]["type"],
+        "string"
+    );
+}
+
+#[test]
 fn generated_json_contains_source_input_checksums_and_canonical_enums() {
     let tmp = fixture_repo();
     generate(tmp.path()).unwrap();

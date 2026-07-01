@@ -1,6 +1,7 @@
 //! Manifest item identity helpers.
 
 use axon_api::source::*;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceItemIdentity {
@@ -52,11 +53,16 @@ fn public_local_key(path: &str) -> String {
             return format!("{}{}", marker.trim_start_matches('/'), suffix);
         }
     }
-    path.rsplit('/')
+    let name = path
+        .rsplit('/')
         .next()
         .filter(|name| !name.is_empty())
-        .unwrap_or("local-item")
-        .to_string()
+        .unwrap_or("local-item");
+    let mut hash = Uuid::new_v5(&Uuid::NAMESPACE_URL, path.as_bytes())
+        .simple()
+        .to_string();
+    hash.truncate(12);
+    format!("local/{hash}/{name}")
 }
 
 fn join_item_uri(source_canonical_uri: &str, source_item_key: &str) -> String {
