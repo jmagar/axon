@@ -11,6 +11,7 @@ mod payload_redaction;
 pub mod point;
 pub mod qdrant;
 pub mod query;
+mod sparse;
 pub mod store;
 pub mod testing;
 

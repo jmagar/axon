@@ -55,19 +55,32 @@ pub fn matches_delete_selector(point: &VectorPoint, selector: &VectorDeleteSelec
         }
         VectorDeleteSelector::Chunks { chunk_ids, .. } => chunk_ids.contains(&point.chunk_id),
         VectorDeleteSelector::Points { point_ids, .. } => point_ids.contains(&point.point_id),
-        VectorDeleteSelector::Url { url, prefix, .. } => point
-            .payload
-            .get("url")
-            .and_then(Value::as_str)
-            .is_some_and(|stored| {
-                if *prefix {
-                    stored.starts_with(url)
-                } else {
-                    stored == url
-                }
-            }),
+        VectorDeleteSelector::Url { url, prefix, .. } => {
+            payload_url_matches(&point.payload, url, *prefix)
+        }
         VectorDeleteSelector::Filter { filter, .. } => matches_json_filter(&point.payload, filter),
     }
+}
+
+fn payload_url_matches(payload: &MetadataMap, expected: &str, prefix: bool) -> bool {
+    [
+        payload.get("url").and_then(Value::as_str),
+        payload.get("source_item_key").and_then(Value::as_str),
+        payload
+            .get("chunk_locator")
+            .and_then(Value::as_object)
+            .and_then(|locator| locator.get("canonical_uri"))
+            .and_then(Value::as_str),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|stored| {
+        if prefix {
+            stored.starts_with(expected)
+        } else {
+            stored == expected
+        }
+    })
 }
 
 pub fn selector_collection(selector: &VectorDeleteSelector) -> &str {

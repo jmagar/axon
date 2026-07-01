@@ -157,7 +157,7 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 **Interfaces:**
 
 - Consumes: `PreparedDocument`, `PreparedChunk`, `EmbeddingResult`, `VectorPointBatch`
-- Produces: `VectorPayload`, `VectorPayloadBuilder`, `VectorPayloadValidationError`, source-specific field registry.
+- Produces: `VectorPayload`, `VectorPayloadValidationError`, source-specific field registry.
 
 - [ ] Write failing payload validation tests for the required vector-payload contract:
   - every payload has `payload_contract_version`, `collection`, `source_id`, `source_generation`, `document_id`, `chunk_id`, `chunk_locator`, `source_range`, `visibility`, `redaction_status`, `job_id`, `document_status`, `embedding_model`, `embedding_dimensions`, `embedding_provider`, `embedding_profile`, and `embedded_at`

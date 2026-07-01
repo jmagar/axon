@@ -194,6 +194,14 @@ fn generated_vector_payload_schema_rejects_runtime_invalid_family_and_range_shap
     assert!(validator.validate(&payload).is_err());
 
     let mut payload = value["x-axon"]["examples"][0].clone();
+    payload["embedding_dimensions"] = serde_json::json!(0);
+    assert!(validator.validate(&payload).is_err());
+
+    let mut payload = value["x-axon"]["examples"][0].clone();
+    payload["collection"] = serde_json::json!("");
+    assert!(validator.validate(&payload).is_err());
+
+    let mut payload = value["x-axon"]["examples"][0].clone();
     payload["source_range"] = serde_json::json!({});
     assert!(validator.validate(&payload).is_err());
 
@@ -253,8 +261,7 @@ fn generated_vector_payload_examples_validate_against_the_builder_registry() {
             );
         }
         let metadata = axon_api::source::MetadataMap(object.clone().into_iter().collect());
-        axon_vectors::payload::VectorPayloadBuilder::new(metadata)
-            .build()
+        axon_vectors::payload::VectorPayload::try_from_metadata(metadata)
             .unwrap_or_else(|err| panic!("example for {family} must validate: {err}"));
     }
 }

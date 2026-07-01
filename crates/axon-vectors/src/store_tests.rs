@@ -111,6 +111,7 @@ fn payload(
     MetadataMap(
         [
             ("source_id".to_string(), json!(source_id)),
+            ("source_item_key".to_string(), json!(url)),
             ("source_generation".to_string(), json!(generation)),
             ("committed_generation".to_string(), json!(generation)),
             ("document_id".to_string(), json!(document_id)),
@@ -209,8 +210,8 @@ async fn fake_vector_store_reports_capabilities_and_records_calls() {
     assert_eq!(capability.provider_kind, ProviderKind::Vector);
     let vector_store = capability.vector_store.unwrap();
     assert!(vector_store.dense);
-    assert!(vector_store.sparse);
-    assert!(vector_store.hybrid);
+    assert!(!vector_store.sparse);
+    assert!(!vector_store.hybrid);
     assert!(vector_store.delete_by_filter);
 
     store.ensure_collection(collection()).await.unwrap();

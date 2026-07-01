@@ -10,7 +10,8 @@ use tokio::sync::Mutex;
 
 use crate::collection::{check_collection_drift, normalize_collection_spec};
 use crate::filter::{matches_delete_selector, matches_search_filters, selector_collection};
-use crate::payload::VectorPayloadBuilder;
+use crate::payload::VectorPayload;
+use crate::sparse::{batch_sparse_vectors_by_chunk, validate_sparse_vector};
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -165,6 +166,7 @@ impl VectorStore for FakeVectorStore {
         if let Some(err) = self.mode_error() {
             return Err(err);
         }
+        let mut batch = batch;
         let slow_write = self.mode == FakeVectorMode::SlowWrite;
         let spec = state.collections.get(&batch.collection).ok_or_else(|| {
             ApiError::new(
@@ -183,7 +185,32 @@ impl VectorStore for FakeVectorStore {
                 ),
             ));
         }
-        for point in &batch.points {
+        let has_sparse = batch.sparse_vectors.is_some()
+            || batch
+                .points
+                .iter()
+                .any(|point| point.sparse_vector.is_some());
+        if has_sparse && spec.sparse.is_none() {
+            return Err(ApiError::new(
+                "vector.sparse_not_configured",
+                axon_error::ErrorStage::Upserting,
+                format!(
+                    "collection {} does not declare a sparse vector namespace",
+                    batch.collection
+                ),
+            ));
+        }
+        let batch_sparse =
+            batch_sparse_vectors_by_chunk(&batch, axon_error::ErrorStage::Upserting)?;
+        for point in &mut batch.points {
+            if point.sparse_vector.is_none()
+                && let Some(sparse) = batch_sparse.get(&point.chunk_id.0)
+            {
+                point.sparse_vector = Some(sparse.clone());
+            }
+            if let Some(sparse) = point.sparse_vector.as_ref() {
+                validate_sparse_vector(&point.chunk_id, sparse, axon_error::ErrorStage::Upserting)?;
+            }
             if point.vector.len() as u32 != spec.dense.dimensions {
                 return Err(ApiError::new(
                     "vector.dimension_mismatch",
@@ -196,15 +223,13 @@ impl VectorStore for FakeVectorStore {
                     ),
                 ));
             }
-            VectorPayloadBuilder::new(point.payload.clone())
-                .build()
-                .map_err(|err| {
-                    ApiError::new(
-                        "vector.invalid_payload",
-                        axon_error::ErrorStage::Upserting,
-                        err.to_string(),
-                    )
-                })?;
+            VectorPayload::try_from_metadata(point.payload.clone()).map_err(|err| {
+                ApiError::new(
+                    "vector.invalid_payload",
+                    axon_error::ErrorStage::Upserting,
+                    err.to_string(),
+                )
+            })?;
         }
         let collection = state.points.entry(batch.collection.clone()).or_default();
         let points_attempted = batch.points.len() as u64;
@@ -274,6 +299,19 @@ impl VectorStore for FakeVectorStore {
         }
         let query_vector = request.dense_vector.as_deref().unwrap_or_default();
         let query_sparse = request.sparse_vector.as_ref();
+        let spec = state.collections.get(&request.collection);
+        if (query_sparse.is_some() || request.hybrid == Some(true))
+            && spec.is_none_or(|spec| spec.sparse.is_none())
+        {
+            return Err(ApiError::new(
+                "vector.sparse_not_configured",
+                axon_error::ErrorStage::Retrieving,
+                format!(
+                    "collection {} does not declare a sparse vector namespace",
+                    request.collection
+                ),
+            ));
+        }
         let limit = request.limit as usize;
         let mut scored = state
             .points
@@ -320,6 +358,23 @@ impl VectorStore for FakeVectorStore {
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
         let state = self.capability_state();
+        let store_state = self.state.lock().await;
+        let sparse_configured = store_state
+            .collections
+            .values()
+            .any(|spec| spec.sparse.is_some());
+        let payload_indexes = store_state
+            .collections
+            .values()
+            .next()
+            .map(|spec| {
+                spec.payload_indexes
+                    .iter()
+                    .map(|index| index.field_name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        drop(store_state);
         Ok(ProviderCapability {
             provider_id: self.provider_id.clone(),
             provider_kind: ProviderKind::Vector,
@@ -358,23 +413,10 @@ impl VectorStore for FakeVectorStore {
             llm: None,
             vector_store: Some(VectorStoreCapability {
                 dense: true,
-                sparse: true,
-                hybrid: true,
+                sparse: sparse_configured,
+                hybrid: sparse_configured,
                 payload_filters: true,
-                payload_indexes: self
-                    .state
-                    .lock()
-                    .await
-                    .collections
-                    .values()
-                    .next()
-                    .map(|spec| {
-                        spec.payload_indexes
-                            .iter()
-                            .map(|index| index.field_name.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default(),
+                payload_indexes,
                 delete_by_filter: true,
                 collection_aliases: false,
                 consistency: VectorConsistency::Strong,
@@ -434,13 +476,14 @@ fn payload_string(payload: &MetadataMap, field: &str) -> Option<String> {
 }
 
 fn stage_header(phase: PipelinePhase) -> StageResultHeader {
+    let timestamp = Timestamp("2026-07-01T00:00:00Z".to_string());
     StageResultHeader {
         job_id: JobId::new(uuid::Uuid::from_u128(0)),
         stage_id: StageId::new(uuid::Uuid::from_u128(0)),
         phase,
         status: LifecycleStatus::Completed,
-        started_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
-        completed_at: Some(Timestamp("2026-07-01T00:00:00Z".to_string())),
+        started_at: timestamp.clone(),
+        completed_at: Some(timestamp),
         counts: StageCounts {
             items_total: None,
             items_done: 0,

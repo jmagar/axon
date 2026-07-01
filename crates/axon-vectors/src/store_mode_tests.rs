@@ -1,4 +1,7 @@
-use axon_api::source::{ChunkId, MetadataMap, SparseVector, VectorPointBatch, VectorSearchRequest};
+use axon_api::source::{
+    ChunkId, MetadataMap, SparseVector, SparseVectorConfig, SparseVectorModifier,
+    VectorDeleteSelector, VectorPointBatch, VectorSearchRequest,
+};
 use serde_json::json;
 
 use crate::point::VectorPointBatchBuilder;
@@ -68,12 +71,58 @@ async fn fake_vector_store_invalid_payload_errors_do_not_echo_raw_discriminators
 }
 
 #[tokio::test]
-async fn fake_vector_store_scores_sparse_vectors_and_applies_limit_before_payload_clone() {
+async fn url_delete_selector_matches_canonical_payload_fields() {
     let store = FakeVectorStore::new("fake-vector");
     store
         .ensure_collection(test_collection_spec(3))
         .await
         .unwrap();
+    let mut batch = batch();
+    batch.points[0].payload.insert(
+        "source_item_key".to_string(),
+        json!("https://example.com/docs/a"),
+    );
+    batch.points[1]
+        .payload
+        .get_mut("chunk_locator")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert(
+            "canonical_uri".to_string(),
+            json!("https://example.com/docs/b"),
+        );
+    store.upsert(batch).await.unwrap();
+
+    let exact = store
+        .delete(VectorDeleteSelector::Url {
+            collection: "axon-test".to_string(),
+            url: "https://example.com/docs/a".to_string(),
+            prefix: false,
+        })
+        .await
+        .unwrap();
+    let prefix = store
+        .delete(VectorDeleteSelector::Url {
+            collection: "axon-test".to_string(),
+            url: "https://example.com/docs/".to_string(),
+            prefix: true,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!((exact.points_deleted, prefix.points_deleted), (1, 1));
+}
+
+#[tokio::test]
+async fn fake_vector_store_scores_sparse_vectors_and_applies_limit_before_payload_clone() {
+    let store = FakeVectorStore::new("fake-vector");
+    let mut spec = test_collection_spec(3);
+    spec.sparse = Some(SparseVectorConfig {
+        name: "bm42".to_string(),
+        modifier: SparseVectorModifier::Idf,
+    });
+    store.ensure_collection(spec).await.unwrap();
     let mut batch = batch();
     batch.points[0].sparse_vector = Some(SparseVector {
         chunk_id: batch.points[0].chunk_id.clone(),
@@ -104,4 +153,44 @@ async fn fake_vector_store_scores_sparse_vectors_and_applies_limit_before_payloa
         result.results[0].chunk_id,
         Some(ChunkId::new("chunk-web-2"))
     );
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_sparse_vectors_for_dense_only_collections() {
+    let store = FakeVectorStore::new("fake-vector");
+    store
+        .ensure_collection(test_collection_spec(3))
+        .await
+        .unwrap();
+    let mut batch = batch();
+    batch.sparse_vectors = Some(vec![SparseVector {
+        chunk_id: batch.points[0].chunk_id.clone(),
+        indices: vec![1],
+        values: vec![0.9],
+    }]);
+
+    let err = store.upsert(batch).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.sparse_not_configured");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_malformed_sparse_vectors() {
+    let store = FakeVectorStore::new("fake-vector");
+    let mut spec = test_collection_spec(3);
+    spec.sparse = Some(SparseVectorConfig {
+        name: "bm42".to_string(),
+        modifier: SparseVectorModifier::Idf,
+    });
+    store.ensure_collection(spec).await.unwrap();
+    let mut batch = batch();
+    batch.points[0].sparse_vector = Some(SparseVector {
+        chunk_id: batch.points[0].chunk_id.clone(),
+        indices: vec![1],
+        values: vec![0.9, 0.1],
+    });
+
+    let err = store.upsert(batch).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_sparse_vector");
 }

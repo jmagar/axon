@@ -200,30 +200,39 @@ fn shared_field_schema(field: &str) -> Value {
     match field {
         "payload_contract_version" => json!({ "type": "string", "x-qdrant-index": "keyword" }),
         "collection" | "source_id" | "source_item_key" | "document_id" | "chunk_id"
-        | "chunk_key" | "content_hash" | "job_id" | "document_status" | "embedding_model"
-        | "embedding_provider" | "embedding_profile" => {
-            json!({ "type": "string", "x-qdrant-index": "keyword" })
+        | "chunk_key" | "content_hash" | "chunk_text" | "job_id" | "document_status"
+        | "embedding_model" | "embedding_provider" | "embedding_profile" => {
+            json!({ "type": "string", "minLength": 1, "x-qdrant-index": "keyword" })
         }
         "source_family" => {
             json!({
                 "type": "string",
+                "minLength": 1,
                 "enum": VECTOR_SOURCE_FAMILIES,
                 "x-qdrant-index": "keyword"
             })
         }
         "source_generation" | "committed_generation" | "embedding_dimensions" => {
-            json!({ "type": "integer", "minimum": 0, "x-qdrant-index": "integer" })
+            let minimum = if field == "embedding_dimensions" {
+                1
+            } else {
+                0
+            };
+            json!({ "type": "integer", "minimum": minimum, "x-qdrant-index": "integer" })
         }
         "chunk_locator" => json!({ "$ref": "#/$defs/ChunkLocator" }),
         "source_range" => json!({ "$ref": "#/$defs/SourceRange" }),
         "visibility" => json!({
             "type": "string",
+            "minLength": 1,
             "enum": VECTOR_VISIBILITY_VALUES,
             "x-qdrant-index": "keyword"
         }),
-        "redaction_status" => json!({ "type": "string", "x-qdrant-index": "keyword" }),
-        "embedded_at" => json!({ "type": "string", "format": "date-time" }),
-        _ => json!({ "type": "string" }),
+        "redaction_status" => {
+            json!({ "type": "string", "minLength": 1, "x-qdrant-index": "keyword" })
+        }
+        "embedded_at" => json!({ "type": "string", "minLength": 1, "format": "date-time" }),
+        _ => json!({ "type": "string", "minLength": 1 }),
     }
 }
 
@@ -344,7 +353,7 @@ fn source_specific_example_value(field: &str, family: &str) -> Value {
         "web_status_code" => json!(200),
         "web_depth" => json!(1),
         "code_language" => json!("rust"),
-        "code_symbol_name" => json!("VectorPayloadBuilder"),
+        "code_symbol_name" => json!("VectorPayload"),
         "code_symbol_kind" => json!("struct"),
         "code_file_type" => json!("source"),
         "package_ecosystem" => json!("cargo"),

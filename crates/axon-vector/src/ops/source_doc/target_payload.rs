@@ -135,8 +135,7 @@ fn enrich_source_specific_fields(
 
 fn validate_target_payload(payload: Map<String, Value>) -> Result<Value, String> {
     let metadata = axon_api::source::MetadataMap(payload.clone().into_iter().collect());
-    axon_vectors::payload::VectorPayloadBuilder::new(metadata)
-        .build()
+    axon_vectors::payload::VectorPayload::try_from_metadata(metadata)
         .map_err(|err| format!("target vector payload validation failed: {err}"))?;
     Ok(Value::Object(payload))
 }

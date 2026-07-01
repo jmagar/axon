@@ -5,10 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use axon_api::source::*;
 
-use crate::capability::{
-    EmbeddingCapabilityConfig, ProviderCapabilityConfig, embedding_capability,
-    embedding_provider_capability, embedding_reservation_policy, embedding_reservation_state,
-};
+use crate::capability::{EmbeddingCapabilityConfig, unavailable_embedding_provider_capability};
 use crate::provider::{EmbeddingProvider, Result, not_wired_error};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,25 +42,18 @@ impl EmbeddingProvider for TeiEmbeddingProvider {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        let last_error = not_wired_error("tei", "TEI");
-        Ok(embedding_provider_capability(ProviderCapabilityConfig {
-            provider_id: ProviderId::new("tei"),
-            implementation: "tei".to_string(),
-            health: HealthStatus::Unavailable,
-            limits: ProviderLimits {
+        Ok(unavailable_embedding_provider_capability(
+            ProviderId::new("tei"),
+            "tei",
+            ProviderLimits {
                 max_batch_size: Some(self.config.max_batch_inputs),
                 timeout_ms: Some(self.config.timeout.as_millis() as u64),
                 ..ProviderLimits::default()
             },
-            features: vec!["dense_embeddings".to_string(), "http_shell".to_string()],
-            cooldown_until: None,
-            last_error: Some(last_error),
-            reservation_policy: embedding_reservation_policy(false, QueuePolicy::Fifo, 0),
-            reservation_state: embedding_reservation_state(0),
-            cost_class: ProviderCostClass::Internal,
-            degraded_modes: Vec::new(),
-            fake_overrides_supported: false,
-            embedding: embedding_capability(EmbeddingCapabilityConfig {
+            vec!["dense_embeddings".to_string(), "http_shell".to_string()],
+            not_wired_error("tei", "TEI"),
+            ProviderCostClass::Internal,
+            EmbeddingCapabilityConfig {
                 model_id: self.config.model.clone(),
                 dimensions: self.config.dimensions,
                 max_input_tokens: self.config.max_input_tokens,
@@ -72,7 +62,7 @@ impl EmbeddingProvider for TeiEmbeddingProvider {
                 sparse_output: false,
                 max_batch_items: self.config.max_batch_inputs,
                 max_batch_bytes: None,
-            }),
-        }))
+            },
+        ))
     }
 }

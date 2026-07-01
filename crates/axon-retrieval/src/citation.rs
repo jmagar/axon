@@ -91,60 +91,71 @@ impl Citation {
 }
 
 fn payload_range(item: &VectorSearchMatch) -> SourceRange {
-    let source_range = item.payload.get("source_range");
+    let source_range = item
+        .payload
+        .get("source_range")
+        .and_then(source_range_from_value);
     let chunk_locator_range = item
         .payload
         .get("chunk_locator")
         .and_then(|value| value.as_object())
-        .and_then(|value| value.get("range"));
+        .and_then(|value| value.get("range"))
+        .and_then(source_range_from_value);
 
+    merge_ranges(source_range, chunk_locator_range)
+}
+
+fn source_range_from_value(value: &Value) -> Option<SourceRange> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+fn merge_ranges(source: Option<SourceRange>, locator: Option<SourceRange>) -> SourceRange {
+    let source = source.unwrap_or_else(empty_range);
+    let locator = locator.unwrap_or_else(empty_range);
     SourceRange {
-        line_start: nested_u32(source_range, "line_start")
-            .or_else(|| nested_u32(chunk_locator_range, "line_start")),
-        line_end: nested_u32(source_range, "line_end")
-            .or_else(|| nested_u32(chunk_locator_range, "line_end")),
-        byte_start: nested_u64(source_range, "byte_start")
-            .or_else(|| nested_u64(chunk_locator_range, "byte_start")),
-        byte_end: nested_u64(source_range, "byte_end")
-            .or_else(|| nested_u64(chunk_locator_range, "byte_end")),
-        char_start: nested_u64(source_range, "char_start")
-            .or_else(|| nested_u64(chunk_locator_range, "char_start")),
-        char_end: nested_u64(source_range, "char_end")
-            .or_else(|| nested_u64(chunk_locator_range, "char_end")),
-        time_start_ms: nested_u64(source_range, "time_start_ms")
-            .or_else(|| nested_u64(chunk_locator_range, "time_start_ms")),
-        time_end_ms: nested_u64(source_range, "time_end_ms")
-            .or_else(|| nested_u64(chunk_locator_range, "time_end_ms")),
-        dom_selector: nested_string(source_range, "dom_selector")
-            .or_else(|| nested_string(chunk_locator_range, "dom_selector")),
-        json_pointer: nested_string(source_range, "json_pointer")
-            .or_else(|| nested_string(chunk_locator_range, "json_pointer")),
-        yaml_path: nested_string(source_range, "yaml_path")
-            .or_else(|| nested_string(chunk_locator_range, "yaml_path")),
-        xml_xpath: nested_string(source_range, "xml_xpath")
-            .or_else(|| nested_string(chunk_locator_range, "xml_xpath")),
-        csv_row: nested_u32(source_range, "csv_row")
-            .or_else(|| nested_u32(chunk_locator_range, "csv_row")),
-        session_turn_id: nested_string(source_range, "session_turn_id")
-            .or_else(|| nested_string(chunk_locator_range, "session_turn_id")),
-        turn_start: nested_string(source_range, "turn_start")
-            .or_else(|| nested_string(chunk_locator_range, "turn_start")),
-        turn_end: nested_string(source_range, "turn_end")
-            .or_else(|| nested_string(chunk_locator_range, "turn_end")),
+        line_start: source.line_start.or(locator.line_start),
+        line_end: source.line_end.or(locator.line_end),
+        byte_start: source.byte_start.or(locator.byte_start),
+        byte_end: source.byte_end.or(locator.byte_end),
+        char_start: source.char_start.or(locator.char_start),
+        char_end: source.char_end.or(locator.char_end),
+        time_start_ms: source.time_start_ms.or(locator.time_start_ms),
+        time_end_ms: source.time_end_ms.or(locator.time_end_ms),
+        dom_selector: non_empty(source.dom_selector).or_else(|| non_empty(locator.dom_selector)),
+        json_pointer: non_empty(source.json_pointer).or_else(|| non_empty(locator.json_pointer)),
+        yaml_path: non_empty(source.yaml_path).or_else(|| non_empty(locator.yaml_path)),
+        xml_xpath: non_empty(source.xml_xpath).or_else(|| non_empty(locator.xml_xpath)),
+        csv_row: source.csv_row.or(locator.csv_row),
+        session_turn_id: non_empty(source.session_turn_id)
+            .or_else(|| non_empty(locator.session_turn_id)),
+        turn_start: non_empty(source.turn_start).or_else(|| non_empty(locator.turn_start)),
+        turn_end: non_empty(source.turn_end).or_else(|| non_empty(locator.turn_end)),
     }
 }
 
-fn nested_u32(value: Option<&Value>, key: &str) -> Option<u32> {
-    value?.as_object()?.get(key)?.as_u64()?.try_into().ok()
+fn empty_range() -> SourceRange {
+    SourceRange {
+        line_start: None,
+        line_end: None,
+        byte_start: None,
+        byte_end: None,
+        char_start: None,
+        char_end: None,
+        time_start_ms: None,
+        time_end_ms: None,
+        dom_selector: None,
+        json_pointer: None,
+        yaml_path: None,
+        xml_xpath: None,
+        csv_row: None,
+        session_turn_id: None,
+        turn_start: None,
+        turn_end: None,
+    }
 }
 
-fn nested_u64(value: Option<&Value>, key: &str) -> Option<u64> {
-    value?.as_object()?.get(key)?.as_u64()
-}
-
-fn nested_string(value: Option<&Value>, key: &str) -> Option<String> {
-    let value = value?.as_object()?.get(key)?.as_str()?.trim();
-    (!value.is_empty()).then(|| value.to_string())
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.trim().is_empty())
 }
 
 fn has_locator(range: &SourceRange) -> bool {

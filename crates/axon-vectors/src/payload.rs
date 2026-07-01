@@ -15,11 +15,6 @@ pub struct VectorPayload {
     metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct VectorPayloadBuilder {
-    metadata: MetadataMap,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VectorPayloadValidationError {
     MissingRequiredField { field: String },
@@ -127,23 +122,6 @@ impl VectorPayload {
     }
 }
 
-impl VectorPayloadBuilder {
-    pub fn new(metadata: MetadataMap) -> Self {
-        Self { metadata }
-    }
-
-    pub fn build(self) -> Result<VectorPayload, VectorPayloadValidationError> {
-        VectorPayload::try_from_metadata(self.metadata)
-    }
-
-    pub fn build_with_registry(
-        self,
-        registry: &SourceSpecificFieldRegistry,
-    ) -> Result<VectorPayload, VectorPayloadValidationError> {
-        VectorPayload::try_from_metadata_with_registry(self.metadata, registry)
-    }
-}
-
 fn validate_required_fields(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
     for field in REQUIRED_FIELDS {
         if !metadata.contains_key(*field) {
@@ -214,12 +192,14 @@ fn validate_shapes(metadata: &MetadataMap) -> Result<(), VectorPayloadValidation
         "source_id",
         "document_id",
         "chunk_id",
+        "chunk_text",
         "job_id",
         "document_status",
         "embedding_model",
         "embedding_provider",
         "embedding_profile",
         "embedded_at",
+        "redaction_status",
     ] {
         require_non_empty_string(metadata, field)?;
     }

@@ -145,7 +145,54 @@ fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiErro
         source_id: citation.source_id.clone(),
         score: item.score,
         canonical_uri: citation.canonical_uri.clone(),
-        text: item.text.clone().unwrap_or_default(),
+        text: item
+            .text
+            .clone()
+            .or_else(|| payload_string(&item.payload, "chunk_text"))
+            .unwrap_or_default(),
         citation,
     })
+}
+
+fn payload_string(payload: &MetadataMap, field: &str) -> Option<String> {
+    payload.get(field)?.as_str().map(ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axon_api::source::{DocumentId, SourceId, VectorPointId};
+    use serde_json::json;
+
+    #[test]
+    fn vector_match_text_falls_back_to_chunk_text_payload() {
+        let mut payload = MetadataMap::new();
+        payload.insert("chunk_text".to_string(), json!("payload body"));
+        payload.insert(
+            "chunk_locator".to_string(),
+            json!({
+                "canonical_uri": "https://example.com/docs",
+                "range": { "line_start": 1, "line_end": 2 }
+            }),
+        );
+        payload.insert(
+            "source_range".to_string(),
+            json!({ "line_start": 1, "line_end": 2 }),
+        );
+
+        let item = VectorSearchMatch {
+            point_id: VectorPointId::new("point"),
+            score: 1.0,
+            chunk_id: Some(ChunkId::new("chunk")),
+            document_id: Some(DocumentId::new("doc")),
+            source_id: Some(SourceId::new("src")),
+            source_item_key: None,
+            text: None,
+            payload,
+        };
+
+        let matched = match_from_vector(&item).unwrap();
+
+        assert_eq!(matched.text, "payload body");
+    }
 }

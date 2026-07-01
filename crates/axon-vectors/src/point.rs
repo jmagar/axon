@@ -7,7 +7,7 @@ use axon_api::source::*;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::payload::{VectorPayloadBuilder, VectorPayloadValidationError};
+use crate::payload::{VectorPayload, VectorPayloadValidationError};
 
 pub const MODULE_NAME: &str = "point";
 
@@ -258,8 +258,7 @@ fn build_payload(
     );
     insert_default_string(&mut metadata, "embedded_at", "1970-01-01T00:00:00Z");
 
-    VectorPayloadBuilder::new(metadata)
-        .build()
+    VectorPayload::try_from_metadata(metadata)
         .map(|payload| payload.into_metadata())
         .map_err(|source| VectorPointBatchBuildError::Payload {
             chunk_id: chunk.chunk_id.clone(),

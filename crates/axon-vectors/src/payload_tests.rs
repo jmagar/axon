@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::payload::{
     SourceSpecificFieldRegistry, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES, VectorPayload,
-    VectorPayloadBuilder, VectorPayloadValidationError, source_specific_field_registry,
+    VectorPayloadValidationError, source_specific_field_registry,
 };
 
 fn fixture(name: &str) -> MetadataMap {
@@ -183,19 +183,6 @@ fn custom_registry_entries_can_admit_new_source_specific_fields() {
     );
 
     assert!(payload.is_ok());
-}
-
-#[test]
-fn payload_builder_runs_the_same_validation_as_direct_payload_construction() {
-    let payload = VectorPayloadBuilder::new(fixture("code.valid.json"))
-        .build()
-        .unwrap();
-    assert_eq!(payload.metadata()["source_family"], "code");
-
-    let err = VectorPayloadBuilder::new(fixture("bad_visibility.invalid.json"))
-        .build()
-        .unwrap_err();
-    assert_eq!(err, VectorPayloadValidationError::InvalidVisibility);
 }
 
 #[test]

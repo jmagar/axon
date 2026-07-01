@@ -1295,10 +1295,12 @@
   "description": "Generated vector payload metadata contract derived from the axon-vectors registry.",
   "properties": {
     "chunk_id": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "chunk_key": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1306,7 +1308,9 @@
       "$ref": "#/$defs/ChunkLocator"
     },
     "chunk_text": {
-      "type": "string"
+      "minLength": 1,
+      "type": "string",
+      "x-qdrant-index": "keyword"
     },
     "code_file_type": {
       "type": "string"
@@ -1321,6 +1325,7 @@
       "type": "string"
     },
     "collection": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1330,38 +1335,46 @@
       "x-qdrant-index": "integer"
     },
     "content_hash": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "content_kind": {
+      "minLength": 1,
       "type": "string"
     },
     "document_id": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "document_status": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "embedded_at": {
       "format": "date-time",
+      "minLength": 1,
       "type": "string"
     },
     "embedding_dimensions": {
-      "minimum": 0,
+      "minimum": 1,
       "type": "integer",
       "x-qdrant-index": "integer"
     },
     "embedding_model": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "embedding_profile": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "embedding_provider": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1381,6 +1394,7 @@
       "type": "array"
     },
     "job_id": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1407,6 +1421,7 @@
       "x-qdrant-index": "keyword"
     },
     "redaction_status": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1431,6 +1446,7 @@
         "graph",
         "memory"
       ],
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1440,10 +1456,12 @@
       "x-qdrant-index": "integer"
     },
     "source_id": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
     "source_item_key": {
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1451,6 +1469,7 @@
       "$ref": "#/$defs/SourceRange"
     },
     "vector_namespace": {
+      "minLength": 1,
       "type": "string"
     },
     "visibility": {
@@ -1461,6 +1480,7 @@
         "redacted",
         "derived"
       ],
+      "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
     },
@@ -1548,7 +1568,7 @@
         "code_file_type": "source",
         "code_language": "rust",
         "code_symbol_kind": "struct",
-        "code_symbol_name": "VectorPayloadBuilder",
+        "code_symbol_name": "VectorPayload",
         "collection": "axon",
         "committed_generation": 7,
         "content_hash": "sha256:codehash",
@@ -2017,12 +2037,12 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:48521c05fdccfa6d5a7a7dac14310faebe5d96dd3b384f24b6375fa5060d962a",
+        "checksum": "sha256:4fd9c62066bc1350729145433b0795cb3d20178b90580e74b4441a5100758a95",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:e2b4ecfdb17afc76e9486e4f5721afa2ac9c159d329d53ef7fc26d8f68eaa1dc",
+        "checksum": "sha256:28cb0ea90f3ba62909b9da3aa8eed43e5b9d5811b1c9149a947de13fe3ed1672",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },

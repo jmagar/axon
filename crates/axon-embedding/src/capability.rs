@@ -72,6 +72,32 @@ pub fn embedding_provider_capability(config: ProviderCapabilityConfig) -> Provid
     }
 }
 
+pub fn unavailable_embedding_provider_capability(
+    provider_id: ProviderId,
+    implementation: impl Into<String>,
+    limits: ProviderLimits,
+    features: Vec<String>,
+    last_error: ApiError,
+    cost_class: ProviderCostClass,
+    embedding: EmbeddingCapabilityConfig,
+) -> ProviderCapability {
+    embedding_provider_capability(ProviderCapabilityConfig {
+        provider_id,
+        implementation: implementation.into(),
+        health: HealthStatus::Unavailable,
+        limits,
+        features,
+        cooldown_until: None,
+        last_error: Some(last_error),
+        reservation_policy: embedding_reservation_policy(false, QueuePolicy::Fifo, 0),
+        reservation_state: embedding_reservation_state(0),
+        cost_class,
+        degraded_modes: Vec::new(),
+        fake_overrides_supported: false,
+        embedding: embedding_capability(embedding),
+    })
+}
+
 pub fn embedding_reservation_policy(
     supports_reservations: bool,
     queue_policy: QueuePolicy,
