@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -31,6 +32,8 @@ fn fixture_repo() -> TempDir {
         "crates/axon-observe/src/lib.rs",
         "crates/axon-graph/src/lib.rs",
         "crates/axon-vectors/src/lib.rs",
+        "crates/axon-vectors/src/payload.rs",
+        "crates/axon-vectors/src/point.rs",
         "docs/pipeline-unification/runtime/error-handling.md",
         "docs/pipeline-unification/surfaces/command-contract.md",
         "docs/pipeline-unification/surfaces/rest-contract.md",
@@ -39,11 +42,17 @@ fn fixture_repo() -> TempDir {
         "docs/pipeline-unification/runtime/observability-contract.md",
         "docs/pipeline-unification/runtime/schema-contract.md",
         "docs/pipeline-unification/sources/source-graph.md",
+        "docs/pipeline-unification/sources/metadata-payload.md",
+        "docs/pipeline-unification/sources/chunking-contract.md",
         "docs/pipeline-unification/schemas/vector-payload-schema.md",
         "docs/pipeline-unification/runtime/provider-contract.md",
         "docs/pipeline-unification/sources/adapter-scopes.md",
     ] {
-        write_fixture(tmp.path(), path, "fixture");
+        if needs_real_fixture(path) {
+            copy_workspace_fixture(tmp.path(), path);
+        } else {
+            write_fixture(tmp.path(), path, "fixture");
+        }
     }
     write_fixture(
         tmp.path(),
@@ -58,10 +67,87 @@ fn fixture_repo() -> TempDir {
     tmp
 }
 
+fn needs_real_fixture(path: &str) -> bool {
+    matches!(
+        path,
+        "crates/axon-api/src/source/vector.rs"
+            | "crates/axon-vectors/src/payload.rs"
+            | "crates/axon-vectors/src/point.rs"
+            | "docs/pipeline-unification/sources/metadata-payload.md"
+            | "docs/pipeline-unification/sources/chunking-contract.md"
+            | "docs/pipeline-unification/schemas/vector-payload-schema.md"
+    )
+}
+
+fn copy_workspace_fixture(root: &Path, path: &str) {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let content = std::fs::read_to_string(repo_root.join(path))
+        .unwrap_or_else(|err| panic!("read workspace fixture {path}: {err}"));
+    write_fixture(root, path, &content);
+}
+
 fn write_fixture(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
+}
+
+fn generated_json(root: &Path, path: &str) -> serde_json::Value {
+    let content = std::fs::read_to_string(root.join(path)).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
+
+fn workspace_file(path: &str) -> String {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    std::fs::read_to_string(repo_root.join(path))
+        .unwrap_or_else(|err| panic!("read workspace file {path}: {err}"))
+}
+
+fn payload_required_fields_from_source() -> Vec<String> {
+    parse_string_const_array(
+        &workspace_file("crates/axon-vectors/src/payload.rs"),
+        "REQUIRED_FIELDS",
+    )
+}
+
+fn payload_shared_fields_from_source() -> Vec<String> {
+    parse_string_const_array(
+        &workspace_file("crates/axon-vectors/src/payload.rs"),
+        "SHARED_FIELDS",
+    )
+}
+
+fn payload_source_family_registry_from_source() -> Vec<(String, Vec<String>)> {
+    let source = workspace_file("crates/axon-vectors/src/payload.rs");
+    let family_re = Regex::new(r#"(?s)\(\s*"([^"]+)"\s*,\s*&\[(.*?)\]\[\.\.\]\s*,\s*\)"#).unwrap();
+    let field_re = Regex::new(r#""([^"]+)""#).unwrap();
+    family_re
+        .captures_iter(&source)
+        .map(|capture| {
+            let family = capture[1].to_string();
+            let fields = field_re
+                .captures_iter(&capture[2])
+                .map(|field| field[1].to_string())
+                .collect::<Vec<_>>();
+            (family, fields)
+        })
+        .collect()
+}
+
+fn parse_string_const_array(source: &str, const_name: &str) -> Vec<String> {
+    let re = Regex::new(&format!(
+        r#"(?s)const\s+{const_name}:\s*&\[\s*&str\s*\]\s*=\s*&\[(.*?)\];"#
+    ))
+    .unwrap();
+    let body = re
+        .captures(source)
+        .unwrap_or_else(|| panic!("missing {const_name} in source"))[1]
+        .to_string();
+    let field_re = Regex::new(r#""([^"]+)""#).unwrap();
+    field_re
+        .captures_iter(&body)
+        .map(|capture| capture[1].to_string())
+        .collect()
 }
 
 fn generate(root: &Path) -> Result<()> {
@@ -260,6 +346,144 @@ fn generated_json_contains_source_input_checksums_and_canonical_enums() {
         value["$defs"]["enums"]["PipelinePhase"]["enum"][1],
         serde_json::json!("requested")
     );
+}
+
+#[test]
+fn generated_vector_payload_schema_includes_registered_required_fields() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let required = value["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let expected = payload_required_fields_from_source();
+
+    assert_eq!(required, expected);
+}
+
+#[test]
+fn generated_vector_payload_index_plan_references_only_schema_fields() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let properties = value["properties"].as_object().unwrap();
+    let indexes = value["x-axon"]["index_plan"]["indexes"].as_array().unwrap();
+
+    assert!(!indexes.is_empty(), "index plan should not be empty");
+    for index in indexes {
+        let field_name = index["field_name"].as_str().unwrap();
+        assert!(
+            properties.contains_key(field_name),
+            "index field {field_name} must exist in schema properties"
+        );
+    }
+}
+
+#[test]
+fn generated_vector_payload_examples_validate_against_the_builder_registry() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let shared = payload_shared_fields_from_source();
+    let required = payload_required_fields_from_source();
+    let registry = payload_source_family_registry_from_source()
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let examples = value["x-axon"]["examples"].as_array().unwrap();
+
+    assert!(!examples.is_empty(), "payload examples should be emitted");
+    for example in examples {
+        let family = example["source_family"].as_str().unwrap();
+        let object = example.as_object().unwrap();
+        for field in &required {
+            assert!(
+                object.contains_key(field),
+                "example for {family} missing required field {field}"
+            );
+        }
+        for field in object.keys() {
+            if shared.contains(field) {
+                continue;
+            }
+            assert!(
+                registry
+                    .get(family)
+                    .is_some_and(|allowed| allowed.contains(field)),
+                "example field {field} is not registered for {family}"
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_vector_payload_source_inputs_cover_builder_contract_and_api_vector_dtos() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let inputs = value["x-axon"]["source_inputs"].as_array().unwrap();
+
+    for path in [
+        "crates/axon-vectors/src/payload.rs",
+        "crates/axon-vectors/src/point.rs",
+        "crates/axon-api/src/source/vector.rs",
+        "docs/pipeline-unification/sources/metadata-payload.md",
+        "docs/pipeline-unification/sources/chunking-contract.md",
+        "docs/pipeline-unification/schemas/vector-payload-schema.md",
+    ] {
+        assert!(
+            inputs.iter().any(|input| input["path"] == path),
+            "{path} should be tracked as a vector payload source input"
+        );
+    }
+}
+
+#[test]
+fn generated_api_schema_and_docs_include_vector_store_dtos() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let schema = generated_json(tmp.path(), "docs/reference/api/schemas.json");
+    for def in [
+        "VectorPointBatch",
+        "VectorPoint",
+        "PayloadIndexSpec",
+        "CollectionSpec",
+        "VectorConfig",
+        "SparseVector",
+        "SparseVectorConfig",
+        "VectorStoreDeleteResult",
+        "VectorSearchRequest",
+        "VectorSearchResult",
+        "VectorSearchMatch",
+    ] {
+        assert!(
+            schema["$defs"].get(def).is_some(),
+            "{def} should be emitted in the API schema bundle"
+        );
+    }
+
+    let markdown = std::fs::read_to_string(tmp.path().join("docs/reference/api/dto.md")).unwrap();
+    assert!(markdown.contains("VectorPointBatch"));
+    assert!(markdown.contains("CollectionSpec"));
 }
 
 #[test]

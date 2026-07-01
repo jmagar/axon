@@ -1,60 +1,1073 @@
 {
   "$defs": {
-    "SchemaFamilyContract": {
+    "ChunkLocator": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
-        "family": {
-          "const": "vector-payload"
-        },
-        "future_registry": {
+        "canonical_uri": {
           "type": "string"
         },
-        "owner_crates": {
+        "heading_path": {
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "status": {
-          "const": "skeleton"
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "range": {
+          "$ref": "#/$defs/ChunkLocator_SourceRange"
+        },
+        "symbol": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
-        "family",
-        "status",
-        "owner_crates"
+        "canonical_uri",
+        "heading_path",
+        "range"
       ],
-      "type": "object",
-      "x-axon": {
-        "replaced_by": "crate-owned registry generator in the matching implementation PR",
-        "skeleton": true
-      }
+      "title": "ChunkLocator",
+      "type": "object"
+    },
+    "ChunkLocator_SourceRange": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_end": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "byte_start": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "char_end": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "char_start": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "csv_row": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "dom_selector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "json_pointer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_end": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line_start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session_turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_end_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "time_start_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turn_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "xml_xpath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "yaml_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SourceRange": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "byte_end": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "byte_start": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "char_end": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "char_start": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "csv_row": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "dom_selector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "json_pointer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_end": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line_start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session_turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_end_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "time_start_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turn_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "xml_xpath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "yaml_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "SourceRange",
+      "type": "object"
     }
   },
   "$id": "https://axon.local/schemas/sources/vector-payload.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Generated Axon schema contract artifact.",
+  "description": "Generated vector payload metadata contract derived from the axon-vectors registry.",
+  "properties": {
+    "chunk_id": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "chunk_key": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "chunk_locator": {
+      "$ref": "#/$defs/ChunkLocator"
+    },
+    "code_file_type": {
+      "type": "string"
+    },
+    "code_language": {
+      "type": "string"
+    },
+    "code_symbol_kind": {
+      "type": "string"
+    },
+    "code_symbol_name": {
+      "type": "string"
+    },
+    "collection": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "committed_generation": {
+      "minimum": 0,
+      "type": "integer",
+      "x-qdrant-index": "integer"
+    },
+    "content_hash": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "document_id": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "document_status": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "embedded_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "embedding_dimensions": {
+      "minimum": 0,
+      "type": "integer",
+      "x-qdrant-index": "integer"
+    },
+    "embedding_model": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "embedding_profile": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "embedding_provider": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "graph_confidence": {
+      "type": "number"
+    },
+    "graph_edge_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "graph_node_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "job_id": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "memory_id": {
+      "type": "string"
+    },
+    "memory_importance": {
+      "type": "integer"
+    },
+    "memory_status": {
+      "type": "string"
+    },
+    "package_ecosystem": {
+      "type": "string"
+    },
+    "package_name": {
+      "type": "string"
+    },
+    "package_version": {
+      "type": "string"
+    },
+    "payload_contract_version": {
+      "type": [
+        "string",
+        "integer"
+      ],
+      "x-qdrant-index": "keyword"
+    },
+    "redaction_status": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "session_skill_name": {
+      "type": "string"
+    },
+    "session_tool_name": {
+      "type": "string"
+    },
+    "session_turn_index": {
+      "type": "integer"
+    },
+    "source_family": {
+      "enum": [
+        "code",
+        "graph",
+        "memory",
+        "package",
+        "session",
+        "web"
+      ],
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "source_generation": {
+      "minimum": 0,
+      "type": "integer",
+      "x-qdrant-index": "integer"
+    },
+    "source_id": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "source_item_key": {
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "source_range": {
+      "$ref": "#/$defs/SourceRange"
+    },
+    "visibility": {
+      "enum": [
+        "public",
+        "internal",
+        "private"
+      ],
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
+    "web_depth": {
+      "type": "integer"
+    },
+    "web_domain": {
+      "type": "string"
+    },
+    "web_status_code": {
+      "type": "integer"
+    },
+    "web_title": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "payload_contract_version",
+    "collection",
+    "source_id",
+    "source_generation",
+    "document_id",
+    "chunk_id",
+    "chunk_locator",
+    "source_range",
+    "visibility",
+    "redaction_status",
+    "job_id",
+    "document_status",
+    "embedding_model",
+    "embedding_dimensions",
+    "embedding_provider",
+    "embedding_profile",
+    "embedded_at",
+    "committed_generation"
+  ],
   "title": "AxonVectorPayloadSchema",
   "type": "object",
   "x-axon": {
+    "api_dtos": [
+      "EmbeddingBatch",
+      "EmbeddingInput",
+      "VectorPointBatch",
+      "VectorPoint",
+      "PayloadIndexSpec",
+      "CollectionSpec",
+      "VectorSearchRequest",
+      "VectorSearchResult"
+    ],
     "clean_break": true,
     "contract_version": "2026-06-30",
+    "examples": [
+      {
+        "chunk_id": "chunk-code-0",
+        "chunk_key": "code-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/code",
+          "heading_path": [
+            "code heading"
+          ],
+          "path": "/code",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "code_file_type": "source",
+        "code_language": "rust",
+        "code_symbol_kind": "struct",
+        "code_symbol_name": "VectorPayloadBuilder",
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:codehash",
+        "document_id": "doc-code",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "job_id": "job-code",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "source_family": "code",
+        "source_generation": 7,
+        "source_id": "src-code",
+        "source_item_key": "code-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal"
+      },
+      {
+        "chunk_id": "chunk-web-0",
+        "chunk_key": "web-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/web",
+          "heading_path": [
+            "web heading"
+          ],
+          "path": "/web",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:webhash",
+        "document_id": "doc-web",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "job_id": "job-web",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "source_family": "web",
+        "source_generation": 7,
+        "source_id": "src-web",
+        "source_item_key": "web-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal",
+        "web_depth": 1,
+        "web_domain": "example.com",
+        "web_status_code": 200,
+        "web_title": "Example Docs"
+      },
+      {
+        "chunk_id": "chunk-package-0",
+        "chunk_key": "package-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/package",
+          "heading_path": [
+            "package heading"
+          ],
+          "path": "/package",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:packagehash",
+        "document_id": "doc-package",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "job_id": "job-package",
+        "package_ecosystem": "cargo",
+        "package_name": "axon",
+        "package_version": "6.2.1",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "source_family": "package",
+        "source_generation": 7,
+        "source_id": "src-package",
+        "source_item_key": "package-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal"
+      },
+      {
+        "chunk_id": "chunk-session-0",
+        "chunk_key": "session-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/session",
+          "heading_path": [
+            "session heading"
+          ],
+          "path": "/session",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:sessionhash",
+        "document_id": "doc-session",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "job_id": "job-session",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "session_id": "session-session",
+        "session_skill_name": "test-driven-development",
+        "session_tool_name": "schemas",
+        "session_turn_index": 3,
+        "source_family": "session",
+        "source_generation": 7,
+        "source_id": "src-session",
+        "source_item_key": "session-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal"
+      },
+      {
+        "chunk_id": "chunk-graph-0",
+        "chunk_key": "graph-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/graph",
+          "heading_path": [
+            "graph heading"
+          ],
+          "path": "/graph",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:graphhash",
+        "document_id": "doc-graph",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "graph_confidence": 0.93,
+        "graph_edge_ids": [
+          "edge-a"
+        ],
+        "graph_node_ids": [
+          "node-a",
+          "node-b"
+        ],
+        "job_id": "job-graph",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "source_family": "graph",
+        "source_generation": 7,
+        "source_id": "src-graph",
+        "source_item_key": "graph-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal"
+      },
+      {
+        "chunk_id": "chunk-memory-0",
+        "chunk_key": "memory-chunk-key",
+        "chunk_locator": {
+          "canonical_uri": "https://example.com/memory",
+          "heading_path": [
+            "memory heading"
+          ],
+          "path": "/memory",
+          "range": {
+            "byte_end": null,
+            "byte_start": null,
+            "char_end": null,
+            "char_start": null,
+            "csv_row": null,
+            "dom_selector": null,
+            "json_pointer": null,
+            "line_end": 4,
+            "line_start": 1,
+            "session_turn_id": null,
+            "time_end_ms": null,
+            "time_start_ms": null,
+            "turn_end": null,
+            "turn_start": null,
+            "xml_xpath": null,
+            "yaml_path": null
+          },
+          "symbol": null
+        },
+        "collection": "axon",
+        "committed_generation": 7,
+        "content_hash": "sha256:memoryhash",
+        "document_id": "doc-memory",
+        "document_status": "prepared",
+        "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_dimensions": 768,
+        "embedding_model": "text-embedding-test",
+        "embedding_profile": "default",
+        "embedding_provider": "tei",
+        "job_id": "job-memory",
+        "memory_id": "memory-memory",
+        "memory_importance": 5,
+        "memory_status": "active",
+        "payload_contract_version": 1,
+        "redaction_status": "clean",
+        "source_family": "memory",
+        "source_generation": 7,
+        "source_id": "src-memory",
+        "source_item_key": "memory-item",
+        "source_range": {
+          "byte_end": null,
+          "byte_start": null,
+          "char_end": null,
+          "char_start": null,
+          "csv_row": null,
+          "dom_selector": null,
+          "json_pointer": null,
+          "line_end": 4,
+          "line_start": 1,
+          "session_turn_id": null,
+          "time_end_ms": null,
+          "time_start_ms": null,
+          "turn_end": null,
+          "turn_start": null,
+          "xml_xpath": null,
+          "yaml_path": null
+        },
+        "visibility": "internal"
+      }
+    ],
     "generated_by": "cargo xtask schemas vector-payload",
+    "index_plan": {
+      "collection": "axon",
+      "indexes": [
+        {
+          "field_name": "payload_contract_version",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "collection",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "source_family",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "source_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "source_item_key",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "source_generation",
+          "field_schema": "integer"
+        },
+        {
+          "field_name": "committed_generation",
+          "field_schema": "integer"
+        },
+        {
+          "field_name": "document_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "chunk_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "job_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "document_status",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_model",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_provider",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "visibility",
+          "field_schema": "keyword"
+        }
+      ]
+    },
     "owner_crates": [
       "axon-vectors",
       "axon-api"
     ],
     "source_inputs": [
       {
-        "checksum": "sha256:61f1dc856edfa1ca6899b0a5ba3d7e94265c3b242dcf8f3cbfbb071de709d845",
+        "checksum": "sha256:a11af79bc5e6e71efef79e4ead255fe3f265e09ace9d0c26df269aeaa97b8645",
         "kind": "rust_module",
-        "path": "crates/axon-vectors/src/lib.rs"
+        "path": "crates/axon-api/src/source/vector.rs"
+      },
+      {
+        "checksum": "sha256:81bd9cd72a6ced1fd144153fefbc8b86bf3e1d85f54be3c9fc4c4b46ff14c95b",
+        "kind": "rust_module",
+        "path": "crates/axon-vectors/src/payload.rs"
+      },
+      {
+        "checksum": "sha256:d87a196cd846726b504625c5025b16e80a7d4133e6273ea5a748a442e1273be9",
+        "kind": "rust_module",
+        "path": "crates/axon-vectors/src/point.rs"
       },
       {
         "checksum": "sha256:ef84517d66acc0e35fe0b432df3cee52fc07e6643006003eca0ec0c29a5cde7f",
         "kind": "markdown_contract",
         "path": "docs/pipeline-unification/schemas/vector-payload-schema.md"
+      },
+      {
+        "checksum": "sha256:c05b4d85b293af0200445e89adf99db1db55d3cf2e7d003fa38844efb682d8d8",
+        "kind": "markdown_contract",
+        "path": "docs/pipeline-unification/sources/chunking-contract.md"
+      },
+      {
+        "checksum": "sha256:debc62b438633191ee4b56a7597828d49752b322d4dffc3ca786a08cc2d3a0f2",
+        "kind": "markdown_contract",
+        "path": "docs/pipeline-unification/sources/metadata-payload.md"
+      }
+    ],
+    "source_specific_families": [
+      {
+        "fields": [
+          "code_language",
+          "code_symbol_name",
+          "code_symbol_kind",
+          "code_file_type"
+        ],
+        "source_family": "code"
+      },
+      {
+        "fields": [
+          "web_title",
+          "web_domain",
+          "web_status_code",
+          "web_depth"
+        ],
+        "source_family": "web"
+      },
+      {
+        "fields": [
+          "package_ecosystem",
+          "package_name",
+          "package_version"
+        ],
+        "source_family": "package"
+      },
+      {
+        "fields": [
+          "session_id",
+          "session_turn_index",
+          "session_tool_name",
+          "session_skill_name"
+        ],
+        "source_family": "session"
+      },
+      {
+        "fields": [
+          "graph_node_ids",
+          "graph_edge_ids",
+          "graph_confidence"
+        ],
+        "source_family": "graph"
+      },
+      {
+        "fields": [
+          "memory_id",
+          "memory_importance",
+          "memory_status"
+        ],
+        "source_family": "memory"
       }
     ]
   }
