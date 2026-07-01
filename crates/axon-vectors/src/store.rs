@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axon_api::source::*;
@@ -209,7 +209,7 @@ impl VectorStore for FakeVectorStore {
         }
         drop(state);
         if slow_write {
-            thread::sleep(Duration::from_millis(10));
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
         if partial_failure {
             return Err(ApiError::new(
