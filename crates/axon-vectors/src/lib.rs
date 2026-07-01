@@ -27,3 +27,7 @@ mod payload_tests;
 #[cfg(test)]
 #[path = "point_tests.rs"]
 mod point_tests;
+
+#[cfg(test)]
+#[path = "qdrant_tests.rs"]
+mod qdrant_tests;
