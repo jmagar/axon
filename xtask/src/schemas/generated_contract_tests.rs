@@ -1,0 +1,292 @@
+use std::path::Path;
+
+use regex::Regex;
+
+use super::{fixture_repo, generate};
+
+fn generated_json(root: &Path, path: &str) -> serde_json::Value {
+    let content = std::fs::read_to_string(root.join(path)).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
+
+fn workspace_file(path: &str) -> String {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    std::fs::read_to_string(repo_root.join(path))
+        .unwrap_or_else(|err| panic!("read workspace file {path}: {err}"))
+}
+
+fn payload_required_fields_from_source() -> Vec<String> {
+    parse_string_const_array(
+        &workspace_file("crates/axon-vectors/src/payload.rs"),
+        "REQUIRED_FIELDS",
+    )
+}
+
+fn parse_string_const_array(source: &str, const_name: &str) -> Vec<String> {
+    let re = Regex::new(&format!(
+        r#"(?s)const\s+{const_name}:\s*&\[\s*&str\s*\]\s*=\s*&\[(.*?)\];"#
+    ))
+    .unwrap();
+    let body = re
+        .captures(source)
+        .unwrap_or_else(|| panic!("missing {const_name} in source"))[1]
+        .to_string();
+    let field_re = Regex::new(r#""([^"]+)""#).unwrap();
+    field_re
+        .captures_iter(&body)
+        .map(|capture| capture[1].to_string())
+        .collect()
+}
+
+#[test]
+fn generated_adapter_docs_include_route_time_registry() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let content = std::fs::read_to_string(
+        tmp.path()
+            .join("docs/reference/sources/adapter-scopes.json"),
+    )
+    .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let adapters = value["x-axon"]["adapters"].as_array().unwrap();
+    let web = adapters
+        .iter()
+        .find(|adapter| adapter["name"] == "web")
+        .expect("web adapter exists");
+
+    assert_eq!(
+        value["$id"],
+        "https://axon.local/schemas/sources/adapter-scopes.json"
+    );
+    assert_eq!(web["source_kind"], "web");
+    assert_eq!(web["default_scope"], "site");
+    assert!(
+        web["supported_scopes"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("map"))
+    );
+    assert_eq!(web["watch_supported"], true);
+
+    let markdown =
+        std::fs::read_to_string(tmp.path().join("docs/reference/sources/adapter-scopes.md"))
+            .unwrap();
+    assert!(markdown.contains("| `web` | `web` | `site` | `site`, `page`, `docs`, `map` |"));
+}
+
+#[test]
+fn generated_adapter_schema_models_registry_payload() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let content = std::fs::read_to_string(
+        tmp.path()
+            .join("docs/reference/sources/adapter-scopes.json"),
+    )
+    .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let properties = value["properties"].as_object().unwrap();
+    let x_axon = properties["x-axon"].as_object().unwrap();
+    let x_axon_properties = x_axon["properties"].as_object().unwrap();
+    let adapters = x_axon_properties["adapters"].as_object().unwrap();
+
+    assert_eq!(value["required"][0], "x-axon");
+    assert_eq!(adapters["type"], "array");
+    assert_eq!(adapters["items"]["$ref"], "#/$defs/AdapterCapability");
+    assert_eq!(
+        value["$defs"]["AdapterCapability"]["properties"]["supported_scopes"]["items"]["type"],
+        "string"
+    );
+}
+
+#[test]
+fn generated_json_contains_source_input_checksums_and_canonical_enums() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+    let value = generated_json(tmp.path(), "docs/reference/api/schemas.json");
+
+    let inputs = value["x-axon"]["source_inputs"].as_array().unwrap();
+    assert!(inputs.iter().any(|input| {
+        input["path"] == "crates/axon-api/src/source.rs"
+            && input["kind"] == "rust_module"
+            && input["checksum"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("sha256:")
+                .unwrap()
+                .len()
+                == 64
+    }));
+    for path in [
+        "crates/axon-api/src/source/document.rs",
+        "crates/axon-api/src/source/graph.rs",
+        "crates/axon-api/src/source/ids.rs",
+        "crates/axon-api/src/source/state.rs",
+        "crates/axon-api/src/source/status.rs",
+        "crates/axon-api/src/source/vector.rs",
+    ] {
+        assert!(
+            inputs.iter().any(|input| input["path"] == path),
+            "{path} should be tracked as an API source input"
+        );
+    }
+    for def in [
+        "SourceGeneration",
+        "PublishGenerationRequest",
+        "CleanupDebt",
+        "LeaseRequest",
+        "LeaseGuard",
+        "CleanupSelector",
+        "DocumentStatus",
+        "SourceDocument",
+        "PreparedDocument",
+        "PreparedChunk",
+        "ChunkLocator",
+        "SourceParseFacts",
+        "GraphCandidate",
+        "GraphEvidence",
+        "EmbeddingBatch",
+        "EmbeddingInput",
+    ] {
+        assert!(
+            value["$defs"].get(def).is_some(),
+            "{def} should be emitted in the API schema bundle"
+        );
+    }
+    assert_eq!(
+        value["$defs"]["enums"]["SourceKind"]["enum"][0],
+        serde_json::json!("web")
+    );
+    assert_eq!(
+        value["$defs"]["enums"]["PipelinePhase"]["enum"][1],
+        serde_json::json!("requested")
+    );
+}
+
+#[test]
+fn generated_vector_payload_schema_includes_registered_required_fields() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let required = value["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let expected = payload_required_fields_from_source();
+
+    assert_eq!(required, expected);
+}
+
+#[test]
+fn generated_vector_payload_index_plan_references_only_schema_fields() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let properties = value["properties"].as_object().unwrap();
+    let indexes = value["x-axon"]["index_plan"]["indexes"].as_array().unwrap();
+
+    assert!(!indexes.is_empty(), "index plan should not be empty");
+    for index in indexes {
+        let field_name = index["field_name"].as_str().unwrap();
+        assert!(
+            properties.contains_key(field_name),
+            "index field {field_name} must exist in schema properties"
+        );
+    }
+}
+
+#[test]
+fn generated_vector_payload_examples_validate_against_the_builder_registry() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let required = payload_required_fields_from_source();
+    let examples = value["x-axon"]["examples"].as_array().unwrap();
+
+    assert!(!examples.is_empty(), "payload examples should be emitted");
+    for example in examples {
+        let family = example["source_family"].as_str().unwrap();
+        let object = example.as_object().unwrap();
+        for field in &required {
+            assert!(
+                object.contains_key(field),
+                "example for {family} missing required field {field}"
+            );
+        }
+        let metadata = axon_api::source::MetadataMap(object.clone().into_iter().collect());
+        axon_vectors::payload::VectorPayloadBuilder::new(metadata)
+            .build()
+            .unwrap_or_else(|err| panic!("example for {family} must validate: {err}"));
+    }
+}
+
+#[test]
+fn generated_vector_payload_source_inputs_cover_builder_contract_and_api_vector_dtos() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let inputs = value["x-axon"]["source_inputs"].as_array().unwrap();
+
+    for path in [
+        "crates/axon-vectors/src/payload.rs",
+        "crates/axon-vectors/src/point.rs",
+        "crates/axon-api/src/source/vector.rs",
+        "docs/pipeline-unification/sources/metadata-payload.md",
+        "docs/pipeline-unification/sources/chunking-contract.md",
+        "docs/pipeline-unification/schemas/vector-payload-schema.md",
+    ] {
+        assert!(
+            inputs.iter().any(|input| input["path"] == path),
+            "{path} should be tracked as a vector payload source input"
+        );
+    }
+}
+
+#[test]
+fn generated_api_schema_and_docs_include_vector_store_dtos() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let schema = generated_json(tmp.path(), "docs/reference/api/schemas.json");
+    for def in [
+        "VectorPointBatch",
+        "VectorPoint",
+        "PayloadIndexSpec",
+        "CollectionSpec",
+        "VectorConfig",
+        "SparseVector",
+        "SparseVectorConfig",
+        "VectorStoreDeleteResult",
+        "VectorSearchRequest",
+        "VectorSearchResult",
+        "VectorSearchMatch",
+    ] {
+        assert!(
+            schema["$defs"].get(def).is_some(),
+            "{def} should be emitted in the API schema bundle"
+        );
+    }
+
+    let markdown = std::fs::read_to_string(tmp.path().join("docs/reference/api/dto.md")).unwrap();
+    assert!(markdown.contains("VectorPointBatch"));
+    assert!(markdown.contains("CollectionSpec"));
+}
