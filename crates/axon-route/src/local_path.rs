@@ -28,7 +28,11 @@ fn normalize_path_components(path: &Path) -> String {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                normalized.pop();
+                if normalized.as_os_str().is_empty() || contains_only_parent_dirs(&normalized) {
+                    normalized.push("..");
+                } else {
+                    normalized.pop();
+                }
             }
             other => normalized.push(other.as_os_str()),
         }
@@ -37,4 +41,9 @@ fn normalize_path_components(path: &Path) -> String {
         .to_string_lossy()
         .trim_end_matches('/')
         .to_string()
+}
+
+fn contains_only_parent_dirs(path: &Path) -> bool {
+    path.components()
+        .all(|component| matches!(component, Component::ParentDir))
 }

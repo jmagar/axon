@@ -85,6 +85,14 @@ pub struct AdapterRegistry {
 
 impl AdapterRegistry {
     pub fn from_adapters(mut adapters: Vec<AdapterDefinition>) -> Self {
+        for adapter in &mut adapters {
+            if let Some(minimum) = minimum_safety_class(adapter.source_kind) {
+                adapter.safety_class = minimum;
+            }
+            if !adapter.supported_scopes.contains(&adapter.default_scope) {
+                adapter.supported_scopes.push(adapter.default_scope);
+            }
+        }
         adapters.sort_by(|left, right| left.adapter.name.cmp(&right.adapter.name));
         Self { adapters }
     }
@@ -155,5 +163,14 @@ impl AdapterRegistry {
         self.adapters
             .iter()
             .find(|adapter| adapter.adapter.name == name)
+    }
+}
+
+fn minimum_safety_class(source_kind: SourceKind) -> Option<SafetyClass> {
+    match source_kind {
+        SourceKind::Local | SourceKind::CliTool | SourceKind::McpTool => {
+            Some(safety_class(source_kind))
+        }
+        _ => None,
     }
 }

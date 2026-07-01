@@ -48,6 +48,11 @@ impl AuthorityRecord {
         self.adapter_hint = Some(adapter.into());
         self
     }
+
+    pub fn with_confidence(mut self, confidence: f32) -> Self {
+        self.confidence = confidence.clamp(0.0, 1.0);
+        self
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -98,11 +103,18 @@ impl InMemoryAuthorityRegistry {
     }
 
     pub fn find(&self, raw_source: &str) -> Option<&AuthorityRecord> {
+        self.matches(raw_source).into_iter().next()
+    }
+
+    pub fn matches(&self, raw_source: &str) -> Vec<&AuthorityRecord> {
         let alias = normalize_alias(raw_source);
-        self.records.iter().find(|record| {
-            normalize_alias(&record.canonical_uri) == alias
-                || record.aliases.iter().any(|candidate| candidate == &alias)
-        })
+        self.records
+            .iter()
+            .filter(|record| {
+                normalize_alias(&record.canonical_uri) == alias
+                    || record.aliases.iter().any(|candidate| candidate == &alias)
+            })
+            .collect()
     }
 }
 

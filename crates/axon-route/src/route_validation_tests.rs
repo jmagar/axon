@@ -92,14 +92,45 @@ fn router_allows_tool_execution_with_trusted_policy() {
         .route_with_policy(
             &request,
             resolved,
-            RouteSecurityPolicy {
-                allow_tool_execution: true,
-            },
+            RouteSecurityPolicy::trusted_tool_execution(),
         )
         .expect("trusted policy allows cli route");
 
     assert_eq!(route.adapter.name, "cli");
     assert_eq!(route.safety_class, SafetyClass::ToolExecution);
+}
+
+#[test]
+fn router_rejects_forged_resolved_source_identity() {
+    let resolver = resolver();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let request = SourceRequest::new("example.com");
+    let mut resolved = resolver.resolve(&request).expect("source resolves");
+    resolved.canonical_uri = "https://evil.example/".to_string();
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("forged source identity fails");
+
+    assert_eq!(err.code.0, "route.source.invalid");
+}
+
+#[test]
+fn router_enforces_minimum_tool_safety_class_from_registry() {
+    let registry = AdapterRegistry::from_adapters(vec![
+        crate::AdapterDefinition::new("cli", "1", SourceKind::CliTool, SourceScope::Tool)
+            .with_safety_class(SafetyClass::PublicNetwork),
+    ]);
+    let resolver = SourceResolver::new(InMemoryAuthorityRegistry::default(), registry.clone());
+    let router = SourceRouter::new(registry);
+    let request = SourceRequest::new("cli:repomix --help");
+    let resolved = resolver.resolve(&request).expect("cli resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("downgraded tool adapter is still denied");
+
+    assert_eq!(err.code.0, "route.tool_execution.denied");
 }
 
 #[test]

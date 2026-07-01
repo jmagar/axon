@@ -7,12 +7,21 @@ use axon_api::{
 use axon_error::{ApiError, ErrorStage};
 
 use crate::capability::{AdapterDefinition, AdapterRegistry};
+use crate::source_id::source_id;
 
 pub type RouteDecision = RoutePlan;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RouteSecurityPolicy {
-    pub allow_tool_execution: bool,
+    allow_tool_execution: bool,
+}
+
+impl RouteSecurityPolicy {
+    pub fn trusted_tool_execution() -> Self {
+        Self {
+            allow_tool_execution: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +48,7 @@ impl SourceRouter {
         source: ResolvedSource,
         policy: RouteSecurityPolicy,
     ) -> Result<RoutePlan, ApiError> {
+        self.validate_source(&source)?;
         let scope = request.scope.unwrap_or(source.default_scope);
         let adapter = self.select_adapter(request, &source)?;
 
@@ -71,6 +81,38 @@ impl SourceRouter {
             watch_supported: adapter.watch_supported,
             refresh_supported: adapter.refresh_supported,
         })
+    }
+
+    fn validate_source(&self, source: &ResolvedSource) -> Result<(), ApiError> {
+        let expected = source_id(source.source_kind, &source.canonical_uri);
+        if source.source_id != expected {
+            return Err(ApiError::new(
+                "route.source.invalid",
+                ErrorStage::Routing,
+                "resolved source id does not match canonical identity",
+            ));
+        }
+
+        for candidate in &source.candidate_adapters {
+            let Some(adapter) = self.adapters.find(&candidate.adapter.name) else {
+                return Err(ApiError::new(
+                    "route.source.invalid",
+                    ErrorStage::Routing,
+                    "resolved source references an unregistered adapter",
+                )
+                .with_context("adapter", candidate.adapter.name.clone()));
+            };
+            if adapter.source_kind != source.source_kind {
+                return Err(ApiError::new(
+                    "route.source.invalid",
+                    ErrorStage::Routing,
+                    "resolved source adapter candidate does not match source kind",
+                )
+                .with_context("adapter", candidate.adapter.name.clone()));
+            }
+        }
+
+        Ok(())
     }
 
     fn select_adapter(

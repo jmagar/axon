@@ -27,23 +27,27 @@ impl SourceResolver {
 
     pub fn resolve(&self, request: &SourceRequest) -> Result<ResolvedSource, ApiError> {
         let mut warnings = Vec::new();
-        let authority_record = self.authorities.find(&request.source);
+        let authority_matches = self.authorities.matches(&request.source);
+        if authority_matches.len() > 1 {
+            return Err(ApiError::new(
+                "source.resolve.ambiguous",
+                ErrorStage::Resolving,
+                "source matched multiple authority records",
+            )
+            .with_context("source", request.source.clone())
+            .with_context("matches", authority_matches.len().to_string()));
+        }
+        let authority_record = authority_matches.first().copied();
         let canonical = self.resolve_canonical(request, authority_record, &mut warnings)?;
         warnings.extend(canonical.warnings.clone());
         let candidates = self.candidates_for(&canonical);
         let authority = authority_record
             .map(|record| record.authority)
             .unwrap_or(AuthorityLevel::Inferred);
-        let confidence = if authority == AuthorityLevel::Official {
-            0.95
-        } else {
-            0.75
-        };
-        let requested_uri = if canonical.source_kind == SourceKind::Local {
-            "local://redacted".to_string()
-        } else {
-            request.source.clone()
-        };
+        let confidence = authority_record
+            .map(|record| record.confidence.clamp(0.0, 1.0))
+            .unwrap_or(0.75);
+        let requested_uri = public_requested_uri(request, &canonical);
 
         Ok(ResolvedSource {
             requested_uri,
@@ -72,6 +76,7 @@ impl SourceResolver {
     ) -> Result<canonical::CanonicalSource, ApiError> {
         match authority_record {
             Some(record) => {
+                self.validate_authority_record(record)?;
                 let scope = request.scope.unwrap_or(SourceScope::Docs);
                 let canonical_uri = record
                     .entrypoints
@@ -130,6 +135,93 @@ impl SourceResolver {
         });
         candidates
     }
+
+    fn validate_authority_record(
+        &self,
+        record: &crate::authority::AuthorityRecord,
+    ) -> Result<(), ApiError> {
+        if !uri_matches_kind(&record.canonical_uri, record.source_kind)
+            || record
+                .entrypoints
+                .iter()
+                .any(|(_, uri)| !uri_matches_kind(uri, record.source_kind))
+        {
+            return Err(ApiError::new(
+                "source.authority.invalid",
+                ErrorStage::Resolving,
+                "authority record URI does not match declared source kind",
+            )
+            .with_context("authority_id", record.authority_id.clone()));
+        }
+        if let Some(adapter_hint) = record.adapter_hint.as_deref() {
+            let adapter = self.adapters.find(adapter_hint).ok_or_else(|| {
+                ApiError::new(
+                    "source.authority.invalid",
+                    ErrorStage::Resolving,
+                    "authority record references an unknown adapter",
+                )
+                .with_context("authority_id", record.authority_id.clone())
+                .with_context("adapter", adapter_hint.to_string())
+            })?;
+            if adapter.source_kind != record.source_kind {
+                return Err(ApiError::new(
+                    "source.authority.invalid",
+                    ErrorStage::Resolving,
+                    "authority adapter does not support declared source kind",
+                )
+                .with_context("authority_id", record.authority_id.clone())
+                .with_context("adapter", adapter_hint.to_string()));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn uri_matches_kind(uri: &str, kind: SourceKind) -> bool {
+    match kind {
+        SourceKind::Web => uri.starts_with("http://") || uri.starts_with("https://"),
+        SourceKind::Local => uri.starts_with("local://"),
+        SourceKind::Git => {
+            uri.starts_with("github://")
+                || uri.starts_with("gitlab://")
+                || uri.starts_with("gitea://")
+                || uri.starts_with("git+http://")
+                || uri.starts_with("git+https://")
+        }
+        SourceKind::Registry => uri.starts_with("pkg://") || uri.starts_with("docker://"),
+        SourceKind::Feed => uri.starts_with("feed://"),
+        SourceKind::Reddit => uri.starts_with("reddit://"),
+        SourceKind::Youtube => uri.starts_with("youtube://"),
+        SourceKind::Session => uri.starts_with("session://"),
+        SourceKind::CliTool => uri.starts_with("cli://"),
+        SourceKind::McpTool => uri.starts_with("mcp://"),
+        SourceKind::Memory => uri.starts_with("memory://"),
+        SourceKind::Upload => uri.starts_with("upload://"),
+    }
+}
+
+fn public_requested_uri(request: &SourceRequest, canonical: &canonical::CanonicalSource) -> String {
+    if canonical.source_kind == SourceKind::Local {
+        return "local://redacted".to_string();
+    }
+    let redacted_query = canonical
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "source.query.sensitive_redacted");
+    if redacted_query || has_url_userinfo(&request.source) {
+        canonical.canonical_uri.clone()
+    } else {
+        request.source.clone()
+    }
+}
+
+fn has_url_userinfo(source: &str) -> bool {
+    let Some((_, rest)) = source.split_once("://") else {
+        return false;
+    };
+    rest.split('/')
+        .next()
+        .is_some_and(|host| host.contains('@'))
 }
 
 fn warning(code: &str, message: &str) -> SourceWarning {

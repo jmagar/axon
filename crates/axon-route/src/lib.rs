@@ -4,6 +4,7 @@ pub mod alias;
 pub mod authority;
 pub mod canonical;
 pub mod capability;
+mod github;
 pub mod local_path;
 pub mod resolver;
 pub mod router;

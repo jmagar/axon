@@ -27,7 +27,7 @@ pub fn canonicalize(raw: &str, requested_scope: Option<SourceScope>) -> Option<C
         .or_else(|| canonical_registry(source))
         .or_else(|| canonical_gitlab(source))
         .or_else(|| canonical_gitea(source))
-        .or_else(|| canonical_github(source))
+        .or_else(|| crate::github::canonical_github(source))
         .or_else(|| canonical_generic_git(source))
         .or_else(|| canonical_web(source))
 }
@@ -198,33 +198,6 @@ fn canonical_registry(raw: &str) -> Option<CanonicalSource> {
     ))
 }
 
-fn canonical_github(raw: &str) -> Option<CanonicalSource> {
-    let path = raw
-        .strip_prefix("https://github.com/")
-        .or_else(|| raw.strip_prefix("http://github.com/"))
-        .or_else(|| raw.strip_prefix("github.com/"))
-        .unwrap_or(raw);
-    let parts = path.split('/').take(3).collect::<Vec<_>>();
-    if parts.len() < 2 || parts[0].contains('.') || parts[0].is_empty() || parts[1].is_empty() {
-        return None;
-    }
-    let mut source = basic(
-        format!("github://{}/{}", parts[0], trim_git_suffix(parts[1])),
-        SourceKind::Git,
-        SourceScope::Repo,
-        "github",
-        parts[1],
-        "resolved as GitHub repository source",
-    );
-    if path == raw {
-        source.warnings.push(warning(
-            "source.inferred.github_shorthand",
-            "source interpreted as GitHub owner/repo shorthand",
-        ));
-    }
-    Some(source)
-}
-
 fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
     let host = url.host_str()?;
@@ -266,7 +239,12 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
         return None;
     }
     Some(basic(
-        format!("git+https://{}{}", host_port(&url)?, clean_path(&url)),
+        format!(
+            "git+{}://{}{}",
+            url.scheme(),
+            host_port(&url)?,
+            clean_path(&url)
+        ),
         SourceKind::Git,
         SourceScope::Repo,
         "git",
@@ -280,7 +258,8 @@ fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let query = normalized_query(&url);
     let mut source = basic(
         format!(
-            "https://{}{}{}",
+            "{}://{}{}{}",
+            url.scheme(),
             host_port(&url)?,
             clean_path(&url),
             query.query
@@ -431,10 +410,6 @@ fn collapse_duplicate_slashes(path: &str) -> String {
         }
     }
     collapsed
-}
-
-fn trim_git_suffix(value: &str) -> &str {
-    value.strip_suffix(".git").unwrap_or(value)
 }
 
 fn is_youtube_host(host: &str) -> bool {
