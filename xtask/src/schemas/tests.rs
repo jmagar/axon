@@ -211,16 +211,23 @@ fn source_input_checksum_matches_fixture_and_drifts_when_source_changes() {
 
 #[test]
 fn removed_surface_drift_fails_generation() {
-    for token in [
-        "\"EmbedRequest\"",
-        "\"code-search\"",
-        "\"action=vertical_scrape\"",
-        "\"/v1/watch/{id}/run\"",
-        "\"AXON_MCP_HTTP_TOKEN\"",
-        "\"path_prefix\"",
+    for (path, token) in [
+        ("docs/reference/api/schemas.json", "\"EmbedRequest\""),
+        ("docs/reference/cli/commands.json", "\"embed\""),
+        ("docs/reference/cli/commands.json", "\"code-search\""),
+        ("docs/reference/mcp/tool-schema.json", "\"vertical_scrape\""),
+        ("docs/reference/mcp/tool-schema.json", "\"crawl\""),
+        ("docs/reference/rest/openapi.json", "\"/v1/watch/{id}/run\""),
+        ("docs/reference/rest/openapi.json", "\"/v1/scrape\""),
+        (
+            "docs/reference/config/env.schema.json",
+            "\"AXON_MCP_HTTP_TOKEN\"",
+        ),
+        ("docs/reference/api/schemas.json", "\"url\""),
+        ("docs/reference/api/schemas.json", "\"path_prefix\""),
     ] {
         let artifacts = vec![artifact::SchemaArtifact::new(
-            "docs/reference/api/schemas.json",
+            path,
             format!("{{\"title\":{token}}}"),
         )];
         let err = registry::check_removed_surface_drift(&artifacts)
@@ -241,4 +248,43 @@ fn json_report_shape_is_machine_readable() {
     let value = serde_json::to_value(reports).unwrap();
     assert_eq!(value[0]["family"], "api");
     assert_eq!(value[0]["artifacts_checked"], 3);
+}
+
+#[test]
+fn json_report_shape_marks_stale_family_as_failed() {
+    let report = super::FamilyReport::from_drift(
+        SchemaFamily::Api,
+        3,
+        vec!["docs/reference/api/schemas.json differs".to_string()],
+    );
+    let value = serde_json::to_value(report).unwrap();
+    assert_eq!(value["family"], "api");
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["drift"][0], "docs/reference/api/schemas.json differs");
+}
+
+#[test]
+fn json_check_mode_still_reports_stale_artifact_error() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+    let path = tmp.path().join("docs/reference/api/schemas.json");
+    std::fs::write(path, "{}\n").unwrap();
+
+    let err = run(
+        tmp.path(),
+        SchemasArgs {
+            command: SchemaCommand::Generate(SchemaGenerateArgs {
+                check: true,
+                json: true,
+                ..SchemaGenerateArgs::default()
+            }),
+        },
+    )
+    .expect_err("stale json check should still fail");
+
+    assert!(err.to_string().contains("schema artifacts are stale"));
+    assert!(
+        err.to_string()
+            .contains("docs/reference/api/schemas.json differs")
+    );
 }

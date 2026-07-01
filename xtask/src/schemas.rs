@@ -134,35 +134,34 @@ fn run_families(root: &Path, families: Vec<SchemaFamily>, args: &SchemaGenerateA
         bail!("--update-fixtures is forbidden in CI");
     }
 
-    let mut drift = Vec::new();
     let mut reports = Vec::new();
     for family in families {
         let artifacts = generator_for(family).generate(root)?;
         registry::check_removed_surface_drift(&artifacts)?;
         registry::check_enum_projection_drift(&artifacts)?;
-        reports.push(FamilyReport {
-            family,
-            ok: true,
-            artifacts_checked: artifacts.len(),
-            drift: Vec::new(),
-            warnings: Vec::new(),
-        });
         if args.print {
             print_artifacts(&artifacts);
+            reports.push(FamilyReport::ok(family, artifacts.len()));
             continue;
         }
         if args.check {
-            collect_drift(root, &artifacts, &mut drift)?;
+            let drift = collect_drift(root, &artifacts)?;
+            reports.push(FamilyReport::from_drift(family, artifacts.len(), drift));
         } else {
             write_artifacts(root, &artifacts)?;
+            reports.push(FamilyReport::ok(family, artifacts.len()));
         }
     }
 
-    if !drift.is_empty() {
-        bail!("schema artifacts are stale:\n{}", drift.join("\n"));
-    }
+    let drift = reports
+        .iter()
+        .flat_map(|report| report.drift.iter().cloned())
+        .collect::<Vec<_>>();
     if args.json {
         print_report(&reports)?;
+    }
+    if !drift.is_empty() {
+        bail!("schema artifacts are stale:\n{}", drift.join("\n"));
     }
     Ok(())
 }
@@ -174,6 +173,28 @@ struct FamilyReport {
     artifacts_checked: usize,
     drift: Vec<String>,
     warnings: Vec<String>,
+}
+
+impl FamilyReport {
+    fn ok(family: SchemaFamily, artifacts_checked: usize) -> Self {
+        Self {
+            family,
+            ok: true,
+            artifacts_checked,
+            drift: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    fn from_drift(family: SchemaFamily, artifacts_checked: usize, drift: Vec<String>) -> Self {
+        Self {
+            family,
+            ok: drift.is_empty(),
+            artifacts_checked,
+            drift,
+            warnings: Vec::new(),
+        }
+    }
 }
 
 fn print_report(reports: &[FamilyReport]) -> Result<()> {
@@ -190,11 +211,8 @@ fn print_artifacts(artifacts: &[artifact::SchemaArtifact]) {
     }
 }
 
-fn collect_drift(
-    root: &Path,
-    artifacts: &[artifact::SchemaArtifact],
-    drift: &mut Vec<String>,
-) -> Result<()> {
+fn collect_drift(root: &Path, artifacts: &[artifact::SchemaArtifact]) -> Result<Vec<String>> {
+    let mut drift = Vec::new();
     for artifact in artifacts {
         let path = root.join(&artifact.path);
         match std::fs::read_to_string(&path) {
@@ -210,7 +228,7 @@ fn collect_drift(
             Err(err) => return Err(err.into()),
         }
     }
-    Ok(())
+    Ok(drift)
 }
 
 fn write_artifacts(root: &Path, artifacts: &[artifact::SchemaArtifact]) -> Result<()> {

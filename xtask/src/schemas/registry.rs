@@ -1,62 +1,116 @@
+use std::path::Path;
+
 use anyhow::{Result, bail};
 
 use super::artifact::SchemaArtifact;
 
-pub const REMOVED_SURFACE_TOKENS: &[&str] = &[
-    "\"EmbedRequest\"",
-    "\"IngestRequest\"",
-    "\"CrawlRequest\"",
-    "\"ScrapeRequest\"",
-    "\"PurgeRequest\"",
-    "\"CodeSearchRequest\"",
-    "\"code-search-watch\"",
-    "\"code-search\"",
-    "\"purge\"",
-    "\"dedupe\"",
-    "\"axon refresh\"",
-    "\"fresh\"",
-    "\"/v1/embed\"",
-    "\"/v1/ingest\"",
-    "\"/v1/scrape\"",
-    "\"/v1/crawl\"",
-    "\"/v1/purge\"",
-    "\"/v1/dedupe\"",
-    "\"/v1/watch/{id}/run\"",
-    "\"action=embed\"",
-    "\"action=ingest\"",
-    "\"action=scrape\"",
-    "\"action=crawl\"",
-    "\"action=code_search\"",
-    "\"action=vertical_scrape\"",
-    "\"action=purge\"",
-    "\"action=dedupe\"",
-    "\"AXON_MCP_HTTP_HOST\"",
-    "\"AXON_MCP_HTTP_PORT\"",
-    "\"AXON_MCP_HTTP_TOKEN\"",
-    "\"AXON_MCP_AUTH_MODE\"",
-    "\"AXON_MCP_PUBLIC_URL\"",
-    "\"AXON_MCP_GOOGLE_CLIENT_ID\"",
-    "\"AXON_MCP_GOOGLE_CLIENT_SECRET\"",
-    "\"AXON_MCP_AUTH_ADMIN_EMAIL\"",
-    "\"AXON_MCP_AUTH_ALLOWED_REDIRECT_URIS\"",
-    "\"AXON_MCP_ALLOWED_ORIGINS\"",
-    "\"AXON_COLLECTION\"",
-    "\"AXON_HYBRID_CANDIDATES\"",
-    "\"AXON_ASK_HYBRID_CANDIDATES\"",
-    "\"AXON_INGEST_LANES\"",
-    "\"AXON_EMBED_DOC_TIMEOUT_SECS\"",
-    "\"AXON_WATCH_TICK_SECS\"",
-    "\"AXON_WATCH_LEASE_SECS\"",
-    "\"input\"",
-    "\"source_type\"",
-    "\"target\"",
-    "\"include_source\"",
-    "\"urls\"",
-    "\"prefix\"",
-    "\"cwd\"",
-    "\"path_prefix\"",
-    "\"no_freshness\"",
+pub struct RemovedSurfaceRule {
+    pub token: &'static str,
+    pub path_contains: &'static [&'static str],
+}
+
+pub const REMOVED_SURFACE_RULES: &[RemovedSurfaceRule] = &[
+    global("\"EmbedRequest\""),
+    global("\"IngestRequest\""),
+    global("\"CrawlRequest\""),
+    global("\"ScrapeRequest\""),
+    global("\"PurgeRequest\""),
+    global("\"CodeSearchRequest\""),
+    cli("\"embed\""),
+    cli("\"ingest\""),
+    cli("\"scrape\""),
+    cli("\"crawl\""),
+    cli("\"code-search\""),
+    cli("\"code-search-watch\""),
+    cli("\"purge\""),
+    cli("\"dedupe\""),
+    cli("\"axon refresh\""),
+    cli("\"fresh\""),
+    mcp("\"embed\""),
+    mcp("\"ingest\""),
+    mcp("\"scrape\""),
+    mcp("\"crawl\""),
+    mcp("\"code_search\""),
+    mcp("\"vertical_scrape\""),
+    mcp("\"purge\""),
+    mcp("\"dedupe\""),
+    rest("\"/v1/embed\""),
+    rest("\"/v1/ingest\""),
+    rest("\"/v1/scrape\""),
+    rest("\"/v1/crawl\""),
+    rest("\"/v1/purge\""),
+    rest("\"/v1/dedupe\""),
+    rest("\"/v1/watch/{id}/run\""),
+    config("\"AXON_MCP_HTTP_HOST\""),
+    config("\"AXON_MCP_HTTP_PORT\""),
+    config("\"AXON_MCP_HTTP_TOKEN\""),
+    config("\"AXON_MCP_AUTH_MODE\""),
+    config("\"AXON_MCP_PUBLIC_URL\""),
+    config("\"AXON_MCP_GOOGLE_CLIENT_ID\""),
+    config("\"AXON_MCP_GOOGLE_CLIENT_SECRET\""),
+    config("\"AXON_MCP_AUTH_ADMIN_EMAIL\""),
+    config("\"AXON_MCP_AUTH_ALLOWED_REDIRECT_URIS\""),
+    config("\"AXON_MCP_ALLOWED_ORIGINS\""),
+    config("\"AXON_COLLECTION\""),
+    config("\"AXON_HYBRID_CANDIDATES\""),
+    config("\"AXON_ASK_HYBRID_CANDIDATES\""),
+    config("\"AXON_INGEST_LANES\""),
+    config("\"AXON_EMBED_DOC_TIMEOUT_SECS\""),
+    config("\"AXON_WATCH_TICK_SECS\""),
+    config("\"AXON_WATCH_LEASE_SECS\""),
+    dto("\"input\""),
+    dto("\"source_type\""),
+    dto("\"target\""),
+    dto("\"include_source\""),
+    dto("\"urls\""),
+    dto("\"url\""),
+    dto("\"prefix\""),
+    dto("\"cwd\""),
+    dto("\"path_prefix\""),
+    dto("\"no_freshness\""),
 ];
+
+const fn global(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &[],
+    }
+}
+
+const fn cli(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &["docs/reference/cli/"],
+    }
+}
+
+const fn mcp(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &["docs/reference/mcp/", "crates/axon-mcp/tests/golden/"],
+    }
+}
+
+const fn rest(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &["docs/reference/rest/"],
+    }
+}
+
+const fn config(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &["docs/reference/config/"],
+    }
+}
+
+const fn dto(token: &'static str) -> RemovedSurfaceRule {
+    RemovedSurfaceRule {
+        token,
+        path_contains: &["docs/reference/api/schemas.json"],
+    }
+}
 
 pub const CANONICAL_ENUMS: &[(&str, &[&str])] = &[
     ("SourceIntent", &["acquire", "refresh", "watch", "map"]),
@@ -138,17 +192,28 @@ pub const CANONICAL_ENUMS: &[(&str, &[&str])] = &[
 
 pub fn check_removed_surface_drift(artifacts: &[SchemaArtifact]) -> Result<()> {
     for artifact in artifacts {
-        for token in REMOVED_SURFACE_TOKENS {
-            if artifact.content.contains(token) {
+        let artifact_path = artifact.path.to_string_lossy();
+        for rule in REMOVED_SURFACE_RULES {
+            if rule_applies(&artifact.path, &artifact_path, rule)
+                && artifact.content.contains(rule.token)
+            {
                 bail!(
                     "{} contains removed public surface token {}",
                     artifact.path.display(),
-                    token
+                    rule.token
                 );
             }
         }
     }
     Ok(())
+}
+
+fn rule_applies(path: &Path, path_string: &str, rule: &RemovedSurfaceRule) -> bool {
+    rule.path_contains.is_empty()
+        || rule
+            .path_contains
+            .iter()
+            .any(|needle| path_string.contains(needle) || path == Path::new(needle))
 }
 
 pub fn check_enum_projection_drift(artifacts: &[SchemaArtifact]) -> Result<()> {
