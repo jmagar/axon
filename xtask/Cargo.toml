@@ -7,11 +7,14 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+axon-api = { path = "../crates/axon-api" }
+axon-error = { path = "../crates/axon-error" }
 axon-web = { path = "../crates/axon-web" }
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 regex = "1"
 reqwest = { version = "0.13", features = ["blocking", "json", "rustls"], default-features = false }
+schemars = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
